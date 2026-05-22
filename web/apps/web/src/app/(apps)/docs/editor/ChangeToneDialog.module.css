@@ -1,0 +1,147 @@
+/* ── ChangeToneDialog ─────────────────────────────────────────────────────── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+}
+
+.dialog {
+  background: var(--color-bg, #ffffff);
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+
+.header {
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text, #202124);
+  margin: 0 0 6px;
+}
+
+.sparkleIcon {
+  color: #8b5cf6;
+}
+
+.headerDesc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted, #5f6368);
+}
+
+/* ── Sliders ── */
+
+.sliders {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.sliderGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sliderLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted, #5f6368);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sliderMinLabel,
+.sliderMaxLabel {
+  font-size: 11px;
+  color: var(--color-text-muted, #5f6368);
+  flex-shrink: 0;
+  min-width: 50px;
+}
+
+.sliderMaxLabel {
+  text-align: right;
+}
+
+.sliderInput {
+  flex: 1;
+  height: 4px;
+  accent-color: #8b5cf6;
+  cursor: pointer;
+}
+
+/* Accessibility tick marks (hidden — sliderRow already shows labels) */
+.sliderTick {
+  display: none;
+}
+
+/* ── Actions ── */
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--color-border, #e0e0e0);
+}
+
+.cancelBtn {
+  padding: 7px 16px;
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text, #202124);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.cancelBtn:hover {
+  background: var(--color-bg-hover, #f1f3f4);
+}
+
+.applyBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: none;
+  border-radius: 6px;
+  background: #8b5cf6;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.applyBtn:hover {
+  background: #7c3aed;
+}

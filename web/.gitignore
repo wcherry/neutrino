@@ -1,0 +1,12 @@
+node_modules/
+.next/
+dist/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.local
+.turbo/
+apps/web/out/
+tsconfig.tsbuildinfo
+**/.DS_Store

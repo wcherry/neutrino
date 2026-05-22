@@ -1,0 +1,423 @@
+/* ── Overlay ──────────────────────────────────────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 16px;
+}
+
+/* ── Dialog shell ─────────────────────────────────────────────────────────── */
+.dialog {
+  background: var(--color-surface, #fff);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  width: 100%;
+  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  overflow: hidden;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+.dialogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  flex-shrink: 0;
+}
+
+.dialogTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text, #111827);
+}
+
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--color-text-secondary, #6b7280);
+  transition: background 0.12s, color 0.12s;
+}
+
+.closeBtn:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-text, #111827);
+}
+
+/* ── Tab bar ──────────────────────────────────────────────────────────────── */
+.tabBar {
+  display: flex;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  flex-shrink: 0;
+}
+
+.tabBtn {
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tabBtn:hover {
+  color: var(--color-text, #111827);
+}
+
+.tabBtnActive {
+  color: var(--color-primary, #2563eb);
+  border-bottom-color: var(--color-primary, #2563eb);
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+.dialogBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  min-height: 0;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+.dialogFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  flex-shrink: 0;
+}
+
+.cancelBtn {
+  padding: 8px 18px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 7px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.cancelBtn:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.applyBtn {
+  padding: 8px 20px;
+  border: none;
+  border-radius: 7px;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.applyBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.applyBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Shared canvas preview ────────────────────────────────────────────────── */
+/* InitialTab uses 120px; FileTab overrides via .canvasArea sizing */
+.previewCanvas {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: block;
+  border: 2px solid var(--color-border, #e5e7eb);
+}
+
+/* FileTab canvas fills the larger canvasArea */
+.canvasArea .previewCanvas {
+  width: 160px;
+  height: 160px;
+}
+
+/* ── InitialTab layout ────────────────────────────────────────────────────── */
+.initialTab {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.canvasWrap {
+  flex-shrink: 0;
+}
+
+.controls {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.controlRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.controlLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+/* Letter input */
+.letterInput {
+  width: 48px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--color-text, #111827);
+  background: var(--color-surface, #fff);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.letterInput:focus {
+  border-color: var(--color-primary, #2563eb);
+}
+
+/* Font / style pill buttons */
+.pillGroup {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  padding: 5px 10px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 5px;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text, #111827);
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  min-width: 32px;
+  text-align: center;
+}
+
+.pill:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.pillActive {
+  border-color: var(--color-primary, #2563eb);
+  background: #eff6ff;
+  color: var(--color-primary, #2563eb);
+}
+
+/* Color swatches */
+.swatchRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s;
+  flex-shrink: 0;
+}
+
+.swatch:hover {
+  transform: scale(1.2);
+}
+
+.swatchActive {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--color-text, #111827);
+}
+
+.colorInput {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border, #e5e7eb);
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* ── AvatarTab grid ───────────────────────────────────────────────────────── */
+.avatarGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+
+.avatarCell {
+  border: 2px solid transparent;
+  border-radius: 50%;
+  padding: 2px;
+  cursor: pointer;
+  background: transparent;
+  transition: border-color 0.12s, transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatarCell img {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: block;
+}
+
+.avatarCell:hover {
+  transform: scale(1.08);
+}
+
+.avatarCellSelected {
+  border-color: var(--color-primary, #2563eb);
+}
+
+/* ── FileTab layout ───────────────────────────────────────────────────────── */
+.fileTab {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.canvasArea {
+  position: relative;
+  flex-shrink: 0;
+  width: 160px;
+  height: 160px;
+}
+
+.uploadPlaceholder {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--color-surface-raised, #f3f4f6);
+  border: 2px dashed var(--color-border, #e5e7eb);
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  z-index: 1;
+}
+
+.uploadPlaceholder:hover {
+  background: var(--color-surface-hover, #e9ecef);
+}
+
+/* Shown briefly below the canvas while image is loaded */
+.dragHint {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--color-text-secondary, #9ca3af);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.fileControls {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.changeBtn {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  width: fit-content;
+  transition: background 0.12s;
+}
+
+.changeBtn:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+/* Drag cursor states on the canvas */
+.canvasGrab {
+  cursor: grab;
+}
+
+.canvasDragging {
+  cursor: grabbing;
+}
+
+/* ── Slider ───────────────────────────────────────────────────────────────── */
+.sliderRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sliderLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.slider {
+  width: 100%;
+  cursor: pointer;
+  accent-color: var(--color-primary, #2563eb);
+}
+
+.slider:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

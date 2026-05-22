@@ -1,0 +1,847 @@
+Group: Authentication
+Name: Register a new account
+Description: Verify that a new user can create an account and land in the authenticated app shell.
+Prerequisites:
+1. Dev or test environment is running.
+2. Auth API is reachable.
+3. Tester has an unused email address.
+Steps:
+1. Open /register.
+2. Enter a valid email, display name, and password.
+3. Submit the form.
+4. Wait for navigation to complete.
+Expected Outcome: The account is created without console errors. The user is signed in and redirected to the main app experience.
+
+Group: Authentication
+Name: Sign in with valid credentials
+Description: Verify that an existing user can authenticate and access protected app routes.
+Prerequisites:
+1. Dev or test environment is running.
+2. Auth API is reachable.
+3. A valid user account exists.
+Steps:
+1. Open /sign-in.
+2. Enter the account email and password.
+3. Submit the form.
+4. Navigate to /drive after sign-in if not redirected automatically.
+Expected Outcome: The user is authenticated, protected routes load successfully, and the app shell shows the signed-in user's navigation.
+
+Group: Authentication
+Name: Invalid sign-in is rejected
+Description: Verify that incorrect credentials do not authenticate a user.
+Prerequisites:
+1. Dev or test environment is running.
+2. Auth API is reachable.
+Steps:
+1. Open /sign-in.
+2. Enter a valid-looking email and an incorrect password.
+3. Submit the form.
+Expected Outcome: The form shows an authentication error. The user remains on the sign-in page and no protected app content is displayed.
+
+Group: Drive
+Name: File grid opens items with mouse
+Description: Verify that document cards or rows open when clicked from the file grid.
+Prerequisites:
+1. User is signed in.
+2. At least one Doc, Sheet, Note, or Slide exists.
+3. Dev server is running.
+Steps:
+1. Open /docs, /sheets, /notes, or /slides.
+2. In large-grid view, click an item.
+3. Return to the listing page.
+4. Switch to small-grid view and click the same or another item.
+5. Return to the listing page.
+6. Switch to list view and click an item.
+Expected Outcome: Each click opens the selected item. If document preview is enabled, the preview modal opens; otherwise the editor route opens directly.
+
+Group: Drive
+Name: File grid opens items with keyboard
+Description: Verify that file grid items are keyboard accessible.
+Prerequisites:
+1. User is signed in.
+2. At least one Doc, Sheet, Note, or Slide exists.
+3. Dev server is running.
+Steps:
+1. Open /sheets.
+2. Press Tab until a spreadsheet card or row has a visible focus ring.
+3. Press Enter.
+4. Return to /sheets.
+5. Focus a spreadsheet again.
+6. Press Space.
+Expected Outcome: Enter and Space open the selected spreadsheet exactly like a mouse click. Pressing Space does not scroll the page.
+
+Group: Drive
+Name: Star and overflow actions do not trigger file open
+Description: Verify that nested file controls perform their own actions without opening the file card.
+Prerequisites:
+1. User is signed in.
+2. Drive contains at least one file.
+3. Dev server is running.
+Steps:
+1. Open /drive.
+2. Tab to a file card.
+3. Tab to the star button and press Space.
+4. Tab to the three-dot menu button and press Space.
+Expected Outcome: The star button toggles the file star state without opening the file. The three-dot menu opens without navigating away.
+
+Group: Document Preview
+Name: Document preview opens and navigates to editor
+Description: Verify that document preview renders a Doc and can open the full editor.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_DOCUMENT_PREVIEW=true.
+2. User is signed in.
+3. At least one Doc exists with formatted content.
+Steps:
+1. Open /docs.
+2. Click a document card.
+3. Verify the preview modal label and content.
+4. Click Open in editor.
+Expected Outcome: A read-only Document preview modal opens within 1 to 2 seconds. Formatted content renders without console errors. Open in editor navigates to /docs/editor?id=<id>.
+
+Group: Document Preview
+Name: Spreadsheet preview preserves grid and cell colors
+Description: Verify that spreadsheet preview renders cells, headers, and user-set cell colors.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_DOCUMENT_PREVIEW=true.
+2. User is signed in.
+3. At least one Sheet exists with values and at least one custom cell background color.
+Steps:
+1. Open /sheets.
+2. Click a spreadsheet card.
+3. Verify column headers, row numbers, and cell values.
+4. Enable dark theme.
+5. Open the same preview again.
+Expected Outcome: The preview shows Spreadsheet preview, grid headers, and values in the correct cells. Custom cell background colors remain unchanged in dark theme.
+
+Group: Document Preview
+Name: Presentation preview opens and navigates to editor
+Description: Verify that presentation preview renders slide thumbnails and can open the editor.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_DOCUMENT_PREVIEW=true.
+2. User is signed in.
+3. At least one Slide deck exists with text content.
+Steps:
+1. Open /slides.
+2. Click a presentation card.
+3. Verify slide thumbnails appear.
+4. Click Open in editor.
+Expected Outcome: A Presentation preview modal opens, thumbnails are numbered and show slide text, and Open in editor navigates to /slides/editor?id=<id>.
+
+Group: Document Preview
+Name: Note preview renders rich note content
+Description: Verify that note preview renders common note formatting.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_DOCUMENT_PREVIEW=true.
+2. User is signed in.
+3. At least one Note exists with paragraphs, lists, code, blockquote, or tasks.
+Steps:
+1. Open /notes.
+2. Click a note card.
+3. Review the rendered preview.
+4. Click Open in editor.
+Expected Outcome: A Note preview modal opens. Paragraphs, bullets, numbered lists, code blocks, blockquotes, and tasks render read-only. Completed tasks show completed styling. Open in editor navigates to /notes/editor?id=<id>.
+
+Group: Document Preview
+Name: Preview modal closes from all supported controls
+Description: Verify that the preview modal can be dismissed by keyboard, close button, and backdrop.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_DOCUMENT_PREVIEW=true.
+2. User is signed in.
+3. At least one previewable item exists.
+Steps:
+1. Open any preview modal.
+2. Press Escape.
+3. Open the preview again.
+4. Click the X close button.
+5. Open the preview again.
+6. Click the backdrop outside the modal content.
+Expected Outcome: The modal closes each time without navigation, stale overlays, or console errors.
+
+Group: Document Preview
+Name: Preview flag off opens editor directly
+Description: Verify the fallback behavior when document preview is disabled.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_DOCUMENT_PREVIEW=false or unset.
+2. Dev server has been restarted after changing the flag.
+3. User is signed in.
+4. At least one Doc, Sheet, Note, or Slide exists.
+Steps:
+1. Open /docs, /sheets, /notes, or /slides.
+2. Click any item card or row.
+Expected Outcome: No preview modal appears. The app navigates directly to the relevant editor route.
+
+Group: Settings
+Name: Settings page AI Assistant tab saves locally
+Description: Verify that the settings route opens and AI settings persist in local storage.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SETTINGS_PAGE=true.
+2. User is signed in.
+3. Dev server is running.
+Steps:
+1. Click the settings icon in the topbar.
+2. Verify navigation goes to /settings.
+3. Verify AI Assistant, Appearance, Notifications, and Account tabs exist.
+4. Change the AI provider.
+5. Enter an API key value.
+6. Click Save AI settings.
+7. Reload the page.
+Expected Outcome: The AI Assistant tab is active by default. Save feedback appears briefly. The provider and API key reload from localStorage under neutrino.ai.settings.
+
+Group: Settings
+Name: Appearance theme saves and reloads
+Description: Verify that theme selection on the settings page persists.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SETTINGS_PAGE=true.
+2. User is signed in.
+3. Profile API is reachable.
+Steps:
+1. Open /settings.
+2. Click the Appearance tab.
+3. Select Dark.
+4. Click Save appearance.
+5. Navigate away and return to /settings.
+6. Open the Appearance tab.
+Expected Outcome: Save feedback appears briefly. Dark remains selected and the app remains in dark theme.
+
+Group: Settings
+Name: Notification preferences save and reload
+Description: Verify that notification preference checkboxes persist.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SETTINGS_PAGE=true.
+2. User is signed in.
+3. Profile API is reachable.
+Steps:
+1. Open /settings.
+2. Click Notifications.
+3. Verify Critical alerts, General, Product updates, and Marketing checkboxes appear.
+4. Uncheck General and check Marketing.
+5. Click Save notifications.
+6. Navigate away and back to /settings > Notifications.
+Expected Outcome: The saved checkbox state is restored. Critical alerts remains available and the page shows no save errors.
+
+Group: Settings
+Name: Account tab updates display name
+Description: Verify that account fields display correctly and display name updates can be saved.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SETTINGS_PAGE=true.
+2. User is signed in.
+3. Profile API is reachable.
+Steps:
+1. Open /settings.
+2. Click Account.
+3. Verify the email field is disabled and contains the signed-in user's email.
+4. Edit the display name.
+5. Click Save account.
+6. Reload the page.
+Expected Outcome: The display name update persists. The email field remains read-only. Change password shows a Coming soon placeholder, and Danger zone shows a red Delete account action.
+
+Group: Settings
+Name: Delete account confirmation can be canceled
+Description: Verify that the delete account action requires confirmation and can be canceled.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SETTINGS_PAGE=true.
+2. User is signed in.
+3. Account tab is open.
+Steps:
+1. Click Delete account.
+2. Verify a confirmation modal appears.
+3. Click Cancel.
+4. Open the modal again.
+5. Click Delete account inside the modal.
+Expected Outcome: Cancel closes the modal with no action. Confirm closes the modal; because the delete action is currently a stub, the account is not deleted.
+
+Group: Settings
+Name: Settings flag off falls back to profile
+Description: Verify that the settings route is hidden when the settings feature flag is disabled.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SETTINGS_PAGE=false or unset.
+2. Dev server has been restarted.
+3. User is signed in.
+Steps:
+1. Click the settings icon in the topbar.
+2. Navigate directly to /settings in the browser address bar.
+Expected Outcome: The topbar navigates to /profile instead of /settings. Direct access to /settings redirects to /profile.
+
+Group: Theme
+Name: Light theme applies immediately and survives reload
+Description: Verify that light theme selection updates the UI, html attribute, and localStorage.
+Prerequisites:
+1. User is signed in.
+2. Browser localStorage can be inspected.
+3. App is running.
+Steps:
+1. Clear the neutrino.theme localStorage key.
+2. Open /profile.
+3. In Appearance, select Light.
+4. Inspect the html element.
+5. Hard-reload the page.
+Expected Outcome: The UI switches to light colors immediately. localStorage has neutrino.theme="light". The html element has data-theme="light". Reload shows light mode with no visible flash of the wrong theme.
+
+Group: Theme
+Name: Dark theme applies immediately and survives reload
+Description: Verify that dark theme selection updates the UI, html attribute, and localStorage.
+Prerequisites:
+1. User is signed in.
+2. Browser localStorage can be inspected.
+3. App is running.
+Steps:
+1. Open /profile.
+2. In Appearance, select Dark.
+3. Inspect the html element.
+4. Hard-reload the page.
+Expected Outcome: The UI switches to dark colors immediately. localStorage has neutrino.theme="dark". The html element has data-theme="dark". Reload shows dark mode with no visible flash of the wrong theme.
+
+Group: Theme
+Name: System theme follows OS preference
+Description: Verify that system theme mode tracks the operating system appearance.
+Prerequisites:
+1. User is signed in.
+2. Browser and OS support light/dark appearance changes.
+3. App is running.
+Steps:
+1. Open /profile.
+2. Select System in Appearance.
+3. Change OS appearance to Dark.
+4. Change OS appearance to Light.
+5. Hard-reload the app.
+Expected Outcome: The app updates to match OS appearance without a page reload. localStorage has neutrino.theme="system". After hard reload, the app starts in the current OS-matching theme.
+
+Group: Calendar
+Name: Create a calendar event
+Description: Verify that a basic event can be created and appears in the calendar.
+Prerequisites:
+1. User is signed in.
+2. Calendar API is reachable.
+3. Calendar app is running.
+Steps:
+1. Open /calendar.
+2. Click New Event.
+3. Enter a title, start time, end time, location, and description.
+4. Click Create Event.
+5. Locate the event on the calendar.
+Expected Outcome: The event creation modal closes, the event appears in the selected calendar view, and reopening it shows the saved details.
+
+Group: Calendar
+Name: Edit an existing event
+Description: Verify that an event can be edited from the event detail panel.
+Prerequisites:
+1. User is signed in.
+2. Calendar API is reachable.
+3. At least one calendar event exists.
+Steps:
+1. Open /calendar.
+2. Click an event to open EventDetail.
+3. Click Edit.
+4. Verify fields are pre-populated.
+5. Change the title or location.
+6. Click Save Changes.
+7. Reopen the event.
+Expected Outcome: The modal title is Edit Event, the submit button says Save Changes, and the Reminders section is hidden. The updated event appears in the calendar and EventDetail shows the saved values.
+
+Group: Calendar
+Name: Cancel editing leaves event unchanged
+Description: Verify that canceling an event edit does not persist draft changes.
+Prerequisites:
+1. User is signed in.
+2. At least one calendar event exists.
+Steps:
+1. Open /calendar.
+2. Click an event.
+3. Click Edit.
+4. Change the title.
+5. Click Cancel.
+6. Reopen the same event.
+Expected Outcome: The modal closes and the event retains its original title and details.
+
+Group: Calendar
+Name: Week hour grid positions timed events
+Description: Verify that the calendar week view renders the hour grid and positions events correctly.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_CALENDAR_WEEK_HOUR_GRID=true.
+2. User is signed in.
+3. Calendar has events at 10:00 AM, 2:30 PM, all-day, early morning, and late evening times.
+Steps:
+1. Open /calendar.
+2. Click Week view.
+3. Review the day headers, all-day band, hour labels, and half-hour lines.
+4. Check the 10:00 AM event position.
+5. Check the 2:30 PM event position.
+6. Check all-day, early, and late events.
+Expected Outcome: The Google Calendar-style grid appears. Timed events align to the correct rows, short events remain visible, all-day events render in the all-day band, early events render in the top overflow row, and late events render in the bottom overflow row.
+
+Group: Calendar
+Name: Week hour grid respects start and end settings
+Description: Verify that calendar day start and end hour preferences affect the week grid and update across tabs.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_CALENDAR_WEEK_HOUR_GRID=true.
+2. NEXT_PUBLIC_FEATURE_SETTINGS_PAGE=true.
+3. User is signed in.
+4. Calendar has an 8:00 AM event and a 6:00 PM event.
+Steps:
+1. Open /settings?tab=calendar.
+2. Set Day starts at to 9:00 AM.
+3. Set Day ends at to 6:00 PM.
+4. Open /calendar in another tab.
+5. Switch to Week view.
+6. Change the settings again in the first tab and return to Calendar without refreshing.
+Expected Outcome: The grid starts and ends according to the saved preferences. Events outside the configured window move into overflow rows. The calendar tab reflects preference changes without a full refresh.
+
+Group: Calendar
+Name: Attach a Drive file to an event
+Description: Verify that the Drive file picker can attach an existing Drive file to a calendar event.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_CALENDAR_DRIVE_FILE_PICKER=true.
+2. User is signed in.
+3. Calendar and Drive APIs are reachable.
+4. Drive contains files and at least one folder.
+5. At least one calendar event exists.
+Steps:
+1. Open /calendar.
+2. Click an event.
+3. In Attachments, click the plus button.
+4. Open the File tab.
+5. Click Browse Drive.
+6. Search for a file.
+7. Navigate into a folder and back using breadcrumbs.
+8. Select a file.
+9. Click Add.
+Expected Outcome: The picker shows Drive files, folders, search, and breadcrumbs. Selecting a file closes the picker and shows the filename in the attachment modal. After Add, the file appears in the event detail attachments list.
+
+Group: Calendar
+Name: Attach and remove a text note from an event
+Description: Verify that text-note attachments can be added and removed.
+Prerequisites:
+1. User is signed in.
+2. Calendar API is reachable.
+3. At least one calendar event exists.
+Steps:
+1. Open /calendar.
+2. Click an event.
+3. In Attachments, click the plus button.
+4. Open the Note tab.
+5. Enter note text and click Add.
+6. Click the remove control beside the new attachment.
+Expected Outcome: The note appears in the event detail attachments list, then is removed when the remove control is clicked.
+
+Group: Calendar
+Name: Task list sidebar toggles task completion
+Description: Verify that tasks in the calendar sidebar can be marked done and undone.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_CALENDAR_TASK_LISTS=true if task lists are gated in the environment.
+2. User is signed in.
+3. At least one task list with pending and completed tasks exists.
+Steps:
+1. Open /calendar.
+2. Locate the Task Lists section in the right sidebar.
+3. Check a pending task.
+4. Reload the page.
+5. Uncheck a completed task.
+6. Reload the page again.
+Expected Outcome: Checking a task moves it to the completed group with strikethrough and reduced opacity. Unchecking moves it back to pending. The final state persists across reloads.
+
+Group: Calendar
+Name: Empty task list states display clearly
+Description: Verify that task list empty states are shown when no tasks or no lists exist.
+Prerequisites:
+1. User is signed in.
+2. Calendar task list UI is enabled.
+3. Tester can create or delete task lists.
+Steps:
+1. Create or select a task list with no tasks.
+2. Review the Task Lists section.
+3. Delete all task lists or use an account with no task lists.
+4. Reload /calendar.
+Expected Outcome: An empty list shows a clear no-tasks message. When no task lists exist, the sidebar shows No task lists below the divider.
+
+Group: Sheets
+Name: Formula bar inserts a single picked cell reference
+Description: Verify that clicking a grid cell while editing a formula inserts a cell reference.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_FORMULA_BAR_CELL_PICK=true.
+2. User is signed in.
+3. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Click cell C3.
+2. In the formula bar, type =SUM(.
+3. Verify the green pick indicator and hint appear.
+4. Click cell A1.
+Expected Outcome: The formula bar shows =SUM(A1, focus remains in the formula bar, and the user can continue typing.
+
+Group: Sheets
+Name: Formula bar inserts a dragged range reference
+Description: Verify that dragging across cells while editing a formula inserts a range reference.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_FORMULA_BAR_CELL_PICK=true.
+2. User is signed in.
+3. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Click a cell.
+2. Type =SUM( in the formula bar.
+3. Press on A1 and drag to D4.
+4. Release the mouse.
+Expected Outcome: The formula bar updates while dragging and ends with =SUM(A1:D4. A green dashed overlay appears over the picked range and the regular blue selection overlay is not used for the pick range.
+
+Group: Sheets
+Name: Formula bar pick mode exits on Enter and Escape
+Description: Verify commit and cancel behavior for formula bar pick mode.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_FORMULA_BAR_CELL_PICK=true.
+2. User is signed in.
+3. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Click a cell and note its current value.
+2. Type =SUM( in the formula bar.
+3. Click A1.
+4. Press Escape.
+5. Type =A1+B1 in the formula bar.
+6. Press Enter.
+Expected Outcome: Escape restores the original cell value and exits pick mode. Enter commits the formula, exits pick mode, and activates the next row cell.
+
+Group: Sheets
+Name: Cross-sheet reference returns a value
+Description: Verify that a formula can reference a cell on another sheet tab.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet is open in /sheets/editor.
+3. No feature flag is required.
+Steps:
+1. Create a second sheet tab.
+2. Rename it to Beta.
+3. On Beta, set C4 to 42.
+4. Return to Sheet 1.
+5. Enter =Beta!C4 in A1.
+Expected Outcome: Cell A1 displays 42.
+
+Group: Sheets
+Name: Cross-sheet SUM range returns a value
+Description: Verify that a formula can sum a range on another sheet tab.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet with Sheet 1 and Beta tabs is open.
+Steps:
+1. On Beta, set C4=10, C5=20, C6=30, D4=5, D5=15, and D6=25.
+2. Switch to Sheet 1.
+3. Enter =SUM(Beta!C4:D6) in A1.
+Expected Outcome: Cell A1 displays 105.
+
+Group: Sheets
+Name: Cross-sheet quoted name with spaces works
+Description: Verify that formulas can reference sheet names containing spaces.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Create a second sheet tab.
+2. Rename it to Net Worth.
+3. On Net Worth, set C4 to 999.
+4. Return to Sheet 1.
+5. Enter ='Net Worth'!C4 in A1.
+Expected Outcome: Cell A1 displays 999.
+
+Group: Sheets
+Name: Cross-sheet missing sheet returns reference error
+Description: Verify that formulas show a reference error when the referenced sheet is renamed or deleted.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet with Sheet 1 and Beta tabs is open.
+3. Beta has C4 set to 77.
+Steps:
+1. On Sheet 1, enter =Beta!C4 in A1 and confirm it displays 77.
+2. Rename Beta to Gamma.
+3. Click another cell, then click A1.
+4. Repeat with a new Beta tab and delete Beta after creating the formula.
+Expected Outcome: After the referenced sheet is renamed or deleted, A1 displays #REF! and the app does not crash.
+
+Group: Sheets
+Name: Absolute reference with locked row and column stays fixed when pasted
+Description: Verify that $A$1 references remain fixed when formulas are copied.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Set A1 to 10.
+2. Set B2 to =$A$1.
+3. Copy B2.
+4. Paste into B5.
+5. Paste into D10.
+6. Click each pasted cell and inspect the formula bar.
+Expected Outcome: B2, B5, and D10 display 10. The formula bar shows =$A$1 for each pasted formula.
+
+Group: Sheets
+Name: Mixed absolute references adjust only unlocked dimensions
+Description: Verify that row-locked and column-locked references adjust correctly when pasted.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Set A1=100 and B1=200.
+2. Set C1 to =A$1.
+3. Copy C1 and paste into C3 and D1.
+4. Set A1=50 and A2=60.
+5. Set B1 to =$A1.
+6. Copy B1 and paste into D1 and B2.
+Expected Outcome: A$1 keeps row 1 fixed while allowing the column to shift. $A1 keeps column A fixed while allowing the row to shift. Formula bar output preserves the $ markers.
+
+Group: Sheets
+Name: Relative references still adjust normally
+Description: Verify that formulas without $ anchors retain existing copy behavior.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Set A1 to 5.
+2. Set B2 to =A1.
+3. Copy B2.
+4. Paste into C3.
+5. Inspect C3 and the formula bar.
+Expected Outcome: C3 displays the value from the shifted relative reference and the formula bar shows =B2.
+
+Group: Sheets
+Name: Arrow keys move selected cell
+Description: Verify that arrow keys navigate the sheet grid when not editing.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Click B3.
+2. Press ArrowDown.
+3. Press ArrowRight.
+4. Press ArrowUp.
+5. Press ArrowLeft.
+6. Click near the right edge of the visible viewport and press ArrowRight several times.
+Expected Outcome: Selection moves to B4, C4, C3, and back to B3. The grid scrolls as needed to keep the selected cell visible.
+
+Group: Sheets
+Name: Arrow keys do not move selection while editing
+Description: Verify that arrow keys are reserved for text cursor movement in the formula bar.
+Prerequisites:
+1. User is signed in.
+2. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Click A1.
+2. Click the formula bar.
+3. Type =SUM(.
+4. Press ArrowLeft and ArrowRight.
+5. Press Escape.
+Expected Outcome: The text cursor moves within the formula bar. The selected cell remains A1.
+
+Group: Sheets
+Name: Dark mode keeps sheet tabs and selection readable
+Description: Verify that the sheet editor remains readable in dark theme while preserving cell colors.
+Prerequisites:
+1. User is signed in.
+2. Dark theme is enabled.
+3. A spreadsheet is open in /sheets/editor.
+4. At least one cell has a user-set fill color.
+Steps:
+1. Review the bottom sheet tab bar.
+2. Hover an inactive tab.
+3. Switch tabs.
+4. Click a cell.
+5. Click a cell with a custom fill color.
+Expected Outcome: Active and inactive tabs are visually distinct and readable. Hover state is visible. Selected cell border and tint are clear. User-set fill colors are preserved in dark mode.
+
+Group: Editors
+Name: Docs Ctrl+K creates, edits, and removes links
+Description: Verify that the Docs editor link shortcut works for selected text and existing links.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_KEYBOARD_SHORTCUTS=true.
+2. User is signed in.
+3. A document is open in /docs/editor.
+Steps:
+1. Type Visit our site.
+2. Select the text.
+3. Press Ctrl+K or Cmd+K.
+4. Enter https://example.com and confirm.
+5. Click inside the linked text and press Ctrl+K or Cmd+K again.
+6. Change the URL and confirm.
+7. Select the link, press Ctrl+K or Cmd+K, clear the field, and confirm.
+Expected Outcome: The first shortcut creates a styled clickable link. The second updates the href. Clearing the prompt removes the link while keeping the text.
+
+Group: Editors
+Name: Docs Ctrl+Backslash clears formatting
+Description: Verify that clear formatting removes bold and italic marks from selected text.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_KEYBOARD_SHORTCUTS=true.
+2. User is signed in.
+3. A document is open in /docs/editor.
+Steps:
+1. Type text in the document.
+2. Select it.
+3. Apply bold and italic.
+4. Press Ctrl+\ or Cmd+\.
+Expected Outcome: Bold and italic formatting are removed from the selected text in one action.
+
+Group: Editors
+Name: Sheets Ctrl+B and Ctrl+I toggle cell styling
+Description: Verify that common formatting shortcuts work in the sheet grid and do not affect cells when the formula bar is focused.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_KEYBOARD_SHORTCUTS=true.
+2. User is signed in.
+3. A spreadsheet is open in /sheets/editor.
+Steps:
+1. Click A1.
+2. Press Ctrl+B or Cmd+B.
+3. Press Ctrl+B or Cmd+B again.
+4. Press Ctrl+I or Cmd+I.
+5. Press Ctrl+I or Cmd+I again.
+6. Click the formula bar.
+7. Press Ctrl+B or Cmd+B.
+Expected Outcome: Bold and italic toggle on and off for the selected cell. When the formula bar is focused, the cell style does not change.
+
+Group: Editors
+Name: Spell check underlines misspellings in supported editors
+Description: Verify that browser spell check is active in Docs, Slides text, Slides speaker notes, and Sheets title fields, but not formula inputs.
+Prerequisites:
+1. Browser or OS spell check is enabled.
+2. User is signed in.
+3. Docs, Slides, and Sheets editors are available.
+Steps:
+1. Open a Doc and type helo in the document body.
+2. Open a Slide deck and type helo in a text element.
+3. Type helo in speaker notes.
+4. Open a Sheet and type helo in the sheet title area.
+5. Click the formula bar and type =SUM(.
+Expected Outcome: Misspelled words receive browser-provided red underlines in document text, slide text, speaker notes, and sheet title. The formula bar does not show spell-check underlines.
+
+Group: Editors
+Name: Spell check keyboard toggle persists
+Description: Verify that the spell check preference can be toggled and is shared across editors.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SPELL_CHECK=true.
+2. Browser spell check is enabled.
+3. User is signed in.
+4. A Doc editor has visible misspelled text.
+Steps:
+1. In the Docs editor, press Cmd+Shift+; on macOS or Ctrl+Shift+; on Windows/Linux.
+2. Refresh the page.
+3. Open the Slides editor.
+4. Press the shortcut again.
+5. Refresh both editors.
+Expected Outcome: The first shortcut hides spell-check underlines and persists that state in localStorage under neutrino.spellCheck. Slides uses the same preference. The second shortcut re-enables spell check and persists the on state.
+
+Group: Editors
+Name: Spell suggestions appear in Docs context menu
+Description: Verify that misspelled words show replacement suggestions in the custom Docs context menu.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SPELL_CHECK_SUGGESTIONS=true.
+2. Spell check is enabled.
+3. User is signed in.
+4. A document is open in /docs/editor.
+Steps:
+1. Type teh or recieve in the document.
+2. Right-click directly on the misspelled word with no text selected.
+3. Click one of the suggestions.
+4. Right-click a correctly spelled word.
+5. Select text and right-click within the selection.
+Expected Outcome: The custom context menu opens instead of the browser native menu. Misspelled words show up to five bold suggestions followed by a separator and standard menu items. Choosing a suggestion replaces the word and closes the menu. Correct words and selected text do not show suggestions.
+
+Group: Editors
+Name: Spell suggestions handle dictionary loading and edge targets
+Description: Verify that the Docs context menu behaves safely while dictionaries load and on non-word targets.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SPELL_CHECK_SUGGESTIONS=true.
+2. User is signed in.
+3. A document is open in /docs/editor.
+Steps:
+1. Hard-reload the page.
+2. Immediately right-click a misspelled word.
+3. Wait for suggestions to load.
+4. Right-click whitespace, a number, a URL, and the start of the document.
+Expected Outcome: A Checking... placeholder appears while the dictionary loads, then is replaced by suggestions when available. Whitespace, numbers, URLs, and document boundaries open the standard custom menu without crashes.
+
+Group: Live Sheet Embeds
+Name: Paste a copied sheet range into Docs as a live embed
+Description: Verify that a copied spreadsheet selection can become a live embed in a document.
+Prerequisites:
+1. NEXT_PUBLIC_FEATURE_SHEET_LIVE_EMBED=true if the feature is gated.
+2. Sheets backend supports named ranges.
+3. User is signed in.
+4. A spreadsheet with data exists.
+5. A document is open in /docs/editor.
+Steps:
+1. Open the spreadsheet.
+2. Select a range with visible values.
+3. Copy the selection.
+4. Switch to the document.
+5. Paste at the desired insertion point.
+6. Choose the live embed option if prompted.
+Expected Outcome: A Live sheet embed block appears in the document and displays the copied table data with the expected header controls.
+
+Group: Live Sheet Embeds
+Name: Refresh a live sheet embed after source data changes
+Description: Verify that a live embed can fetch updated source sheet data.
+Prerequisites:
+1. A document contains a live sheet embed.
+2. The source spreadsheet still exists.
+3. User is signed in.
+Steps:
+1. Open the source spreadsheet.
+2. Change one or more cells in the embedded range.
+3. Return to the document.
+4. Click Check for updates on the embed.
+Expected Outcome: The embed refreshes to show the updated cell values and retains its document placement.
+
+Group: Live Sheet Embeds
+Name: Deleted source sheet shows fallback state
+Description: Verify that a live embed handles a deleted source spreadsheet gracefully.
+Prerequisites:
+1. A document contains a live sheet embed.
+2. Tester can delete the source spreadsheet.
+Steps:
+1. Delete the source spreadsheet from Drive.
+2. Return to the document containing the embed.
+3. Click Check for updates.
+Expected Outcome: The embed transitions to a deleted-source state that explains the sheet was deleted and provides fallback actions without crashing the editor.
+
+Group: Share
+Name: Shared link loads public share page
+Description: Verify that the public share page can open content from a share token.
+Prerequisites:
+1. User is signed in.
+2. A file supports sharing.
+3. A valid share link or token has been generated.
+Steps:
+1. Copy the share link for the file.
+2. Open the link in a private browser window or signed-out session.
+3. Wait for the share page to load.
+Expected Outcome: The /share page resolves the token and displays the shared content or allowed preview state without requiring the signed-in user's session.
+
+Group: Photos
+Name: Photo library opens and displays items
+Description: Verify that the Photos app loads the user's photo library.
+Prerequisites:
+1. User is signed in.
+2. Photos API is reachable.
+3. At least one photo exists in the account.
+Steps:
+1. Open /photos.
+2. Wait for the photo library to load.
+3. Click a photo item if the UI supports detail viewing.
+Expected Outcome: Photo thumbnails or items display without layout overlap or console errors. Opening a photo shows the expected detail or editing experience.
+
+Group: Photos
+Name: Photo edit route opens for a selected photo
+Description: Verify that a photo can be opened in the edit route.
+Prerequisites:
+1. User is signed in.
+2. Photos API is reachable.
+3. At least one editable photo exists.
+Steps:
+1. Open /photos.
+2. Select a photo.
+3. Use the edit action or navigate to /photos/edit with the selected photo context.
+Expected Outcome: The photo edit view loads the selected image and shows editing controls without losing the image.
+
+Group: Photos
+Name: Photo map route loads geotagged photos
+Description: Verify that the photo map page handles photos with location metadata.
+Prerequisites:
+1. User is signed in.
+2. Photos API is reachable.
+3. At least one geotagged photo exists.
+Steps:
+1. Open /photos/map.
+2. Wait for map and photo markers to load.
+3. Select a marker if available.
+Expected Outcome: The map page loads without errors, geotagged photos appear at their locations, and selecting a marker reveals the associated photo context.

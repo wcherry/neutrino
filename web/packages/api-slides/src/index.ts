@@ -1,0 +1,184 @@
+import { request } from '@neutrino/api-core';
+
+// ---------------------------------------------------------------------------
+// Slides types
+// ---------------------------------------------------------------------------
+
+export interface SlideResponse {
+  id: string;
+  title: string;
+  /** Path to read presentation content directly from the drive API (GET). */
+  contentUrl: string;
+  /** Path to write presentation content directly to the drive API (multipart POST). */
+  contentWriteUrl: string;
+  folderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SlideMetaResponse {
+  id: string;
+  title: string;
+  folderId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSlideRequest {
+  title: string;
+  folderId?: string | null;
+}
+
+export interface SaveSlideRequest {
+  title?: string;
+}
+
+export interface ListSlidesResponse {
+  slides: SlideMetaResponse[];
+}
+
+// ---------------------------------------------------------------------------
+// Theme types
+// ---------------------------------------------------------------------------
+
+export interface SlideTheme {
+  id: string;
+  name: string;
+  primaryColor: string;
+  backgroundColor: string;
+  textColor: string;
+  accentColor: string;
+  fontFamily: string;
+  backgroundImage: string | null;
+  gradientBackground: string | null;
+  defaultTransition: string;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateThemeRequest {
+  name: string;
+  primaryColor: string;
+  backgroundColor: string;
+  textColor: string;
+  accentColor: string;
+  fontFamily?: string;
+  backgroundImage?: string | null;
+  gradientBackground?: string | null;
+  defaultTransition?: string;
+}
+
+export interface UpdateThemeRequest {
+  name?: string;
+  primaryColor?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  accentColor?: string;
+  fontFamily?: string;
+  backgroundImage?: string | null;
+  gradientBackground?: string | null;
+  defaultTransition?: string;
+}
+
+export interface ListThemesResponse {
+  themes: SlideTheme[];
+}
+
+// ---------------------------------------------------------------------------
+// Slides API
+// ---------------------------------------------------------------------------
+
+export const slidesApi = {
+  async listSlides(): Promise<ListSlidesResponse> {
+    return request<ListSlidesResponse>('/api/v1/slides');
+  },
+
+  async createSlide(body: CreateSlideRequest): Promise<SlideResponse> {
+    return request<SlideResponse>('/api/v1/slides', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async getSlide(slideId: string): Promise<SlideResponse> {
+    return request<SlideResponse>(`/api/v1/slides/${slideId}`);
+  },
+
+  async saveSlide(slideId: string, body: SaveSlideRequest): Promise<SlideMetaResponse> {
+    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  // ── Themes ────────────────────────────────────────────────────────────────
+
+  async listThemes(): Promise<ListThemesResponse> {
+    return request<ListThemesResponse>('/api/v1/slides/themes');
+  },
+
+  async createTheme(body: CreateThemeRequest): Promise<SlideTheme> {
+    return request<SlideTheme>('/api/v1/slides/themes', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async updateTheme(themeId: string, body: UpdateThemeRequest): Promise<SlideTheme> {
+    return request<SlideTheme>(`/api/v1/slides/themes/${themeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async deleteTheme(themeId: string): Promise<void> {
+    await request<void>(`/api/v1/slides/themes/${themeId}`, { method: 'DELETE' });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Slides AI types & API
+// ---------------------------------------------------------------------------
+
+export interface ImageResult {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  url: string;
+}
+
+export interface ImageSearchResponse {
+  images: ImageResult[];
+}
+
+export const slidesAI = {
+  async complete(slideId: string, slideText: string): Promise<{ text: string }> {
+    return request<{ text: string }>(`/api/v1/slides/${slideId}/ai/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ slideText }),
+    });
+  },
+
+  async imageSearch(slideId: string, query: string): Promise<ImageSearchResponse> {
+    return request<ImageSearchResponse>(`/api/v1/slides/${slideId}/ai/image-search`, {
+      method: 'POST',
+      body: JSON.stringify({ query }),
+    });
+  },
+
+  async design(slideId: string, slideContent: string): Promise<unknown> {
+    return request<unknown>(`/api/v1/slides/${slideId}/ai/design`, {
+      method: 'POST',
+      body: JSON.stringify({ slideContent }),
+    });
+  },
+
+  async autoformat(slideId: string, slideJson: string): Promise<unknown> {
+    return request<unknown>(`/api/v1/slides/${slideId}/ai/autoformat`, {
+      method: 'POST',
+      body: JSON.stringify({ slideJson }),
+    });
+  },
+};

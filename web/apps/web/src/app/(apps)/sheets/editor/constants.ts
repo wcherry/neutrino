@@ -1,0 +1,9 @@
+export const CELL_W = 100;
+export const CELL_H = 28;
+export const ROW_HDR_W = 50;
+export const COL_HDR_H = 26;
+export const MAX_ROWS = 65536;
+export const MAX_COLS = 65536;
+export const V_BUF = 5;
+export const H_BUF = 3;
+export const MAX_HISTORY = 100;

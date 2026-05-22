@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "paths": {
+      "@neutrino/tokens": ["./packages/tokens/src/index.css"],
+      "@neutrino/ui": ["./packages/ui/src/index.ts"],
+      "@neutrino/ui/styles": ["./packages/ui/src/styles/index.css"],
+      "@neutrino/layout": ["./packages/layout/src/index.ts"],
+      "@neutrino/auth": ["./packages/auth/src/index.ts"],
+      "@neutrino/api-core": ["./packages/api-core/src/index.ts"],
+      "@neutrino/api-drive": ["./packages/api-drive/src/index.ts"],
+      "@neutrino/api-docs": ["./packages/api-docs/src/index.ts"],
+      "@neutrino/api-sheets": ["./packages/api-sheets/src/index.ts"],
+      "@neutrino/api-slides": ["./packages/api-slides/src/index.ts"],
+      "@neutrino/api-photos": ["./packages/api-photos/src/index.ts"],
+      "@neutrino/hooks": ["./packages/hooks/src/index.ts"],
+      "@neutrino/utils": ["./packages/utils/src/index.ts"]
+    }
+  }
+}

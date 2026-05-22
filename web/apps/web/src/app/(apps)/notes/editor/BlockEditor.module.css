@@ -1,0 +1,792 @@
+/* ── Block editor container ──────────────────────────────────────────────────── */
+
+.editor {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1) 0;
+}
+
+/* ── Block row ───────────────────────────────────────────────────────────────── */
+
+.blockRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+  padding: 1px 0;
+  position: relative;
+  border-top: 2px solid transparent;
+}
+
+.blockRow:hover .dragHandle {
+  opacity: 1;
+}
+
+.blockRowDragOver {
+  border-top-color: var(--color-accent, #2563eb);
+}
+
+/* ── Drag handle ─────────────────────────────────────────────────────────────── */
+
+.dragHandle {
+  opacity: 0;
+  cursor: grab;
+  color: var(--color-text-tertiary);
+  font-size: 14px;
+  padding-top: 3px;
+  user-select: none;
+  flex-shrink: 0;
+  width: 16px;
+  transition: opacity 0.1s;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+/* ── Block prefix (bullet / number) ─────────────────────────────────────────── */
+
+.blockPrefix {
+  flex-shrink: 0;
+  width: 24px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  padding-top: 1px;
+}
+
+/* ── Input wrapper ───────────────────────────────────────────────────────────── */
+
+.blockInputWrapper {
+  flex: 1;
+  position: relative;
+}
+
+/* ── Textarea ────────────────────────────────────────────────────────────────── */
+
+.blockTextarea {
+  width: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-family-sans, inherit);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  color: var(--color-text-primary);
+  padding: 0;
+  overflow: hidden;
+  min-height: calc(1.7 * var(--font-size-sm, 14px));
+  display: block;
+}
+
+.blockTextareaCode {
+  font-family: var(--font-family-mono, monospace);
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-1) 0;
+}
+
+.blockTextareaQuote {
+  border-left: 3px solid var(--color-border);
+  padding-left: var(--space-3);
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.blockTextarea::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* ── Slash command menu ──────────────────────────────────────────────────────── */
+
+.slashMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+  min-width: 240px;
+}
+
+.slashItem,
+.slashItemActive {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.slashItemActive {
+  background: var(--color-surface-raised);
+}
+
+.slashItem:hover {
+  background: var(--color-surface-raised);
+}
+
+.slashLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.slashDesc {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+}
+
+/* ── Wiki-link autocomplete ──────────────────────────────────────────────────── */
+
+.autocomplete {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.acItem,
+.acItemActive {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acItemActive {
+  background: var(--color-surface-raised);
+}
+
+.acItem:hover {
+  background: var(--color-surface-raised);
+}
+
+/* ── Inline view mode ────────────────────────────────────────────────────────── */
+
+/* Rendered content when a block is not being edited */
+.blockView {
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  color: var(--color-text-primary);
+  min-height: calc(1.7 * var(--font-size-sm, 14px));
+  white-space: pre-wrap;
+  cursor: text;
+  word-break: break-word;
+}
+
+.blockViewQuote {
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  font-style: italic;
+  border-left: 3px solid var(--color-border);
+  padding-left: var(--space-3);
+  margin: 0;
+  cursor: text;
+  word-break: break-word;
+}
+
+.blockViewCode {
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+  background: var(--color-surface-raised);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-1) 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  cursor: text;
+  color: var(--color-text-primary);
+}
+
+.blockPlaceholder {
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+}
+
+.blockViewChecked {
+  text-decoration: line-through;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Task checkbox ───────────────────────────────────────────────────────────── */
+
+.taskCheckbox {
+  margin-top: 3px;
+  cursor: pointer;
+  accent-color: var(--color-accent, #2563eb);
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* ── Inline markdown styles ──────────────────────────────────────────────────── */
+
+.inlineCode {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 0.88em;
+  background: var(--color-surface-raised);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  color: var(--color-text-primary);
+}
+
+/* ── Heading block styles ────────────────────────────────────────────────────── */
+
+.blockViewH1 {
+  font-size: 1.5em;
+  font-weight: var(--font-weight-bold, 700);
+  line-height: 1.3;
+  color: var(--color-text-primary);
+  cursor: text;
+  margin: 0;
+  word-break: break-word;
+}
+
+.blockViewH2 {
+  font-size: 1.25em;
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  cursor: text;
+  margin: 0;
+  word-break: break-word;
+}
+
+.blockViewH3 {
+  font-size: 1.1em;
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  cursor: text;
+  margin: 0;
+  word-break: break-word;
+}
+
+/* ── Wiki-link styles (shared between editor and preview) ────────────────────── */
+
+.wikiLink {
+  color: var(--color-accent, #2563eb);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: inherit;
+  font-family: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.wikiLink:hover {
+  text-decoration-style: solid;
+}
+
+.wikiLinkBroken {
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────────── */
+
+.tableWrapper {
+  width: 100%;
+  margin: var(--space-1) 0;
+}
+
+.tableScroll {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 100%;
+  color: var(--color-text-primary);
+}
+
+.tableRow {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tableRow:last-child {
+  border-bottom: none;
+}
+
+.tableCell {
+  border-right: 1px solid var(--color-border);
+  position: relative;
+  padding: 0;
+  vertical-align: top;
+  overflow: hidden;
+}
+
+.tableCell:last-child {
+  border-right: none;
+}
+
+.tableCellView {
+  min-height: 32px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: inherit;
+  font-weight: inherit;
+  cursor: text;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.tableCellInput {
+  width: 100%;
+  min-height: 32px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-sans, inherit);
+  line-height: 1.5;
+  color: inherit;
+  font-weight: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  display: block;
+  box-sizing: border-box;
+}
+
+/* Column resize handle — right edge of each cell */
+.colResizeHandle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+  background: transparent;
+}
+
+.colResizeHandle:hover {
+  background: var(--color-accent, #2563eb);
+  opacity: 0.4;
+}
+
+/* Row resize handle — bottom edge of last cell in each row */
+.rowResizeHandle {
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  cursor: row-resize;
+  z-index: 2;
+  background: transparent;
+}
+
+.rowResizeHandle:hover {
+  background: var(--color-accent, #2563eb);
+  opacity: 0.4;
+}
+
+/* Add column anchor — thin right column, spans all data rows via rowSpan */
+.tableAddColCell {
+  padding: 0;
+  position: relative;
+  overflow: visible;
+  vertical-align: middle;
+  border-left: 1px solid var(--color-border);
+}
+
+/* Add column icon — sits on the left border (= right border of last data col) */
+.tableAddColBtn {
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  z-index: 3;
+  transition: opacity 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.tableScroll:hover .tableAddColBtn {
+  opacity: 1;
+}
+
+.tableAddColBtn:hover {
+  color: var(--color-accent, #2563eb);
+  border-color: var(--color-accent, #2563eb);
+  background: var(--color-surface);
+}
+
+/* Add row anchor — thin bottom row */
+.tableAddRowRow td {
+  border-bottom: none;
+  padding: 0;
+  height: 8px;
+}
+
+.tableAddRowCell {
+  position: relative;
+  overflow: visible;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Add row icon — sits on the top border (= bottom border of last data row) */
+.tableAddRowBtn {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  z-index: 3;
+  transition: opacity 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.tableScroll:hover .tableAddRowBtn {
+  opacity: 1;
+}
+
+.tableAddRowBtn:hover {
+  color: var(--color-accent, #2563eb);
+  border-color: var(--color-accent, #2563eb);
+  background: var(--color-surface);
+}
+
+/* ── Table column/row delete controls ────────────────────────────────────────── */
+
+/* Thin anchor row — just provides positioning context for delete-col buttons */
+.tableControlRow {
+  height: 8px;
+}
+
+.tableControlCell {
+  padding: 0;
+  position: relative;
+  overflow: visible;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.tableControlCell:last-child {
+  border-right: none;
+}
+
+/* Delete column icon — sits on the bottom border of the control row */
+.tableDeleteColBtn {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  z-index: 3;
+  transition: opacity 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.tableControlCell:hover .tableDeleteColBtn {
+  opacity: 1;
+}
+
+.tableDeleteColBtn:hover {
+  color: var(--color-error, #dc2626);
+  border-color: var(--color-error, #dc2626);
+  background: var(--color-surface);
+}
+
+/* Thin anchor column — just provides positioning context for delete-row buttons */
+.tableDeleteRowCell {
+  width: 8px;
+  min-width: 8px;
+  border-right: 1px solid var(--color-border);
+  padding: 0;
+  position: relative;
+  overflow: visible;
+  vertical-align: middle;
+}
+
+/* Delete row icon — sits on the right border of the left anchor column */
+.tableDeleteRowBtn {
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  z-index: 3;
+  transition: opacity 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.tableRow:hover .tableDeleteRowBtn {
+  opacity: 1;
+}
+
+.tableDeleteRowBtn:hover {
+  color: var(--color-error, #dc2626);
+  border-color: var(--color-error, #dc2626);
+  background: var(--color-surface);
+}
+
+/* ── Table cell style variants ───────────────────────────────────────────────── */
+
+.tableCellHeader {
+  background: var(--color-surface-raised);
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.tableCellSummary {
+  background: var(--color-surface-raised);
+  font-style: italic;
+  font-weight: var(--font-weight-medium, 500);
+  border-top: 2px solid var(--color-border);
+}
+
+.tableCellBanded {
+  background: var(--color-surface-raised);
+}
+
+/* ── Table style controls ────────────────────────────────────────────────────── */
+
+.tableStyleControls {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Preset swatch grid */
+.tablePresetPicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tablePresetSwatch {
+  width: 36px;
+  height: 28px;
+  border-radius: 3px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-raised);
+  transition: border-color 0.1s, transform 0.1s;
+}
+
+.tablePresetSwatch:hover {
+  border-color: var(--color-text-secondary);
+  transform: scale(1.1);
+}
+
+.tablePresetSwatchActive {
+  border-color: var(--color-accent, #2563eb) !important;
+  box-shadow: 0 0 0 1px var(--color-accent, #2563eb);
+}
+
+.tablePresetNoneLabel {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1;
+}
+
+/* Structural toggles */
+.tableStructureToggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.tableStructureLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tableStructureLabel input[type='checkbox'] {
+  accent-color: var(--color-accent, #2563eb);
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+}
+
+/* ── Table context menu ───────────────────────────────────────────────────────── */
+
+.tableCtxMenu {
+  position: fixed;
+  z-index: 200;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-1) 0;
+  min-width: 180px;
+}
+
+.tableCtxSection {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  padding: var(--space-1) var(--space-3);
+  pointer-events: none;
+  user-select: none;
+}
+
+.tableCtxItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.tableCtxItem:hover:not(:disabled) {
+  background: var(--color-surface-raised);
+}
+
+.tableCtxItem:disabled {
+  color: var(--color-text-tertiary);
+  cursor: default;
+}
+
+.tableCtxItemStyle {
+  color: var(--color-accent, #2563eb);
+}
+
+.tableCtxDivider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--space-1) 0;
+}
+
+/* ── Table style dialog ───────────────────────────────────────────────────────── */
+
+.tableStyleOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tableStyleDialog {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-4);
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tableStyleDialogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tableStyleDialogTitle {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.tableStyleDialogClose {
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.tableStyleDialogClose:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-raised);
+}

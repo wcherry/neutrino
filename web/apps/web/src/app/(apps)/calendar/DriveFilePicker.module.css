@@ -1,0 +1,171 @@
+/* ── Picker body ──────────────────────────────────────────────────────────── */
+.pickerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Search row ──────────────────────────────────────────────────────────── */
+.searchRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 9px;
+  color: var(--color-text-tertiary, #9ca3af);
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 7px 30px 7px 30px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-text, #111827);
+  background: var(--color-surface, #fff);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.searchInput:focus {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.searchClear {
+  position: absolute;
+  right: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--color-text-tertiary, #9ca3af);
+  padding: 2px;
+  border-radius: 3px;
+  transition: color 0.1s;
+}
+
+.searchClear:hover {
+  color: var(--color-text-secondary, #6b7280);
+}
+
+/* ── Breadcrumbs ─────────────────────────────────────────────────────────── */
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.breadcrumbSep {
+  color: var(--color-text-tertiary, #9ca3af);
+  flex-shrink: 0;
+}
+
+.breadcrumbItem {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.breadcrumbItem:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.breadcrumbItemActive {
+  color: var(--color-text-secondary, #6b7280);
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ── File list ───────────────────────────────────────────────────────────── */
+.fileList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: 220px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.fileRow:last-child {
+  border-bottom: none;
+}
+
+.fileRow:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.fileIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.fileName {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text, #111827);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.folderChevron {
+  color: var(--color-text-tertiary, #9ca3af);
+  flex-shrink: 0;
+}
+
+/* ── Loading / empty states ──────────────────────────────────────────────── */
+.loadingState,
+.emptyState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 40px 16px;
+  font-size: 13px;
+  color: var(--color-text-tertiary, #9ca3af);
+  font-style: italic;
+}
+
+.loadingText {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}

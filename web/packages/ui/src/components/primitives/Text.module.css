@@ -1,0 +1,40 @@
+.text {
+  font-family: var(--font-sans);
+}
+
+/* Sizes */
+.xs   { font-size: var(--text-xs); }
+.sm   { font-size: var(--text-sm); }
+.base { font-size: var(--text-base); }
+.lg   { font-size: var(--text-lg); }
+.xl   { font-size: var(--text-xl); }
+
+/* Weight */
+.normal   { font-weight: var(--font-normal); }
+.medium   { font-weight: var(--font-medium); }
+.semibold { font-weight: var(--font-semibold); }
+.bold     { font-weight: var(--font-bold); }
+
+/* Color */
+.primary   { color: var(--color-text-primary); }
+.secondary { color: var(--color-text-secondary); }
+.muted     { color: var(--color-text-muted); }
+.accent    { color: var(--color-accent); }
+.success   { color: var(--color-success); }
+.warning   { color: var(--color-warning); }
+.error     { color: var(--color-error); }
+
+/* Truncate */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Leading */
+.tight   { line-height: var(--leading-tight); }
+.normal-leading { line-height: var(--leading-normal); }
+.relaxed { line-height: var(--leading-relaxed); }
+
+/* Mono */
+.mono { font-family: var(--font-mono); }

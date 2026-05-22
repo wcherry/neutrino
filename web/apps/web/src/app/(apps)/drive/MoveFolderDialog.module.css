@@ -1,0 +1,93 @@
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.chevron {
+  color: var(--color-text-muted, #9ca3af);
+  flex-shrink: 0;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--color-text-link, #2563eb);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.crumb:hover:not(:disabled) {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.crumbActive {
+  color: var(--color-text, #111827);
+  cursor: default;
+  font-weight: 500;
+}
+
+.folderList {
+  min-height: 160px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.empty {
+  display: block;
+  text-align: center;
+  padding: 32px 0;
+}
+
+.folderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.folderRow:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.folderIcon {
+  flex-shrink: 0;
+}
+
+.folderChevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--color-text-muted, #9ca3af);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}

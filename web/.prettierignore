@@ -1,0 +1,7 @@
+# Generated / build output — do not format
+.next/
+dist/
+out/
+node_modules/
+.turbo/
+pnpm-lock.yaml

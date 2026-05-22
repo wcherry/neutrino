@@ -1,0 +1,18 @@
+.panel {
+  background-color: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+/* Colors */
+.default { background-color: var(--color-surface-raised); }
+.accent  { background-color: var(--color-accent-subtle); border-color: color-mix(in srgb, var(--color-accent) 20%, transparent); }
+.success { background-color: var(--color-success-subtle); border-color: color-mix(in srgb, var(--color-success) 20%, transparent); }
+.warning { background-color: var(--color-warning-subtle); border-color: color-mix(in srgb, var(--color-warning) 20%, transparent); }
+.error   { background-color: var(--color-error-subtle); border-color: color-mix(in srgb, var(--color-error) 20%, transparent); }
+
+/* Padding */
+.sm { padding: var(--space-3); }
+.md { padding: var(--space-4); }
+.lg { padding: var(--space-6); }

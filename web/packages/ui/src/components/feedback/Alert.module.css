@@ -1,0 +1,86 @@
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  font-size: var(--text-sm);
+}
+
+/* Variants */
+.info {
+  background-color: var(--color-info-subtle);
+  border-color: color-mix(in srgb, var(--color-info) 20%, transparent);
+  color: var(--color-text-primary);
+}
+
+.success {
+  background-color: var(--color-success-subtle);
+  border-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+  color: var(--color-text-primary);
+}
+
+.warning {
+  background-color: var(--color-warning-subtle);
+  border-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
+  color: var(--color-text-primary);
+}
+
+.error {
+  background-color: var(--color-error-subtle);
+  border-color: color-mix(in srgb, var(--color-error) 20%, transparent);
+  color: var(--color-text-primary);
+}
+
+.icon-wrapper {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.info    .icon-wrapper { color: var(--color-info); }
+.success .icon-wrapper { color: var(--color-success); }
+.warning .icon-wrapper { color: var(--color-warning); }
+.error   .icon-wrapper { color: var(--color-error); }
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-weight: var(--font-semibold);
+  margin-bottom: var(--space-1);
+  color: var(--color-text-primary);
+}
+
+.message {
+  color: var(--color-text-secondary);
+  line-height: var(--leading-normal);
+}
+
+.close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--duration-fast) var(--ease-default);
+  padding: 0;
+}
+
+.close-btn:hover {
+  background-color: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.close-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}

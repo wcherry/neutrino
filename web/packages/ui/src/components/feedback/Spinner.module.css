@@ -1,0 +1,43 @@
+.spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ring {
+  border-radius: 50%;
+  border-style: solid;
+  border-color: var(--spinner-track, var(--color-neutral-200));
+  border-top-color: var(--spinner-color, var(--color-accent));
+  animation: spin var(--duration-slower) linear infinite;
+}
+
+/* Sizes */
+.xs .ring { width: 0.75rem;  height: 0.75rem;  border-width: 1.5px; }
+.sm .ring { width: 1rem;    height: 1rem;    border-width: 2px; }
+.md .ring { width: 1.5rem;  height: 1.5rem;  border-width: 2px; }
+.lg .ring { width: 2rem;    height: 2rem;    border-width: 2.5px; }
+.xl .ring { width: 2.5rem;  height: 2.5rem;  border-width: 3px; }
+
+/* Color variants */
+.accent  { --spinner-color: var(--color-accent); }
+.white   { --spinner-color: #ffffff; --spinner-track: rgba(255,255,255,0.25); }
+.muted   { --spinner-color: var(--color-text-muted); }
+.success { --spinner-color: var(--color-success); }
+.error   { --spinner-color: var(--color-error); }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Overlay variant */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(0, 0, 0, 0.25);
+  z-index: var(--z-modal-backdrop);
+}

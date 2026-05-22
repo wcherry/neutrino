@@ -1,0 +1,66 @@
+// ---------------------------------------------------------------------------
+// Admin API types
+//
+// These mirror the Rust structs in neutrino-drive/src/admin/service.rs and
+// neutrino-drive/src/service_registry/mod.rs (all serde rename_all = "camelCase").
+// ---------------------------------------------------------------------------
+
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  status: string;
+  cpuPercent: number;
+  memoryRssKb: number;
+  openFiles: number;
+}
+
+export interface PathUsage {
+  path: string;
+  usedBytes: number;
+  percent: number;
+}
+
+export interface DiskUsageInfo {
+  totalBytes: number;
+  usedBytes: number;
+  freeBytes: number;
+  paths: PathUsage[];
+}
+
+export interface ServiceInfo {
+  name: string;
+  endpoint: string;
+  version: string;
+  healthCheckUrl: string;
+  registeredAt: string;
+  enabled: boolean;
+  autoUpdate: boolean;
+}
+
+export interface UpdateServiceRequest {
+  enabled?: boolean;
+  autoUpdate?: boolean;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  totpEnabled: boolean;
+  createdAt: string;
+  deletedAt: string | null;
+}
+
+export interface AdminUserListResponse {
+  users: AdminUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface UpdateAdminUserRequest {
+  name?: string;
+  role?: string;
+  totpEnabled?: boolean;
+}

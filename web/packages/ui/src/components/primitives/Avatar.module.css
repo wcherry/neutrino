@@ -1,0 +1,58 @@
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+  font-weight: var(--font-semibold);
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* Sizes */
+.xs  { width: 1.5rem;  height: 1.5rem;  font-size: 0.625rem; }
+.sm  { width: 2rem;    height: 2rem;    font-size: var(--text-xs); }
+.md  { width: 2.5rem;  height: 2.5rem;  font-size: var(--text-sm); }
+.lg  { width: 3rem;    height: 3rem;    font-size: var(--text-base); }
+.xl  { width: 4rem;    height: 4rem;    font-size: var(--text-lg); }
+.xxl { width: 5rem;    height: 5rem;    font-size: var(--text-xl); }
+
+.image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.initials {
+  line-height: 1;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+/* Status indicator */
+.status-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 25%;
+  height: 25%;
+  border-radius: 50%;
+  border: 2px solid var(--color-bg);
+}
+
+.status-online  { background-color: var(--color-success); }
+.status-offline { background-color: var(--color-neutral-400); }
+.status-busy    { background-color: var(--color-error); }
+
+/* Color variants for initials */
+.color-0 { background-color: #eff6ff; color: #1e40af; }
+.color-1 { background-color: #f0fdf4; color: #166534; }
+.color-2 { background-color: #fffbeb; color: #92400e; }
+.color-3 { background-color: #fef2f2; color: #991b1b; }
+.color-4 { background-color: #f5f3ff; color: #4c1d95; }
+.color-5 { background-color: #fdf4ff; color: #701a75; }
+.color-6 { background-color: #fff7ed; color: #9a3412; }
+.color-7 { background-color: #ecfdf5; color: #065f46; }

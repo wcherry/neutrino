@@ -1,0 +1,402 @@
+.panel {
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-subtle, #f9fafb);
+  gap: var(--space-2);
+}
+
+.headerInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--color-border, #e5e7eb);
+  flex-shrink: 0;
+}
+
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatarPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-subtle, #f3f4f6);
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.headerTitle {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-text, #111827);
+}
+
+.headerCount {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1);
+  color: var(--color-text-secondary, #6b7280);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s;
+}
+
+.closeBtn:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.body {
+  padding: var(--space-3) var(--space-4);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary, #6b7280);
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: var(--space-2);
+}
+
+.thumb {
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border, #e5e7eb);
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.15s;
+}
+
+.thumb:hover {
+  transform: scale(1.04);
+  border-color: var(--color-primary, #4f46e5);
+}
+
+.thumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumbPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-subtle, #f3f4f6);
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+/* ── Rename ────────────────────────────────────────────────────────────────── */
+
+.renameRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.renameInput {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  padding: 2px var(--space-1);
+  border: 1px solid var(--color-primary, #4f46e5);
+  border-radius: var(--radius-sm);
+  outline: none;
+  width: 140px;
+  color: var(--color-text, #111827);
+  background: var(--color-surface, #fff);
+}
+
+.iconAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary, #6b7280);
+  transition: background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.iconAction:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+  color: var(--color-text, #111827);
+}
+
+/* ── Header actions ────────────────────────────────────────────────────────── */
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+/* ── Merge dropdown ────────────────────────────────────────────────────────── */
+
+.mergeWrapper {
+  position: relative;
+}
+
+.mergeDropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+  min-width: 180px;
+  padding: var(--space-1) 0;
+}
+
+.mergeLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary, #6b7280);
+  padding: var(--space-1) var(--space-3);
+  margin: 0;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mergeOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-text, #111827);
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.mergeOption:hover {
+  background: var(--color-surface-subtle, #f9fafb);
+}
+
+.mergeOption:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mergeOptionCount {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary, #6b7280);
+}
+
+/* ── Faces section ─────────────────────────────────────────────────────────── */
+
+.facesSection {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.sectionLabel {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-2);
+}
+
+.facesStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.faceItem {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.faceThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border, #e5e7eb);
+  display: block;
+}
+
+.faceThumbPlaceholder {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border, #e5e7eb);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-subtle, #f3f4f6);
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.faceRemoveBtn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-danger, #ef4444);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding: 0;
+}
+
+.faceItem:hover .faceRemoveBtn {
+  opacity: 1;
+}
+
+/* ── Relationships ─────────────────────────────────────────────────────────── */
+
+.relationshipsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.relationshipChip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--color-surface-subtle, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-full, 9999px);
+  padding: 2px var(--space-2) 2px 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text, #111827);
+}
+
+.relationshipAvatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.relationshipAvatarPlaceholder {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-surface-raised, #e5e7eb);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary, #9ca3af);
+  flex-shrink: 0;
+}
+
+.relationshipName {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relationshipCount {
+  font-size: 10px;
+  color: var(--color-text-secondary, #6b7280);
+  background: var(--color-border, #e5e7eb);
+  border-radius: var(--radius-full, 9999px);
+  padding: 0 4px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* ── Tab bar ───────────────────────────────────────────────────────────────── */
+
+.tabBar {
+  display: flex;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-subtle, #f9fafb);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab:hover {
+  color: var(--color-text, #111827);
+}
+
+.tabActive {
+  color: var(--color-primary, #4f46e5);
+  border-bottom-color: var(--color-primary, #4f46e5);
+}

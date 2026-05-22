@@ -1,0 +1,35 @@
+.heading {
+  font-family: var(--font-sans);
+  font-weight: var(--font-semibold);
+  line-height: var(--leading-tight);
+  color: var(--color-text-primary);
+}
+
+/* Levels map to semantic sizes */
+.h1 { font-size: var(--text-4xl); font-weight: var(--font-bold); }
+.h2 { font-size: var(--text-3xl); font-weight: var(--font-bold); }
+.h3 { font-size: var(--text-2xl); }
+.h4 { font-size: var(--text-xl); }
+.h5 { font-size: var(--text-lg); }
+.h6 { font-size: var(--text-base); }
+
+/* Visual size overrides */
+.size-xs  { font-size: var(--text-xs); }
+.size-sm  { font-size: var(--text-sm); }
+.size-base { font-size: var(--text-base); }
+.size-lg  { font-size: var(--text-lg); }
+.size-xl  { font-size: var(--text-xl); }
+.size-2xl { font-size: var(--text-2xl); }
+.size-3xl { font-size: var(--text-3xl); }
+.size-4xl { font-size: var(--text-4xl); }
+
+/* Color */
+.primary   { color: var(--color-text-primary); }
+.secondary { color: var(--color-text-secondary); }
+.muted     { color: var(--color-text-muted); }
+
+/* Weight overrides */
+.normal   { font-weight: var(--font-normal); }
+.medium   { font-weight: var(--font-medium); }
+.semibold { font-weight: var(--font-semibold); }
+.bold     { font-weight: var(--font-bold); }

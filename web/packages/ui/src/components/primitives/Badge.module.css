@@ -1,0 +1,73 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* Sizes */
+.sm {
+  padding: 2px var(--space-2);
+  font-size: 0.6875rem;
+}
+
+.md {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.lg {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* Variants */
+.default {
+  background-color: var(--color-surface-raised);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+
+.accent {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+  border-color: transparent;
+}
+
+.success {
+  background-color: var(--color-success-subtle);
+  color: var(--color-success);
+  border-color: transparent;
+}
+
+.warning {
+  background-color: var(--color-warning-subtle);
+  color: var(--color-warning);
+  border-color: transparent;
+}
+
+.error {
+  background-color: var(--color-error-subtle);
+  color: var(--color-error);
+  border-color: transparent;
+}
+
+.info {
+  background-color: var(--color-info-subtle);
+  color: var(--color-info);
+  border-color: transparent;
+}
+
+/* Dot indicator */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  flex-shrink: 0;
+}

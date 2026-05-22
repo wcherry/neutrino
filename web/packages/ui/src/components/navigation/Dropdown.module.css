@@ -1,0 +1,22 @@
+.wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.content {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  background-color: var(--color-surface-overlay);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  min-width: 200px;
+  overflow: hidden;
+}
+
+/* Placement */
+.bottom-start { top: calc(100% + var(--space-1)); left: 0; }
+.bottom-end   { top: calc(100% + var(--space-1)); right: 0; }
+.top-start    { bottom: calc(100% + var(--space-1)); left: 0; }
+.top-end      { bottom: calc(100% + var(--space-1)); right: 0; }
+.bottom       { top: calc(100% + var(--space-1)); left: 50%; transform: translateX(-50%); }

@@ -1,0 +1,85 @@
+/* ── Help modal body content ──────────────────────────────────────────────── */
+.helpSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.helpSectionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted, #5f6368);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+
+.helpList {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text, #202124);
+  line-height: 1.5;
+}
+
+.helpAbout {
+  font-size: 13px;
+  color: var(--color-text, #202124);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.shortcutsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+}
+
+.shortcutRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-text, #202124);
+}
+
+.shortcutRow:hover {
+  background: var(--color-bg-hover, #f1f3f4);
+}
+
+.shortcutAction {
+  color: var(--color-text, #202124);
+}
+
+.shortcutKeys {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.shortcutPlus {
+  font-size: 11px;
+  color: var(--color-text-muted, #9aa0a6);
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 5px;
+  background: var(--color-bg-secondary, #f1f3f4);
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--color-text, #202124);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+}

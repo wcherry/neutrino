@@ -1,0 +1,92 @@
+:root {
+  /* Neutrals */
+  --color-neutral-50: #f9fafb;
+  --color-neutral-100: #f3f4f6;
+  --color-neutral-200: #e5e7eb;
+  --color-neutral-300: #d1d5db;
+  --color-neutral-400: #9ca3af;
+  --color-neutral-500: #6b7280;
+  --color-neutral-600: #4b5563;
+  --color-neutral-700: #374151;
+  --color-neutral-800: #1f2937;
+  --color-neutral-900: #111827;
+
+  /* Semantic */
+  --color-bg: #ffffff;
+  --color-bg-subtle: var(--color-neutral-50);
+  --color-surface: #ffffff;
+  --color-surface-raised: var(--color-neutral-50);
+  --color-surface-overlay: #ffffff;
+  --color-border: var(--color-neutral-200);
+  --color-border-strong: var(--color-neutral-300);
+
+  /* Text */
+  --color-text-primary: var(--color-neutral-900);
+  --color-text-secondary: var(--color-neutral-600);
+  --color-text-muted: var(--color-neutral-400);
+  --color-text-inverse: #ffffff;
+  --color-text-on-accent: #ffffff;
+
+  /* Accent (Drive = Blue) */
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-subtle: #eff6ff;
+  --color-accent-text: #1e40af;
+
+  /* Aliases used by app components */
+  --color-text: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-muted);
+  --color-surface-secondary: var(--color-neutral-100);
+  --color-surface-past: var(--color-neutral-50);
+  --color-surface-hover: var(--color-neutral-100);
+  --color-primary: var(--color-accent);
+  --color-primary-light: #dbeafe;
+
+  /* Status */
+  --color-success: #16a34a;
+  --color-success-subtle: #f0fdf4;
+  --color-warning: #d97706;
+  --color-warning-subtle: #fffbeb;
+  --color-error: #dc2626;
+  --color-error-subtle: #fef2f2;
+  --color-info: #0284c7;
+  --color-info-subtle: #f0f9ff;
+}
+
+/* Dark mode */
+[data-theme="dark"] {
+  --color-bg: #0f172a;
+  --color-bg-subtle: #1e293b;
+  --color-surface: #1e293b;
+  --color-surface-raised: #334155;
+  --color-surface-overlay: #1e293b;
+  --color-border: #334155;
+  --color-border-strong: #475569;
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-text-inverse: #0f172a;
+  --color-text-on-accent: #ffffff;
+  --color-accent: #3b82f6;
+  --color-accent-hover: #60a5fa;
+  --color-accent-subtle: #1e3a5f;
+  --color-accent-text: #93c5fd;
+
+  /* Aliases used by app components */
+  --color-text: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-muted);
+  --color-surface-secondary: var(--color-surface-raised);
+  --color-surface-past: #263040;
+  --color-surface-hover: var(--color-surface-raised);
+  --color-primary: var(--color-accent);
+  --color-primary-light: var(--color-accent-subtle);
+
+  --color-success: #22c55e;
+  --color-success-subtle: #052e16;
+  --color-warning: #f59e0b;
+  --color-warning-subtle: #1c1003;
+  --color-error: #ef4444;
+  --color-error-subtle: #1c0a0a;
+  --color-info: #38bdf8;
+  --color-info-subtle: #082f49;
+}

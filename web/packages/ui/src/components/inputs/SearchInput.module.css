@@ -1,0 +1,100 @@
+.wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding-left: 2.5rem;
+  padding-right: var(--space-3);
+  outline: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-default),
+    background-color var(--duration-fast) var(--ease-default),
+    box-shadow var(--duration-fast) var(--ease-default);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+}
+
+.input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 15%, transparent);
+  background-color: var(--color-surface);
+}
+
+.input:disabled {
+  background-color: var(--color-bg-subtle);
+  cursor: not-allowed;
+}
+
+/* Sizes */
+.sm { height: 2rem; padding-right: 2rem; }
+.md { height: 2.5rem; padding-right: 2.25rem; }
+.lg { height: 3rem; padding-left: 3rem; padding-right: 2.75rem; font-size: var(--text-base); }
+
+.icon-left {
+  position: absolute;
+  left: var(--space-3);
+  color: var(--color-text-muted);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.clear-btn {
+  position: absolute;
+  right: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background-color: var(--color-neutral-300);
+  color: var(--color-neutral-600);
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  transition:
+    background-color var(--duration-fast) var(--ease-default),
+    color var(--duration-fast) var(--ease-default);
+}
+
+.clear-btn:hover {
+  background-color: var(--color-neutral-400);
+  color: var(--color-neutral-800);
+}
+
+.clear-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Subtle variant (used in topbar) */
+.subtle .input {
+  background-color: var(--color-bg-subtle);
+  border-color: transparent;
+}
+
+.subtle .input:hover:not(:disabled) {
+  background-color: var(--color-neutral-100);
+  border-color: transparent;
+}
+
+.subtle .input:focus {
+  background-color: var(--color-surface);
+  border-color: var(--color-accent);
+}
