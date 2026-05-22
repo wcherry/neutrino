@@ -1,0 +1,2 @@
+-- SQLite does not support DROP COLUMN in versions < 3.35.0.
+-- starred_at columns remain but are unused after rollback.

@@ -1,0 +1,6 @@
+ALTER TABLE files ADD COLUMN folder_id TEXT REFERENCES folders(id);
+ALTER TABLE files ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE files ADD COLUMN is_trashed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE files ADD COLUMN trashed_at TIMESTAMP;
+
+CREATE INDEX idx_files_folder_id ON files(folder_id);

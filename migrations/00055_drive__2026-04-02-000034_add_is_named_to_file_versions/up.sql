@@ -1,0 +1,1 @@
+ALTER TABLE file_versions ADD COLUMN is_named BOOLEAN NOT NULL DEFAULT 0;

@@ -1,0 +1,2 @@
+ALTER TABLE files ADD COLUMN starred_at TIMESTAMP;
+ALTER TABLE folders ADD COLUMN starred_at TIMESTAMP;

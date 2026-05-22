@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neutrino Drive Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+    };
+  </script>
+  <style>
+    /* Toggle switch */
+    .toggle-checkbox:checked { transform: translateX(100%); border-color: #3b82f6; }
+    .toggle-checkbox:checked + .toggle-label { background-color: #3b82f6; }
+    .spinner {
+      border: 3px solid #374151;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      width: 20px; height: 20px;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="dark bg-gray-900 text-gray-100 min-h-screen">
+
+<!-- ── Login Page ─────────────────────────────────────────────────────────── -->
+<div id="login-page" class="hidden min-h-screen flex items-center justify-center">
+  <div class="bg-gray-800 rounded-2xl shadow-2xl p-10 w-full max-w-sm">
+    <h1 class="text-2xl font-bold text-center mb-2 text-white">Neutrino Drive</h1>
+    <p class="text-gray-400 text-center mb-8 text-sm">Admin Dashboard</p>
+    <div id="login-error" class="hidden mb-4 p-3 bg-red-900/50 border border-red-700 text-red-300 rounded-lg text-sm"></div>
+    <label class="block text-sm font-medium text-gray-300 mb-2" for="token-input">Admin Token</label>
+    <input
+      id="token-input"
+      type="password"
+      class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-6"
+      placeholder="Bearer token…"
+      autocomplete="off"
+    />
+    <button
+      id="login-btn"
+      class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2.5 rounded-lg transition-colors"
+    >Sign In</button>
+  </div>
+</div>
+
+<!-- ── Dashboard ─────────────────────────────────────────────────────────── -->
+<div id="dashboard-page" class="hidden">
+
+  <!-- Header -->
+  <header class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+      </div>
+      <span class="text-lg font-semibold text-white">Neutrino Drive Admin</span>
+    </div>
+    <button
+      id="logout-btn"
+      class="text-sm text-gray-400 hover:text-white bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg transition-colors"
+    >Sign out</button>
+  </header>
+
+  <!-- Tab Bar -->
+  <div class="bg-gray-800 border-b border-gray-700 px-6">
+    <nav class="flex gap-0 -mb-px">
+      <button class="tab-btn px-5 py-4 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent hover:border-gray-500 transition-colors" data-tab="processes">
+        Processes
+      </button>
+      <button class="tab-btn px-5 py-4 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent hover:border-gray-500 transition-colors" data-tab="disk">
+        Drive Space
+      </button>
+      <button class="tab-btn px-5 py-4 text-sm font-medium text-gray-400 hover:text-white border-b-2 border-transparent hover:border-gray-500 transition-colors" data-tab="settings">
+        Settings
+      </button>
+    </nav>
+  </div>
+
+  <!-- Tab Panels -->
+  <main class="p-6 max-w-7xl mx-auto">
+
+    <!-- ── Processes Tab ────────────────────────────────────────────────── -->
+    <div id="tab-processes" class="tab-panel hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold text-white">Running Processes</h2>
+        <button onclick="loadProcesses()" class="text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
+      <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-750">
+            <tr class="border-b border-gray-700">
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">PID</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Name</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Status</th>
+              <th class="text-right px-4 py-3 text-gray-400 font-medium">CPU %</th>
+              <th class="text-right px-4 py-3 text-gray-400 font-medium">Memory (RSS)</th>
+              <th class="text-right px-4 py-3 text-gray-400 font-medium">Open Files</th>
+            </tr>
+          </thead>
+          <tbody id="processes-tbody">
+            <tr>
+              <td colspan="6" class="px-4 py-8 text-center text-gray-500">
+                <div class="spinner mx-auto mb-2"></div>
+                <div>Loading…</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Drive Space Tab ──────────────────────────────────────────────── -->
+    <div id="tab-disk" class="tab-panel hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold text-white">Drive Space</h2>
+        <button onclick="loadDisk()" class="text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
+
+      <!-- Summary card -->
+      <div id="disk-summary" class="bg-gray-800 rounded-xl border border-gray-700 p-6 mb-6">
+        <div class="spinner mx-auto mb-2"></div>
+        <p class="text-center text-gray-500 text-sm">Loading…</p>
+      </div>
+
+      <!-- Per-path breakdown -->
+      <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-700">
+          <h3 class="text-sm font-semibold text-gray-300">Path Breakdown</h3>
+        </div>
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-700">
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Path</th>
+              <th class="text-right px-4 py-3 text-gray-400 font-medium">Used</th>
+              <th class="text-right px-4 py-3 text-gray-400 font-medium">Usage %</th>
+            </tr>
+          </thead>
+          <tbody id="disk-paths-tbody">
+            <tr>
+              <td colspan="3" class="px-4 py-6 text-center text-gray-500 text-sm">Loading…</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Settings Tab ─────────────────────────────────────────────────── -->
+    <div id="tab-settings" class="tab-panel hidden">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl font-semibold text-white">Registered Services</h2>
+        <button onclick="loadServices()" class="text-sm bg-gray-700 hover:bg-gray-600 text-gray-200 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
+      <div id="settings-alert" class="hidden mb-4 p-3 bg-green-900/50 border border-green-700 text-green-300 rounded-lg text-sm"></div>
+      <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-gray-700">
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Service</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Version</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Endpoint</th>
+              <th class="text-center px-4 py-3 text-gray-400 font-medium">Status</th>
+              <th class="text-center px-4 py-3 text-gray-400 font-medium">Auto Update</th>
+              <th class="text-left px-4 py-3 text-gray-400 font-medium">Last Registered</th>
+              <th class="text-center px-4 py-3 text-gray-400 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="services-tbody">
+            <tr>
+              <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                <div class="spinner mx-auto mb-2"></div>
+                <div>Loading…</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+function getToken() { return sessionStorage.getItem('admin_token') || ''; }
+function authHeaders() {
+  return {
+    headers: {
+      'Authorization': 'Bearer ' + getToken(),
+      'Content-Type': 'application/json',
+    }
+  };
+}
+function handleUnauth(status) {
+  if (status === 401 || status === 403) {
+    sessionStorage.removeItem('admin_token');
+    showLogin();
+    return true;
+  }
+  return false;
+}
+
+// ── Page switching ─────────────────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('login-page').classList.remove('hidden');
+  document.getElementById('dashboard-page').classList.add('hidden');
+}
+function showDashboard() {
+  document.getElementById('login-page').classList.add('hidden');
+  document.getElementById('dashboard-page').classList.remove('hidden');
+  switchTab('processes');
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const active = btn.dataset.tab === name;
+    btn.classList.toggle('text-white', active);
+    btn.classList.toggle('border-blue-500', active);
+    btn.classList.toggle('text-gray-400', !active);
+    btn.classList.toggle('border-transparent', !active);
+  });
+  const panel = document.getElementById('tab-' + name);
+  if (panel) panel.classList.remove('hidden');
+
+  if (name === 'processes') loadProcesses();
+  else if (name === 'disk') loadDisk();
+  else if (name === 'settings') loadServices();
+}
+
+// ── Formatting helpers ──────────────────────────────────────────────────────
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + units[i];
+}
+function formatDate(isoStr) {
+  if (!isoStr) return '—';
+  try { return new Date(isoStr).toLocaleString(); } catch { return isoStr; }
+}
+
+// ── Error row helper ────────────────────────────────────────────────────────
+function errorRow(msg, cols) {
+  return `<tr><td colspan="${cols}" class="px-4 py-6 text-center text-red-400 text-sm">${msg}</td></tr>`;
+}
+
+// ── Processes ─────────────────────────────────────────────────────────────
+async function loadProcesses() {
+  const tbody = document.getElementById('processes-tbody');
+  tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-gray-500"><div class="spinner mx-auto mb-2"></div><div>Loading…</div></td></tr>`;
+  try {
+    const res = await fetch('/admin/api/processes', authHeaders());
+    if (handleUnauth(res.status)) return;
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const procs = await res.json();
+    if (!procs.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="px-4 py-6 text-center text-gray-500 text-sm">No processes found.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = procs.map(p => `
+      <tr class="border-b border-gray-700/50 hover:bg-gray-750 transition-colors">
+        <td class="px-4 py-3 font-mono text-blue-400">${p.pid}</td>
+        <td class="px-4 py-3 text-gray-200 font-medium">${escHtml(p.name)}</td>
+        <td class="px-4 py-3">
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(p.status)}">${escHtml(p.status)}</span>
+        </td>
+        <td class="px-4 py-3 text-right font-mono text-gray-300">${p.cpuPercent.toFixed(1)}%</td>
+        <td class="px-4 py-3 text-right font-mono text-gray-300">${formatBytes(p.memoryRssKb * 1024)}</td>
+        <td class="px-4 py-3 text-right font-mono text-gray-300">${p.openFiles}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = errorRow('Failed to load processes: ' + e.message, 6);
+  }
+}
+
+function statusBadge(status) {
+  const s = (status || '').toLowerCase();
+  if (s === 'running') return 'bg-green-900/60 text-green-300';
+  if (s === 'sleeping') return 'bg-blue-900/60 text-blue-300';
+  if (s === 'waiting') return 'bg-yellow-900/60 text-yellow-300';
+  if (s === 'zombie') return 'bg-red-900/60 text-red-300';
+  return 'bg-gray-700 text-gray-300';
+}
+
+// ── Drive Space ──────────────────────────────────────────────────────────
+async function loadDisk() {
+  const summary = document.getElementById('disk-summary');
+  const tbody = document.getElementById('disk-paths-tbody');
+  summary.innerHTML = `<div class="spinner mx-auto mb-2"></div><p class="text-center text-gray-500 text-sm">Loading…</p>`;
+  tbody.innerHTML = `<tr><td colspan="3" class="px-4 py-6 text-center text-gray-500 text-sm">Loading…</td></tr>`;
+  try {
+    const res = await fetch('/admin/api/disk', authHeaders());
+    if (handleUnauth(res.status)) return;
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const pct = data.totalBytes > 0 ? (data.usedBytes / data.totalBytes * 100) : 0;
+    const pctStr = pct.toFixed(1);
+    const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-blue-500';
+    summary.innerHTML = `
+      <div class="grid grid-cols-3 gap-6 mb-6">
+        <div class="text-center">
+          <div class="text-3xl font-bold text-white mb-1">${formatBytes(data.totalBytes)}</div>
+          <div class="text-xs text-gray-500 uppercase tracking-wide">Total</div>
+        </div>
+        <div class="text-center">
+          <div class="text-3xl font-bold text-blue-400 mb-1">${formatBytes(data.usedBytes)}</div>
+          <div class="text-xs text-gray-500 uppercase tracking-wide">Used</div>
+        </div>
+        <div class="text-center">
+          <div class="text-3xl font-bold text-green-400 mb-1">${formatBytes(data.freeBytes)}</div>
+          <div class="text-xs text-gray-500 uppercase tracking-wide">Free</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="flex-1 bg-gray-700 rounded-full h-3 overflow-hidden">
+          <div class="${barColor} h-3 rounded-full transition-all" style="width:${pctStr}%"></div>
+        </div>
+        <div class="text-sm font-mono text-gray-300 w-16 text-right">${pctStr}%</div>
+      </div>
+    `;
+    tbody.innerHTML = (data.paths || []).map(p => `
+      <tr class="border-b border-gray-700/50 hover:bg-gray-750 transition-colors">
+        <td class="px-4 py-3 font-mono text-gray-300 text-xs">${escHtml(p.path)}</td>
+        <td class="px-4 py-3 text-right font-mono text-gray-300">${formatBytes(p.usedBytes)}</td>
+        <td class="px-4 py-3 text-right font-mono text-gray-300">${p.percent.toFixed(1)}%</td>
+      </tr>
+    `).join('') || `<tr><td colspan="3" class="px-4 py-6 text-center text-gray-500 text-sm">No paths.</td></tr>`;
+  } catch (e) {
+    summary.innerHTML = `<p class="text-center text-red-400 text-sm">${e.message}</p>`;
+    tbody.innerHTML = errorRow('Failed to load disk info: ' + e.message, 3);
+  }
+}
+
+// ── Services (Settings) ──────────────────────────────────────────────────
+async function loadServices() {
+  const tbody = document.getElementById('services-tbody');
+  tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-gray-500"><div class="spinner mx-auto mb-2"></div><div>Loading…</div></td></tr>`;
+  try {
+    const res = await fetch('/admin/api/services', authHeaders());
+    if (handleUnauth(res.status)) return;
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const services = await res.json();
+    if (!services.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-6 text-center text-gray-500 text-sm">No registered services.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = services.map(s => renderServiceRow(s)).join('');
+  } catch (e) {
+    tbody.innerHTML = errorRow('Failed to load services: ' + e.message, 7);
+  }
+}
+
+function renderServiceRow(s) {
+  const enabledBadge = s.enabled
+    ? '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-green-900/60 text-green-300">Enabled</span>'
+    : '<span class="px-2 py-0.5 rounded-full text-xs font-medium bg-red-900/60 text-red-300">Disabled</span>';
+  const toggleChecked = s.autoUpdate ? 'checked' : '';
+  const actionBtn = s.enabled
+    ? `<button onclick="toggleService('${escAttr(s.name)}', false)" class="text-xs bg-red-900/40 hover:bg-red-800/60 text-red-300 px-3 py-1.5 rounded-lg transition-colors">Disable</button>`
+    : `<button onclick="toggleService('${escAttr(s.name)}', true)" class="text-xs bg-green-900/40 hover:bg-green-800/60 text-green-300 px-3 py-1.5 rounded-lg transition-colors">Enable</button>`;
+  return `
+    <tr class="border-b border-gray-700/50 hover:bg-gray-750 transition-colors" id="svc-row-${escAttr(s.name)}">
+      <td class="px-4 py-3 font-semibold text-white">${escHtml(s.name)}</td>
+      <td class="px-4 py-3 font-mono text-blue-400 text-xs">${escHtml(s.version)}</td>
+      <td class="px-4 py-3 text-gray-400 text-xs truncate max-w-48">${escHtml(s.endpoint)}</td>
+      <td class="px-4 py-3 text-center">${enabledBadge}</td>
+      <td class="px-4 py-3 text-center">
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" class="toggle-checkbox sr-only" ${toggleChecked}
+            onchange="toggleAutoUpdate('${escAttr(s.name)}', this.checked)" />
+          <div class="w-9 h-5 bg-gray-600 rounded-full relative toggle-label transition-colors">
+            <div class="toggle-checkbox absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${s.autoUpdate ? 'translate-x-4' : ''}"></div>
+          </div>
+        </label>
+      </td>
+      <td class="px-4 py-3 text-gray-400 text-xs">${formatDate(s.registeredAt)}</td>
+      <td class="px-4 py-3 text-center">${actionBtn}</td>
+    </tr>`;
+}
+
+async function toggleService(name, enabled) {
+  await patchService(name, { enabled });
+}
+async function toggleAutoUpdate(name, autoUpdate) {
+  await patchService(name, { autoUpdate });
+}
+
+async function patchService(name, body) {
+  const alert = document.getElementById('settings-alert');
+  try {
+    const res = await fetch('/admin/api/services/' + encodeURIComponent(name), {
+      method: 'PATCH',
+      ...authHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (handleUnauth(res.status)) return;
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const updated = await res.json();
+    // Re-render the row
+    const row = document.getElementById('svc-row-' + name);
+    if (row) row.outerHTML = renderServiceRow(updated);
+    alert.textContent = `Service "${name}" updated.`;
+    alert.classList.remove('hidden');
+    setTimeout(() => alert.classList.add('hidden'), 3000);
+  } catch (e) {
+    alert.textContent = 'Error: ' + e.message;
+    alert.classList.remove('hidden', 'bg-green-900/50', 'border-green-700', 'text-green-300');
+    alert.classList.add('bg-red-900/50', 'border-red-700', 'text-red-300');
+    setTimeout(() => {
+      alert.classList.add('hidden');
+      alert.classList.remove('bg-red-900/50', 'border-red-700', 'text-red-300');
+      alert.classList.add('bg-green-900/50', 'border-green-700', 'text-green-300');
+    }, 5000);
+  }
+}
+
+// ── XSS helpers ──────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function escAttr(s) { return escHtml(s); }
+
+// ── Login flow ──────────────────────────────────────────────────────────
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const token = document.getElementById('token-input').value.trim();
+  const errEl = document.getElementById('login-error');
+  errEl.classList.add('hidden');
+  if (!token) { errEl.textContent = 'Please enter a token.'; errEl.classList.remove('hidden'); return; }
+  // Probe: try to fetch /admin/api/services to verify token
+  const res = await fetch('/admin/api/services', {
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+  });
+  if (res.status === 401 || res.status === 403) {
+    errEl.textContent = res.status === 403 ? 'Access denied — admin privileges required.' : 'Invalid token.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  sessionStorage.setItem('admin_token', token);
+  showDashboard();
+});
+
+document.getElementById('token-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('login-btn').click();
+});
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+  sessionStorage.removeItem('admin_token');
+  showLogin();
+});
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// ── Bootstrap ────────────────────────────────────────────────────────────
+(function init() {
+  const token = sessionStorage.getItem('admin_token');
+  if (token) showDashboard();
+  else showLogin();
+})();
+</script>
+</body>
+</html>

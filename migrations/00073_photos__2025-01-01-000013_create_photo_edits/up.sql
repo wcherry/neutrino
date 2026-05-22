@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS photo_edits (
+    photo_id TEXT PRIMARY KEY NOT NULL,
+    edits_json TEXT NOT NULL DEFAULT '{}',
+    preview_storage_path TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

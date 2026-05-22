@@ -1,0 +1,5 @@
+CREATE TABLE doc_yjs_state (
+    file_id TEXT PRIMARY KEY NOT NULL,
+    state BLOB NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

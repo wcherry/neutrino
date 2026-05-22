@@ -1,0 +1,2 @@
+ALTER TABLE permissions ADD COLUMN user_email TEXT NOT NULL DEFAULT '';
+ALTER TABLE permissions ADD COLUMN user_name TEXT NOT NULL DEFAULT '';

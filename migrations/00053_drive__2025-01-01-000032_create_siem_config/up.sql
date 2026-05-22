@@ -1,0 +1,9 @@
+CREATE TABLE siem_configs (
+    id TEXT PRIMARY KEY NOT NULL,
+    endpoint_url TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    format TEXT NOT NULL DEFAULT 'json',
+    is_active INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
