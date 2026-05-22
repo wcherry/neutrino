@@ -7,6 +7,7 @@ use crate::drive::{permissions::{
     repository::PermissionsRepository,
 }};
 use crate::shared::{ApiError, AuthenticatedUser, fetch_auth_profile};
+use crate::auth::service::AuthService;
 use crate::drive::encryption::repository::EncryptionRepository;
 use crate::drive::workspace::service::WorkspaceService;
 use std::sync::Arc;
@@ -16,6 +17,7 @@ pub struct PermissionsService {
     repo: Arc<PermissionsRepository>,
     workspace: Arc<WorkspaceService>,
     encryption: Arc<EncryptionRepository>,
+    auth_service: Arc<AuthService>,
 }
 
 impl PermissionsService {
@@ -23,8 +25,9 @@ impl PermissionsService {
         repo: Arc<PermissionsRepository>,
         workspace: Arc<WorkspaceService>,
         encryption: Arc<EncryptionRepository>,
+        auth_service: Arc<AuthService>,
     ) -> Self {
-        PermissionsService { repo, workspace, encryption }
+        PermissionsService { repo, workspace, encryption, auth_service }
     }
 
     /// Auto-grants Owner role when a resource is created. Called internally by
@@ -35,7 +38,7 @@ impl PermissionsService {
         resource_type: &str,
         resource_id: &str,
     ) -> Result<(), ApiError> {
-        let profile = fetch_auth_profile(&user).await?;
+        let profile = fetch_auth_profile(user, &self.auth_service)?;
         let user_email = profile.email.as_ref();
         let user_name = profile.name.as_ref();
 

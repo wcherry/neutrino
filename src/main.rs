@@ -1,5 +1,6 @@
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder, middleware::Logger, middleware::NormalizePath};
 use actix_cors::Cors;
+use actix_files;
 use diesel::r2d2::{ConnectionManager, CustomizeConnection, Error as R2D2Error, Pool};
 use diesel::{RunQueryDsl, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -131,7 +132,7 @@ async fn main() -> std::io::Result<()> {
 
     let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
     let auth_service = Arc::new(AuthService::new(auth_repo, token_service.clone()));
-    let auth_state = web::Data::new(auth::api::AuthApiState { auth_service });
+    let auth_state = web::Data::new(auth::api::AuthApiState { auth_service: auth_service.clone() });
 
     // ── Calendar service ─────────────────────────────────────────────────────
 
@@ -189,41 +190,6 @@ async fn main() -> std::io::Result<()> {
     tokio::spawn(async move {
         calendar::reminder_engine::run(engine_repo, 60).await;
     });
-
-    // ── Docs service ─────────────────────────────────────────────────────────
-
-    use docs::ai::service::DocsAIService;
-    use docs::collab::repository::CollabRepository;
-    use docs::collab::state::CollabState;
-    use docs::docs::repository::DocsRepository;
-    use docs::docs::service::DocsService;
-    use docs::templates::repository::TemplatesRepository;
-    use docs::templates::service::TemplatesService;
-    use crate::shared::drive_client::DriveClient;
-
-    let drive_client_for_docs = Arc::new(DriveClient::new(config.drive_base_url.clone()));
-    let docs_repo = Arc::new(DocsRepository::new(pool.clone()));
-    let docs_service = Arc::new(DocsService::new(docs_repo, drive_client_for_docs));
-    let docs_state = web::Data::new(docs::docs::api::DocsApiState {
-        docs_service: docs_service.clone(),
-    });
-
-    let docs_ai_service = Arc::new(DocsAIService::new());
-    let docs_ai_state = web::Data::new(docs::ai::api::DocsAIState {
-        ai_service: docs_ai_service,
-    });
-
-    let templates_repo = Arc::new(TemplatesRepository::new(pool.clone()));
-    let templates_service = Arc::new(TemplatesService::new(templates_repo, docs_service));
-    templates_service.seed_system_templates().unwrap_or_else(|e| {
-        error!("Failed to seed system templates: {}", e);
-    });
-    let templates_state = web::Data::new(docs::templates::api::TemplatesApiState {
-        templates_service,
-    });
-
-    let docs_collab_repo = web::Data::new(Arc::new(CollabRepository::new(pool.clone())));
-    let docs_collab_state = web::Data::new(Arc::new(CollabState::new()));
 
     // ── Drive service ─────────────────────────────────────────────────────────
 
@@ -291,6 +257,7 @@ async fn main() -> std::io::Result<()> {
         drive_permissions_repo.clone(),
         drive_workspace_service.clone(),
         drive_encryption_repo.clone(),
+        auth_service.clone(),
     ));
     let drive_permissions_state = web::Data::new(drive::permissions::api::PermissionsApiState {
         permissions_service: drive_permissions_service.clone(),
@@ -341,7 +308,7 @@ async fn main() -> std::io::Result<()> {
     ));
     let drive_fs_state = web::Data::new(drive::filesystem::api::FilesystemApiState {
         filesystem_service: drive_fs_service,
-        filesystem_repo: drive_fs_repo,
+        filesystem_repo: drive_fs_repo.clone(),
         permissions_repo: drive_permissions_repo.clone(),
     });
 
@@ -473,7 +440,7 @@ async fn main() -> std::io::Result<()> {
 
     let drive_encryption_service = Arc::new(EncryptionService::new(
         drive_encryption_repo,
-        drive_permissions_service,
+        drive_permissions_service.clone(),
     ));
     let drive_encryption_state = web::Data::new(drive::encryption::api::EncryptionApiState {
         encryption_service: drive_encryption_service,
@@ -501,12 +468,55 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
+    // ── Docs service ─────────────────────────────────────────────────────────
+
+    use crate::shared::drive_client::DriveClient;
+    use docs::ai::service::DocsAIService;
+    use docs::collab::repository::CollabRepository;
+    use docs::collab::state::CollabState;
+    use docs::docs::repository::DocsRepository;
+    use docs::docs::service::DocsService;
+    use docs::templates::repository::TemplatesRepository;
+    use docs::templates::service::TemplatesService;
+
+    let drive_client_for_docs = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
+    let docs_repo = Arc::new(DocsRepository::new(pool.clone()));
+    let docs_service = Arc::new(DocsService::new(docs_repo, drive_client_for_docs));
+    let docs_state = web::Data::new(docs::docs::api::DocsApiState {
+        docs_service: docs_service.clone(),
+    });
+
+    let docs_ai_service = Arc::new(DocsAIService::new());
+    let docs_ai_state = web::Data::new(docs::ai::api::DocsAIState {
+        ai_service: docs_ai_service,
+    });
+
+    let templates_repo = Arc::new(TemplatesRepository::new(pool.clone()));
+    let templates_service = Arc::new(TemplatesService::new(templates_repo, docs_service));
+    templates_service.seed_system_templates().unwrap_or_else(|e| {
+        error!("Failed to seed system templates: {}", e);
+    });
+    let templates_state = web::Data::new(docs::templates::api::TemplatesApiState {
+        templates_service,
+    });
+
+    let docs_collab_repo = web::Data::new(Arc::new(CollabRepository::new(pool.clone())));
+    let docs_collab_state = web::Data::new(Arc::new(CollabState::new()));
+
     // ── Notes service ─────────────────────────────────────────────────────────
 
     use notes::repository::NotesRepository;
     use notes::service::NotesService;
 
-    let drive_client_for_notes = Arc::new(DriveClient::new(config.drive_base_url.clone()));
+    let drive_client_for_notes = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
     let notes_repo = Arc::new(NotesRepository::new(pool.clone()));
     let notes_service = Arc::new(NotesService::new(
         notes_repo,
@@ -530,7 +540,11 @@ async fn main() -> std::io::Result<()> {
     use photos::suggestions::repository::SuggestionsRepository as PhotosSuggestionsRepository;
     use photos::suggestions::service::SuggestionsService as PhotosSuggestionsService;
 
-    let drive_client_for_photos = Arc::new(DriveClient::new(config.drive_base_url.clone()));
+    let drive_client_for_photos = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
 
     let photos_photos_repo = Arc::new(PhotosRepository::new(pool.clone()));
     let photos_albums_repo = Arc::new(AlbumsRepository::new(pool.clone()));
@@ -614,7 +628,11 @@ async fn main() -> std::io::Result<()> {
     use sheets::sheets::repository::SheetsRepository;
     use sheets::sheets::service::SheetsService;
 
-    let drive_client_for_sheets = Arc::new(DriveClient::new(config.drive_base_url.clone()));
+    let drive_client_for_sheets = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
     let sheets_repo = Arc::new(SheetsRepository::new(pool.clone()));
     let sheets_service = Arc::new(SheetsService::new(
         sheets_repo.clone(),
@@ -645,7 +663,11 @@ async fn main() -> std::io::Result<()> {
     use slides::slides::repository::SlidesRepository;
     use slides::slides::service::SlidesService;
 
-    let drive_client_for_slides = Arc::new(DriveClient::new(config.drive_base_url.clone()));
+    let drive_client_for_slides = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
     let slides_slides_repo = Arc::new(SlidesRepository::new(pool.clone()));
     let slides_service = Arc::new(SlidesService::new(slides_slides_repo, drive_client_for_slides));
     let slides_state = web::Data::new(slides::slides::api::SlidesApiState {
@@ -667,6 +689,7 @@ async fn main() -> std::io::Result<()> {
 
     let bind_addr = format!("0.0.0.0:{}", config.port);
     let max_upload_bytes = config.max_upload_bytes as usize;
+    let web_dir = config.web_dir.clone();
 
     // ── Combined OpenAPI spec ─────────────────────────────────────────────────
 
@@ -842,6 +865,24 @@ async fn main() -> std::io::Result<()> {
                     // Slides
                     .configure(slides::slides::api::configure)
                     .configure(slides::ai::api::configure),
+            )
+            // Static web app — registered last so API routes take priority.
+            // Falls back to index.html for client-side navigation.
+            .service(
+                actix_files::Files::new("/", &web_dir)
+                    .index_file("index.html")
+                    .use_last_modified(true)
+                    .use_etag(true)
+                    .default_handler({
+                        let index = format!("{}/index.html", web_dir);
+                        web::get().to(move || {
+                            let index = index.clone();
+                            async move {
+                                actix_files::NamedFile::open(&index)
+                                    .map_err(actix_web::error::ErrorNotFound)
+                            }
+                        })
+                    }),
             )
     })
     .bind(&bind_addr)?

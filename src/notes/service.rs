@@ -62,7 +62,7 @@ impl NotesService {
     }
 
     pub async fn list_notes(&self, user: &AuthenticatedUser) -> Result<ListNotesResponse, ApiError> {
-        let items = self.drive.list_files(&user.token, MIME_TYPE).await?;
+        let items = self.drive.list_files(user, MIME_TYPE).await?;
         let notes = items
             .into_iter()
             .map(|item| NoteMetaResponse {
@@ -88,14 +88,14 @@ impl NotesService {
         let id = Uuid::new_v4().to_string();
         let file = self
             .drive
-            .create_file(&user.token, &id, &title, MIME_TYPE, req.folder_id.as_deref())
+            .create_file(user, &id, &title, MIME_TYPE, req.folder_id.as_deref())
             .await?;
 
         let new_note = NewNoteRecord { file_id: &id };
         self.repo.insert_note(new_note)?;
 
         self.drive
-            .upload_content(&user.token, &id, EMPTY_NOTE_CONTENT, "create_note_content")
+            .upload_content(&id, EMPTY_NOTE_CONTENT, "create_note_content")
             .await?;
 
         Ok(NoteResponse {
@@ -115,14 +115,14 @@ impl NotesService {
     ) -> Result<NoteResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, note_id, "Note not found")
+            .get_file(user, note_id, "Note not found")
             .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Note is in trash"));
         }
         let content = self
             .drive
-            .get_content(&user.token, note_id, "Note content not found")
+            .get_content(note_id, "Note content not found")
             .await
             .unwrap_or_default();
         Ok(NoteResponse {
@@ -143,7 +143,7 @@ impl NotesService {
     ) -> Result<NoteMetaResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, note_id, "Note not found")
+            .get_file(user, note_id, "Note not found")
             .await?;
         match file.your_role.as_str() {
             "owner" | "editor" => {}
@@ -157,7 +157,7 @@ impl NotesService {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
                 self.drive
-                    .update_file_name(&user.token, note_id, &trimmed)
+                    .update_file_name(user, note_id, &trimmed)
                     .await?;
                 trimmed
             } else {
@@ -168,7 +168,7 @@ impl NotesService {
         };
 
         self.drive
-            .upload_content(&user.token, note_id, &req.content, "save_note_content")
+            .upload_content(note_id, &req.content, "save_note_content")
             .await?;
 
         // Parse [[wiki links]] and update note_links table.
@@ -176,7 +176,7 @@ impl NotesService {
         let target_ids = if linked_titles.is_empty() {
             Vec::new()
         } else {
-            let all_files = self.drive.list_files(&user.token, MIME_TYPE).await?;
+            let all_files = self.drive.list_files(user, MIME_TYPE).await?;
             let title_to_id: HashMap<String, String> = all_files
                 .into_iter()
                 .filter(|f| f.id != note_id) // exclude self-links
@@ -212,7 +212,7 @@ impl NotesService {
         // Verify the user can see this note.
         let file = self
             .drive
-            .get_file(&user.token, note_id, "Note not found")
+            .get_file(user, note_id, "Note not found")
             .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Note is in trash"));
@@ -221,7 +221,7 @@ impl NotesService {
         let source_ids = self.repo.get_backlink_source_ids(note_id)?;
         let mut backlinks = Vec::new();
         for source_id in &source_ids {
-            if let Ok(source_file) = self.drive.get_file(&user.token, source_id, "").await {
+            if let Ok(source_file) = self.drive.get_file(user, source_id, "").await {
                 if source_file.deleted_at.is_none() {
                     backlinks.push(NoteLinkItem {
                         id: source_file.id,
@@ -240,7 +240,7 @@ impl NotesService {
     ) -> Result<(), ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, note_id, "Note not found")
+            .get_file(user, note_id, "Note not found")
             .await?;
         match file.your_role.as_str() {
             "owner" => {}

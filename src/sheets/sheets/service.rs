@@ -69,7 +69,7 @@ impl SheetsService {
     }
 
     pub async fn list_sheets(&self, user: &AuthenticatedUser) -> Result<ListSheetsResponse, ApiError> {
-        let items = self.drive.list_files(&user.token, MIME_TYPE).await?;
+        let items = self.drive.list_files(user, MIME_TYPE).await?;
         let sheets = items
             .into_iter()
             .map(|item| SheetMetaResponse {
@@ -95,13 +95,13 @@ impl SheetsService {
         let id = Uuid::new_v4().to_string();
         let file = self
             .drive
-            .create_file(&user.token, &id, &title, MIME_TYPE, req.folder_id.as_deref())
+            .create_file(user, &id, &title, MIME_TYPE, req.folder_id.as_deref())
             .await?;
         let new_sheet = NewSheetRecord { file_id: &id };
         self.repo.insert_sheet(new_sheet)?;
 
         self.drive
-            .upload_content(&user.token, &id, EMPTY_SHEET_CONTENT, "upload_sheet_content")
+            .upload_content(&id, EMPTY_SHEET_CONTENT, "upload_sheet_content")
             .await?;
 
         let (content_url, content_write_url) = content_urls(&id);
@@ -123,7 +123,7 @@ impl SheetsService {
     ) -> Result<SheetResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, sheet_id, "Spreadsheet not found")
+            .get_file(user, sheet_id, "Spreadsheet not found")
             .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Spreadsheet is in trash"));
@@ -148,7 +148,7 @@ impl SheetsService {
     ) -> Result<SheetMetaResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, sheet_id, "Spreadsheet not found")
+            .get_file(user, sheet_id, "Spreadsheet not found")
             .await?;
         match file.your_role.as_str() {
             "owner" | "editor" => {}
@@ -161,7 +161,7 @@ impl SheetsService {
         let new_title = if let Some(ref title) = req.title {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(&user.token, sheet_id, &trimmed).await?;
+                self.drive.update_file_name(user, sheet_id, &trimmed).await?;
                 trimmed
             } else {
                 file.name.clone()

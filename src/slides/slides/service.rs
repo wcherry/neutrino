@@ -58,7 +58,7 @@ impl SlidesService {
     }
 
     pub async fn list_slides(&self, user: &AuthenticatedUser) -> Result<ListSlidesResponse, ApiError> {
-        let items = self.drive.list_files(&user.token, MIME_TYPE).await?;
+        let items = self.drive.list_files(user, MIME_TYPE).await?;
         let slides = items
             .into_iter()
             .map(|item| SlideMetaResponse {
@@ -84,13 +84,13 @@ impl SlidesService {
         let id = Uuid::new_v4().to_string();
         let file = self
             .drive
-            .create_file(&user.token, &id, &title, MIME_TYPE, req.folder_id.as_deref())
+            .create_file(user, &id, &title, MIME_TYPE, req.folder_id.as_deref())
             .await?;
         let new_slide = NewSlideRecord { file_id: &id };
         self.repo.insert_slide(new_slide)?;
 
         self.drive
-            .upload_content(&user.token, &id, EMPTY_SLIDES_CONTENT, "upload_slide_content")
+            .upload_content(&id, EMPTY_SLIDES_CONTENT, "upload_slide_content")
             .await?;
 
         let (content_url, content_write_url) = content_urls(&id);
@@ -112,7 +112,7 @@ impl SlidesService {
     ) -> Result<SlideResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, slide_id, "Presentation not found")
+            .get_file(user, slide_id, "Presentation not found")
             .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Presentation is in trash"));
@@ -214,7 +214,7 @@ impl SlidesService {
     ) -> Result<SlideMetaResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, slide_id, "Presentation not found")
+            .get_file(user, slide_id, "Presentation not found")
             .await?;
         match file.your_role.as_str() {
             "owner" | "editor" => {}
@@ -227,7 +227,7 @@ impl SlidesService {
         let new_title = if let Some(ref title) = req.title {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(&user.token, slide_id, &trimmed).await?;
+                self.drive.update_file_name(user, slide_id, &trimmed).await?;
                 trimmed
             } else {
                 file.name.clone()

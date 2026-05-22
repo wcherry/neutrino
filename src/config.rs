@@ -27,6 +27,8 @@ pub struct Config {
     // OAuth for calendar connections
     pub oauth: OAuthConfig,
     pub drive_base_url: String,
+
+    pub web_dir: String,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +103,8 @@ impl Config {
                 .unwrap_or_else(|_| format!("{}/api/v1/connections/outlook/callback", drive_base_url)),
         };
 
+        let web_dir = env::var("WEB_DIR").unwrap_or_else(|_| "web/apps/web/out".to_string());
+
         Ok(Config {
             port,
             log_level,
@@ -115,6 +119,7 @@ impl Config {
             jobs_per_worker,
             drive_base_url,
             oauth,
+            web_dir,
         })
     }
 }

@@ -36,7 +36,7 @@ impl NamedRangesService {
         // Verify the spreadsheet exists and the user can access it.
         let file = self
             .drive
-            .get_file(&user.token, sheet_db_id, "Spreadsheet not found")
+            .get_file(user, sheet_db_id, "Spreadsheet not found")
             .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Spreadsheet is in trash"));
@@ -97,7 +97,7 @@ impl NamedRangesService {
         if let Some(u) = user {
             let file = self
                 .drive
-                .get_file(&u.token, sheet_db_id, "Spreadsheet not found")
+                .get_file(u, sheet_db_id, "Spreadsheet not found")
                 .await?;
             if file.deleted_at.is_some() {
                 return Err(ApiError::not_found("Spreadsheet is in trash"));
@@ -105,10 +105,9 @@ impl NamedRangesService {
         }
 
         // Fetch the spreadsheet content from drive.
-        let token = user.map(|u| u.token.as_str()).unwrap_or("");
         let content_raw = self
             .drive
-            .get_content(token, sheet_db_id, "Spreadsheet content not found")
+            .get_content(sheet_db_id, "Spreadsheet content not found")
             .await?;
 
         let rows = extract_cell_data(

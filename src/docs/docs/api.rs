@@ -20,7 +20,7 @@ pub struct DocsApiState {
     security(("bearer_auth" = [])),
     tag = "docs"
 )]
-#[get("/docs")]
+#[get("")]
 pub async fn list_docs(
     state: web::Data<DocsApiState>,
     user: AuthenticatedUser,
@@ -40,7 +40,7 @@ pub async fn list_docs(
     security(("bearer_auth" = [])),
     tag = "docs"
 )]
-#[post("/docs")]
+#[post("")]
 pub async fn create_doc(
     state: web::Data<DocsApiState>,
     user: AuthenticatedUser,
@@ -64,7 +64,7 @@ pub async fn create_doc(
     security(("bearer_auth" = [])),
     tag = "docs"
 )]
-#[get("/docs/{id}")]
+#[get("/{id}")]
 pub async fn get_doc(
     state: web::Data<DocsApiState>,
     user: AuthenticatedUser,
@@ -90,7 +90,7 @@ pub async fn get_doc(
     security(("bearer_auth" = [])),
     tag = "docs"
 )]
-#[patch("/docs/{id}")]
+#[patch("/{id}")]
 pub async fn save_doc(
     state: web::Data<DocsApiState>,
     user: AuthenticatedUser,
@@ -119,7 +119,7 @@ pub async fn save_doc(
     security(("bearer_auth" = [])),
     tag = "docs"
 )]
-#[get("/docs/{id}/export/text")]
+#[get("/{id}/export/text")]
 pub async fn export_text(
     state: web::Data<DocsApiState>,
     user: AuthenticatedUser,

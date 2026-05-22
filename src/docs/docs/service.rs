@@ -32,7 +32,7 @@ impl DocsService {
     }
 
     pub async fn list_docs(&self, user: &AuthenticatedUser) -> Result<ListDocsResponse, ApiError> {
-        let items = self.drive.list_files(&user.token, MIME_TYPE).await?;
+        let items = self.drive.list_files(user, MIME_TYPE).await?;
         let docs = items
             .into_iter()
             .map(|item| DocMetaResponse {
@@ -58,7 +58,7 @@ impl DocsService {
         let id = Uuid::new_v4().to_string();
         let file = self
             .drive
-            .create_file(&user.token, &id, &title, MIME_TYPE, req.folder_id.as_deref())
+            .create_file(user, &id, &title, MIME_TYPE, req.folder_id.as_deref())
             .await?;
         let new_doc = NewDocRecord {
             file_id: &id,
@@ -68,7 +68,7 @@ impl DocsService {
 
         // Upload initial empty content to drive storage
         self.drive
-            .upload_content(&user.token, &id, EMPTY_DOC_CONTENT, "upload_doc_content")
+            .upload_content(&id, EMPTY_DOC_CONTENT, "upload_doc_content")
             .await?;
 
         let page_setup = default_page_setup();
@@ -92,7 +92,7 @@ impl DocsService {
     ) -> Result<DocResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, doc_id, "Document not found")
+            .get_file(user, doc_id, "Document not found")
             .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Document is in trash"));
@@ -121,7 +121,7 @@ impl DocsService {
     ) -> Result<DocMetaResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, doc_id, "Document not found")
+            .get_file(user, doc_id, "Document not found")
             .await?;
         match file.your_role.as_str() {
             "owner" | "editor" => {}
@@ -134,7 +134,7 @@ impl DocsService {
         let new_title = if let Some(ref title) = req.title {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(&user.token, doc_id, &trimmed).await?;
+                self.drive.update_file_name(user, doc_id, &trimmed).await?;
                 trimmed
             } else {
                 file.name.clone()
@@ -171,7 +171,7 @@ impl DocsService {
         content: &str,
     ) -> Result<(), ApiError> {
         self.drive
-            .upload_content(&user.token, doc_id, content, "write_doc_content")
+            .upload_content(doc_id, content, "write_doc_content")
             .await
     }
 
@@ -182,14 +182,14 @@ impl DocsService {
     ) -> Result<ExportTextResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, doc_id, "Document not found")
+            .get_file(user, doc_id, "Document not found")
             .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Document is in trash"));
         }
         let content = self
             .drive
-            .get_content(&user.token, doc_id, "Document content not found")
+            .get_content(doc_id, "Document content not found")
             .await?;
         let text = extract_text_from_tiptap_json(&content);
         let word_count = count_words(&text);

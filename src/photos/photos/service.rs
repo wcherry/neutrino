@@ -47,7 +47,7 @@ impl PhotosService {
     ) -> Result<PhotoResponse, ApiError> {
         let file = self
             .drive
-            .get_file(&user.token, &req.file_id, "File not found")
+            .get_file(user, &req.file_id, "File not found")
             .await?;
 
         if file.deleted_at.is_some() {
@@ -192,7 +192,7 @@ impl PhotosService {
         for r in &records {
             let file = self
                 .drive
-                .get_file(&user.token, &r.file_id, "File not found")
+                .get_file(user, &r.file_id, "File not found")
                 .await
                 .ok();
             responses.push(self.to_response(r.clone(), file.as_ref()));
@@ -215,7 +215,7 @@ impl PhotosService {
         }
         let file = self
             .drive
-            .get_file(&user.token, &photo.file_id, "File not found")
+            .get_file(user, &photo.file_id, "File not found")
             .await?;
         Ok(self.to_response(photo, Some(&file)))
     }
@@ -240,7 +240,7 @@ impl PhotosService {
         let updated = self.repo.update_photo(photo_id, changes)?;
         let file = self
             .drive
-            .get_file(&user.token, &updated.file_id, "File not found")
+            .get_file(user, &updated.file_id, "File not found")
             .await?;
         Ok(self.to_response(
             updated,
@@ -288,7 +288,7 @@ impl PhotosService {
         let updated = self.repo.update_photo(photo_id, changes)?;
         let file = self
             .drive
-            .get_file(&user.token, &updated.file_id, "File not found")
+            .get_file(user, &updated.file_id, "File not found")
             .await?;
         Ok(self.to_response(
             updated,
@@ -305,7 +305,7 @@ impl PhotosService {
         for r in &records {
             let file = self
                 .drive
-                .get_file(&user.token, &r.file_id, "File not found")
+                .get_file(user, &r.file_id, "File not found")
                 .await
                 .ok();
             responses.push(self.to_response(r.clone(), file.as_ref()));
@@ -345,7 +345,7 @@ impl PhotosService {
             }
             let file = self
                 .drive
-                .get_file(&user.token, &photo.file_id, "File not found")
+                .get_file(user, &photo.file_id, "File not found")
                 .await
                 .ok();
             responses.push(self.to_response(photo, file.as_ref()));
@@ -662,7 +662,7 @@ impl PhotosService {
         for r in records {
             let file = self
                 .drive
-                .get_file(&user.token, &r.file_id, "File not found")
+                .get_file(user, &r.file_id, "File not found")
                 .await
                 .ok();
             let name = file.map(|f| f.name).unwrap_or_else(|| "Unknown".to_string());

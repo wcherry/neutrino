@@ -3,8 +3,45 @@
 # neutrino — unified service Dockerfile
 # =============================================================================
 
-# ── Build Stage ──────────────────────────────────────────────────────────────
-FROM rust:1.93 AS builder
+# ── Web Build Stage ───────────────────────────────────────────────────────────
+FROM node:23-alpine AS web-builder
+
+WORKDIR /app
+
+RUN corepack enable
+
+# Copy workspace manifests first (for layer caching)
+COPY web/pnpm-lock.yaml web/pnpm-workspace.yaml web/package.json ./
+COPY web/.npmrc .npmrc
+COPY web/apps/web/package.json apps/web/package.json
+COPY web/packages/api-admin/package.json packages/api-admin/package.json
+COPY web/packages/api-calendar/package.json packages/api-calendar/package.json
+COPY web/packages/api-core/package.json packages/api-core/package.json
+COPY web/packages/api-docs/package.json packages/api-docs/package.json
+COPY web/packages/api-drive/package.json packages/api-drive/package.json
+COPY web/packages/api-notes/package.json packages/api-notes/package.json
+COPY web/packages/api-photos/package.json packages/api-photos/package.json
+COPY web/packages/api-sheets/package.json packages/api-sheets/package.json
+COPY web/packages/api-slides/package.json packages/api-slides/package.json
+COPY web/packages/sheet-embed/package.json packages/sheet-embed/package.json
+COPY web/packages/e2e-crypto/package.json packages/e2e-crypto/package.json
+COPY web/packages/auth/package.json packages/auth/package.json
+COPY web/packages/hooks/package.json packages/hooks/package.json
+COPY web/packages/layout/package.json packages/layout/package.json
+COPY web/packages/tokens/package.json packages/tokens/package.json
+COPY web/packages/ui/package.json packages/ui/package.json
+COPY web/packages/utils/package.json packages/utils/package.json
+
+RUN pnpm install --prod=false
+
+# Copy the rest of the web source and build
+COPY web/ .
+
+WORKDIR /app/apps/web
+RUN pnpm build
+
+# ── Rust Build Stage ──────────────────────────────────────────────────────────
+FROM rust:1.93 AS rust-builder
 
 WORKDIR /app
 
@@ -46,9 +83,12 @@ RUN apt-get update \
     && apt-get install -y openssl libssl3 curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/neutrino /usr/local/bin/service
+COPY --from=rust-builder /app/target/release/neutrino /usr/local/bin/service
+COPY --from=web-builder /app/apps/web/out /app/web
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+ENV WEB_DIR=/app/web
 
 EXPOSE 8080
 

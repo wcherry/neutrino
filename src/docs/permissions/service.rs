@@ -1,15 +1,17 @@
 use crate::shared::{fetch_auth_profile, ApiError, AuthenticatedUser};
+use crate::auth::service::AuthService;
 use crate::docs::permissions::{model::NewPermissionRecord, repository::PermissionsRepository};
 use std::sync::Arc;
 use uuid::Uuid;
 
 pub struct PermissionsService {
     repo: Arc<PermissionsRepository>,
+    auth_service: Arc<AuthService>,
 }
 
 impl PermissionsService {
-    pub fn new(repo: Arc<PermissionsRepository>) -> Self {
-        PermissionsService { repo }
+    pub fn new(repo: Arc<PermissionsRepository>, auth_service: Arc<AuthService>) -> Self {
+        PermissionsService { repo, auth_service }
     }
 
     /// Auto-grants Owner role when a document is created.
@@ -19,7 +21,7 @@ impl PermissionsService {
         resource_type: &str,
         resource_id: &str,
     ) -> Result<(), ApiError> {
-        let profile = fetch_auth_profile(user).await?;
+        let profile = fetch_auth_profile(user, &self.auth_service)?;
         let id = Uuid::new_v4().to_string();
         let record = NewPermissionRecord {
             id: &id,
