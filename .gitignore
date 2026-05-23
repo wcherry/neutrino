@@ -1,6 +1,6 @@
 /target/
 **/*.rs.bk
-
+/web/packages/ui/storybook-static/**
 *.db
 *.db-shm
 *.db-wal
