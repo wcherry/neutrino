@@ -108,6 +108,12 @@ export interface FileGridProps {
   onSortChange: (field: SortField, dir: SortDir) => void;
   defaultViewMode?: ViewMode;
   totalCount?: number;
+  /** Drag-and-drop handlers — wire these up to make the grid a drop target */
+  onDragEnter?: React.DragEventHandler<HTMLDivElement>;
+  onDragOver?: React.DragEventHandler<HTMLDivElement>;
+  onDragLeave?: React.DragEventHandler<HTMLDivElement>;
+  onDrop?: React.DragEventHandler<HTMLDivElement>;
+  isDraggingOver?: boolean;
 }
 
 export function FileGrid({
@@ -125,6 +131,11 @@ export function FileGrid({
   onSortChange,
   defaultViewMode = 'large',
   totalCount,
+  onDragEnter,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  isDraggingOver,
 }: FileGridProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
   const [filter, setFilter] = useState<FilterType>('all');
@@ -181,9 +192,12 @@ export function FileGrid({
     </div>
   );
 
+  const rootClass = [styles.root, isDraggingOver ? styles['root--drag-over'] : ''].filter(Boolean).join(' ');
+  const dragProps = { onDragEnter, onDragOver, onDragLeave, onDrop };
+
   if (isLoading) {
     return (
-      <div className={styles.root}>
+      <div className={rootClass} {...dragProps}>
         {toolbar}
         <div className={styles['list-container']}>
           <FileListSkeleton rows={8} />
@@ -193,7 +207,7 @@ export function FileGrid({
   }
 
   return (
-    <div className={styles.root}>
+    <div className={rootClass} {...dragProps}>
       {toolbar}
 
       {showFilter && (

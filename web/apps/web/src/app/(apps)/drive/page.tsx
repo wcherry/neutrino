@@ -592,14 +592,7 @@ export default function DrivePage() {
       </section>
 
       {/* All files */}
-      <section
-        className={[styles.section, isDraggingOver ? styles['section--drag-over'] : ''].filter(Boolean).join(' ')}
-        onDragEnter={handleAreaDragEnter}
-        onDragOver={handleAreaDragOver}
-        onDragLeave={handleAreaDragLeave}
-        onDrop={handleAreaDrop}
-        aria-labelledby="all-files-heading"
-      >
+      <section className={`${styles.section} ${styles['section-files']}`} aria-labelledby="all-files-heading">
         <Heading level={2} size="sm" id="all-files-heading">Files</Heading>
         <FileGrid
           items={gridItems}
@@ -628,6 +621,11 @@ export default function DrivePage() {
           onItemClick={handleGridItemClick}
           onItemMenuOpen={handleGridItemMenuOpen}
           onToggleStar={handleToggleStar}
+          onDragEnter={handleAreaDragEnter}
+          onDragOver={handleAreaDragOver}
+          onDragLeave={handleAreaDragLeave}
+          onDrop={handleAreaDrop}
+          isDraggingOver={isDraggingOver}
           showFilter
           showSizeColumn
           sortBy={sortBy}

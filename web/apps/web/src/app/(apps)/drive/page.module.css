@@ -3,32 +3,16 @@
   flex-direction: column;
   gap: var(--space-6);
   max-width: 1200px;
+  flex: 1;
+  min-height: 0;
 }
 
-/* Drag-over overlay: shows a dashed accent border around the files grid */
-.section--drag-over {
-  outline: 2px dashed var(--color-accent);
-  outline-offset: 4px;
-  border-radius: var(--radius-lg);
-  background-color: color-mix(in srgb, var(--color-accent) 4%, transparent);
-}
-
-/* Drop indicator pill that appears when dragging over the files area */
-.section--drag-over::after {
-  content: 'Drop to upload';
-  position: fixed;
-  bottom: 2rem;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: var(--color-accent);
-  color: #fff;
-  padding: var(--space-2) var(--space-5);
-  border-radius: var(--radius-full, 9999px);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-medium);
-  pointer-events: none;
-  z-index: 9998;
-  box-shadow: var(--shadow-md);
+/* The files section grows to fill remaining page height so the FileGrid drop target covers the empty area */
+.section-files {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* Page header */
