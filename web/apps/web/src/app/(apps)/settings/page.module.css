@@ -142,6 +142,66 @@
   cursor: not-allowed;
 }
 
+/* ── Theme picker ─────────────────────────────────────────────────────────── */
+.themeGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.themeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.themeCard:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-border-strong, #d1d5db);
+}
+
+.themeCardActive {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.themeCardActive:hover {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.themeSwatch {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 5px;
+  box-sizing: border-box;
+}
+
+.themeSwatchAccent {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+.themeCardLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  white-space: nowrap;
+}
+
 /* ── Appearance segmented control ────────────────────────────────────────── */
 .settingRow {
   display: flex;

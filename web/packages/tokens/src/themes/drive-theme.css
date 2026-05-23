@@ -1,5 +1,5 @@
-/* Drive theme — sets the accent color palette for the cloud storage app */
-[data-app="drive"] {
+/* Drive theme — accent palette for light and dark only; custom themes define their own accents */
+[data-app="drive"][data-theme="light"] {
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
   --color-accent-subtle: #eff6ff;

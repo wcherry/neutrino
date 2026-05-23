@@ -12,8 +12,8 @@ import React, {
 // Types
 // ---------------------------------------------------------------------------
 
-export type ThemeChoice = 'light' | 'dark' | 'system';
-export type ResolvedTheme = 'light' | 'dark';
+export type ThemeChoice = 'light' | 'dark' | 'system' | 'glass' | 'midnight' | 'beach' | 'forest' | 'sunbeams' | 'light-glass';
+export type ResolvedTheme = 'light' | 'dark' | 'glass' | 'midnight' | 'beach' | 'forest' | 'sunbeams' | 'light-glass';
 
 interface ThemeContextValue {
   theme: ThemeChoice;
@@ -27,13 +27,13 @@ interface ThemeContextValue {
 
 const STORAGE_KEY = 'neutrino.theme';
 
+const VALID_CHOICES: ThemeChoice[] = ['light', 'dark', 'system', 'glass', 'midnight', 'beach', 'forest', 'sunbeams', 'light-glass'];
+
 function readStoredTheme(): ThemeChoice {
   if (typeof window === 'undefined') return 'system';
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'light' || stored === 'dark' || stored === 'system') {
-      return stored;
-    }
+    const stored = localStorage.getItem(STORAGE_KEY) as ThemeChoice | null;
+    if (stored && VALID_CHOICES.includes(stored)) return stored;
   } catch {
     // localStorage unavailable (private browsing restrictions, etc.)
   }
@@ -41,12 +41,9 @@ function readStoredTheme(): ThemeChoice {
 }
 
 function resolveTheme(choice: ThemeChoice): ResolvedTheme {
-  if (choice === 'light') return 'light';
-  if (choice === 'dark') return 'dark';
+  if (choice !== 'system') return choice;
   if (typeof window !== 'undefined') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : 'light';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
   return 'light';
 }

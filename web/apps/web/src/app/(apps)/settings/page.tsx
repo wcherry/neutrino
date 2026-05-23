@@ -22,10 +22,16 @@ import styles from './page.module.css';
 // Constants
 // ---------------------------------------------------------------------------
 
-const THEME_OPTIONS: { value: ThemeChoice; label: string }[] = [
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
-  { value: 'system', label: 'System' },
+const THEME_OPTIONS: { value: ThemeChoice; label: string; bg: string; accent: string }[] = [
+  { value: 'light',       label: 'Light',       bg: '#ffffff',                                                           accent: '#2563eb' },
+  { value: 'dark',        label: 'Dark',        bg: '#0f172a',                                                           accent: '#3b82f6' },
+  { value: 'system',      label: 'System',      bg: 'linear-gradient(135deg, #ffffff 50%, #0f172a 50%)',                 accent: '#6b7280' },
+  { value: 'light-glass', label: 'Light Glass', bg: 'linear-gradient(135deg, #dbeafe 0%, #ede9fe 55%, #fce7f3 100%)',   accent: '#6366f1' },
+  { value: 'glass',       label: 'Glass',       bg: '#0e1621',                                                           accent: '#38bdf8' },
+  { value: 'midnight',    label: 'Midnight',    bg: '#06060f',                                                           accent: '#818cf8' },
+  { value: 'beach',       label: 'Beach',       bg: '#fdf8f0',                                                           accent: '#0ea5e9' },
+  { value: 'forest',      label: 'Forest',      bg: '#1a2416',                                                           accent: '#4ade80' },
+  { value: 'sunbeams',    label: 'Sunbeams',    bg: '#fdfaf0',                                                           accent: '#d97706' },
 ];
 
 const WEEK_START_OPTIONS: { value: number; label: string }[] = [
@@ -404,7 +410,7 @@ const qc = useQueryClient();
   });
 
   function handleThemeSave() {
-    applyTheme(theme as 'light' | 'dark' | 'system');
+    applyTheme(theme);
     save.mutate({ theme });
     setThemeSaved(true);
     setTimeout(() => setThemeSaved(false), 2000);
@@ -525,20 +531,24 @@ const qc = useQueryClient();
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>Appearance</h2>
 
-            <div className={styles.settingRow}>
+            <div className={styles.formGroup}>
               <div className={styles.settingInfo}>
                 <div className={styles.settingName}>Theme</div>
                 <div className={styles.settingDesc}>Choose the color scheme for the interface</div>
               </div>
-              <div className={styles.segmented}>
+              <div className={styles.themeGrid}>
                 {THEME_OPTIONS.map((opt) => (
                   <button
                     key={opt.value}
                     type="button"
-                    className={`${styles.segmentedBtn} ${theme === opt.value ? styles.segmentedBtnActive : ''}`}
-                    onClick={() => setTheme(opt.value)}
+                    className={`${styles.themeCard} ${theme === opt.value ? styles.themeCardActive : ''}`}
+                    onClick={() => { setTheme(opt.value); applyTheme(opt.value); }}
+                    title={opt.label}
                   >
-                    {opt.label}
+                    <span className={styles.themeSwatch} style={{ background: opt.bg }}>
+                      <span className={styles.themeSwatchAccent} style={{ background: opt.accent }} />
+                    </span>
+                    <span className={styles.themeCardLabel}>{opt.label}</span>
                   </button>
                 ))}
               </div>

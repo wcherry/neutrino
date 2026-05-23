@@ -6,6 +6,7 @@
   border-right: 1px solid var(--color-border);
   overflow-y: auto;
   overflow-x: hidden;
+  backdrop-filter: var(--glass-backdrop, none);
 }
 
 /* Logo area */
