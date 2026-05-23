@@ -35,6 +35,7 @@ import { ShareDialog } from './ShareDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
+import featureFlags from '@/lib/featureFlags';
 import styles from './page.module.css';
 
 
@@ -117,6 +118,10 @@ export default function DrivePage() {
   const [sortBy, setSortBy] = useState<SortField>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  // Track drag depth to handle dragLeave correctly across child elements.
+  const dragDepthRef = useRef(0);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [infoFile, setInfoFile] = useState<FileItem | null>(null);
@@ -416,8 +421,53 @@ export default function DrivePage() {
     );
   }
 
+  // ── Area-wide drag-and-drop (gated by feature flag) ──────────────────────────
+  const handleAreaDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!featureFlags.driveAreaDropTarget) return;
+    // Only react to file drags, not text/link drags.
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+    dragDepthRef.current += 1;
+    if (dragDepthRef.current === 1) {
+      e.preventDefault();
+      setIsDraggingOver(true);
+    }
+  }, []);
+
+  const handleAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!featureFlags.driveAreaDropTarget) return;
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!featureFlags.driveAreaDropTarget) return;
+    dragDepthRef.current -= 1;
+    if (dragDepthRef.current === 0) {
+      setIsDraggingOver(false);
+    }
+  }, []);
+
+  const handleAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!featureFlags.driveAreaDropTarget) return;
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      setDroppedFiles(files);
+      setUploadOpen(true);
+    }
+  }, []);
+
   return (
-    <div className={styles.page}>
+    <div
+      className={[styles.page, isDraggingOver ? styles['page--drag-over'] : ''].filter(Boolean).join(' ')}
+      onDragEnter={handleAreaDragEnter}
+      onDragOver={handleAreaDragOver}
+      onDragLeave={handleAreaDragLeave}
+      onDrop={handleAreaDrop}
+    >
       {/* Page header */}
       <div className={styles.header}>
         <div className={styles['header-left']}>
@@ -587,7 +637,13 @@ export default function DrivePage() {
       </section>
 
       {/* Overlays */}
-      {uploadOpen && <UploadZone onClose={() => setUploadOpen(false)} folderId={currentFolderId} />}
+      {uploadOpen && (
+        <UploadZone
+          onClose={() => { setUploadOpen(false); setDroppedFiles(null); }}
+          folderId={currentFolderId}
+          initialFiles={droppedFiles ?? undefined}
+        />
+      )}
       {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
       {docPreview && (
         <DocumentPreviewModal id={docPreview.id} kind={docPreview.kind} onClose={() => setDocPreview(null)} />

@@ -3,6 +3,34 @@
   flex-direction: column;
   gap: var(--space-6);
   max-width: 1200px;
+  position: relative;
+  border-radius: var(--radius-lg);
+  transition: outline-color var(--duration-fast) var(--ease-default);
+}
+
+/* Drag-over overlay: shows a dashed accent border around the entire drive area */
+.page--drag-over {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 4px;
+  background-color: color-mix(in srgb, var(--color-accent) 4%, transparent);
+}
+
+/* Full-page drop indicator label that appears when dragging over */
+.page--drag-over::after {
+  content: 'Drop to upload';
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--color-accent);
+  color: #fff;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-medium);
+  pointer-events: none;
+  z-index: 9998;
+  box-shadow: var(--shadow-md);
 }
 
 /* Page header */
