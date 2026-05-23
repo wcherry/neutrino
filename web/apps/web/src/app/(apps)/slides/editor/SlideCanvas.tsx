@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useRef } from 'react';
-import type { Slide, SlideElement, TextElement, ShapeElement, SheetEmbedElement } from './slideEditorTypes';
+import type { Slide, SlideElement, TextElement, ShapeElement, SheetEmbedElement, VideoElement } from './slideEditorTypes';
 import { SHAPE_CATALOG, RESIZE_HANDLES } from './slideEditorConstants';
-import { slideBackgroundStyle } from './slideEditorHelpers';
+import { slideBackgroundStyle, getVideoEmbedInfo } from './slideEditorHelpers';
 import { SheetEmbedRenderer } from '@neutrino/sheet-embed';
 import type { CellValue } from '@neutrino/sheet-embed';
 import styles from './page.module.css';
@@ -139,7 +139,7 @@ export default function SlideCanvas({
 
     function onMove(me: MouseEvent) {
       if (!resizeState.current) return;
-      const { handle: h, startMouseX, startMouseY, startX, startY, startW, startH } = resizeState.current;
+      const { handle: h, startMouseX, startMouseY, startX, startY, startW, startH, elementId } = resizeState.current;
       const dx = ((me.clientX - startMouseX) / rect.width) * 100;
       const dy = ((me.clientY - startMouseY) / rect.height) * 100;
 
@@ -158,9 +158,27 @@ export default function SlideCanvas({
         newH = startH - clampedDy;
       }
 
-      onUpdateElement(resizeState.current.elementId, (elem) => ({
-        ...elem, x: newX, y: newY, w: newW, h: newH,
-      }));
+      // Lock aspect ratio for video elements on a 16:9 slide.
+      // 16:9 video → h% = w%  (ratio 1)
+      // 9:16 Shorts → h% = w% × (16/9)/(9/16) = w% × 256/81
+      onUpdateElement(elementId, (elem) => {
+        if (elem.type === 'video') {
+          const { isPortrait } = getVideoEmbedInfo((elem as VideoElement).url);
+          const ratio = isPortrait ? 256 / 81 : 1;
+          const deltaW = Math.abs(newW - startW);
+          const deltaH = Math.abs(newH - startH);
+          if (deltaW >= deltaH) {
+            const lockedH = newW * ratio;
+            if (h.includes('n')) newY = startY + startH - lockedH;
+            newH = lockedH;
+          } else {
+            const lockedW = newH / ratio;
+            if (h.includes('w')) newX = startX + startW - lockedW;
+            newW = lockedW;
+          }
+        }
+        return { ...elem, x: newX, y: newY, w: newW, h: newH };
+      });
     }
 
     function onUp() {
@@ -318,6 +336,76 @@ export default function SlideCanvas({
                 onRemove={() => onEmbedRemove?.(el.id)}
               />
               {isSelected && RESIZE_HANDLES.map((h) => (
+                <div
+                  key={h.id}
+                  className={styles.resizeHandle}
+                  style={{ top: h.top, left: h.left, cursor: h.cursor }}
+                  onMouseDown={(e) => handleResizeMouseDown(e, el.id, el, h.id)}
+                />
+              ))}
+            </div>
+          );
+        }
+
+        if (el.type === 'video') {
+          const videoEl = el as VideoElement;
+          const info = getVideoEmbedInfo(videoEl.url, {
+            startSeconds: videoEl.startSeconds,
+            autoplay: videoEl.autoplay,
+            loop: videoEl.loop,
+            muted: videoEl.muted,
+          });
+          // isEditing doubles as "play mode" for video — overlay is removed so the
+          // iframe can receive pointer events and the video can actually be played.
+          return (
+            <div
+              key={el.id}
+              className={`${styles.slideElement} ${isSelected ? styles.slideElementSelected : ''}`}
+              style={{
+                left: `${el.x}%`,
+                top: `${el.y}%`,
+                width: `${el.w}%`,
+                height: `${el.h}%`,
+                cursor: isEditing ? 'default' : 'move',
+                overflow: 'hidden',
+                background: '#000',
+              }}
+              onMouseDown={(e) => { if (!isEditing) handleMouseDown(e, el.id, el); }}
+              onDoubleClick={(e) => { e.stopPropagation(); onStartEdit(el.id); }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {info.isPortrait ? (
+                <div className={styles.shortVideoContainer}>
+                  <iframe
+                    src={info.embedUrl}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                    allowFullScreen
+                    title="Video embed"
+                  />
+                </div>
+              ) : info.provider === 'mp4' ? (
+                <video
+                  src={info.embedUrl}
+                  controls
+                  autoPlay={videoEl.autoplay}
+                  loop={videoEl.loop}
+                  muted={videoEl.muted}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <iframe
+                  src={info.embedUrl}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                  allowFullScreen
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  title="Video embed"
+                />
+              )}
+              {/* Transparent overlay captures mouse events for drag/resize when not in play mode */}
+              {!isEditing && (
+                <div style={{ position: 'absolute', inset: 0, cursor: 'move' }} />
+              )}
+              {isSelected && !isEditing && RESIZE_HANDLES.map((h) => (
                 <div
                   key={h.id}
                   className={styles.resizeHandle}

@@ -35,6 +35,66 @@ export function bgPreviewStyle(bg: SlideBackground): React.CSSProperties {
   return { background: bg.value };
 }
 
+export type VideoProvider = 'youtube' | 'vimeo' | 'loom' | 'mp4';
+
+export interface VideoEmbedInfo {
+  provider: VideoProvider;
+  embedUrl: string;
+  thumbnailUrl?: string;
+  /** True for portrait (9:16) formats such as YouTube Shorts. */
+  isPortrait: boolean;
+}
+
+export interface VideoEmbedOpts {
+  startSeconds?: number;
+  autoplay?: boolean;
+  loop?: boolean;
+  muted?: boolean;
+}
+
+export function getVideoEmbedInfo(url: string, opts: VideoEmbedOpts = {}): VideoEmbedInfo {
+  const { startSeconds, autoplay, loop, muted } = opts;
+  const isShorts = /youtube\.com\/shorts\//.test(url);
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  if (ytMatch) {
+    const id = ytMatch[1];
+    const params = new URLSearchParams({ enablejsapi: '1' });
+    if (startSeconds) params.set('start', String(Math.floor(startSeconds)));
+    if (autoplay) params.set('autoplay', '1');
+    if (loop) { params.set('loop', '1'); params.set('playlist', id); }
+    if (muted) params.set('mute', '1');
+    return {
+      provider: 'youtube',
+      embedUrl: `https://www.youtube.com/embed/${id}?${params}`,
+      thumbnailUrl: `https://img.youtube.com/vi/${id}/hqdefault.jpg`,
+      isPortrait: isShorts,
+    };
+  }
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+  if (vimeoMatch) {
+    const params = new URLSearchParams();
+    if (startSeconds) params.set('t', String(Math.floor(startSeconds)));
+    if (autoplay) params.set('autoplay', '1');
+    if (loop) params.set('loop', '1');
+    if (muted) params.set('muted', '1');
+    const query = params.toString();
+    return {
+      provider: 'vimeo',
+      embedUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}${query ? `?${query}` : ''}`,
+      isPortrait: false,
+    };
+  }
+  const loomMatch = url.match(/loom\.com\/share\/([a-f0-9]+)/i);
+  if (loomMatch) {
+    return {
+      provider: 'loom',
+      embedUrl: `https://www.loom.com/embed/${loomMatch[1]}`,
+      isPortrait: false,
+    };
+  }
+  return { provider: 'mp4', embedUrl: url, isPortrait: false };
+}
+
 export function dbThemeToTheme(t: SlideTheme): Theme {
   return {
     name: t.name,

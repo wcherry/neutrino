@@ -61,7 +61,22 @@ export interface SheetEmbedElement {
   animation?: ElementAnimation;
 }
 
-export type SlideElement = TextElement | ShapeElement | SheetEmbedElement;
+export interface VideoElement {
+  id: string;
+  type: 'video';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  url: string;
+  autoplay: boolean;
+  loop: boolean;
+  muted: boolean;
+  startSeconds?: number;
+  animation?: ElementAnimation;
+}
+
+export type SlideElement = TextElement | ShapeElement | SheetEmbedElement | VideoElement;
 
 export type SlideBackground =
   | { type: 'color'; value: string }
