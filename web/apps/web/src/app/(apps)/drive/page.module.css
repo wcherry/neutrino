@@ -3,20 +3,18 @@
   flex-direction: column;
   gap: var(--space-6);
   max-width: 1200px;
-  position: relative;
-  border-radius: var(--radius-lg);
-  transition: outline-color var(--duration-fast) var(--ease-default);
 }
 
-/* Drag-over overlay: shows a dashed accent border around the entire drive area */
-.page--drag-over {
+/* Drag-over overlay: shows a dashed accent border around the files grid */
+.section--drag-over {
   outline: 2px dashed var(--color-accent);
   outline-offset: 4px;
+  border-radius: var(--radius-lg);
   background-color: color-mix(in srgb, var(--color-accent) 4%, transparent);
 }
 
-/* Full-page drop indicator label that appears when dragging over */
-.page--drag-over::after {
+/* Drop indicator pill that appears when dragging over the files area */
+.section--drag-over::after {
   content: 'Drop to upload';
   position: fixed;
   bottom: 2rem;

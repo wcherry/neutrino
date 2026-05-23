@@ -461,13 +461,7 @@ export default function DrivePage() {
   }, []);
 
   return (
-    <div
-      className={[styles.page, isDraggingOver ? styles['page--drag-over'] : ''].filter(Boolean).join(' ')}
-      onDragEnter={handleAreaDragEnter}
-      onDragOver={handleAreaDragOver}
-      onDragLeave={handleAreaDragLeave}
-      onDrop={handleAreaDrop}
-    >
+    <div className={styles.page}>
       {/* Page header */}
       <div className={styles.header}>
         <div className={styles['header-left']}>
@@ -598,7 +592,14 @@ export default function DrivePage() {
       </section>
 
       {/* All files */}
-      <section className={styles.section} aria-labelledby="all-files-heading">
+      <section
+        className={[styles.section, isDraggingOver ? styles['section--drag-over'] : ''].filter(Boolean).join(' ')}
+        onDragEnter={handleAreaDragEnter}
+        onDragOver={handleAreaDragOver}
+        onDragLeave={handleAreaDragLeave}
+        onDrop={handleAreaDrop}
+        aria-labelledby="all-files-heading"
+      >
         <Heading level={2} size="sm" id="all-files-heading">Files</Heading>
         <FileGrid
           items={gridItems}
