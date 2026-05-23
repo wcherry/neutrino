@@ -41,6 +41,7 @@ import {
   Grid,
   ChevronsRight,
   Eraser,
+  Video,
 } from 'lucide-react';
 import { Button } from '@neutrino/ui';
 import { slidesApi, driveReadContent, driveWriteContent, driveWriteEncryptedContent, storageApi } from '@/lib/api';
@@ -58,6 +59,7 @@ import type {
   ElementAnimation,
   TextElement,
   ShapeElement,
+  VideoElement,
   SlideElement,
   SlideBackground,
   Slide,
@@ -74,7 +76,7 @@ import {
   makeDefaultMaster,
   uid,
 } from './slideEditorConstants';
-import { slideBackgroundStyle, dbThemeToTheme } from './slideEditorHelpers';
+import { slideBackgroundStyle, dbThemeToTheme, getVideoEmbedInfo } from './slideEditorHelpers';
 import { exportAsPptx } from './pptxExport';
 import BackgroundPicker from './BackgroundPicker';
 import SlideCanvas from './SlideCanvas';
@@ -84,7 +86,7 @@ import { LayoutPreview, ThemePreview } from './slideEditorPreviews';
 import styles from './page.module.css';
 
 // ── Re-exports ────────────────────────────────────────────────────────────────
-export type { TextStyle, ElementAnimation, TextElement, ShapeElement, SheetEmbedElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
+export type { TextStyle, ElementAnimation, TextElement, ShapeElement, VideoElement, SheetEmbedElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
 // importFromPptx is intentionally NOT re-exported here so that pptxImport (and
 // its jszip dependency) stays out of the initial bundle. Callers that need it
 // should use: const { importFromPptx } = await import('./pptxImport')
@@ -122,6 +124,8 @@ export function SlideEditor() {
   function zoomOut() { setZoom((z) => [...ZOOM_STEPS].reverse().find((s) => s < z) ?? z); }
   const [importError, setImportError] = useState<string | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [videoDialogOpen, setVideoDialogOpen] = useState(false);
+  const [videoUrlInput, setVideoUrlInput] = useState('');
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef('');
@@ -233,6 +237,18 @@ export function SlideEditor() {
   useEffect(() => {
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, []);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.key !== 'Delete' && e.key !== 'Backspace') || !selectedElementId || editingElementId) return;
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      deleteElement(selectedElementId);
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedElementId, editingElementId]);
 
   // ── Slide operations ─────────────────────────────────────────────────────
 
@@ -387,6 +403,28 @@ export function SlideEditor() {
       fill: presentation.theme.primaryColor,
       stroke: 'transparent',
       strokeWidth: 0,
+    };
+    updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+    setSelectedElementId(el.id);
+  }
+
+  // ── Video embed operations ────────────────────────────────────────────────
+
+  function addVideo(url: string) {
+    const { isPortrait } = getVideoEmbedInfo(url);
+    // On a 16:9 slide: landscape (16:9) → h% = w%; portrait (9:16) → h% = w% × 256/81.
+    // Shorts default: w=25 → h≈79, centered horizontally.
+    const defaults = isPortrait
+      ? { x: 37.5, y: 10, w: 25, h: Math.round(25 * 256 / 81) }
+      : { x: 10, y: 10, w: 80, h: 80 };
+    const el: VideoElement = {
+      id: uid(),
+      type: 'video',
+      ...defaults,
+      url,
+      autoplay: false,
+      loop: false,
+      muted: false,
     };
     updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
     setSelectedElementId(el.id);
@@ -684,6 +722,59 @@ export function SlideEditor() {
         <button className={styles.toolbarBtn} onClick={() => addShape('circle')} title="Add circle">
           <Circle size={16} /> Circle
         </button>
+        <button className={styles.toolbarBtn} onClick={() => { setVideoUrlInput(''); setVideoDialogOpen(true); }} title="Add video">
+          <Video size={16} /> Video
+        </button>
+
+        {selectedElement?.type === 'video' && (
+          <>
+            <div className={styles.toolbarDivider} />
+            <label className={styles.toolbarLabel} title="Autoplay">
+              <input
+                type="checkbox"
+                checked={(selectedElement as VideoElement).autoplay}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, autoplay: e.target.checked } as VideoElement))}
+              />
+              Autoplay
+            </label>
+            <label className={styles.toolbarLabel} title="Loop">
+              <input
+                type="checkbox"
+                checked={(selectedElement as VideoElement).loop}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, loop: e.target.checked } as VideoElement))}
+              />
+              Loop
+            </label>
+            <label className={styles.toolbarLabel} title="Muted">
+              <input
+                type="checkbox"
+                checked={(selectedElement as VideoElement).muted}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, muted: e.target.checked } as VideoElement))}
+              />
+              Muted
+            </label>
+            <span className={styles.toolbarLabel} title="Start time in seconds">
+              Start
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={(selectedElement as VideoElement).startSeconds ?? 0}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, startSeconds: parseInt(e.target.value) || 0 } as VideoElement))}
+                className={styles.toolbarNumberInput}
+                title="Start time (seconds)"
+              />
+              s
+            </span>
+            <button
+              className={styles.toolbarBtn}
+              onClick={() => deleteElement(selectedElement.id)}
+              title="Delete video"
+            >
+              <Trash2 size={16} />
+            </button>
+          </>
+        )}
 
         {selectedElement?.type === 'text' && (
           <>
@@ -1187,6 +1278,46 @@ export function SlideEditor() {
           onPasteAsEmbed={sheetPasteDialogState.onPasteAsEmbed}
           onClose={sheetPasteDialogState.onClose}
         />
+      )}
+
+      {videoDialogOpen && (
+        <div className={styles.dialogOverlay} onClick={() => setVideoDialogOpen(false)}>
+          <div className={styles.dialogBox} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.dialogTitle}>Insert Video</div>
+            <p className={styles.dialogHint}>Paste a YouTube, Vimeo, Loom, or direct video URL.</p>
+            <input
+              className={styles.dialogInput}
+              type="url"
+              placeholder="https://www.youtube.com/watch?v=…"
+              value={videoUrlInput}
+              onChange={(e) => setVideoUrlInput(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && videoUrlInput.trim()) {
+                  addVideo(videoUrlInput.trim());
+                  setVideoDialogOpen(false);
+                } else if (e.key === 'Escape') {
+                  setVideoDialogOpen(false);
+                }
+              }}
+            />
+            <div className={styles.dialogActions}>
+              <button className={styles.dialogCancelBtn} onClick={() => setVideoDialogOpen(false)}>Cancel</button>
+              <button
+                className={styles.dialogConfirmBtn}
+                disabled={!videoUrlInput.trim()}
+                onClick={() => {
+                  if (videoUrlInput.trim()) {
+                    addVideo(videoUrlInput.trim());
+                    setVideoDialogOpen(false);
+                  }
+                }}
+              >
+                Insert
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

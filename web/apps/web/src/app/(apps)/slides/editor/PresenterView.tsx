@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import type { SlidePresentation, TextElement, ShapeElement } from './slideEditorTypes';
-import { slideBackgroundStyle, getAnimationStyle } from './slideEditorHelpers';
+import type { SlidePresentation, TextElement, ShapeElement, VideoElement } from './slideEditorTypes';
+import { slideBackgroundStyle, getAnimationStyle, getVideoEmbedInfo } from './slideEditorHelpers';
 import { ShapeRenderer } from './SlideCanvas';
 import styles from './page.module.css';
 
@@ -101,6 +101,50 @@ export default function PresenterView({ presentation, onExit }: PresenterViewPro
                   style={{ position: 'absolute', left: `${el.x}%`, top: `${el.y}%`, width: `${el.w}%`, height: `${el.h}%`, ...animStyle }}
                 >
                   <ShapeRenderer el={shapeEl} />
+                </div>
+              );
+            }
+            if (el.type === 'video') {
+              const videoEl = el as VideoElement;
+              const info = getVideoEmbedInfo(videoEl.url, {
+                startSeconds: videoEl.startSeconds,
+                autoplay: videoEl.autoplay,
+                loop: videoEl.loop,
+                muted: videoEl.muted,
+              });
+              const animStyle = getAnimationStyle(el.animation);
+              return (
+                <div
+                  key={`${el.id}-${animKey}`}
+                  style={{ position: 'absolute', left: `${el.x}%`, top: `${el.y}%`, width: `${el.w}%`, height: `${el.h}%`, overflow: 'hidden', background: '#000', ...animStyle }}
+                >
+                  {info.isPortrait ? (
+                    <div className={styles.shortVideoContainer}>
+                      <iframe
+                        src={info.embedUrl}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                        allowFullScreen
+                        title="Video embed"
+                      />
+                    </div>
+                  ) : info.provider === 'mp4' ? (
+                    <video
+                      src={info.embedUrl}
+                      controls
+                      autoPlay={videoEl.autoplay}
+                      loop={videoEl.loop}
+                      muted={videoEl.muted}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <iframe
+                      src={info.embedUrl}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                      allowFullScreen
+                      style={{ width: '100%', height: '100%', border: 'none' }}
+                      title="Video embed"
+                    />
+                  )}
                 </div>
               );
             }
