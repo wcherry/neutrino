@@ -29,6 +29,9 @@ export type CellStyle = {
 export type SavedCell = {
     id: string;
     raw?: string;
+    /** Pre-computed display value. Formulas store their evaluated result here so
+     *  the embed API can serve display values without re-evaluating formulas. */
+    value?: string;
     cellStyle?: CellStyle;
     colSpan?: number,      // columns this cell spans (>1 = merge anchor)
     rowSpan?: number,      // rows this cell spans (>1 = merge anchor)

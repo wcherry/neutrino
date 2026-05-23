@@ -295,15 +295,15 @@ export default function DrivePage() {
     const file = fileMap.get(item.id);
     if (!file) return;
     if (file.mimeType === DOC_MIME) {
-      setDocPreview({ id: file.id, kind: 'doc' });
+      router.push(`/docs/editor?id=${file.id}`);
     } else if (file.mimeType === SHEET_MIME) {
-      setDocPreview({ id: file.id, kind: 'sheet' });
+      router.push(`/sheets/editor?id=${file.id}`);
     } else if (file.mimeType === SLIDES_MIME) {
-      setDocPreview({ id: file.id, kind: 'slide' });
+      router.push(`/slides/editor?id=${file.id}`);
     } else {
       setPreviewFile(file);
     }
-  }, [fileMap, folderMap, openFolder]);
+  }, [fileMap, folderMap, openFolder, router]);
 
   const handleGridItemMenuOpen = useCallback((item: GridItem, e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -501,11 +501,11 @@ export default function DrivePage() {
                   date: file.updatedAt,
                   onClick: () => {
                     if (file.mimeType === DOC_MIME) {
-                      setDocPreview({ id: file.id, kind: 'doc' });
+                      router.push(`/docs/editor?id=${file.id}`);
                     } else if (file.mimeType === SHEET_MIME) {
-                      setDocPreview({ id: file.id, kind: 'sheet' });
+                      router.push(`/sheets/editor?id=${file.id}`);
                     } else if (file.mimeType === SLIDES_MIME) {
-                      setDocPreview({ id: file.id, kind: 'slide' });
+                      router.push(`/slides/editor?id=${file.id}`);
                     } else {
                       setPreviewFile(file);
                     }

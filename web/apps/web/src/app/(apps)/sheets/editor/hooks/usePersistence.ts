@@ -8,14 +8,14 @@ import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent
 import { computeCell, type SheetRef } from '../formula';
 
 /**
- * First pass: build a raw (unevaluated) CellProps map from saved cell records.
- * Values are left empty until re-evaluated in parseSheetDataWithContext.
+ * First pass: build a CellProps map from saved cell records, carrying over the
+ * pre-computed value so formula lookups have a baseline during evaluation.
  */
 function buildRawSheetMap(sheetData: SheetFile['sheets'][0]): Map<string, CellProps> {
     return new Map(
         Object.values(sheetData.cells).map(c => [
             c.id,
-            { id: c.id, raw: c.raw, edit: false, cellStyle: c.cellStyle,
+            { id: c.id, raw: c.raw, value: c.value, edit: false, cellStyle: c.cellStyle,
                 colSpan: c.colSpan, rowSpan: c.rowSpan, mergeAnchor: c.mergeAnchor },
         ])
     );
@@ -24,12 +24,15 @@ function buildRawSheetMap(sheetData: SheetFile['sheets'][0]): Map<string, CellPr
 /**
  * Second pass: evaluate all formulas in a sheet with access to all sheets
  * (needed for cross-sheet references like =Beta!C4).
+ * Mutates the map in-place so each cell sees freshly computed values from
+ * cells evaluated earlier in iteration order, enabling formula chains to work.
  */
 function evaluateSheetMap(map: Map<string, CellProps>, allSheets: SheetRef[]): Map<string, CellProps> {
-    return new Map([...map.values()].map(c => {
-        const { value, deps } = computeCell(c.raw || '', map, allSheets);
-        return [c.id, { ...c, value, deps } as CellProps];
-    }));
+    for (const [id, cell] of map) {
+        const { value, deps } = computeCell(cell.raw || '', map, allSheets);
+        map.set(id, { ...cell, value, deps });
+    }
+    return map;
 }
 
 export function usePersistence({
@@ -76,8 +79,8 @@ export function usePersistence({
         const fileSheets = sheetsDataRef.current.map((sheetData, i) => {
             const cells: SheetFile['sheets'][0]['cells'] = {};
             for (const [id, cell] of sheetData) {
-                cells[id] = { id, raw: cell.raw, cellStyle: cell.cellStyle, colSpan: cell.colSpan,
-                    rowSpan: cell.rowSpan, mergeAnchor: cell.mergeAnchor };
+                cells[id] = { id, raw: cell.raw, value: cell.value, cellStyle: cell.cellStyle,
+                    colSpan: cell.colSpan, rowSpan: cell.rowSpan, mergeAnchor: cell.mergeAnchor };
             }
             const cw = sheetsColWidthsRef.current[i];
             const rh = sheetsRowHeightsRef.current[i];

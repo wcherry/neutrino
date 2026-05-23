@@ -21,6 +21,15 @@ const featureFlags = {
    * Default: off
    */
   slidesVideoEmbeds: process.env.NEXT_PUBLIC_FEATURE_SLIDES_VIDEO_EMBEDS === 'true',
+
+  /**
+   * Live sheet embeds in the slides editor.
+   * Enables pasting a copied Sheets selection as a live embed block, and adds
+   * a "Sheet" toolbar button to insert an embed by spreadsheet ID and range.
+   * Env var: NEXT_PUBLIC_FEATURE_SHEET_LIVE_EMBED
+   * Default: off
+   */
+  sheetLiveEmbed: process.env.NEXT_PUBLIC_FEATURE_SHEET_LIVE_EMBED === 'true',
 } as const;
 
 export default featureFlags;

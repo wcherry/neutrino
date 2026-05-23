@@ -42,6 +42,7 @@ import {
   ChevronsRight,
   Eraser,
   Video,
+  Table2,
 } from 'lucide-react';
 import { Button } from '@neutrino/ui';
 import { slidesApi, driveReadContent, driveWriteContent, driveWriteEncryptedContent, storageApi } from '@/lib/api';
@@ -50,8 +51,10 @@ import { decryptFile } from '@neutrino/e2e-crypto';
 import type { SlideTheme } from '@neutrino/api-slides';
 import { FONT_FAMILY_NAMES as FONT_FAMILIES } from '@/constants/editor';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
+import featureFlags from '@/lib/featureFlags';
 import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-embed';
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
+import { InsertSheetDialog } from './InsertSheetDialog';
 
 // ── Domain modules ────────────────────────────────────────────────────────────
 import type {
@@ -126,6 +129,7 @@ export function SlideEditor() {
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [videoUrlInput, setVideoUrlInput] = useState('');
+  const [sheetDialogOpen, setSheetDialogOpen] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef('');
@@ -217,6 +221,19 @@ export function SlideEditor() {
       scheduleAutoSave(next);
       return next;
     });
+  }
+
+  async function handleBack() {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const content = JSON.stringify(presentation);
+    if (content !== lastSavedRef.current) {
+      await contentMutation.mutateAsync(content);
+    }
+    queryClient.invalidateQueries({ queryKey: ['slides'] });
+    router.push('/slides');
   }
 
   function handleTitleBlur() {
@@ -499,6 +516,7 @@ export function SlideEditor() {
   });
 
   useEffect(() => {
+    if (!featureFlags.sheetLiveEmbed) return;
     const listener = (e: ClipboardEvent) => {
       handleSheetPaste(e).then((consumed) => {
         if (consumed) e.preventDefault();
@@ -638,7 +656,7 @@ export function SlideEditor() {
 
       {/* Top bar */}
       <div className={styles.topBar}>
-        <Button variant="ghost" icon={<ArrowLeft size={16} />} onClick={() => { queryClient.invalidateQueries({ queryKey: ['slides'] }); router.push('/slides'); }} className={styles.backBtn}>
+        <Button variant="ghost" icon={<ArrowLeft size={16} />} onClick={handleBack} className={styles.backBtn}>
           Slides
         </Button>
 
@@ -725,6 +743,15 @@ export function SlideEditor() {
         <button className={styles.toolbarBtn} onClick={() => { setVideoUrlInput(''); setVideoDialogOpen(true); }} title="Add video">
           <Video size={16} /> Video
         </button>
+        {featureFlags.sheetLiveEmbed && (
+          <button
+            className={styles.toolbarBtn}
+            onClick={() => setSheetDialogOpen(true)}
+            title="Add sheet embed"
+          >
+            <Table2 size={16} /> Sheet
+          </button>
+        )}
 
         {selectedElement?.type === 'video' && (
           <>
@@ -1271,12 +1298,19 @@ export function SlideEditor() {
         </div>
       </div>
 
-      {sheetPasteDialogState && (
+      {featureFlags.sheetLiveEmbed && sheetPasteDialogState && (
         <PasteChoiceDialog
           previewData={sheetPasteDialogState.previewData}
           onPasteAsTable={sheetPasteDialogState.onPasteAsTable}
           onPasteAsEmbed={sheetPasteDialogState.onPasteAsEmbed}
           onClose={sheetPasteDialogState.onClose}
+        />
+      )}
+
+      {sheetDialogOpen && (
+        <InsertSheetDialog
+          onInsert={(attrs) => { addSheetEmbed(attrs); setSheetDialogOpen(false); }}
+          onClose={() => setSheetDialogOpen(false)}
         />
       )}
 
@@ -1322,3 +1356,4 @@ export function SlideEditor() {
     </div>
   );
 }
+

@@ -7,10 +7,15 @@ use utoipa::ToSchema;
 /// `sheet_db_id` is the spreadsheet file ID (same as the :id path param —
 /// included in the body for validation symmetry).
 /// `sheet_id` is the tab identifier within the workbook (FortuneSheet index).
+fn default_sheet_id() -> String {
+    "0".to_string()
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateNamedRangeRequest {
-    /// Tab identifier within the workbook (e.g. "0").
+    /// Tab identifier within the workbook (e.g. "0"). Defaults to "0" (first tab) if omitted.
+    #[serde(default = "default_sheet_id")]
     pub sheet_id: String,
     /// 0-based inclusive start row.
     pub start_row: i32,

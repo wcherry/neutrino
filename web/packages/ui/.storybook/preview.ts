@@ -1,17 +1,27 @@
 import type { Preview } from '@storybook/react';
+import { withThemeByDataAttribute } from '@storybook/addon-themes';
 import '../src/styles/index.css';
 
 const preview: Preview = {
   parameters: {
-    backgrounds: {
-      default: 'light',
-      values: [
-        { name: 'light', value: '#ffffff' },
-        { name: 'dark', value: '#0f0f0f' },
-      ],
-    },
     layout: 'centered',
   },
+  decorators: [
+    withThemeByDataAttribute({
+      themes: {
+        Light:       'light',
+        Dark:        'dark',
+        Glass:       'glass',
+        Midnight:    'midnight',
+        Beach:       'beach',
+        Forest:      'forest',
+        Sunbeams:    'sunbeams',
+        'Light Glass': 'light-glass',
+      },
+      defaultTheme: 'Light',
+      attributeName: 'data-theme',
+    }),
+  ],
 };
 
 export default preview;

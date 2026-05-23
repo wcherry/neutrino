@@ -520,6 +520,19 @@ export function DocEditor() {
     metaMutation.mutate({ title });
   };
 
+  const handleBack = useCallback(async () => {
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+    }
+    if (pendingContent.current !== null) {
+      await contentMutation.mutateAsync(pendingContent.current);
+      pendingContent.current = null;
+    }
+    queryClient.invalidateQueries({ queryKey: ['docs'] });
+    router.push('/docs');
+  }, [contentMutation, queryClient, router]);
+
   const handleManualSave = useCallback(() => {
     if (!editor) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -767,7 +780,7 @@ export function DocEditor() {
           onPrint={handlePrint}
         />
 
-        <button className={styles.backBtn} onClick={() => { queryClient.invalidateQueries({ queryKey: ['docs'] }); router.push('/docs'); }}>
+        <button className={styles.backBtn} onClick={handleBack}>
           <ArrowLeft size={16} />
           Docs
         </button>

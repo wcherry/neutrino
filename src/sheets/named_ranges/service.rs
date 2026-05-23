@@ -175,6 +175,15 @@ fn parse_cell_id(id: &str) -> Option<(i32, i32)> {
     Some((row_1based - 1, col_1based - 1))
 }
 
+fn scalar_to_string(v: Option<&serde_json::Value>) -> Option<String> {
+    match v? {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
 /// Extract a 2-D slice from the workbook JSON.
 ///
 /// Two formats are supported:
@@ -239,13 +248,12 @@ fn extract_cell_data(
                 continue;
             }
 
-            let display = cell_val
-                .get("raw")
-                .and_then(|v| match v {
-                    serde_json::Value::String(s) => Some(s.clone()),
-                    serde_json::Value::Number(n) => Some(n.to_string()),
-                    serde_json::Value::Bool(b) => Some(b.to_string()),
-                    _ => None,
+            // Prefer the pre-computed display value; fall back to `raw` only
+            // when `value` is absent (old files) and `raw` is not a formula.
+            let display = scalar_to_string(cell_val.get("value"))
+                .or_else(|| {
+                    scalar_to_string(cell_val.get("raw"))
+                        .filter(|s| !s.starts_with('='))
                 });
 
             let row_idx = (r - start_row) as usize;
