@@ -53,7 +53,7 @@
   --color-info-subtle: #f0f9ff;
 }
 
-/* Dark mode */
+/* ── Dark ─────────────────────────────────────────────────────────────────── */
 [data-theme="dark"] {
   --color-bg: #0f172a;
   --color-bg-subtle: #1e293b;
@@ -89,4 +89,230 @@
   --color-error-subtle: #1c0a0a;
   --color-info: #38bdf8;
   --color-info-subtle: #082f49;
+}
+
+/* ── Glass — frosted dark navy, sky-blue accent ───────────────────────────── */
+[data-theme="glass"] {
+  --color-bg: #0e1621;
+  --color-bg-subtle: #162032;
+  --color-surface: #1a2840;
+  --color-surface-raised: #223350;
+  --color-surface-overlay: #1a2840;
+  --color-border: #2a4060;
+  --color-border-strong: #3a5578;
+  --color-text-primary: #dce8f5;
+  --color-text-secondary: #8aa8c8;
+  --color-text-muted: #4a6882;
+  --color-text-inverse: #0e1621;
+  --color-text-on-accent: #ffffff;
+  --color-accent: #38bdf8;
+  --color-accent-hover: #7dd3fc;
+  --color-accent-subtle: #0c3050;
+  --color-accent-text: #7dd3fc;
+  --color-text: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-muted);
+  --color-surface-secondary: var(--color-surface-raised);
+  --color-surface-past: #152235;
+  --color-surface-hover: var(--color-surface-raised);
+  --color-primary: var(--color-accent);
+  --color-primary-light: var(--color-accent-subtle);
+  --color-success: #22c55e;
+  --color-success-subtle: #052e16;
+  --color-warning: #f59e0b;
+  --color-warning-subtle: #1c1003;
+  --color-error: #ef4444;
+  --color-error-subtle: #1c0a0a;
+  --color-info: #38bdf8;
+  --color-info-subtle: #082f49;
+}
+
+/* ── Midnight — near-black with indigo accent ─────────────────────────────── */
+[data-theme="midnight"] {
+  --color-bg: #06060f;
+  --color-bg-subtle: #0d0d1a;
+  --color-surface: #10102a;
+  --color-surface-raised: #18183a;
+  --color-surface-overlay: #10102a;
+  --color-border: #22224a;
+  --color-border-strong: #30306a;
+  --color-text-primary: #e8e8ff;
+  --color-text-secondary: #9898c4;
+  --color-text-muted: #55556a;
+  --color-text-inverse: #06060f;
+  --color-text-on-accent: #ffffff;
+  --color-accent: #818cf8;
+  --color-accent-hover: #a5b4fc;
+  --color-accent-subtle: #1e1e4a;
+  --color-accent-text: #a5b4fc;
+  --color-text: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-muted);
+  --color-surface-secondary: var(--color-surface-raised);
+  --color-surface-past: #0d0d22;
+  --color-surface-hover: var(--color-surface-raised);
+  --color-primary: var(--color-accent);
+  --color-primary-light: var(--color-accent-subtle);
+  --color-success: #22c55e;
+  --color-success-subtle: #052e16;
+  --color-warning: #f59e0b;
+  --color-warning-subtle: #1c1003;
+  --color-error: #ef4444;
+  --color-error-subtle: #1c0a0a;
+  --color-info: #38bdf8;
+  --color-info-subtle: #082f49;
+}
+
+/* ── Beach — warm sandy cream, ocean blue accent ─────────────────────────── */
+[data-theme="beach"] {
+  --color-bg: #fdf8f0;
+  --color-bg-subtle: #faf3e8;
+  --color-surface: #fffcf8;
+  --color-surface-raised: #f5ede0;
+  --color-surface-overlay: #fffcf8;
+  --color-border: #dfc9a8;
+  --color-border-strong: #c4a67d;
+  --color-text-primary: #3d2b1f;
+  --color-text-secondary: #7a5c47;
+  --color-text-muted: #b89a80;
+  --color-text-inverse: #ffffff;
+  --color-text-on-accent: #ffffff;
+  --color-accent: #0ea5e9;
+  --color-accent-hover: #0284c7;
+  --color-accent-subtle: #e0f2fe;
+  --color-accent-text: #0369a1;
+  --color-text: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-muted);
+  --color-surface-secondary: #f5ede0;
+  --color-surface-past: #fdf8f0;
+  --color-surface-hover: #f5ede0;
+  --color-primary: var(--color-accent);
+  --color-primary-light: #e0f2fe;
+  --color-success: #16a34a;
+  --color-success-subtle: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-subtle: #fef3c7;
+  --color-error: #dc2626;
+  --color-error-subtle: #fee2e2;
+  --color-info: #0284c7;
+  --color-info-subtle: #e0f2fe;
+}
+
+/* ── Forest — deep evergreen, bright green accent ────────────────────────── */
+[data-theme="forest"] {
+  --color-bg: #1a2416;
+  --color-bg-subtle: #202d1c;
+  --color-surface: #263020;
+  --color-surface-raised: #2e3d28;
+  --color-surface-overlay: #263020;
+  --color-border: #3d5234;
+  --color-border-strong: #4e6843;
+  --color-text-primary: #d8e8d0;
+  --color-text-secondary: #8aaa7e;
+  --color-text-muted: #4e6843;
+  --color-text-inverse: #1a2416;
+  --color-text-on-accent: #052e16;
+  --color-accent: #4ade80;
+  --color-accent-hover: #86efac;
+  --color-accent-subtle: #14532d;
+  --color-accent-text: #86efac;
+  --color-text: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-muted);
+  --color-surface-secondary: var(--color-surface-raised);
+  --color-surface-past: #1e2b1a;
+  --color-surface-hover: var(--color-surface-raised);
+  --color-primary: var(--color-accent);
+  --color-primary-light: var(--color-accent-subtle);
+  --color-success: #4ade80;
+  --color-success-subtle: #14532d;
+  --color-warning: #f59e0b;
+  --color-warning-subtle: #1c1003;
+  --color-error: #f87171;
+  --color-error-subtle: #1c0a0a;
+  --color-info: #38bdf8;
+  --color-info-subtle: #082f49;
+}
+
+/* ── Light Glass — frosted-glass canvas, rgba surfaces, indigo accent ────── */
+[data-theme="light-glass"] {
+  /* Gradient canvas — visible through translucent surfaces */
+  --color-bg: linear-gradient(135deg, #dbeafe 0%, #ede9fe 55%, #fce7f3 100%);
+  --color-bg-subtle: rgba(241, 245, 255, 0.5);
+
+  /* Semi-transparent glass surfaces */
+  --color-surface: rgba(255, 255, 255, 0.60);
+  --color-surface-raised: rgba(255, 255, 255, 0.82);
+  --color-surface-overlay: rgba(255, 255, 255, 0.92);
+
+  /* Translucent borders */
+  --color-border: rgba(148, 163, 184, 0.28);
+  --color-border-strong: rgba(100, 116, 139, 0.45);
+
+  /* Text */
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-muted: #94a3b8;
+  --color-text-inverse: #ffffff;
+  --color-text-on-accent: #ffffff;
+
+  /* Accent: indigo-violet */
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+  --color-accent-subtle: rgba(99, 102, 241, 0.12);
+  --color-accent-text: #4338ca;
+
+  /* Aliases */
+  --color-text: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-muted);
+  --color-surface-secondary: rgba(255, 255, 255, 0.45);
+  --color-surface-past: rgba(240, 245, 255, 0.35);
+  --color-surface-hover: rgba(255, 255, 255, 0.78);
+  --color-primary: var(--color-accent);
+  --color-primary-light: rgba(99, 102, 241, 0.12);
+
+  /* Backdrop blur applied to glass surfaces */
+  --glass-backdrop: blur(16px) saturate(180%);
+
+  /* Status */
+  --color-success: #16a34a;
+  --color-success-subtle: rgba(22, 163, 74, 0.12);
+  --color-warning: #d97706;
+  --color-warning-subtle: rgba(217, 119, 6, 0.12);
+  --color-error: #dc2626;
+  --color-error-subtle: rgba(220, 38, 38, 0.12);
+  --color-info: #0284c7;
+  --color-info-subtle: rgba(2, 132, 199, 0.12);
+}
+
+/* ── Sunbeams — warm golden cream, amber accent ───────────────────────────── */
+[data-theme="sunbeams"] {
+  --color-bg: #fdfaf0;
+  --color-bg-subtle: #faf5e4;
+  --color-surface: #fffef8;
+  --color-surface-raised: #fef3c7;
+  --color-surface-overlay: #fffef8;
+  --color-border: #fcd34d;
+  --color-border-strong: #f59e0b;
+  --color-text-primary: #1c1008;
+  --color-text-secondary: #78501c;
+  --color-text-muted: #a8782a;
+  --color-text-inverse: #ffffff;
+  --color-text-on-accent: #ffffff;
+  --color-accent: #d97706;
+  --color-accent-hover: #b45309;
+  --color-accent-subtle: #fef3c7;
+  --color-accent-text: #92400e;
+  --color-text: var(--color-text-primary);
+  --color-text-tertiary: var(--color-text-muted);
+  --color-surface-secondary: #fef3c7;
+  --color-surface-past: #fdfaf0;
+  --color-surface-hover: #fef3c7;
+  --color-primary: var(--color-accent);
+  --color-primary-light: #fef3c7;
+  --color-success: #16a34a;
+  --color-success-subtle: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-subtle: #fef3c7;
+  --color-error: #dc2626;
+  --color-error-subtle: #fee2e2;
+  --color-info: #0284c7;
+  --color-info-subtle: #e0f2fe;
 }

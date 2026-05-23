@@ -3,7 +3,7 @@
   grid-template-columns: 240px 1fr;
   grid-template-rows: 64px 1fr;
   height: 100vh;
-  background-color: var(--color-bg);
+  background: var(--color-bg);
   overflow: hidden;
 }
 
