@@ -30,6 +30,15 @@ const featureFlags = {
    * Default: off
    */
   sheetLiveEmbed: process.env.NEXT_PUBLIC_FEATURE_SHEET_LIVE_EMBED === 'true',
+
+  /**
+   * Drive area-wide drag-and-drop upload.
+   * Makes the entire Drive view a drop target so users can drag files from their
+   * OS file manager and drop them anywhere in the drive area to upload.
+   * Env var: NEXT_PUBLIC_FEATURE_DRIVE_AREA_DROP_TARGET
+   * Default: off
+   */
+  driveAreaDropTarget: process.env.NEXT_PUBLIC_FEATURE_DRIVE_AREA_DROP_TARGET === 'true',
 } as const;
 
 export default featureFlags;

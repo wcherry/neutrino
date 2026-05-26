@@ -2,6 +2,32 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
+}
+
+.root--drag-over {
+  outline: 2px dashed var(--color-accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-lg);
+  background-color: color-mix(in srgb, var(--color-accent) 4%, transparent);
+}
+
+.root--drag-over::after {
+  content: 'Drop to upload';
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--color-accent);
+  color: #fff;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-medium);
+  pointer-events: none;
+  z-index: 9998;
+  box-shadow: var(--shadow-md);
 }
 
 /* ── Toolbar ── */
@@ -137,6 +163,9 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: var(--space-3);
+  align-content: start;
+  flex: 1;
+  min-height: 0;
 }
 
 .card-large {
@@ -181,6 +210,9 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
   gap: var(--space-2);
+  align-content: start;
+  flex: 1;
+  min-height: 0;
 }
 
 .card-small {
@@ -276,6 +308,8 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   background-color: var(--color-surface);
+  flex: 1;
+  min-height: 0;
 }
 
 .list-header {

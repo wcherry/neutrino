@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, File } from 'lucide-react';
 import { authApi, storageApi, uploadEncryptedFile } from '@/lib/api';
@@ -26,6 +26,8 @@ interface UploadEntry {
 interface UploadZoneProps {
   onClose: () => void;
   folderId?: string | null;
+  /** Files to enqueue immediately on mount (e.g. dropped onto the drive area). */
+  initialFiles?: File[];
 }
 
 function formatFileSize(bytes: number): string {
@@ -35,7 +37,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-export function UploadZone({ onClose, folderId }: UploadZoneProps) {
+export function UploadZone({ onClose, folderId, initialFiles }: UploadZoneProps) {
   const queryClient = useQueryClient();
   const [entries, setEntries] = useState<UploadEntry[]>([]);
   const currentUser = useUser();
@@ -43,6 +45,8 @@ export function UploadZone({ onClose, folderId }: UploadZoneProps) {
   const updateEntry = useCallback((id: string, patch: Partial<UploadEntry>) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   }, []);
+
+  const didEnqueueInitialFiles = React.useRef(false);
 
   const { mutate: uploadFile } = useMutation({
     mutationFn: async ({ entry }: { entry: UploadEntry }) => {
@@ -100,6 +104,16 @@ export function UploadZone({ onClose, folderId }: UploadZoneProps) {
     },
     [uploadFile]
   );
+
+  // Enqueue any files that were dropped onto the drive area before the zone opened.
+  // The ref guard prevents double-enqueue from React Strict Mode's deliberate remount.
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0 && !didEnqueueInitialFiles.current) {
+      didEnqueueInitialFiles.current = true;
+      enqueueFiles(initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const removeEntry = (id: string) => {
     setEntries((prev) => prev.filter((e) => e.id !== id));
