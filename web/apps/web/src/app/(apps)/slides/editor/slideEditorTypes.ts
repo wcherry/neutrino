@@ -3,8 +3,10 @@ export interface TextStyle {
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  strikethrough?: boolean;
   color: string;
-  align: 'left' | 'center' | 'right';
+  backgroundColor?: string;
+  align: 'left' | 'center' | 'right' | 'justify';
   fontFamily: string;
 }
 

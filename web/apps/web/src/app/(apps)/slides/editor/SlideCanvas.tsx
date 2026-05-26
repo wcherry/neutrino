@@ -229,8 +229,12 @@ export default function SlideCanvas({
                     fontSize: `${textEl.style.fontSize * 0.75}px`,
                     fontWeight: textEl.style.bold ? 700 : 400,
                     fontStyle: textEl.style.italic ? 'italic' : 'normal',
-                    textDecoration: textEl.style.underline ? 'underline' : 'none',
+                    textDecoration: [
+                      textEl.style.underline ? 'underline' : '',
+                      textEl.style.strikethrough ? 'line-through' : '',
+                    ].filter(Boolean).join(' ') || 'none',
                     color: textEl.style.color,
+                    backgroundColor: textEl.style.backgroundColor ?? 'transparent',
                     textAlign: textEl.style.align,
                     fontFamily: textEl.style.fontFamily,
                   }}
@@ -247,8 +251,12 @@ export default function SlideCanvas({
                     fontSize: `${textEl.style.fontSize * 0.75}px`,
                     fontWeight: textEl.style.bold ? 700 : 400,
                     fontStyle: textEl.style.italic ? 'italic' : 'normal',
-                    textDecoration: textEl.style.underline ? 'underline' : 'none',
+                    textDecoration: [
+                      textEl.style.underline ? 'underline' : '',
+                      textEl.style.strikethrough ? 'line-through' : '',
+                    ].filter(Boolean).join(' ') || 'none',
                     color: textEl.style.color,
+                    backgroundColor: textEl.style.backgroundColor ?? 'transparent',
                     textAlign: textEl.style.align,
                     fontFamily: textEl.style.fontFamily,
                   }}
