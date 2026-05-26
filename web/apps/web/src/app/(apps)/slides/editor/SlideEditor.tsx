@@ -49,7 +49,7 @@ import {
   ToolbarDivider,
   ToolbarButton,
   ToolbarSelect,
-  ColorSwatch,
+  ColorPickerPopover,
 } from '@neutrino/ui';
 import { slidesApi, driveReadContent, driveWriteContent, driveWriteEncryptedContent, storageApi } from '@/lib/api';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -146,8 +146,6 @@ export function SlideEditor() {
   const exportRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const dragSrcIdx = useRef<number | null>(null);
-  const textColorRef = useRef<HTMLInputElement>(null);
-  const textBgColorRef = useRef<HTMLInputElement>(null);
 
   const { isLoading: metaLoading, data: slideData } = useQuery({
     queryKey: ['slide', slideId],
@@ -882,36 +880,26 @@ export function SlideEditor() {
 
             {/* Text color + background color */}
             <ToolbarGroup>
-              <ToolbarButton
-                onClick={() => textColorRef.current?.click()}
+              <ColorPickerPopover
+                color={(selectedElement as TextElement).style.color ?? '#202124'}
+                onChange={(hex) => updateTextStyle(selectedElement.id, { color: hex })}
                 title="Text color"
-                style={{ flexDirection: 'column', gap: 1, height: 32 }}
               >
-                <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1 }}>A</span>
-                <ColorSwatch color={(selectedElement as TextElement).style.color ?? '#202124'} />
-                <input
-                  ref={textColorRef}
-                  type="color"
-                  style={{ display: 'none' }}
-                  value={(selectedElement as TextElement).style.color ?? '#202124'}
-                  onChange={(e) => updateTextStyle(selectedElement.id, { color: e.target.value })}
-                />
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={() => textBgColorRef.current?.click()}
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
+                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.color ?? '#202124' }} />
+                </span>
+              </ColorPickerPopover>
+              <ColorPickerPopover
+                color={(selectedElement as TextElement).style.backgroundColor ?? '#fef08a'}
+                onChange={(hex) => updateTextStyle(selectedElement.id, { backgroundColor: hex })}
                 title="Text background color"
-                style={{ flexDirection: 'column', gap: 1, height: 32 }}
               >
-                <span style={{ fontSize: 12, lineHeight: 1 }}>&#9632;</span>
-                <ColorSwatch color={(selectedElement as TextElement).style.backgroundColor ?? 'transparent'} />
-                <input
-                  ref={textBgColorRef}
-                  type="color"
-                  style={{ display: 'none' }}
-                  value={(selectedElement as TextElement).style.backgroundColor ?? '#fef08a'}
-                  onChange={(e) => updateTextStyle(selectedElement.id, { backgroundColor: e.target.value })}
-                />
-              </ToolbarButton>
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                  <span style={{ fontSize: 12 }}>&#9632;</span>
+                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.backgroundColor ?? '#fef08a' }} />
+                </span>
+              </ColorPickerPopover>
             </ToolbarGroup>
 
             <ToolbarDivider />
@@ -961,22 +949,16 @@ export function SlideEditor() {
           <>
             <ToolbarDivider />
             <ToolbarGroup>
-              <ToolbarButton
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'color';
-                  input.value = (selectedElement as ShapeElement).fill;
-                  input.addEventListener('input', (e) => {
-                    updateElement(selectedElement.id, (el) => ({ ...el, fill: (e.target as HTMLInputElement).value } as ShapeElement));
-                  });
-                  input.click();
-                }}
+              <ColorPickerPopover
+                color={(selectedElement as ShapeElement).fill}
+                onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, fill: hex } as ShapeElement))}
                 title="Fill color"
-                style={{ flexDirection: 'column', gap: 1, height: 32 }}
               >
-                <span style={{ fontSize: 12, lineHeight: 1 }}>&#9632;</span>
-                <ColorSwatch color={(selectedElement as ShapeElement).fill} />
-              </ToolbarButton>
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                  <span style={{ fontSize: 12 }}>&#9632;</span>
+                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).fill }} />
+                </span>
+              </ColorPickerPopover>
               <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
                 <Trash2 size={15} />
               </ToolbarButton>
