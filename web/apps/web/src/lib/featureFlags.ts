@@ -39,6 +39,15 @@ const featureFlags = {
    * Default: off
    */
   driveAreaDropTarget: process.env.NEXT_PUBLIC_FEATURE_DRIVE_AREA_DROP_TARGET === 'true',
+
+  /**
+   * Alpha channel in the color picker.
+   * Adds an opacity slider to ColorPickerPopover when showAlpha=true is passed.
+   * Currently used for the slides background color picker.
+   * Env var: NEXT_PUBLIC_FEATURE_COLOR_PICKER_ALPHA
+   * Default: off
+   */
+  colorPickerAlpha: process.env.NEXT_PUBLIC_FEATURE_COLOR_PICKER_ALPHA === 'true',
 } as const;
 
 export default featureFlags;

@@ -151,6 +151,35 @@
   cursor: pointer;
 }
 
+/* ── Alpha slider row ────────────────────────────────────────────────── */
+.alphaRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 8px;
+}
+
+.alphaSlider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.alphaSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(0,0,0,0.3);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  cursor: pointer;
+}
+
 /* ── Values tab ───────────────────────────────────────────────────────── */
 .valuesTab {
   padding: 10px;

@@ -30,6 +30,10 @@ import {
   Zap,
   Upload,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpToLine,
+  ArrowDownToLine,
   ZoomIn,
   Layers,
   Sun,
@@ -125,11 +129,12 @@ export function SlideEditor() {
   const [selectedSlideIdx, setSelectedSlideIdx] = useState(0);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [editingElementId, setEditingElementId] = useState<string | null>(null);
+  const [editingInitialText, setEditingInitialText] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [presenterMode, setPresenterMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [masterMode, setMasterMode] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState<'layout' | 'notes' | 'theme' | 'shapes'>('notes');
+  const [rightPanelTab, setRightPanelTab] = useState<'layout' | 'theme' | 'insert'>('layout');
   const [zoom, setZoom] = useState(100);
 
   const ZOOM_STEPS = [25, 50, 75, 100, 125, 150, 200];
@@ -267,15 +272,27 @@ export function SlideEditor() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.key !== 'Delete' && e.key !== 'Backspace') || !selectedElementId || editingElementId) return;
+      if (!selectedElementId || editingElementId) return;
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      e.preventDefault();
-      deleteElement(selectedElementId);
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        deleteElement(selectedElementId);
+        return;
+      }
+
+      const slide = presentation.slides[selectedSlideIdx] ?? presentation.slides[0];
+      const selectedEl = slide?.elements.find((el) => el.id === selectedElementId);
+      if (selectedEl?.type === 'text' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setEditingInitialText(e.key);
+        setEditingElementId(selectedElementId);
+      }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElementId, editingElementId]);
+  }, [selectedElementId, editingElementId, presentation, selectedSlideIdx]);
 
   // ── Slide operations ─────────────────────────────────────────────────────
 
@@ -305,7 +322,7 @@ export function SlideEditor() {
     const elements = layout.makeElements(presentation.theme, master);
     updateCurrentSlide((s) => ({ ...s, elements }));
     setSelectedElementId(null);
-    setRightPanelTab('notes');
+    setRightPanelTab('layout');
   }
 
   function addSlide() {
@@ -428,11 +445,45 @@ export function SlideEditor() {
       shape,
       x: 30, y: 35, w: 40, h: 25,
       fill: presentation.theme.primaryColor,
-      stroke: 'transparent',
-      strokeWidth: 0,
+      stroke: '#000000',
+      strokeWidth: 1,
+      strokeDash: '',
     };
     updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
     setSelectedElementId(el.id);
+  }
+
+  function handleInsertDrop(kind: string, shape: string | null, pctX: number, pctY: number) {
+    if (kind === 'text') {
+      const w = 60, h = 15;
+      const el: TextElement = {
+        id: uid(),
+        type: 'text',
+        x: Math.max(0, Math.min(100 - w, pctX - w / 2)),
+        y: Math.max(0, Math.min(100 - h, pctY - h / 2)),
+        w, h,
+        content: 'New text box',
+        style: { fontSize: 24, bold: false, italic: false, underline: false, color: presentation.theme.textColor, align: 'left', fontFamily: 'Inter' },
+      };
+      updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+      setSelectedElementId(el.id);
+    } else if (kind === 'shape' && shape) {
+      const w = 40, h = 25;
+      const el: ShapeElement = {
+        id: uid(),
+        type: 'shape',
+        shape,
+        x: Math.max(0, Math.min(100 - w, pctX - w / 2)),
+        y: Math.max(0, Math.min(100 - h, pctY - h / 2)),
+        w, h,
+        fill: presentation.theme.primaryColor,
+        stroke: '#000000',
+        strokeWidth: 1,
+        strokeDash: '',
+      };
+      updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+      setSelectedElementId(el.id);
+    }
   }
 
   // ── Video embed operations ────────────────────────────────────────────────
@@ -562,6 +613,52 @@ export function SlideEditor() {
     });
   }
 
+  function bringElementToFront() {
+    if (!selectedElementId) return;
+    updateCurrentSlide((s) => {
+      const idx = s.elements.findIndex((e) => e.id === selectedElementId);
+      if (idx < 0 || idx === s.elements.length - 1) return s;
+      const els = [...s.elements];
+      const [el] = els.splice(idx, 1);
+      els.push(el);
+      return { ...s, elements: els };
+    });
+  }
+
+  function sendElementToBack() {
+    if (!selectedElementId) return;
+    updateCurrentSlide((s) => {
+      const idx = s.elements.findIndex((e) => e.id === selectedElementId);
+      if (idx <= 0) return s;
+      const els = [...s.elements];
+      const [el] = els.splice(idx, 1);
+      els.unshift(el);
+      return { ...s, elements: els };
+    });
+  }
+
+  function moveElementForward() {
+    if (!selectedElementId) return;
+    updateCurrentSlide((s) => {
+      const idx = s.elements.findIndex((e) => e.id === selectedElementId);
+      if (idx < 0 || idx >= s.elements.length - 1) return s;
+      const els = [...s.elements];
+      [els[idx], els[idx + 1]] = [els[idx + 1], els[idx]];
+      return { ...s, elements: els };
+    });
+  }
+
+  function moveElementBackward() {
+    if (!selectedElementId) return;
+    updateCurrentSlide((s) => {
+      const idx = s.elements.findIndex((e) => e.id === selectedElementId);
+      if (idx <= 0) return s;
+      const els = [...s.elements];
+      [els[idx], els[idx - 1]] = [els[idx - 1], els[idx]];
+      return { ...s, elements: els };
+    });
+  }
+
   // ── Slide master operations ──────────────────────────────────────────────
 
   function updateMaster(updater: (m: SlideMaster) => SlideMaster) {
@@ -622,6 +719,10 @@ export function SlideEditor() {
   // ── Selected element ─────────────────────────────────────────────────────
 
   const selectedElement = currentSlide?.elements.find((e) => e.id === selectedElementId) ?? null;
+  const selectedElementIndex = selectedElement
+    ? (currentSlide?.elements.findIndex((e) => e.id === selectedElementId) ?? -1)
+    : -1;
+  const elementCount = currentSlide?.elements.length ?? 0;
 
   const saveStatusText =
     saveStatus === 'saving' ? 'Saving…' :
@@ -741,27 +842,6 @@ export function SlideEditor() {
 
       {/* Toolbar */}
       <RichTextToolbar>
-        {/* Insert controls */}
-        <ToolbarGroup>
-          <ToolbarButton onClick={addTextBox} title="Add text box" wide>
-            <Type size={14} /> Text
-          </ToolbarButton>
-          <ToolbarButton onClick={() => addShape('rect')} title="Add rectangle" wide>
-            <Square size={14} /> Rect
-          </ToolbarButton>
-          <ToolbarButton onClick={() => addShape('circle')} title="Add circle" wide>
-            <Circle size={14} /> Circle
-          </ToolbarButton>
-          <ToolbarButton onClick={() => { setVideoUrlInput(''); setVideoDialogOpen(true); }} title="Add video" wide>
-            <Video size={14} /> Video
-          </ToolbarButton>
-          {featureFlags.sheetLiveEmbed && (
-            <ToolbarButton onClick={() => setSheetDialogOpen(true)} title="Add sheet embed" wide>
-              <Table2 size={14} /> Sheet
-            </ToolbarButton>
-          )}
-        </ToolbarGroup>
-
         {/* Video controls */}
         {selectedElement?.type === 'video' && (
           <>
@@ -884,6 +964,7 @@ export function SlideEditor() {
                 color={(selectedElement as TextElement).style.color ?? '#202124'}
                 onChange={(hex) => updateTextStyle(selectedElement.id, { color: hex })}
                 title="Text color"
+                showAlpha={featureFlags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
@@ -894,12 +975,39 @@ export function SlideEditor() {
                 color={(selectedElement as TextElement).style.backgroundColor ?? '#fef08a'}
                 onChange={(hex) => updateTextStyle(selectedElement.id, { backgroundColor: hex })}
                 title="Text background color"
+                showAlpha={featureFlags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9632;</span>
                   <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.backgroundColor ?? '#fef08a' }} />
                 </span>
               </ColorPickerPopover>
+            </ToolbarGroup>
+
+            <ToolbarDivider />
+
+            {/* Shadow */}
+            <ToolbarGroup>
+              <ToolbarButton
+                active={(selectedElement as TextElement).style.shadow ?? false}
+                onClick={() => updateTextStyle(selectedElement.id, { shadow: !((selectedElement as TextElement).style.shadow ?? false) })}
+                title="Text shadow"
+              >
+                <span style={{ fontWeight: 700, fontSize: 13, textShadow: '1px 1px 2px rgba(0,0,0,0.6)' }}>S</span>
+              </ToolbarButton>
+              {(selectedElement as TextElement).style.shadow && (
+                <ColorPickerPopover
+                  color={(selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)'}
+                  onChange={(hex) => updateTextStyle(selectedElement.id, { shadowColor: hex })}
+                  title="Shadow color"
+                  showAlpha={featureFlags.colorPickerAlpha}
+                >
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                    <span style={{ fontSize: 11, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>A</span>
+                    <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)' }} />
+                  </span>
+                </ColorPickerPopover>
+              )}
             </ToolbarGroup>
 
             <ToolbarDivider />
@@ -944,7 +1052,7 @@ export function SlideEditor() {
           </>
         )}
 
-        {/* Shape fill color */}
+        {/* Shape fill + stroke */}
         {selectedElement?.type === 'shape' && (
           <>
             <ToolbarDivider />
@@ -953,14 +1061,94 @@ export function SlideEditor() {
                 color={(selectedElement as ShapeElement).fill}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, fill: hex } as ShapeElement))}
                 title="Fill color"
+                showAlpha={featureFlags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9632;</span>
                   <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).fill }} />
                 </span>
               </ColorPickerPopover>
-              <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
-                <Trash2 size={15} />
+              <ColorPickerPopover
+                color={(selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke}
+                onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as ShapeElement))}
+                title="Outline color"
+                showAlpha={featureFlags.colorPickerAlpha}
+              >
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                  <span style={{ fontSize: 12 }}>&#9633;</span>
+                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke }} />
+                </span>
+              </ColorPickerPopover>
+            </ToolbarGroup>
+            <ToolbarDivider />
+            <span className={styles.toolbarLabel}>Outline</span>
+            <ToolbarGroup>
+              <ToolbarButton
+                onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.max(0, (el as ShapeElement).strokeWidth - 1) } as ShapeElement))}
+                disabled={(selectedElement as ShapeElement).strokeWidth <= 0}
+                title="Decrease outline width"
+              >
+                <Minus size={12} />
+              </ToolbarButton>
+              <span className={styles.stepperValue}>{(selectedElement as ShapeElement).strokeWidth}px</span>
+              <ToolbarButton
+                onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.min(20, (el as ShapeElement).strokeWidth + 1) } as ShapeElement))}
+                disabled={(selectedElement as ShapeElement).strokeWidth >= 20}
+                title="Increase outline width"
+              >
+                <Plus size={12} />
+              </ToolbarButton>
+            </ToolbarGroup>
+            <ToolbarSelect
+              value={(selectedElement as ShapeElement).strokeDash ?? ''}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, strokeDash: e.target.value } as ShapeElement))}
+              title="Line style"
+            >
+              <option value="">Solid</option>
+              <option value="4 4">Dashed</option>
+              <option value="2 2">Dotted</option>
+              <option value="8 4 2 4">Dash · dot</option>
+              <option value="8 4 2 4 2 4">Dash · dot · dot</option>
+            </ToolbarSelect>
+            <ToolbarDivider />
+            <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
+              <Trash2 size={15} />
+            </ToolbarButton>
+          </>
+        )}
+
+        {/* Layer order controls */}
+        {selectedElement && (
+          <>
+            <ToolbarDivider />
+            <ToolbarGroup>
+              <ToolbarButton
+                onClick={sendElementToBack}
+                disabled={selectedElementIndex <= 0}
+                title="Send to back"
+              >
+                <ArrowDownToLine size={14} />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={moveElementBackward}
+                disabled={selectedElementIndex <= 0}
+                title="Send backward"
+              >
+                <ArrowDown size={14} />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={moveElementForward}
+                disabled={selectedElementIndex >= elementCount - 1}
+                title="Bring forward"
+              >
+                <ArrowUp size={14} />
+              </ToolbarButton>
+              <ToolbarButton
+                onClick={bringElementToFront}
+                disabled={selectedElementIndex >= elementCount - 1}
+                title="Bring to front"
+              >
+                <ArrowUpToLine size={14} />
               </ToolbarButton>
             </ToolbarGroup>
           </>
@@ -1041,6 +1229,7 @@ export function SlideEditor() {
         <BackgroundPicker
           background={currentSlide.background}
           onChange={(bg) => updateCurrentSlide((s) => ({ ...s, background: bg }))}
+          theme={presentation.theme}
         />
 
         {/* Transition */}
@@ -1134,15 +1323,17 @@ export function SlideEditor() {
                 slide={currentSlide}
                 selectedElementId={selectedElementId}
                 editingElementId={editingElementId}
+                editingInitialText={editingInitialText}
                 spellCheck={spellCheck}
                 onSelectElement={setSelectedElementId}
-                onStartEdit={setEditingElementId}
-                onStopEdit={() => setEditingElementId(null)}
+                onStartEdit={(id) => { setEditingInitialText(null); setEditingElementId(id); }}
+                onStopEdit={() => { setEditingElementId(null); setEditingInitialText(null); }}
                 onUpdateElement={updateElement}
-                onClickBackground={() => { setSelectedElementId(null); setEditingElementId(null); }}
+                onClickBackground={() => { setSelectedElementId(null); setEditingElementId(null); setEditingInitialText(null); }}
                 onEmbedCacheUpdate={handleEmbedCacheUpdate}
                 onEmbedConvertToStatic={handleEmbedConvertToStatic}
                 onEmbedRemove={deleteElement}
+                onInsertDrop={handleInsertDrop}
               />
             )}
           </div>
@@ -1281,11 +1472,36 @@ export function SlideEditor() {
                       ))}
                     </div>
                   </div>
-                ) : rightPanelTab === 'shapes' ? (
-                  <div className={styles.shapesPanel}>
+                ) : rightPanelTab === 'insert' ? (
+                  <div className={styles.insertPanel}>
+                    <div className={styles.insertSection}>
+                      <span className={styles.insertSectionLabel}>Text</span>
+                      <button
+                        className={styles.insertBtn}
+                        onClick={addTextBox}
+                        draggable
+                        onDragStart={(e) => e.dataTransfer.setData('application/x-slide-insert', JSON.stringify({ kind: 'text' }))}
+                      >
+                        <Type size={15} />
+                        <span>Text Box</span>
+                      </button>
+                    </div>
+                    <div className={styles.insertSection}>
+                      <span className={styles.insertSectionLabel}>Media</span>
+                      <button className={styles.insertBtn} onClick={() => { setVideoUrlInput(''); setVideoDialogOpen(true); }}>
+                        <Video size={15} />
+                        <span>Video</span>
+                      </button>
+                      {featureFlags.sheetLiveEmbed && (
+                        <button className={styles.insertBtn} onClick={() => setSheetDialogOpen(true)}>
+                          <Table2 size={15} />
+                          <span>Sheet</span>
+                        </button>
+                      )}
+                    </div>
                     {SHAPE_GROUPS.map((group) => (
-                      <div key={group.key} className={styles.shapesGroup}>
-                        <span className={styles.shapesGroupLabel}>{group.label}</span>
+                      <div key={group.key} className={styles.insertSection}>
+                        <span className={styles.insertSectionLabel}>{group.label}</span>
                         <div className={styles.shapesGrid}>
                           {Object.entries(SHAPE_CATALOG)
                             .filter(([, def]) => def.group === group.key)
@@ -1295,6 +1511,8 @@ export function SlideEditor() {
                                 className={styles.shapeBtn}
                                 title={def.label}
                                 onClick={() => addShape(id)}
+                                draggable
+                                onDragStart={(e) => e.dataTransfer.setData('application/x-slide-insert', JSON.stringify({ kind: 'shape', shape: id }))}
                               >
                                 <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">
                                   <path
@@ -1309,15 +1527,7 @@ export function SlideEditor() {
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <textarea
-                    className={styles.notesArea}
-                    placeholder="Add speaker notes for this slide…"
-                    spellCheck={spellCheck}
-                    value={currentSlide?.notes ?? ''}
-                    onChange={(e) => updateCurrentSlide((s) => ({ ...s, notes: e.target.value }))}
-                  />
-                )}
+                ) : null}
               </div>
 
               {/* Vertical tab strip – right side */}
@@ -1337,23 +1547,28 @@ export function SlideEditor() {
                   <span className={styles.rightPanelTabLabel}>Theme</span>
                 </button>
                 <button
-                  className={`${styles.rightPanelTab} ${rightPanelTab === 'shapes' ? styles.rightPanelTabActive : ''}`}
-                  onClick={() => setRightPanelTab('shapes')}
-                  title="Shapes"
+                  className={`${styles.rightPanelTab} ${rightPanelTab === 'insert' ? styles.rightPanelTabActive : ''}`}
+                  onClick={() => setRightPanelTab('insert')}
+                  title="Insert"
                 >
-                  <span className={styles.rightPanelTabLabel}>Shapes</span>
-                </button>
-                <button
-                  className={`${styles.rightPanelTab} ${rightPanelTab === 'notes' ? styles.rightPanelTabActive : ''}`}
-                  onClick={() => setRightPanelTab('notes')}
-                  title="Notes"
-                >
-                  <span className={styles.rightPanelTabLabel}>Notes</span>
+                  <span className={styles.rightPanelTabLabel}>Insert</span>
                 </button>
               </div>
             </>
           )}
         </div>
+      </div>
+
+      {/* Bottom notes bar */}
+      <div className={styles.notesBar}>
+        <span className={styles.notesBarLabel}>Notes</span>
+        <textarea
+          className={styles.notesArea}
+          placeholder="Add speaker notes for this slide…"
+          spellCheck={spellCheck}
+          value={currentSlide?.notes ?? ''}
+          onChange={(e) => updateCurrentSlide((s) => ({ ...s, notes: e.target.value }))}
+        />
       </div>
 
       {featureFlags.sheetLiveEmbed && sheetPasteDialogState && (

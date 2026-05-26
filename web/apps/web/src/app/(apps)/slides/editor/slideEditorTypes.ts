@@ -8,6 +8,8 @@ export interface TextStyle {
   backgroundColor?: string;
   align: 'left' | 'center' | 'right' | 'justify';
   fontFamily: string;
+  shadow?: boolean;
+  shadowColor?: string;
 }
 
 export interface ElementAnimation {
@@ -40,6 +42,7 @@ export interface ShapeElement {
   fill: string;
   stroke: string;
   strokeWidth: number;
+  strokeDash?: string;
   animation?: ElementAnimation;
 }
 
