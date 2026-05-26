@@ -24,6 +24,7 @@ export default function SlideThumbnail({ slide }: { slide: Slide }) {
                 fontSize: `${textEl.style.fontSize * 0.075}px`,
                 fontWeight: textEl.style.bold ? 700 : 400,
                 color: textEl.style.color,
+                textShadow: textEl.style.shadow ? `0.5px 0.5px 1px ${textEl.style.shadowColor ?? 'rgba(0,0,0,0.5)'}` : undefined,
                 overflow: 'hidden',
                 lineHeight: 1.2,
               }}

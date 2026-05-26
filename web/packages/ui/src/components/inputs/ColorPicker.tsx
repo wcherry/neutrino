@@ -79,6 +79,12 @@ function lchToRgb(L: number, C: number, H: number): [number, number, number] {
     return [Math.round(gm(rl) * 255), Math.round(gm(gl) * 255), Math.round(gm(bl) * 255)];
 }
 
+// Returns a CSS background value that layers a semi-transparent color over a checkerboard.
+function alphaPreviewBg(hex: string, alpha: number): string {
+    const [r, g, b] = hexToRgb(hex);
+    return `linear-gradient(rgba(${r},${g},${b},${alpha / 255}), rgba(${r},${g},${b},${alpha / 255})), repeating-conic-gradient(#c0c0c0 0% 25%, #fff 0% 50%) 0 0 / 8px 8px`;
+}
+
 // ── Palette: 10 cols × 8 rows = 80 colors ─────────────────────────────
 // Row-major; each column is a hue family, rows go dark→light
 const PALETTE: string[] = [
@@ -128,30 +134,53 @@ function drawWheel(ctx: CanvasRenderingContext2D, value: number) {
 type Tab = 'swatches' | 'wheel' | 'values';
 
 export interface ColorPickerProps {
-    value: string;   // hex string
+    value: string;   // #rrggbb, or #rrggbbaa when showAlpha=true
     onChange: (hex: string) => void;
+    showAlpha?: boolean;
 }
 
-export function ColorPicker({ value, onChange }: ColorPickerProps) {
-    const safeHex = /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : '#000000';
+export function ColorPicker({ value, onChange, showAlpha }: ColorPickerProps) {
+    const lv = value.toLowerCase();
+    const is8 = !!showAlpha && /^#[0-9a-fA-F]{8}$/.test(lv);
+    const is6 = /^#[0-9a-fA-F]{6}$/.test(lv);
+    const initBase = is8 ? lv.slice(0, 7) : is6 ? lv : '#000000';
+    const initAlpha = is8 ? parseInt(lv.slice(7, 9), 16) : 255;
+
     const [tab, setTab] = useState<Tab>('swatches');
-    const [hex, setHex] = useState(safeHex);
-    const [hexInput, setHexInput] = useState(safeHex);
+    const [hex, setHex] = useState(initBase);
+    const [hexInput, setHexInput] = useState(showAlpha ? initBase + initAlpha.toString(16).padStart(2, '0') : initBase);
+    const [alpha, setAlpha] = useState(initAlpha);
 
     // Sync when controlled value changes from outside
     useEffect(() => {
-        if (safeHex !== hex) {
-            setHex(safeHex);
-            setHexInput(safeHex);
+        const lv2 = value.toLowerCase();
+        const ext8 = !!showAlpha && /^#[0-9a-fA-F]{8}$/.test(lv2);
+        const ext6 = /^#[0-9a-fA-F]{6}$/.test(lv2);
+        const newBase = ext8 ? lv2.slice(0, 7) : ext6 ? lv2 : '#000000';
+        const newAlpha = ext8 ? parseInt(lv2.slice(7, 9), 16) : 255;
+        if (newBase !== hex || newAlpha !== alpha) {
+            setHex(newBase);
+            setAlpha(newAlpha);
+            setHexInput(showAlpha ? newBase + newAlpha.toString(16).padStart(2, '0') : newBase);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [safeHex]);
+    }, [value]);
 
-    const commit = useCallback((h: string) => {
+    const commit = useCallback((h: string, a: number = alpha) => {
         setHex(h);
-        setHexInput(h);
-        onChange(h);
-    }, [onChange]);
+        const full = showAlpha ? h + a.toString(16).padStart(2, '0') : h;
+        setHexInput(full);
+        onChange(full);
+    }, [onChange, alpha, showAlpha]);
+
+    function commitAlpha(a: number) {
+        setAlpha(a);
+        if (showAlpha) {
+            const full = hex + a.toString(16).padStart(2, '0');
+            setHexInput(full);
+            onChange(full);
+        }
+    }
 
     const [r, g, b] = hexToRgb(hex);
     const [hsvH, hsvS, hsvV] = rgbToHsv(r, g, b);
@@ -188,6 +217,10 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
     // Dot position on wheel
     const dotX = WHEEL_R + hsvS * WHEEL_R * Math.cos(hsvH * 2 * Math.PI);
     const dotY = WHEEL_R + hsvS * WHEEL_R * Math.sin(hsvH * 2 * Math.PI);
+
+    const alphaHex = alpha.toString(16).padStart(2, '0');
+    const fullHex = showAlpha ? hex + alphaHex : hex;
+    const previewBg = showAlpha && alpha < 255 ? alphaPreviewBg(hex, alpha) : hex;
 
     return (
         <div className={styles.picker}>
@@ -259,7 +292,7 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
             {/* ── Values tab ── */}
             {tab === 'values' && (
                 <div className={styles.valuesTab}>
-                    <div className={styles.valuePreview} style={{ backgroundColor: hex }} />
+                    <div className={styles.valuePreview} style={{ background: previewBg }} />
 
                     <div className={styles.valueGroup}>
                         <span className={styles.valueGroupLabel}>Hex</span>
@@ -270,9 +303,19 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
                             onChange={e => {
                                 const v = e.target.value;
                                 setHexInput(v);
-                                if (/^#[0-9a-fA-F]{6}$/.test(v)) commit(v.toLowerCase());
+                                if (showAlpha && /^#[0-9a-fA-F]{8}$/.test(v)) {
+                                    const newBase = v.slice(0, 7).toLowerCase();
+                                    const newA = parseInt(v.slice(7, 9), 16);
+                                    setHex(newBase);
+                                    setAlpha(newA);
+                                    onChange(v.toLowerCase());
+                                } else if (!showAlpha && /^#[0-9a-fA-F]{6}$/.test(v)) {
+                                    const lower = v.toLowerCase();
+                                    setHex(lower);
+                                    onChange(lower);
+                                }
                             }}
-                            onBlur={() => setHexInput(hex)}
+                            onBlur={() => setHexInput(fullHex)}
                         />
                     </div>
 
@@ -318,10 +361,29 @@ export function ColorPicker({ value, onChange }: ColorPickerProps) {
                 </div>
             )}
 
+            {/* Alpha slider — shown across all tabs when showAlpha is enabled */}
+            {showAlpha && (
+                <div className={styles.alphaRow}>
+                    <span className={styles.sliderLabel}>A</span>
+                    <input
+                        type="range"
+                        min={0} max={255}
+                        value={alpha}
+                        className={styles.alphaSlider}
+                        style={{
+                            backgroundImage: `linear-gradient(to right, transparent, ${hex}), repeating-conic-gradient(#c0c0c0 0% 25%, #fff 0% 50%)`,
+                            backgroundSize: '100% 100%, 8px 8px',
+                        }}
+                        onChange={e => commitAlpha(parseInt(e.target.value))}
+                    />
+                    <span className={styles.sliderValue}>{Math.round(alpha / 255 * 100)}</span>
+                </div>
+            )}
+
             {/* Bottom preview */}
             <div className={styles.pickerBottom}>
-                <div className={styles.bottomSwatch} style={{ backgroundColor: hex }} />
-                <span className={styles.bottomHex}>{hex}</span>
+                <div className={styles.bottomSwatch} style={{ background: previewBg }} />
+                <span className={styles.bottomHex}>{fullHex}</span>
             </div>
         </div>
     );

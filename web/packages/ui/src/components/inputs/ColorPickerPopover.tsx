@@ -11,9 +11,10 @@ export interface ColorPickerPopoverProps {
     disabled?: boolean;
     title?: string;
     children?: React.ReactNode;
+    showAlpha?: boolean;
 }
 
-export function ColorPickerPopover({ color, onChange, disabled, title, children }: ColorPickerPopoverProps) {
+export function ColorPickerPopover({ color, onChange, disabled, title, children, showAlpha }: ColorPickerPopoverProps) {
     const [open, setOpen] = useState(false);
     const [pos, setPos] = useState({ top: 0, left: 0 });
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -76,8 +77,8 @@ export function ColorPickerPopover({ color, onChange, disabled, title, children 
                 </ToolbarButton>
             </div>
             {open && createPortal(
-                <div ref={popoverRef} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}>
-                    <ColorPicker value={color} onChange={(hex) => { onChange(hex); }} />
+                <div ref={popoverRef} data-color-picker-portal="" style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}>
+                    <ColorPicker value={color} onChange={(hex) => { onChange(hex); }} showAlpha={showAlpha} />
                 </div>,
                 document.body
             )}

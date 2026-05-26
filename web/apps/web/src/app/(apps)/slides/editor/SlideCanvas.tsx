@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import type { Slide, SlideElement, TextElement, ShapeElement, SheetEmbedElement, VideoElement } from './slideEditorTypes';
 import { SHAPE_CATALOG, RESIZE_HANDLES } from './slideEditorConstants';
 import { slideBackgroundStyle, getVideoEmbedInfo } from './slideEditorHelpers';
@@ -20,6 +20,7 @@ export function ShapeRenderer({ el }: { el: ShapeElement }) {
         fill={el.fill}
         stroke={el.stroke || 'none'}
         strokeWidth={el.strokeWidth}
+        strokeDasharray={el.strokeDash || undefined}
         vectorEffect="non-scaling-stroke"
       />
     </svg>
@@ -32,6 +33,7 @@ interface SlideCanvasProps {
   slide: Slide;
   selectedElementId: string | null;
   editingElementId: string | null;
+  editingInitialText: string | null;
   spellCheck: boolean;
   onSelectElement: (id: string) => void;
   onStartEdit: (id: string) => void;
@@ -44,12 +46,15 @@ interface SlideCanvasProps {
   onEmbedConvertToStatic?: (id: string, data: CellValue[][]) => void;
   /** Called when the user removes a sheet embed. */
   onEmbedRemove?: (id: string) => void;
+  /** Called when an item is dragged from the Insert panel and dropped on the canvas. */
+  onInsertDrop?: (kind: string, shape: string | null, pctX: number, pctY: number) => void;
 }
 
 export default function SlideCanvas({
   slide,
   selectedElementId,
   editingElementId,
+  editingInitialText,
   spellCheck,
   onSelectElement,
   onStartEdit,
@@ -59,8 +64,10 @@ export default function SlideCanvas({
   onEmbedCacheUpdate,
   onEmbedConvertToStatic,
   onEmbedRemove,
+  onInsertDrop,
 }: SlideCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const dragState = useRef<{
     elementId: string;
     startMouseX: number;
@@ -191,12 +198,45 @@ export default function SlideCanvas({
     window.addEventListener('mouseup', onUp);
   }
 
+  const DRAG_MIME = 'application/x-slide-insert';
+
+  function handleDragOver(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes(DRAG_MIME)) {
+      e.preventDefault();
+      setIsDragOver(true);
+    }
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (!canvasRef.current?.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragOver(false);
+    const raw = e.dataTransfer.getData(DRAG_MIME);
+    if (!raw) return;
+    let payload: { kind: string; shape?: string };
+    try { payload = JSON.parse(raw); } catch { return; }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const pctX = ((e.clientX - rect.left) / rect.width) * 100;
+    const pctY = ((e.clientY - rect.top) / rect.height) * 100;
+    onInsertDrop?.(payload.kind, payload.shape ?? null, pctX, pctY);
+  }
+
   return (
     <div
       ref={canvasRef}
-      className={styles.slideCanvas}
+      className={`${styles.slideCanvas} ${isDragOver ? styles.slideCanvasDragOver : ''}`}
       style={slideBackgroundStyle(slide.background)}
       onClick={onClickBackground}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {slide.elements.map((el) => {
         const isSelected = el.id === selectedElementId;
@@ -223,8 +263,16 @@ export default function SlideCanvas({
                 <textarea
                   className={styles.textEditArea}
                   autoFocus
+                  onFocus={(e) => {
+                    if (editingInitialText === null) {
+                      e.target.select();
+                    } else {
+                      const len = e.target.value.length;
+                      e.target.setSelectionRange(len, len);
+                    }
+                  }}
                   spellCheck={spellCheck}
-                  defaultValue={textEl.content}
+                  defaultValue={editingInitialText !== null ? editingInitialText : textEl.content}
                   style={{
                     fontSize: `${textEl.style.fontSize * 0.75}px`,
                     fontWeight: textEl.style.bold ? 700 : 400,
@@ -237,6 +285,7 @@ export default function SlideCanvas({
                     backgroundColor: textEl.style.backgroundColor ?? 'transparent',
                     textAlign: textEl.style.align,
                     fontFamily: textEl.style.fontFamily,
+                    textShadow: textEl.style.shadow ? `2px 2px 4px ${textEl.style.shadowColor ?? 'rgba(0,0,0,0.5)'}` : undefined,
                   }}
                   onBlur={(e) => {
                     onUpdateElement(el.id, (elem) => ({ ...elem, content: e.target.value } as TextElement));
@@ -259,6 +308,7 @@ export default function SlideCanvas({
                     backgroundColor: textEl.style.backgroundColor ?? 'transparent',
                     textAlign: textEl.style.align,
                     fontFamily: textEl.style.fontFamily,
+                    textShadow: textEl.style.shadow ? `2px 2px 4px ${textEl.style.shadowColor ?? 'rgba(0,0,0,0.5)'}` : undefined,
                   }}
                 >
                   {textEl.content || <span style={{ opacity: 0.4 }}>Empty text box</span>}
