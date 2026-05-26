@@ -8,6 +8,10 @@ export interface TextStyle {
   backgroundColor?: string;
   align: 'left' | 'center' | 'right' | 'justify';
   fontFamily: string;
+  lineHeight?: number;
+  spaceBefore?: number;  // pt — space above each paragraph (except first)
+  spaceAfter?: number;   // pt — space below each paragraph
+  listType?: 'none' | 'bullet' | 'numbered';
   shadow?: boolean;
   shadowColor?: string;
 }
@@ -81,7 +85,27 @@ export interface VideoElement {
   animation?: ElementAnimation;
 }
 
-export type SlideElement = TextElement | ShapeElement | SheetEmbedElement | VideoElement;
+export interface ImageElement {
+  id: string;
+  type: 'image';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  src: string;
+  driveFileId?: string;
+  opacity: number;
+  tintColor?: string;
+  tintStrength: number;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  warmth: number;
+  objectFit: 'cover' | 'contain' | 'fill';
+  animation?: ElementAnimation;
+}
+
+export type SlideElement = TextElement | ShapeElement | SheetEmbedElement | VideoElement | ImageElement;
 
 export type SlideBackground =
   | { type: 'color'; value: string }

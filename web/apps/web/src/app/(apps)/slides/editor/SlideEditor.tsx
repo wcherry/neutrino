@@ -45,6 +45,10 @@ import {
   Eraser,
   Video,
   Table2,
+  ImageIcon,
+  List,
+  ListOrdered,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   Button,
@@ -65,6 +69,7 @@ import featureFlags from '@/lib/featureFlags';
 import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-embed';
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
 import { InsertSheetDialog } from './InsertSheetDialog';
+import { InsertImageDialog } from './InsertImageDialog';
 
 // ── Domain modules ────────────────────────────────────────────────────────────
 import type {
@@ -73,6 +78,7 @@ import type {
   TextElement,
   ShapeElement,
   VideoElement,
+  ImageElement,
   SlideElement,
   SlideBackground,
   Slide,
@@ -103,10 +109,93 @@ import styles from './page.module.css';
 const FONT_SIZES = ['8', '10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '60', '72', '96'];
 
 // ── Re-exports ────────────────────────────────────────────────────────────────
-export type { TextStyle, ElementAnimation, TextElement, ShapeElement, VideoElement, SheetEmbedElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
+export type { TextStyle, ElementAnimation, TextElement, ShapeElement, VideoElement, ImageElement, SheetEmbedElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
 // importFromPptx is intentionally NOT re-exported here so that pptxImport (and
 // its jszip dependency) stays out of the initial bundle. Callers that need it
 // should use: const { importFromPptx } = await import('./pptxImport')
+
+// ── Line spacing menu ─────────────────────────────────────────────────────────
+
+const LINE_SPACING_PRESETS = [
+  { value: 1, label: 'Single' },
+  { value: 1.15, label: '1.15' },
+  { value: 1.5, label: '1.5' },
+  { value: 2, label: 'Double' },
+];
+
+function LineSpacingMenu({
+  lineHeight,
+  spaceBefore,
+  spaceAfter,
+  fontSize,
+  onChangeLineHeight,
+  onChangeSpaceBefore,
+  onChangeSpaceAfter,
+}: {
+  lineHeight: number | undefined;
+  spaceBefore: number | undefined;
+  spaceAfter: number | undefined;
+  fontSize: number;
+  onChangeLineHeight: (lh: number) => void;
+  onChangeSpaceBefore: (pt: number) => void;
+  onChangeSpaceAfter: (pt: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const currentLH = lineHeight ?? 1.15;
+  const spaceAmount = Math.round(fontSize);
+  const hasSpaceBefore = (spaceBefore ?? 0) > 0;
+  const hasSpaceAfter = (spaceAfter ?? 0) > 0;
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <ToolbarButton active={open} onClick={() => setOpen((v) => !v)} title="Line & paragraph spacing">
+        <ArrowUpDown size={15} />
+      </ToolbarButton>
+      {open && (
+        <div className={styles.lineSpacingDropdown}>
+          {LINE_SPACING_PRESETS.map((p) => (
+            <button
+              key={p.value}
+              className={styles.lineSpacingItem}
+              onClick={() => { onChangeLineHeight(p.value); setOpen(false); }}
+            >
+              <span className={styles.lineSpacingCheck}>
+                {Math.abs(currentLH - p.value) < 0.01 ? '✓' : ''}
+              </span>
+              {p.label}
+            </button>
+          ))}
+          <div className={styles.lineSpacingDivider} />
+          <button
+            className={styles.lineSpacingItem}
+            onClick={() => { onChangeSpaceBefore(hasSpaceBefore ? 0 : spaceAmount); setOpen(false); }}
+          >
+            <span className={styles.lineSpacingCheck} />
+            {hasSpaceBefore ? 'Remove space before paragraph' : 'Add space before paragraph'}
+          </button>
+          <button
+            className={styles.lineSpacingItem}
+            onClick={() => { onChangeSpaceAfter(hasSpaceAfter ? 0 : spaceAmount); setOpen(false); }}
+          >
+            <span className={styles.lineSpacingCheck} />
+            {hasSpaceAfter ? 'Remove space after paragraph' : 'Add space after paragraph'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Save status ──────────────────────────────────────────────────────────────
 
@@ -145,6 +234,7 @@ export function SlideEditor() {
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [videoUrlInput, setVideoUrlInput] = useState('');
   const [sheetDialogOpen, setSheetDialogOpen] = useState(false);
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef('');
@@ -503,6 +593,27 @@ export function SlideEditor() {
       autoplay: false,
       loop: false,
       muted: false,
+    };
+    updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+    setSelectedElementId(el.id);
+  }
+
+  // ── Image operations ──────────────────────────────────────────────────────
+
+  function addImage(src: string, driveFileId?: string) {
+    const el: ImageElement = {
+      id: uid(),
+      type: 'image',
+      x: 10, y: 10, w: 80, h: 70,
+      src,
+      driveFileId,
+      opacity: 1,
+      tintStrength: 0,
+      brightness: 0,
+      contrast: 0,
+      saturation: 0,
+      warmth: 0,
+      objectFit: 'cover',
     };
     updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
     setSelectedElementId(el.id);
@@ -1046,7 +1157,153 @@ export function SlideEditor() {
 
             <ToolbarDivider />
 
+            {/* Line & paragraph spacing */}
+            <LineSpacingMenu
+              lineHeight={(selectedElement as TextElement).style.lineHeight}
+              spaceBefore={(selectedElement as TextElement).style.spaceBefore}
+              spaceAfter={(selectedElement as TextElement).style.spaceAfter}
+              fontSize={(selectedElement as TextElement).style.fontSize}
+              onChangeLineHeight={(lh) => updateTextStyle(selectedElement.id, { lineHeight: lh })}
+              onChangeSpaceBefore={(pt) => updateTextStyle(selectedElement.id, { spaceBefore: pt })}
+              onChangeSpaceAfter={(pt) => updateTextStyle(selectedElement.id, { spaceAfter: pt })}
+            />
+
+            {/* List type */}
+            <ToolbarGroup>
+              <ToolbarButton
+                active={(selectedElement as TextElement).style.listType === 'bullet'}
+                onClick={() => {
+                  const t = selectedElement as TextElement;
+                  updateTextStyle(t.id, { listType: t.style.listType === 'bullet' ? 'none' : 'bullet' });
+                }}
+                title="Bullet list"
+              >
+                <List size={15} />
+              </ToolbarButton>
+              <ToolbarButton
+                active={(selectedElement as TextElement).style.listType === 'numbered'}
+                onClick={() => {
+                  const t = selectedElement as TextElement;
+                  updateTextStyle(t.id, { listType: t.style.listType === 'numbered' ? 'none' : 'numbered' });
+                }}
+                title="Numbered list"
+              >
+                <ListOrdered size={15} />
+              </ToolbarButton>
+            </ToolbarGroup>
+
+            <ToolbarDivider />
+
             <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
+              <Trash2 size={15} />
+            </ToolbarButton>
+          </>
+        )}
+
+        {/* Image controls */}
+        {selectedElement?.type === 'image' && (
+          <>
+            <ToolbarDivider />
+            <ToolbarGroup>
+              <ToolbarSelect
+                value={(selectedElement as ImageElement).objectFit ?? 'cover'}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, objectFit: e.target.value } as ImageElement))}
+                title="Image fit"
+              >
+                <option value="cover">Cover</option>
+                <option value="contain">Contain</option>
+                <option value="fill">Fill</option>
+              </ToolbarSelect>
+            </ToolbarGroup>
+
+            <ToolbarDivider />
+
+            {/* Transparency */}
+            <span className={styles.toolbarLabel} title="Opacity">
+              Opacity
+              <input
+                type="range"
+                min={0} max={100} step={1}
+                value={Math.round(((selectedElement as ImageElement).opacity ?? 1) * 100)}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, opacity: parseInt(e.target.value) / 100 } as ImageElement))}
+                className={styles.toolbarSlider}
+              />
+              {Math.round(((selectedElement as ImageElement).opacity ?? 1) * 100)}%
+            </span>
+
+            <ToolbarDivider />
+
+            {/* Tint */}
+            <ColorPickerPopover
+              color={(selectedElement as ImageElement).tintColor ?? '#ff0000'}
+              onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, tintColor: hex } as ImageElement))}
+              title="Tint color"
+              showAlpha={featureFlags.colorPickerAlpha}
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                <span style={{ fontSize: 11 }}>Tint</span>
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ImageElement).tintColor ?? '#ff0000' }} />
+              </span>
+            </ColorPickerPopover>
+            <input
+              type="range"
+              min={0} max={100} step={1}
+              value={Math.round(((selectedElement as ImageElement).tintStrength ?? 0) * 100)}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, tintStrength: parseInt(e.target.value) / 100 } as ImageElement))}
+              className={styles.toolbarSlider}
+              title="Tint strength"
+            />
+
+            <ToolbarDivider />
+
+            {/* Color adjustments */}
+            <span className={styles.toolbarLabel} title="Brightness">
+              Bright
+              <input
+                type="range"
+                min={-100} max={100} step={1}
+                value={(selectedElement as ImageElement).brightness ?? 0}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, brightness: parseInt(e.target.value) } as ImageElement))}
+                className={styles.toolbarSlider}
+              />
+            </span>
+            <span className={styles.toolbarLabel} title="Contrast">
+              Contrast
+              <input
+                type="range"
+                min={-100} max={100} step={1}
+                value={(selectedElement as ImageElement).contrast ?? 0}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, contrast: parseInt(e.target.value) } as ImageElement))}
+                className={styles.toolbarSlider}
+              />
+            </span>
+            <span className={styles.toolbarLabel} title="Saturation">
+              Sat
+              <input
+                type="range"
+                min={-100} max={100} step={1}
+                value={(selectedElement as ImageElement).saturation ?? 0}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, saturation: parseInt(e.target.value) } as ImageElement))}
+                className={styles.toolbarSlider}
+              />
+            </span>
+
+            <ToolbarDivider />
+
+            {/* White balance */}
+            <span className={styles.toolbarLabel} title="White balance (warm/cool)">
+              Warm
+              <input
+                type="range"
+                min={-100} max={100} step={1}
+                value={(selectedElement as ImageElement).warmth ?? 0}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, warmth: parseInt(e.target.value) } as ImageElement))}
+                className={styles.toolbarSlider}
+              />
+            </span>
+
+            <ToolbarDivider />
+            <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete image">
               <Trash2 size={15} />
             </ToolbarButton>
           </>
@@ -1488,6 +1745,10 @@ export function SlideEditor() {
                     </div>
                     <div className={styles.insertSection}>
                       <span className={styles.insertSectionLabel}>Media</span>
+                      <button className={styles.insertBtn} onClick={() => setImageDialogOpen(true)}>
+                        <ImageIcon size={15} />
+                        <span>Image</span>
+                      </button>
                       <button className={styles.insertBtn} onClick={() => { setVideoUrlInput(''); setVideoDialogOpen(true); }}>
                         <Video size={15} />
                         <span>Video</span>
@@ -1584,6 +1845,13 @@ export function SlideEditor() {
         <InsertSheetDialog
           onInsert={(attrs) => { addSheetEmbed(attrs); setSheetDialogOpen(false); }}
           onClose={() => setSheetDialogOpen(false)}
+        />
+      )}
+
+      {imageDialogOpen && (
+        <InsertImageDialog
+          onInsert={(src, driveFileId) => { addImage(src, driveFileId); setImageDialogOpen(false); }}
+          onClose={() => setImageDialogOpen(false)}
         />
       )}
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import type { Slide, SlideElement, TextElement, ShapeElement, SheetEmbedElement, VideoElement } from './slideEditorTypes';
+import type { Slide, SlideElement, TextElement, ShapeElement, SheetEmbedElement, VideoElement, ImageElement } from './slideEditorTypes';
 import { SHAPE_CATALOG, RESIZE_HANDLES } from './slideEditorConstants';
 import { slideBackgroundStyle, getVideoEmbedInfo } from './slideEditorHelpers';
 import { SheetEmbedRenderer } from '@neutrino/sheet-embed';
@@ -285,6 +285,7 @@ export default function SlideCanvas({
                     backgroundColor: textEl.style.backgroundColor ?? 'transparent',
                     textAlign: textEl.style.align,
                     fontFamily: textEl.style.fontFamily,
+                    lineHeight: textEl.style.lineHeight ?? 1.3,
                     textShadow: textEl.style.shadow ? `2px 2px 4px ${textEl.style.shadowColor ?? 'rgba(0,0,0,0.5)'}` : undefined,
                   }}
                   onBlur={(e) => {
@@ -308,10 +309,36 @@ export default function SlideCanvas({
                     backgroundColor: textEl.style.backgroundColor ?? 'transparent',
                     textAlign: textEl.style.align,
                     fontFamily: textEl.style.fontFamily,
+                    lineHeight: textEl.style.lineHeight ?? 1.3,
                     textShadow: textEl.style.shadow ? `2px 2px 4px ${textEl.style.shadowColor ?? 'rgba(0,0,0,0.5)'}` : undefined,
                   }}
                 >
-                  {textEl.content || <span style={{ opacity: 0.4 }}>Empty text box</span>}
+                  {!textEl.content ? (
+                    <span style={{ opacity: 0.4 }}>Empty text box</span>
+                  ) : textEl.content.split('\n').map((line, i, arr) => {
+                    const listType = textEl.style.listType ?? 'none';
+                    const spaceBefore = (textEl.style.spaceBefore ?? 0) * 0.75;
+                    const spaceAfter = (textEl.style.spaceAfter ?? 0) * 0.75;
+                    return (
+                      <div
+                        key={i}
+                        style={{
+                          display: 'flex',
+                          gap: listType !== 'none' ? '0.4em' : undefined,
+                          marginTop: i > 0 ? spaceBefore : 0,
+                          marginBottom: i < arr.length - 1 ? spaceAfter : 0,
+                        }}
+                      >
+                        {listType === 'bullet' && (
+                          <span style={{ flexShrink: 0, userSelect: 'none' }}>•</span>
+                        )}
+                        {listType === 'numbered' && (
+                          <span style={{ flexShrink: 0, userSelect: 'none' }}>{i + 1}.</span>
+                        )}
+                        <span style={{ flex: 1 }}>{line || ' '}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {isSelected && !isEditing && RESIZE_HANDLES.map((h) => (
@@ -464,6 +491,72 @@ export default function SlideCanvas({
                 <div style={{ position: 'absolute', inset: 0, cursor: 'move' }} />
               )}
               {isSelected && !isEditing && RESIZE_HANDLES.map((h) => (
+                <div
+                  key={h.id}
+                  className={styles.resizeHandle}
+                  style={{ top: h.top, left: h.left, cursor: h.cursor }}
+                  onMouseDown={(e) => handleResizeMouseDown(e, el.id, el, h.id)}
+                />
+              ))}
+            </div>
+          );
+        }
+
+        if (el.type === 'image') {
+          const imgEl = el as ImageElement;
+          const filterParts: string[] = [];
+          if (imgEl.brightness !== 0) filterParts.push(`brightness(${1 + imgEl.brightness / 100})`);
+          if (imgEl.contrast !== 0) filterParts.push(`contrast(${1 + imgEl.contrast / 100})`);
+          if (imgEl.saturation !== 0) filterParts.push(`saturate(${Math.max(0, 1 + imgEl.saturation / 100)})`);
+          if (imgEl.warmth > 0) {
+            filterParts.push(`sepia(${(imgEl.warmth / 100) * 0.5})`);
+            filterParts.push(`hue-rotate(${imgEl.warmth * -0.1}deg)`);
+          } else if (imgEl.warmth < 0) {
+            filterParts.push(`hue-rotate(${imgEl.warmth * 0.5}deg)`);
+          }
+          const imgFilter = filterParts.length > 0 ? filterParts.join(' ') : undefined;
+
+          return (
+            <div
+              key={el.id}
+              className={`${styles.slideElement} ${isSelected ? styles.slideElementSelected : ''}`}
+              style={{
+                left: `${el.x}%`,
+                top: `${el.y}%`,
+                width: `${el.w}%`,
+                height: `${el.h}%`,
+                cursor: 'move',
+                overflow: 'hidden',
+              }}
+              onMouseDown={(e) => handleMouseDown(e, el.id, el)}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imgEl.src}
+                alt=""
+                draggable={false}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: imgEl.objectFit ?? 'cover',
+                  opacity: imgEl.opacity ?? 1,
+                  filter: imgFilter,
+                  display: 'block',
+                  pointerEvents: 'none',
+                }}
+              />
+              {imgEl.tintColor && imgEl.tintStrength > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  backgroundColor: imgEl.tintColor,
+                  opacity: imgEl.tintStrength,
+                  mixBlendMode: 'multiply',
+                  pointerEvents: 'none',
+                }} />
+              )}
+              {isSelected && RESIZE_HANDLES.map((h) => (
                 <div
                   key={h.id}
                   className={styles.resizeHandle}
