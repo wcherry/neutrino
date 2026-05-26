@@ -392,6 +392,7 @@
   height: 100%;
   overflow: hidden;
   line-height: 1.3;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 
@@ -1207,6 +1208,14 @@
 }
 
 
+/* ── Toolbar slider ──────────────────────────────────────────────────────── */
+
+.toolbarSlider {
+  width: 64px;
+  cursor: pointer;
+  accent-color: var(--color-accent);
+}
+
 /* ── Toolbar number input ────────────────────────────────────────────────── */
 
 .toolbarNumberInput {
@@ -1941,3 +1950,200 @@
   flex-shrink: 0;
 }
 
+
+/* ── Insert Image Dialog ─────────────────────────────────────────────────── */
+
+.imageTabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: var(--space-2);
+  flex-shrink: 0;
+}
+
+.imageTab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  background: none;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.imageTab:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.imageTabActive {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  font-weight: var(--font-weight-medium);
+}
+
+.imageDialogContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.imageDriveGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-1);
+}
+
+.imageDriveItem {
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--color-surface-raised);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  aspect-ratio: 4 / 3;
+}
+
+.imageDriveItem:hover {
+  border-color: var(--color-border-strong);
+}
+
+.imageDriveItemActive {
+  border-color: var(--color-accent);
+}
+
+.imageDriveItemImg {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  object-fit: cover;
+}
+
+.imageDriveItemName {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  padding: 2px var(--space-1) var(--space-1);
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.imageUrlPreview {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.imageUploadArea {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
+}
+
+.imageUploadBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  width: 100%;
+  justify-content: center;
+}
+
+.imageUploadBtn:hover:not(:disabled) {
+  background: var(--color-surface-raised);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.imageUploadBtn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.imageUploadProgress {
+  height: 4px;
+  background: var(--color-surface-raised);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.imageUploadProgressBar {
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 0.15s;
+}
+
+/* ── Line spacing dropdown ───────────────────────────────────────────────── */
+
+.lineSpacingDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px 0;
+  min-width: 220px;
+  z-index: 200;
+}
+
+.lineSpacingItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 16px;
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  gap: 0;
+}
+
+.lineSpacingItem:hover {
+  background: var(--color-surface-raised, rgba(0, 0, 0, 0.04));
+}
+
+.lineSpacingCheck {
+  display: inline-block;
+  width: 20px;
+  flex-shrink: 0;
+  color: var(--color-accent);
+  font-size: 13px;
+}
+
+.lineSpacingDivider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
