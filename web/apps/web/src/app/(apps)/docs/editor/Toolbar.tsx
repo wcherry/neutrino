@@ -1,18 +1,82 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { Editor } from '@tiptap/react';
 import {
   Code, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Link, Image, Table, Minus, Undo, Redo, Quote,
+  Link, Image, Table, Minus, Undo, Redo, Quote, ArrowUpDown,
 } from 'lucide-react';
 import {
-  Toolbar as RickTextToolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect, ColorSwatch,
+  Toolbar as RickTextToolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect, ColorPickerPopover,
 } from '@neutrino/ui';
 import { FONT_FAMILIES } from '@/constants/editor';
+import styles from './page.module.css';
 
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
+
+const LINE_SPACING_PRESETS = [
+  { value: 1,    label: 'Single' },
+  { value: 1.15, label: '1.15' },
+  { value: 1.5,  label: '1.5' },
+  { value: 2,    label: 'Double' },
+];
+
+function LineSpacingMenu({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const attrs = editor.getAttributes('paragraph');
+  const currentLH = (attrs.lineHeight as number | null) ?? 1.15;
+  const spaceBefore = (attrs.spaceBefore as number | null) ?? 0;
+  const spaceAfter  = (attrs.spaceAfter  as number | null) ?? 0;
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <ToolbarButton active={open} onClick={() => setOpen(v => !v)} title="Line & paragraph spacing">
+        <ArrowUpDown size={15} />
+      </ToolbarButton>
+      {open && (
+        <div className={styles.lineSpacingDropdown}>
+          {LINE_SPACING_PRESETS.map(p => (
+            <button
+              key={p.value}
+              className={styles.lineSpacingItem}
+              onClick={() => { editor.chain().focus().updateAttributes('paragraph', { lineHeight: p.value }).run(); setOpen(false); }}
+            >
+              <span className={styles.lineSpacingCheck}>{Math.abs(currentLH - p.value) < 0.01 ? '✓' : ''}</span>
+              {p.label}
+            </button>
+          ))}
+          <div className={styles.lineSpacingDivider} />
+          <button
+            className={styles.lineSpacingItem}
+            onClick={() => { editor.chain().focus().updateAttributes('paragraph', { spaceBefore: spaceBefore > 0 ? 0 : 8 }).run(); setOpen(false); }}
+          >
+            <span className={styles.lineSpacingCheck} />
+            {spaceBefore > 0 ? 'Remove space before paragraph' : 'Add space before paragraph'}
+          </button>
+          <button
+            className={styles.lineSpacingItem}
+            onClick={() => { editor.chain().focus().updateAttributes('paragraph', { spaceAfter: spaceAfter > 0 ? 0 : 8 }).run(); setOpen(false); }}
+          >
+            <span className={styles.lineSpacingCheck} />
+            {spaceAfter > 0 ? 'Remove space after paragraph' : 'Add space after paragraph'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const HEADINGS: { label: string; level: number | null }[] = [
   { label: 'Normal', level: null },
@@ -30,9 +94,6 @@ export interface ToolbarProps {
 }
 
 export function Toolbar({ editor, onInsertImage }: ToolbarProps) {
-  const colorInputRef = useRef<HTMLInputElement>(null);
-  const highlightInputRef = useRef<HTMLInputElement>(null);
-
   if (!editor) return null;
 
   const currentHeading = HEADINGS.find(h =>
@@ -120,17 +181,31 @@ export function Toolbar({ editor, onInsertImage }: ToolbarProps) {
       <ToolbarDivider />
 
       <ToolbarGroup>
-        <ToolbarButton onClick={() => colorInputRef.current?.click()} title="Text color" style={{ flexDirection: 'column', gap: 1, height: 32 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1 }}>A</span>
-          <ColorSwatch color={editor.getAttributes('textStyle').color ?? '#202124'} />
-          <input ref={colorInputRef} type="color" style={{ display: 'none' }} defaultValue="#202124" onChange={e => editor.chain().focus().setColor(e.target.value).run()} />
-        </ToolbarButton>
-        <ToolbarButton onClick={() => highlightInputRef.current?.click()} title="Highlight color" style={{ flexDirection: 'column', gap: 1, height: 32 }}>
-          <span style={{ fontSize: 12, lineHeight: 1 }}>⬛</span>
-          <ColorSwatch color={editor.getAttributes('highlight').color ?? '#fef08a'} />
-          <input ref={highlightInputRef} type="color" style={{ display: 'none' }} defaultValue="#fef08a" onChange={e => editor.chain().focus().toggleHighlight({ color: e.target.value }).run()} />
-        </ToolbarButton>
+        <ColorPickerPopover
+          color={editor.getAttributes('textStyle').color ?? '#202124'}
+          onChange={(hex) => editor.chain().focus().setColor(hex).run()}
+          title="Text color"
+        >
+          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
+            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: editor.getAttributes('textStyle').color ?? '#202124' }} />
+          </span>
+        </ColorPickerPopover>
+        <ColorPickerPopover
+          color={editor.getAttributes('highlight').color ?? '#fef08a'}
+          onChange={(hex) => editor.chain().focus().toggleHighlight({ color: hex }).run()}
+          title="Highlight color"
+        >
+          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+            <span style={{ fontSize: 12, lineHeight: 1 }}>⬛</span>
+            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: editor.getAttributes('highlight').color ?? '#fef08a' }} />
+          </span>
+        </ColorPickerPopover>
       </ToolbarGroup>
+
+      <ToolbarDivider />
+
+      <LineSpacingMenu editor={editor} />
 
       <ToolbarDivider />
 

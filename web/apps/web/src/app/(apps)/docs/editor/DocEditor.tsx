@@ -9,6 +9,7 @@ import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
 import { useSheetPasteInterceptor, PasteChoiceDialog, type SheetEmbedAttrsShape, type CellValue } from '@neutrino/sheet-embed';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import Paragraph from '@tiptap/extension-paragraph';
 import Underline from '@tiptap/extension-underline';
 import TextStyle from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
@@ -257,6 +258,31 @@ function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
   );
 }
 
+// ── Custom paragraph with line-height / paragraph-spacing support ────────────
+
+const LineParagraph = Paragraph.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      lineHeight: {
+        default: null,
+        renderHTML: (attrs: Record<string, unknown>) => attrs.lineHeight ? { style: `line-height: ${attrs.lineHeight}` } : {},
+        parseHTML: (el: HTMLElement) => el.style.lineHeight || null,
+      },
+      spaceBefore: {
+        default: null,
+        renderHTML: (attrs: Record<string, unknown>) => attrs.spaceBefore ? { style: `margin-top: ${attrs.spaceBefore}pt` } : {},
+        parseHTML: (el: HTMLElement) => el.style.marginTop ? parseFloat(el.style.marginTop) : null,
+      },
+      spaceAfter: {
+        default: null,
+        renderHTML: (attrs: Record<string, unknown>) => attrs.spaceAfter ? { style: `margin-bottom: ${attrs.spaceAfter}pt` } : {},
+        parseHTML: (el: HTMLElement) => el.style.marginBottom ? parseFloat(el.style.marginBottom) : null,
+      },
+    };
+  },
+});
+
 // ── Main editor ──────────────────────────────────────────────────────────────
 
 const AUTO_SAVE_DELAY_MS = 2000;
@@ -401,7 +427,8 @@ export function DocEditor() {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({ paragraph: false }),
+      LineParagraph,
       Underline,
       TextStyle,
       Color,
