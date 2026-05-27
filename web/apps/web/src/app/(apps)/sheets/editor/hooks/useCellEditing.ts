@@ -8,6 +8,7 @@ import { computeCell, propagateDeps, functionsList, type SheetRef } from '../for
 import { insertCellRef, isFormulaPickActive } from '../formulaBarCellPick';
 import { applyPatch, buildReversePatch } from '../cellPatch';
 import type { UndoPatch } from '../cellPatch';
+import { MAX_COLS } from '../constants';
 
 export function useCellEditing({
     data,
@@ -76,7 +77,7 @@ export function useCellEditing({
         setSelectionAnchor(id);
         setSelectionActive(id);
         selectionAnchorLatestRef.current = id;
-        formulaInputRef.current?.focus();
+        // No focus() call — formula bar focuses only on explicit user click, keeping arrow-key navigation active.
 
         startTransition(() => {
             const base = dataRef.current;
@@ -181,14 +182,27 @@ export function useCellEditing({
         }
     };
 
-    const handleEnterOrTab = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleFormulaBarKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter' && currentCell) {
+            event.preventDefault();
             setFormulaPickMode(false);
             pickAnchorRef.current = null;
             const m = currentCell.id.match(/^([A-Z]+)(\d+)$/);
-            if (m) activateCell(`${m[1]}${parseInt(m[2]) + 1}`);
-        }
-        if (event.key === 'Escape') {
+            if (m) {
+                activateCell(`${m[1]}${parseInt(m[2]) + 1}`);
+                formulaInputRef.current?.blur();
+            }
+        } else if (event.key === 'Tab' && currentCell) {
+            event.preventDefault();
+            setFormulaPickMode(false);
+            pickAnchorRef.current = null;
+            const m = currentCell.id.match(/^([A-Z]+)(\d+)$/);
+            if (m) {
+                const nextCol = Math.min(alphaToNum(m[1]) + 1, MAX_COLS);
+                activateCell(`${numToAlpha(nextCol)}${m[2]}`);
+                formulaInputRef.current?.blur();
+            }
+        } else if (event.key === 'Escape') {
             setFormulaPickMode(false);
             pickAnchorRef.current = null;
         }
@@ -415,7 +429,7 @@ export function useCellEditing({
         stableOnCellActivate,
         stableOnSelectionExtend,
         handleTextChange,
-        handleEnterOrTab,
+        handleFormulaBarKeyDown,
         handleFormulaBarFocus,
         handleFormulaBarBlur,
         toggleAllFunctions,
