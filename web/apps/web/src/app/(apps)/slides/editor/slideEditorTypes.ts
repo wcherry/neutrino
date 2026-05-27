@@ -50,6 +50,21 @@ export interface ShapeElement {
   animation?: ElementAnimation;
 }
 
+export interface LineElement {
+  id: string;
+  type: 'line';
+  x1: number; // percentage 0-100
+  y1: number;
+  x2: number;
+  y2: number;
+  stroke: string;
+  strokeWidth: number;
+  strokeDash?: string;
+  startArrow?: 'none' | 'arrow' | 'triangle';
+  endArrow?: 'none' | 'arrow' | 'triangle';
+  animation?: ElementAnimation;
+}
+
 export interface SheetEmbedElement {
   id: string;
   type: 'sheetEmbed';
@@ -105,7 +120,7 @@ export interface ImageElement {
   animation?: ElementAnimation;
 }
 
-export type SlideElement = TextElement | ShapeElement | SheetEmbedElement | VideoElement | ImageElement;
+export type SlideElement = TextElement | ShapeElement | LineElement | SheetEmbedElement | VideoElement | ImageElement;
 
 export type SlideBackground =
   | { type: 'color'; value: string }

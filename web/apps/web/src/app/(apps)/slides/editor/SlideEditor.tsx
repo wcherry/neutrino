@@ -77,6 +77,7 @@ import type {
   ElementAnimation,
   TextElement,
   ShapeElement,
+  LineElement,
   VideoElement,
   ImageElement,
   SlideElement,
@@ -90,6 +91,7 @@ import {
   DEFAULT_THEME,
   SHAPE_CATALOG,
   SHAPE_GROUPS,
+  LINE_CATALOG,
   SLIDE_LAYOUTS,
   makeDefaultPresentation,
   makeDefaultMaster,
@@ -200,6 +202,102 @@ function LineSpacingMenu({
 // ── Save status ──────────────────────────────────────────────────────────────
 
 type SaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
+
+// ── Line SVG preview (insert panel) ──────────────────────────────────────────
+
+function LineSvgPreview({ lineType }: { lineType: string }) {
+  const color = 'currentColor';
+  const sw = 1.5;
+  switch (lineType) {
+    case 'arrow-left':
+      return (
+        <svg viewBox="0 0 28 12" width="28" height="12" style={{ flexShrink: 0 }}>
+          <line x1="8" y1="6" x2="26" y2="6" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+          <polygon points="11 2, 2 6, 11 10" fill={color} />
+        </svg>
+      );
+    case 'arrow':
+      return (
+        <svg viewBox="0 0 28 12" width="28" height="12" style={{ flexShrink: 0 }}>
+          <line x1="2" y1="6" x2="20" y2="6" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+          <polygon points="17 2, 26 6, 17 10" fill={color} />
+        </svg>
+      );
+    case 'double-arrow':
+      return (
+        <svg viewBox="0 0 28 12" width="28" height="12" style={{ flexShrink: 0 }}>
+          <line x1="8" y1="6" x2="20" y2="6" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+          <polygon points="11 2, 2 6, 11 10" fill={color} />
+          <polygon points="17 2, 26 6, 17 10" fill={color} />
+        </svg>
+      );
+    case 'dashed':
+      return (
+        <svg viewBox="0 0 28 12" width="28" height="12" style={{ flexShrink: 0 }}>
+          <line x1="2" y1="6" x2="26" y2="6" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeDasharray="4 3" />
+        </svg>
+      );
+    case 'dashed-arrow':
+      return (
+        <svg viewBox="0 0 28 12" width="28" height="12" style={{ flexShrink: 0 }}>
+          <line x1="2" y1="6" x2="20" y2="6" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeDasharray="4 3" />
+          <polygon points="17 2, 26 6, 17 10" fill={color} />
+        </svg>
+      );
+    default: // straight
+      return (
+        <svg viewBox="0 0 28 12" width="28" height="12" style={{ flexShrink: 0 }}>
+          <line x1="2" y1="6" x2="26" y2="6" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+        </svg>
+      );
+  }
+}
+
+// ── Lines toolbar dropdown ────────────────────────────────────────────────────
+
+const TOOLBAR_LINE_TYPES = [
+  { id: 'straight',     label: 'Line' },
+  { id: 'arrow-left',   label: 'Left Arrow' },
+  { id: 'arrow',        label: 'Right Arrow' },
+  { id: 'double-arrow', label: 'Double Arrow' },
+] as const;
+
+function LinesToolbarDropdown({ onAdd }: { onAdd: (lineType: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <ToolbarButton active={open} onClick={() => setOpen((v) => !v)} title="Insert line">
+        <Minus size={14} />
+        <ChevronDown size={10} style={{ marginLeft: 1 }} />
+      </ToolbarButton>
+      {open && (
+        <div className={styles.lineSpacingDropdown}>
+          {TOOLBAR_LINE_TYPES.map((lt) => (
+            <button
+              key={lt.id}
+              className={styles.lineSpacingItem}
+              onClick={() => { onAdd(lt.id); setOpen(false); }}
+            >
+              <LineSvgPreview lineType={lt.id} />
+              <span style={{ marginLeft: '0.5em' }}>{lt.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Main component ───────────────────────────────────────────────────────────
 
@@ -543,6 +641,21 @@ export function SlideEditor() {
     setSelectedElementId(el.id);
   }
 
+  function addLine(lineType: string) {
+    const def = LINE_CATALOG[lineType];
+    if (!def) return;
+    const el: LineElement = {
+      id: uid(), type: 'line',
+      x1: 20, y1: 50, x2: 80, y2: 50,
+      stroke: '#1f2937', strokeWidth: 2,
+      ...(def.strokeDash   ? { strokeDash:  def.strokeDash  } : {}),
+      ...(def.startArrow   ? { startArrow:  def.startArrow  } : {}),
+      ...(def.endArrow     ? { endArrow:    def.endArrow    } : {}),
+    };
+    updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+    setSelectedElementId(el.id);
+  }
+
   function handleInsertDrop(kind: string, shape: string | null, pctX: number, pctY: number) {
     if (kind === 'text') {
       const w = 60, h = 15;
@@ -570,6 +683,21 @@ export function SlideEditor() {
         stroke: '#000000',
         strokeWidth: 1,
         strokeDash: '',
+      };
+      updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+      setSelectedElementId(el.id);
+    } else if (kind === 'line' && shape) {
+      const def = LINE_CATALOG[shape];
+      if (!def) return;
+      const halfLen = 15;
+      const el: LineElement = {
+        id: uid(), type: 'line',
+        x1: Math.max(0, pctX - halfLen), y1: pctY,
+        x2: Math.min(100, pctX + halfLen), y2: pctY,
+        stroke: '#1f2937', strokeWidth: 2,
+        ...(def.strokeDash ? { strokeDash: def.strokeDash } : {}),
+        ...(def.startArrow ? { startArrow: def.startArrow } : {}),
+        ...(def.endArrow   ? { endArrow:   def.endArrow   } : {}),
       };
       updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
       setSelectedElementId(el.id);
@@ -953,6 +1081,9 @@ export function SlideEditor() {
 
       {/* Toolbar */}
       <RichTextToolbar>
+        <LinesToolbarDropdown onAdd={addLine} />
+        <ToolbarDivider />
+
         {/* Video controls */}
         {selectedElement?.type === 'video' && (
           <>
@@ -1369,6 +1500,59 @@ export function SlideEditor() {
             </ToolbarSelect>
             <ToolbarDivider />
             <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
+              <Trash2 size={15} />
+            </ToolbarButton>
+          </>
+        )}
+
+        {/* Line stroke controls */}
+        {selectedElement?.type === 'line' && (
+          <>
+            <ToolbarDivider />
+            <ToolbarGroup>
+              <ColorPickerPopover
+                color={(selectedElement as LineElement).stroke}
+                onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as LineElement))}
+                title="Line color"
+                showAlpha={featureFlags.colorPickerAlpha}
+              >
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                  <span style={{ fontSize: 12 }}>&#9633;</span>
+                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as LineElement).stroke }} />
+                </span>
+              </ColorPickerPopover>
+            </ToolbarGroup>
+            <ToolbarDivider />
+            <ToolbarGroup>
+              <ToolbarButton
+                onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.max(1, (el as LineElement).strokeWidth - 1) } as LineElement))}
+                disabled={(selectedElement as LineElement).strokeWidth <= 1}
+                title="Decrease line width"
+              >
+                <Minus size={12} />
+              </ToolbarButton>
+              <span className={styles.stepperValue}>{(selectedElement as LineElement).strokeWidth}px</span>
+              <ToolbarButton
+                onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.min(20, (el as LineElement).strokeWidth + 1) } as LineElement))}
+                disabled={(selectedElement as LineElement).strokeWidth >= 20}
+                title="Increase line width"
+              >
+                <Plus size={12} />
+              </ToolbarButton>
+            </ToolbarGroup>
+            <ToolbarSelect
+              value={(selectedElement as LineElement).strokeDash ?? ''}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, strokeDash: e.target.value || undefined } as LineElement))}
+              title="Line style"
+            >
+              <option value="">Solid</option>
+              <option value="4 4">Dashed</option>
+              <option value="2 2">Dotted</option>
+              <option value="8 4 2 4">Dash · dot</option>
+              <option value="8 4 2 4 2 4">Dash · dot · dot</option>
+            </ToolbarSelect>
+            <ToolbarDivider />
+            <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete line">
               <Trash2 size={15} />
             </ToolbarButton>
           </>

@@ -199,6 +199,7 @@
 
 .slidePanelList {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--space-2);
   display: flex;
@@ -241,6 +242,7 @@
 
 .slideThumbnail {
   position: relative;
+  flex-shrink: 0;
   cursor: pointer;
   border: 2px solid transparent;
   border-radius: var(--radius-sm);
@@ -288,8 +290,8 @@
 }
 
 .thumbnailPreview {
-  width: 100%;
-  aspect-ratio: 16 / 9;
+  width: 160px;
+  height: 90px;
   position: relative;
   overflow: hidden;
 }
@@ -806,9 +808,17 @@
 
 .presenterWrapper {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   background: #111;
   overflow: hidden;
+}
+
+.presenterContent {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .presenterMain {
@@ -1022,6 +1032,52 @@
   color: rgba(255,255,255,0.75);
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+.mirrorPrompt {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: rgba(30, 30, 30, 0.98);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.88);
+  font-family: inherit;
+}
+
+.mirrorPromptBtnYes {
+  background: rgba(59, 130, 246, 0.75);
+  border: 1px solid rgba(96, 165, 250, 0.6);
+  border-radius: var(--radius-md);
+  color: #fff;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  transition: background var(--duration-fast);
+}
+
+.mirrorPromptBtnYes:hover {
+  background: rgba(59, 130, 246, 0.95);
+}
+
+.mirrorPromptBtnNo {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius-md);
+  color: rgba(255, 255, 255, 0.7);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  transition: background var(--duration-fast);
+}
+
+.mirrorPromptBtnNo:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 /* ── Animation keyframes ─────────────────────────────────────────────────── */

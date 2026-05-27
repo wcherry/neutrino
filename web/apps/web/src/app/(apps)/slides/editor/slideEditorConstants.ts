@@ -147,6 +147,22 @@ export const SHAPE_GROUPS: Array<{ key: 'general' | 'arrows' | 'callouts'; label
   { key: 'callouts', label: 'Callouts' },
 ];
 
+// ── Line catalog ──────────────────────────────────────────────────────────────
+
+export const LINE_CATALOG: Record<string, {
+  label: string;
+  strokeDash?: string;
+  startArrow?: 'none' | 'arrow' | 'triangle';
+  endArrow?: 'none' | 'arrow' | 'triangle';
+}> = {
+  straight:       { label: 'Line' },
+  'arrow-left':   { label: 'Left Arrow',    startArrow: 'triangle' },
+  arrow:          { label: 'Right Arrow',   endArrow: 'triangle' },
+  'double-arrow': { label: 'Double Arrow',  startArrow: 'triangle', endArrow: 'triangle' },
+  dashed:         { label: 'Dashed',        strokeDash: '8 4' },
+  'dashed-arrow': { label: 'Dashed Arrow',  strokeDash: '8 4', endArrow: 'triangle' },
+};
+
 // ── Background gradients ──────────────────────────────────────────────────────
 
 export const PRESET_GRADIENTS = [

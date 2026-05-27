@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import type { Slide, SlideElement, TextElement, ShapeElement, SheetEmbedElement, VideoElement, ImageElement } from './slideEditorTypes';
+import type { Slide, SlideElement, TextElement, ShapeElement, LineElement, SheetEmbedElement, VideoElement, ImageElement } from './slideEditorTypes';
 import { SHAPE_CATALOG, RESIZE_HANDLES } from './slideEditorConstants';
 import { slideBackgroundStyle, getVideoEmbedInfo } from './slideEditorHelpers';
 import { SheetEmbedRenderer } from '@neutrino/sheet-embed';
@@ -23,6 +23,100 @@ export function ShapeRenderer({ el }: { el: ShapeElement }) {
         strokeDasharray={el.strokeDash || undefined}
         vectorEffect="non-scaling-stroke"
       />
+    </svg>
+  );
+}
+
+// ── LineRenderer ──────────────────────────────────────────────────────────────
+
+export function LineRenderer({
+  el,
+  isSelected,
+  onBodyMouseDown,
+  onEndpointMouseDown,
+}: {
+  el: LineElement;
+  isSelected?: boolean;
+  onBodyMouseDown?: (e: React.MouseEvent) => void;
+  onEndpointMouseDown?: (e: React.MouseEvent, endpoint: 'start' | 'end') => void;
+}) {
+  const sid         = el.id.replace(/[^a-z0-9]/gi, '');
+  const color       = el.stroke || '#000000';
+  const sw          = el.strokeWidth || 2;
+  const startArrow  = el.startArrow ?? 'none';
+  const endArrow    = el.endArrow   ?? 'none';
+  const arrowSize   = Math.max(8, sw * 4);
+  const half        = arrowSize / 2;
+
+  const arrowContent = (type: 'arrow' | 'triangle') =>
+    type === 'triangle'
+      ? <polygon points={`0 0, ${arrowSize} ${half}, 0 ${arrowSize}`} fill={color} />
+      : <polyline points={`0 0, ${arrowSize} ${half}, 0 ${arrowSize}`} fill="none" stroke={color} strokeWidth={sw} />;
+
+  return (
+    <svg
+      style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}
+    >
+      <defs>
+        {startArrow !== 'none' && (
+          <marker id={`ls-${sid}`} markerWidth={arrowSize} markerHeight={arrowSize}
+            refX={arrowSize} refY={half} orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+            {arrowContent(startArrow)}
+          </marker>
+        )}
+        {endArrow !== 'none' && (
+          <marker id={`le-${sid}`} markerWidth={arrowSize} markerHeight={arrowSize}
+            refX={arrowSize} refY={half} orient="auto" markerUnits="userSpaceOnUse">
+            {arrowContent(endArrow)}
+          </marker>
+        )}
+      </defs>
+
+      {/* Wide transparent hit area */}
+      {onBodyMouseDown && (
+        <line
+          x1={`${el.x1}%`} y1={`${el.y1}%`} x2={`${el.x2}%`} y2={`${el.y2}%`}
+          stroke="transparent" strokeWidth={Math.max(16, sw + 10)}
+          style={{ pointerEvents: 'stroke', cursor: 'move' }}
+          onMouseDown={onBodyMouseDown}
+        />
+      )}
+
+      {/* Selection highlight */}
+      {isSelected && (
+        <line
+          x1={`${el.x1}%`} y1={`${el.y1}%`} x2={`${el.x2}%`} y2={`${el.y2}%`}
+          stroke="#2563eb" strokeWidth={sw + 6} strokeOpacity={0.3}
+          vectorEffect="non-scaling-stroke" style={{ pointerEvents: 'none' }}
+        />
+      )}
+
+      {/* Visible line */}
+      <line
+        x1={`${el.x1}%`} y1={`${el.y1}%`} x2={`${el.x2}%`} y2={`${el.y2}%`}
+        stroke={color} strokeWidth={sw}
+        strokeDasharray={el.strokeDash || undefined}
+        vectorEffect="non-scaling-stroke"
+        markerStart={startArrow !== 'none' ? `url(#ls-${sid})` : undefined}
+        markerEnd={endArrow   !== 'none' ? `url(#le-${sid})` : undefined}
+        style={{ pointerEvents: 'none' }}
+      />
+
+      {/* Endpoint drag handles */}
+      {isSelected && onEndpointMouseDown && (
+        <>
+          <circle cx={`${el.x1}%`} cy={`${el.y1}%`} r={6}
+            fill="white" stroke="#2563eb" strokeWidth={2}
+            style={{ pointerEvents: 'all', cursor: 'crosshair' }}
+            onMouseDown={(e) => onEndpointMouseDown(e, 'start')}
+          />
+          <circle cx={`${el.x2}%`} cy={`${el.y2}%`} r={6}
+            fill="white" stroke="#2563eb" strokeWidth={2}
+            style={{ pointerEvents: 'all', cursor: 'crosshair' }}
+            onMouseDown={(e) => onEndpointMouseDown(e, 'end')}
+          />
+        </>
+      )}
     </svg>
   );
 }
@@ -87,7 +181,7 @@ export default function SlideCanvas({
     startH: number;
   } | null>(null);
 
-  function handleMouseDown(e: React.MouseEvent, elementId: string, el: SlideElement) {
+  function handleMouseDown(e: React.MouseEvent, elementId: string, el: Exclude<SlideElement, LineElement>) {
     if (editingElementId === elementId) return;
     e.stopPropagation();
     onSelectElement(elementId);
@@ -125,7 +219,7 @@ export default function SlideCanvas({
   function handleResizeMouseDown(
     e: React.MouseEvent,
     elementId: string,
-    el: SlideElement,
+    el: Exclude<SlideElement, LineElement>,
     handle: string,
   ) {
     e.stopPropagation();
@@ -378,6 +472,72 @@ export default function SlideCanvas({
                   onMouseDown={(e) => handleResizeMouseDown(e, el.id, el, h.id)}
                 />
               ))}
+            </div>
+          );
+        }
+
+        if (el.type === 'line') {
+          const lineEl = el as LineElement;
+
+          function handleLineBodyMouseDown(e: React.MouseEvent) {
+            e.stopPropagation();
+            onSelectElement(el.id);
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const startMX = e.clientX, startMY = e.clientY;
+            const sx1 = lineEl.x1, sy1 = lineEl.y1, sx2 = lineEl.x2, sy2 = lineEl.y2;
+            function onMove(me: MouseEvent) {
+              const dx = ((me.clientX - startMX) / rect.width)  * 100;
+              const dy = ((me.clientY - startMY) / rect.height) * 100;
+              onUpdateElement(el.id, (elem) => ({ ...(elem as LineElement), x1: sx1 + dx, y1: sy1 + dy, x2: sx2 + dx, y2: sy2 + dy }));
+            }
+            function onUp() {
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+            }
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+          }
+
+          function handleEndpointMouseDown(e: React.MouseEvent, endpoint: 'start' | 'end') {
+            e.stopPropagation();
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const rect = canvas.getBoundingClientRect();
+            const startMX = e.clientX, startMY = e.clientY;
+            const sx = endpoint === 'start' ? lineEl.x1 : lineEl.x2;
+            const sy = endpoint === 'start' ? lineEl.y1 : lineEl.y2;
+            function onMove(me: MouseEvent) {
+              const dx = ((me.clientX - startMX) / rect.width)  * 100;
+              const dy = ((me.clientY - startMY) / rect.height) * 100;
+              onUpdateElement(el.id, (elem) => {
+                const l = elem as LineElement;
+                return endpoint === 'start'
+                  ? { ...l, x1: sx + dx, y1: sy + dy }
+                  : { ...l, x2: sx + dx, y2: sy + dy };
+              });
+            }
+            function onUp() {
+              window.removeEventListener('mousemove', onMove);
+              window.removeEventListener('mouseup', onUp);
+            }
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+          }
+
+          return (
+            <div
+              key={el.id}
+              style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <LineRenderer
+                el={lineEl}
+                isSelected={isSelected}
+                onBodyMouseDown={handleLineBodyMouseDown}
+                onEndpointMouseDown={handleEndpointMouseDown}
+              />
             </div>
           );
         }
