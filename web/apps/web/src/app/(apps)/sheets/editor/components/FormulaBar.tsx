@@ -13,7 +13,7 @@ type Props = {
     formulaPickMode: boolean;
     formulaInputRef: React.RefObject<HTMLInputElement>;
     onTextChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    onKeyUp: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+    onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
     onFocus: (event: React.FocusEvent<HTMLInputElement>) => void;
     onBlur: (event: React.FocusEvent<HTMLInputElement>) => void;
     onToggleAllFunctions: () => void;
@@ -30,7 +30,7 @@ export function FormulaBar({
     formulaPickMode,
     formulaInputRef,
     onTextChange,
-    onKeyUp,
+    onKeyDown,
     onFocus,
     onBlur,
     onToggleAllFunctions,
@@ -78,7 +78,7 @@ export function FormulaBar({
                     value={currentCell?.raw ?? ''}
                     spellCheck={spellCheck}
                     onChange={onTextChange}
-                    onKeyUp={onKeyUp}
+                    onKeyDown={onKeyDown}
                     onFocus={onFocus}
                     onBlur={onBlur}
                 />

@@ -790,7 +790,7 @@ export function SheetEditor() {
                 formulaPickMode={editing.formulaPickMode}
                 formulaInputRef={editing.formulaInputRef}
                 onTextChange={editing.handleTextChange}
-                onKeyUp={editing.handleEnterOrTab}
+                onKeyDown={editing.handleFormulaBarKeyDown}
                 onFocus={editing.handleFormulaBarFocus}
                 onBlur={editing.handleFormulaBarBlur}
                 onToggleAllFunctions={editing.toggleAllFunctions}

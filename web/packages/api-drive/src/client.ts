@@ -478,6 +478,9 @@ export async function uploadEncryptedFile(
   if (folderId) formData.append('folder_id', folderId);
   // Pass encrypted_metadata so the server stores it alongside the blob.
   formData.append('encrypted_metadata', encryptedMetadata);
+  // Pass the original MIME type explicitly — the encrypted blob is typed as
+  // application/octet-stream, so the server can't infer the real type from it.
+  if (file.type) formData.append('mime_type', file.type);
   formData.append('file', encryptedFile);
 
   const item = await request<FileItem>('/api/v1/drive/files/upload', {
