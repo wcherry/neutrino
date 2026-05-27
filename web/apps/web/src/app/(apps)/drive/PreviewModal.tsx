@@ -3,7 +3,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Download, AlertCircle, FileText, Folder } from 'lucide-react';
 import { Text, Spinner } from '@neutrino/ui';
-import { storageApi, type FileItem, type ZipEntry } from '@/lib/api';
+import { useUser } from '@neutrino/auth';
+import { storageApi, authApi, downloadAndDecryptFile, type FileItem, type ZipEntry } from '@/lib/api';
+import { initSodium, loadKeyPair } from '@neutrino/e2e-crypto';
 import styles from './PreviewModal.module.css';
 
 interface PreviewModalProps {
@@ -60,29 +62,57 @@ function formatBytes(bytes: number): string {
 export function PreviewModal({ file, onClose }: PreviewModalProps) {
   const [state, setState] = useState<PreviewState>({ kind: 'loading' });
   const blobUrlRef = useRef<string | null>(null);
+  const currentUser = useUser();
 
   useEffect(() => {
     let cancelled = false;
 
+    async function fetchBlobUrl(mimeType: string): Promise<string> {
+      if (file.encryptedMetadata) {
+        const userId = currentUser?.id ?? await authApi.getProfile().then((u) => u.id);
+        await initSodium();
+        const kp = loadKeyPair(userId);
+        if (!kp) throw new Error('No local keypair — cannot decrypt file');
+        const bytes = await downloadAndDecryptFile(file.id, kp.publicKey, kp.secretKey);
+        if (!bytes) throw new Error('Failed to decrypt file');
+        const blob = new Blob([bytes], { type: mimeType });
+        return URL.createObjectURL(blob);
+      }
+      return storageApi.fetchPreviewBlobUrl(file.id);
+    }
+
+    async function fetchText(): Promise<string> {
+      if (file.encryptedMetadata) {
+        const userId = currentUser?.id ?? await authApi.getProfile().then((u) => u.id);
+        await initSodium();
+        const kp = loadKeyPair(userId);
+        if (!kp) throw new Error('No local keypair — cannot decrypt file');
+        const bytes = await downloadAndDecryptFile(file.id, kp.publicKey, kp.secretKey);
+        if (!bytes) throw new Error('Failed to decrypt file');
+        return new TextDecoder().decode(bytes);
+      }
+      return storageApi.fetchPreviewText(file.id);
+    }
+
     async function load() {
       try {
         if (file.mimeType.startsWith('image/')) {
-          const url = await storageApi.fetchPreviewBlobUrl(file.id);
+          const url = await fetchBlobUrl(file.mimeType);
           blobUrlRef.current = url;
           if (!cancelled) setState({ kind: 'image', url });
         } else if (file.mimeType === 'application/pdf') {
-          const url = await storageApi.fetchPreviewBlobUrl(file.id);
+          const url = await fetchBlobUrl(file.mimeType);
           blobUrlRef.current = url;
           if (!cancelled) setState({ kind: 'pdf', url });
         } else if (file.mimeType.startsWith('video/')) {
-          const url = await storageApi.fetchPreviewBlobUrl(file.id);
+          const url = await fetchBlobUrl(file.mimeType);
           blobUrlRef.current = url;
           if (!cancelled) setState({ kind: 'video', url });
         } else if (isZip(file.mimeType, file.name)) {
           const { entries } = await storageApi.getZipContents(file.id);
           if (!cancelled) setState({ kind: 'zip', entries });
         } else if (isPreviewableText(file.mimeType, file.name)) {
-          const content = await storageApi.fetchPreviewText(file.id);
+          const content = await fetchText();
           const language = detectLanguage(file.name);
           if (!cancelled) {
             // Lazy-load highlight.js only when needed
@@ -111,7 +141,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
         blobUrlRef.current = null;
       }
     };
-  }, [file]);
+  }, [file, currentUser?.id]);
 
   // Close on backdrop click
   function handleBackdrop(e: React.MouseEvent<HTMLDivElement>) {

@@ -73,6 +73,7 @@ pub async fn upload_file(
 ) -> Result<web::Json<FileMetadataResponse>, ApiError> {
     let mut folder_id: Option<String> = None;
     let mut encrypted_metadata: Option<String> = None;
+    let mut explicit_mime_type: Option<String> = None;
 
     while let Some(field) = payload.next().await {
         let mut field = field.map_err(|e| {
@@ -91,7 +92,7 @@ pub async fn upload_file(
             .and_then(|cd| cd.get_filename())
             .is_none()
         {
-            if field_name == "folder_id" || field_name == "encrypted_metadata" {
+            if matches!(field_name.as_str(), "folder_id" | "encrypted_metadata" | "mime_type") {
                 let mut buf = Vec::new();
                 while let Some(chunk) = field.next().await {
                     let data = chunk.map_err(|e| {
@@ -102,10 +103,11 @@ pub async fn upload_file(
                 }
                 let value = String::from_utf8_lossy(&buf).trim().to_string();
                 if !value.is_empty() {
-                    if field_name == "folder_id" {
-                        folder_id = Some(value);
-                    } else {
-                        encrypted_metadata = Some(value);
+                    match field_name.as_str() {
+                        "folder_id" => folder_id = Some(value),
+                        "encrypted_metadata" => encrypted_metadata = Some(value),
+                        "mime_type" => explicit_mime_type = Some(value),
+                        _ => {}
                     }
                 }
             }
@@ -118,14 +120,16 @@ pub async fn upload_file(
             .unwrap_or("untitled")
             .to_string();
 
-        let mime_type = field
-            .content_type()
-            .map(|m| m.to_string())
-            .unwrap_or_else(|| {
-                mime_guess::from_path(&file_name)
-                    .first_or_octet_stream()
-                    .to_string()
-            });
+        let mime_type = explicit_mime_type.take().unwrap_or_else(|| {
+            field
+                .content_type()
+                .map(|m| m.to_string())
+                .unwrap_or_else(|| {
+                    mime_guess::from_path(&file_name)
+                        .first_or_octet_stream()
+                        .to_string()
+                })
+        });
 
         let temp_id = Uuid::new_v4().to_string();
         state
