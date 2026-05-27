@@ -1,16 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import type {
-  SlidePresentation,
-  Slide,
-  TextElement,
-  ShapeElement,
-  ImageElement,
-  VideoElement,
-} from './slideEditorTypes';
-import { slideBackgroundStyle, getAnimationStyle, getVideoEmbedInfo } from './slideEditorHelpers';
-import { ShapeRenderer } from './SlideCanvas';
+import React, { useState, useEffect, useRef } from 'react';
+import type { SlidePresentation } from './slideEditorTypes';
+import { slideBackgroundStyle } from './slideEditorHelpers';
+import { SlideRenderer } from './SlideRenderer';
 import styles from './page.module.css';
 
 interface PresenterViewProps {
@@ -18,220 +11,17 @@ interface PresenterViewProps {
   onExit: () => void;
 }
 
-// ── Shared slide renderer ─────────────────────────────────────────────────────
-
-function SlideRenderer({
-  slide,
-  scale,
-  animKey,
-}: {
-  slide: Slide;
-  /** Font-size multiplier: 0.75 for full-size, 0.3 for next-slide preview. */
-  scale: number;
-  animKey?: number;
-}) {
-  return (
-    <>
-      {slide.elements.map((el) => {
-        const animStyle = animKey !== undefined ? getAnimationStyle(el.animation) : {};
-
-        if (el.type === 'text') {
-          const textEl = el as TextElement;
-          const listType = textEl.style.listType ?? 'none';
-          const spaceBefore = (textEl.style.spaceBefore ?? 0) * scale;
-          const spaceAfter = (textEl.style.spaceAfter ?? 0) * scale;
-          const lines = textEl.content.split('\n');
-          return (
-            <div
-              key={animKey !== undefined ? `${el.id}-${animKey}` : el.id}
-              style={{
-                position: 'absolute',
-                left: `${el.x}%`,
-                top: `${el.y}%`,
-                width: `${el.w}%`,
-                height: `${el.h}%`,
-                fontSize: `${textEl.style.fontSize * scale}px`,
-                fontWeight: textEl.style.bold ? 700 : 400,
-                fontStyle: textEl.style.italic ? 'italic' : 'normal',
-                textDecoration: [
-                  textEl.style.underline ? 'underline' : '',
-                  textEl.style.strikethrough ? 'line-through' : '',
-                ].filter(Boolean).join(' ') || 'none',
-                color: textEl.style.color,
-                backgroundColor: textEl.style.backgroundColor ?? 'transparent',
-                textAlign: textEl.style.align,
-                fontFamily: textEl.style.fontFamily,
-                lineHeight: textEl.style.lineHeight ?? 1.3,
-                textShadow: textEl.style.shadow
-                  ? `2px 2px 4px ${textEl.style.shadowColor ?? 'rgba(0,0,0,0.5)'}`
-                  : undefined,
-                overflow: 'hidden',
-                wordBreak: 'break-word',
-                ...animStyle,
-              }}
-            >
-              {lines.map((line, i, arr) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    gap: listType !== 'none' ? '0.4em' : undefined,
-                    whiteSpace: 'pre-wrap',
-                    marginTop: i > 0 ? spaceBefore : 0,
-                    marginBottom: i < arr.length - 1 ? spaceAfter : 0,
-                  }}
-                >
-                  {listType === 'bullet' && (
-                    <span style={{ flexShrink: 0, userSelect: 'none' }}>•</span>
-                  )}
-                  {listType === 'numbered' && (
-                    <span style={{ flexShrink: 0, userSelect: 'none' }}>{i + 1}.</span>
-                  )}
-                  <span style={{ flex: 1 }}>{line || ' '}</span>
-                </div>
-              ))}
-            </div>
-          );
-        }
-
-        if (el.type === 'shape') {
-          const shapeEl = el as ShapeElement;
-          return (
-            <div
-              key={animKey !== undefined ? `${el.id}-${animKey}` : el.id}
-              style={{
-                position: 'absolute',
-                left: `${el.x}%`,
-                top: `${el.y}%`,
-                width: `${el.w}%`,
-                height: `${el.h}%`,
-                ...animStyle,
-              }}
-            >
-              <ShapeRenderer el={shapeEl} />
-            </div>
-          );
-        }
-
-        if (el.type === 'image') {
-          const imgEl = el as ImageElement;
-          const filterParts: string[] = [];
-          if (imgEl.brightness !== 0) filterParts.push(`brightness(${1 + imgEl.brightness / 100})`);
-          if (imgEl.contrast !== 0) filterParts.push(`contrast(${1 + imgEl.contrast / 100})`);
-          if (imgEl.saturation !== 0)
-            filterParts.push(`saturate(${Math.max(0, 1 + imgEl.saturation / 100)})`);
-          if (imgEl.warmth > 0) {
-            filterParts.push(`sepia(${(imgEl.warmth / 100) * 0.5})`);
-            filterParts.push(`hue-rotate(${imgEl.warmth * -0.1}deg)`);
-          } else if (imgEl.warmth < 0) {
-            filterParts.push(`hue-rotate(${imgEl.warmth * 0.5}deg)`);
-          }
-          return (
-            <div
-              key={animKey !== undefined ? `${el.id}-${animKey}` : el.id}
-              style={{
-                position: 'absolute',
-                left: `${el.x}%`,
-                top: `${el.y}%`,
-                width: `${el.w}%`,
-                height: `${el.h}%`,
-                overflow: 'hidden',
-                ...animStyle,
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imgEl.src}
-                alt=""
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: imgEl.objectFit ?? 'cover',
-                  opacity: imgEl.opacity ?? 1,
-                  filter: filterParts.length > 0 ? filterParts.join(' ') : undefined,
-                  display: 'block',
-                }}
-              />
-              {imgEl.tintColor && imgEl.tintStrength > 0 && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    backgroundColor: imgEl.tintColor,
-                    opacity: imgEl.tintStrength,
-                    mixBlendMode: 'multiply',
-                    pointerEvents: 'none',
-                  }}
-                />
-              )}
-            </div>
-          );
-        }
-
-        if (el.type === 'video') {
-          const videoEl = el as VideoElement;
-          const info = getVideoEmbedInfo(videoEl.url, {
-            startSeconds: videoEl.startSeconds,
-            autoplay: videoEl.autoplay,
-            loop: videoEl.loop,
-            muted: videoEl.muted,
-          });
-          return (
-            <div
-              key={animKey !== undefined ? `${el.id}-${animKey}` : el.id}
-              style={{
-                position: 'absolute',
-                left: `${el.x}%`,
-                top: `${el.y}%`,
-                width: `${el.w}%`,
-                height: `${el.h}%`,
-                overflow: 'hidden',
-                background: '#000',
-                ...animStyle,
-              }}
-            >
-              {info.isPortrait ? (
-                <div className={styles.shortVideoContainer}>
-                  <iframe
-                    src={info.embedUrl}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                    allowFullScreen
-                    title="Video embed"
-                  />
-                </div>
-              ) : info.provider === 'mp4' ? (
-                <video
-                  src={info.embedUrl}
-                  controls
-                  autoPlay={videoEl.autoplay}
-                  loop={videoEl.loop}
-                  muted={videoEl.muted}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                />
-              ) : (
-                <iframe
-                  src={info.embedUrl}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                  allowFullScreen
-                  style={{ width: '100%', height: '100%', border: 'none' }}
-                  title="Video embed"
-                />
-              )}
-            </div>
-          );
-        }
-
-        return null;
-      })}
-    </>
-  );
-}
-
 // ── PresenterView ─────────────────────────────────────────────────────────────
 
 export default function PresenterView({ presentation, onExit }: PresenterViewProps) {
   const [idx, setIdx] = useState(0);
   const [animKey, setAnimKey] = useState(0);
+  const [showMirrorPrompt, setShowMirrorPrompt] = useState(false);
+  const mirrorWindowRef = useRef<Window | null>(null);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const idxRef = useRef(0);
+  idxRef.current = idx;
+
   const slide = presentation.slides[idx];
   const total = presentation.slides.length;
 
@@ -250,20 +40,116 @@ export default function PresenterView({ presentation, onExit }: PresenterViewPro
     });
   }
 
+  // Detect external monitors on mount
+  useEffect(() => {
+    // screen.isExtended requires no permission and no user gesture (Chrome 94+)
+    if ('isExtended' in window.screen) {
+      if ((window.screen as unknown as { isExtended: boolean }).isExtended) {
+        console.log('[PresenterView] External display detected via screen.isExtended');
+        setShowMirrorPrompt(true);
+      } else {
+        console.log('[PresenterView] screen.isExtended: single display only');
+      }
+      return;
+    }
+    // Fallback: getScreenDetails (requires user gesture in some browsers — may silently fail here)
+    if ('getScreenDetails' in window) {
+      (window as unknown as { getScreenDetails(): Promise<{ screens: Array<{ isPrimary: boolean }> }> })
+        .getScreenDetails()
+        .then((sd) => {
+          if (sd.screens.length > 1) {
+            console.log('[PresenterView] External display detected via getScreenDetails:', sd.screens);
+            setShowMirrorPrompt(true);
+          } else {
+            console.log('[PresenterView] getScreenDetails: single display only');
+          }
+        })
+        .catch(() => {
+          console.log('[PresenterView] getScreenDetails unavailable or permission denied');
+        });
+    } else {
+      console.log('[PresenterView] No multi-screen API available in this browser');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Broadcast slide changes to mirror window
+  useEffect(() => {
+    channelRef.current?.postMessage({ type: 'slide', slideIndex: idx });
+  }, [idx]);
+
+  // Keyboard navigation
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') next();
       else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prev();
-      else if (e.key === 'Escape') onExit();
+      else if (e.key === 'Escape') {
+        channelRef.current?.postMessage({ type: 'exit' });
+        channelRef.current?.close();
+        channelRef.current = null;
+        mirrorWindowRef.current?.close();
+        mirrorWindowRef.current = null;
+        onExit();
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onExit]);
 
+  async function openMirror() {
+    setShowMirrorPrompt(false);
+    const channelId = `slides-mirror-${Date.now()}`;
+    const channel = new BroadcastChannel(channelId);
+    channelRef.current = channel;
+
+    channel.onmessage = (e: MessageEvent) => {
+      if (e.data.type === 'ready') {
+        channel.postMessage({ type: 'init', presentation, slideIndex: idxRef.current });
+      }
+    };
+
+    try {
+      type ScreenInfo = { isPrimary: boolean; left: number; top: number; width: number; height: number };
+      const screenDetails = await (window as unknown as { getScreenDetails(): Promise<{ screens: ScreenInfo[] }> }).getScreenDetails();
+      const externalScreen = screenDetails.screens.find((s) => !s.isPrimary) ?? screenDetails.screens[1];
+      const mirrorUrl = `${window.location.origin}/slides-mirror?channelId=${encodeURIComponent(channelId)}`;
+      const win = window.open(
+        mirrorUrl,
+        'slides-mirror',
+        `left=${externalScreen.left},top=${externalScreen.top},width=${externalScreen.width},height=${externalScreen.height}`
+      );
+      mirrorWindowRef.current = win;
+    } catch {
+      channel.close();
+      channelRef.current = null;
+    }
+  }
+
+  function handleExit() {
+    if (channelRef.current) {
+      channelRef.current.postMessage({ type: 'exit' });
+      channelRef.current.close();
+      channelRef.current = null;
+    }
+    if (mirrorWindowRef.current) {
+      mirrorWindowRef.current.close();
+      mirrorWindowRef.current = null;
+    }
+    onExit();
+  }
+
   const nextSlide = presentation.slides[idx + 1];
 
   return (
     <div className={styles.presenterWrapper}>
+      {showMirrorPrompt && (
+        <div className={styles.mirrorPrompt}>
+          <span>External monitor detected — mirror the presentation on it?</span>
+          <button className={styles.mirrorPromptBtnYes} onClick={openMirror}>Mirror on external display</button>
+          <button className={styles.mirrorPromptBtnNo} onClick={() => setShowMirrorPrompt(false)}>No thanks</button>
+        </div>
+      )}
+
+      <div className={styles.presenterContent}>
       {/* Current slide */}
       <div className={styles.presenterMain}>
         <div
@@ -290,7 +176,7 @@ export default function PresenterView({ presentation, onExit }: PresenterViewPro
           <button className={styles.presenterBtn} onClick={prev} disabled={idx === 0}>←</button>
           <span className={styles.presenterCounter}>{idx + 1} / {total}</span>
           <button className={styles.presenterBtn} onClick={next} disabled={idx === total - 1}>→</button>
-          <button className={styles.presenterBtnExit} onClick={onExit}>✕ Exit</button>
+          <button className={styles.presenterBtnExit} onClick={handleExit}>✕ Exit</button>
         </div>
       </div>
 
@@ -314,6 +200,7 @@ export default function PresenterView({ presentation, onExit }: PresenterViewPro
             {slide.notes || <span style={{ opacity: 0.4 }}>No notes for this slide</span>}
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

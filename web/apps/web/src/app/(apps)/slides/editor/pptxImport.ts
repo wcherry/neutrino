@@ -1,4 +1,4 @@
-import type { Slide, SlideElement, ImageElement, ShapeElement, TextElement, SlidePresentation, SlideBackground, TextStyle } from './slideEditorTypes';
+import type { Slide, SlideElement, ImageElement, ShapeElement, TextElement, LineElement, SlidePresentation, SlideBackground, TextStyle } from './slideEditorTypes';
 import { makeDefaultPresentation, makeDefaultMaster, uid, DEFAULT_THEME } from './slideEditorConstants';
 
 const PPTX_MAX_BYTES = 100 * 1024 * 1024;
@@ -401,6 +401,59 @@ function parseXfrm(xfrm: Element, sw: number, sh: number): { x: number; y: numbe
   return { x: clamp((x / sw) * 100, 0, 100), y: clamp((y / sh) * 100, 0, 100), w: clamp(w, 0, 100), h: clamp(h, 0, 100) };
 }
 
+// ── Arrow / line helpers ──────────────────────────────────────────────────────
+
+function parseArrowType(end: Element | undefined): LineElement['startArrow'] {
+  if (!end) return 'none';
+  const type = end.getAttribute('type') ?? 'none';
+  if (type === 'none') return 'none';
+  if (type === 'triangle' || type === 'stealth') return 'triangle';
+  return 'arrow';
+}
+
+function parseLineEndpoints(
+  xfrm: Element, sw: number, sh: number,
+): { x1: number; y1: number; x2: number; y2: number } {
+  const off = xfrm.getElementsByTagNameNS(NS_A, 'off')[0];
+  const ext = xfrm.getElementsByTagNameNS(NS_A, 'ext')[0];
+  const ox  = parseInt(off?.getAttribute('x')  ?? '0');
+  const oy  = parseInt(off?.getAttribute('y')  ?? '0');
+  const ecx = parseInt(ext?.getAttribute('cx') ?? '0');
+  const ecy = parseInt(ext?.getAttribute('cy') ?? '0');
+  const flipH = xfrm.getAttribute('flipH') === '1';
+  const flipV = xfrm.getAttribute('flipV') === '1';
+  // Default: (ox, oy) → (ox+ecx, oy+ecy); flip swaps the respective endpoints
+  return {
+    x1: clamp(((flipH ? ox + ecx : ox) / sw) * 100, 0, 100),
+    y1: clamp(((flipV ? oy + ecy : oy) / sh) * 100, 0, 100),
+    x2: clamp(((flipH ? ox : ox + ecx) / sw) * 100, 0, 100),
+    y2: clamp(((flipV ? oy : oy + ecy) / sh) * 100, 0, 100),
+  };
+}
+
+function parseCxnSp(
+  cxnSp: Element, themeColors: ThemeColors, sw: number, sh: number,
+): LineElement | null {
+  const spPr = cxnSp.getElementsByTagNameNS(NS_P, 'spPr')[0];
+  const xfrm = spPr?.getElementsByTagNameNS(NS_A, 'xfrm')[0];
+  if (!xfrm) return null;
+
+  const pts = parseLineEndpoints(xfrm, sw, sh);
+  if (pts.x1 === pts.x2 && pts.y1 === pts.y2) return null;
+
+  const ln        = spPr?.getElementsByTagNameNS(NS_A, 'ln')[0];
+  const lnSolid   = ln?.getElementsByTagNameNS(NS_A, 'solidFill')[0];
+  const stroke    = resolveSolidFill(lnSolid, themeColors) ?? '#000000';
+  const wAttr     = ln?.getAttribute('w');
+  const strokeWidth = wAttr ? Math.max(1, Math.round(parseInt(wAttr) / 12700)) : 1;
+
+  return {
+    id: uid(), type: 'line', ...pts, stroke, strokeWidth,
+    startArrow: parseArrowType(ln?.getElementsByTagNameNS(NS_A, 'headEnd')[0]),
+    endArrow:   parseArrowType(ln?.getElementsByTagNameNS(NS_A, 'tailEnd')[0]),
+  };
+}
+
 // ── Text / shape element ──────────────────────────────────────────────────────
 
 function parseSp(
@@ -519,7 +572,24 @@ function parseSp(
     return el;
   }
 
-  // No text → shape element
+  // No text → line or shape element
+  const prst = spPr?.getElementsByTagNameNS(NS_A, 'prstGeom')[0]?.getAttribute('prst') ?? 'rect';
+  const ln   = spPr?.getElementsByTagNameNS(NS_A, 'ln')[0];
+
+  if (prst === 'line') {
+    const lnSolid   = ln?.getElementsByTagNameNS(NS_A, 'solidFill')[0];
+    const stroke    = resolveSolidFill(lnSolid, themeColors) ?? '#000000';
+    const wAttr     = ln?.getAttribute('w');
+    const strokeWidth = wAttr ? Math.max(1, Math.round(parseInt(wAttr) / 12700)) : 1;
+    return {
+      id: uid(), type: 'line',
+      ...parseLineEndpoints(xfrm, sw, sh),
+      stroke, strokeWidth,
+      startArrow: parseArrowType(ln?.getElementsByTagNameNS(NS_A, 'headEnd')[0]),
+      endArrow:   parseArrowType(ln?.getElementsByTagNameNS(NS_A, 'tailEnd')[0]),
+    } as LineElement;
+  }
+
   const noFill   = spPr?.getElementsByTagNameNS(NS_A, 'noFill')[0];
   const solid    = spPr?.getElementsByTagNameNS(NS_A, 'solidFill')[0];
   const grad     = spPr?.getElementsByTagNameNS(NS_A, 'gradFill')[0];
@@ -529,13 +599,11 @@ function parseSp(
   if (solid) fill = resolveSolidFill(solid, themeColors) ?? 'transparent';
   else if (grad) fill = parseGradFill(grad, themeColors);
 
-  const ln        = spPr?.getElementsByTagNameNS(NS_A, 'ln')[0];
   const lnSolid   = ln?.getElementsByTagNameNS(NS_A, 'solidFill')[0];
   const stroke    = resolveSolidFill(lnSolid, themeColors) ?? 'transparent';
   const wAttr     = ln?.getAttribute('w');
   const strokeWidth = wAttr ? Math.max(1, Math.round(parseInt(wAttr) / 12700)) : 0;
 
-  const prst  = spPr?.getElementsByTagNameNS(NS_A, 'prstGeom')[0]?.getAttribute('prst') ?? 'rect';
   const shape = PRST_GEOM_MAP[prst] ?? 'rect';
 
   if (fill === 'transparent' && stroke === 'transparent') return null;
@@ -662,6 +730,9 @@ export async function importFromPptx(file: File): Promise<SlidePresentation> {
           if (el) elements.push(el);
         } else if (child.localName === 'pic') {
           const el = await parsePic(child, slideRels, slidePath, zip, slideDims.w, slideDims.h);
+          if (el) elements.push(el);
+        } else if (child.localName === 'cxnSp') {
+          const el = parseCxnSp(child, themeColors, slideDims.w, slideDims.h);
           if (el) elements.push(el);
         }
       }
