@@ -139,11 +139,20 @@ export function useClipboard({
                                 const targetId = `${numToAlpha(currentCol)}${currentRow}`;
                                 let raw = cell.raw;
                                 const existing = next.get(targetId) ?? { id: targetId, value: '', raw, edit: false };
+                                const oldDeps = existing.deps ?? [];
                                 raw = fixRealtiveFormulas(raw, currentRow, currentCol);
-                                const { value, deps } = computeCell(raw, next);
+                                const { value, deps: newDeps } = computeCell(raw, next);
                                 const rowSpan = (cell.rowSpan ?? 1) > 1 ? cell.rowSpan : undefined;
                                 const colSpan = (cell.colSpan ?? 1) > 1 ? cell.colSpan : undefined;
-                                next.set(targetId, { ...existing, id: targetId, raw, value, deps, edit: false, cellStyle: cell.cellStyle, rowSpan, colSpan, mergeAnchor: undefined });
+                                next.set(targetId, { ...existing, id: targetId, raw, value, deps: newDeps, edit: false, cellStyle: cell.cellStyle, rowSpan, colSpan, mergeAnchor: undefined });
+                                for (const depId of oldDeps.filter(d => !newDeps.includes(d))) {
+                                    const depCell = next.get(depId);
+                                    if (depCell) next.set(depId, { ...depCell, dependents: (depCell.dependents ?? []).filter(d => d !== targetId) });
+                                }
+                                for (const depId of newDeps.filter(d => !oldDeps.includes(d))) {
+                                    const depCell = next.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
+                                    next.set(depId, { ...depCell, dependents: [...(depCell.dependents ?? []), targetId] });
+                                }
                                 propagateDeps(targetId, next, new Set([targetId]));
                                 // Create covered-cell entries for every position spanned by this anchor.
                                 // Google Sheets encodes covered cells as BLANK so they are absent from
@@ -183,8 +192,17 @@ export function useClipboard({
                         const targetId = `${numToAlpha(pasteCol + c)}${pasteRow + r}`;
                         const raw = rows[r][c];
                         const existing = next.get(targetId) ?? { id: targetId, value: '', raw: '', edit: false };
-                        const { value, deps } = computeCell(raw, next);
-                        next.set(targetId, { ...existing, id: targetId, raw, value, deps, edit: false });
+                        const oldDeps = existing.deps ?? [];
+                        const { value, deps: newDeps } = computeCell(raw, next);
+                        next.set(targetId, { ...existing, id: targetId, raw, value, deps: newDeps, edit: false });
+                        for (const depId of oldDeps.filter(d => !newDeps.includes(d))) {
+                            const depCell = next.get(depId);
+                            if (depCell) next.set(depId, { ...depCell, dependents: (depCell.dependents ?? []).filter(d => d !== targetId) });
+                        }
+                        for (const depId of newDeps.filter(d => !oldDeps.includes(d))) {
+                            const depCell = next.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
+                            next.set(depId, { ...depCell, dependents: [...(depCell.dependents ?? []), targetId] });
+                        }
                         propagateDeps(targetId, next, new Set([targetId]));
                     }
                 }
@@ -205,7 +223,13 @@ export function useClipboard({
             if (clipboard.isCut) {
                 for (const id of cutSourceRef.current) {
                     const cell = next.get(id);
-                    if (cell) next.set(id, { ...cell, raw: '', value: '', cellStyle: undefined, deps: [] });
+                    if (!cell) continue;
+                    // Remove the cut cell from its dependencies' dependents lists.
+                    for (const depId of cell.deps ?? []) {
+                        const depCell = next.get(depId);
+                        if (depCell) next.set(depId, { ...depCell, dependents: (depCell.dependents ?? []).filter(d => d !== id) });
+                    }
+                    next.set(id, { ...cell, raw: '', value: '', cellStyle: undefined, deps: [] });
                 }
             }
 
@@ -225,8 +249,19 @@ export function useClipboard({
                 const targetCol = pasteCol + entry.relCol;
                 const targetId = `${numToAlpha(targetCol)}${targetRow}`;
                 const cell = next.get(targetId)!;
-                const { value, deps } = computeCell(cell.raw ?? '', next);
-                next.set(targetId, { ...cell, value, deps });
+                const oldDeps = cell.deps ?? [];
+                const { value, deps: newDeps } = computeCell(cell.raw ?? '', next);
+                next.set(targetId, { ...cell, value, deps: newDeps });
+                // Reconcile the reverse dependency graph so future changes to referenced
+                // cells correctly propagate into the pasted cell.
+                for (const depId of oldDeps.filter(d => !newDeps.includes(d))) {
+                    const depCell = next.get(depId);
+                    if (depCell) next.set(depId, { ...depCell, dependents: (depCell.dependents ?? []).filter(d => d !== targetId) });
+                }
+                for (const depId of newDeps.filter(d => !oldDeps.includes(d))) {
+                    const depCell = next.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
+                    next.set(depId, { ...depCell, dependents: [...(depCell.dependents ?? []), targetId] });
+                }
                 propagateDeps(targetId, next, new Set([targetId]));
             }
 

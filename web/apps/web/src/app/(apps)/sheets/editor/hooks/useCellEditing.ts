@@ -77,6 +77,7 @@ export function useCellEditing({
         setSelectionAnchor(id);
         setSelectionActive(id);
         selectionAnchorLatestRef.current = id;
+        formulaInputRef.current?.blur();
         // No focus() call — formula bar focuses only on explicit user click, keeping arrow-key navigation active.
 
         startTransition(() => {
@@ -85,8 +86,12 @@ export function useCellEditing({
             const allSheets = getAllSheets?.();
 
             if (currentCell) {
-                const { value, deps: newDeps } = computeCell(currentCell.raw ?? '', next, allSheets);
-                const oldDeps = currentCell.deps ?? [];
+                // Use the data-map version of this cell as the source of truth for raw/deps.
+                // External updates (e.g. paste) modify the data map but not the currentCell
+                // React state, so currentCell.raw can be stale. latestCell reflects those updates.
+                const latestCell = next.get(currentCell.id) ?? currentCell;
+                const { value, deps: newDeps } = computeCell(latestCell.raw ?? '', next, allSheets);
+                const oldDeps = latestCell.deps ?? [];
 
                 // Collect IDs that will be mutated so we can build an undo patch.
                 const changedIds = new Set<string>([currentCell.id]);
@@ -102,7 +107,6 @@ export function useCellEditing({
                     const depCell = next.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
                     next.set(depId, { ...depCell, dependents: [...(depCell.dependents ?? []), currentCell.id] });
                 }
-                const latestCell = next.get(currentCell.id) ?? currentCell;
                 next.set(currentCell.id, { ...latestCell, edit: false, value, deps: newDeps });
                 propagateDeps(currentCell.id, next, new Set([currentCell.id]), allSheets);
 
@@ -162,6 +166,38 @@ export function useCellEditing({
     const stableOnCellActivate = useCallback((id: string) => activateCellRef.current(id), []);
     const stableOnSelectionExtend = useCallback((id: string) => { setSelectionActive(id); }, [setSelectionActive]);
 
+    const beginTypingInFormulaBar = useCallback((text: string) => {
+        const id = selectionAnchorLatestRef.current ?? selectionAnchor;
+        if (!id) return;
+
+        const existing = dataRef.current.get(id) ?? { id, value: '', raw: '', edit: true };
+        const nextCell = { ...existing, raw: text, edit: true };
+
+        dirtyRef.current = true;
+        setCurrentCell(nextCell);
+        setSelectionAnchor(id);
+        setSelectionActive(id);
+        setShowFunctions(text.startsWith('=') && functionsList(text.slice(1).toUpperCase()).length > 0);
+        setFormulaPickMode(isFormulaPickActive(text));
+
+        if (!snapshotBeforeEditRef.current) {
+            snapshotBeforeEditRef.current = new Map(dataRef.current);
+        }
+
+        startTransition(() => {
+            setData(prev => applyPatch(prev, {
+                [id]: nextCell,
+            }));
+        });
+
+        setTimeout(() => {
+            const input = formulaInputRef.current;
+            if (!input) return;
+            input.focus();
+            input.setSelectionRange(text.length, text.length);
+        }, 0);
+    }, [dataRef, dirtyRef, selectionAnchor, setCurrentCell, setData, setSelectionAnchor, setSelectionActive, snapshotBeforeEditRef, startTransition]);
+
     // ── Formula bar handlers ─────────────────────────────────────────────────
     const handleTextChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         event.stopPropagation();
@@ -172,9 +208,9 @@ export function useCellEditing({
         setShowFunctions(query.length > 0 && functionsList(query).length > 0);
         setFormulaPickMode(isFormulaPickActive(newRaw));
         if (currentCell) {
+            // Patch only the one cell being edited — avoids O(n) Map clone.
+            const existing = dataRef.current.get(currentCell.id) ?? { id: currentCell.id, value: '', raw: '', edit: true };
             startTransition(() => {
-                // Patch only the one cell being edited — avoids O(n) Map clone.
-                const existing = dataRef.current.get(currentCell.id) ?? { id: currentCell.id, value: '', raw: '', edit: true };
                 setData(prev => applyPatch(prev, {
                     [currentCell.id]: { ...existing, raw: newRaw, edit: true },
                 }));
@@ -428,6 +464,7 @@ export function useCellEditing({
         activateCellRef,
         stableOnCellActivate,
         stableOnSelectionExtend,
+        beginTypingInFormulaBar,
         handleTextChange,
         handleFormulaBarKeyDown,
         handleFormulaBarFocus,

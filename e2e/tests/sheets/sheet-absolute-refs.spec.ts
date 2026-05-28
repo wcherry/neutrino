@@ -50,7 +50,7 @@ async function openNewSheet(page: Page): Promise<void> {
 /** Click a cell, type a value into the formula bar, press Enter to commit. */
 async function setCell(page: Page, ref: string, value: string): Promise<void> {
   await page.locator(`[data-type="cell"][id="${ref}"]`).click();
-  const formulaInput = page.getByRole('textbox');
+  const formulaInput = page.getByTestId('formula-bar-input');
   await formulaInput.fill(value);
   await formulaInput.press('Enter');
 }
@@ -88,7 +88,7 @@ async function copyPaste(page: Page, srcRef: string, destRef: string): Promise<v
  */
 async function getCellRaw(page: Page, ref: string): Promise<string> {
   await page.locator(`[data-type="cell"][id="${ref}"]`).click();
-  const formulaInput = page.getByRole('textbox');
+  const formulaInput = page.getByTestId('formula-bar-input');
   return await formulaInput.inputValue();
 }
 

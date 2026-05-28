@@ -1,4 +1,7 @@
 import type { CellStyle, CellProps } from './types';
+import { MAX_COLS, MAX_ROWS } from './constants';
+
+export type ArrowNavigationKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight';
 
 export function numToAlpha(num: number): string {
     let alpha: string = '';
@@ -16,6 +19,62 @@ export function alphaToNum(alpha: string): number {
         num = num * 26 + (alpha.charCodeAt(i) - 64);
     }
     return num;
+}
+
+export function parseCellId(id: string): { col: number; row: number } | null {
+    const match = id.match(/^([A-Z]+)(\d+)$/);
+    if (!match) return null;
+    return { col: alphaToNum(match[1]), row: parseInt(match[2], 10) };
+}
+
+function isPopulatedCell(cell: CellProps | undefined): boolean {
+    return ((cell?.raw ?? '') !== '') || ((cell?.value ?? '') !== '');
+}
+
+function populatedBounds(cells: Map<string, CellProps>, origin: { col: number; row: number }) {
+    let minCol = Infinity, maxCol = -Infinity, minRow = Infinity, maxRow = -Infinity;
+    for (const [id, cell] of cells) {
+        if (!isPopulatedCell(cell)) continue;
+        const parsed = parseCellId(id);
+        if (!parsed) continue;
+        if (parsed.row === origin.row) {
+            minCol = Math.min(minCol, parsed.col);
+            maxCol = Math.max(maxCol, parsed.col);
+        }
+        if (parsed.col === origin.col) {
+            minRow = Math.min(minRow, parsed.row);
+            maxRow = Math.max(maxRow, parsed.row);
+        }
+    }
+    return { minCol, maxCol, minRow, maxRow };
+}
+
+export function navigateCell(
+    currentId: string,
+    direction: ArrowNavigationKey,
+    options: { ctrlKey?: boolean; data?: Map<string, CellProps> } = {},
+): string {
+    const parsed = parseCellId(currentId);
+    if (!parsed) return currentId;
+
+    let { col, row } = parsed;
+
+    if (options.ctrlKey) {
+        const bounds = populatedBounds(options.data ?? new Map(), parsed);
+        if (direction === 'ArrowUp' && bounds.minRow !== Infinity) row = bounds.minRow;
+        if (direction === 'ArrowDown' && bounds.maxRow !== -Infinity) row = bounds.maxRow;
+        if (direction === 'ArrowLeft' && bounds.minCol !== Infinity) col = bounds.minCol;
+        if (direction === 'ArrowRight' && bounds.maxCol !== -Infinity) col = bounds.maxCol;
+    } else {
+        if (direction === 'ArrowUp') row -= 1;
+        if (direction === 'ArrowDown') row += 1;
+        if (direction === 'ArrowLeft') col -= 1;
+        if (direction === 'ArrowRight') col += 1;
+    }
+
+    col = Math.max(1, Math.min(MAX_COLS, col));
+    row = Math.max(1, Math.min(MAX_ROWS, row));
+    return `${numToAlpha(col)}${row}`;
 }
 
 function formatDateWithPattern(d: Date, fmt: string): string {

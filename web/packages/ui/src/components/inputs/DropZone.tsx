@@ -59,6 +59,7 @@ export function DropZone({
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
       aria-label={dragging ? 'Drop to upload' : label}
+      data-testid="drop-zone"
     >
       <Upload size={32} className={styles.dropIcon} />
       <p className={styles.dropText}>{dragging ? 'Drop to upload' : label}</p>

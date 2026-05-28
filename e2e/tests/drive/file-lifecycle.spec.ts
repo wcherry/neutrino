@@ -63,7 +63,7 @@ async function uploadFileViaUI(page: Page, fileName: string): Promise<void> {
   await expect(dialog).toBeVisible({ timeout: 5_000 });
 
   // The file input is display:none so we simulate a drop on the drop zone instead
-  const dropZone = dialog.getByRole('button', { name: 'Drop files here or click to browse' });
+  const dropZone = dialog.getByTestId('drop-zone');
   const dataTransfer = await page.evaluateHandle(
     ({ name, content }) => {
       const dt = new DataTransfer();
@@ -87,6 +87,7 @@ async function uploadFileViaUI(page: Page, fileName: string): Promise<void> {
 async function openContextMenu(page: Page, fileName: string): Promise<void> {
   await page.getByRole('listitem', { name: fileName }).first().hover();
   await page.getByLabel(`More options for ${fileName}`).click();
+  await expect(page.getByRole('menu', { name: 'File options' })).toBeVisible({ timeout: 5_000 });
 }
 
 test.describe('Drive file lifecycle', () => {

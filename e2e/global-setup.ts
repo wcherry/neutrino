@@ -1,4 +1,4 @@
-import { execSync, spawn } from 'child_process';
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -36,11 +36,8 @@ export default async function globalSetup(): Promise<void> {
     process.env.RUN_DIR = fallback;
     fs.mkdirSync(fallback, { recursive: true });
     for (const sub of [
-      'data/auth', 'data/drive', 'data/docs', 'data/sheets',
-      'data/slides', 'data/photos', 'data/workers',
-      'service-logs/auth', 'service-logs/drive', 'service-logs/docs',
-      'service-logs/sheets', 'service-logs/slides', 'service-logs/photos',
-      'service-logs/workers', 'browser-logs', 'databases', 'playwright-results',
+      'data', 'data/storage',
+      'service-logs', 'browser-logs', 'databases', 'playwright-results',
     ]) {
       fs.mkdirSync(path.join(fallback, sub), { recursive: true });
     }

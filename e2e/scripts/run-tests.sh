@@ -21,26 +21,11 @@ echo "Run ID  : ${RUN_ID}"
 echo "Run dir : ${RUN_DIR}"
 echo ""
 
-# Create the full directory tree
+# Create the run directory tree
 mkdir -p \
-  "${RUN_DIR}/data/auth" \
-  "${RUN_DIR}/data/drive" \
-  "${RUN_DIR}/data/docs" \
-  "${RUN_DIR}/data/sheets" \
-  "${RUN_DIR}/data/slides" \
-  "${RUN_DIR}/data/photos" \
-  "${RUN_DIR}/data/notes" \
-  "${RUN_DIR}/data/calendar" \
-  "${RUN_DIR}/data/workers" \
-  "${RUN_DIR}/service-logs/auth" \
-  "${RUN_DIR}/service-logs/drive" \
-  "${RUN_DIR}/service-logs/docs" \
-  "${RUN_DIR}/service-logs/sheets" \
-  "${RUN_DIR}/service-logs/slides" \
-  "${RUN_DIR}/service-logs/photos" \
-  "${RUN_DIR}/service-logs/notes" \
-  "${RUN_DIR}/service-logs/calendar" \
-  "${RUN_DIR}/service-logs/workers" \
+  "${RUN_DIR}/data" \
+  "${RUN_DIR}/data/storage" \
+  "${RUN_DIR}/service-logs" \
   "${RUN_DIR}/browser-logs" \
   "${RUN_DIR}/databases" \
   "${RUN_DIR}/playwright-artifacts" \
@@ -64,7 +49,7 @@ done
 # Run Playwright (global-setup starts Docker, global-teardown stops it)
 cd "$REPO_ROOT"
 EXIT_CODE=0
-npx playwright test "${PW_ARGS[@]+"${PW_ARGS[@]}"}" || EXIT_CODE=$?
+pnpm exec playwright test "${PW_ARGS[@]+"${PW_ARGS[@]}"}" || EXIT_CODE=$?
 
 echo ""
 echo "Run artifacts saved to: ${RUN_DIR}"
@@ -75,7 +60,7 @@ echo "  PW artifacts : ${RUN_DIR}/playwright-artifacts/"
 echo "  PW report    : ${RUN_DIR}/playwright-report/"
 
 if [ "$SHOW_REPORT" = true ]; then
-  npx playwright show-report "${RUN_DIR}/playwright-report"
+  pnpm exec playwright show-report "${RUN_DIR}/playwright-report"
 fi
 
 

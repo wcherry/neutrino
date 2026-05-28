@@ -15,6 +15,7 @@ type Props = {
     onTextChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
     onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
     onFocus: (event: React.FocusEvent<HTMLInputElement>) => void;
+    onMouseDown: (event: React.MouseEvent<HTMLInputElement>) => void;
     onBlur: (event: React.FocusEvent<HTMLInputElement>) => void;
     onToggleAllFunctions: () => void;
     onFunctionSelect: (fnName: string) => void;
@@ -32,6 +33,7 @@ export function FormulaBar({
     onTextChange,
     onKeyDown,
     onFocus,
+    onMouseDown,
     onBlur,
     onToggleAllFunctions,
     onFunctionSelect,
@@ -80,7 +82,9 @@ export function FormulaBar({
                     onChange={onTextChange}
                     onKeyDown={onKeyDown}
                     onFocus={onFocus}
+                    onMouseDown={onMouseDown}
                     onBlur={onBlur}
+                    data-testid="formula-bar-input"
                 />
                 {formulaPickMode && (
                     <span className={styles.formulaPickHint} aria-live="polite">

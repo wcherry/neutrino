@@ -6,10 +6,6 @@ const BASE_URL = 'http://localhost:9880';
 // pageTitle is the h1 text rendered by the target page; omit for pages with no h1.
 const NAV_LINKS: { label: string; href: string; pageTitle?: string }[] = [
   { label: 'My Drive',       href: '/drive',         pageTitle: 'My Drive' },
-  { label: 'Photos',         href: '/photos',        pageTitle: 'Photos' },
-  { label: 'Documents',      href: '/docs',          pageTitle: 'Documents' },
-  { label: 'Spreadsheets',   href: '/sheets',        pageTitle: 'Spreadsheets' },
-  { label: 'Presentations',  href: '/slides',        pageTitle: 'Presentations' },
   { label: 'Notes',          href: '/notes',         pageTitle: 'Notes' },
   { label: 'Calendar',       href: '/calendar' },
   { label: 'Shared with me', href: '/drive/shared',  pageTitle: 'Shared with me' },

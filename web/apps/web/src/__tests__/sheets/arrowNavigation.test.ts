@@ -7,32 +7,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { alphaToNum, numToAlpha } from '../../app/(apps)/sheets/editor/utils';
+import { navigateCell, numToAlpha } from '../../app/(apps)/sheets/editor/utils';
 import { MAX_ROWS, MAX_COLS } from '../../app/(apps)/sheets/editor/constants';
-
-// ── Reusable navigation helper (mirrors the SheetEditor implementation) ────────
-//
-// This function computes the next cell ID after an arrow-key press.
-// It is tested here in isolation so we can exercise all the edge cases
-// without needing a rendered component.
-
-type Direction = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight';
-
-function navigateCell(currentId: string, direction: Direction): string {
-    const m = currentId.match(/^([A-Z]+)(\d+)$/);
-    if (!m) return currentId;
-    let col = alphaToNum(m[1]);
-    let row = parseInt(m[2], 10);
-
-    switch (direction) {
-        case 'ArrowUp':    row = Math.max(1, row - 1);         break;
-        case 'ArrowDown':  row = Math.min(MAX_ROWS, row + 1);  break;
-        case 'ArrowLeft':  col = Math.max(1, col - 1);         break;
-        case 'ArrowRight': col = Math.min(MAX_COLS, col + 1);  break;
-    }
-
-    return `${numToAlpha(col)}${row}`;
-}
+import type { CellProps } from '../../app/(apps)/sheets/editor/types';
 
 // ── Basic directional movement ────────────────────────────────────────────────
 
@@ -94,37 +71,35 @@ describe('navigateCell — boundary clamping', () => {
     });
 });
 
-// ── Guard condition logic (pure boolean helpers) ───────────────────────────────
-//
-// The actual guard in SheetEditor checks DOM state, so we test the pure
-// conditions here symbolically.
+// ── Ctrl jumps to populated bounds ────────────────────────────────────────────
 
-describe('arrow nav guard conditions', () => {
-    // Modifier key guard
-    it('should NOT navigate when Ctrl is held', () => {
-        // Simulated: modifier check prevents the nav function from being called.
-        // We verify the helper is only called when no modifier is held.
-        const ctrlHeld = true;
-        const result = ctrlHeld ? 'A1' : navigateCell('A1', 'ArrowDown');
-        expect(result).toBe('A1'); // navigation was suppressed
+describe('navigateCell — Ctrl movement', () => {
+    const data = new Map<string, CellProps>([
+        ['B2', { id: 'B2', raw: 'left', value: 'left', edit: false }],
+        ['E2', { id: 'E2', raw: 'right', value: 'right', edit: false }],
+        ['C4', { id: 'C4', raw: 'top', value: 'top', edit: false }],
+        ['C9', { id: 'C9', raw: 'bottom', value: 'bottom', edit: false }],
+        ['G2', { id: 'G2', raw: '', value: '', edit: false }],
+    ]);
+
+    it('Ctrl+Right moves to the last populated column in the row', () => {
+        expect(navigateCell('C2', 'ArrowRight', { ctrlKey: true, data })).toBe('E2');
     });
 
-    it('should NOT navigate when Meta (Cmd) is held', () => {
-        const metaHeld = true;
-        const result = metaHeld ? 'B3' : navigateCell('B3', 'ArrowDown');
-        expect(result).toBe('B3');
+    it('Ctrl+Left moves to the first populated column in the row', () => {
+        expect(navigateCell('D2', 'ArrowLeft', { ctrlKey: true, data })).toBe('B2');
     });
 
-    it('should NOT navigate when Alt is held', () => {
-        const altHeld = true;
-        const result = altHeld ? 'C5' : navigateCell('C5', 'ArrowRight');
-        expect(result).toBe('C5');
+    it('Ctrl+Down moves to the last populated row in the column', () => {
+        expect(navigateCell('C5', 'ArrowDown', { ctrlKey: true, data })).toBe('C9');
     });
 
-    it('navigates when no modifier is held', () => {
-        const noModifier = false;
-        const result = noModifier ? 'A1' : navigateCell('A1', 'ArrowDown');
-        expect(result).toBe('A2');
+    it('Ctrl+Up moves to the first populated row in the column', () => {
+        expect(navigateCell('C8', 'ArrowUp', { ctrlKey: true, data })).toBe('C4');
+    });
+
+    it('Ctrl movement stays put when the row or column has no populated data', () => {
+        expect(navigateCell('A10', 'ArrowRight', { ctrlKey: true, data })).toBe('A10');
     });
 });
 

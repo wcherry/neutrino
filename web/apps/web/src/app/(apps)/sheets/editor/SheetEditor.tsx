@@ -8,7 +8,7 @@ import * as XLSX from 'xlsx';
 import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
 import { sheetsApi, filesystemApi, driveAutosaveContent } from '@/lib/api';
 import type { CellProps } from './types';
-import { rangeAddress, numToAlpha, alphaToNum } from './utils';
+import { rangeAddress, numToAlpha, alphaToNum, navigateCell, type ArrowNavigationKey } from './utils';
 import { MAX_ROWS, MAX_COLS } from './constants';
 import { useHistory } from './hooks/useHistory';
 import { useClipboard } from './hooks/useClipboard';
@@ -28,6 +28,8 @@ import { HamburgerMenu } from './components/HamburgerMenu';
 import { ExportDialogs } from './components/ExportDialogs';
 import { SheetTabBar } from './components/SheetTabBar';
 import styles from './page.module.css';
+
+type SheetKeyboardMode = 'movement' | 'formula';
 
 // ── Import parsers ────────────────────────────────────────────────────────────
 
@@ -109,6 +111,7 @@ export function SheetEditor() {
     const [currentCell, setCurrentCell] = useState<CellProps | undefined>();
     const [selectionAnchor, setSelectionAnchor] = useState<string | undefined>(undefined);
     const [selectionActive, setSelectionActive] = useState<string | undefined>(undefined);
+    const [keyboardMode, setKeyboardMode] = useState<SheetKeyboardMode>('movement');
     const [data, setData] = useState<Map<string, CellProps>>(new Map());
     const dataRef = useRef<Map<string, CellProps>>(data);
     const [colWidths, setColWidths] = useState<Map<number, number>>(new Map());
@@ -135,6 +138,7 @@ export function SheetEditor() {
     const [hamburgerDeleteConfirm, setHamburgerDeleteConfirm] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
     const queryClient = useQueryClient();
+    const suppressNextFormulaFocusModeRef = useRef(false);
 
     // Sync state → refs so event handlers always see current values.
     // useLayoutEffect for dataRef ensures it's updated synchronously after every
@@ -231,46 +235,55 @@ export function SheetEditor() {
     // with empty deps always reads the latest values without re-registering.
     const selectionAnchorNavRef = useRef(selectionAnchor);
     selectionAnchorNavRef.current = selectionAnchor;
+    const selectionActiveNavRef = useRef(selectionActive);
+    selectionActiveNavRef.current = selectionActive;
+    const keyboardModeNavRef = useRef(keyboardMode);
+    keyboardModeNavRef.current = keyboardMode;
+    const dataNavRef = useRef(data);
+    dataNavRef.current = data;
     const formulaInputNavRef = useRef(editing.formulaInputRef);
     formulaInputNavRef.current = editing.formulaInputRef;
     const stableOnCellActivateNavRef = useRef(editing.stableOnCellActivate);
     stableOnCellActivateNavRef.current = editing.stableOnCellActivate;
+    const stableOnSelectionExtendNavRef = useRef(editing.stableOnSelectionExtend);
+    stableOnSelectionExtendNavRef.current = editing.stableOnSelectionExtend;
+    const beginTypingInFormulaBarNavRef = useRef(editing.beginTypingInFormulaBar);
+    beginTypingInFormulaBarNavRef.current = editing.beginTypingInFormulaBar;
     // Initialized with a no-op; updated after clearHeaderSelection is defined below.
     const clearHeaderSelectionNavRef = useRef<() => void>(() => {});
 
     // Document-level arrow-key handler for cell navigation.
     // Only fires when a cell is selected and the user is NOT actively editing
-    // (i.e. the formula bar input is not focused) and no modifier key is held.
+    // (i.e. the formula bar input or another text input is not focused).
     useEffect(() => {
         const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
         const handler = (e: KeyboardEvent) => {
             if (!ARROW_KEYS.has(e.key)) return;
-            // Skip if any modifier key is held — those are OS/browser shortcuts.
-            if (e.ctrlKey || e.metaKey || e.altKey) return;
-            // Skip if the formula input is focused (user is typing in a cell formula).
-            if (document.activeElement === formulaInputNavRef.current.current) return;
-            // Skip if any input, textarea, or contenteditable has focus.
+            if (keyboardModeNavRef.current !== 'movement') return;
+            if (e.metaKey || e.altKey) return;
             const active = document.activeElement as HTMLElement | null;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+            const isFormulaInput = active === formulaInputNavRef.current.current;
+            // Skip other inputs, textareas, and contenteditables. When the
+            // formula input is focused while still in Movement Mode, arrows
+            // continue to navigate the grid.
+            if (active && !isFormulaInput && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
             const anchor = selectionAnchorNavRef.current;
             if (!anchor) return;
+            const activeCell = selectionActiveNavRef.current ?? anchor;
 
             e.preventDefault();
-            const m = anchor.match(/^([A-Z]+)(\d+)$/);
-            if (!m) return;
-            let col = alphaToNum(m[1]);
-            let row = parseInt(m[2], 10);
-
-            if (e.key === 'ArrowUp')    row = Math.max(1, row - 1);
-            if (e.key === 'ArrowDown')  row = Math.min(MAX_ROWS, row + 1);
-            if (e.key === 'ArrowLeft')  col = Math.max(1, col - 1);
-            if (e.key === 'ArrowRight') col = Math.min(MAX_COLS, col + 1);
-
-            const nextId = `${numToAlpha(col)}${row}`;
-            if (nextId === anchor) return; // already at boundary
+            const nextId = navigateCell(activeCell, e.key as ArrowNavigationKey, {
+                ctrlKey: e.ctrlKey,
+                data: dataNavRef.current,
+            });
+            if (nextId === activeCell) return; // already at boundary or populated edge
 
             clearHeaderSelectionNavRef.current();
-            stableOnCellActivateNavRef.current(nextId);
+            if (e.shiftKey) {
+                stableOnSelectionExtendNavRef.current(nextId);
+            } else {
+                stableOnCellActivateNavRef.current(nextId);
+            }
 
             // Scroll the newly selected cell into view if it's off-screen.
             // The cell elements are plain divs with id={cellId} inside the
@@ -283,6 +296,42 @@ export function SheetEditor() {
         document.addEventListener('keydown', handler);
         return () => document.removeEventListener('keydown', handler);
     }, []); // empty deps — handler reads only from stable refs
+
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+            const active = document.activeElement as HTMLElement | null;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+
+            const anchor = selectionAnchorNavRef.current;
+            if (!anchor) return;
+
+            if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                setKeyboardMode('movement');
+                const direction = e.key === 'Enter' ? 'ArrowDown' : 'ArrowRight';
+                const activeCell = selectionActiveNavRef.current ?? anchor;
+                const nextId = navigateCell(activeCell, direction);
+                clearHeaderSelectionNavRef.current();
+                stableOnCellActivateNavRef.current(nextId);
+                requestAnimationFrame(() => {
+                    const el = document.getElementById(nextId);
+                    if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                });
+                return;
+            }
+
+            if (e.key.length !== 1) return;
+
+            e.preventDefault();
+            clearHeaderSelectionNavRef.current();
+            suppressNextFormulaFocusModeRef.current = true;
+            beginTypingInFormulaBarNavRef.current(e.key);
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, []);
 
     const clipboard = useClipboard({
         dataRef,
@@ -675,8 +724,15 @@ export function SheetEditor() {
     }, []);
     // Keep the arrow-nav ref up-to-date with the stable version of this callback.
     clearHeaderSelectionNavRef.current = clearHeaderSelection;
+    const {
+        stableOnCellActivate,
+        stableOnSelectionExtend,
+        handleFormulaBarKeyDown: onFormulaBarKeyDown,
+        handleFormulaBarFocus: onFormulaBarFocus,
+    } = editing;
 
     const handleColHeaderClick = useCallback((c: number) => {
+        setKeyboardMode('movement');
         const colLetter = numToAlpha(c + 1);
         setSelectionAnchor(`${colLetter}1`);
         setSelectionActive(`${colLetter}${MAX_ROWS}`);
@@ -687,6 +743,7 @@ export function SheetEditor() {
     }, [setSelectionAnchor, setSelectionActive]);
 
     const handleRowHeaderClick = useCallback((r: number) => {
+        setKeyboardMode('movement');
         setSelectionAnchor(`A${r + 1}`);
         setSelectionActive(`${numToAlpha(MAX_COLS)}${r + 1}`);
         setCurrentCell(undefined);
@@ -697,14 +754,38 @@ export function SheetEditor() {
 
     // Wrap cell-activate and selection-extend to clear any header selection.
     const handleCellActivate = useCallback((id: string) => {
+        setKeyboardMode('movement');
         clearHeaderSelection();
-        editing.stableOnCellActivate(id);
-    }, [clearHeaderSelection, editing.stableOnCellActivate]);
+        stableOnCellActivate(id);
+    }, [clearHeaderSelection, stableOnCellActivate]);
 
     const handleSelectionExtend = useCallback((id: string) => {
+        setKeyboardMode('movement');
         clearHeaderSelection();
-        editing.stableOnSelectionExtend(id);
-    }, [clearHeaderSelection, editing.stableOnSelectionExtend]);
+        stableOnSelectionExtend(id);
+    }, [clearHeaderSelection, stableOnSelectionExtend]);
+
+    const handleFormulaBarKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Enter' || event.key === 'Tab') {
+            setKeyboardMode('movement');
+        }
+        onFormulaBarKeyDown(event);
+    }, [onFormulaBarKeyDown]);
+
+    const handleFormulaBarFocus = useCallback(() => {
+        if (suppressNextFormulaFocusModeRef.current) {
+            suppressNextFormulaFocusModeRef.current = false;
+            onFormulaBarFocus();
+            return;
+        }
+        setKeyboardMode('formula');
+        onFormulaBarFocus();
+    }, [onFormulaBarFocus]);
+
+    const handleFormulaBarMouseDown = useCallback(() => {
+        suppressNextFormulaFocusModeRef.current = false;
+        setKeyboardMode('formula');
+    }, []);
 
     // ── Resize handlers ──────────────────────────────────────────────────────
     const handleColResize = (colIndex: number, width: number) => {
@@ -790,8 +871,9 @@ export function SheetEditor() {
                 formulaPickMode={editing.formulaPickMode}
                 formulaInputRef={editing.formulaInputRef}
                 onTextChange={editing.handleTextChange}
-                onKeyDown={editing.handleFormulaBarKeyDown}
-                onFocus={editing.handleFormulaBarFocus}
+                onKeyDown={handleFormulaBarKeyDown}
+                onFocus={handleFormulaBarFocus}
+                onMouseDown={handleFormulaBarMouseDown}
                 onBlur={editing.handleFormulaBarBlur}
                 onToggleAllFunctions={editing.toggleAllFunctions}
                 onFunctionSelect={editing.handleFunctionSelect}

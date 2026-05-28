@@ -53,7 +53,7 @@ test.describe('Sheets keyboard shortcuts', () => {
     await page.keyboard.press('Control+B');
 
     // The bold toolbar button should now have the active class
-    await expect(boldBtn).toHaveClass(/toolbarBtnActive/, { timeout: 5_000 });
+    await expect(boldBtn).toHaveClass(/active/, { timeout: 5_000 });
   });
 
   test('Ctrl+B toggles bold off when pressed again', async ({ page, request }) => {
@@ -65,13 +65,13 @@ test.describe('Sheets keyboard shortcuts', () => {
     // Click cell A1 and apply bold
     await page.locator('#A1').click();
     await page.keyboard.press('Control+B');
-    await expect(boldBtn).toHaveClass(/toolbarBtnActive/, { timeout: 5_000 });
+    await expect(boldBtn).toHaveClass(/active/, { timeout: 5_000 });
 
     // Press Ctrl+B again to remove bold
     await page.keyboard.press('Control+B');
 
     // The active class should be gone
-    await expect(boldBtn).not.toHaveClass(/toolbarBtnActive/, { timeout: 5_000 });
+    await expect(boldBtn).not.toHaveClass(/active/, { timeout: 5_000 });
   });
 
   // ── Ctrl+I (italic) ──────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ test.describe('Sheets keyboard shortcuts', () => {
     await page.keyboard.press('Control+I');
 
     // The italic toolbar button should now have the active class
-    await expect(italicBtn).toHaveClass(/toolbarBtnActive/, { timeout: 5_000 });
+    await expect(italicBtn).toHaveClass(/active/, { timeout: 5_000 });
   });
 
   test('Ctrl+I toggles italic off when pressed again', async ({ page, request }) => {
@@ -101,13 +101,13 @@ test.describe('Sheets keyboard shortcuts', () => {
     // Click cell A1 and apply italic
     await page.locator('#A1').click();
     await page.keyboard.press('Control+I');
-    await expect(italicBtn).toHaveClass(/toolbarBtnActive/, { timeout: 5_000 });
+    await expect(italicBtn).toHaveClass(/active/, { timeout: 5_000 });
 
     // Press Ctrl+I again to remove italic
     await page.keyboard.press('Control+I');
 
     // The active class should be gone
-    await expect(italicBtn).not.toHaveClass(/toolbarBtnActive/, { timeout: 5_000 });
+    await expect(italicBtn).not.toHaveClass(/active/, { timeout: 5_000 });
   });
 
   // ── Guard: shortcut must not fire when an input has focus ────────────────────
@@ -129,6 +129,7 @@ test.describe('Sheets keyboard shortcuts', () => {
     await page.keyboard.press('Control+B');
 
     // The bold button must NOT have the active class
-    await expect(boldBtn).not.toHaveClass(/toolbarBtnActive/, { timeout: 5_000 });
+    await expect(boldBtn).not.toHaveClass(/active/, { timeout: 5_000 });
   });
+
 });

@@ -25,7 +25,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page, prefix =
 /** Click a cell, type a value into the formula bar, press Enter to commit. */
 async function setCell(page: Page, ref: string, value: string): Promise<void> {
   await page.locator(`[data-type="cell"][id="${ref}"]`).click();
-  const formulaInput = page.getByRole('textbox');
+  const formulaInput = page.getByTestId('formula-bar-input');
   await formulaInput.fill(value);
   await formulaInput.press('Enter');
 }
@@ -68,15 +68,18 @@ async function addAndRenameSheet(page: Page, newName: string): Promise<void> {
   await expect(page.getByText(newName, { exact: true })).toBeVisible({ timeout: 5_000 });
 }
 
-/** Trigger re-evaluation of a cell by clicking away and back. */
+/** Trigger re-evaluation of a cell by activating it, then committing via a neighbour click. */
 async function reactivateCell(page: Page, ref: string): Promise<void> {
-  // Click another cell to commit any edit
+  // Click the target cell first so it becomes currentCell (edit: true).
+  await page.locator(`[data-type="cell"][id="${ref}"]`).click();
+  // Click a neighbour cell to commit the target: activateCell for the neighbour
+  // runs computeCell on the target using the latest allSheets, producing the
+  // correct computed value and leaving the target in edit: false state.
   const m = ref.match(/^([A-Z]+)(\d+)$/);
   if (m) {
     const nextRef = `${m[1]}${parseInt(m[2]) + 1}`;
     await page.locator(`[data-type="cell"][id="${nextRef}"]`).click();
   }
-  await page.locator(`[data-type="cell"][id="${ref}"]`).click();
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

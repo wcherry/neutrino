@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Eye, Info, Pencil, Star, StarOff, Download, Trash2, Link, Share2, FolderInput } from 'lucide-react';
 import { type FileItem } from '@/lib/api';
 import styles from './FileContextMenu.module.css';
@@ -37,6 +37,7 @@ export function FileContextMenu({
   onMove,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x, y });
 
   useEffect(() => {
     function onMouseDown(e: MouseEvent) {
@@ -53,9 +54,14 @@ export function FileContextMenu({
     };
   }, [onClose]);
 
-  // Adjust position to stay within viewport
-  const adjustedX = Math.min(x, window.innerWidth - 200);
-  const adjustedY = Math.min(y, window.innerHeight - 320);
+  // After first render, measure actual dimensions and clamp within viewport.
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const { width, height } = ref.current.getBoundingClientRect();
+    const clampedX = Math.min(x, window.innerWidth - width - 4);
+    const clampedY = Math.min(y, window.innerHeight - height - 4);
+    setPos({ x: Math.max(4, clampedX), y: Math.max(4, clampedY) });
+  }, [x, y]);
 
   const items = [
     ...(onPreview ? [{ icon: <Eye size={14} />, label: 'Preview', action: onPreview }] : []),
@@ -78,7 +84,7 @@ export function FileContextMenu({
     <div
       ref={ref}
       className={styles.menu}
-      style={{ left: adjustedX, top: adjustedY }}
+      style={{ left: pos.x, top: pos.y }}
       role="menu"
       aria-label="File options"
     >

@@ -4,7 +4,7 @@ import * as path from 'path';
 
 const COMPOSE_FILE = path.resolve(__dirname, 'docker-compose-test.yml');
 
-const SERVICES = ['auth', 'drive', 'docs', 'sheets', 'slides', 'photos', 'worker', 'web'];
+const SERVICES = ['neutrino'];
 
 function readRunDir(): string {
   const runDir = process.env.RUN_DIR;
@@ -43,20 +43,14 @@ function snapshotDatabases(runDir: string): void {
 
   if (!fs.existsSync(dataDir)) return;
 
-  for (const svc of fs.readdirSync(dataDir)) {
-    const svcDataDir = path.join(dataDir, svc);
-    if (!fs.statSync(svcDataDir).isDirectory()) continue;
-
-    for (const file of fs.readdirSync(svcDataDir)) {
-      if (file.endsWith('.db')) {
-        const src = path.join(svcDataDir, file);
-        const dest = path.join(dbDir, `${svc}_${file}`);
-        try {
-          fs.copyFileSync(src, dest);
-        } catch {
-          // Non-fatal
-        }
-      }
+  for (const file of fs.readdirSync(dataDir)) {
+    if (!file.endsWith('.db')) continue;
+    const src = path.join(dataDir, file);
+    const dest = path.join(dbDir, file);
+    try {
+      fs.copyFileSync(src, dest);
+    } catch {
+      // Non-fatal
     }
   }
 }

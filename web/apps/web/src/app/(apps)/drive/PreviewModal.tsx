@@ -69,13 +69,13 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
 
     async function fetchBlobUrl(mimeType: string): Promise<string> {
       if (file.encryptedMetadata) {
-        const userId = currentUser?.id ?? await authApi.getProfile().then((u) => u.id);
+        const userId = (currentUser?.id ?? await authApi.getProfile().then((u) => u.id))!;
         await initSodium();
         const kp = loadKeyPair(userId);
         if (!kp) throw new Error('No local keypair — cannot decrypt file');
         const bytes = await downloadAndDecryptFile(file.id, kp.publicKey, kp.secretKey);
         if (!bytes) throw new Error('Failed to decrypt file');
-        const blob = new Blob([bytes], { type: mimeType });
+        const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mimeType });
         return URL.createObjectURL(blob);
       }
       return storageApi.fetchPreviewBlobUrl(file.id);
@@ -83,7 +83,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
 
     async function fetchText(): Promise<string> {
       if (file.encryptedMetadata) {
-        const userId = currentUser?.id ?? await authApi.getProfile().then((u) => u.id);
+        const userId = (currentUser?.id ?? await authApi.getProfile().then((u) => u.id))!;
         await initSodium();
         const kp = loadKeyPair(userId);
         if (!kp) throw new Error('No local keypair — cannot decrypt file');

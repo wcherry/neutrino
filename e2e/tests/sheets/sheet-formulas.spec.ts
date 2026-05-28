@@ -25,7 +25,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page, prefix =
 /** Click a cell, type a value into the formula bar, press Enter to commit. */
 async function setCell(page: Page, ref: string, value: string): Promise<void> {
   await page.locator(`[data-type="cell"][id="${ref}"]`).click();
-  const formulaInput = page.getByRole('textbox');
+  const formulaInput = page.getByTestId('formula-bar-input');
   await formulaInput.fill(value);
   await formulaInput.press('Enter');
 }

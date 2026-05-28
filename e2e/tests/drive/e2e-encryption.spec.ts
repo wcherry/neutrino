@@ -17,14 +17,14 @@ import {
   initSodium,
   decryptFile,
   decryptFileKey,
-} from '../../../neutrino-web/packages/e2e-crypto/src/crypto';
+} from '../../../web/packages/e2e-crypto/src/crypto';
 
 const BASE_URL = 'http://localhost:9880';
 
-// Host-side path to the drive service's storage directory.
-// Matches the docker-compose mount: ./data/drive:/usr/local/data + STORAGE_PATH=/usr/local/data/storage
+// Host-side path to the storage directory.
+// Matches the docker-compose mount: ${RUN_DIR}/data:/usr/local/data + STORAGE_PATH=/usr/local/data/storage
 const runDir = process.env.RUN_DIR ?? '/tmp/neutrino-e2e/default';
-const STORAGE_PATH =  process.env.DRIVE_STORAGE_PATH ?? path.join(runDir, 'data/drive/storage');
+const STORAGE_PATH = process.env.DRIVE_STORAGE_PATH ?? path.join(runDir, 'data/storage');
 
 
 
@@ -103,7 +103,7 @@ async function uploadFileViaUI(
   const dialog = page.getByRole('dialog', { name: 'Upload files' });
   await expect(dialog).toBeVisible({ timeout: 5_000 });
 
-  const dropZone = dialog.getByRole('button', { name: 'Drop files here or click to browse' });
+  const dropZone = dialog.getByRole('button', { name: 'Drag & drop files here' });
   const dataTransfer = await page.evaluateHandle(
     ({ name, content }) => {
       const dt = new DataTransfer();
