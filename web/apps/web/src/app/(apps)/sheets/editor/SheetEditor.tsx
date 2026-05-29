@@ -251,6 +251,8 @@ export function SheetEditor() {
     beginTypingInFormulaBarNavRef.current = editing.beginTypingInFormulaBar;
     // Initialized with a no-op; updated after clearHeaderSelection is defined below.
     const clearHeaderSelectionNavRef = useRef<() => void>(() => {});
+    // Initialized with a no-op; updated after handleClearCells is defined below.
+    const handleClearCellsNavRef = useRef<() => void>(() => {});
 
     // Document-level arrow-key handler for cell navigation.
     // Only fires when a cell is selected and the user is NOT actively editing
@@ -319,6 +321,13 @@ export function SheetEditor() {
                     const el = document.getElementById(nextId);
                     if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
                 });
+                return;
+            }
+
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                clearHeaderSelectionNavRef.current();
+                handleClearCellsNavRef.current();
                 return;
             }
 
@@ -615,6 +624,9 @@ export function SheetEditor() {
         });
         dirtyRef.current = true;
     }, [editing.selectedCells, setData, history, dirtyRef, getAllSheets]);
+
+    // Keep the delete-key ref up-to-date with the latest version of handleClearCells.
+    handleClearCellsNavRef.current = handleClearCells;
 
     // ── Clipboard wrappers for context menu ──────────────────────────────────
     // The native clipboard handlers in useClipboard fire on document copy/cut/paste
