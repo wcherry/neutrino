@@ -148,8 +148,8 @@ export function SheetEditor() {
     useLayoutEffect(() => { dataRef.current = data; }, [data]);
     useEffect(() => { colWidthsRef.current = colWidths; }, [colWidths]);
     useEffect(() => { rowHeightsRef.current = rowHeights; }, [rowHeights]);
-    useEffect(() => { selectionAnchorRef.current = selectionAnchor; }, [selectionAnchor]);
-    useEffect(() => { selectionActiveRef.current = selectionActive; }, [selectionActive]);
+    useLayoutEffect(() => { selectionAnchorRef.current = selectionAnchor; }, [selectionAnchor]);
+    useLayoutEffect(() => { selectionActiveRef.current = selectionActive; }, [selectionActive]);
 
 
     // ── Hooks ────────────────────────────────────────────────────────────────
@@ -652,7 +652,7 @@ export function SheetEditor() {
 
     const handleDelete = useCallback(async () => {
         await filesystemApi.bulkDelete({ fileIds: [sheetId], folderIds: [] });
-        router.push('/sheets');
+        router.push('/drive');
     }, [sheetId, router]);
 
     // ── Import ───────────────────────────────────────────────────────────────
@@ -820,7 +820,7 @@ export function SheetEditor() {
                     setHamburgerDialog={setHamburgerDialog}
                     setHamburgerDeleteConfirm={setHamburgerDeleteConfirm}
                 />
-                <button className={styles.backBtn} aria-label="Sheets" onClick={async () => { await persist.save(); router.push('/sheets'); }}>
+                <button className={styles.backBtn} aria-label="Sheets" onClick={async () => { await persist.save(); router.push('/drive'); }}>
                     <ArrowLeft size={16} />
                 </button>
                 <div className={styles.titleArea}>

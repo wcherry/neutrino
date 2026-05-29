@@ -99,7 +99,8 @@ async function uploadFileViaUI(
   fileName: string,
   content: string,
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Upload', exact: true }).click();
+  await page.getByRole('button', { name: 'Create new item' }).click();
+  await page.getByRole('menuitem', { name: 'Upload' }).click();
   const dialog = page.getByRole('dialog', { name: 'Upload files' });
   await expect(dialog).toBeVisible({ timeout: 5_000 });
 
@@ -507,8 +508,19 @@ test.describe('E2EE for sheets, docs, slides, and photos', () => {
   }) => {
     const { token } = await loginUser(request, page);
 
-    await page.goto('/sheets');
-    await page.getByRole('button', { name: 'New Spreadsheet' }).first().click();
+    await page.goto('/drive');
+
+    // Register the autosave listener before clicking so we don't miss the first save.
+    const autosavePromise = page.waitForResponse(
+      (r) =>
+        r.url().includes('/api/v1/drive/files/') &&
+        !r.url().endsWith('/key') &&
+        ['POST', 'PUT'].includes(r.request().method()),
+      { timeout: 30_000 },
+    );
+
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Spreadsheet' }).click();
 
     // Wait until the editor page loads (URL changes to /sheets/editor)
     await expect(page).toHaveURL(/\/sheets\/editor/, { timeout: 30_000 });
@@ -517,6 +529,9 @@ test.describe('E2EE for sheets, docs, slides, and photos', () => {
     const url = page.url();
     const sheetId = new URL(url).searchParams.get('id');
     expect(sheetId, 'sheet ID must be present in editor URL').toBeTruthy();
+
+    // Wait for the initial autosave — DEK is stored before the first autosave runs.
+    await autosavePromise;
 
     // Verify an encrypted DEK is stored for the sheet
     const keyRes = await request.get(`${BASE_URL}/api/v1/drive/files/${sheetId}/key`, {
@@ -547,14 +562,26 @@ test.describe('E2EE for sheets, docs, slides, and photos', () => {
   }) => {
     const { token } = await loginUser(request, page);
 
-    await page.goto('/docs');
-    await page.getByRole('button', { name: 'New Document' }).first().click();
+    await page.goto('/drive');
+
+    const autosavePromiseDoc = page.waitForResponse(
+      (r) =>
+        r.url().includes('/api/v1/drive/files/') &&
+        !r.url().endsWith('/key') &&
+        ['POST', 'PUT'].includes(r.request().method()),
+      { timeout: 30_000 },
+    );
+
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Document' }).click();
 
     await expect(page).toHaveURL(/\/docs\/editor/, { timeout: 30_000 });
 
     const url = page.url();
     const docId = new URL(url).searchParams.get('id');
     expect(docId, 'doc ID must be present in editor URL').toBeTruthy();
+
+    await autosavePromiseDoc;
 
     const keyRes = await request.get(`${BASE_URL}/api/v1/drive/files/${docId}/key`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -583,14 +610,26 @@ test.describe('E2EE for sheets, docs, slides, and photos', () => {
   }) => {
     const { token } = await loginUser(request, page);
 
-    await page.goto('/slides');
-    await page.getByRole('button', { name: 'New Presentation' }).first().click();
+    await page.goto('/drive');
+
+    const autosavePromiseSlide = page.waitForResponse(
+      (r) =>
+        r.url().includes('/api/v1/drive/files/') &&
+        !r.url().endsWith('/key') &&
+        ['POST', 'PUT'].includes(r.request().method()),
+      { timeout: 30_000 },
+    );
+
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Presentation' }).click();
 
     await expect(page).toHaveURL(/\/slides\/editor/, { timeout: 30_000 });
 
     const url = page.url();
     const slideId = new URL(url).searchParams.get('id');
     expect(slideId, 'slide ID must be present in editor URL').toBeTruthy();
+
+    await autosavePromiseSlide;
 
     const keyRes = await request.get(`${BASE_URL}/api/v1/drive/files/${slideId}/key`, {
       headers: { Authorization: `Bearer ${token}` },

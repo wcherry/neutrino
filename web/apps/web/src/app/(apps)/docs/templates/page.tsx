@@ -110,7 +110,7 @@ export default function DocsTemplatesPage() {
   return (
     <div className={styles.page}>
       <div className={styles.topbar}>
-        <button className={styles.backBtn} onClick={() => router.push('/docs')}>
+        <button className={styles.backBtn} onClick={() => router.push('/drive')}>
           <ArrowLeft size={16} />
           Back to Docs
         </button>

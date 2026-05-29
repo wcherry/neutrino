@@ -46,6 +46,7 @@ dashmap = "6"
 base64 = "0.22"
 mime_guess = "2"
 mime = "0.3"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff"] }
 zip = "2"
 regex = "1"
 libc = "0.2"

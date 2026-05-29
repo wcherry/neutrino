@@ -4,6 +4,7 @@
 // toolbar, calendar area, and sidebar.  No meaningful static server shell exists.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams, useRouter as useNextRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@neutrino/ui';
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
@@ -43,6 +44,8 @@ import styles from './page.module.css';
 
 export default function CalendarPage() {
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
+  const calendarRouter = useNextRouter();
   const [view, setView] = useState<View>('month');
   const [cursor, setCursor] = useState(() => new Date());
   const [startDay, setStartDay] = useState(0);
@@ -83,6 +86,17 @@ export default function CalendarPage() {
   const [newEventDate, setNewEventDate] = useState<Date>(() => new Date());
   const [icsPrefill, setIcsPrefill] = useState<ParsedIcsEvent | undefined>();
   const [reminderModal, setReminderModal] = useState<{ open: boolean; editing: import('@/lib/api').ReminderResponse | null }>({ open: false, editing: null });
+
+  useEffect(() => {
+    const newParam = searchParams.get('new');
+    if (newParam === 'event') {
+      setShowNewEvent(true);
+      calendarRouter.replace('/calendar');
+    } else if (newParam === 'reminder') {
+      setReminderModal({ open: true, editing: null });
+      calendarRouter.replace('/calendar');
+    }
+  }, [searchParams, calendarRouter]);
 
   const { from, to } = monthRange(cursor);
 

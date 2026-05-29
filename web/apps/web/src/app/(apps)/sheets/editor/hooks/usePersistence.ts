@@ -231,6 +231,13 @@ export function usePersistence({
         }
         // Signal the autosave useEffect to (re-)start the interval with a fresh closure.
         setLoadCount(c => c + 1);
+
+        // Immediately save encrypted content to overwrite the server's plaintext initial
+        // content (written by POST /api/v1/sheets on creation).  Without this, the server
+        // would hold plaintext bytes until the first user edit triggers the 3-second timer.
+        if (dekRef.current) {
+            save();
+        }
     };
 
     const updateTitle = async (event: React.FocusEvent<HTMLElement>) => {

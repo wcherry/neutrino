@@ -26,11 +26,9 @@ async function registerAndLogin(
 }
 
 async function openNewSheet(page: Page): Promise<void> {
-  await page.goto('/sheets');
-  await expect(page.getByRole('button', { name: /new spreadsheet/i })).toHaveCount(2, {
-    timeout: 10_000,
-  });
-  await page.getByRole('button', { name: /new spreadsheet/i }).first().click();
+  await page.goto('/drive');
+  await page.getByRole('button', { name: 'Create new item' }).click();
+  await page.getByRole('menuitem', { name: 'Spreadsheet' }).click();
   await expect(page).toHaveURL(/\/sheets\/editor\/?\?id=/, { timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Sheets' })).toBeVisible({ timeout: 10_000 });
   // Wait for the grid to be ready

@@ -465,6 +465,7 @@ export async function uploadEncryptedFile(
   encryptedMetadata: string,
   onProgress?: (percent: number) => void,
   folderId?: string | null,
+  thumbnailB64?: string | null,
 ): Promise<FileItem> {
   // Encrypt the file bytes.
   const { encryptFile } = await import('@neutrino/e2e-crypto');
@@ -481,6 +482,12 @@ export async function uploadEncryptedFile(
   // Pass the original MIME type explicitly — the encrypted blob is typed as
   // application/octet-stream, so the server can't infer the real type from it.
   if (file.type) formData.append('mime_type', file.type);
+  if (thumbnailB64) {
+    console.log('[uploadEncryptedFile] appending thumbnail_b64, length:', thumbnailB64.length);
+    formData.append('thumbnail_b64', thumbnailB64);
+  } else {
+    console.log('[uploadEncryptedFile] no thumbnail_b64 to append');
+  }
   formData.append('file', encryptedFile);
 
   const item = await request<FileItem>('/api/v1/drive/files/upload', {

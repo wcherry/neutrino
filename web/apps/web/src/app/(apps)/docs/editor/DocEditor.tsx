@@ -318,6 +318,7 @@ export function DocEditor() {
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingContent = useRef<string | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
+  const initialSaveDoneRef = useRef(false);
 
   const { data: doc, isLoading: metaLoading } = useQuery({
     queryKey: ['doc', docId],
@@ -340,6 +341,7 @@ export function DocEditor() {
     },
     enabled: !!doc?.contentUrl && dekResolved,
     staleTime: 0,
+    retry: 0,
   });
 
   const isLoading = metaLoading || contentLoading;
@@ -502,6 +504,21 @@ export function DocEditor() {
     }
   }, [docContent, editor]);
 
+  // After the DEK is resolved and the content query has settled, do a one-time
+  // encrypted autosave when no valid content was loaded (new file or failed
+  // decryption of server-stored plaintext).  This overwrites the server's
+  // plaintext initial content so the stored bytes are always ciphertext.
+  useEffect(() => {
+    if (!dekRef.current || !editor || !doc || contentLoading) return;
+    if (initialSaveDoneRef.current) return;
+    if (docContent !== null && docContent !== undefined) return;
+    initialSaveDoneRef.current = true;
+    const content = JSON.stringify(editor.getJSON());
+    driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
+  // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dekResolved, editor, doc, contentLoading, docContent, docId]);
+
   useEffect(() => {
     const flush = () => {
       if (pendingContent.current === null) return;
@@ -557,7 +574,7 @@ export function DocEditor() {
       pendingContent.current = null;
     }
     queryClient.invalidateQueries({ queryKey: ['docs'] });
-    router.push('/docs');
+    router.push('/drive');
   }, [contentMutation, queryClient, router]);
 
   const handleManualSave = useCallback(() => {

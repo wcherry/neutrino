@@ -16,13 +16,11 @@ import {
   useToast,
 } from '@neutrino/ui';
 import {
-  Upload,
-  FolderPlus,
-  FileText,
   Folder,
   Clock,
+  Upload,
 } from 'lucide-react';
-import { storageApi, filesystemApi, docsApi, sheetsApi, slidesApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem } from '@/lib/api';
+import { storageApi, filesystemApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
 import { useRouter } from 'next/navigation';
@@ -147,6 +145,17 @@ export default function DrivePage() {
     }
   }, [renaming]);
 
+  useEffect(() => {
+    function onNewFolder() { setNewFolderName('New folder'); setNewFolderDialogOpen(true); }
+    function onUpload() { setUploadOpen(true); }
+    window.addEventListener('drive:new-folder', onNewFolder);
+    window.addEventListener('drive:upload', onUpload);
+    return () => {
+      window.removeEventListener('drive:new-folder', onNewFolder);
+      window.removeEventListener('drive:upload', onUpload);
+    };
+  }, []);
+
   const { data: starredData } = useQuery({
     queryKey: ['starred'],
     queryFn: () => filesystemApi.getStarred(5),
@@ -190,33 +199,6 @@ export default function DrivePage() {
       setFolderPath((prev) => prev.slice(0, index + 1));
     }
   }
-
-  const createDocMutation = useMutation({
-    mutationFn: (title: string) => docsApi.createDoc({ title, folderId: currentFolderId }),
-    onSuccess: (doc) => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      router.push(`/docs/editor?id=${doc.id}`);
-    },
-    onError: () => toast.error('Failed to create document'),
-  });
-
-  const createSheetMutation = useMutation({
-    mutationFn: (title: string) => sheetsApi.createSheet({ title, folderId: currentFolderId }),
-    onSuccess: (sheet: { id: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      router.push(`/sheets/editor?id=${sheet.id}`);
-    },
-    onError: () => toast.error('Failed to create spreadsheet'),
-  });
-
-  const createSlideMutation = useMutation({
-    mutationFn: (title: string) => slidesApi.createSlide({ title, folderId: currentFolderId }),
-    onSuccess: (slide: { id: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      router.push(`/slides/editor?id=${slide.id}`);
-    },
-    onError: () => toast.error('Failed to create presentation'),
-  });
 
   const createFolderMutation = useMutation({
     mutationFn: (name: string) => filesystemApi.createFolder({ name, parentId: currentFolderId ?? undefined }),
@@ -474,45 +456,6 @@ export default function DrivePage() {
               })),
             ]}
           />
-          <Heading level={1} size="xl">
-            {folderPath.length > 0 ? folderPath[folderPath.length - 1].name : 'My Drive'}
-          </Heading>
-        </div>
-        <div className={styles['header-actions']}>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<FolderPlus size={16} />}
-            onClick={() => { setNewFolderName('New folder'); setNewFolderDialogOpen(true); }}
-          >New folder</Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<FileText size={16} />}
-            onClick={() => createDocMutation.mutate('Untitled document')}
-            disabled={createDocMutation.isPending}
-          >
-            New document
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => createSheetMutation.mutate('Untitled spreadsheet')}
-            disabled={createSheetMutation.isPending}
-          >
-            New spreadsheet
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => createSlideMutation.mutate('Untitled presentation')}
-            disabled={createSlideMutation.isPending}
-          >
-            New presentation
-          </Button>
-          <Button variant="primary" size="sm" icon={<Upload size={16} />} onClick={() => setUploadOpen(true)}>
-            Upload
-          </Button>
         </div>
       </div>
 
@@ -543,6 +486,8 @@ export default function DrivePage() {
                   iconColor: getIconColor(file.mimeType),
                   name: file.name,
                   date: file.updatedAt,
+                  coverThumbnail: file.coverThumbnail,
+                  coverThumbnailMimeType: file.coverThumbnailMimeType,
                   onClick: () => {
                     if (file.mimeType === DOC_MIME) {
                       router.push(`/docs/editor?id=${file.id}`);
@@ -561,6 +506,8 @@ export default function DrivePage() {
                   iconColor: folder.color ?? 'var(--color-amber, #d97706)',
                   name: folder.name,
                   date: folder.updatedAt,
+                  coverThumbnail: null as string | null,
+                  coverThumbnailMimeType: null as string | null,
                   onClick: () => openFolder(folder),
                 }));
                 const items = [...starredFiles, ...starredFolders];
@@ -576,8 +523,11 @@ export default function DrivePage() {
                   return (
                     <Card key={item.key} hoverable padding="sm" className={styles['quick-card']} role="button" tabIndex={0} aria-label={`Open ${item.name}`} onClick={item.onClick}>
                       <div className={styles['quick-card-inner']}>
-                        <div className={styles['file-icon-sm']} style={{ color: item.iconColor }}>
-                          <IconComponent size={20} strokeWidth={1.5} />
+                        <div className={styles['file-icon-sm']} style={!item.coverThumbnail ? { color: item.iconColor } : undefined}>
+                          {item.coverThumbnail && item.coverThumbnailMimeType
+                            ? <img src={`data:${item.coverThumbnailMimeType};base64,${item.coverThumbnail}`} alt="" className={styles['file-icon-sm-thumb']} loading="lazy" />
+                            : <IconComponent size={20} strokeWidth={1.5} />
+                          }
                         </div>
                         <div className={styles['quick-card-info']}>
                           <Text size="sm" weight="medium" truncate>{item.name}</Text>

@@ -86,11 +86,13 @@ export function useCellEditing({
             const allSheets = getAllSheets?.();
 
             if (currentCell) {
-                // Use the data-map version of this cell as the source of truth for raw/deps.
-                // External updates (e.g. paste) modify the data map but not the currentCell
-                // React state, so currentCell.raw can be stale. latestCell reflects those updates.
                 const latestCell = next.get(currentCell.id) ?? currentCell;
-                const { value, deps: newDeps } = computeCell(latestCell.raw ?? '', next, allSheets);
+                // currentCell.raw is synchronously updated by handleTextChange (via setCurrentCell),
+                // while the corresponding setData call is deferred via startTransition and may not
+                // have reached dataRef.current yet. Prefer currentCell.raw to avoid committing
+                // a stale value from the data map.
+                const rawToCommit = currentCell.raw ?? latestCell.raw ?? '';
+                const { value, deps: newDeps } = computeCell(rawToCommit, next, allSheets);
                 const oldDeps = latestCell.deps ?? [];
 
                 // Collect IDs that will be mutated so we can build an undo patch.
@@ -107,7 +109,7 @@ export function useCellEditing({
                     const depCell = next.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
                     next.set(depId, { ...depCell, dependents: [...(depCell.dependents ?? []), currentCell.id] });
                 }
-                next.set(currentCell.id, { ...latestCell, edit: false, value, deps: newDeps });
+                next.set(currentCell.id, { ...latestCell, raw: rawToCommit, edit: false, value, deps: newDeps });
                 propagateDeps(currentCell.id, next, new Set([currentCell.id]), allSheets);
 
                 // Collect all cells touched by propagateDeps into changedIds.

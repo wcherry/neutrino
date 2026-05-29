@@ -26,11 +26,9 @@ async function registerAndLogin(
 }
 
 async function openNewDoc(page: Page): Promise<void> {
-  await page.goto('/docs');
-  await expect(page.getByRole('button', { name: /new document/i })).toHaveCount(2, {
-    timeout: 10_000,
-  });
-  await page.getByRole('button', { name: /new document/i }).first().click();
+  await page.goto('/drive');
+  await page.getByRole('button', { name: 'Create new item' }).click();
+  await page.getByRole('menuitem', { name: 'Document' }).click();
   await expect(page).toHaveURL(/\/docs\/editor\/?\?id=/, { timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Docs' })).toBeVisible({ timeout: 10_000 });
   // Wait for the ProseMirror editor to be ready

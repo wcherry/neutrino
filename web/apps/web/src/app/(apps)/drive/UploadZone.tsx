@@ -4,6 +4,7 @@ import React, { useCallback, useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, File } from 'lucide-react';
 import { authApi, storageApi, uploadEncryptedFile } from '@/lib/api';
+import { generateThumbnail } from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
 import { DropZone } from '@neutrino/ui';
 import {
@@ -62,6 +63,9 @@ export function UploadZone({ onClose, folderId, initialFiles }: UploadZoneProps)
             { name: entry.file.name, mimeType: entry.file.type || 'application/octet-stream' },
             dek,
           );
+          const thumbnailB64 = entry.file.type.startsWith('image/')
+            ? await generateThumbnail(entry.file)
+            : null;
           return uploadEncryptedFile(
             entry.file,
             dek,
@@ -69,6 +73,7 @@ export function UploadZone({ onClose, folderId, initialFiles }: UploadZoneProps)
             encryptedMetadata,
             (progress) => updateEntry(entry.id, { progress, status: 'uploading' }),
             folderId,
+            thumbnailB64,
           );
         }
       }

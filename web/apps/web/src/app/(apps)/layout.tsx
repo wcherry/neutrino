@@ -26,6 +26,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
+import { NewItemFAB } from './NewItemFAB';
 
 const BASE_NAV_SECTIONS: NavSection[] = [
   {
@@ -192,6 +193,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AppShell sidebar={sidebar} topbar={topbar}>
       {children}
+      <NewItemFAB />
     </AppShell>
   );
 }

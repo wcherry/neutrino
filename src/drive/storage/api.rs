@@ -74,6 +74,7 @@ pub async fn upload_file(
     let mut folder_id: Option<String> = None;
     let mut encrypted_metadata: Option<String> = None;
     let mut explicit_mime_type: Option<String> = None;
+    let mut thumbnail_b64: Option<String> = None;
 
     while let Some(field) = payload.next().await {
         let mut field = field.map_err(|e| {
@@ -92,7 +93,7 @@ pub async fn upload_file(
             .and_then(|cd| cd.get_filename())
             .is_none()
         {
-            if matches!(field_name.as_str(), "folder_id" | "encrypted_metadata" | "mime_type") {
+            if matches!(field_name.as_str(), "folder_id" | "encrypted_metadata" | "mime_type" | "thumbnail_b64") {
                 let mut buf = Vec::new();
                 while let Some(chunk) = field.next().await {
                     let data = chunk.map_err(|e| {
@@ -107,6 +108,10 @@ pub async fn upload_file(
                         "folder_id" => folder_id = Some(value),
                         "encrypted_metadata" => encrypted_metadata = Some(value),
                         "mime_type" => explicit_mime_type = Some(value),
+                        "thumbnail_b64" => {
+                            tracing::info!("thumbnail_b64 received, length: {}", value.len());
+                            thumbnail_b64 = Some(value);
+                        }
                         _ => {}
                     }
                 }
@@ -186,8 +191,21 @@ pub async fn upload_file(
                 let _ = std::fs::remove_file(&temp_path);
             })?;
 
-        // Enqueue a thumbnail job for supported file types (best-effort).
-        if is_thumbnail_supported(&mime_type) {
+        // Save client-generated thumbnail if provided.
+        if let Some(b64) = thumbnail_b64.take() {
+            tracing::info!("saving thumbnail for file {}, base64 length: {}", response.id, b64.len());
+            match state.storage_service.set_cover_thumbnail(&response.id, b64, "image/jpeg".to_string()) {
+                Ok(_) => tracing::info!("thumbnail saved successfully for file {}", response.id),
+                Err(e) => tracing::warn!("failed to save thumbnail for {}: {:?}", response.id, e),
+            }
+        } else {
+            tracing::info!("no thumbnail_b64 in upload request for file {}", response.id);
+        }
+
+        // Enqueue a thumbnail job for non-image file types that need an external worker
+        // (e.g. PDF, Office docs).
+        let mime_base = mime_type.split(';').next().unwrap_or(&mime_type).trim();
+        if is_thumbnail_supported(&mime_type) && !mime_base.starts_with("image/") {
             let req = CreateJobRequest {
                 job_type: "thumbnail".to_string(),
                 payload: serde_json::json!({ "fileId": response.id }),

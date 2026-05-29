@@ -74,18 +74,20 @@ test.describe('Presentation E2EE encryption', () => {
       { timeout: 10_000 },
     );
 
-    await page.goto('/slides');
+    await page.goto('/drive');
 
     // Register the listener before clicking to avoid a race where the initial
     // content upload completes before waitForResponse is set up.
     const contentUploadPromise1 = page.waitForResponse(
       (r) =>
         r.url().includes('/api/v1/drive/files/') &&
-        r.request().method() === 'POST',
+        !r.url().endsWith('/key') &&
+        ['POST', 'PUT'].includes(r.request().method()),
       { timeout: 20_000 },
     );
 
-    await page.getByRole('button', { name: /new presentation/i }).first().click();
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Presentation' }).click();
     await expect(page).toHaveURL(/\/slides\/editor\/?\?id=/, { timeout: 15_000 });
 
     const slideId = new URL(page.url()).searchParams.get('id')!;
@@ -122,16 +124,18 @@ test.describe('Presentation E2EE encryption', () => {
       { timeout: 10_000 },
     );
 
-    await page.goto('/slides');
+    await page.goto('/drive');
 
     const contentUploadPromise2 = page.waitForResponse(
       (r) =>
         r.url().includes('/api/v1/drive/files/') &&
-        r.request().method() === 'POST',
+        !r.url().endsWith('/key') &&
+        ['POST', 'PUT'].includes(r.request().method()),
       { timeout: 20_000 },
     );
 
-    await page.getByRole('button', { name: /new presentation/i }).first().click();
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Presentation' }).click();
     await expect(page).toHaveURL(/\/slides\/editor\/?\?id=/, { timeout: 15_000 });
 
     const slideId = new URL(page.url()).searchParams.get('id')!;
@@ -168,8 +172,9 @@ test.describe('Presentation E2EE encryption', () => {
       { timeout: 10_000 },
     );
 
-    await page.goto('/slides');
-    await page.getByRole('button', { name: /new presentation/i }).first().click();
+    await page.goto('/drive');
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Presentation' }).click();
     await expect(page).toHaveURL(/\/slides\/editor\/?\?id=/, { timeout: 15_000 });
 
     const slideId = new URL(page.url()).searchParams.get('id')!;

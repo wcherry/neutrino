@@ -1,0 +1,86 @@
+.fab {
+  position: fixed;
+  top: 72px;
+  right: 28px;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.trigger {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background-color: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  flex-shrink: 0;
+  transition: background-color 0.15s;
+}
+
+.trigger:hover {
+  background-color: var(--color-primary-hover, color-mix(in srgb, var(--color-primary) 85%, black));
+}
+
+.trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.trigger svg {
+  transition: transform 0.2s;
+}
+
+.trigger.open svg {
+  transform: rotate(45deg);
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  min-width: 192px;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  text-align: left;
+  width: 100%;
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  transition: background-color 0.1s;
+}
+
+.menuItem:hover {
+  background-color: var(--color-bg-subtle);
+}
+
+.menuIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) - 1);
+}

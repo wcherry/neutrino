@@ -35,7 +35,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useUser } from '@neutrino/auth';
-import { initSodium, loadKeyPair, decryptFileKey } from '@neutrino/e2e-crypto';
+import { initSodium, loadKeyPair, decryptFileKey, generateFileKey, encryptFileKey } from '@neutrino/e2e-crypto';
 import {
   encryptionApi,
   driveAutosaveContent,
@@ -112,6 +112,12 @@ export function useEncryptedDocumentContent({
               kp.publicKey,
               kp.secretKey,
             );
+          } else if (!cancelled && !keyRef) {
+            // New file: generate a DEK, encrypt it with the user's public key, and store it.
+            const newDek = generateFileKey();
+            const encryptedFileKey = encryptFileKey(newDek, kp.publicKey);
+            await encryptionApi.setFileKey(id, { encryptedFileKey });
+            dekRef.current = newDek;
           }
         }
       } catch {

@@ -214,116 +214,116 @@ export const calendarApi = {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const qs = params.toString();
-    return request<ListEventsResponse>(`/api/v1/events${qs ? `?${qs}` : ''}`);
+    return request<ListEventsResponse>(`/api/v1/calendar/events${qs ? `?${qs}` : ''}`);
   },
 
   async createEvent(body: CreateEventRequest): Promise<EventResponse> {
-    return request<EventResponse>('/api/v1/events', {
+    return request<EventResponse>('/api/v1/calendar/events', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   },
 
   async getEvent(eventId: string): Promise<EventResponse> {
-    return request<EventResponse>(`/api/v1/events/${eventId}`);
+    return request<EventResponse>(`/api/v1/calendar/events/${eventId}`);
   },
 
   async updateEvent(eventId: string, body: UpdateEventRequest): Promise<EventResponse> {
-    return request<EventResponse>(`/api/v1/events/${eventId}`, {
+    return request<EventResponse>(`/api/v1/calendar/events/${eventId}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     });
   },
 
   async deleteEvent(eventId: string): Promise<void> {
-    return request<void>(`/api/v1/events/${eventId}`, { method: 'DELETE' });
+    return request<void>(`/api/v1/calendar/events/${eventId}`, { method: 'DELETE' });
   },
 
   // ── Reminders ───────────────────────────────────────────────────────────
 
   async listReminders(eventId?: string): Promise<ListRemindersResponse> {
     const qs = eventId ? `?eventId=${encodeURIComponent(eventId)}` : '';
-    return request<ListRemindersResponse>(`/api/v1/reminders${qs}`);
+    return request<ListRemindersResponse>(`/api/v1/calendar/reminders${qs}`);
   },
 
   async createReminder(body: CreateReminderRequest): Promise<ReminderResponse> {
-    return request<ReminderResponse>('/api/v1/reminders', {
+    return request<ReminderResponse>('/api/v1/calendar/reminders', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   },
 
   async updateReminder(reminderId: string, body: UpdateReminderRequest): Promise<ReminderResponse> {
-    return request<ReminderResponse>(`/api/v1/reminders/${reminderId}`, {
+    return request<ReminderResponse>(`/api/v1/calendar/reminders/${reminderId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
   },
 
   async deleteReminder(reminderId: string): Promise<void> {
-    return request<void>(`/api/v1/reminders/${reminderId}`, { method: 'DELETE' });
+    return request<void>(`/api/v1/calendar/reminders/${reminderId}`, { method: 'DELETE' });
   },
 
   // ── Attachments ─────────────────────────────────────────────────────────
 
   async listAttachments(eventId: string): Promise<ListAttachmentsResponse> {
-    return request<ListAttachmentsResponse>(`/api/v1/events/${eventId}/attachments`);
+    return request<ListAttachmentsResponse>(`/api/v1/calendar/events/${eventId}/attachments`);
   },
 
   async createAttachment(eventId: string, body: CreateAttachmentRequest): Promise<AttachmentResponse> {
-    return request<AttachmentResponse>(`/api/v1/events/${eventId}/attachments`, {
+    return request<AttachmentResponse>(`/api/v1/calendar/events/${eventId}/attachments`, {
       method: 'POST',
       body: JSON.stringify(body),
     });
   },
 
   async deleteAttachment(eventId: string, attachmentId: string): Promise<void> {
-    return request<void>(`/api/v1/events/${eventId}/attachments/${attachmentId}`, { method: 'DELETE' });
+    return request<void>(`/api/v1/calendar/events/${eventId}/attachments/${attachmentId}`, { method: 'DELETE' });
   },
 
   // ── Task Lists ──────────────────────────────────────────────────────────
 
   async listTaskLists(): Promise<ListTaskListsResponse> {
-    return request<ListTaskListsResponse>('/api/v1/tasks/lists');
+    return request<ListTaskListsResponse>('/api/v1/calendar/tasks/lists');
   },
 
   async createTaskList(body: CreateTaskListRequest): Promise<TaskListResponse> {
-    return request<TaskListResponse>('/api/v1/tasks/lists', {
+    return request<TaskListResponse>('/api/v1/calendar/tasks/lists', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   },
 
   async listTasks(listId: string): Promise<ListTasksResponse> {
-    return request<ListTasksResponse>(`/api/v1/tasks?listId=${encodeURIComponent(listId)}`);
+    return request<ListTasksResponse>(`/api/v1/calendar/tasks?listId=${encodeURIComponent(listId)}`);
   },
 
   async listAllTasks(): Promise<TaskResponse[]> {
-    return request<TaskResponse[]>('/api/v1/tasks');
+    return request<TaskResponse[]>('/api/v1/calendar/tasks');
   },
 
   async createTask(body: CreateTaskRequest): Promise<TaskResponse> {
-    return request<TaskResponse>('/api/v1/tasks', {
+    return request<TaskResponse>('/api/v1/calendar/tasks', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   },
 
   async addTaskToList(taskId: string, listId: string): Promise<void> {
-    return request<void>(`/api/v1/tasks/${taskId}/lists/${listId}`, {
+    return request<void>(`/api/v1/calendar/tasks/${taskId}/lists/${listId}`, {
       method: 'POST',
     });
   },
 
   async updateTask(taskId: string, body: UpdateTaskRequest): Promise<TaskResponse> {
-    return request<TaskResponse>(`/api/v1/tasks/${taskId}`, {
+    return request<TaskResponse>(`/api/v1/calendar/tasks/${taskId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
   },
 
   async reorderTasks(body: ReorderTasksRequest): Promise<void> {
-    return request<void>('/api/v1/tasks/reorder', {
+    return request<void>('/api/v1/calendar/tasks/reorder', {
       method: 'POST',
       body: JSON.stringify(body),
     });
@@ -332,11 +332,11 @@ export const calendarApi = {
   // ── Connections ─────────────────────────────────────────────────────────
 
   async listConnections(): Promise<ListConnectionsResponse> {
-    return request<ListConnectionsResponse>('/api/v1/connections');
+    return request<ListConnectionsResponse>('/api/v1/calendar/connections');
   },
 
   async connectGoogle(): Promise<{ authUrl: string }> {
-    return request<{ authUrl: string }>('/api/v1/connections/google', { method: 'POST' });
+    return request<{ authUrl: string }>('/api/v1/calendar/connections/google', { method: 'POST' });
   },
 
   /**
@@ -346,29 +346,29 @@ export const calendarApi = {
    * This endpoint is authenticated with the user's existing JWT.
    */
   async completeGoogleOAuth(code: string): Promise<ConnectionResponse> {
-    return request<ConnectionResponse>('/api/v1/connections/google/complete', {
+    return request<ConnectionResponse>('/api/v1/calendar/connections/google/complete', {
       method: 'POST',
       body: JSON.stringify({ code } satisfies CompleteGoogleOAuthRequest),
     });
   },
 
   async connectOutlook(): Promise<{ authUrl: string }> {
-    return request<{ authUrl: string }>('/api/v1/connections/outlook', { method: 'POST' });
+    return request<{ authUrl: string }>('/api/v1/calendar/connections/outlook', { method: 'POST' });
   },
 
   async connectApple(body: CreateAppleConnectionRequest): Promise<ConnectionResponse> {
-    return request<ConnectionResponse>('/api/v1/connections/apple', {
+    return request<ConnectionResponse>('/api/v1/calendar/connections/apple', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   },
 
   async disconnectConnection(connectionId: string): Promise<void> {
-    return request<void>(`/api/v1/connections/${connectionId}`, { method: 'DELETE' });
+    return request<void>(`/api/v1/calendar/connections/${connectionId}`, { method: 'DELETE' });
   },
 
   async triggerSync(connectionId: string): Promise<TriggerSyncResponse> {
-    return request<TriggerSyncResponse>('/api/v1/sync/trigger', {
+    return request<TriggerSyncResponse>('/api/v1/calendar/sync/trigger', {
       method: 'POST',
       body: JSON.stringify({ connectionId }),
     });

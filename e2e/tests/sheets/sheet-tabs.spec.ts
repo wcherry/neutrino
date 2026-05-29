@@ -32,12 +32,9 @@ async function setCell(page: Page, ref: string, value: string): Promise<void> {
 test.describe('Spreadsheet sheet tabs', () => {
   test('switching sheets keeps cell data isolated per sheet', async ({ page, request }) => {
     await registerAndLogin(request, page);
-    await page.goto('/sheets');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Spreadsheets', {
-      timeout: 10_000,
-    });
-
-    await page.getByRole('button', { name: /new spreadsheet/i }).first().click();
+    await page.goto('/drive');
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Spreadsheet' }).click();
     await expect(page).toHaveURL(/\/sheets\/editor\/?\?id=/, { timeout: 15_000 });
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 15_000 });
 

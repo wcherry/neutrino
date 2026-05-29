@@ -9,6 +9,8 @@ use crate::drive::storage::{
     repository::StorageRepository,
     store::LocalFileStore,
 };
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use chrono::Utc;
 use std::path::Path;
 use std::sync::Arc;
@@ -450,6 +452,19 @@ impl StorageService {
 
     pub fn find_file_any_user(&self, file_id: &str) -> Result<Option<FileRecord>, ApiError> {
         self.repo.find_file_by_id(file_id)
+    }
+
+    /// Decode an image file, resize it to fit within 512×512, and return base64 JPEG + MIME type.
+    /// Returns None if the file cannot be decoded (e.g. unsupported format or encrypted).
+    pub fn generate_image_thumbnail(path: &Path) -> Option<(String, String)> {
+        let img = image::open(path).ok()?;
+        let thumb = img.thumbnail(512, 512);
+        let mut buf: Vec<u8> = Vec::new();
+        thumb.write_to(
+            &mut std::io::Cursor::new(&mut buf),
+            image::ImageFormat::Jpeg,
+        ).ok()?;
+        Some((BASE64.encode(&buf), "image/jpeg".to_string()))
     }
 
     pub fn set_cover_thumbnail(

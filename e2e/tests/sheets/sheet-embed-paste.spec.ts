@@ -24,11 +24,9 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
 }
 
 async function createSpreadsheet(page: Page): Promise<string> {
-  await page.goto('/sheets');
-  await expect(page.getByRole('button', { name: /new spreadsheet/i })).toHaveCount(2, {
-    timeout: 10_000,
-  });
-  await page.getByRole('button', { name: /new spreadsheet/i }).first().click();
+  await page.goto('/drive');
+  await page.getByRole('button', { name: 'Create new item' }).click();
+  await page.getByRole('menuitem', { name: 'Spreadsheet' }).click();
   await expect(page).toHaveURL(/\/sheets\/editor\/?\?id=/, { timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Sheets' })).toBeVisible({ timeout: 10_000 });
   const match = page.url().match(/[?&]id=([^&]+)/);
@@ -37,11 +35,9 @@ async function createSpreadsheet(page: Page): Promise<string> {
 }
 
 async function createDoc(page: Page): Promise<void> {
-  await page.goto('/docs');
-  await expect(page.getByRole('button', { name: /new document/i })).toHaveCount(2, {
-    timeout: 10_000,
-  });
-  await page.getByRole('button', { name: /new document/i }).first().click();
+  await page.goto('/drive');
+  await page.getByRole('button', { name: 'Create new item' }).click();
+  await page.getByRole('menuitem', { name: 'Document' }).click();
   await expect(page).toHaveURL(/\/docs\/editor\/?\?id=/, { timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Docs' })).toBeVisible({ timeout: 10_000 });
 }

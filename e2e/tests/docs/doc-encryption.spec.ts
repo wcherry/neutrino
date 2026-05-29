@@ -74,18 +74,20 @@ test.describe('Document E2EE encryption', () => {
       { timeout: 10_000 },
     );
 
-    await page.goto('/docs');
+    await page.goto('/drive');
 
     // Register the listener before clicking to avoid a race where the initial
     // content upload completes before waitForResponse is set up.
     const uploadPromise = page.waitForResponse(
       (r) =>
         r.url().includes('/api/v1/drive/files/') &&
-        r.request().method() === 'POST',
+        !r.url().endsWith('/key') &&
+        ['POST', 'PUT'].includes(r.request().method()),
       { timeout: 20_000 },
     );
 
-    await page.getByRole('button', { name: /new document/i }).first().click();
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Document' }).click();
     await expect(page).toHaveURL(/\/docs\/editor\/?\?id=/, { timeout: 15_000 });
 
     const docId = new URL(page.url()).searchParams.get('id')!;
@@ -122,16 +124,18 @@ test.describe('Document E2EE encryption', () => {
       { timeout: 10_000 },
     );
 
-    await page.goto('/docs');
+    await page.goto('/drive');
 
     const uploadPromise2 = page.waitForResponse(
       (r) =>
         r.url().includes('/api/v1/drive/files/') &&
-        r.request().method() === 'POST',
+        !r.url().endsWith('/key') &&
+        ['POST', 'PUT'].includes(r.request().method()),
       { timeout: 20_000 },
     );
 
-    await page.getByRole('button', { name: /new document/i }).first().click();
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Document' }).click();
     await expect(page).toHaveURL(/\/docs\/editor\/?\?id=/, { timeout: 15_000 });
 
     const docId = new URL(page.url()).searchParams.get('id')!;
@@ -166,16 +170,18 @@ test.describe('Document E2EE encryption', () => {
       { timeout: 10_000 },
     );
 
-    await page.goto('/docs');
+    await page.goto('/drive');
 
     const uploadPromise3 = page.waitForResponse(
       (r) =>
         r.url().includes('/api/v1/drive/files/') &&
-        r.request().method() === 'POST',
+        !r.url().endsWith('/key') &&
+        ['POST', 'PUT'].includes(r.request().method()),
       { timeout: 20_000 },
     );
 
-    await page.getByRole('button', { name: /new document/i }).first().click();
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Document' }).click();
     await expect(page).toHaveURL(/\/docs\/editor\/?\?id=/, { timeout: 15_000 });
 
     const docId = new URL(page.url()).searchParams.get('id')!;

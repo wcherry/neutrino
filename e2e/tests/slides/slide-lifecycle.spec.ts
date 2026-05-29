@@ -25,14 +25,25 @@ async function registerAndLogin(
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
 }
 
-test.describe('Presentations lifecycle', () => {
-  // ── Empty state ─────────────────────────────────────────────────────────────
+async function createSlideViaFAB(page: Page): Promise<void> {
+  await page.goto('/drive');
+  await page.getByRole('button', { name: 'Create new item' }).click();
+  await page.getByRole('menuitem', { name: 'Presentation' }).click();
+  await expect(page).toHaveURL(/\/slides\/editor\/?\?id=/, { timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Slides' })).toBeVisible({ timeout: 10_000 });
+}
 
-  test('empty Presentations page shows two New Presentation buttons', async ({ page, request }) => {
+test.describe('Presentations lifecycle', () => {
+  // ── Create via FAB ───────────────────────────────────────────────────────────
+
+  test('the FAB creates a new presentation and navigates to the editor', async ({ page, request }) => {
     await registerAndLogin(request, page);
-    await page.goto('/slides');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Presentations');
-    await expect(page.getByRole('button', { name: /new presentation/i })).toHaveCount(2);
+    await page.goto('/drive');
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await expect(page.getByRole('menuitem', { name: 'Presentation' })).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('menuitem', { name: 'Presentation' }).click();
+    await expect(page).toHaveURL(/\/slides\/editor\/?\?id=/, { timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Slides' })).toBeVisible({ timeout: 10_000 });
   });
 
   // ── Full create → rename → back → list ──────────────────────────────────────
@@ -42,22 +53,7 @@ test.describe('Presentations lifecycle', () => {
     request,
   }) => {
     await registerAndLogin(request, page);
-    await page.goto('/slides');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Presentations', {
-      timeout: 10_000,
-    });
-
-    // Two "New Presentation" buttons appear when the list is empty
-    await expect(page.getByRole('button', { name: /new presentation/i })).toHaveCount(2);
-
-    // Click the header "New Presentation" button (first of the two)
-    await page.getByRole('button', { name: /new presentation/i }).first().click();
-
-    // Should navigate to the editor for the newly created presentation
-    await expect(page).toHaveURL(/\/slides\/editor\/?\?id=/, { timeout: 15_000 });
-
-    // Wait for the editor toolbar to appear (back button visible means loading is done)
-    await expect(page.getByRole('button', { name: 'Slides' })).toBeVisible({ timeout: 10_000 });
+    await createSlideViaFAB(page);
 
     // Change the presentation name
     const titleInput = page.getByPlaceholder('Untitled presentation');
@@ -71,11 +67,11 @@ test.describe('Presentations lifecycle', () => {
     await titleInput.blur();
     await titleSaved;
 
-    // Click the back button to return to the Presentations list
+    // Click the back button to return to Drive
     await page.getByRole('button', { name: 'Slides' }).click();
-    await expect(page).toHaveURL(/\/slides\/?$/, { timeout: 10_000 });
+    await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
 
-    // The renamed presentation should appear in the list
+    // The renamed presentation should appear in the drive file list
     await expect(page.getByRole('listitem', { name: 'Annual Review' })).toBeVisible({
       timeout: 10_000,
     });

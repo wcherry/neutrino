@@ -36,9 +36,9 @@ async function expectCell(page: Page, ref: string, expected: string): Promise<vo
 }
 
 async function openNewSheet(page: Page): Promise<void> {
-  await page.goto('/sheets');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Spreadsheets', { timeout: 10_000 });
-  await page.getByRole('button', { name: /new spreadsheet/i }).first().click();
+  await page.goto('/drive');
+  await page.getByRole('button', { name: 'Create new item' }).click();
+  await page.getByRole('menuitem', { name: 'Spreadsheet' }).click();
   await expect(page).toHaveURL(/\/sheets\/editor\/?\?id=/, { timeout: 15_000 });
   await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 15_000 });
 }
@@ -245,9 +245,12 @@ test.describe('Cross-sheet cell references', () => {
     await setCell(page, 'A1', '=Beta!C4');
     await expectCell(page, 'A1', '55');
 
-    // Right-click "Beta" tab to open context menu and delete it
+    // Right-click "Beta" tab to open context menu and delete it.
+    // The tab context menu uses plain <button> elements (not role="menuitem").
+    // Delete is two-step: first click shows a confirmation dialog, second click confirms.
     await page.getByText('Beta', { exact: true }).click({ button: 'right' });
-    await page.getByRole('menuitem', { name: /delete/i }).click();
+    await page.getByRole('button', { name: 'Delete' }).click();
+    await page.getByRole('button', { name: 'Delete' }).click();
 
     // Wait for Beta tab to disappear
     await expect(page.getByText('Beta', { exact: true })).not.toBeVisible({ timeout: 5_000 });
@@ -295,7 +298,8 @@ test.describe('Cross-sheet cell references', () => {
     await reactivateCell(page, 'A1');
 
     // When referenced cell is empty, cross-sheet reference should return "" or "0"
-    const a1Text = await page.locator('[data-type="cell"][id="A1"] span').textContent({ timeout: 8_000 });
+    await expect(page.locator('[data-type="cell"][id="A1"] span')).not.toHaveText('100', { timeout: 8_000 });
+    const a1Text = await page.locator('[data-type="cell"][id="A1"] span').textContent();
     expect(a1Text === '' || a1Text === '0').toBeTruthy();
   });
 });

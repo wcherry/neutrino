@@ -58,7 +58,8 @@ async function uploadFileViaApi(
 
 /** Upload a file via the Upload dialog in the browser. */
 async function uploadFileViaUI(page: Page, fileName: string): Promise<void> {
-  await page.getByRole('button', { name: 'Upload', exact: true }).click();
+  await page.getByRole('button', { name: 'Create new item' }).click();
+  await page.getByRole('menuitem', { name: 'Upload' }).click();
   const dialog = page.getByRole('dialog', { name: 'Upload files' });
   await expect(dialog).toBeVisible({ timeout: 5_000 });
 

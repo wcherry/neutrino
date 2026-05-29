@@ -32,6 +32,7 @@ import {
   type FileItem,
   type MemoryYear,
 } from '@/lib/api';
+import { generateThumbnail } from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
 import { initSodium, generateFileKey, encryptFileKey, encryptMetadata, loadKeyPair } from '@neutrino/e2e-crypto';
 import { PhotoInfoPanel } from './PhotoInfoPanel';
@@ -288,28 +289,33 @@ export default function PhotosPage() {
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       const userId = currentUser?.id;
-      if (userId) {
-        try {
-          await initSodium();
-          const kp = loadKeyPair(userId);
-          if (kp) {
-            const dek = generateFileKey();
-            const encryptedFileKey = encryptFileKey(dek, kp.publicKey);
-            const encryptedMetadata = encryptMetadata(
-              { name: file.name, mimeType: file.type || 'application/octet-stream' },
-              dek,
-            );
-            const fileItem = await uploadEncryptedFile(
-              file, dek, encryptedFileKey, encryptedMetadata,
-              (pct) => setUploadProgress(pct),
-            );
-            return photosApi.registerPhoto({ fileId: fileItem.id });
-          }
-        } catch {
-          // Fall through to plaintext upload
-        }
+      if (!userId) throw new Error('You must be signed in to upload photos.');
+
+      await initSodium();
+      const kp = loadKeyPair(userId);
+      if (!kp) {
+        throw new Error(
+          'Your encryption keys could not be found. Sign out and sign back in to restore them, then try again.',
+        );
       }
-      return photosApi.uploadPhoto(file, (pct) => setUploadProgress(pct));
+
+      const dek = generateFileKey();
+      const encryptedFileKey = encryptFileKey(dek, kp.publicKey);
+      const encryptedMetadata = encryptMetadata(
+        { name: file.name, mimeType: file.type || 'application/octet-stream' },
+        dek,
+      );
+      const thumbnailB64 = file.type.startsWith('image/')
+        ? await generateThumbnail(file)
+        : null;
+      console.log('[photos:upload] thumbnailB64 present:', thumbnailB64 !== null, 'length:', thumbnailB64?.length ?? 0);
+      const fileItem = await uploadEncryptedFile(
+        file, dek, encryptedFileKey, encryptedMetadata,
+        (pct) => setUploadProgress(pct),
+        undefined,
+        thumbnailB64,
+      );
+      return photosApi.registerPhoto({ fileId: fileItem.id });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photos'] });

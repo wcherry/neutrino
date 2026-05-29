@@ -339,6 +339,7 @@ export function SlideEditor() {
   const exportRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const dragSrcIdx = useRef<number | null>(null);
+  const initialSaveDoneRef = useRef(false);
 
   const { isLoading: metaLoading, data: slideData } = useQuery({
     queryKey: ['slide', slideId],
@@ -361,6 +362,7 @@ export function SlideEditor() {
     },
     enabled: !!slideData?.contentUrl && dekResolved,
     staleTime: 30_000,
+    retry: 0,
   });
 
   const { data: dbThemesData } = useQuery({
@@ -388,6 +390,20 @@ export function SlideEditor() {
       // keep default
     }
   }, [slideContent]);
+
+  // After DEK resolves and the content query settles, do a one-time encrypted save
+  // when no valid content was loaded (new file or failed decryption of server plaintext).
+  // This overwrites the server's plaintext initial content so bytes are always ciphertext.
+  useEffect(() => {
+    if (!dekRef.current || !slideData || contentLoading) return;
+    if (initialSaveDoneRef.current || lastSavedRef.current !== '') return;
+    initialSaveDoneRef.current = true;
+    const content = JSON.stringify(presentation);
+    driveWriteEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
+  // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
+  // presentation intentionally omitted: we capture the default once, not on every change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dekResolved, slideData, contentLoading, slideContent]);
 
   const contentMutation = useMutation({
     mutationFn: (content: string) =>
@@ -436,7 +452,7 @@ export function SlideEditor() {
       await contentMutation.mutateAsync(content);
     }
     queryClient.invalidateQueries({ queryKey: ['slides'] });
-    router.push('/slides');
+    router.push('/drive');
   }
 
   function handleTitleBlur() {
