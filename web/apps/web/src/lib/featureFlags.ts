@@ -48,6 +48,15 @@ const featureFlags = {
    * Default: off
    */
   colorPickerAlpha: process.env.NEXT_PUBLIC_FEATURE_COLOR_PICKER_ALPHA === 'true',
+
+  /**
+   * Client-side encrypted search (phases 1-4).
+   * Keyword search over documents, notes, sheets, slides, events, reminders.
+   * Uses a local IndexedDB inverted index with HMAC-SHA256 token hashing.
+   * Env var: NEXT_PUBLIC_FEATURE_SEARCH
+   * Default: off
+   */
+  search: process.env.NEXT_PUBLIC_FEATURE_SEARCH === 'true',
 } as const;
 
 export default featureFlags;

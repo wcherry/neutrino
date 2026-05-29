@@ -22,7 +22,9 @@
       "@neutrino/api-notes": ["../../packages/api-notes/src/index.ts"],
       "@neutrino/sheet-embed": ["../../packages/sheet-embed/src/index.ts"],
       "@neutrino/hooks": ["../../packages/hooks/src/index.ts"],
-      "@neutrino/utils": ["../../packages/utils/src/index.ts"]
+      "@neutrino/utils": ["../../packages/utils/src/index.ts"],
+      "@neutrino/search": ["../../packages/search/src/index.ts"],
+      "@neutrino/e2e-crypto": ["../../packages/e2e-crypto/src/index.ts"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
