@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heading, Badge, SearchInput } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
-import { IndexEngine, type SearchResult, type SearchableDocType } from '@neutrino/search';
+import { IndexEngine, getOrCreateSearchKey, type SearchResult, type SearchableDocType } from '@neutrino/search';
 import featureFlags from '@/lib/featureFlags';
 import { notFound } from 'next/navigation';
 import styles from './page.module.css';
@@ -17,20 +17,6 @@ const DOC_TYPE_LABELS: Record<SearchableDocType, string> = {
   event: 'Event',
   reminder: 'Reminder',
 };
-
-const ENGINE_KEY = 'search_key_v1';
-const SEARCH_KEY_BYTES = 32;
-
-function getOrCreateSearchKey(userId: string): Uint8Array {
-  const storageKey = `${ENGINE_KEY}_${userId}`;
-  const stored = localStorage.getItem(storageKey);
-  if (stored) {
-    return Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
-  }
-  const key = crypto.getRandomValues(new Uint8Array(SEARCH_KEY_BYTES));
-  localStorage.setItem(storageKey, btoa(String.fromCharCode(...key)));
-  return key;
-}
 
 export default function SearchPage() {
   if (!featureFlags.search) notFound();

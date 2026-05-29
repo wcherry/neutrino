@@ -4,3 +4,4 @@ export type { TokenWithPositions } from './tokenizer';
 export { openSearchDb, resetSearchDb, clearSearchIndex } from './db';
 export type { TokenEntry, DocEntry } from './db';
 export { IndexEngine } from './engine';
+export { getOrCreateSearchKey } from './searchKey';
