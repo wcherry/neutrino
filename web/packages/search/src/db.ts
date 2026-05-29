@@ -141,3 +141,16 @@ export function getDocEntries(
 export function resetSearchDb(): void {
   _db = null;
 }
+
+export function clearSearchIndex(): Promise<void> {
+  if (_db) {
+    _db.close();
+    _db = null;
+  }
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve(); // resolve anyway; stale tabs will clean up on reload
+  });
+}

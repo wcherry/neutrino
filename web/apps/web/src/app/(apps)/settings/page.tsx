@@ -9,6 +9,7 @@ import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type Connecti
 import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, toBase64url, fromBase64url } from '@neutrino/e2e-crypto';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
+import { clearSearchIndex } from '@neutrino/search';
 import {
   WEEK_START_KEY,
   DAY_START_HOUR_KEY,
@@ -70,7 +71,9 @@ const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
   apple: 'Sync via CalDAV',
 };
 
-type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar';
+const SEARCH_SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
+
+type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'advanced';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'ai', label: 'AI Assistant' },
@@ -78,6 +81,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'account', label: 'Account' },
+  { id: 'advanced', label: 'Advanced' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -239,6 +243,10 @@ const qc = useQueryClient();
   const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
 
+  // ── Advanced state ─────────────────────────────────────────────────────────
+  const [searchSyncDisabled, setSearchSyncDisabled] = useState<boolean>(false);
+  const [rebuildingIndex, setRebuildingIndex] = useState(false);
+
   // ── Calendar state ─────────────────────────────────────────────────────────
   const { success: toastSuccess, error: toastError } = useToast();
   const [weekStart, setWeekStart] = useState<number>(0);
@@ -260,6 +268,8 @@ const qc = useQueryClient();
 
     const storedEnd = localStorage.getItem(DAY_END_HOUR_KEY);
     if (storedEnd !== null) setDayEndHourState(Number(storedEnd));
+
+    setSearchSyncDisabled(localStorage.getItem(SEARCH_SYNC_DISABLED_KEY) === 'true');
   }, []);
 
   async function handleExportKey() {
@@ -441,6 +451,23 @@ const qc = useQueryClient();
   function handleDeleteAccount() {
     // TODO: wire to DELETE /api/v1/auth/me once endpoint is available
     setShowDeleteDialog(false);
+  }
+
+  function handleSearchSyncToggle(disabled: boolean) {
+    setSearchSyncDisabled(disabled);
+    localStorage.setItem(SEARCH_SYNC_DISABLED_KEY, String(disabled));
+  }
+
+  async function handleRebuildIndex() {
+    setRebuildingIndex(true);
+    try {
+      await clearSearchIndex();
+      toastSuccess('Search index cleared. It will be rebuilt as you open documents.');
+    } catch {
+      toastError('Failed to clear search index. Please try again.');
+    } finally {
+      setRebuildingIndex(false);
+    }
   }
 
   if (isLoading) {
@@ -898,6 +925,54 @@ const qc = useQueryClient();
                 onClick={() => setShowDeleteDialog(true)}
               >
                 Delete account
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ── Advanced tab ────────────────────────────────────────────────── */}
+      {activeTab === 'advanced' && (
+        <div className={styles.content}>
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Search</h2>
+
+            <label className={styles.checkRow}>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={searchSyncDisabled}
+                onChange={(e) => handleSearchSyncToggle(e.target.checked)}
+              />
+              <div className={styles.checkInfo}>
+                <div className={styles.checkLabel}>Disable search index syncing</div>
+                <div className={styles.checkDesc}>
+                  Stop syncing the encrypted search index to other devices. The local index
+                  will still work on this device.
+                </div>
+              </div>
+            </label>
+          </section>
+
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Index maintenance</h2>
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <div className={styles.settingName}>Rebuild search index</div>
+                <div className={styles.settingDesc}>
+                  Wipes the local search index and schedules a full re-index. Use this if
+                  search results seem stale or incomplete.
+                </div>
+              </div>
+              <button
+                type="button"
+                className={styles.outlineBtn}
+                onClick={handleRebuildIndex}
+                disabled={rebuildingIndex}
+              >
+                {rebuildingIndex
+                  ? <><Loader2 size={14} className={styles.spinner} /> Rebuilding…</>
+                  : 'Rebuild index'}
               </button>
             </div>
           </section>
