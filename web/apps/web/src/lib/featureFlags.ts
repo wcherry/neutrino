@@ -57,8 +57,8 @@ const featureFlags = {
    * Default: off
    */
   search: process.env.NEXT_PUBLIC_FEATURE_SEARCH === 'true',
-   * Phase 1 charting for Neutrino Sheets.
-   * Adds chart creation, editing, and rendering (column, bar, line, area, pie,
+   /* Phase 1 charting for Neutrino Sheets.
+   * Adds chart creation, editing, and rendering (bar, line, area, pie,
    * donut, scatter, combo) within the spreadsheet grid. Charts are inserted from
    * a selected range, update live when cell values change, and are draggable and
    * resizable. A side panel allows formatting the title, axes, legend, data
