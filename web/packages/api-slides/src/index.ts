@@ -1,6 +1,14 @@
 import { request } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
+// Slide text extraction helpers
+// ---------------------------------------------------------------------------
+
+type SlideEl = { type: string; content?: string };
+type SlideItem = { elements?: SlideEl[]; notes?: string };
+type SlidePresentationContent = { slides?: SlideItem[] };
+
+// ---------------------------------------------------------------------------
 // Slides types
 // ---------------------------------------------------------------------------
 
@@ -110,6 +118,25 @@ export const slidesApi = {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
+  },
+
+  async retrieveText(slideId: string): Promise<string> {
+    const slide = await request<SlideResponse>(`/api/v1/slides/${slideId}`);
+    const raw = await request<string>(slide.contentUrl, {}, { responseType: 'text' }).catch(() => '');
+    if (!raw) return '';
+    try {
+      const parsed = JSON.parse(raw) as SlidePresentationContent;
+      const parts: string[] = [];
+      for (const s of parsed.slides ?? []) {
+        for (const el of s.elements ?? []) {
+          if (el.type === 'text' && el.content) parts.push(el.content);
+        }
+        if (s.notes) parts.push(s.notes);
+      }
+      return parts.join(' ').replace(/\s+/g, ' ').trim();
+    } catch {
+      return '';
+    }
   },
 
   // ── Themes ────────────────────────────────────────────────────────────────

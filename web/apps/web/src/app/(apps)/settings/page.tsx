@@ -9,6 +9,8 @@ import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type Connecti
 import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, toBase64url, fromBase64url } from '@neutrino/e2e-crypto';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
+import { clearSearchIndex, getOrCreateSearchKey, IndexEngine, type SearchableDocument } from '@neutrino/search';
+import { docsApi, notesApi, sheetsApi, slidesApi } from '@/lib/api';
 import {
   WEEK_START_KEY,
   DAY_START_HOUR_KEY,
@@ -70,7 +72,9 @@ const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
   apple: 'Sync via CalDAV',
 };
 
-type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar';
+const SEARCH_SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
+
+type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'advanced';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'ai', label: 'AI Assistant' },
@@ -78,6 +82,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'account', label: 'Account' },
+  { id: 'advanced', label: 'Advanced' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -239,6 +244,11 @@ const qc = useQueryClient();
   const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
 
+  // ── Advanced state ─────────────────────────────────────────────────────────
+  const [searchSyncDisabled, setSearchSyncDisabled] = useState<boolean>(false);
+  const [rebuildingIndex, setRebuildingIndex] = useState(false);
+  const [rebuildProgress, setRebuildProgress] = useState<{ done: number; total: number } | null>(null);
+
   // ── Calendar state ─────────────────────────────────────────────────────────
   const { success: toastSuccess, error: toastError } = useToast();
   const [weekStart, setWeekStart] = useState<number>(0);
@@ -260,6 +270,8 @@ const qc = useQueryClient();
 
     const storedEnd = localStorage.getItem(DAY_END_HOUR_KEY);
     if (storedEnd !== null) setDayEndHourState(Number(storedEnd));
+
+    setSearchSyncDisabled(localStorage.getItem(SEARCH_SYNC_DISABLED_KEY) === 'true');
   }, []);
 
   async function handleExportKey() {
@@ -441,6 +453,155 @@ const qc = useQueryClient();
   function handleDeleteAccount() {
     // TODO: wire to DELETE /api/v1/auth/me once endpoint is available
     setShowDeleteDialog(false);
+  }
+
+  function handleSearchSyncToggle(disabled: boolean) {
+    setSearchSyncDisabled(disabled);
+    localStorage.setItem(SEARCH_SYNC_DISABLED_KEY, String(disabled));
+  }
+
+  async function handleRebuildIndex() {
+    if (!user?.id) return;
+    setRebuildingIndex(true);
+    setRebuildProgress(null);
+
+    try {
+      await clearSearchIndex();
+
+      // Collect indexable documents from all content types.
+      // Fetch everything in parallel; failures on individual types are non-fatal.
+      const [
+        notesMeta,
+        docsMeta,
+        sheetsMeta,
+        slidesMeta,
+        eventsRes,
+        remindersRes,
+      ] = await Promise.allSettled([
+        notesApi.listNotes(),
+        docsApi.listDocs(),
+        sheetsApi.listSheets(),
+        slidesApi.listSlides(),
+        calendarApi.listEvents(),
+        calendarApi.listReminders(),
+      ]);
+
+      // Build a flat list of items to fetch-and-index.
+      type IndexJob = () => Promise<SearchableDocument>;
+      const jobs: IndexJob[] = [];
+
+      if (notesMeta.status === 'fulfilled') {
+        for (const n of notesMeta.value.notes) {
+          jobs.push(async () => {
+            const full = await notesApi.getNote(n.id);
+            return {
+              id: n.id,
+              type: 'note' as const,
+              title: full.title,
+              content: full.content,
+              updatedAt: new Date(full.updatedAt).getTime(),
+            };
+          });
+        }
+      }
+
+      if (docsMeta.status === 'fulfilled') {
+        for (const d of docsMeta.value.docs) {
+          jobs.push(async () => {
+            const text = await docsApi.retrieveText(d.id);
+            return {
+              id: d.id,
+              type: 'document' as const,
+              title: d.title,
+              content: text,
+              updatedAt: new Date(d.updatedAt).getTime(),
+            };
+          });
+        }
+      }
+
+      if (sheetsMeta.status === 'fulfilled') {
+        for (const s of sheetsMeta.value.sheets) {
+          jobs.push(async () => {
+            const text = await sheetsApi.retrieveText(s.id);
+            return {
+              id: s.id,
+              type: 'spreadsheet' as const,
+              title: s.title,
+              content: text,
+              updatedAt: new Date(s.updatedAt).getTime(),
+            };
+          });
+        }
+      }
+
+      if (slidesMeta.status === 'fulfilled') {
+        for (const s of slidesMeta.value.slides) {
+          jobs.push(async () => {
+            const text = await slidesApi.retrieveText(s.id);
+            return {
+              id: s.id,
+              type: 'slide' as const,
+              title: s.title,
+              content: text,
+              updatedAt: new Date(s.updatedAt).getTime(),
+            };
+          });
+        }
+      }
+
+      if (eventsRes.status === 'fulfilled') {
+        for (const e of eventsRes.value.events) {
+          jobs.push(async () => ({
+            id: e.id,
+            type: 'event' as const,
+            title: e.title,
+            content: e.description ?? '',
+            updatedAt: new Date(e.updatedAt).getTime(),
+          }));
+        }
+      }
+
+      if (remindersRes.status === 'fulfilled') {
+        for (const r of remindersRes.value.reminders) {
+          jobs.push(async () => ({
+            id: r.id,
+            type: 'reminder' as const,
+            title: r.title,
+            content: '',
+            updatedAt: new Date(r.updatedAt).getTime(),
+          }));
+        }
+      }
+
+      const total = jobs.length;
+      setRebuildProgress({ done: 0, total });
+
+      if (total === 0) {
+        toastSuccess('Search index rebuilt — nothing to index yet.');
+        return;
+      }
+
+      const searchKey = getOrCreateSearchKey(user.id);
+      const engine = new IndexEngine();
+
+      for (let i = 0; i < jobs.length; i++) {
+        try {
+          const doc = await jobs[i]();
+          await engine.indexDocument(doc, searchKey);
+        } catch {
+          // skip individual failures silently
+        }
+        setRebuildProgress({ done: i + 1, total });
+      }
+
+      toastSuccess(`Search index rebuilt — ${total} item${total === 1 ? '' : 's'} indexed.`);
+    } catch {
+      toastError('Failed to rebuild search index. Please try again.');
+    } finally {
+      setRebuildingIndex(false);
+      setRebuildProgress(null);
+    }
   }
 
   if (isLoading) {
@@ -898,6 +1059,56 @@ const qc = useQueryClient();
                 onClick={() => setShowDeleteDialog(true)}
               >
                 Delete account
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ── Advanced tab ────────────────────────────────────────────────── */}
+      {activeTab === 'advanced' && (
+        <div className={styles.content}>
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Search</h2>
+
+            <label className={styles.checkRow}>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={searchSyncDisabled}
+                onChange={(e) => handleSearchSyncToggle(e.target.checked)}
+              />
+              <div className={styles.checkInfo}>
+                <div className={styles.checkLabel}>Disable search index syncing</div>
+                <div className={styles.checkDesc}>
+                  Stop syncing the encrypted search index to other devices. The local index
+                  will still work on this device.
+                </div>
+              </div>
+            </label>
+          </section>
+
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Index maintenance</h2>
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <div className={styles.settingName}>Rebuild search index</div>
+                <div className={styles.settingDesc}>
+                  Wipes the local search index and schedules a full re-index. Use this if
+                  search results seem stale or incomplete.
+                </div>
+              </div>
+              <button
+                type="button"
+                className={styles.outlineBtn}
+                onClick={handleRebuildIndex}
+                disabled={rebuildingIndex}
+              >
+                {rebuildingIndex
+                  ? rebuildProgress
+                    ? <><Loader2 size={14} className={styles.spinner} /> {rebuildProgress.done}/{rebuildProgress.total}</>
+                    : <><Loader2 size={14} className={styles.spinner} /> Starting…</>
+                  : 'Rebuild index'}
               </button>
             </div>
           </section>

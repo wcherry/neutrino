@@ -5,4 +5,4 @@ export { Sidebar } from './Sidebar';
 export type { SidebarProps, NavItem, NavSection, StorageQuota } from './Sidebar';
 
 export { Topbar } from './Topbar';
-export type { TopbarProps, TopbarUser, TopbarAction } from './Topbar';
+export type { TopbarProps, TopbarUser, TopbarAction, TopbarSearchResult } from './Topbar';

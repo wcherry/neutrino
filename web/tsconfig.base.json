@@ -26,7 +26,8 @@
       "@neutrino/api-slides": ["./packages/api-slides/src/index.ts"],
       "@neutrino/api-photos": ["./packages/api-photos/src/index.ts"],
       "@neutrino/hooks": ["./packages/hooks/src/index.ts"],
-      "@neutrino/utils": ["./packages/utils/src/index.ts"]
+      "@neutrino/utils": ["./packages/utils/src/index.ts"],
+      "@neutrino/search": ["./packages/search/src/index.ts"]
     }
   }
 }

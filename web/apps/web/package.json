@@ -31,6 +31,7 @@
     "@neutrino/sheet-embed": "workspace:*",
     "@neutrino/tokens": "workspace:*",
     "@neutrino/ui": "workspace:*",
+    "@neutrino/search": "workspace:*",
     "@neutrino/utils": "workspace:*",
     "@tanstack/react-query": "^5.40.0",
     "@tanstack/react-query-devtools": "^5.40.0",

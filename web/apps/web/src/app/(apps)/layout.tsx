@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -9,6 +9,7 @@ import {
   Topbar,
   type NavSection,
   type StorageQuota,
+  type TopbarSearchResult,
 } from '@neutrino/layout';
 import {
   Spinner,
@@ -24,9 +25,66 @@ import {
   Share2,
   NotebookPen,
   ShieldCheck,
+  FileText,
+  Table2,
+  Presentation,
+  Bell,
 } from 'lucide-react';
 import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
+import { IndexEngine, type SearchableDocType } from '@neutrino/search';
+import { loadKeyPair } from '@neutrino/e2e-crypto';
+import featureFlags from '@/lib/featureFlags';
 import { NewItemFAB } from './NewItemFAB';
+
+const SEARCH_KEY_STORAGE = 'search_key_v1';
+const SEARCH_KEY_BYTES = 32;
+
+function getOrCreateSearchKey(userId: string): Uint8Array {
+  const storageKey = `${SEARCH_KEY_STORAGE}_${userId}`;
+  const stored = localStorage.getItem(storageKey);
+  if (stored) {
+    return Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
+  }
+  const key = crypto.getRandomValues(new Uint8Array(SEARCH_KEY_BYTES));
+  localStorage.setItem(storageKey, btoa(String.fromCharCode(...key)));
+  return key;
+}
+
+function docTypeUrl(type: SearchableDocType, docId: string): string {
+  switch (type) {
+    case 'document': return `/docs/editor?id=${docId}`;
+    case 'spreadsheet': return `/sheets/editor?id=${docId}`;
+    case 'note': return `/notes/editor?id=${docId}`;
+    case 'slide': return `/slides/editor?id=${docId}`;
+    case 'event':
+    case 'reminder': return '/calendar';
+    default: return '/drive';
+  }
+}
+
+function docTypeLabel(type: SearchableDocType): string {
+  const labels: Record<SearchableDocType, string> = {
+    document: 'Document',
+    spreadsheet: 'Sheet',
+    note: 'Note',
+    slide: 'Slide',
+    event: 'Event',
+    reminder: 'Reminder',
+  };
+  return labels[type] ?? type;
+}
+
+function docTypeIcon(type: SearchableDocType): React.ReactNode {
+  switch (type) {
+    case 'document': return <FileText size={16} />;
+    case 'spreadsheet': return <Table2 size={16} />;
+    case 'note': return <NotebookPen size={16} />;
+    case 'slide': return <Presentation size={16} />;
+    case 'event': return <Calendar size={16} />;
+    case 'reminder': return <Bell size={16} />;
+    default: return <FileText size={16} />;
+  }
+}
 
 const BASE_NAV_SECTIONS: NavSection[] = [
   {
@@ -85,6 +143,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
+  const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
+  const engineRef = useRef<IndexEngine | null>(null);
+  const searchKeyRef = useRef<Uint8Array | null>(null);
 
   const isAdmin = auth.status === 'ready' ? (auth.user.isAdmin ?? false) : false;
   const currentNavSections = getNavSections(isAdmin);
@@ -147,6 +208,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             : { usedBytes: 0, totalBytes: DEFAULT_QUOTA_BYTES },
         });
         ensureE2EKeys(user.id).catch(() => {});
+        if (featureFlags.search) {
+          const kp = loadKeyPair(user.id);
+          if (kp) {
+            engineRef.current = new IndexEngine();
+            searchKeyRef.current = getOrCreateSearchKey(user.id);
+          }
+        }
       } catch {
         // Not authenticated or refresh failed — redirect to sign-in.
         router.replace('/sign-in');
@@ -154,6 +222,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
 
     init();
+  }, [router]);
+
+  const handleSearch = useCallback(async (query: string) => {
+    const engine = engineRef.current;
+    const searchKey = searchKeyRef.current;
+    if (!engine || !searchKey || query.length < 3) {
+      setSearchResults([]);
+      return;
+    }
+    const terms = query.trim().split(/\s+/).filter(Boolean);
+    const found = await engine.query(terms, searchKey);
+    setSearchResults(
+      found.map((r) => ({
+        id: r.docId,
+        title: r.title || r.docId,
+        subtitle: docTypeLabel(r.type),
+        href: docTypeUrl(r.type, r.docId),
+        icon: docTypeIcon(r.type),
+      })),
+    );
+  }, []);
+
+  const handleResultClick = useCallback((result: TopbarSearchResult) => {
+    router.push(result.href);
   }, [router]);
 
   async function handleSignOut() {
@@ -182,8 +274,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const topbar = (
     <Topbar
       user={{ name: auth.user.name, email: auth.user.email, avatarSrc: profileDetails?.avatar ?? undefined }}
-      onSearch={(q) => console.log('search:', q)}
+      onSearch={handleSearch}
       searchPlaceholder="Search in Drive..."
+      searchResults={featureFlags.search ? searchResults : undefined}
+      onResultClick={featureFlags.search ? handleResultClick : undefined}
       onSettings={() => router.push('/settings')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}

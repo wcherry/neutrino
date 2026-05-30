@@ -23,10 +23,20 @@ export interface TopbarAction {
   badge?: boolean;
 }
 
+export interface TopbarSearchResult {
+  id: string;
+  title: string;
+  subtitle: string;
+  href: string;
+  icon?: React.ReactNode;
+}
+
 export interface TopbarProps {
   user?: TopbarUser;
   onSearch?: (query: string) => void;
   searchPlaceholder?: string;
+  searchResults?: TopbarSearchResult[];
+  onResultClick?: (result: TopbarSearchResult) => void;
   actions?: TopbarAction[];
   onSettings?: () => void;
   onSignOut?: () => void;
@@ -39,6 +49,8 @@ export function Topbar({
   user,
   onSearch,
   searchPlaceholder = 'Search files...',
+  searchResults,
+  onResultClick,
   actions = [],
   onSettings,
   onSignOut,
@@ -48,8 +60,10 @@ export function Topbar({
 }: TopbarProps) {
   const [searchValue, setSearchValue] = useState('');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
   const { toggleSidebar } = useShell();
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const searchWrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -72,6 +86,39 @@ export function Topbar({
     };
   }, [userMenuOpen]);
 
+  useEffect(() => {
+    if (!searchDropdownOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchWrapperRef.current && !searchWrapperRef.current.contains(e.target as Node)) {
+        setSearchDropdownOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSearchDropdownOpen(false);
+        setSearchValue('');
+        onSearch?.('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [searchDropdownOpen, onSearch]);
+
+  useEffect(() => {
+    if (searchResults && searchResults.length > 0 && searchValue.length >= 3) {
+      setSearchDropdownOpen(true);
+    } else {
+      setSearchDropdownOpen(false);
+    }
+  }, [searchResults, searchValue]);
+
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchValue(e.target.value);
     onSearch?.(e.target.value);
@@ -80,6 +127,14 @@ export function Topbar({
   const handleSearchClear = () => {
     setSearchValue('');
     onSearch?.('');
+    setSearchDropdownOpen(false);
+  };
+
+  const handleResultClick = (result: TopbarSearchResult) => {
+    setSearchDropdownOpen(false);
+    setSearchValue('');
+    onSearch?.('');
+    onResultClick?.(result);
   };
 
   return (
@@ -96,7 +151,7 @@ export function Topbar({
 
       {/* Search */}
       {onSearch && (
-        <div className={styles['search-wrapper']}>
+        <div className={styles['search-wrapper']} ref={searchWrapperRef}>
           <SearchInput
             variant="subtle"
             placeholder={searchPlaceholder}
@@ -104,7 +159,32 @@ export function Topbar({
             onChange={handleSearchChange}
             onClear={handleSearchClear}
             aria-label="Search"
+            aria-expanded={searchDropdownOpen}
+            aria-autocomplete="list"
           />
+          {searchDropdownOpen && searchResults && searchResults.length > 0 && (
+            <ul className={styles['search-dropdown']} role="listbox" aria-label="Search results">
+              {searchResults.map((result) => (
+                <li key={result.id} role="option" aria-selected={false}>
+                  <button
+                    type="button"
+                    className={styles['search-result-btn']}
+                    onMouseDown={() => handleResultClick(result)}
+                  >
+                    {result.icon && (
+                      <span className={styles['search-result-icon']} aria-hidden="true">
+                        {result.icon}
+                      </span>
+                    )}
+                    <span className={styles['search-result-text']}>
+                      <span className={styles['search-result-title']}>{result.title}</span>
+                      <span className={styles['search-result-subtitle']}>{result.subtitle}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

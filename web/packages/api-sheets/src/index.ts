@@ -1,6 +1,14 @@
 import { request } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
+// Sheet text extraction helpers
+// ---------------------------------------------------------------------------
+
+type SheetCell = { raw?: string; value?: string };
+type SheetData = { cells?: Record<string, SheetCell> };
+type SheetFileContent = { sheets?: SheetData[] };
+
+// ---------------------------------------------------------------------------
 // Sheets types
 // ---------------------------------------------------------------------------
 
@@ -106,6 +114,25 @@ export const sheetsApi = {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
+  },
+
+  async retrieveText(sheetId: string): Promise<string> {
+    const sheet = await request<SheetResponse>(`/api/v1/sheets/${sheetId}`);
+    const raw = await request<string>(sheet.contentUrl, {}, { responseType: 'text' }).catch(() => '');
+    if (!raw) return '';
+    try {
+      const parsed = JSON.parse(raw) as SheetFileContent;
+      const parts: string[] = [];
+      for (const s of parsed.sheets ?? []) {
+        for (const cell of Object.values(s.cells ?? {})) {
+          const text = cell.value ?? (cell.raw?.startsWith('=') ? '' : cell.raw);
+          if (text) parts.push(text);
+        }
+      }
+      return parts.join(' ').replace(/\s+/g, ' ').trim();
+    } catch {
+      return '';
+    }
   },
 
   /** Create a named range for a cell selection, returning a stable GUID.
