@@ -9,6 +9,7 @@
     cursor: move;
     user-select: none;
     background: #ffffff;
+    pointer-events: all;
 }
 
 .chartFrameSelected {
