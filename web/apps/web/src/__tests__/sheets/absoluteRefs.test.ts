@@ -234,4 +234,11 @@ describe('computeCell — evaluates absolute ref formulas', () => {
         const { value } = computeCell('=$A$1+$B$2', data);
         expect(value).toBe('15');
     });
+
+    it('=Beta!$A$1 resolves an absolute cross-sheet ref', () => {
+        const active = makeData([]);
+        const beta = makeData([['A1', '123']]);
+        const { value } = computeCell('=Beta!$A$1', active, [{ name: 'Beta', data: beta }]);
+        expect(value).toBe('123');
+    });
 });

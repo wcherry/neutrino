@@ -190,6 +190,7 @@ export function ChartFrame({
             ref={resolvedFrameRef as React.RefObject<HTMLDivElement>}
             className={`${styles.chartFrame} ${isSelected ? styles.chartFrameSelected : ''}`}
             style={frameStyle}
+            data-chart-id={def.id}
             onMouseDown={handleBodyMouseDown}
         >
             <div
