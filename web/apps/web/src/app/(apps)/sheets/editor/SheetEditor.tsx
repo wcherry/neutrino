@@ -27,6 +27,11 @@ import { FormulaBar } from './components/FormulaBar';
 import { HamburgerMenu } from './components/HamburgerMenu';
 import { ExportDialogs } from './components/ExportDialogs';
 import { SheetTabBar } from './components/SheetTabBar';
+import featureFlags from '@/lib/featureFlags';
+import { useCharts } from './charts/useCharts';
+import { ChartLayer } from './charts/ChartLayer';
+import { ChartCreationDialog } from './charts/ChartCreationDialog';
+import { ChartEditorPanel } from './charts/ChartEditorPanel';
 import styles from './page.module.css';
 
 type SheetKeyboardMode = 'movement' | 'formula';
@@ -137,6 +142,10 @@ export function SheetEditor() {
     const [hamburgerDialog, setHamburgerDialog] = useState<string | null>(null);
     const [hamburgerDeleteConfirm, setHamburgerDeleteConfirm] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
+
+    // ── Chart state (feature-flagged) ────────────────────────────────────────
+    const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
+    const [showChartDialog, setShowChartDialog] = useState(false);
     const queryClient = useQueryClient();
     const suppressNextFormulaFocusModeRef = useRef(false);
 
@@ -166,6 +175,12 @@ export function SheetEditor() {
         resetHistoryAndSelection: history.resetHistoryAndSelection,
     });
 
+    const charts = useCharts({
+        dataRef,
+        dirtyRef,
+        activeSheetIndexRef: sheets.activeSheetIndexRef,
+    });
+
     const persist = usePersistence({
         sheetId, dirtyRef,
         sheetsDataRef: sheets.sheetsDataRef,
@@ -178,6 +193,9 @@ export function SheetEditor() {
         setData, setColWidths, setRowHeights,
         setSheetNames: sheets.setSheetNames,
         setSheetColors: sheets.setSheetColors,
+        sheetsChartsRef: featureFlags.sheetsCharts ? charts.sheetsChartsRef : undefined,
+        flushActiveCharts: featureFlags.sheetsCharts ? charts.flushActiveCharts : undefined,
+        setCharts: featureFlags.sheetsCharts ? charts.setCharts : undefined,
     });
 
     // ── Cross-sheet reference helper ─────────────────────────────────────────
@@ -902,6 +920,7 @@ export function SheetEditor() {
                 canRedo={history.historyLen.redo > 0}
                 onMergeCells={editing.mergeCells}
                 isMerged={editing.isMerged}
+                onInsertChart={featureFlags.sheetsCharts ? () => setShowChartDialog(true) : undefined}
             />
 
             <div className={styles.mainArea}>
@@ -927,6 +946,17 @@ export function SheetEditor() {
                         onCellContextMenu={handleCellContextMenu}
                         scrollBodyRef={scrollBodyRef}
                     />
+                    {featureFlags.sheetsCharts && (
+                        <ChartLayer
+                            charts={charts.charts}
+                            data={data}
+                            selectedChartId={selectedChartId}
+                            onSelectChart={setSelectedChartId}
+                            onUpdateChart={(id, patch) => { charts.updateChart(id, patch); dirtyRef.current = true; }}
+                            onDeleteChart={(id) => { charts.removeChart(id); setSelectedChartId(null); dirtyRef.current = true; }}
+                            containerRef={scrollBodyRef}
+                        />
+                    )}
                 </div>
                 {showHistory && (
                     <VersionHistoryPanel
@@ -938,6 +968,18 @@ export function SheetEditor() {
                         onClose={() => setShowHistory(false)}
                     />
                 )}
+                {featureFlags.sheetsCharts && selectedChartId && (() => {
+                    const def = charts.charts.find(c => c.id === selectedChartId);
+                    return def ? (
+                        <ChartEditorPanel
+                            def={def}
+                            data={data}
+                            onUpdate={(patch) => { charts.updateChart(selectedChartId, patch); dirtyRef.current = true; }}
+                            onDelete={() => { charts.removeChart(selectedChartId); setSelectedChartId(null); dirtyRef.current = true; }}
+                            onClose={() => setSelectedChartId(null)}
+                        />
+                    ) : null;
+                })()}
             </div>
 
             <SheetTabBar
@@ -946,13 +988,36 @@ export function SheetEditor() {
                 setSheetColors={sheets.setSheetColors}
                 activeSheetIndex={sheets.activeSheetIndex}
                 dirtyRef={dirtyRef}
-                onSwitchSheet={sheets.switchSheet}
+                onSwitchSheet={(idx) => {
+                    sheets.switchSheet(idx);
+                    if (featureFlags.sheetsCharts) {
+                        charts.switchSheetCharts(idx);
+                        setSelectedChartId(null);
+                    }
+                }}
                 onAddSheet={sheets.addSheet}
                 onDeleteSheet={sheets.deleteSheet}
                 onDuplicateSheet={sheets.duplicateSheet}
                 onMoveSheet={sheets.moveSheet}
                 onCommitRename={sheets.commitRename}
             />
+
+            {featureFlags.sheetsCharts && showChartDialog && (
+                <ChartCreationDialog
+                    initialRange={
+                        selectionAnchor && selectionActive
+                            ? `${selectionAnchor}:${selectionActive}`
+                            : selectionAnchor ?? 'A1:D10'
+                    }
+                    data={data}
+                    onConfirm={(def) => {
+                        charts.addChart(def);
+                        dirtyRef.current = true;
+                        setShowChartDialog(false);
+                    }}
+                    onClose={() => setShowChartDialog(false)}
+                />
+            )}
 
             {contextMenu && (
                 <SheetContextMenu

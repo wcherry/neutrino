@@ -48,6 +48,18 @@ const featureFlags = {
    * Default: off
    */
   colorPickerAlpha: process.env.NEXT_PUBLIC_FEATURE_COLOR_PICKER_ALPHA === 'true',
+
+  /**
+   * Phase 1 charting for Neutrino Sheets.
+   * Adds chart creation, editing, and rendering (column, bar, line, area, pie,
+   * donut, scatter, combo) within the spreadsheet grid. Charts are inserted from
+   * a selected range, update live when cell values change, and are draggable and
+   * resizable. A side panel allows formatting the title, axes, legend, data
+   * labels, gridlines, and background colors.
+   * Env var: NEXT_PUBLIC_FEATURE_SHEETS_CHARTS
+   * Default: off
+   */
+  sheetsCharts: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS === 'true',
 } as const;
 
 export default featureFlags;

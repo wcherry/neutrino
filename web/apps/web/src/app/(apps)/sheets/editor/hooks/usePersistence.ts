@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CellProps, SheetFile } from '../types';
+import type { ChartDef } from '../charts/chartTypes';
 import { sheetsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -67,6 +68,9 @@ export function usePersistence({
     setRowHeights,
     setSheetNames,
     setSheetColors,
+    sheetsChartsRef,
+    flushActiveCharts,
+    setCharts,
 }: {
     sheetId: string;
     dirtyRef: React.MutableRefObject<boolean>;
@@ -82,6 +86,10 @@ export function usePersistence({
     setRowHeights: React.Dispatch<React.SetStateAction<Map<number, number>>>;
     setSheetNames: React.Dispatch<React.SetStateAction<string[]>>;
     setSheetColors: React.Dispatch<React.SetStateAction<(string | null)[]>>;
+    // Optional chart persistence — omit if charting is not enabled
+    sheetsChartsRef?: React.MutableRefObject<ChartDef[][]>;
+    flushActiveCharts?: () => void;
+    setCharts?: React.Dispatch<React.SetStateAction<ChartDef[]>>;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
@@ -93,6 +101,7 @@ export function usePersistence({
 
     const serialize = (): string => {
         flushActiveSheet();
+        flushActiveCharts?.();
         const fileSheets = sheetsDataRef.current.map((sheetData, i) => {
             const cells: SheetFile['sheets'][0]['cells'] = {};
             for (const [id, cell] of sheetData) {
@@ -108,12 +117,14 @@ export function usePersistence({
                 ? Object.fromEntries([...rh].map(([k, v]) => [String(k), v]))
                 : undefined;
             const color = sheetColorsRef.current[i] ?? undefined;
+            const sheetCharts = sheetsChartsRef?.current[i];
             return {
                 name: sheetNamesRef.current[i] ?? `Sheet ${i + 1}`,
                 color,
                 cells,
                 colWidths: colWidthsObj,
                 rowHeights: rowHeightsObj,
+                charts: sheetCharts && sheetCharts.length > 0 ? sheetCharts : undefined,
             };
         });
         return JSON.stringify({ sheets: fileSheets } as SheetFile);
@@ -225,6 +236,11 @@ export function usePersistence({
                 setData(allData[0]);
                 setColWidths(allColWidths[0]);
                 setRowHeights(allRowHeights[0]);
+                // Restore charts if the hook is wired up
+                if (sheetsChartsRef && setCharts) {
+                    sheetsChartsRef.current = rawSheets.map(s => s.charts ?? []);
+                    setCharts(sheetsChartsRef.current[0] ?? []);
+                }
             }
         } catch {
             // empty sheet, start fresh

@@ -44,6 +44,7 @@ export type SheetData = {
     cells: Record<string, SavedCell>;
     colWidths?: Record<string, number>;  // 0-based col index (as string key) → pixel width
     rowHeights?: Record<string, number>; // 0-based row index (as string key) → pixel height
+    charts?: import('./charts/chartTypes').ChartDef[];
 };
 
 export type SheetFile = {
