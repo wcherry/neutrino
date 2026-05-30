@@ -508,7 +508,7 @@ const qc = useQueryClient();
       if (docsMeta.status === 'fulfilled') {
         for (const d of docsMeta.value.docs) {
           jobs.push(async () => {
-            const { text } = await docsApi.exportText(d.id);
+            const text = await docsApi.retrieveText(d.id);
             return {
               id: d.id,
               type: 'document' as const,
@@ -522,25 +522,31 @@ const qc = useQueryClient();
 
       if (sheetsMeta.status === 'fulfilled') {
         for (const s of sheetsMeta.value.sheets) {
-          jobs.push(async () => ({
-            id: s.id,
-            type: 'spreadsheet' as const,
-            title: s.title,
-            content: '',
-            updatedAt: new Date(s.updatedAt).getTime(),
-          }));
+          jobs.push(async () => {
+            const text = await sheetsApi.retrieveText(s.id);
+            return {
+              id: s.id,
+              type: 'spreadsheet' as const,
+              title: s.title,
+              content: text,
+              updatedAt: new Date(s.updatedAt).getTime(),
+            };
+          });
         }
       }
 
       if (slidesMeta.status === 'fulfilled') {
         for (const s of slidesMeta.value.slides) {
-          jobs.push(async () => ({
-            id: s.id,
-            type: 'slide' as const,
-            title: s.title,
-            content: '',
-            updatedAt: new Date(s.updatedAt).getTime(),
-          }));
+          jobs.push(async () => {
+            const text = await slidesApi.retrieveText(s.id);
+            return {
+              id: s.id,
+              type: 'slide' as const,
+              title: s.title,
+              content: text,
+              updatedAt: new Date(s.updatedAt).getTime(),
+            };
+          });
         }
       }
 

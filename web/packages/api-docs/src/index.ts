@@ -1,6 +1,18 @@
 import { request } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
+// Tiptap text extraction (client-side, no tiptap dependency required)
+// ---------------------------------------------------------------------------
+
+type TiptapNode = { type: string; text?: string; content?: TiptapNode[] };
+
+function tiptapToText(node: TiptapNode): string {
+  if (node.type === 'text') return node.text ?? '';
+  if (node.type === 'hardBreak') return ' ';
+  return (node.content ?? []).map(tiptapToText).join(' ');
+}
+
+// ---------------------------------------------------------------------------
 // Docs types
 // ---------------------------------------------------------------------------
 
@@ -82,7 +94,20 @@ export const docsApi = {
   },
 
   async exportText(docId: string): Promise<ExportTextResponse> {
+    console.log("Exporting text...");
     return request<ExportTextResponse>(`/api/v1/docs/${docId}/export/text`);
+  },
+
+  async retrieveText(docId: string): Promise<string> {
+    const doc = await request<DocResponse>(`/api/v1/docs/${docId}`);
+    const raw = await request<string>(doc.contentUrl, {}, { responseType: 'text' }).catch(() => '');
+    if (!raw) return '';
+    try {
+      const parsed = JSON.parse(raw) as TiptapNode;
+      return tiptapToText(parsed).replace(/\s+/g, ' ').trim();
+    } catch {
+      return '';
+    }
   },
 };
 

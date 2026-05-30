@@ -19,10 +19,12 @@ export interface DocEntry {
 }
 
 let _db: IDBDatabase | null = null;
+let _opening: Promise<IDBDatabase> | null = null;
 
 export function openSearchDb(): Promise<IDBDatabase> {
   if (_db) return Promise.resolve(_db);
-  return new Promise((resolve, reject) => {
+  if (_opening) return _opening;
+  _opening = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
@@ -39,10 +41,15 @@ export function openSearchDb(): Promise<IDBDatabase> {
     };
     req.onsuccess = (e) => {
       _db = (e.target as IDBOpenDBRequest).result;
+      _opening = null;
       resolve(_db);
     };
-    req.onerror = () => reject(req.error);
+    req.onerror = () => {
+      _opening = null;
+      reject(req.error);
+    };
   });
+  return _opening;
 }
 
 export function putTokenEntries(entries: TokenEntry[], db: IDBDatabase): Promise<void> {
@@ -140,6 +147,7 @@ export function getDocEntries(
 
 export function resetSearchDb(): void {
   _db = null;
+  _opening = null;
 }
 
 export function clearSearchIndex(): Promise<void> {
@@ -147,6 +155,7 @@ export function clearSearchIndex(): Promise<void> {
     _db.close();
     _db = null;
   }
+  _opening = null;
   return new Promise((resolve, reject) => {
     const req = indexedDB.deleteDatabase(DB_NAME);
     req.onsuccess = () => resolve();

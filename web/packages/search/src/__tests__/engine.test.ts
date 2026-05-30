@@ -236,3 +236,195 @@ describe('IndexEngine', () => {
     expect(results).toHaveLength(0);
   });
 });
+
+describe('body/content search', () => {
+  const searchKey = new Uint8Array(32).fill(7);
+  let engine: IndexEngine;
+
+  beforeEach(() => {
+    const db = createMockDb();
+    engine = new IndexEngine(() => Promise.resolve(db));
+  });
+
+  it('finds a document when the search term appears only in the body', async () => {
+    const doc: SearchableDocument = {
+      id: 'doc-body-only',
+      type: 'document',
+      title: 'Untitled',
+      content: 'The quarterly revenue figures show significant growth in APAC markets.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(doc, searchKey);
+    const results = await engine.query(['revenue'], searchKey);
+    expect(results).toHaveLength(1);
+    expect(results[0].docId).toBe('doc-body-only');
+  });
+
+  it('does not return a document when the term is absent from both title and body', async () => {
+    const doc: SearchableDocument = {
+      id: 'doc-no-match',
+      type: 'document',
+      title: 'Meeting Notes',
+      content: 'We discussed the roadmap and team capacity for next quarter.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(doc, searchKey);
+    const results = await engine.query(['invoice'], searchKey);
+    expect(results).toHaveLength(0);
+  });
+
+  it('returns only the document whose body contains the term', async () => {
+    const matching: SearchableDocument = {
+      id: 'doc-match',
+      type: 'document',
+      title: 'Project Alpha',
+      content: 'Budget constraints require renegotiating vendor contracts.',
+      updatedAt: Date.now(),
+    };
+    const nonMatching: SearchableDocument = {
+      id: 'doc-no-match',
+      type: 'note',
+      title: 'Personal Note',
+      content: 'Reminder to water the plants.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(matching, searchKey);
+    await engine.indexDocument(nonMatching, searchKey);
+    const results = await engine.query(['vendor'], searchKey);
+    expect(results).toHaveLength(1);
+    expect(results[0].docId).toBe('doc-match');
+  });
+
+  it('matches a multi-word AND query where both terms appear only in the body', async () => {
+    const doc: SearchableDocument = {
+      id: 'doc-multi',
+      type: 'document',
+      title: 'Weekly Sync',
+      content: 'The deployment pipeline failed due to a missing environment variable.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(doc, searchKey);
+    const results = await engine.query(['deployment', 'pipeline'], searchKey);
+    expect(results).toHaveLength(1);
+    expect(results[0].docId).toBe('doc-multi');
+  });
+
+  it('returns empty when one term of a multi-word query is missing from the body', async () => {
+    const doc: SearchableDocument = {
+      id: 'doc-partial',
+      type: 'document',
+      title: 'Tech Debt',
+      content: 'Refactoring the authentication module will improve reliability.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(doc, searchKey);
+    const results = await engine.query(['authentication', 'invoice'], searchKey);
+    expect(results).toHaveLength(0);
+  });
+
+  it('finds a spreadsheet document by body content', async () => {
+    const sheet: SearchableDocument = {
+      id: 'sheet-1',
+      type: 'spreadsheet',
+      title: 'Q3 Data',
+      content: 'Revenue Expenses Profit Headcount',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(sheet, searchKey);
+    const results = await engine.query(['headcount'], searchKey);
+    expect(results).toHaveLength(1);
+    expect(results[0].docId).toBe('sheet-1');
+    expect(results[0].type).toBe('spreadsheet');
+  });
+
+  it('finds a slide document by body content', async () => {
+    const slide: SearchableDocument = {
+      id: 'slide-1',
+      type: 'slide',
+      title: 'Q4 Roadmap',
+      content: 'Our go-to-market strategy focuses on enterprise customers in Europe.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(slide, searchKey);
+    const results = await engine.query(['enterprise'], searchKey);
+    expect(results).toHaveLength(1);
+    expect(results[0].docId).toBe('slide-1');
+    expect(results[0].type).toBe('slide');
+  });
+
+  it('finds a note document by body content', async () => {
+    const note: SearchableDocument = {
+      id: 'note-1',
+      type: 'note',
+      title: 'Quick Thought',
+      content: 'Consider using WebSockets for the real-time collaboration feature.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(note, searchKey);
+    const results = await engine.query(['websockets'], searchKey);
+    expect(results).toHaveLength(1);
+    expect(results[0].docId).toBe('note-1');
+  });
+
+  it('re-indexing with updated body makes new term searchable and old term unsearchable', async () => {
+    const original: SearchableDocument = {
+      id: 'doc-update',
+      type: 'document',
+      title: 'Living Doc',
+      content: 'This document covers legacy infrastructure.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(original, searchKey);
+
+    const updated: SearchableDocument = {
+      ...original,
+      content: 'This document covers cloud migration planning.',
+      updatedAt: Date.now() + 1,
+    };
+    await engine.indexDocument(updated, searchKey);
+
+    const cloudResults = await engine.query(['cloud'], searchKey);
+    expect(cloudResults).toHaveLength(1);
+    expect(cloudResults[0].docId).toBe('doc-update');
+
+    const legacyResults = await engine.query(['legacy'], searchKey);
+    expect(legacyResults).toHaveLength(0);
+  });
+
+  it('body search is case-insensitive', async () => {
+    const doc: SearchableDocument = {
+      id: 'doc-case',
+      type: 'document',
+      title: 'Notes',
+      content: 'The KUBERNETES cluster needs to be upgraded to version 1.30.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(doc, searchKey);
+    const results = await engine.query(['kubernetes'], searchKey);
+    expect(results).toHaveLength(1);
+    expect(results[0].docId).toBe('doc-case');
+  });
+
+  it('returns multiple documents when both have the search term in their body', async () => {
+    const doc1: SearchableDocument = {
+      id: 'doc-a',
+      type: 'document',
+      title: 'Alpha',
+      content: 'The onboarding checklist needs to be updated.',
+      updatedAt: Date.now(),
+    };
+    const doc2: SearchableDocument = {
+      id: 'doc-b',
+      type: 'note',
+      title: 'Beta',
+      content: 'New hire onboarding starts next Monday.',
+      updatedAt: Date.now(),
+    };
+    await engine.indexDocument(doc1, searchKey);
+    await engine.indexDocument(doc2, searchKey);
+    const results = await engine.query(['onboarding'], searchKey);
+    const ids = results.map((r) => r.docId);
+    expect(ids).toContain('doc-a');
+    expect(ids).toContain('doc-b');
+  });
+});

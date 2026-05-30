@@ -23,14 +23,15 @@ function positionsToBytes(positions: number[]): Uint8Array {
 }
 
 export class IndexEngine {
-  private dbPromise: Promise<IDBDatabase>;
+  private getDb: () => Promise<IDBDatabase>;
 
   constructor(dbFactory?: () => Promise<IDBDatabase>) {
-    this.dbPromise = dbFactory ? dbFactory() : openSearchDb();
+    this.getDb = dbFactory ?? openSearchDb;
   }
 
   async indexDocument(doc: SearchableDocument, searchKey: Uint8Array): Promise<void> {
-    const db = await this.dbPromise;
+    const t0 = performance.now();
+    const db = await this.getDb();
     await deleteDocumentTokens(doc.id, db);
 
     const [titleTokens, contentTokens] = await Promise.all([
@@ -61,16 +62,25 @@ export class IndexEngine {
       putTokenEntries(entries, db),
       putDocEntry({ documentId: doc.id, type: doc.type, titleHashes, updatedAt: doc.updatedAt }, db),
     ]);
+
+    const elapsed = (performance.now() - t0).toFixed(1);
+    const contentWords = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
+    console.debug(
+      `[search] indexed ${doc.type} "${doc.id}" — ` +
+      `title tokens: ${titleTokens.length}, content tokens: ${contentTokens.length}, ` +
+      `content words: ${contentWords}, total entries: ${entries.length}, ` +
+      `${elapsed}ms`,
+    );
   }
 
   async removeDocument(docId: string): Promise<void> {
-    const db = await this.dbPromise;
+    const db = await this.getDb();
     await deleteDocumentTokens(docId, db);
   }
 
   async query(terms: string[], searchKey: Uint8Array): Promise<SearchResult[]> {
     if (terms.length === 0) return [];
-    const db = await this.dbPromise;
+    const db = await this.getDb();
 
     const normalizedTerms = terms.flatMap((t) => normalizeText(t));
     if (normalizedTerms.length === 0) return [];
