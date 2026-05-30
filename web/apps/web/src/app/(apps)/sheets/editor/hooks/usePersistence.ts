@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CellProps, SheetFile } from '../types';
+import type { ChartDef } from '../charts/chartTypes';
 import { sheetsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -67,6 +68,9 @@ export function usePersistence({
     setRowHeights,
     setSheetNames,
     setSheetColors,
+    sheetsChartsRef,
+    flushActiveCharts,
+    setCharts,
 }: {
     sheetId: string;
     dirtyRef: React.MutableRefObject<boolean>;
@@ -82,6 +86,10 @@ export function usePersistence({
     setRowHeights: React.Dispatch<React.SetStateAction<Map<number, number>>>;
     setSheetNames: React.Dispatch<React.SetStateAction<string[]>>;
     setSheetColors: React.Dispatch<React.SetStateAction<(string | null)[]>>;
+    // Optional chart persistence — omit if charting is not enabled
+    sheetsChartsRef?: React.MutableRefObject<ChartDef[][]>;
+    flushActiveCharts?: () => void;
+    setCharts?: React.Dispatch<React.SetStateAction<ChartDef[]>>;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
@@ -90,9 +98,13 @@ export function usePersistence({
     // The autosave useEffect depends on it so it restarts (with cleanup) on each reload.
     const [loadCount, setLoadCount] = useState(0);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    // Always points to the latest save function so the flush-on-unmount effect
+    // (which uses empty deps) can call it without a stale closure.
+    const saveRef = useRef<() => Promise<void>>(async () => {});
 
     const serialize = (): string => {
         flushActiveSheet();
+        flushActiveCharts?.();
         const fileSheets = sheetsDataRef.current.map((sheetData, i) => {
             const cells: SheetFile['sheets'][0]['cells'] = {};
             for (const [id, cell] of sheetData) {
@@ -108,12 +120,14 @@ export function usePersistence({
                 ? Object.fromEntries([...rh].map(([k, v]) => [String(k), v]))
                 : undefined;
             const color = sheetColorsRef.current[i] ?? undefined;
+            const sheetCharts = sheetsChartsRef?.current[i];
             return {
                 name: sheetNamesRef.current[i] ?? `Sheet ${i + 1}`,
                 color,
                 cells,
                 colWidths: colWidthsObj,
                 rowHeights: rowHeightsObj,
+                charts: sheetCharts && sheetCharts.length > 0 ? sheetCharts : undefined,
             };
         });
         return JSON.stringify({ sheets: fileSheets } as SheetFile);
@@ -127,6 +141,7 @@ export function usePersistence({
             await driveAutosaveContent(sheetId, serialize(), 'sheet.json');
         }
     };
+    saveRef.current = save;
 
     const manualSave = async () => {
         if (!sheetRef.current) return;
@@ -160,12 +175,13 @@ export function usePersistence({
     }, [loadCount]);
 
     // Flush dirty state when the user leaves: tab hidden, page unload, or SPA navigation.
+    // Uses empty deps so the cleanup always runs on unmount regardless of load state.
+    // saveRef.current always points to the latest save, avoiding stale closure issues.
     useEffect(() => {
-        if (loadCount === 0) return;
         const flush = () => {
             if (!dirtyRef.current || !sheetRef.current) return;
             dirtyRef.current = false;
-            save(); // fire and forget
+            saveRef.current(); // fire and forget
         };
         const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
         document.addEventListener('visibilitychange', onVisibilityChange);
@@ -175,9 +191,8 @@ export function usePersistence({
             window.removeEventListener('pagehide', flush);
             flush();
         };
-    // save/dirtyRef/sheetRef are stable refs; re-register only after each load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadCount]);
+    }, []);
 
     const load = async () => {
         if (!sheetId) return;
@@ -225,6 +240,11 @@ export function usePersistence({
                 setData(allData[0]);
                 setColWidths(allColWidths[0]);
                 setRowHeights(allRowHeights[0]);
+                // Restore charts if the hook is wired up
+                if (sheetsChartsRef && setCharts) {
+                    sheetsChartsRef.current = rawSheets.map(s => s.charts ?? []);
+                    setCharts(sheetsChartsRef.current[0] ?? []);
+                }
             }
         } catch {
             // empty sheet, start fresh
