@@ -414,3 +414,101 @@
 }
 
 .applyBtn:hover { opacity: 0.9; }
+
+/* ── Phase 2: Themes ── */
+
+.themeGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.themeBtn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.themeBtn:hover {
+    background: var(--color-surface-hover, rgb(240, 240, 248));
+}
+
+.themeBtnActive {
+    border-color: var(--color-accent, #0064ff);
+    background: var(--color-accent-subtle, rgba(0, 100, 255, 0.08));
+}
+
+.themeSwatches {
+    display: flex;
+    gap: 2px;
+}
+
+.themeSwatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+
+.themeLabel {
+    font-size: 10px;
+    color: var(--color-text-muted);
+}
+
+.themeBtnActive .themeLabel {
+    color: var(--color-accent, #0064ff);
+    font-weight: 500;
+}
+
+/* ── Phase 2: Two-column row ── */
+
+.twoColRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+/* ── Phase 2: Series row ── */
+
+.seriesRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.seriesVisibilityCheck {
+    flex-shrink: 0;
+}
+
+.seriesName {
+    flex: 1;
+    font-size: 12px;
+    color: var(--color-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.thicknessInput {
+    width: 42px;
+    padding: 3px 4px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-size: 11px;
+    background: var(--color-surface-raised, #f9f9fb);
+    color: var(--color-text);
+    text-align: center;
+    outline: none;
+}
+
+.thicknessInput:focus {
+    border-color: var(--color-accent, #0064ff);
+}

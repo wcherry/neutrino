@@ -60,6 +60,20 @@ const featureFlags = {
    * Default: off
    */
   sheetsCharts: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS === 'true',
+
+  /**
+   * Phase 2 charting for Neutrino Sheets.
+   * Adds new chart types (stacked column/bar, 100% stacked, bubble, histogram,
+   * candlestick, waterfall, treemap, sunburst), axis controls (min/max, log
+   * scale, reverse, number formatting), per-series styling (color, line
+   * thickness, markers, visibility, secondary Y-axis), data label configuration
+   * (type, position, font size), and built-in chart themes (Default, Dark,
+   * Pastel, Corporate, Colorblind Safe).
+   * Requires NEXT_PUBLIC_FEATURE_SHEETS_CHARTS to also be enabled.
+   * Env var: NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE2
+   * Default: off
+   */
+  sheetsChartsPhase2: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE2 === 'true',
 } as const;
 
 export default featureFlags;
