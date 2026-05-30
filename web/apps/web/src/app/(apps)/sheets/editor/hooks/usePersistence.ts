@@ -98,6 +98,9 @@ export function usePersistence({
     // The autosave useEffect depends on it so it restarts (with cleanup) on each reload.
     const [loadCount, setLoadCount] = useState(0);
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    // Always points to the latest save function so the flush-on-unmount effect
+    // (which uses empty deps) can call it without a stale closure.
+    const saveRef = useRef<() => Promise<void>>(async () => {});
 
     const serialize = (): string => {
         flushActiveSheet();
@@ -138,6 +141,7 @@ export function usePersistence({
             await driveAutosaveContent(sheetId, serialize(), 'sheet.json');
         }
     };
+    saveRef.current = save;
 
     const manualSave = async () => {
         if (!sheetRef.current) return;
@@ -171,12 +175,13 @@ export function usePersistence({
     }, [loadCount]);
 
     // Flush dirty state when the user leaves: tab hidden, page unload, or SPA navigation.
+    // Uses empty deps so the cleanup always runs on unmount regardless of load state.
+    // saveRef.current always points to the latest save, avoiding stale closure issues.
     useEffect(() => {
-        if (loadCount === 0) return;
         const flush = () => {
             if (!dirtyRef.current || !sheetRef.current) return;
             dirtyRef.current = false;
-            save(); // fire and forget
+            saveRef.current(); // fire and forget
         };
         const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
         document.addEventListener('visibilitychange', onVisibilityChange);
@@ -186,9 +191,8 @@ export function usePersistence({
             window.removeEventListener('pagehide', flush);
             flush();
         };
-    // save/dirtyRef/sheetRef are stable refs; re-register only after each load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadCount]);
+    }, []);
 
     const load = async () => {
         if (!sheetId) return;
