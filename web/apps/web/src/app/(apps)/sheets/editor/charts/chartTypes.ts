@@ -1,4 +1,4 @@
-// Chart data model for Neutrino Sheets Phase 1 + Phase 2 charting.
+// Chart data model for Neutrino Sheets Phase 1 + Phase 2 + Phase 5 charting.
 
 export type ChartType =
     | 'column'
@@ -54,6 +54,42 @@ export type DataLabelConfig = {
 // Phase 2: marker styles for line/area/scatter
 export type MarkerStyle = 'circle' | 'square' | 'triangle' | 'diamond' | 'none';
 
+// Phase 5: Annotation types
+export type AnnotationType = 'callout' | 'note' | 'arrow' | 'shape' | 'text';
+export type ShapeKind = 'rect' | 'ellipse' | 'line';
+
+export type ChartAnnotation = {
+    id: string;
+    type: AnnotationType;
+    // Normalised 0–1 coordinates relative to the chart frame's pixel dimensions.
+    // This ensures annotations stay in the correct relative position when the
+    // chart is resized.
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    text?: string;
+    fontSize?: number;
+    fontColor?: string;
+    fillColor?: string;
+    strokeColor?: string;
+    strokeWidth?: number;
+    // Arrow end point (normalised)
+    x2?: number;
+    y2?: number;
+    // Shape kind (when type === 'shape')
+    shapeKind?: ShapeKind;
+};
+
+// Phase 5: Animation configuration
+export type ChartAnimationMode = 'none' | 'reveal-series' | 'highlight-points' | 'presentation-transition';
+
+export type ChartAnimationConfig = {
+    mode: ChartAnimationMode;
+    durationMs?: number;  // per-element animation duration in ms (default 600)
+    delayMs?: number;     // stagger delay between elements in ms (default 150)
+};
+
 export type ChartSeries = {
     name: string;
     dataRange: string;    // e.g. "B2:B10"
@@ -94,4 +130,7 @@ export type ChartDef = {
     y2Axis?: AxisConfig;
     dataLabel?: DataLabelConfig;
     theme?: string;
+    // Phase 5
+    annotations?: ChartAnnotation[];
+    animation?: ChartAnimationConfig;
 };

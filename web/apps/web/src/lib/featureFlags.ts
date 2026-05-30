@@ -74,6 +74,17 @@ const featureFlags = {
    * Default: off
    */
   sheetsChartsPhase2: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE2 === 'true',
+
+  /**
+   * Phase 5 charting for Neutrino Sheets — Presentation Features.
+   * Adds annotation overlays (callouts, notes, arrows, shapes, text overlays),
+   * chart export (PNG, SVG, PDF, clipboard copy, print), and chart animation
+   * (reveal series, highlight data points, presentation transitions).
+   * Requires NEXT_PUBLIC_FEATURE_SHEETS_CHARTS to also be enabled.
+   * Env var: NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE5
+   * Default: off
+   */
+  sheetsChartsPhase5: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE5 === 'true',
 } as const;
 
 export default featureFlags;
