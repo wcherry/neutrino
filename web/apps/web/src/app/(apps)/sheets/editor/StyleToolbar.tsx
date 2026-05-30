@@ -6,7 +6,9 @@ import {
     AlignLeft, AlignCenter, AlignRight,
     Calendar,
     TableCellsMerge, TableCellsSplit,
+    BarChart2,
 } from 'lucide-react';
+import featureFlags from '@/lib/featureFlags';
 import type { CellStyle } from './types';
 import { ColorPickerPopover, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
 import { FONT_FAMILIES } from '@/constants/editor';
@@ -83,9 +85,10 @@ export type StyleToolbarProps = {
     canRedo: boolean;
     onMergeCells: () => void;
     isMerged: boolean;
+    onInsertChart?: () => void;
 };
 
-export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged }: StyleToolbarProps) {
+export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart }: StyleToolbarProps) {
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
     const isStrikethrough = cellStyle?.textDecoration === 'line-through';
@@ -313,6 +316,18 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                     title="Increase decimal places"
                 ><DecimalIncIcon /></ToolbarButton>
             </ToolbarGroup>
+
+            {featureFlags.sheetsCharts && onInsertChart && (
+                <>
+                    <ToolbarDivider />
+                    <ToolbarButton
+                        onClick={onInsertChart}
+                        title="Insert Chart"
+                    >
+                        <BarChart2 size={15} />
+                    </ToolbarButton>
+                </>
+            )}
 
             {showFormatDialog && (
                 <CustomFormatDialog

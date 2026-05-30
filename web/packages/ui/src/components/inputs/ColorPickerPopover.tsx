@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ColorPicker } from './ColorPicker';
 import { ToolbarButton } from '../display/Toolbar';
@@ -52,6 +52,35 @@ export function ColorPickerPopover({ color, onChange, disabled, title, children,
             document.removeEventListener('keydown', handleKeyDown);
         };
     }, [open]);
+
+    // After the popover renders, clamp it so it stays fully within the viewport.
+    // useLayoutEffect fires before the browser paints, avoiding any visible flicker.
+    useLayoutEffect(() => {
+        if (!open || !popoverRef.current) return;
+        const el = popoverRef.current;
+        const elRect = el.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const pad = 8;
+
+        let { top, left } = pos;
+
+        // Flip above the trigger if the bottom edge overflows the viewport
+        if (top + elRect.height > vh - pad) {
+            const wrapRect = wrapperRef.current?.getBoundingClientRect();
+            top = wrapRect ? wrapRect.top - elRect.height - 6 : vh - elRect.height - pad;
+            if (top < pad) top = pad;
+        }
+
+        // Shift left if the right edge overflows the viewport
+        if (left + elRect.width > vw - pad) {
+            left = vw - elRect.width - pad;
+        }
+        if (left < pad) left = pad;
+
+        el.style.top = `${top}px`;
+        el.style.left = `${left}px`;
+    }, [open, pos]);
 
     function handleOpen() {
         if (disabled) return;

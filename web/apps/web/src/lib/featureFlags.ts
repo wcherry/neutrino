@@ -57,6 +57,30 @@ const featureFlags = {
    * Default: off
    */
   search: process.env.NEXT_PUBLIC_FEATURE_SEARCH === 'true',
+   * Phase 1 charting for Neutrino Sheets.
+   * Adds chart creation, editing, and rendering (column, bar, line, area, pie,
+   * donut, scatter, combo) within the spreadsheet grid. Charts are inserted from
+   * a selected range, update live when cell values change, and are draggable and
+   * resizable. A side panel allows formatting the title, axes, legend, data
+   * labels, gridlines, and background colors.
+   * Env var: NEXT_PUBLIC_FEATURE_SHEETS_CHARTS
+   * Default: off
+   */
+  sheetsCharts: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS === 'true',
+
+  /**
+   * Phase 2 charting for Neutrino Sheets.
+   * Adds new chart types (stacked column/bar, 100% stacked, bubble, histogram,
+   * candlestick, waterfall, treemap, sunburst), axis controls (min/max, log
+   * scale, reverse, number formatting), per-series styling (color, line
+   * thickness, markers, visibility, secondary Y-axis), data label configuration
+   * (type, position, font size), and built-in chart themes (Default, Dark,
+   * Pastel, Corporate, Colorblind Safe).
+   * Requires NEXT_PUBLIC_FEATURE_SHEETS_CHARTS to also be enabled.
+   * Env var: NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE2
+   * Default: off
+   */
+  sheetsChartsPhase2: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE2 === 'true',
 } as const;
 
 export default featureFlags;
