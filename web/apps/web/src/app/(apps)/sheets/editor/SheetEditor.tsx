@@ -850,7 +850,7 @@ export function SheetEditor() {
                     setHamburgerDialog={setHamburgerDialog}
                     setHamburgerDeleteConfirm={setHamburgerDeleteConfirm}
                 />
-                <button className={styles.backBtn} aria-label="Sheets" onClick={async () => { await persist.save(); router.push('/drive'); }}>
+                <button className={styles.backBtn} aria-label="Sheets" onClick={async () => { try { await persist.save(); } finally { router.push('/drive'); } }}>
                     <ArrowLeft size={16} />
                 </button>
                 <div className={styles.titleArea}>
