@@ -9,6 +9,7 @@ import type { CellProps } from '../types';
 import type { ChartDef, ChartType } from './chartTypes';
 import { ChartRenderer } from './ChartRenderer';
 import { autoDetectChartConfig, generateChartId } from './chartUtils';
+import featureFlags from '@/lib/featureFlags';
 import styles from './charts.module.css';
 
 interface ChartCreationDialogProps {
@@ -18,7 +19,7 @@ interface ChartCreationDialogProps {
     onClose: () => void;
 }
 
-const CHART_TYPES: { type: ChartType; label: string; Icon: React.ElementType }[] = [
+const P1_CHART_TYPES: { type: ChartType; label: string; Icon: React.ElementType }[] = [
     { type: 'column',  label: 'Column',  Icon: BarChart2 },
     { type: 'bar',     label: 'Bar',     Icon: BarChartHorizontal },
     { type: 'line',    label: 'Line',    Icon: LineChart },
@@ -27,6 +28,19 @@ const CHART_TYPES: { type: ChartType; label: string; Icon: React.ElementType }[]
     { type: 'donut',   label: 'Donut',   Icon: Circle },
     { type: 'scatter', label: 'Scatter', Icon: ScatterChart },
     { type: 'combo',   label: 'Combo',   Icon: Layers },
+];
+
+const P2_CHART_TYPES: { type: ChartType; label: string; Icon: React.ElementType }[] = [
+    { type: 'stacked-column',     label: 'Stacked Col', Icon: BarChart2 },
+    { type: 'stacked-bar',        label: 'Stacked Bar', Icon: BarChartHorizontal },
+    { type: 'stacked-column-100', label: '100% Col',    Icon: BarChart2 },
+    { type: 'stacked-bar-100',    label: '100% Bar',    Icon: BarChartHorizontal },
+    { type: 'bubble',             label: 'Bubble',      Icon: Circle },
+    { type: 'histogram',          label: 'Histogram',   Icon: BarChart2 },
+    { type: 'candlestick',        label: 'Candlestick', Icon: LineChart },
+    { type: 'waterfall',          label: 'Waterfall',   Icon: BarChart2 },
+    { type: 'treemap',            label: 'Treemap',     Icon: Layers },
+    { type: 'sunburst',           label: 'Sunburst',    Icon: PieChart },
 ];
 
 export function ChartCreationDialog({
@@ -39,6 +53,10 @@ export function ChartCreationDialog({
     const [dataRange, setDataRange] = useState(initialRange);
     const [hasHeaders, setHasHeaders] = useState(true);
     const [seriesInRows, setSeriesInRows] = useState(false);
+
+    const allChartTypes = featureFlags.sheetsChartsPhase2
+        ? [...P1_CHART_TYPES, ...P2_CHART_TYPES]
+        : P1_CHART_TYPES;
 
     // Build a live preview ChartDef from current dialog state.
     const previewDef = useMemo<ChartDef>(() => {
@@ -104,7 +122,7 @@ export function ChartCreationDialog({
                         <div className={styles.fieldGroup}>
                             <div className={styles.fieldLabel}>Chart Type</div>
                             <div className={styles.chartTypePicker}>
-                                {CHART_TYPES.map(({ type, label, Icon }) => (
+                                {allChartTypes.map(({ type, label, Icon }) => (
                                     <button
                                         key={type}
                                         className={`${styles.chartTypeBtn} ${chartType === type ? styles.chartTypeBtnActive : ''}`}

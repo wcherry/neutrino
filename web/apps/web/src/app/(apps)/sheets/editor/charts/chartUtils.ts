@@ -1,6 +1,6 @@
 import type { CellProps } from '../types';
 import { alphaToNum, numToAlpha } from '../utils';
-import type { ChartDef, ChartSeries } from './chartTypes';
+import type { ChartDef, ChartSeries, AxisConfig } from './chartTypes';
 
 const MAX_CHART_ROWS = 1000;
 
@@ -195,4 +195,111 @@ function extractSeriesInRows(
 
 export function generateChartId(): string {
     return `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+// ── Histogram binning ─────────────────────────────────────────────────────────
+
+export type HistogramBin = {
+    label: string;
+    count: number;
+    min: number;
+    max: number;
+};
+
+export function computeHistogramBins(values: number[], binCount: number = 10): HistogramBin[] {
+    if (values.length === 0) return [];
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (min === max) {
+        return [{ label: String(min), count: values.length, min, max }];
+    }
+    const binWidth = (max - min) / binCount;
+    const bins: HistogramBin[] = Array.from({ length: binCount }, (_, i) => ({
+        label: `${(min + i * binWidth).toFixed(1)}–${(min + (i + 1) * binWidth).toFixed(1)}`,
+        count: 0,
+        min: min + i * binWidth,
+        max: min + (i + 1) * binWidth,
+    }));
+    for (const v of values) {
+        const idx = Math.min(Math.floor((v - min) / binWidth), binCount - 1);
+        bins[idx].count++;
+    }
+    return bins;
+}
+
+// ── Waterfall running totals ──────────────────────────────────────────────────
+
+export type WaterfallBar = {
+    label: string;
+    start: number;
+    end: number;
+    value: number;
+    isTotal: boolean;
+};
+
+export function computeWaterfallBars(labels: string[], values: number[]): WaterfallBar[] {
+    const bars: WaterfallBar[] = [];
+    let running = 0;
+    labels.forEach((label, i) => {
+        const value = values[i] ?? 0;
+        const start = running;
+        const end = running + value;
+        running = end;
+        bars.push({ label, start, end, value, isTotal: false });
+    });
+    // Add a total bar at the end
+    bars.push({ label: 'Total', start: 0, end: running, value: running, isTotal: true });
+    return bars;
+}
+
+// ── 100% stacked normalization ────────────────────────────────────────────────
+
+export function normalize100Percent(datasets: ChartDataset[]): ChartDataset[] {
+    const numPoints = datasets[0]?.data.length ?? 0;
+    const totals: number[] = Array.from({ length: numPoints }, (_, i) =>
+        datasets.reduce((sum, ds) => sum + Math.abs(ds.data[i] ?? 0), 0),
+    );
+    return datasets.map(ds => ({
+        ...ds,
+        data: ds.data.map((v, i) => {
+            const total = totals[i];
+            return total === 0 ? 0 : Math.round(((v / total) * 100) * 100) / 100;
+        }),
+    }));
+}
+
+// ── Axis tick formatter ───────────────────────────────────────────────────────
+
+export function makeTickFormatter(axisConfig?: AxisConfig): ((value: number) => string) | undefined {
+    if (!axisConfig?.numberFormat || axisConfig.numberFormat === 'default') {
+        return undefined;
+    }
+    const decimals = axisConfig.decimalPlaces ?? 0;
+    const symbol = axisConfig.currencySymbol ?? '$';
+    return (v: number) => {
+        switch (axisConfig.numberFormat) {
+            case 'currency':   return `${symbol}${v.toFixed(decimals)}`;
+            case 'percentage': return `${v.toFixed(decimals)}%`;
+            case 'number':     return v.toFixed(decimals);
+            default:           return String(v);
+        }
+    };
+}
+
+// ── Treemap/Sunburst data builder ─────────────────────────────────────────────
+
+export type TreemapNode = {
+    name: string;
+    value: number;
+    color?: string;
+};
+
+export function buildTreemapData(labels: string[], datasets: ChartDataset[]): TreemapNode[] {
+    const firstDs = datasets[0];
+    if (!firstDs) return [];
+    return labels.map((name, i) => ({
+        name,
+        value: Math.abs(firstDs.data[i] ?? 0),
+        color: firstDs.color,
+    }));
 }
