@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { Editor } from '@tiptap/react';
 import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
+import featureFlags from '@/lib/featureFlags';
 import styles from './MenuBar.module.css';
 
 // ── Help modal ────────────────────────────────────────────────────────────
@@ -100,6 +101,12 @@ export interface HamburgerMenuProps {
   onExport: (format: 'docx' | 'pdf' | 'html' | 'txt') => void;
   onPageSetup: () => void;
   onPrint: () => void;
+  // Layout & structure feature callbacks (only used when docsLayoutStructure flag is on)
+  onInsertFootnote?: () => void;
+  onInsertCrossRef?: () => void;
+  onHeaderFooter?: () => void;
+  onWatermark?: () => void;
+  onTheme?: () => void;
 }
 
 export function HamburgerMenu({
@@ -112,6 +119,11 @@ export function HamburgerMenu({
   onExport,
   onPageSetup,
   onPrint,
+  onInsertFootnote,
+  onInsertCrossRef,
+  onHeaderFooter,
+  onWatermark,
+  onTheme,
 }: HamburgerMenuProps) {
   const router = useRouter();
   const [showHelp, setShowHelp] = useState(false);
@@ -198,6 +210,12 @@ export function HamburgerMenu({
             { kind: 'action', label: 'Double (2.0)',       action: () => {} },
           ],
         },
+        ...(featureFlags.docsLayoutStructure ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Header & footer…',  action: () => onHeaderFooter?.() },
+          { kind: 'action' as const, label: 'Watermark…',         action: () => onWatermark?.() },
+          { kind: 'action' as const, label: 'Document theme…',    action: () => onTheme?.() },
+        ] : []),
       ],
     },
     {
@@ -211,6 +229,15 @@ export function HamburgerMenu({
         { kind: 'action', label: 'Horizontal rule',                     action: () => editor?.chain().focus().setHorizontalRule().run() },
         { kind: 'action', label: 'Code block',                          action: () => editor?.chain().focus().toggleCodeBlock().run() },
         { kind: 'action', label: 'Blockquote',                          action: () => editor?.chain().focus().toggleBlockquote().run() },
+        ...(featureFlags.docsLayoutStructure ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Table of contents',  action: () => editor?.chain().focus().insertContent({ type: 'tableOfContents' }).run() },
+          { kind: 'action' as const, label: 'Footnote',           action: () => onInsertFootnote?.() },
+          { kind: 'action' as const, label: 'Cross-reference…',  action: () => onInsertCrossRef?.() },
+          { kind: 'action' as const, label: 'Section break',      action: () => editor?.chain().focus().insertContent({ type: 'sectionBreak' }).run() },
+          { kind: 'action' as const, label: '2-column layout',    action: () => editor?.chain().focus().insertContent({ type: 'columnLayout', attrs: { columns: 2 }, content: [{ type: 'paragraph' }] }).run() },
+          { kind: 'action' as const, label: '3-column layout',    action: () => editor?.chain().focus().insertContent({ type: 'columnLayout', attrs: { columns: 3 }, content: [{ type: 'paragraph' }] }).run() },
+        ] : []),
       ],
     },
     {

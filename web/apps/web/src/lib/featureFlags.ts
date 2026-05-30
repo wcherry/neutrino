@@ -92,6 +92,15 @@ const featureFlags = {
    * Default: off
    */
   sheetsChartsPhase5: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE5 === 'true',
+  /**
+   * Document layout & structure features for Neutrino Docs (Feature Gap #1).
+   * Adds: headers/footers with page numbering, footnotes, cross-references,
+   * table-of-contents generation, section breaks, multi-column layouts,
+   * page backgrounds, document themes, and watermarks.
+   * Env var: NEXT_PUBLIC_FEATURE_DOCS_LAYOUT_STRUCTURE
+   * Default: off
+   */
+  docsLayoutStructure: process.env.NEXT_PUBLIC_FEATURE_DOCS_LAYOUT_STRUCTURE === 'true',
 } as const;
 
 export default featureFlags;
