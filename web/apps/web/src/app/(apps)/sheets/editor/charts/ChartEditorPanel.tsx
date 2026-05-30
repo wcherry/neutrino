@@ -187,26 +187,15 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
                         <ColorPickerPopover
                             color={def.backgroundColor || '#ffffff'}
                             onChange={v => onUpdate({ backgroundColor: v })}
-                        >
-                            <button
-                                className={styles.colorSwatch}
-                                style={{ background: def.backgroundColor || '#ffffff' }}
-                                aria-label="Background color"
-                            />
-                        </ColorPickerPopover>
+                            showAlpha={true}
+                        />
                     </div>
                     <div className={styles.colorRow}>
                         <span>Plot area</span>
                         <ColorPickerPopover
                             color={def.plotAreaColor || '#ffffff'}
                             onChange={v => onUpdate({ plotAreaColor: v })}
-                        >
-                            <button
-                                className={styles.colorSwatch}
-                                style={{ background: def.plotAreaColor || '#ffffff' }}
-                                aria-label="Plot area color"
-                            />
-                        </ColorPickerPopover>
+                        />
                     </div>
                 </div>
 
