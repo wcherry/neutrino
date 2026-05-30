@@ -14,6 +14,7 @@ import {
     Tooltip,
     Legend,
     LabelList,
+    Label,
     ZAxis,
 } from 'recharts';
 import type { CellProps } from '../types';
@@ -75,149 +76,160 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
         background: def.backgroundColor || '#ffffff',
         width: width ?? '100%',
         height: height ?? '100%',
+        display: 'flex',
+        flexDirection: 'column',
     };
 
+    // Title bar rendered above all chart types
+    const titleEl = def.title ? (
+        <div style={{ textAlign: 'center', padding: '6px 12px 2px', fontSize: 13, fontWeight: 600, color: '#1a1a1a', flexShrink: 0 }}>
+            {def.title}
+        </div>
+    ) : null;
+
+    // Wraps chart content so the title gets space and the chart fills the rest
+    const wrap = (inner: React.ReactNode) => (
+        <div style={containerStyle}>
+            {titleEl}
+            <div style={{ flex: 1, minHeight: 0 }}>
+                {inner}
+            </div>
+        </div>
+    );
+
+    // Axis label helpers
+    const xLabel = def.xAxisTitle ? <Label value={def.xAxisTitle} position="insideBottom" offset={-4} style={{ fontSize: 11, fill: '#666' }} /> : null;
+    const yLabel = def.yAxisTitle ? <Label value={def.yAxisTitle} angle={-90} position="insideLeft" style={{ fontSize: 11, fill: '#666' }} /> : null;
+
     if (isEmpty) {
-        return <div style={containerStyle}><NoData /></div>;
+        return wrap(<NoData />);
     }
 
     // ── Column chart ──────────────────────────────────────────────────────────
     if (def.type === 'column') {
-        return (
-            <div style={containerStyle}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 20, right: 16, bottom: 8, left: 0 }}
-                        style={{ background: def.plotAreaColor || 'transparent' }}>
-                        {grid}
-                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip />
-                        {legendProps && <Legend {...legendProps} />}
-                        {datasets.map((ds, i) => (
-                            <Bar key={ds.name} dataKey={ds.name}
-                                fill={ds.color ?? CHART_COLORS[i % CHART_COLORS.length]}>
-                                {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
-                            </Bar>
-                        ))}
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
+        return wrap(
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 8, right: 16, bottom: def.xAxisTitle ? 28 : 8, left: 0 }}
+                    style={{ background: def.plotAreaColor || 'transparent' }}>
+                    {grid}
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }}>{xLabel}</XAxis>
+                    <YAxis tick={{ fontSize: 11 }}>{yLabel}</YAxis>
+                    <Tooltip />
+                    {legendProps && <Legend {...legendProps} />}
+                    {datasets.map((ds, i) => (
+                        <Bar key={ds.name} dataKey={ds.name}
+                            fill={ds.color ?? CHART_COLORS[i % CHART_COLORS.length]}>
+                            {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
+                        </Bar>
+                    ))}
+                </BarChart>
+            </ResponsiveContainer>
         );
     }
 
     // ── Bar chart (horizontal) ────────────────────────────────────────────────
     if (def.type === 'bar') {
-        return (
-            <div style={containerStyle}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart layout="vertical" data={chartData} margin={{ top: 20, right: 24, bottom: 8, left: 8 }}>
-                        {grid}
-                        <XAxis type="number" tick={{ fontSize: 11 }} />
-                        <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} width={80} />
-                        <Tooltip />
-                        {legendProps && <Legend {...legendProps} />}
-                        {datasets.map((ds, i) => (
-                            <Bar key={ds.name} dataKey={ds.name}
-                                fill={ds.color ?? CHART_COLORS[i % CHART_COLORS.length]}>
-                                {def.showDataLabels && <LabelList dataKey={ds.name} position="right" style={{ fontSize: 10 }} />}
-                            </Bar>
-                        ))}
-                    </BarChart>
-                </ResponsiveContainer>
-            </div>
+        return wrap(
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart layout="vertical" data={chartData} margin={{ top: 8, right: 24, bottom: def.xAxisTitle ? 28 : 8, left: 8 }}>
+                    {grid}
+                    <XAxis type="number" tick={{ fontSize: 11 }}>{xLabel}</XAxis>
+                    <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} width={80}>{yLabel}</YAxis>
+                    <Tooltip />
+                    {legendProps && <Legend {...legendProps} />}
+                    {datasets.map((ds, i) => (
+                        <Bar key={ds.name} dataKey={ds.name}
+                            fill={ds.color ?? CHART_COLORS[i % CHART_COLORS.length]}>
+                            {def.showDataLabels && <LabelList dataKey={ds.name} position="right" style={{ fontSize: 10 }} />}
+                        </Bar>
+                    ))}
+                </BarChart>
+            </ResponsiveContainer>
         );
     }
 
     // ── Line chart ────────────────────────────────────────────────────────────
     if (def.type === 'line') {
-        return (
-            <div style={containerStyle}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData} margin={{ top: 20, right: 16, bottom: 8, left: 0 }}>
-                        {grid}
-                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip />
-                        {legendProps && <Legend {...legendProps} />}
-                        {datasets.map((ds, i) => (
-                            <Line key={ds.name} type="monotone" dataKey={ds.name}
-                                stroke={ds.color ?? CHART_COLORS[i % CHART_COLORS.length]}
-                                dot={{ r: 3 }} activeDot={{ r: 5 }}>
-                                {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
-                            </Line>
-                        ))}
-                    </LineChart>
-                </ResponsiveContainer>
-            </div>
+        return wrap(
+            <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 8, right: 16, bottom: def.xAxisTitle ? 28 : 8, left: 0 }}>
+                    {grid}
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }}>{xLabel}</XAxis>
+                    <YAxis tick={{ fontSize: 11 }}>{yLabel}</YAxis>
+                    <Tooltip />
+                    {legendProps && <Legend {...legendProps} />}
+                    {datasets.map((ds, i) => (
+                        <Line key={ds.name} type="monotone" dataKey={ds.name}
+                            stroke={ds.color ?? CHART_COLORS[i % CHART_COLORS.length]}
+                            dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                            {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
+                        </Line>
+                    ))}
+                </LineChart>
+            </ResponsiveContainer>
         );
     }
 
     // ── Area chart ────────────────────────────────────────────────────────────
     if (def.type === 'area') {
-        return (
-            <div style={containerStyle}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 20, right: 16, bottom: 8, left: 0 }}>
-                        {grid}
-                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip />
-                        {legendProps && <Legend {...legendProps} />}
-                        {datasets.map((ds, i) => {
-                            const color = ds.color ?? CHART_COLORS[i % CHART_COLORS.length];
-                            return (
-                                <Area key={ds.name} type="monotone" dataKey={ds.name}
-                                    stroke={color} fill={color} fillOpacity={0.3}>
-                                    {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
-                                </Area>
-                            );
-                        })}
-                    </AreaChart>
-                </ResponsiveContainer>
-            </div>
+        return wrap(
+            <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 8, right: 16, bottom: def.xAxisTitle ? 28 : 8, left: 0 }}>
+                    {grid}
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }}>{xLabel}</XAxis>
+                    <YAxis tick={{ fontSize: 11 }}>{yLabel}</YAxis>
+                    <Tooltip />
+                    {legendProps && <Legend {...legendProps} />}
+                    {datasets.map((ds, i) => {
+                        const color = ds.color ?? CHART_COLORS[i % CHART_COLORS.length];
+                        return (
+                            <Area key={ds.name} type="monotone" dataKey={ds.name}
+                                stroke={color} fill={color} fillOpacity={0.3}>
+                                {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
+                            </Area>
+                        );
+                    })}
+                </AreaChart>
+            </ResponsiveContainer>
         );
     }
 
     // ── Pie chart ─────────────────────────────────────────────────────────────
     if (def.type === 'pie' || def.type === 'donut') {
-        // Use first dataset's values, labels as category names
         const firstDs = datasets[0];
-        if (!firstDs) return <div style={containerStyle}><NoData /></div>;
+        if (!firstDs) return wrap(<NoData />);
         const pieData = labels.map((label, i) => ({ name: label, value: firstDs.data[i] ?? 0 }));
         const innerRadius = def.type === 'donut' ? '55%' : 0;
 
-        return (
-            <div style={containerStyle}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie
-                            data={pieData}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%" cy="50%"
-                            outerRadius="75%"
-                            innerRadius={innerRadius}
-                            label={def.showDataLabels
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                ? (props: any) => `${props.name} ${(((props.percent as number) ?? 0) * 100).toFixed(0)}%`
-                                : undefined}
-                            labelLine={def.showDataLabels}
-                        >
-                            {pieData.map((entry, i) => (
-                                <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                            ))}
-                        </Pie>
-                        <Tooltip />
-                        {legendProps && <Legend {...legendProps} />}
-                    </PieChart>
-                </ResponsiveContainer>
-            </div>
+        return wrap(
+            <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                    <Pie
+                        data={pieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%" cy="50%"
+                        outerRadius="75%"
+                        innerRadius={innerRadius}
+                        label={def.showDataLabels
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            ? (props: any) => `${props.name} ${(((props.percent as number) ?? 0) * 100).toFixed(0)}%`
+                            : undefined}
+                        labelLine={def.showDataLabels}
+                    >
+                        {pieData.map((entry, i) => (
+                            <Cell key={`cell-${i}`} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                        ))}
+                    </Pie>
+                    <Tooltip />
+                    {legendProps && <Legend {...legendProps} />}
+                </PieChart>
+            </ResponsiveContainer>
         );
     }
 
     // ── Scatter plot ──────────────────────────────────────────────────────────
     if (def.type === 'scatter') {
-        // Use first dataset as X values, second as Y values, or single dataset with index as X
         const scatterData: { x: number; y: number }[] = [];
         if (datasets.length >= 2) {
             const xDs = datasets[0];
@@ -231,62 +243,57 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
             });
         }
 
-        return (
-            <div style={containerStyle}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <ScatterChart margin={{ top: 20, right: 16, bottom: 8, left: 0 }}>
-                        {grid}
-                        <XAxis dataKey="x" type="number" name={datasets[0]?.name ?? 'X'} tick={{ fontSize: 11 }} />
-                        <YAxis dataKey="y" type="number" name={datasets[1]?.name ?? 'Y'} tick={{ fontSize: 11 }} />
-                        <ZAxis range={[40, 40]} />
-                        <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                        {legendProps && <Legend {...legendProps} />}
-                        <Scatter
-                            name={datasets[0]?.name ?? 'Data'}
-                            data={scatterData}
-                            fill={datasets[0]?.color ?? CHART_COLORS[0]}
-                        />
-                    </ScatterChart>
-                </ResponsiveContainer>
-            </div>
+        return wrap(
+            <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart margin={{ top: 8, right: 16, bottom: def.xAxisTitle ? 28 : 8, left: 0 }}>
+                    {grid}
+                    <XAxis dataKey="x" type="number" name={datasets[0]?.name ?? 'X'} tick={{ fontSize: 11 }}>{xLabel}</XAxis>
+                    <YAxis dataKey="y" type="number" name={datasets[1]?.name ?? 'Y'} tick={{ fontSize: 11 }}>{yLabel}</YAxis>
+                    <ZAxis range={[40, 40]} />
+                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
+                    {legendProps && <Legend {...legendProps} />}
+                    <Scatter
+                        name={datasets[0]?.name ?? 'Data'}
+                        data={scatterData}
+                        fill={datasets[0]?.color ?? CHART_COLORS[0]}
+                    />
+                </ScatterChart>
+            </ResponsiveContainer>
         );
     }
 
     // ── Combo chart (first series as bars, rest as lines) ─────────────────────
     if (def.type === 'combo') {
-        return (
-            <div style={containerStyle}>
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartData} margin={{ top: 20, right: 16, bottom: 8, left: 0 }}>
-                        {grid}
-                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 11 }} />
-                        <Tooltip />
-                        {legendProps && <Legend {...legendProps} />}
-                        {datasets.map((ds, i) => {
-                            const color = ds.color ?? CHART_COLORS[i % CHART_COLORS.length];
-                            // Per-series override or: first series = bar, rest = lines
-                            const seriesDef = def.series.find(s => s.name === ds.name);
-                            const seriesType = seriesDef?.chartType ?? (i === 0 ? 'column' : 'line');
-                            if (seriesType === 'line' || seriesType === 'area') {
-                                return (
-                                    <Line key={ds.name} type="monotone" dataKey={ds.name}
-                                        stroke={color} dot={{ r: 3 }}>
-                                        {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
-                                    </Line>
-                                );
-                            }
+        return wrap(
+            <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 8, right: 16, bottom: def.xAxisTitle ? 28 : 8, left: 0 }}>
+                    {grid}
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }}>{xLabel}</XAxis>
+                    <YAxis tick={{ fontSize: 11 }}>{yLabel}</YAxis>
+                    <Tooltip />
+                    {legendProps && <Legend {...legendProps} />}
+                    {datasets.map((ds, i) => {
+                        const color = ds.color ?? CHART_COLORS[i % CHART_COLORS.length];
+                        const seriesDef = def.series.find(s => s.name === ds.name);
+                        const seriesType = seriesDef?.chartType ?? (i === 0 ? 'column' : 'line');
+                        if (seriesType === 'line' || seriesType === 'area') {
                             return (
-                                <Bar key={ds.name} dataKey={ds.name} fill={color}>
+                                <Line key={ds.name} type="monotone" dataKey={ds.name}
+                                    stroke={color} dot={{ r: 3 }}>
                                     {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
-                                </Bar>
+                                </Line>
                             );
-                        })}
-                    </ComposedChart>
-                </ResponsiveContainer>
-            </div>
+                        }
+                        return (
+                            <Bar key={ds.name} dataKey={ds.name} fill={color}>
+                                {def.showDataLabels && <LabelList dataKey={ds.name} position="top" style={{ fontSize: 10 }} />}
+                            </Bar>
+                        );
+                    })}
+                </ComposedChart>
+            </ResponsiveContainer>
         );
     }
 
-    return <div style={containerStyle}><NoData /></div>;
+    return wrap(<NoData />);
 }
