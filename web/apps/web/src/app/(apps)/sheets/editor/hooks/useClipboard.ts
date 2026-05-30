@@ -279,35 +279,62 @@ export function useClipboard({
     // Native copy/cut/paste events — fire before the browser writes the clipboard,
     // so setData() reliably reaches the OS regardless of which element has focus.
     useEffect(() => {
-        const onCopy = (e: ClipboardEvent) => {
+        const shouldLetFormulaInputHandleShortcut = () => {
             const active = document.activeElement as HTMLInputElement | null;
+            return active === formulaInputRef.current &&
+                (active?.selectionStart ?? 0) !== (active?.selectionEnd ?? 0);
+        };
+
+        const createMemoryTransfer = (): DataTransfer => {
+            if (typeof DataTransfer !== 'undefined') return new DataTransfer();
+            const store = new Map<string, string>();
+            return {
+                setData: (type: string, value: string) => { store.set(type, value); },
+                getData: (type: string) => store.get(type) ?? '',
+            } as DataTransfer;
+        };
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+            if (shouldLetFormulaInputHandleShortcut()) return;
+            if (!selectionAnchorRef.current) return;
+
+            const key = e.key.toLowerCase();
+            if (key === 'c') {
+                handleCopy(false, createMemoryTransfer());
+            } else if (key === 'x') {
+                handleCopy(true, createMemoryTransfer());
+            } else if (key === 'v' && clipboardRef.current) {
+                e.preventDefault();
+                handlePaste();
+            }
+        };
+
+        const onCopy = (e: ClipboardEvent) => {
             // Let the browser copy if the user has text selected inside the formula bar.
-            if (active === formulaInputRef.current &&
-                (active?.selectionStart ?? 0) !== (active?.selectionEnd ?? 0)) return;
+            if (shouldLetFormulaInputHandleShortcut()) return;
             if (!selectionAnchorRef.current || !e.clipboardData) return;
             e.preventDefault();
             handleCopy(false, e.clipboardData);
         };
         const onCut = (e: ClipboardEvent) => {
-            const active = document.activeElement as HTMLInputElement | null;
-            if (active === formulaInputRef.current &&
-                (active?.selectionStart ?? 0) !== (active?.selectionEnd ?? 0)) return;
+            if (shouldLetFormulaInputHandleShortcut()) return;
             if (!selectionAnchorRef.current || !e.clipboardData) return;
             e.preventDefault();
             handleCopy(true, e.clipboardData);
         };
         const onPaste = (e: ClipboardEvent) => {
-            const active = document.activeElement as HTMLInputElement | null;
-            if (active === formulaInputRef.current &&
-                (active?.selectionStart ?? 0) !== (active?.selectionEnd ?? 0)) return;
+            if (shouldLetFormulaInputHandleShortcut()) return;
             if (!selectionAnchorRef.current) return;
             e.preventDefault();
             handlePaste(e.clipboardData ?? undefined);
         };
+        document.addEventListener('keydown', onKeyDown);
         document.addEventListener('copy', onCopy);
         document.addEventListener('cut', onCut);
         document.addEventListener('paste', onPaste);
         return () => {
+            document.removeEventListener('keydown', onKeyDown);
             document.removeEventListener('copy', onCopy);
             document.removeEventListener('cut', onCut);
             document.removeEventListener('paste', onPaste);

@@ -764,8 +764,12 @@ export function SheetEditor() {
     const handleColHeaderClick = useCallback((c: number) => {
         setKeyboardMode('movement');
         const colLetter = numToAlpha(c + 1);
-        setSelectionAnchor(`${colLetter}1`);
-        setSelectionActive(`${colLetter}${MAX_ROWS}`);
+        const anchor = `${colLetter}1`;
+        const active = `${colLetter}${MAX_ROWS}`;
+        selectionAnchorRef.current = anchor;
+        selectionActiveRef.current = active;
+        setSelectionAnchor(anchor);
+        setSelectionActive(active);
         setCurrentCell(undefined);
         setHeaderSelectionLabel(colLetter);
         setHighlightedCol(c);
@@ -774,8 +778,12 @@ export function SheetEditor() {
 
     const handleRowHeaderClick = useCallback((r: number) => {
         setKeyboardMode('movement');
-        setSelectionAnchor(`A${r + 1}`);
-        setSelectionActive(`${numToAlpha(MAX_COLS)}${r + 1}`);
+        const anchor = `A${r + 1}`;
+        const active = `${numToAlpha(MAX_COLS)}${r + 1}`;
+        selectionAnchorRef.current = anchor;
+        selectionActiveRef.current = active;
+        setSelectionAnchor(anchor);
+        setSelectionActive(active);
         setCurrentCell(undefined);
         setHeaderSelectionLabel(`${r + 1}`);
         setHighlightedRow(r);
@@ -786,12 +794,15 @@ export function SheetEditor() {
     const handleCellActivate = useCallback((id: string) => {
         setKeyboardMode('movement');
         clearHeaderSelection();
+        selectionAnchorRef.current = id;
+        selectionActiveRef.current = id;
         stableOnCellActivate(id);
     }, [clearHeaderSelection, stableOnCellActivate]);
 
     const handleSelectionExtend = useCallback((id: string) => {
         setKeyboardMode('movement');
         clearHeaderSelection();
+        selectionActiveRef.current = id;
         stableOnSelectionExtend(id);
     }, [clearHeaderSelection, stableOnSelectionExtend]);
 

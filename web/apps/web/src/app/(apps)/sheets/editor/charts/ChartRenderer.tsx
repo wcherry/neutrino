@@ -362,8 +362,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                         cx="50%" cy="50%"
                         outerRadius="75%"
                         innerRadius={innerRadius}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        label={showDL ? (props: any) => `${props.name} ${(((props.percent as number) ?? 0) * 100).toFixed(0)}%` : undefined}
+                        label={showDL ? (props: { name?: string; percent?: number }) => `${props.name ?? ''} ${(((props.percent as number) ?? 0) * 100).toFixed(0)}%` : undefined}
                         labelLine={showDL}
                     >
                         {pieData.map((entry, i) => (
@@ -520,16 +519,14 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: axisTextColor }}>{xLabel}</XAxis>
                     <YAxis tick={{ fontSize: 11, fill: axisTextColor }} domain={[0, 100]}
                         tickFormatter={(v: number) => `${v}%`}>{yLabel}</YAxis>
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
+                    <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
                     {legendProps && <Legend {...legendProps} />}
                     {normalizedDatasets.map((ds, i) => (
                         <Bar key={ds.name} dataKey={ds.name} stackId="stack"
                             fill={ds.color ?? palette[i % palette.length]}>
                             {showDL && (
                                 <LabelList dataKey={ds.name} position="center" style={dlStyle}
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    formatter={(v: any) => `${Number(v).toFixed(0)}%`} />
+                                    formatter={(v) => `${Number(v).toFixed(0)}%`} />
                             )}
                         </Bar>
                     ))}
@@ -549,16 +546,14 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     <XAxis type="number" tick={{ fontSize: 11, fill: axisTextColor }}
                         domain={[0, 100]} tickFormatter={(v: number) => `${v}%`}>{xLabel}</XAxis>
                     <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: axisTextColor }} width={80}>{yLabel}</YAxis>
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
+                    <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
                     {legendProps && <Legend {...legendProps} />}
                     {normalizedDatasets.map((ds, i) => (
                         <Bar key={ds.name} dataKey={ds.name} stackId="stack"
                             fill={ds.color ?? palette[i % palette.length]}>
                             {showDL && (
                                 <LabelList dataKey={ds.name} position="center" style={dlStyle}
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    formatter={(v: any) => `${Number(v).toFixed(0)}%`} />
+                                    formatter={(v) => `${Number(v).toFixed(0)}%`} />
                             )}
                         </Bar>
                     ))}
@@ -719,11 +714,10 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: axisTextColor }}>{xLabel}</XAxis>
                     <YAxis tick={{ fontSize: 11, fill: axisTextColor }} domain={[minV, maxV]}>{yLabel}</YAxis>
                     <Tooltip
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        formatter={(value: any, name: any, props: any) => {
+                        formatter={(value, name, props) => {
                             if (name === 'invisible') return null;
-                            const pl = props?.payload ?? {};
-                            const actualValue = pl.isTotal ? pl.value : (pl.positive ? pl.value : -pl.value);
+                            const pl = (props?.payload ?? {}) as { isTotal?: boolean; positive?: boolean; value?: number };
+                            const actualValue = pl.isTotal ? pl.value : (pl.positive ? pl.value : -(pl.value ?? 0));
                             return [actualValue, 'Value'];
                         }}
                     />
@@ -731,11 +725,10 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     <Bar dataKey="invisible" stackId="w" fill="transparent" stroke="none" legendType="none" />
                     <Bar dataKey="value" stackId="w"
                         fill={palette[0]}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        shape={(props: any) => {
-                            const { x, y, width, height, payload } = props;
-                            const color = payload.isTotal ? palette[3] : (payload.positive ? palette[0] : '#ef4444');
-                            return <rect x={x} y={y} width={width} height={height} fill={color} />;
+                        shape={(props: { x?: number; y?: number; width?: number; height?: number; payload?: { isTotal?: boolean; positive?: boolean } }) => {
+                            const { x = 0, y = 0, width: w = 0, height: h = 0, payload } = props;
+                            const color = payload?.isTotal ? palette[3] : (payload?.positive ? palette[0] : '#ef4444');
+                            return <rect x={x} y={y} width={w} height={h} fill={color} />;
                         }}
                     >
                         {showDL && <LabelList dataKey="value" position="top" style={dlStyle} />}
@@ -754,9 +747,8 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
             fill: node.color ?? palette[i % palette.length],
         }));
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        function TreemapCell(props: any) {
-            const { x, y, width, height, name, value, fill: cellFill } = props;
+        function TreemapCell(props: { x?: number; y?: number; width?: number; height?: number; name?: string; value?: number; fill?: string }) {
+            const { x = 0, y = 0, width, height, name, value, fill: cellFill } = props;
             if (!width || !height || width < 10 || height < 10) return null;
             return (
                 <g>

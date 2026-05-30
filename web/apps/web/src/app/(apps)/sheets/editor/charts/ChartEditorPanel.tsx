@@ -4,6 +4,9 @@ import React, { useState } from 'react';
 import {
     BarChart2, BarChartHorizontal, LineChart, AreaChart,
     PieChart, Circle, ScatterChart, Layers, X, Trash2,
+    FileImage, FileText, Clipboard, Printer,
+    MessageSquare, StickyNote, MoveRight, Square, Type,
+    Play, Zap, Sparkles,
 } from 'lucide-react';
 import { ColorPickerPopover } from '@neutrino/ui';
 import type { CellProps } from '../types';
@@ -11,9 +14,16 @@ import type {
     ChartDef, ChartType, LegendPosition, AxisConfig,
     DataLabelConfig, DataLabelType, DataLabelPosition,
     AxisNumberFormat, MarkerStyle,
+    ChartAnnotation, ChartAnimationMode,
 } from './chartTypes';
 import { autoDetectChartConfig } from './chartUtils';
 import { CHART_THEMES } from './chartThemes';
+import {
+    exportChartAsPng,
+    exportChartAsSvg,
+    exportChartAsPdf,
+    copyChartToClipboard,
+} from './chartExport';
 import featureFlags from '@/lib/featureFlags';
 import styles from './charts.module.css';
 
@@ -501,12 +511,294 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
                     </div>
                 )}
 
+                {/* Phase 5: Annotations */}
+                {featureFlags.sheetsChartsPhase5 && (
+                    <Phase5AnnotationsSection def={def} onUpdate={onUpdate} />
+                )}
+
+                {/* Phase 5: Export */}
+                {featureFlags.sheetsChartsPhase5 && (
+                    <Phase5ExportSection def={def} />
+                )}
+
+                {/* Phase 5: Animation */}
+                {featureFlags.sheetsChartsPhase5 && (
+                    <Phase5AnimationSection def={def} onUpdate={onUpdate} />
+                )}
+
                 {/* Delete */}
                 <button className={styles.deleteBtn} onClick={onDelete}>
                     <Trash2 size={13} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />
                     Delete Chart
                 </button>
             </div>
+        </div>
+    );
+}
+
+// ── Phase 5 sub-components ────────────────────────────────────────────────────
+
+// Annotation type definitions with icons and labels
+const ANNOTATION_TYPES: { type: ChartAnnotation['type']; label: string; Icon: React.ElementType; defaultW: number; defaultH: number }[] = [
+    { type: 'callout',  label: 'Callout', Icon: MessageSquare, defaultW: 0.25, defaultH: 0.15 },
+    { type: 'note',     label: 'Note',    Icon: StickyNote,    defaultW: 0.25, defaultH: 0.12 },
+    { type: 'arrow',    label: 'Arrow',   Icon: MoveRight,     defaultW: 0.20, defaultH: 0.10 },
+    { type: 'shape',    label: 'Shape',   Icon: Square,        defaultW: 0.20, defaultH: 0.15 },
+    { type: 'text',     label: 'Text',    Icon: Type,          defaultW: 0.20, defaultH: 0.08 },
+];
+
+function generateAnnotationId(): string {
+    return `ann-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function Phase5AnnotationsSection({
+    def,
+    onUpdate,
+}: {
+    def: ChartDef;
+    onUpdate: (patch: Partial<ChartDef>) => void;
+}) {
+    const annotations = def.annotations ?? [];
+
+    function addAnnotation(type: ChartAnnotation['type'], defaultW: number, defaultH: number) {
+        const newAnn: ChartAnnotation = {
+            id: generateAnnotationId(),
+            type,
+            x: 0.1,
+            y: 0.1,
+            w: defaultW,
+            h: defaultH,
+            text: '',
+            fontSize: 12,
+            fontColor: '#1a1a1a',
+            fillColor: 'rgba(255,255,255,0.85)',
+            strokeColor: '#2563eb',
+            strokeWidth: 1.5,
+            ...(type === 'arrow' ? { x2: 0.3, y2: 0.2 } : {}),
+            ...(type === 'shape' ? { shapeKind: 'rect' as const } : {}),
+        };
+        onUpdate({ annotations: [...annotations, newAnn] });
+    }
+
+    function removeAnnotation(id: string) {
+        onUpdate({ annotations: annotations.filter(a => a.id !== id) });
+    }
+
+    function labelFor(ann: ChartAnnotation): string {
+        if (ann.text) return ann.text.length > 20 ? ann.text.slice(0, 20) + '…' : ann.text;
+        return ann.type.charAt(0).toUpperCase() + ann.type.slice(1);
+    }
+
+    return (
+        <div className={styles.editorSection}>
+            <div className={styles.editorSectionTitle}>Annotations</div>
+            <div className={styles.annotationAddRow}>
+                {ANNOTATION_TYPES.map(({ type, label, Icon, defaultW, defaultH }) => (
+                    <button
+                        key={type}
+                        className={styles.annotationAddBtn}
+                        onClick={() => addAnnotation(type, defaultW, defaultH)}
+                        title={`Add ${label}`}
+                    >
+                        <Icon size={11} />
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {annotations.length > 0 && (
+                <div className={styles.annotationList}>
+                    {annotations.map(ann => (
+                        <div key={ann.id} className={styles.annotationListItem}>
+                            <span className={styles.annotationListItemLabel}>{labelFor(ann)}</span>
+                            <button
+                                className={styles.annotationListItemDelete}
+                                onClick={() => removeAnnotation(ann.id)}
+                                title="Remove annotation"
+                            >
+                                <X size={10} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function Phase5ExportSection({ def }: { def: ChartDef }) {
+    const [toast, setToast] = useState<string | null>(null);
+
+    function showToast(msg: string) {
+        setToast(msg);
+        setTimeout(() => setToast(null), 2200);
+    }
+
+    // Find the chart frame DOM element by looking for the outermost chart frame
+    // div that wraps this panel's chart. We locate it via the chart id stored
+    // in the def so we target only the correct chart on multi-chart sheets.
+    function findFrameEl(): HTMLElement | null {
+        // Charts render inside .chartFrame elements; select by data-chart-id
+        // attribute set on the frame div (we add this attribute in ChartFrame).
+        const el = document.querySelector(`[data-chart-id="${def.id}"]`) as HTMLElement | null;
+        return el;
+    }
+
+    async function handlePng() {
+        const el = findFrameEl();
+        if (!el) { showToast('Chart not found'); return; }
+        try {
+            await exportChartAsPng(el, def.title || 'chart');
+            showToast('PNG downloaded');
+        } catch (err) {
+            showToast('PNG export failed');
+            console.error(err);
+        }
+    }
+
+    function handleSvg() {
+        const el = findFrameEl();
+        if (!el) { showToast('Chart not found'); return; }
+        try {
+            exportChartAsSvg(el, def.title || 'chart');
+            showToast('SVG downloaded');
+        } catch (err) {
+            showToast('SVG export failed');
+            console.error(err);
+        }
+    }
+
+    function handlePdf() {
+        const el = findFrameEl();
+        if (!el) { showToast('Chart not found'); return; }
+        try {
+            exportChartAsPdf(el, def.title || 'chart');
+        } catch (err) {
+            showToast('PDF export failed');
+            console.error(err);
+        }
+    }
+
+    async function handleCopy() {
+        const el = findFrameEl();
+        if (!el) { showToast('Chart not found'); return; }
+        const ok = await copyChartToClipboard(el);
+        showToast(ok ? 'Copied to clipboard' : 'Clipboard access denied');
+    }
+
+    function handlePrint() {
+        const el = findFrameEl();
+        if (!el) { showToast('Chart not found'); return; }
+        try {
+            exportChartAsPdf(el, def.title || 'chart');
+        } catch (err) {
+            showToast('Print failed');
+            console.error(err);
+        }
+    }
+
+    return (
+        <div className={styles.editorSection}>
+            <div className={styles.editorSectionTitle}>Export</div>
+            <div className={styles.exportButtonRow}>
+                <button className={styles.exportBtn} onClick={handlePng} title="Download as PNG">
+                    <FileImage size={12} /> PNG
+                </button>
+                <button className={styles.exportBtn} onClick={handleSvg} title="Download as SVG">
+                    <FileText size={12} /> SVG
+                </button>
+                <button className={styles.exportBtn} onClick={handlePdf} title="Save as PDF">
+                    <FileText size={12} /> PDF
+                </button>
+                <button className={styles.exportBtn} onClick={handleCopy} title="Copy image to clipboard">
+                    <Clipboard size={12} /> Copy
+                </button>
+                <button className={`${styles.exportBtn} ${styles.exportBtnWide}`} onClick={handlePrint} title="Print chart">
+                    <Printer size={12} /> Print
+                </button>
+            </div>
+            {toast && <div className={styles.exportToast}>{toast}</div>}
+        </div>
+    );
+}
+
+const ANIMATION_MODES: { mode: ChartAnimationMode; label: string; Icon: React.ElementType; description: string }[] = [
+    { mode: 'none',                    label: 'None',                    Icon: X,        description: 'No animation' },
+    { mode: 'reveal-series',           label: 'Reveal series',           Icon: Play,     description: 'Each series fades in sequentially' },
+    { mode: 'highlight-points',        label: 'Highlight data points',   Icon: Zap,      description: 'Data points pulse with a glow' },
+    { mode: 'presentation-transition', label: 'Presentation transition', Icon: Sparkles, description: 'Chart fades and scales in on mount' },
+];
+
+function Phase5AnimationSection({
+    def,
+    onUpdate,
+}: {
+    def: ChartDef;
+    onUpdate: (patch: Partial<ChartDef>) => void;
+}) {
+    const currentMode: ChartAnimationMode = def.animation?.mode ?? 'none';
+
+    function setMode(mode: ChartAnimationMode) {
+        if (mode === 'none') {
+            onUpdate({ animation: { mode: 'none' } });
+        } else {
+            onUpdate({
+                animation: {
+                    mode,
+                    durationMs: def.animation?.durationMs ?? 600,
+                    delayMs: def.animation?.delayMs ?? 150,
+                },
+            });
+        }
+    }
+
+    return (
+        <div className={styles.editorSection}>
+            <div className={styles.editorSectionTitle}>Animation</div>
+            <div className={styles.animationBtnGroup}>
+                {ANIMATION_MODES.map(({ mode, label, Icon }) => (
+                    <button
+                        key={mode}
+                        className={`${styles.animationBtn} ${currentMode === mode ? styles.animationBtnActive : ''}`}
+                        onClick={() => setMode(mode)}
+                        title={ANIMATION_MODES.find(m => m.mode === mode)?.description}
+                    >
+                        <Icon size={12} />
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {currentMode !== 'none' && (
+                <div className={styles.twoColRow} style={{ marginTop: 8 }}>
+                    <div className={styles.fieldGroup}>
+                        <div className={styles.fieldLabel}>Duration (ms)</div>
+                        <input
+                            className={styles.fieldInput}
+                            type="number"
+                            min={100}
+                            max={3000}
+                            step={100}
+                            value={def.animation?.durationMs ?? 600}
+                            onChange={e => onUpdate({
+                                animation: { ...def.animation!, mode: currentMode, durationMs: Number(e.target.value) },
+                            })}
+                        />
+                    </div>
+                    <div className={styles.fieldGroup}>
+                        <div className={styles.fieldLabel}>Delay (ms)</div>
+                        <input
+                            className={styles.fieldInput}
+                            type="number"
+                            min={0}
+                            max={1000}
+                            step={50}
+                            value={def.animation?.delayMs ?? 150}
+                            onChange={e => onUpdate({
+                                animation: { ...def.animation!, mode: currentMode, delayMs: Number(e.target.value) },
+                            })}
+                        />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
