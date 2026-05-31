@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { CellProps, SheetFile } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import { sheetsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
@@ -155,6 +156,9 @@ export function usePersistence({
     const timedSave = async () => {
         if (!dirtyRef.current) return;
         dirtyRef.current = false;
+        // Flush any pending React startTransition updates (e.g. from cell editing)
+        // so dataRef.current reflects the latest committed state before serialising.
+        flushSync(() => {});
         await save();
     };
 
