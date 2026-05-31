@@ -6,11 +6,18 @@ import {
   Code, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link, Image, Table, Minus, Undo, Redo, Quote, ArrowUpDown,
+  Superscript, Subscript, Indent, Outdent,
 } from 'lucide-react';
 import {
   Toolbar as RickTextToolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect, ColorPickerPopover,
 } from '@neutrino/ui';
 import { FONT_FAMILIES } from '@/constants/editor';
+import { applyTextCase, type TextCaseMode } from '@/lib/textCase';
+import {
+  BULLET_LIST_STYLES,
+  ORDERED_LIST_STYLES,
+} from '@/lib/extensions/ListStyleExtension';
+import featureFlags from '@/lib/featureFlags';
 import styles from './page.module.css';
 
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
@@ -21,6 +28,8 @@ const LINE_SPACING_PRESETS = [
   { value: 1.5,  label: '1.5' },
   { value: 2,    label: 'Double' },
 ];
+
+// ── Line spacing dropdown ──────────────────────────────────────────────────────
 
 function LineSpacingMenu({ editor }: { editor: Editor }) {
   const [open, setOpen] = useState(false);
@@ -78,6 +87,108 @@ function LineSpacingMenu({ editor }: { editor: Editor }) {
   );
 }
 
+// ── Text case dropdown ─────────────────────────────────────────────────────────
+
+const TEXT_CASE_OPTIONS: { value: TextCaseMode; label: string }[] = [
+  { value: 'uppercase', label: 'UPPERCASE' },
+  { value: 'lowercase', label: 'lowercase' },
+  { value: 'title',     label: 'Title Case' },
+  { value: 'sentence',  label: 'Sentence case' },
+];
+
+function TextCaseMenu({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <ToolbarButton
+        active={open}
+        onClick={() => setOpen(v => !v)}
+        title="Text case"
+        style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.03em' }}
+      >
+        Aa
+      </ToolbarButton>
+      {open && (
+        <div className={styles.lineSpacingDropdown}>
+          {TEXT_CASE_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              className={styles.lineSpacingItem}
+              onClick={() => { applyTextCase(editor, opt.value); setOpen(false); }}
+            >
+              <span className={styles.lineSpacingCheck} />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── List style dropdown ────────────────────────────────────────────────────────
+
+function ListStyleMenu({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const isBullet  = editor.isActive('bulletList');
+  const isOrdered = editor.isActive('orderedList');
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  if (!isBullet && !isOrdered) return null;
+
+  const options = isBullet ? BULLET_LIST_STYLES : ORDERED_LIST_STYLES;
+  const nodeType = isBullet ? 'bulletList' : 'orderedList';
+  const currentStyle = (editor.getAttributes(nodeType).listStyleType as string) ?? (isBullet ? 'disc' : 'decimal');
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <ToolbarButton active={open} onClick={() => setOpen(v => !v)} title="List style">
+        <span style={{ fontSize: 11 }}>▾</span>
+      </ToolbarButton>
+      {open && (
+        <div className={styles.lineSpacingDropdown}>
+          {options.map(opt => (
+            <button
+              key={opt.value}
+              className={styles.lineSpacingItem}
+              onClick={() => {
+                editor.chain().focus().updateAttributes(nodeType, { listStyleType: opt.value }).run();
+                setOpen(false);
+              }}
+            >
+              <span className={styles.lineSpacingCheck}>{currentStyle === opt.value ? '✓' : ''}</span>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Headings list ──────────────────────────────────────────────────────────────
+
 const HEADINGS: { label: string; level: number | null }[] = [
   { label: 'Normal', level: null },
   { label: 'Heading 1', level: 1 },
@@ -88,12 +199,29 @@ const HEADINGS: { label: string; level: number | null }[] = [
   { label: 'Heading 6', level: 6 },
 ];
 
+// ── Toolbar component ──────────────────────────────────────────────────────────
+
 export interface ToolbarProps {
   editor: Editor | null;
   onInsertImage: () => void;
+  /** Local file upload handler (advanced formatting flag only). */
+  onInsertLocalImage?: () => void;
+  /** Open paragraph styles palette (advanced formatting flag only). */
+  onOpenStylesPalette?: () => void;
+  /** Open image properties modal (advanced formatting flag only). */
+  onOpenImageProps?: () => void;
+  /** Open table cell format modal (advanced formatting flag only). */
+  onOpenTableCellModal?: () => void;
 }
 
-export function Toolbar({ editor, onInsertImage }: ToolbarProps) {
+export function Toolbar({
+  editor,
+  onInsertImage,
+  onInsertLocalImage,
+  onOpenStylesPalette,
+  onOpenImageProps,
+  onOpenTableCellModal,
+}: ToolbarProps) {
   if (!editor) return null;
 
   const currentHeading = HEADINGS.find(h =>
@@ -123,6 +251,16 @@ export function Toolbar({ editor, onInsertImage }: ToolbarProps) {
       </ToolbarGroup>
 
       <ToolbarDivider />
+
+      {/* ── Paragraph styles palette button (advanced flag only) ── */}
+      {featureFlags.docsAdvancedFormatting && onOpenStylesPalette && (
+        <>
+          <ToolbarButton onClick={onOpenStylesPalette} title="Paragraph styles" wide>
+            Styles
+          </ToolbarButton>
+          <ToolbarDivider />
+        </>
+      )}
 
       <ToolbarSelect
         value={currentHeading?.label ?? 'Normal'}
@@ -176,6 +314,26 @@ export function Toolbar({ editor, onInsertImage }: ToolbarProps) {
         <ToolbarButton active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</ToolbarButton>
         <ToolbarButton active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</ToolbarButton>
         <ToolbarButton active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" style={{ textDecoration: 'line-through' }}>S</ToolbarButton>
+
+        {/* Superscript / Subscript (advanced flag only) */}
+        {featureFlags.docsAdvancedFormatting && (
+          <>
+            <ToolbarButton
+              active={editor.isActive('superscript')}
+              onClick={() => editor.chain().focus().toggleMark('superscript').run()}
+              title="Superscript (Ctrl+.)"
+            >
+              <Superscript size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={editor.isActive('subscript')}
+              onClick={() => editor.chain().focus().toggleMark('subscript').run()}
+              title="Subscript (Ctrl+,)"
+            >
+              <Subscript size={15} />
+            </ToolbarButton>
+          </>
+        )}
       </ToolbarGroup>
 
       <ToolbarDivider />
@@ -205,6 +363,14 @@ export function Toolbar({ editor, onInsertImage }: ToolbarProps) {
 
       <ToolbarDivider />
 
+      {/* Text case (advanced flag only) */}
+      {featureFlags.docsAdvancedFormatting && (
+        <>
+          <TextCaseMenu editor={editor} />
+          <ToolbarDivider />
+        </>
+      )}
+
       <LineSpacingMenu editor={editor} />
 
       <ToolbarDivider />
@@ -221,15 +387,59 @@ export function Toolbar({ editor, onInsertImage }: ToolbarProps) {
       <ToolbarGroup>
         <ToolbarButton active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bulleted list"><List size={15} /></ToolbarButton>
         <ToolbarButton active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list"><ListOrdered size={15} /></ToolbarButton>
+
+        {/* List style type dropdown (advanced flag only, shown only when a list is active) */}
+        {featureFlags.docsAdvancedFormatting && (
+          <ListStyleMenu editor={editor} />
+        )}
+
         <ToolbarButton active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="Quote"><Quote size={15} /></ToolbarButton>
         <ToolbarButton active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()} title="Inline code"><Code size={15} /></ToolbarButton>
       </ToolbarGroup>
+
+      {/* Indent / Outdent (advanced flag only) */}
+      {featureFlags.docsAdvancedFormatting && (
+        <>
+          <ToolbarDivider />
+          <ToolbarGroup>
+            <ToolbarButton
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onClick={() => (editor.chain().focus() as any)?.outdent?.()?.run?.()}
+              title="Outdent (Shift+Tab)"
+            >
+              <Outdent size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              onClick={() => (editor.chain().focus() as any)?.indent?.()?.run?.()}
+              title="Indent (Tab)"
+            >
+              <Indent size={15} />
+            </ToolbarButton>
+          </ToolbarGroup>
+        </>
+      )}
 
       <ToolbarDivider />
 
       <ToolbarGroup>
         <ToolbarButton active={editor.isActive('link')} onClick={setLink} title="Insert link"><Link size={15} /></ToolbarButton>
-        <ToolbarButton onClick={onInsertImage} title="Insert image"><Image size={15} /></ToolbarButton>
+
+        {/* When advanced flag is on: show a URL insert + a local upload option */}
+        {featureFlags.docsAdvancedFormatting && onInsertLocalImage ? (
+          <>
+            <ToolbarButton onClick={onInsertLocalImage} title="Upload local image"><Image size={15} /></ToolbarButton>
+            {/* When an image is selected, show properties button */}
+            {editor.isActive('image') && onOpenImageProps && (
+              <ToolbarButton onClick={onOpenImageProps} title="Image properties" wide>
+                Img…
+              </ToolbarButton>
+            )}
+          </>
+        ) : (
+          <ToolbarButton onClick={onInsertImage} title="Insert image"><Image size={15} /></ToolbarButton>
+        )}
+
         <ToolbarButton onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert table"><Table size={15} /></ToolbarButton>
         <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal rule"><Minus size={15} /></ToolbarButton>
       </ToolbarGroup>
@@ -245,6 +455,11 @@ export function Toolbar({ editor, onInsertImage }: ToolbarProps) {
             <ToolbarButton wide onClick={() => editor.chain().focus().mergeCells().run()} title="Merge cells">Merge</ToolbarButton>
             <ToolbarButton wide onClick={() => editor.chain().focus().splitCell().run()} title="Split cell">Split</ToolbarButton>
             <ToolbarButton wide onClick={() => editor.chain().focus().deleteTable().run()} title="Delete table" style={{ color: '#d93025' }}>Del Table</ToolbarButton>
+
+            {/* Cell formatting (advanced flag only) */}
+            {featureFlags.docsAdvancedFormatting && onOpenTableCellModal && (
+              <ToolbarButton wide onClick={onOpenTableCellModal} title="Cell formatting">Cell…</ToolbarButton>
+            )}
           </ToolbarGroup>
         </>
       )}

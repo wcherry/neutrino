@@ -6,6 +6,7 @@ import type { Editor } from '@tiptap/react';
 import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
 import featureFlags from '@/lib/featureFlags';
+import { applyTextCase } from '@/lib/textCase';
 import styles from './MenuBar.module.css';
 
 // ── Help modal ────────────────────────────────────────────────────────────
@@ -107,6 +108,9 @@ export interface HamburgerMenuProps {
   onHeaderFooter?: () => void;
   onWatermark?: () => void;
   onTheme?: () => void;
+  // Advanced formatting feature callbacks (only used when docsAdvancedFormatting flag is on)
+  onStylesPalette?: () => void;
+  onInsertLocalImage?: () => void;
 }
 
 export function HamburgerMenu({
@@ -124,6 +128,8 @@ export function HamburgerMenu({
   onHeaderFooter,
   onWatermark,
   onTheme,
+  onStylesPalette,
+  onInsertLocalImage,
 }: HamburgerMenuProps) {
   const router = useRouter();
   const [showHelp, setShowHelp] = useState(false);
@@ -216,6 +222,27 @@ export function HamburgerMenu({
           { kind: 'action' as const, label: 'Watermark…',         action: () => onWatermark?.() },
           { kind: 'action' as const, label: 'Document theme…',    action: () => onTheme?.() },
         ] : []),
+        ...(featureFlags.docsAdvancedFormatting ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Paragraph styles…', action: () => onStylesPalette?.() },
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Superscript', shortcut: 'Ctrl+.', action: () => editor?.chain().focus().toggleMark('superscript').run() },
+          { kind: 'action' as const, label: 'Subscript',   shortcut: 'Ctrl+,', action: () => editor?.chain().focus().toggleMark('subscript').run() },
+          { kind: 'separator' as const },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { kind: 'action' as const, label: 'Indent',              action: () => (editor?.chain().focus() as any)?.indent?.()?.run?.() },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { kind: 'action' as const, label: 'Outdent',             action: () => (editor?.chain().focus() as any)?.outdent?.()?.run?.() },
+          { kind: 'separator' as const },
+          {
+            kind: 'submenu' as const, label: 'Text case', items: [
+              { kind: 'action' as const, label: 'UPPERCASE',     action: () => editor && applyTextCase(editor, 'uppercase') },
+              { kind: 'action' as const, label: 'lowercase',     action: () => editor && applyTextCase(editor, 'lowercase') },
+              { kind: 'action' as const, label: 'Title Case',    action: () => editor && applyTextCase(editor, 'title') },
+              { kind: 'action' as const, label: 'Sentence case', action: () => editor && applyTextCase(editor, 'sentence') },
+            ],
+          },
+        ] : []),
       ],
     },
     {
@@ -223,7 +250,9 @@ export function HamburgerMenu({
       label: 'Insert',
       items: [
         { kind: 'action', label: 'Link…',           shortcut: 'Ctrl+K', action: () => { const url = window.prompt('Enter URL:', 'https://'); if (url) editor?.chain().focus().setLink({ href: url }).run(); } },
-        { kind: 'action', label: 'Image…',                              action: () => { const url = window.prompt('Enter image URL:'); if (url) editor?.chain().focus().setImage({ src: url }).run(); } },
+        featureFlags.docsAdvancedFormatting
+          ? { kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() }
+          : { kind: 'action' as const, label: 'Image…',           action: () => { const url = window.prompt('Enter image URL:'); if (url) editor?.chain().focus().setImage({ src: url }).run(); } },
         { kind: 'separator' },
         { kind: 'action', label: 'Table',                               action: () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
         { kind: 'action', label: 'Horizontal rule',                     action: () => editor?.chain().focus().setHorizontalRule().run() },

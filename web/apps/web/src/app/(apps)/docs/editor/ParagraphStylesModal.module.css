@@ -1,0 +1,68 @@
+/* ── Paragraph styles palette ──────────────────────────────────────────────── */
+
+.palette {
+  background: var(--color-bg, #ffffff);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 360px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.styleBtn {
+  padding: 10px 14px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 6px;
+  background: var(--color-bg, #ffffff);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text, #202124);
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.styleBtn:hover {
+  background: var(--color-bg-hover, #f1f3f4);
+  border-color: #1a73e8;
+}
+
+/* Named styles use their own typographic look to hint at what they do */
+.styleBtn[data-style="Title"] {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.styleBtn[data-style="Subtitle"] {
+  font-size: 14px;
+  color: var(--color-text-muted, #5f6368);
+}
+
+.styleBtn[data-style="Heading 1"] { font-size: 14px; font-weight: 700; }
+.styleBtn[data-style="Heading 2"] { font-size: 13px; font-weight: 600; }
+.styleBtn[data-style="Heading 3"] { font-size: 12px; font-weight: 600; }
+
+.styleBtn[data-style="Quote"] {
+  border-left: 3px solid #e0e0e0;
+  color: var(--color-text-muted, #5f6368);
+  font-style: italic;
+}
+
+.styleBtn[data-style="Code Block"] {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  background: var(--color-bg-secondary, #f1f3f4);
+}
+
+.styleBtn[data-style="Caption"] {
+  font-size: 11px;
+  color: var(--color-text-muted, #5f6368);
+}
