@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
@@ -370,6 +371,7 @@ export function SheetEditor() {
         setData,
         spreadsheetId: sheetId,
         activeSheetIndexRef: sheets.activeSheetIndexRef,
+        getAllSheets,
     });
 
     const exports = useExport({
@@ -861,7 +863,7 @@ export function SheetEditor() {
                     setHamburgerDialog={setHamburgerDialog}
                     setHamburgerDeleteConfirm={setHamburgerDeleteConfirm}
                 />
-                <button className={styles.backBtn} aria-label="Sheets" onClick={async () => { try { await persist.save(); } finally { router.push('/drive'); } }}>
+                <button className={styles.backBtn} aria-label="Sheets" onClick={async () => { flushSync(() => {}); try { await persist.save(); } finally { router.push('/drive'); } }}>
                     <ArrowLeft size={16} />
                 </button>
                 <div className={styles.titleArea}>

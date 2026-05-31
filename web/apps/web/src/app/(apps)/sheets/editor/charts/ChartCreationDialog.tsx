@@ -176,7 +176,7 @@ export function ChartCreationDialog({
 
                 <div className={styles.dialogFooter}>
                     <button className={styles.btnSecondary} onClick={onClose}>Cancel</button>
-                    <button className={styles.btnPrimary} onClick={handleConfirm}>Insert Chart</button>
+                    <button className={styles.btnPrimary} data-testid="insert-chart-submit" onClick={handleConfirm}>Insert Chart</button>
                 </div>
             </div>
         </div>

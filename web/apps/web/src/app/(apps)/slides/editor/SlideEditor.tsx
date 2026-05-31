@@ -59,7 +59,7 @@ import {
   ToolbarSelect,
   ColorPickerPopover,
 } from '@neutrino/ui';
-import { slidesApi, driveReadContent, driveWriteContent, driveWriteEncryptedContent, storageApi } from '@/lib/api';
+import { slidesApi, driveReadContent, driveWriteContent, driveWriteEncryptedContent, driveAutosaveEncryptedContent, storageApi } from '@/lib/api';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import type { SlideTheme } from '@neutrino/api-slides';
@@ -391,7 +391,7 @@ export function SlideEditor() {
     }
   }, [slideContent]);
 
-  // After DEK resolves and the content query settles, do a one-time encrypted save
+  // After DEK resolves and the content query settles, do a one-time encrypted autosave
   // when no valid content was loaded (new file or failed decryption of server plaintext).
   // This overwrites the server's plaintext initial content so bytes are always ciphertext.
   useEffect(() => {
@@ -399,7 +399,7 @@ export function SlideEditor() {
     if (initialSaveDoneRef.current || lastSavedRef.current !== '') return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(presentation);
-    driveWriteEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
+    driveAutosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // presentation intentionally omitted: we capture the default once, not on every change.
   // eslint-disable-next-line react-hooks/exhaustive-deps

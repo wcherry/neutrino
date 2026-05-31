@@ -4,7 +4,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import type { CellProps, ClipboardCell, ClipboardData } from '../types';
 import { getRangeCells, encodeFormula, decodeFormula } from '../utils';
 import { alphaToNum, numToAlpha } from '../utils';
-import { computeCell, propagateDeps } from '../formula';
+import { computeCell, propagateDeps, type SheetRef } from '../formula';
 import { parseGoogleSpreadsheetCompactTableJson, fixRealtiveFormulas } from '../google.transfomer';
 import { NEUTRINO_SHEET_SELECTION_MIME, buildSheetSelectionPayload } from '@neutrino/sheet-embed';
 
@@ -18,6 +18,7 @@ export function useClipboard({
     setData,
     spreadsheetId,
     activeSheetIndexRef,
+    getAllSheets,
 }: {
     dataRef: React.MutableRefObject<Map<string, CellProps>>;
     selectionAnchorRef: React.MutableRefObject<string | undefined>;
@@ -30,6 +31,8 @@ export function useClipboard({
     spreadsheetId: string;
     /** Ref to the active tab index (FortuneSheet tab identifier). */
     activeSheetIndexRef: React.MutableRefObject<number>;
+    /** Returns all sheets for cross-sheet formula resolution. */
+    getAllSheets?: () => SheetRef[];
 }) {
     const clipboardRef = useRef<ClipboardData | null>(null);
     const cutSourceRef = useRef<Set<string>>(new Set<string>());
@@ -114,6 +117,7 @@ export function useClipboard({
         const m = anchor.match(/^([A-Z]+)(\d+)$/);
         if (!m) return;
         const pasteCol = alphaToNum(m[1]), pasteRow = parseInt(m[2]);
+        const allSheets = getAllSheets?.();
 
         // Prefer the rich custom format; fall back to in-memory ref, then plain text.
         if (transfer) {
@@ -141,7 +145,7 @@ export function useClipboard({
                                 const existing = next.get(targetId) ?? { id: targetId, value: '', raw, edit: false };
                                 const oldDeps = existing.deps ?? [];
                                 raw = fixRealtiveFormulas(raw, currentRow, currentCol);
-                                const { value, deps: newDeps } = computeCell(raw, next);
+                                const { value, deps: newDeps } = computeCell(raw, next, allSheets);
                                 const rowSpan = (cell.rowSpan ?? 1) > 1 ? cell.rowSpan : undefined;
                                 const colSpan = (cell.colSpan ?? 1) > 1 ? cell.colSpan : undefined;
                                 next.set(targetId, { ...existing, id: targetId, raw, value, deps: newDeps, edit: false, cellStyle: cell.cellStyle, rowSpan, colSpan, mergeAnchor: undefined });
@@ -153,7 +157,7 @@ export function useClipboard({
                                     const depCell = next.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
                                     next.set(depId, { ...depCell, dependents: [...(depCell.dependents ?? []), targetId] });
                                 }
-                                propagateDeps(targetId, next, new Set([targetId]));
+                                propagateDeps(targetId, next, new Set([targetId]), allSheets);
                                 // Create covered-cell entries for every position spanned by this anchor.
                                 // Google Sheets encodes covered cells as BLANK so they are absent from
                                 // the parsed cells array; we must synthesise them here.
@@ -193,7 +197,7 @@ export function useClipboard({
                         const raw = rows[r][c];
                         const existing = next.get(targetId) ?? { id: targetId, value: '', raw: '', edit: false };
                         const oldDeps = existing.deps ?? [];
-                        const { value, deps: newDeps } = computeCell(raw, next);
+                        const { value, deps: newDeps } = computeCell(raw, next, allSheets);
                         next.set(targetId, { ...existing, id: targetId, raw, value, deps: newDeps, edit: false });
                         for (const depId of oldDeps.filter(d => !newDeps.includes(d))) {
                             const depCell = next.get(depId);
@@ -203,7 +207,7 @@ export function useClipboard({
                             const depCell = next.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
                             next.set(depId, { ...depCell, dependents: [...(depCell.dependents ?? []), targetId] });
                         }
-                        propagateDeps(targetId, next, new Set([targetId]));
+                        propagateDeps(targetId, next, new Set([targetId]), allSheets);
                     }
                 }
                 return next;
@@ -250,7 +254,7 @@ export function useClipboard({
                 const targetId = `${numToAlpha(targetCol)}${targetRow}`;
                 const cell = next.get(targetId)!;
                 const oldDeps = cell.deps ?? [];
-                const { value, deps: newDeps } = computeCell(cell.raw ?? '', next);
+                const { value, deps: newDeps } = computeCell(cell.raw ?? '', next, allSheets);
                 next.set(targetId, { ...cell, value, deps: newDeps });
                 // Reconcile the reverse dependency graph so future changes to referenced
                 // cells correctly propagate into the pasted cell.
@@ -262,7 +266,7 @@ export function useClipboard({
                     const depCell = next.get(depId) ?? { id: depId, raw: '', value: '', edit: false };
                     next.set(depId, { ...depCell, dependents: [...(depCell.dependents ?? []), targetId] });
                 }
-                propagateDeps(targetId, next, new Set([targetId]));
+                propagateDeps(targetId, next, new Set([targetId]), allSheets);
             }
 
             return next;
@@ -274,7 +278,7 @@ export function useClipboard({
             cutSourceRef.current = new Set();
             setCutCells(new Set());
         }
-    }, [selectionAnchorRef, pushToUndo, dirtyRef, setData]);
+    }, [selectionAnchorRef, pushToUndo, dirtyRef, setData, getAllSheets]);
 
     // Native copy/cut/paste events — fire before the browser writes the clipboard,
     // so setData() reliably reaches the OS regardless of which element has focus.
