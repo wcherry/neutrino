@@ -6,6 +6,11 @@ import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useNspell } from '@/hooks/useNspell';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
+import { FootnoteExtension, getFootnoteItems, FootnoteRegistry } from '@/lib/extensions/FootnoteExtension';
+import { CrossRefExtension } from '@/lib/extensions/CrossRefExtension';
+import { TableOfContentsExtension } from '@/lib/extensions/TableOfContentsExtension';
+import { SectionBreakExtension } from '@/lib/extensions/SectionBreakExtension';
+import { ColumnLayoutExtension } from '@/lib/extensions/ColumnLayoutExtension';
 import { useSheetPasteInterceptor, PasteChoiceDialog, type SheetEmbedAttrsShape, type CellValue } from '@neutrino/sheet-embed';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -31,9 +36,13 @@ import {
 import { Spinner } from '@neutrino/ui';
 import { docsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import featureFlags from '@/lib/featureFlags';
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
 import { DocOutline } from './DocOutline';
+import { HeaderFooterModal } from './HeaderFooterModal';
+import { WatermarkModal } from './WatermarkModal';
+import { ThemeModal, type DocTheme } from './ThemeModal';
 // Heavy side panels — loaded on demand so they stay out of the initial editor bundle
 import dynamic from 'next/dynamic';
 const VersionHistoryPanel = dynamic(
@@ -258,6 +267,31 @@ function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
   );
 }
 
+// ── Content serialisation helpers ────────────────────────────────────────────
+// When the layout feature flag is on, content is stored as a wrapper object
+// { doc: TiptapJSON, _meta: LayoutMeta } so metadata survives save/load.
+// When the flag is off (or the document was created without the flag), we fall
+// back to plain Tiptap JSON for backward compatibility.
+
+interface LayoutMeta {
+  headerText: string;
+  footerText: string;
+  showPageNumbers: boolean;
+  watermarkText: string;
+  bgColor: string;
+  docTheme: DocTheme;
+}
+
+function serializeContent(
+  docJson: object,
+  meta: LayoutMeta,
+): string {
+  if (featureFlags.docsLayoutStructure) {
+    return JSON.stringify({ doc: docJson, _meta: meta });
+  }
+  return JSON.stringify(docJson);
+}
+
 // ── Custom paragraph with line-height / paragraph-spacing support ────────────
 
 const LineParagraph = Paragraph.extend({
@@ -309,6 +343,19 @@ export function DocEditor() {
   const [showHistory, setShowHistory] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [commentInitialText, setCommentInitialText] = useState('');
+
+  // ── Layout & structure state (gated by featureFlags.docsLayoutStructure) ──
+  const [headerText, setHeaderText] = useState('');
+  const [footerText, setFooterText] = useState('');
+  const [showPageNumbers, setShowPageNumbers] = useState(false);
+  const [watermarkText, setWatermarkText] = useState('');
+  const [bgColor, setBgColor] = useState('');
+  const [docTheme, setDocTheme] = useState<DocTheme>('default');
+  const [showHeaderFooterModal, setShowHeaderFooterModal] = useState(false);
+  const [showWatermarkModal, setShowWatermarkModal] = useState(false);
+  const [showThemeModal, setShowThemeModal] = useState(false);
+  // Track editor state version to force footnote list re-render on each transaction
+  const [editorVersion, setEditorVersion] = useState(0);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; wordFrom?: number; wordTo?: number } | null>(null);
   const [spellWord, setSpellWord] = useState<string | undefined>(undefined);
   const [spellWordRange, setSpellWordRange] = useState<{ from: number; to: number } | null>(null);
@@ -319,6 +366,13 @@ export function DocEditor() {
   const pendingContent = useRef<string | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const initialSaveDoneRef = useRef(false);
+  // Stable ref to latest layout metadata — read inside the useEditor onUpdate
+  // closure so we always serialise the most recent values without needing to
+  // re-create the editor.
+  const layoutMetaRef = useRef<LayoutMeta>({
+    headerText: '', footerText: '', showPageNumbers: false,
+    watermarkText: '', bgColor: '', docTheme: 'default',
+  });
 
   const { data: doc, isLoading: metaLoading } = useQuery({
     queryKey: ['doc', docId],
@@ -446,12 +500,26 @@ export function DocEditor() {
       Placeholder.configure({ placeholder: 'Start typing…' }),
       CharacterCount,
       SheetEmbedExtension,
+      // Layout & structure extensions — only loaded when feature flag is on
+      ...(featureFlags.docsLayoutStructure ? [
+        FootnoteExtension,
+        CrossRefExtension,
+        TableOfContentsExtension,
+        SectionBreakExtension,
+        ColumnLayoutExtension,
+      ] : []),
     ],
     editorProps: {
       attributes: { class: 'ProseMirror', spellcheck: 'true' },  // initial value; updated via effect below
     },
     onUpdate: ({ editor }) => {
-      const content = JSON.stringify(editor.getJSON());
+      // Bump editorVersion so layout-dependent components (e.g. footnote list) re-render
+      if (featureFlags.docsLayoutStructure) {
+        setEditorVersion(v => v + 1);
+      }
+      // Use the stable ref so we always get fresh metadata values without
+      // needing to re-create the editor when metadata changes.
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current);
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -485,6 +553,12 @@ export function DocEditor() {
     dom.setAttribute('spellcheck', spellCheck ? 'true' : 'false');
   }, [editor, spellCheck]);
 
+  // Keep layoutMetaRef in sync with state so the stable onUpdate closure has
+  // fresh values without re-creating the editor.
+  useEffect(() => {
+    layoutMetaRef.current = { headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme };
+  }, [headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
+
   useEffect(() => {
     if (!doc || !editor) return;
     setTitle(doc.title);
@@ -497,8 +571,19 @@ export function DocEditor() {
     // window.focus after a prompt dialog) must not clobber in-progress work.
     if (pendingContent.current !== null) return;
     try {
-      const json = JSON.parse(docContent);
-      editor.commands.setContent(json, false);
+      const parsed = JSON.parse(docContent);
+      // Detect wrapper format { doc, _meta } written when the layout flag was on
+      if (featureFlags.docsLayoutStructure && parsed._meta) {
+        editor.commands.setContent(parsed.doc, false);
+        setHeaderText(parsed._meta.headerText ?? '');
+        setFooterText(parsed._meta.footerText ?? '');
+        setShowPageNumbers(parsed._meta.showPageNumbers ?? false);
+        setWatermarkText(parsed._meta.watermarkText ?? '');
+        setBgColor(parsed._meta.bgColor ?? '');
+        setDocTheme(parsed._meta.docTheme ?? 'default');
+      } else {
+        editor.commands.setContent(parsed, false);
+      }
     } catch {
       editor.commands.setContent(docContent, false);
     }
@@ -580,9 +665,11 @@ export function DocEditor() {
   const handleManualSave = useCallback(() => {
     if (!editor) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    const content = JSON.stringify(editor.getJSON());
+    const content = serializeContent(editor.getJSON(), {
+      headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme,
+    });
     versionMutation.mutate(content);
-  }, [editor, versionMutation]);
+  }, [editor, versionMutation, headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -653,6 +740,89 @@ export function DocEditor() {
       editor.chain().focus().setLink({ href: url }).run();
     }
   };
+
+  // ── Layout & structure handlers ────────────────────────────────────────────
+
+  const handleInsertFootnote = useCallback(() => {
+    if (!editor) return;
+    // Generate a unique ID for this footnote
+    const id = `fn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // TODO: Replace with inline editor for richer UX
+    const text = window.prompt('Enter footnote text:');
+    if (text === null) return; // cancelled
+    FootnoteRegistry.set(id, text ?? '');
+    editor.chain().focus().insertContent({ type: 'footnote', attrs: { id } }).run();
+  }, [editor]);
+
+  const handleInsertCrossRef = useCallback(() => {
+    if (!editor) return;
+    const headingText = window.prompt('Enter the heading text to link to:');
+    if (!headingText) return;
+    // Find the heading node and apply the cross-ref mark to the current selection
+    editor.chain().focus().setMark('crossRef', { headingText }).run();
+  }, [editor]);
+
+  // Click handler for cross-reference links — scrolls to the referenced heading
+  const handleCrossRefClick = useCallback((e: React.MouseEvent) => {
+    if (!editor) return;
+    const target = (e.target as HTMLElement).closest('[data-cross-ref]') as HTMLElement | null;
+    if (!target) return;
+    e.preventDefault();
+    const headingText = target.getAttribute('data-cross-ref');
+    if (!headingText) return;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'heading' && node.textContent === headingText) {
+        const domNode = editor.view.nodeDOM(pos);
+        if (domNode instanceof HTMLElement) {
+          domNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        return false;
+      }
+    });
+  }, [editor]);
+
+  const handleHeaderFooterSave = useCallback((h: string, f: string, spn: boolean) => {
+    setHeaderText(h);
+    setFooterText(f);
+    setShowPageNumbers(spn);
+    // Trigger an autosave with the new metadata
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), {
+        ...layoutMetaRef.current, headerText: h, footerText: f, showPageNumbers: spn,
+      });
+      pendingContent.current = content;
+      setSaveStatus('unsaved');
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content), AUTO_SAVE_DELAY_MS);
+    }
+  }, [editor, triggerSave]);
+
+  const handleWatermarkSave = useCallback((wt: string, bg: string) => {
+    setWatermarkText(wt);
+    setBgColor(bg);
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), {
+        ...layoutMetaRef.current, watermarkText: wt, bgColor: bg,
+      });
+      pendingContent.current = content;
+      setSaveStatus('unsaved');
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content), AUTO_SAVE_DELAY_MS);
+    }
+  }, [editor, triggerSave]);
+
+  const handleThemeSave = useCallback((theme: DocTheme) => {
+    setDocTheme(theme);
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), {
+        ...layoutMetaRef.current, docTheme: theme,
+      });
+      pendingContent.current = content;
+      setSaveStatus('unsaved');
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content), AUTO_SAVE_DELAY_MS);
+    }
+  }, [editor, triggerSave]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -802,6 +972,7 @@ export function DocEditor() {
     paddingBottom: pageSetup.marginBottom,
     paddingLeft: pageSetup.marginLeft,
     paddingRight: pageSetup.marginRight,
+    ...(featureFlags.docsLayoutStructure && bgColor ? { backgroundColor: bgColor } : {}),
   };
 
   if (isLoading || !docId) {
@@ -822,6 +993,13 @@ export function DocEditor() {
           onExport={handleExport}
           onPageSetup={() => setShowPageSetup(true)}
           onPrint={handlePrint}
+          {...(featureFlags.docsLayoutStructure ? {
+            onInsertFootnote: handleInsertFootnote,
+            onInsertCrossRef: handleInsertCrossRef,
+            onHeaderFooter: () => setShowHeaderFooterModal(true),
+            onWatermark: () => setShowWatermarkModal(true),
+            onTheme: () => setShowThemeModal(true),
+          } : {})}
         />
 
         <button className={styles.backBtn} onClick={handleBack}>
@@ -902,15 +1080,55 @@ export function DocEditor() {
       <div className={styles.mainArea}>
         {showOutline && <DocOutline editor={editor} />}
         <div className={styles.editorScroll} onContextMenu={handleContextMenu}>
-          <div ref={pageRef} className={styles.page} style={pageStyle}>
+          <div
+            ref={pageRef}
+            className={styles.page}
+            style={pageStyle}
+            {...(featureFlags.docsLayoutStructure && docTheme !== 'default'
+              ? { 'data-doc-theme': docTheme }
+              : {})}
+          >
             <PageBreakOverlay
               marginTop={pageSetup.marginTop}
               contentHeightPx={contentHeightPx}
               pageRef={pageRef}
             />
-            <div className={styles.editorContent}>
+            {/* ── Header ── */}
+            {featureFlags.docsLayoutStructure && headerText && (
+              <div className={styles.pageHeader}>
+                {showPageNumbers ? headerText.replace('{{page}}', '1') : headerText}
+              </div>
+            )}
+            {/* ── Watermark ── */}
+            {featureFlags.docsLayoutStructure && watermarkText && (
+              <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
+            )}
+            <div className={styles.editorContent} onClick={featureFlags.docsLayoutStructure ? handleCrossRefClick : undefined}>
               <EditorContent editor={editor} />
             </div>
+            {/* ── Footer ── */}
+            {featureFlags.docsLayoutStructure && footerText && (
+              <div className={styles.pageFooter}>
+                {showPageNumbers ? footerText.replace('{{page}}', '1') : footerText}
+              </div>
+            )}
+            {/* ── Footnote list ── */}
+            {featureFlags.docsLayoutStructure && editor && (() => {
+              // editorVersion is read to trigger re-renders on document changes
+              void editorVersion;
+              const notes = getFootnoteItems(editor);
+              if (notes.length === 0) return null;
+              return (
+                <div className={styles.footnoteList}>
+                  <div className={styles.footnoteDivider} />
+                  {notes.map(n => (
+                    <div key={n.id} id={`footnote-${n.id}`} className={styles.footnoteItem}>
+                      <sup>{n.number}</sup> {n.text || '(empty footnote)'}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
         {showHistory && (
@@ -972,6 +1190,32 @@ export function DocEditor() {
           onPasteAsTable={sheetPasteDialogState.onPasteAsTable}
           onPasteAsEmbed={sheetPasteDialogState.onPasteAsEmbed}
           onClose={sheetPasteDialogState.onClose}
+        />
+      )}
+
+      {/* ── Layout & structure modals ── */}
+      {featureFlags.docsLayoutStructure && showHeaderFooterModal && (
+        <HeaderFooterModal
+          headerText={headerText}
+          footerText={footerText}
+          showPageNumbers={showPageNumbers}
+          onSave={handleHeaderFooterSave}
+          onClose={() => setShowHeaderFooterModal(false)}
+        />
+      )}
+      {featureFlags.docsLayoutStructure && showWatermarkModal && (
+        <WatermarkModal
+          watermarkText={watermarkText}
+          bgColor={bgColor}
+          onSave={handleWatermarkSave}
+          onClose={() => setShowWatermarkModal(false)}
+        />
+      )}
+      {featureFlags.docsLayoutStructure && showThemeModal && (
+        <ThemeModal
+          currentTheme={docTheme}
+          onSave={handleThemeSave}
+          onClose={() => setShowThemeModal(false)}
         />
       )}
     </div>

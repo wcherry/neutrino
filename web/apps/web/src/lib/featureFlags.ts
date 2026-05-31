@@ -57,8 +57,8 @@ const featureFlags = {
    * Default: off
    */
   search: process.env.NEXT_PUBLIC_FEATURE_SEARCH === 'true',
-   * Phase 1 charting for Neutrino Sheets.
-   * Adds chart creation, editing, and rendering (column, bar, line, area, pie,
+   /* Phase 1 charting for Neutrino Sheets.
+   * Adds chart creation, editing, and rendering (bar, line, area, pie,
    * donut, scatter, combo) within the spreadsheet grid. Charts are inserted from
    * a selected range, update live when cell values change, and are draggable and
    * resizable. A side panel allows formatting the title, axes, legend, data
@@ -92,6 +92,15 @@ const featureFlags = {
    * Default: off
    */
   sheetsChartsPhase5: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE5 === 'true',
+  /**
+   * Document layout & structure features for Neutrino Docs (Feature Gap #1).
+   * Adds: headers/footers with page numbering, footnotes, cross-references,
+   * table-of-contents generation, section breaks, multi-column layouts,
+   * page backgrounds, document themes, and watermarks.
+   * Env var: NEXT_PUBLIC_FEATURE_DOCS_LAYOUT_STRUCTURE
+   * Default: off
+   */
+  docsLayoutStructure: process.env.NEXT_PUBLIC_FEATURE_DOCS_LAYOUT_STRUCTURE === 'true',
 } as const;
 
 export default featureFlags;
