@@ -101,6 +101,21 @@ const featureFlags = {
    * Default: off
    */
   docsLayoutStructure: process.env.NEXT_PUBLIC_FEATURE_DOCS_LAYOUT_STRUCTURE === 'true',
+
+  /**
+   * Advanced formatting & styles features for Neutrino Docs (Feature Gap #2).
+   * Adds: superscript/subscript marks, text-case controls (UPPER / lower /
+   * Title / Sentence), indent/outdent for paragraphs and headings (Tab key),
+   * richer list formatting (disc/circle/square/none bullet styles and
+   * decimal/alpha/roman ordered list styles), a named paragraph styles palette
+   * (Normal, Title, Subtitle, Heading 1-6, Quote, Code Block, Caption),
+   * per-cell table formatting (background colour, border colour & width), and
+   * better image support (local file upload, width, alignment, alt text,
+   * caption).
+   * Env var: NEXT_PUBLIC_FEATURE_DOCS_ADVANCED_FORMATTING
+   * Default: off
+   */
+  docsAdvancedFormatting: process.env.NEXT_PUBLIC_FEATURE_DOCS_ADVANCED_FORMATTING === 'true',
 } as const;
 
 export default featureFlags;

@@ -11,6 +11,12 @@ import { CrossRefExtension } from '@/lib/extensions/CrossRefExtension';
 import { TableOfContentsExtension } from '@/lib/extensions/TableOfContentsExtension';
 import { SectionBreakExtension } from '@/lib/extensions/SectionBreakExtension';
 import { ColumnLayoutExtension } from '@/lib/extensions/ColumnLayoutExtension';
+// Advanced formatting extensions — only loaded when docsAdvancedFormatting flag is on
+import { Superscript, Subscript } from '@/lib/extensions/SubSuperExtension';
+import { IndentExtension } from '@/lib/extensions/IndentExtension';
+import { ListStyleExtension } from '@/lib/extensions/ListStyleExtension';
+import { AdvancedTableCell } from '@/lib/extensions/AdvancedTableCellExtension';
+import { AdvancedImage } from '@/lib/extensions/AdvancedImageExtension';
 import { useSheetPasteInterceptor, PasteChoiceDialog, type SheetEmbedAttrsShape, type CellValue } from '@neutrino/sheet-embed';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -43,6 +49,10 @@ import { DocOutline } from './DocOutline';
 import { HeaderFooterModal } from './HeaderFooterModal';
 import { WatermarkModal } from './WatermarkModal';
 import { ThemeModal, type DocTheme } from './ThemeModal';
+// Advanced formatting modals
+import { ParagraphStylesModal } from './ParagraphStylesModal';
+import { ImagePropertiesModal } from './ImagePropertiesModal';
+import { TableCellModal } from './TableCellModal';
 // Heavy side panels — loaded on demand so they stay out of the initial editor bundle
 import dynamic from 'next/dynamic';
 const VersionHistoryPanel = dynamic(
@@ -360,6 +370,12 @@ export function DocEditor() {
   const [spellWord, setSpellWord] = useState<string | undefined>(undefined);
   const [spellWordRange, setSpellWordRange] = useState<{ from: number; to: number } | null>(null);
   const [spellSuggestions, setSpellSuggestions] = useState<string[] | undefined>(undefined);
+  // ── Advanced formatting state (gated by featureFlags.docsAdvancedFormatting) ──
+  const [showStylesPalette, setShowStylesPalette] = useState(false);
+  const [showImageProps, setShowImageProps] = useState(false);
+  const [showTableCellModal, setShowTableCellModal] = useState(false);
+  const localImageInputRef = useRef<HTMLInputElement>(null);
+
   const importInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -493,9 +509,15 @@ export function DocEditor() {
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Table.configure({ resizable: true }),
       TableRow,
-      TableCell,
+      // When advanced formatting is on, use the extended TableCell with extra attrs;
+      // otherwise fall back to the standard TableCell for backward compatibility.
+      featureFlags.docsAdvancedFormatting ? AdvancedTableCell : TableCell,
       TableHeader,
-      Image.configure({ inline: true, allowBase64: true }),
+      // When advanced formatting is on, use the extended Image node (adds width,
+      // alignment, caption attrs); otherwise use the standard Image extension.
+      featureFlags.docsAdvancedFormatting
+        ? AdvancedImage.configure({ inline: true, allowBase64: true })
+        : Image.configure({ inline: true, allowBase64: true }),
       Link.configure({ openOnClick: false }),
       Placeholder.configure({ placeholder: 'Start typing…' }),
       CharacterCount,
@@ -507,6 +529,13 @@ export function DocEditor() {
         TableOfContentsExtension,
         SectionBreakExtension,
         ColumnLayoutExtension,
+      ] : []),
+      // Advanced formatting extensions — only loaded when feature flag is on
+      ...(featureFlags.docsAdvancedFormatting ? [
+        Superscript,
+        Subscript,
+        IndentExtension,
+        ListStyleExtension,
       ] : []),
     ],
     editorProps: {
@@ -733,6 +762,34 @@ export function DocEditor() {
       editor.chain().focus().setImage({ src: url }).run();
     }
   };
+
+  // ── Advanced formatting handlers ───────────────────────────────────────────
+
+  const handleInsertLocalImage = useCallback(() => {
+    localImageInputRef.current?.click();
+  }, []);
+
+  const handleLocalImageFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !editor) return;
+      // Read as data URL for inline base64 storage.
+      // TODO: Replace with a backend file upload API for large images to avoid
+      //       bloating the document JSON. For now, base64 inline is used since
+      //       the editor already supports allowBase64: true on the image extension.
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const src = ev.target?.result as string;
+        if (src) {
+          editor.chain().focus().setImage({ src }).run();
+        }
+      };
+      reader.readAsDataURL(file);
+      // Reset the input so the same file can be uploaded again if needed.
+      e.target.value = '';
+    },
+    [editor],
+  );
 
   const handleInsertLink = () => {
     const url = window.prompt('Enter URL:');
@@ -1000,6 +1057,10 @@ export function DocEditor() {
             onWatermark: () => setShowWatermarkModal(true),
             onTheme: () => setShowThemeModal(true),
           } : {})}
+          {...(featureFlags.docsAdvancedFormatting ? {
+            onStylesPalette: () => setShowStylesPalette(true),
+            onInsertLocalImage: handleInsertLocalImage,
+          } : {})}
         />
 
         <button className={styles.backBtn} onClick={handleBack}>
@@ -1044,6 +1105,17 @@ export function DocEditor() {
             onChange={handleImport}
           />
 
+          {/* Local image upload input — only needed when advanced formatting flag is on */}
+          {featureFlags.docsAdvancedFormatting && (
+            <input
+              ref={localImageInputRef}
+              type="file"
+              accept="image/*"
+              className={styles.hiddenInput}
+              onChange={handleLocalImageFileChange}
+            />
+          )}
+
           <button
             className={styles.exportBtn}
             onClick={() => setShowOutline(v => !v)}
@@ -1074,7 +1146,16 @@ export function DocEditor() {
       </div>
 
       {/* ── Toolbar ── */}
-      <Toolbar editor={editor} onInsertImage={handleInsertImage} />
+      <Toolbar
+        editor={editor}
+        onInsertImage={handleInsertImage}
+        {...(featureFlags.docsAdvancedFormatting ? {
+          onInsertLocalImage: handleInsertLocalImage,
+          onOpenStylesPalette: () => setShowStylesPalette(true),
+          onOpenImageProps: () => setShowImageProps(true),
+          onOpenTableCellModal: () => setShowTableCellModal(true),
+        } : {})}
+      />
 
       {/* ── Main area ── */}
       <div className={styles.mainArea}>
@@ -1216,6 +1297,33 @@ export function DocEditor() {
           currentTheme={docTheme}
           onSave={handleThemeSave}
           onClose={() => setShowThemeModal(false)}
+        />
+      )}
+
+      {/* ── Advanced formatting modals ── */}
+      {featureFlags.docsAdvancedFormatting && showStylesPalette && editor && (
+        <ParagraphStylesModal
+          editor={editor}
+          onClose={() => setShowStylesPalette(false)}
+        />
+      )}
+      {featureFlags.docsAdvancedFormatting && showImageProps && editor && (
+        <ImagePropertiesModal
+          editor={editor}
+          initialAttrs={{
+            src:       editor.getAttributes('image').src as string | undefined,
+            width:     editor.getAttributes('image').width as string | null | undefined,
+            alignment: editor.getAttributes('image').alignment as string | undefined,
+            alt:       editor.getAttributes('image').alt as string | undefined,
+            caption:   editor.getAttributes('image').caption as string | undefined,
+          }}
+          onClose={() => setShowImageProps(false)}
+        />
+      )}
+      {featureFlags.docsAdvancedFormatting && showTableCellModal && editor && (
+        <TableCellModal
+          editor={editor}
+          onClose={() => setShowTableCellModal(false)}
         />
       )}
     </div>

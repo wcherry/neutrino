@@ -430,6 +430,42 @@
   margin: 8px 0;
 }
 
+/* ── Image alignment (advanced formatting flag) ───────────────────────────── */
+/* Applied via data-alignment attribute set by AdvancedImageExtension */
+
+.editorContent :global(img[data-alignment="left"]) {
+  display: block;
+  margin-right: auto;
+}
+
+.editorContent :global(img[data-alignment="center"]) {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.editorContent :global(img[data-alignment="right"]) {
+  display: block;
+  margin-left: auto;
+}
+
+.editorContent :global(img[data-alignment="float-left"]) {
+  float: left;
+  margin: 4px 12px 4px 0;
+}
+
+.editorContent :global(img[data-alignment="float-right"]) {
+  float: right;
+  margin: 4px 0 4px 12px;
+}
+
+/* Clearfix after floated images so subsequent block content isn't pulled up */
+.editorContent :global(.ProseMirror)::after {
+  content: '';
+  display: table;
+  clear: both;
+}
+
 .editorContent :global(hr) {
   border: none;
   border-top: 1px solid #e0e0e0;
