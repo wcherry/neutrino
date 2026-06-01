@@ -94,6 +94,20 @@
   background: var(--color-bg-hover, #f1f3f4);
 }
 
+/* "Fix with AI" menu item */
+.item.aiItem {
+  color: #7c3aed;
+  font-weight: 500;
+}
+
+.item.aiItem .itemIcon {
+  color: #7c3aed;
+}
+
+.item.aiItem:hover:not(.disabled) {
+  background: #f3f0ff;
+}
+
 /* "Checking…" placeholder while dictionary loads */
 .checking {
   padding: 7px 10px;

@@ -12,11 +12,11 @@ const meta: Meta<typeof ColorPicker> = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-function Controlled({ initial = '#4f46e5' }: { initial?: string }) {
+function Controlled({ initial = '#4f46e5', showAlpha }: { initial?: string; showAlpha?: boolean }) {
   const [color, setColor] = useState(initial);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-      <ColorPicker value={color} onChange={setColor} />
+      <ColorPicker value={color} onChange={setColor} showAlpha={showAlpha} />
       <div style={{
         width: 80,
         height: 32,
@@ -30,17 +30,26 @@ function Controlled({ initial = '#4f46e5' }: { initial?: string }) {
 }
 
 export const Default: Story = {
-  render: () => <Controlled />,
+  args: { showAlpha: false },
+  render: ({ showAlpha }) => <Controlled showAlpha={showAlpha} />,
+};
+
+export const WithAlpha: Story = {
+  args: { showAlpha: true },
+  render: ({ showAlpha }) => <Controlled showAlpha={showAlpha} initial="#4f46e5cc" />,
 };
 
 export const StartRed: Story = {
-  render: () => <Controlled initial="#dc2626" />,
+  args: { showAlpha: false },
+  render: ({ showAlpha }) => <Controlled initial="#dc2626" showAlpha={showAlpha} />,
 };
 
 export const StartBlack: Story = {
-  render: () => <Controlled initial="#000000" />,
+  args: { showAlpha: false },
+  render: ({ showAlpha }) => <Controlled initial="#000000" showAlpha={showAlpha} />,
 };
 
 export const StartWhite: Story = {
-  render: () => <Controlled initial="#ffffff" />,
+  args: { showAlpha: false },
+  render: ({ showAlpha }) => <Controlled initial="#ffffff" showAlpha={showAlpha} />,
 };

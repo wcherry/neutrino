@@ -297,9 +297,9 @@ test.describe('Cross-sheet cell references', () => {
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await reactivateCell(page, 'A1');
 
-    // When referenced cell is empty, cross-sheet reference should return "" or "0"
-    await expect(page.locator('[data-type="cell"][id="A1"] span')).not.toHaveText('100', { timeout: 8_000 });
-    const a1Text = await page.locator('[data-type="cell"][id="A1"] span').textContent();
-    expect(a1Text === '' || a1Text === '0').toBeTruthy();
+    // When referenced cell is empty, cross-sheet reference should return "" or "0".
+    // Use a regex-based toHaveText so Playwright retries until the startTransition
+    // that re-evaluates A1 commits — avoiding a race with textContent() point-in-time reads.
+    await expect(page.locator('[data-type="cell"][id="A1"] span')).toHaveText(/^$|^0$/, { timeout: 8_000 });
   });
 });

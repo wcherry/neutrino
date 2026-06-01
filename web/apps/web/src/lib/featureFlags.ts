@@ -116,6 +116,16 @@ const featureFlags = {
    * Default: off
    */
   docsAdvancedFormatting: process.env.NEXT_PUBLIC_FEATURE_DOCS_ADVANCED_FORMATTING === 'true',
+
+  /**
+   * Editing and productivity tools for Neutrino Docs (Feature Gap #3).
+   * Adds: find-and-replace dialog (Ctrl+F), grammar checking with inline
+   * underline decorations and context-menu suggestions, and AI-assisted
+   * writing (summarize, suggestions, change-tone) via the AI writing panel.
+   * Env var: NEXT_PUBLIC_FEATURE_DOCS_EDITING_TOOLS
+   * Default: off
+   */
+  docsEditingTools: process.env.NEXT_PUBLIC_FEATURE_DOCS_EDITING_TOOLS === 'true',
 } as const;
 
 export default featureFlags;

@@ -1,0 +1,202 @@
+.bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--color-surface-raised, #fff);
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  z-index: 20;
+  position: relative;
+}
+
+.toggleBtn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 28px;
+  margin-top: 1px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--color-text-secondary, #5f6368);
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.toggleBtn:hover {
+  background: var(--color-surface-hover, #f1f3f4);
+  border-color: var(--color-border, #e0e0e0);
+}
+
+.toggleBtn svg {
+  transition: transform 0.15s;
+}
+
+.toggleBtnOpen svg {
+  transform: rotate(180deg);
+}
+
+.fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.findRow,
+.replaceRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--color-text-primary, #202124);
+  background: var(--color-surface, #f8f9fa);
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input:focus {
+  border-color: var(--color-primary, #1a73e8);
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.15);
+  background: #fff;
+}
+
+.matchCount {
+  position: absolute;
+  right: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary, #5f6368);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.noMatch {
+  color: #d93025;
+}
+
+.optGroup {
+  display: flex;
+  gap: 2px;
+}
+
+.optBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  font-weight: 600;
+  background: none;
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 4px;
+  color: var(--color-text-secondary, #5f6368);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.optBtn:hover {
+  background: var(--color-surface-hover, #f1f3f4);
+  color: var(--color-text-primary, #202124);
+}
+
+.optBtnActive {
+  background: var(--color-primary-light, #e8f0fe);
+  border-color: var(--color-primary, #1a73e8);
+  color: var(--color-primary, #1a73e8);
+}
+
+.navGroup {
+  display: flex;
+  gap: 2px;
+}
+
+.navBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 4px;
+  color: var(--color-text-secondary, #5f6368);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.navBtn:hover:not(:disabled) {
+  background: var(--color-surface-hover, #f1f3f4);
+  color: var(--color-text-primary, #202124);
+}
+
+.navBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.replaceBtn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-surface, #f8f9fa);
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 4px;
+  color: var(--color-text-primary, #202124);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.replaceBtn:hover:not(:disabled) {
+  background: var(--color-surface-hover, #f1f3f4);
+  border-color: #bdc1c6;
+}
+
+.replaceBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.closeBtn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--color-text-secondary, #5f6368);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.closeBtn:hover {
+  background: var(--color-surface-hover, #f1f3f4);
+  color: var(--color-text-primary, #202124);
+}

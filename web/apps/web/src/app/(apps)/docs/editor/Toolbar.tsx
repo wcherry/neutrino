@@ -6,7 +6,7 @@ import {
   Code, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link, Image, Table, Minus, Undo, Redo, Quote, ArrowUpDown,
-  Superscript, Subscript, Indent, Outdent,
+  Superscript, Subscript, Indent, Outdent, Sparkles, Search, SpellCheck,
 } from 'lucide-react';
 import {
   Toolbar as RickTextToolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect, ColorPickerPopover,
@@ -199,6 +199,60 @@ const HEADINGS: { label: string; level: number | null }[] = [
   { label: 'Heading 6', level: 6 },
 ];
 
+// ── AI Writing dropdown (editing tools flag) ───────────────────────────────────
+
+function AiWritingMenu({
+  onSuggestions,
+  onSummarize,
+  onChangeTone,
+}: {
+  onSuggestions?: () => void;
+  onSummarize?: () => void;
+  onChangeTone?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <ToolbarButton
+        active={open}
+        onClick={() => setOpen(v => !v)}
+        title="AI writing"
+        style={{ gap: 3, display: 'flex', alignItems: 'center' }}
+      >
+        <Sparkles size={14} />
+        <span style={{ fontSize: 11, fontWeight: 500 }}>AI</span>
+      </ToolbarButton>
+      {open && (
+        <div className={styles.lineSpacingDropdown} style={{ minWidth: 160 }}>
+          <button className={styles.lineSpacingItem} onClick={() => { onSuggestions?.(); setOpen(false); }}>
+            <span className={styles.lineSpacingCheck} />
+            Suggestions
+          </button>
+          <button className={styles.lineSpacingItem} onClick={() => { onSummarize?.(); setOpen(false); }}>
+            <span className={styles.lineSpacingCheck} />
+            Summarize
+          </button>
+          <button className={styles.lineSpacingItem} onClick={() => { onChangeTone?.(); setOpen(false); }}>
+            <span className={styles.lineSpacingCheck} />
+            Change tone…
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Toolbar component ──────────────────────────────────────────────────────────
 
 export interface ToolbarProps {
@@ -212,6 +266,13 @@ export interface ToolbarProps {
   onOpenImageProps?: () => void;
   /** Open table cell format modal (advanced formatting flag only). */
   onOpenTableCellModal?: () => void;
+  // Editing tools props (feature gap #3, docsEditingTools flag only)
+  grammarEnabled?: boolean;
+  onToggleGrammar?: () => void;
+  onAiSuggestions?: () => void;
+  onAiSummarize?: () => void;
+  onAiChangeTone?: () => void;
+  onOpenFindReplace?: () => void;
 }
 
 export function Toolbar({
@@ -221,6 +282,12 @@ export function Toolbar({
   onOpenStylesPalette,
   onOpenImageProps,
   onOpenTableCellModal,
+  grammarEnabled,
+  onToggleGrammar,
+  onAiSuggestions,
+  onAiSummarize,
+  onAiChangeTone,
+  onOpenFindReplace,
 }: ToolbarProps) {
   if (!editor) return null;
 
@@ -460,6 +527,33 @@ export function Toolbar({
             {featureFlags.docsAdvancedFormatting && onOpenTableCellModal && (
               <ToolbarButton wide onClick={onOpenTableCellModal} title="Cell formatting">Cell…</ToolbarButton>
             )}
+          </ToolbarGroup>
+        </>
+      )}
+
+      {/* ── Editing tools: grammar toggle + find/replace + AI writing ── */}
+      {featureFlags.docsEditingTools && (
+        <>
+          <ToolbarDivider />
+          <ToolbarGroup>
+            <ToolbarButton
+              active={grammarEnabled}
+              onClick={onToggleGrammar}
+              title={grammarEnabled ? 'Grammar check on — click to disable' : 'Enable grammar check'}
+            >
+              <SpellCheck size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={onOpenFindReplace}
+              title="Find and replace (Ctrl+F)"
+            >
+              <Search size={15} />
+            </ToolbarButton>
+            <AiWritingMenu
+              onSuggestions={onAiSuggestions}
+              onSummarize={onAiSummarize}
+              onChangeTone={onAiChangeTone}
+            />
           </ToolbarGroup>
         </>
       )}

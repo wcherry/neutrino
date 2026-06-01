@@ -145,13 +145,14 @@ test.describe('Sheets autosave — flush on SPA navigation (sidebar)', () => {
     const cellValue = 'SidebarSaveValue';
     await setCell(page, 'A1', cellValue);
 
-    // Intercept the flush-on-unmount save that usePersistence's cleanup fires.
-    // This fires as a fire-and-forget call inside the effect cleanup.
-    const saveRequest = page.waitForRequest(
+    // Wait for the flush-on-unmount save that usePersistence's cleanup fires.
+    // The save is fire-and-forget, so we must wait for the server to respond
+    // (not just for the request to be sent) before reloading the sheet.
+    const saveResponse = page.waitForResponse(
       (r) =>
         r.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
-        r.method() === 'PUT',
-      { timeout: 10_000 },
+        r.request().method() === 'PUT',
+      { timeout: 15_000 },
     );
 
     // Navigate to Drive via the sidebar "My Drive" link (SPA navigation that
@@ -159,8 +160,8 @@ test.describe('Sheets autosave — flush on SPA navigation (sidebar)', () => {
     const sidebar = page.getByRole('navigation', { name: 'Primary navigation' });
     await sidebar.getByRole('link', { name: 'My Drive' }).click();
 
-    // The flush must have fired
-    await saveRequest;
+    // The flush must have fired and the server must have acknowledged it.
+    await saveResponse;
 
     await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
 

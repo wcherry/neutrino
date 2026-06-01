@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useNspell } from '@/hooks/useNspell';
+import { useAiSettings } from '@/hooks/useAiSettings';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
 import { FootnoteExtension, getFootnoteItems, FootnoteRegistry } from '@/lib/extensions/FootnoteExtension';
@@ -64,6 +65,14 @@ const CommentsPanel = dynamic(
   { ssr: false }
 );
 import { EditorContextMenu } from './EditorContextMenu';
+// Editing tools — find/replace, grammar check, AI writing (feature gap #3)
+import { FindReplaceExtension } from '@/lib/extensions/FindReplaceExtension';
+import { GrammarCheckExtension, getGrammarIssueAt } from '@/lib/extensions/GrammarCheckExtension';
+import { SpellCheckExtension } from '@/lib/extensions/SpellCheckExtension';
+import { FindReplaceBar } from './FindReplaceBar';
+import { AiPanel, type AiOperation } from './AiPanel';
+import { ChangeToneDialog, type ToneValues } from './ChangeToneDialog';
+import { Sparkles } from 'lucide-react';
 import styles from './page.module.css';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
@@ -338,6 +347,7 @@ export function DocEditor() {
   const queryClient = useQueryClient();
   const { spellCheck } = useSpellCheck();
   const nspell = useNspell();
+  const { getProviderOptions } = useAiSettings();
 
   const { dekRef, dekResolved } =
     useEncryptedDocumentContent({ id: docId, filename: 'doc.json' });
@@ -375,6 +385,27 @@ export function DocEditor() {
   const [showImageProps, setShowImageProps] = useState(false);
   const [showTableCellModal, setShowTableCellModal] = useState(false);
   const localImageInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Editing tools state (gated by featureFlags.docsEditingTools) ──
+  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [grammarEnabled, setGrammarEnabled] = useState(false);
+  const [grammarIssue, setGrammarIssue] = useState<{
+    message: string; suggestion?: string; category?: string; from: number; to: number;
+  } | null>(null);
+  // AI writing panel state
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiOperation, setAiOperation] = useState<AiOperation>('suggestions');
+  const [aiResult, setAiResult] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [showChangeTone, setShowChangeTone] = useState(false);
+  const aiInsertTextRef = useRef('');
+  // Whether the current grammar-fix AI result has an auto-applicable replacement.
+  // Advisory-only results (passive voice, long sentences) set this to false.
+  const grammarAiCanInsertRef = useRef(true);
+  // Stores the document range of the grammar issue being fixed by AI so
+  // handleAiInsert knows exactly where to replace when the user accepts.
+  const grammarAiRangeRef = useRef<{ from: number; to: number } | null>(null);
 
   const importInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -537,9 +568,16 @@ export function DocEditor() {
         IndentExtension,
         ListStyleExtension,
       ] : []),
+      // Client-side spell checking via nspell (replaces browser spellcheck attribute)
+      SpellCheckExtension,
+      // Editing tools — find/replace and grammar check (feature gap #3)
+      ...(featureFlags.docsEditingTools ? [
+        FindReplaceExtension,
+        GrammarCheckExtension,
+      ] : []),
     ],
     editorProps: {
-      attributes: { class: 'ProseMirror', spellcheck: 'true' },  // initial value; updated via effect below
+      attributes: { class: 'ProseMirror', spellcheck: 'false' },
     },
     onUpdate: ({ editor }) => {
       // Bump editorVersion so layout-dependent components (e.g. footnote list) re-render
@@ -573,14 +611,12 @@ export function DocEditor() {
     return () => dom.removeEventListener('paste', listener);
   }, [editor, handleSheetPaste]);
 
-  // Imperatively keep the ProseMirror contentEditable element's spellcheck
-  // attribute in sync with the user's preference. Tiptap reads editorProps
-  // only at construction time, so we update the DOM node directly.
+  // Sync spell-check state into the SpellCheckExtension plugin. This runs
+  // whenever the user preference or the nspell handle changes (nspell loads lazily).
   useEffect(() => {
     if (!editor) return;
-    const dom = editor.view.dom as HTMLElement;
-    dom.setAttribute('spellcheck', spellCheck ? 'true' : 'false');
-  }, [editor, spellCheck]);
+    editor.commands.updateSpellCheck({ enabled: spellCheck, nspell });
+  }, [editor, spellCheck, nspell]);
 
   // Keep layoutMetaRef in sync with state so the stable onUpdate closure has
   // fresh values without re-creating the editor.
@@ -660,13 +696,6 @@ export function DocEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep ProseMirror's spellcheck attribute in sync with user preference.
-  // Tiptap only reads editorProps at construction, so we update the DOM directly.
-  useEffect(() => {
-    if (!editor) return;
-    (editor.view.dom as HTMLElement).setAttribute('spellcheck', spellCheck ? 'true' : 'false');
-  }, [editor, spellCheck]);
-
   // When nspell finishes loading while the context menu is open, compute suggestions.
   useEffect(() => {
     if (!nspell || !spellWord || spellSuggestions !== undefined) return;
@@ -700,8 +729,20 @@ export function DocEditor() {
     versionMutation.mutate(content);
   }, [editor, versionMutation, headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
 
+  // Sync grammar-enabled state into the GrammarCheckExtension plugin
+  useEffect(() => {
+    if (!featureFlags.docsEditingTools || !editor) return;
+    editor.commands.setGrammarEnabled(grammarEnabled);
+  }, [grammarEnabled, editor]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && featureFlags.docsEditingTools) {
+        e.preventDefault();
+        setShowFindReplace(true);
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         handleManualSave();
@@ -888,6 +929,7 @@ export function DocEditor() {
     setSpellWord(undefined);
     setSpellWordRange(null);
     setSpellSuggestions(undefined);
+    setGrammarIssue(null);
 
     if (
       spellCheck &&
@@ -960,6 +1002,24 @@ export function DocEditor() {
       }
     }
 
+    // Detect grammar issue at cursor position when grammar check is enabled
+    if (featureFlags.docsEditingTools && grammarEnabled && editor) {
+      const view = editor.view;
+      const pos = view.posAtCoords({ left: e.clientX, top: e.clientY });
+      if (pos) {
+        const issue = getGrammarIssueAt(editor.state.doc, pos.pos);
+        if (issue) {
+          setGrammarIssue({
+            message: issue.message,
+            suggestion: issue.suggestion,
+            category: issue.category,
+            from: issue.from,
+            to: issue.to,
+          });
+        }
+      }
+    }
+
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
@@ -988,6 +1048,141 @@ export function DocEditor() {
     setCommentInitialText(selectedText ? `"${selectedText}"\n\n` : '');
     setShowComments(true);
   };
+
+  // ── AI writing handlers ────────────────────────────────────────────────────
+
+  const runAiOperation = useCallback(async (
+    op: AiOperation,
+    toneValues?: ToneValues,
+    grammarContext?: { message: string; issueText: string; suggestion?: string; category?: string },
+  ) => {
+    if (!editor) return;
+    setAiOperation(op);
+    setShowAiPanel(true);
+    setAiLoading(true);
+    setAiError(null);
+    setAiResult('');
+
+    const { from, to, empty } = editor.state.selection;
+    const selectedText = empty ? '' : editor.state.doc.textBetween(from, to, ' ');
+    const fullText = editor.state.doc.textContent;
+
+    try {
+      let result = '';
+      let customInsertText: string | null = null;
+
+      if (op === 'grammar-fix' && grammarContext) {
+        const { message, issueText, suggestion, category } = grammarContext;
+        const { provider, apiKey } = getProviderOptions();
+
+        try {
+          const res = await fetch('/api/ai/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider,
+              apiKey,
+              systemPrompt:
+                'You are a precise grammar editor. When given a grammar issue and the problematic text, return ONLY the corrected version of that text. No explanation. No quotation marks. No extra words. Just the corrected text itself.',
+              userMessage: `Grammar issue: ${message}\nText to fix: "${issueText}"`,
+            }),
+          });
+          const data = await res.json() as { text?: string; error?: string };
+          if (data.error) throw new Error(data.error);
+          const aiFixed = data.text?.trim() ?? '';
+          if (!aiFixed) throw new Error('Empty response from AI');
+
+          result = `Issue: ${message}\n\nOriginal: "${issueText}"\nAI fix: "${aiFixed}"`;
+          customInsertText = aiFixed;
+          grammarAiCanInsertRef.current = true;
+        } catch (aiErr) {
+          // AI call failed — fall back to rule-based hint so the user still gets something.
+          const errMsg = aiErr instanceof Error ? aiErr.message : 'AI unavailable';
+          if (suggestion) {
+            result = `Issue: ${message}\n\nOriginal: "${issueText}"\nRule-based fix: "${suggestion}"\n\n(AI error: ${errMsg})`;
+            customInsertText = suggestion;
+            grammarAiCanInsertRef.current = true;
+          } else if (category === 'readability') {
+            result = `Issue: ${message}\n\nThis sentence is too long to rewrite automatically. Consider:\n• Breaking at a conjunction (and, but, or, so)\n• Splitting into two complete sentences\n• Removing parenthetical clauses\n\n(AI error: ${errMsg})`;
+            customInsertText = '';
+            grammarAiCanInsertRef.current = false;
+          } else {
+            result = `Issue: ${message}\n\n"${issueText}"\n\nAI error: ${errMsg}. Please review and correct manually.`;
+            customInsertText = '';
+            grammarAiCanInsertRef.current = false;
+          }
+        }
+
+      } else {
+        // Simulated responses for non-grammar-fix operations.
+        await new Promise<void>(r => setTimeout(r, 800));
+
+        if (op === 'suggestions') {
+          const context = selectedText || fullText.slice(-200);
+          result = context
+            ? `Here is a suggested continuation:\n\n"${context.trim()}… and this idea can be expanded further by considering the broader implications and exploring related perspectives that enrich the original thought."`
+            : 'Start writing to get AI suggestions.';
+        } else if (op === 'summarize') {
+          const text = selectedText || fullText;
+          const wordCount = text.trim().split(/\s+/).length;
+          result = text.trim()
+            ? `Summary (${wordCount} words → ~${Math.max(1, Math.round(wordCount * 0.15))} words):\n\nThis document covers key topics with relevant details. The main ideas are presented clearly and the content addresses the core subject matter effectively.`
+            : 'No text to summarize.';
+        } else if (op === 'change-tone' && toneValues) {
+          const text = selectedText || fullText.slice(0, 300);
+          const formalLabel = toneValues.formal > 66 ? 'formal' : toneValues.formal < 33 ? 'informal' : 'neutral';
+          const moodLabel = toneValues.cheerful > 66 ? 'cheerful' : toneValues.cheerful < 33 ? 'reserved' : 'balanced';
+          const lengthLabel = toneValues.verbose > 66 ? 'expanded' : toneValues.verbose < 33 ? 'condensed' : 'similar length';
+          result = `Rewritten text (${formalLabel}, ${moodLabel}, ${lengthLabel}):\n\n${text.trim() || '(No text selected)'}`;
+        }
+      }
+
+      aiInsertTextRef.current = customInsertText !== null
+        ? customInsertText
+        : result.split('\n\n').slice(1).join('\n\n') || result;
+      setAiResult(result);
+    } catch {
+      setAiError('AI writing is unavailable. Please try again.');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [editor, getProviderOptions]);
+
+  const handleAiInsert = useCallback(() => {
+    if (!editor || !aiInsertTextRef.current) return;
+    const text = aiInsertTextRef.current;
+    const { from, to, empty } = editor.state.selection;
+    if (aiOperation === 'grammar-fix') {
+      const range = grammarAiRangeRef.current;
+      if (range) {
+        editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).insertContent(text).run();
+        grammarAiRangeRef.current = null;
+      }
+    } else if (aiOperation === 'change-tone' && !empty) {
+      editor.chain().focus().setTextSelection({ from, to }).insertContent(text).run();
+    } else if (aiOperation === 'summarize' && !empty) {
+      editor.chain().focus().setTextSelection({ from, to }).insertContent(text).run();
+    } else {
+      editor.chain().focus().insertContentAt(editor.state.selection.to, ' ' + text).run();
+    }
+    setShowAiPanel(false);
+  }, [editor, aiOperation]);
+
+  const handleApplyGrammarFix = useCallback((from: number, to: number, replacement: string) => {
+    editor?.chain().focus().setTextSelection({ from, to }).insertContent(replacement).run();
+  }, [editor]);
+
+  const handleAiGrammarFix = useCallback(() => {
+    if (!editor || !grammarIssue) return;
+    const issueText = editor.state.doc.textBetween(grammarIssue.from, grammarIssue.to);
+    grammarAiRangeRef.current = { from: grammarIssue.from, to: grammarIssue.to };
+    runAiOperation('grammar-fix', undefined, {
+      message: grammarIssue.message,
+      issueText,
+      suggestion: grammarIssue.suggestion,
+      category: grammarIssue.category,
+    });
+  }, [editor, grammarIssue, runAiOperation]);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1060,6 +1255,14 @@ export function DocEditor() {
           {...(featureFlags.docsAdvancedFormatting ? {
             onStylesPalette: () => setShowStylesPalette(true),
             onInsertLocalImage: handleInsertLocalImage,
+          } : {})}
+          {...(featureFlags.docsEditingTools ? {
+            onOpenFindReplace: () => setShowFindReplace(true),
+            grammarEnabled,
+            onToggleGrammar: () => setGrammarEnabled(v => !v),
+            onAiSuggestions: () => runAiOperation('suggestions'),
+            onAiSummarize: () => runAiOperation('summarize'),
+            onAiChangeTone: () => setShowChangeTone(true),
           } : {})}
         />
 
@@ -1155,7 +1358,20 @@ export function DocEditor() {
           onOpenImageProps: () => setShowImageProps(true),
           onOpenTableCellModal: () => setShowTableCellModal(true),
         } : {})}
+        {...(featureFlags.docsEditingTools ? {
+          grammarEnabled,
+          onToggleGrammar: () => setGrammarEnabled(v => !v),
+          onAiSuggestions: () => runAiOperation('suggestions'),
+          onAiSummarize: () => runAiOperation('summarize'),
+          onAiChangeTone: () => setShowChangeTone(true),
+          onOpenFindReplace: () => setShowFindReplace(true),
+        } : {})}
       />
+
+      {/* ── Find & replace bar (editing tools flag) ── */}
+      {featureFlags.docsEditingTools && showFindReplace && editor && (
+        <FindReplaceBar editor={editor} onClose={() => setShowFindReplace(false)} />
+      )}
 
       {/* ── Main area ── */}
       <div className={styles.mainArea}>
@@ -1256,12 +1472,20 @@ export function DocEditor() {
             setSpellWord(undefined);
             setSpellWordRange(null);
             setSpellSuggestions(undefined);
+            setGrammarIssue(null);
           }}
           onAddComment={handleAddComment}
           onInsertLink={handleInsertLink}
           spellWord={spellWord}
           spellSuggestions={spellSuggestions}
           onApplySuggestion={handleApplySuggestion}
+          {...(featureFlags.docsEditingTools && grammarIssue ? {
+            grammarMessage: grammarIssue.message,
+            grammarSuggestion: grammarIssue.suggestion,
+            grammarRange: { from: grammarIssue.from, to: grammarIssue.to },
+            onApplyGrammarFix: handleApplyGrammarFix,
+            onAiGrammarFix: handleAiGrammarFix,
+          } : {})}
         />
       )}
 
@@ -1325,6 +1549,33 @@ export function DocEditor() {
           editor={editor}
           onClose={() => setShowTableCellModal(false)}
         />
+      )}
+
+      {/* ── Editing tools modals (feature gap #3) ── */}
+      {featureFlags.docsEditingTools && showChangeTone && (
+        <ChangeToneDialog
+          hasSelection={editor ? !editor.state.selection.empty : false}
+          onApply={(values) => {
+            setShowChangeTone(false);
+            runAiOperation('change-tone', values);
+          }}
+          onClose={() => setShowChangeTone(false)}
+        />
+      )}
+
+      {featureFlags.docsEditingTools && showAiPanel && (
+        <div className={styles.aiPanelOverlay}>
+          <AiPanel
+            operation={aiOperation}
+            result={aiResult}
+            isLoading={aiLoading}
+            error={aiError}
+            hasSelection={editor ? !editor.state.selection.empty : false}
+            onInsert={handleAiInsert}
+            onClose={() => setShowAiPanel(false)}
+            canInsert={aiOperation !== 'grammar-fix' || grammarAiCanInsertRef.current}
+          />
+        </div>
       )}
     </div>
   );

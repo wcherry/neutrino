@@ -111,6 +111,13 @@ export interface HamburgerMenuProps {
   // Advanced formatting feature callbacks (only used when docsAdvancedFormatting flag is on)
   onStylesPalette?: () => void;
   onInsertLocalImage?: () => void;
+  // Editing tools feature callbacks (only used when docsEditingTools flag is on)
+  onOpenFindReplace?: () => void;
+  grammarEnabled?: boolean;
+  onToggleGrammar?: () => void;
+  onAiSuggestions?: () => void;
+  onAiSummarize?: () => void;
+  onAiChangeTone?: () => void;
 }
 
 export function HamburgerMenu({
@@ -130,6 +137,12 @@ export function HamburgerMenu({
   onTheme,
   onStylesPalette,
   onInsertLocalImage,
+  onOpenFindReplace,
+  grammarEnabled,
+  onToggleGrammar,
+  onAiSuggestions,
+  onAiSummarize,
+  onAiChangeTone,
 }: HamburgerMenuProps) {
   const router = useRouter();
   const [showHelp, setShowHelp] = useState(false);
@@ -184,6 +197,11 @@ export function HamburgerMenu({
         { kind: 'action', label: 'Paste',      shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
         { kind: 'separator' },
         { kind: 'action', label: 'Select all', shortcut: 'Ctrl+A', action: () => editor?.chain().focus().selectAll().run() },
+        ...(featureFlags.docsEditingTools ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Find and replace…', shortcut: 'Ctrl+F', action: () => onOpenFindReplace?.() },
+          { kind: 'action' as const, label: grammarEnabled ? 'Grammar check ✓' : 'Grammar check', action: () => onToggleGrammar?.() },
+        ] : []),
       ],
     },
     {
@@ -269,6 +287,15 @@ export function HamburgerMenu({
         ] : []),
       ],
     },
+    ...(featureFlags.docsEditingTools ? [{
+      kind: 'submenu' as const,
+      label: 'AI Writing',
+      items: [
+        { kind: 'action' as const, label: 'Suggestions',  action: () => onAiSuggestions?.() },
+        { kind: 'action' as const, label: 'Summarize',    action: () => onAiSummarize?.() },
+        { kind: 'action' as const, label: 'Change tone…', action: () => onAiChangeTone?.() },
+      ],
+    }] : []),
     {
       kind: 'submenu',
       label: 'Help',

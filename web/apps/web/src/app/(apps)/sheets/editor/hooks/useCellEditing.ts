@@ -80,6 +80,19 @@ export function useCellEditing({
         formulaInputRef.current?.blur();
         // No focus() call — formula bar focuses only on explicit user click, keeping arrow-key navigation active.
 
+        // Eagerly commit the previous cell's raw value into dataRef.current before the
+        // startTransition below. The transition is deferred and may not commit before the
+        // component unmounts (e.g. SPA navigation immediately after Enter). The flush-on-
+        // unmount save reads dataRef.current directly, so this ensures the latest edit is
+        // always captured even if the transition never commits to React state.
+        if (currentCell) {
+            const rawToCommit = currentCell.raw ?? '';
+            const eagerMap = new Map(dataRef.current);
+            const prevCell = eagerMap.get(currentCell.id) ?? { id: currentCell.id, value: '', raw: '', edit: false };
+            eagerMap.set(currentCell.id, { ...prevCell, raw: rawToCommit, edit: false });
+            dataRef.current = eagerMap;
+        }
+
         startTransition(() => {
             const base = dataRef.current;
             const next = new Map(base);

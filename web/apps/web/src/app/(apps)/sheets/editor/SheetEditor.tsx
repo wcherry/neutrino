@@ -136,6 +136,10 @@ export function SheetEditor() {
     // newly selected cells into view after arrow-key navigation.
     const scrollBodyRef = useRef<HTMLDivElement | null>(null);
 
+    // Ref for the title contentEditable; kept separate from dangerouslySetInnerHTML
+    // so React never overwrites user-typed content during re-renders.
+    const titleInputRef = useRef<HTMLDivElement | null>(null);
+
     const [headerSelectionLabel, setHeaderSelectionLabel] = useState<string | null>(null);
     const [highlightedCol, setHighlightedCol] = useState<number | null>(null);
     const [highlightedRow, setHighlightedRow] = useState<number | null>(null);
@@ -731,6 +735,16 @@ export function SheetEditor() {
 
 
     // ── Effects ──────────────────────────────────────────────────────────────
+    // Sync the title div's innerHTML when persist.title changes, but only while
+    // the element is not focused — prevents overwriting content the user is
+    // actively typing if load() completes mid-edit.
+    useEffect(() => {
+        const el = titleInputRef.current;
+        if (el && document.activeElement !== el) {
+            el.innerHTML = persist.title;
+        }
+    }, [persist.title]);
+
     // Wait for the E2EE DEK to be resolved before loading content so that
     // dekRef.current is populated before we attempt to decrypt the file.
     useEffect(() => {
@@ -799,6 +813,7 @@ export function SheetEditor() {
         selectionAnchorRef.current = id;
         selectionActiveRef.current = id;
         stableOnCellActivate(id);
+        setSelectedChartId(null);
     }, [clearHeaderSelection, stableOnCellActivate]);
 
     const handleSelectionExtend = useCallback((id: string) => {
@@ -868,12 +883,12 @@ export function SheetEditor() {
                 </button>
                 <div className={styles.titleArea}>
                     <div
+                        ref={titleInputRef}
                         data-testid="worksheet.name"
                         className={styles.titleInput}
                         contentEditable={true}
                         suppressContentEditableWarning={true}
                         spellCheck={spellCheck}
-                        dangerouslySetInnerHTML={{ __html: persist.title }}
                         onBlur={persist.updateTitle}
                     />
                 </div>
@@ -1002,13 +1017,27 @@ export function SheetEditor() {
                 activeSheetIndex={sheets.activeSheetIndex}
                 dirtyRef={dirtyRef}
                 onSwitchSheet={(idx) => {
+                    if (featureFlags.sheetsCharts) {
+                        // Flush before switchSheet updates activeSheetIndexRef, so
+                        // the current sheet's charts land in the correct slot.
+                        charts.flushActiveCharts();
+                    }
                     sheets.switchSheet(idx);
                     if (featureFlags.sheetsCharts) {
                         charts.switchSheetCharts(idx);
                         setSelectedChartId(null);
                     }
                 }}
-                onAddSheet={sheets.addSheet}
+                onAddSheet={() => {
+                    if (featureFlags.sheetsCharts) {
+                        charts.flushActiveCharts();
+                    }
+                    sheets.addSheet();
+                    if (featureFlags.sheetsCharts) {
+                        charts.switchSheetCharts(sheets.activeSheetIndexRef.current);
+                        setSelectedChartId(null);
+                    }
+                }}
                 onDeleteSheet={sheets.deleteSheet}
                 onDuplicateSheet={sheets.duplicateSheet}
                 onMoveSheet={sheets.moveSheet}

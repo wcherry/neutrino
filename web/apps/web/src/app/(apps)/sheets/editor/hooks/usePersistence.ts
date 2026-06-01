@@ -185,6 +185,9 @@ export function usePersistence({
         const flush = () => {
             if (!dirtyRef.current || !sheetRef.current) return;
             dirtyRef.current = false;
+            // Flush any pending startTransition updates so dataRef.current reflects
+            // the latest committed cell values before serialising (same as timedSave).
+            flushSync(() => {});
             saveRef.current(); // fire and forget
         };
         const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
@@ -236,17 +239,30 @@ export function usePersistence({
                     return m;
                 });
                 const colors = rawSheets.map(s => s.color ?? null);
-                sheetsDataRef.current = allData;
-                sheetsColWidthsRef.current = allColWidths;
-                sheetsRowHeightsRef.current = allRowHeights;
-                setSheetNames(names);
-                setSheetColors(colors);
+                // Preserve any sheets the user added while the content download
+                // was still in progress — load() is async and the user may have
+                // pushed new entries to the refs before we get here.
+                const extraData = sheetsDataRef.current.slice(allData.length);
+                const extraColWidths = sheetsColWidthsRef.current.slice(allData.length);
+                const extraRowHeights = sheetsRowHeightsRef.current.slice(allData.length);
+                sheetsDataRef.current = [...allData, ...extraData];
+                sheetsColWidthsRef.current = [...allColWidths, ...extraColWidths];
+                sheetsRowHeightsRef.current = [...allRowHeights, ...extraRowHeights];
+                const extraNames = extraData.map((_, i) => `Sheet ${allData.length + i + 1}`);
+                const extraColors = extraData.map(() => null as string | null);
+                setSheetNames([...names, ...extraNames]);
+                setSheetColors([...colors, ...extraColors]);
                 setData(allData[0]);
                 setColWidths(allColWidths[0]);
                 setRowHeights(allRowHeights[0]);
-                // Restore charts if the hook is wired up
+                // Restore charts if the hook is wired up; preserve any charts
+                // the user placed on sheets they added during the download.
                 if (sheetsChartsRef && setCharts) {
-                    sheetsChartsRef.current = rawSheets.map(s => s.charts ?? []);
+                    const extraCharts = sheetsChartsRef.current.slice(allData.length);
+                    sheetsChartsRef.current = [
+                        ...rawSheets.map(s => s.charts ?? []),
+                        ...extraCharts,
+                    ];
                     setCharts(sheetsChartsRef.current[0] ?? []);
                 }
             }

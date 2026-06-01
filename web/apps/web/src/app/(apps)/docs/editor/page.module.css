@@ -837,6 +837,43 @@
   letter-spacing: 0.08em;
 }
 
+/* ── Find & replace highlight decorations (editing tools feature gap #3) ───── */
+.editorContent :global(.find-replace-match) {
+  background-color: rgba(255, 213, 0, 0.45);
+  border-radius: 2px;
+}
+
+.editorContent :global(.find-replace-current) {
+  background-color: rgba(255, 152, 0, 0.65);
+  border-radius: 2px;
+  outline: 1px solid rgba(255, 120, 0, 0.6);
+}
+
+/* ── Grammar issue underline decorations ─────────────────────────────────── */
+.editorContent :global(.grammar-issue) {
+  text-decoration: underline wavy #1e8e3e;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* ── Spell-error underline decorations (client-side nspell, not browser) ──── */
+.editorContent :global(.spell-error) {
+  text-decoration: underline wavy #e53935;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* ── AI writing result panel overlay ────────────────────────────────────── */
+.aiPanelOverlay {
+  position: fixed;
+  bottom: 48px;
+  right: 24px;
+  z-index: 100;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.18));
+}
+
 /* ── Print ────────────────────────────────────────────────────────────────── */
 @media print {
   .shell { height: auto; }
