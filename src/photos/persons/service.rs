@@ -1,6 +1,6 @@
 use crate::photos::persons::{
     dto::{
-        ClusterEntry, FaceEmbeddingEntry, FaceEmbeddingsResponse, ListPersonsResponse,
+        FaceEmbeddingEntry, FaceEmbeddingsResponse, ListPersonsResponse,
         MergePersonsRequest, PersonFaceThumbnail, PersonRelationship, PersonRelationshipsResponse,
         PersonResponse, PersonTimelineResponse, ReassignFaceRequest, RenamePersonRequest,
         SaveClustersRequest, TimelineGroup, UsersWithFacesResponse,

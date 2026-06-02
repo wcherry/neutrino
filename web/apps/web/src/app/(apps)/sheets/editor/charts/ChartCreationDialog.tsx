@@ -9,7 +9,7 @@ import type { CellProps } from '../types';
 import type { ChartDef, ChartType } from './chartTypes';
 import { ChartRenderer } from './ChartRenderer';
 import { autoDetectChartConfig, generateChartId } from './chartUtils';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './charts.module.css';
 
 interface ChartCreationDialogProps {
@@ -49,12 +49,13 @@ export function ChartCreationDialog({
     onConfirm,
     onClose,
 }: ChartCreationDialogProps) {
+    const flags = useFeatureFlags();
     const [chartType, setChartType] = useState<ChartType>('column');
     const [dataRange, setDataRange] = useState(initialRange);
     const [hasHeaders, setHasHeaders] = useState(true);
     const [seriesInRows, setSeriesInRows] = useState(false);
 
-    const allChartTypes = featureFlags.sheetsChartsPhase2
+    const allChartTypes = flags.sheetsChartsPhase2
         ? [...P1_CHART_TYPES, ...P2_CHART_TYPES]
         : P1_CHART_TYPES;
 

@@ -20,7 +20,7 @@ use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
 use futures_util::StreamExt;
 use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, BufWriter};
-use utoipa::{OpenApi, ToSchema};
+use utoipa::OpenApi;
 use uuid::Uuid;
 
 pub struct StorageApiState {

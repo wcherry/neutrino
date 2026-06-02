@@ -64,3 +64,14 @@ export interface UpdateAdminUserRequest {
   role?: string;
   totpEnabled?: boolean;
 }
+
+export interface FeatureFlag {
+  key: string;
+  enabled: boolean;
+  description: string | null;
+  updatedAt: string;
+}
+
+export interface UpdateFeatureFlagRequest {
+  enabled: boolean;
+}

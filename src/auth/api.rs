@@ -596,13 +596,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .service(set_public_key)
             .service(get_user_public_key),
     )
-    .service(
-        web::scope("/admin")
-            .service(admin_list_users)
-            .service(admin_get_user)
-            .service(admin_update_user)
-            .service(admin_delete_user),
-    );
+    .service(admin_list_users)
+    .service(admin_get_user)
+    .service(admin_update_user)
+    .service(admin_delete_user);
 }
 
 #[derive(OpenApi)]

@@ -142,6 +142,7 @@ pub struct PublicProfileResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct AdminUpdateUserRequest {
     pub name: Option<String>,
     pub role: Option<String>,

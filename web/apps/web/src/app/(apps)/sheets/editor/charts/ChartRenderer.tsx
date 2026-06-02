@@ -30,7 +30,7 @@ import {
     buildTreemapData,
 } from './chartUtils';
 import { getTheme } from './chartThemes';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 
 interface ChartRendererProps {
     def: ChartDef;
@@ -162,11 +162,12 @@ function SunburstChart({ labels, values, colors, showLabels, axisTextColor }: Su
 // ── ChartRenderer ─────────────────────────────────────────────────────────────
 
 export function ChartRenderer({ def, data, width, height }: ChartRendererProps) {
+    const flags = useFeatureFlags();
     const { labels, datasets } = extractChartData(def, data);
     const legendProps = getLegendProps(def.legendPosition);
 
     // Resolve theme (Phase 2 feature-flagged)
-    const theme = featureFlags.sheetsChartsPhase2 ? getTheme(def.theme) : null;
+    const theme = flags.sheetsChartsPhase2 ? getTheme(def.theme) : null;
     const palette = theme ? theme.colors : CHART_COLORS;
     const bgColor = def.backgroundColor || (theme?.backgroundColor ?? '#ffffff');
     const plotColor = def.plotAreaColor || (theme?.plotAreaColor ?? 'transparent');
@@ -205,14 +206,14 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
     const yLabel = def.yAxisTitle ? <Label value={def.yAxisTitle} angle={-90} position="insideLeft" style={{ fontSize: 11, fill: axisTextColor }} /> : null;
 
     // Phase 2: axis config
-    const yDomain = featureFlags.sheetsChartsPhase2 ? getYAxisDomain(def.yAxis) : (['auto', 'auto'] as [string, string]);
-    const yTickFormatter = featureFlags.sheetsChartsPhase2 ? makeTickFormatter(def.yAxis) : undefined;
-    const xTickFormatter = featureFlags.sheetsChartsPhase2 ? makeTickFormatter(def.xAxis) : undefined;
-    const yScaleType = featureFlags.sheetsChartsPhase2 && def.yAxis?.logScale ? 'log' as const : 'linear' as const;
-    const yReversed = featureFlags.sheetsChartsPhase2 && (def.yAxis?.reversed ?? false);
+    const yDomain = flags.sheetsChartsPhase2 ? getYAxisDomain(def.yAxis) : (['auto', 'auto'] as [string, string]);
+    const yTickFormatter = flags.sheetsChartsPhase2 ? makeTickFormatter(def.yAxis) : undefined;
+    const xTickFormatter = flags.sheetsChartsPhase2 ? makeTickFormatter(def.xAxis) : undefined;
+    const yScaleType = flags.sheetsChartsPhase2 && def.yAxis?.logScale ? 'log' as const : 'linear' as const;
+    const yReversed = flags.sheetsChartsPhase2 && (def.yAxis?.reversed ?? false);
 
     // Phase 2: data label config
-    const dlCfg = featureFlags.sheetsChartsPhase2 ? def.dataLabel : undefined;
+    const dlCfg = flags.sheetsChartsPhase2 ? def.dataLabel : undefined;
     const showDL = dlCfg ? dlCfg.show : def.showDataLabels;
     const dlPosition = getLabelPosition(dlCfg);
     const dlStyle: React.CSSProperties = {
@@ -221,7 +222,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
     };
 
     // Filter invisible series (Phase 2)
-    const visibleDatasets = featureFlags.sheetsChartsPhase2
+    const visibleDatasets = flags.sheetsChartsPhase2
         ? datasets.filter(ds => {
             const serDef = def.series.find(s => s.name === ds.name);
             return serDef?.visible !== false;
@@ -231,7 +232,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
     const getSeriesDef = (name: string) => def.series.find(s => s.name === name);
 
     // Shared YAxis props for Phase 2 axis config
-    const yAxisBaseProps = featureFlags.sheetsChartsPhase2 ? {
+    const yAxisBaseProps = flags.sheetsChartsPhase2 ? {
         domain: yDomain,
         tickFormatter: yTickFormatter,
         scale: yScaleType,
@@ -300,9 +301,9 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     {legendProps && <Legend {...legendProps} />}
                     {visibleDatasets.map((ds, i) => {
                         const sd = getSeriesDef(ds.name);
-                        const strokeWidth = featureFlags.sheetsChartsPhase2 ? (sd?.lineThickness ?? 2) : 2;
-                        const markerSize = featureFlags.sheetsChartsPhase2 ? (sd?.markerSize ?? 3) : 3;
-                        const showMarker = !featureFlags.sheetsChartsPhase2 || (sd?.markerStyle ?? 'circle') !== 'none';
+                        const strokeWidth = flags.sheetsChartsPhase2 ? (sd?.lineThickness ?? 2) : 2;
+                        const markerSize = flags.sheetsChartsPhase2 ? (sd?.markerSize ?? 3) : 3;
+                        const showMarker = !flags.sheetsChartsPhase2 || (sd?.markerStyle ?? 'circle') !== 'none';
                         return (
                             <Line key={ds.name} type="monotone" dataKey={ds.name}
                                 stroke={ds.color ?? palette[i % palette.length]}
@@ -332,7 +333,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     {visibleDatasets.map((ds, i) => {
                         const color = ds.color ?? palette[i % palette.length];
                         const sd = getSeriesDef(ds.name);
-                        const strokeWidth = featureFlags.sheetsChartsPhase2 ? (sd?.lineThickness ?? 2) : 2;
+                        const strokeWidth = flags.sheetsChartsPhase2 ? (sd?.lineThickness ?? 2) : 2;
                         return (
                             <Area key={ds.name} type="monotone" dataKey={ds.name}
                                 stroke={color} fill={color} fillOpacity={0.3} strokeWidth={strokeWidth}>
@@ -412,7 +413,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
 
     // ── Combo chart ───────────────────────────────────────────────────────────
     if (def.type === 'combo') {
-        const hasSecondaryAxis = featureFlags.sheetsChartsPhase2 &&
+        const hasSecondaryAxis = flags.sheetsChartsPhase2 &&
             visibleDatasets.some(ds => getSeriesDef(ds.name)?.yAxisId === 'right');
         return wrap(
             <ResponsiveContainer width="100%" height="100%">
@@ -433,8 +434,8 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                         const color = ds.color ?? palette[i % palette.length];
                         const seriesDef = def.series.find(s => s.name === ds.name);
                         const seriesType = seriesDef?.chartType ?? (i === 0 ? 'column' : 'line');
-                        const yAxisId = featureFlags.sheetsChartsPhase2 ? (seriesDef?.yAxisId ?? 'left') : 'left';
-                        const strokeWidth = featureFlags.sheetsChartsPhase2 ? (seriesDef?.lineThickness ?? 2) : 2;
+                        const yAxisId = flags.sheetsChartsPhase2 ? (seriesDef?.yAxisId ?? 'left') : 'left';
+                        const strokeWidth = flags.sheetsChartsPhase2 ? (seriesDef?.lineThickness ?? 2) : 2;
                         if (seriesType === 'line' || seriesType === 'area') {
                             return (
                                 <Line key={ds.name} type="monotone" dataKey={ds.name}
@@ -458,7 +459,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
     // Phase 2 chart types — only rendered when sheetsChartsPhase2 flag is on
     // ═══════════════════════════════════════════════════════════════════════════
 
-    if (!featureFlags.sheetsChartsPhase2) {
+    if (!flags.sheetsChartsPhase2) {
         return wrap(<NoData message="Phase 2 charts require the sheetsChartsPhase2 feature flag" />);
     }
 

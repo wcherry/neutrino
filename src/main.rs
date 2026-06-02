@@ -1,4 +1,4 @@
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder, middleware::Logger, middleware::NormalizePath};
+use actix_web::{get, web, App, HttpResponse, HttpServer, Responder, middleware::Logger, middleware::NormalizePath, middleware::TrailingSlash};
 use actix_cors::Cors;
 use actix_files;
 use diesel::r2d2::{ConnectionManager, CustomizeConnection, Error as R2D2Error, Pool};
@@ -198,13 +198,12 @@ async fn main() -> std::io::Result<()> {
     use drive::activity::repository::ActivityRepository;
     use drive::activity::service::ActivityService;
     use drive::admin::service::AdminDashboardService;
+    use drive::feature_flags::repository::FeatureFlagsRepository;
     use drive::ai::service::DriveAIService;
     use drive::comments::repository::CommentsRepository;
     use drive::comments::service::CommentsService;
     use drive::compliance::repository::ComplianceRepository;
     use drive::compliance::service::ComplianceService;
-    use drive::dlp::repository::DlpRepository;
-    use drive::dlp::service::DlpService;
     use drive::encryption::repository::EncryptionRepository;
     use drive::encryption::service::EncryptionService;
     use drive::filesystem::repository::FilesystemRepository;
@@ -420,12 +419,6 @@ async fn main() -> std::io::Result<()> {
         service: drive_shared_drives_service,
     });
 
-    let drive_dlp_repo = Arc::new(DlpRepository::new(pool.clone()));
-    let drive_dlp_service = Arc::new(DlpService::new(drive_dlp_repo, pool.clone()));
-    let drive_dlp_state = web::Data::new(drive::dlp::api::DlpApiState {
-        service: drive_dlp_service,
-    });
-
     let drive_compliance_repo = Arc::new(ComplianceRepository::new(pool.clone()));
     let drive_compliance_service = Arc::new(ComplianceService::new(drive_compliance_repo, pool.clone()));
     let drive_compliance_state = web::Data::new(drive::compliance::api::ComplianceApiState {
@@ -456,6 +449,11 @@ async fn main() -> std::io::Result<()> {
     let drive_admin_state = web::Data::new(drive::admin::api::AdminDashboardState {
         service: drive_admin_svc,
         service_registry: drive_service_registry,
+    });
+
+    let drive_feature_flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
+    let drive_feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
+        repo: drive_feature_flags_repo,
     });
 
     // Drive background jobs processor
@@ -715,10 +713,10 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::access_requests::api::AccessRequestsApiDoc::openapi());
         doc.merge(drive::activity::api::ActivityApiDoc::openapi());
         doc.merge(drive::admin::api::AdminApiDoc::openapi());
+        doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
         doc.merge(drive::ai::api::DriveAIApiDoc::openapi());
         doc.merge(drive::comments::api::CommentsApiDoc::openapi());
         doc.merge(drive::compliance::api::ComplianceApiDoc::openapi());
-        doc.merge(drive::dlp::api::DlpApiDoc::openapi());
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
         doc.merge(drive::filesystem::api::FilesystemApiDoc::openapi());
         doc.merge(drive::irm::api::IrmApiDoc::openapi());
@@ -790,13 +788,13 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_priority_state.clone())
             .app_data(drive_ai_state.clone())
             .app_data(drive_shared_drives_state.clone())
-            .app_data(drive_dlp_state.clone())
             .app_data(drive_compliance_state.clone())
             .app_data(drive_security_state.clone())
             .app_data(drive_tags_state.clone())
             .app_data(drive_encryption_state.clone())
             .app_data(drive_service_registry_state.clone())
             .app_data(drive_admin_state.clone())
+            .app_data(drive_feature_flags_state.clone())
             // Notes
             .app_data(notes_state.clone())
             // Photos
@@ -814,7 +812,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(slides_state.clone())
             .app_data(slides_ai_state.clone())
             // Middleware
-            .wrap(NormalizePath::trim())
+            .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
             .wrap(Logger::default())
             .wrap(Cors::permissive())
             // Swagger UI
@@ -829,6 +827,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api/v1")
                     .configure(auth::api::configure)
+                    .configure(drive::feature_flags::api::configure_public)
                     .configure(calendar::configure)
                     .configure(docs::configure)
                     .configure(drive::configure)
@@ -839,10 +838,10 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::scope("/admin")
                             .configure(drive::workspace::api::configure)
-                            .configure(drive::dlp::api::configure)
                             .configure(drive::compliance::api::configure)
                             .configure(drive::security::api::configure)
-                            .configure(drive::admin::api::configure),
+                            .configure(drive::admin::api::configure)
+                            .configure(drive::feature_flags::api::configure_admin),
                     )
                     // Internal routes
                     .service(

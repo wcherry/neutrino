@@ -1,10 +1,10 @@
 pub mod access_requests;
+pub mod feature_flags;
 pub mod activity;
 pub mod admin;
 pub mod ai;
 pub mod comments;
 pub mod compliance;
-pub mod dlp;
 pub mod encryption;
 pub mod filesystem;
 pub mod irm;

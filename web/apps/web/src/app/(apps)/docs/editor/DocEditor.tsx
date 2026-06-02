@@ -43,7 +43,7 @@ import {
 import { Spinner } from '@neutrino/ui';
 import { docsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
 import { DocOutline } from './DocOutline';
@@ -304,8 +304,9 @@ interface LayoutMeta {
 function serializeContent(
   docJson: object,
   meta: LayoutMeta,
+  layoutStructure: boolean,
 ): string {
-  if (featureFlags.docsLayoutStructure) {
+  if (layoutStructure) {
     return JSON.stringify({ doc: docJson, _meta: meta });
   }
   return JSON.stringify(docJson);
@@ -343,6 +344,7 @@ const AUTO_SAVE_DELAY_MS = 2000;
 export function DocEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const flags = useFeatureFlags();
   const docId = searchParams.get('id') ?? '';
   const queryClient = useQueryClient();
   const { spellCheck } = useSpellCheck();
@@ -364,7 +366,7 @@ export function DocEditor() {
   const [showComments, setShowComments] = useState(false);
   const [commentInitialText, setCommentInitialText] = useState('');
 
-  // ── Layout & structure state (gated by featureFlags.docsLayoutStructure) ──
+  // ── Layout & structure state (gated by flags.docsLayoutStructure) ──
   const [headerText, setHeaderText] = useState('');
   const [footerText, setFooterText] = useState('');
   const [showPageNumbers, setShowPageNumbers] = useState(false);
@@ -380,13 +382,13 @@ export function DocEditor() {
   const [spellWord, setSpellWord] = useState<string | undefined>(undefined);
   const [spellWordRange, setSpellWordRange] = useState<{ from: number; to: number } | null>(null);
   const [spellSuggestions, setSpellSuggestions] = useState<string[] | undefined>(undefined);
-  // ── Advanced formatting state (gated by featureFlags.docsAdvancedFormatting) ──
+  // ── Advanced formatting state (gated by flags.docsAdvancedFormatting) ──
   const [showStylesPalette, setShowStylesPalette] = useState(false);
   const [showImageProps, setShowImageProps] = useState(false);
   const [showTableCellModal, setShowTableCellModal] = useState(false);
   const localImageInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Editing tools state (gated by featureFlags.docsEditingTools) ──
+  // ── Editing tools state (gated by flags.docsEditingTools) ──
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [grammarEnabled, setGrammarEnabled] = useState(false);
   const [grammarIssue, setGrammarIssue] = useState<{
@@ -542,11 +544,11 @@ export function DocEditor() {
       TableRow,
       // When advanced formatting is on, use the extended TableCell with extra attrs;
       // otherwise fall back to the standard TableCell for backward compatibility.
-      featureFlags.docsAdvancedFormatting ? AdvancedTableCell : TableCell,
+      flags.docsAdvancedFormatting ? AdvancedTableCell : TableCell,
       TableHeader,
       // When advanced formatting is on, use the extended Image node (adds width,
       // alignment, caption attrs); otherwise use the standard Image extension.
-      featureFlags.docsAdvancedFormatting
+      flags.docsAdvancedFormatting
         ? AdvancedImage.configure({ inline: true, allowBase64: true })
         : Image.configure({ inline: true, allowBase64: true }),
       Link.configure({ openOnClick: false }),
@@ -554,7 +556,7 @@ export function DocEditor() {
       CharacterCount,
       SheetEmbedExtension,
       // Layout & structure extensions — only loaded when feature flag is on
-      ...(featureFlags.docsLayoutStructure ? [
+      ...(flags.docsLayoutStructure ? [
         FootnoteExtension,
         CrossRefExtension,
         TableOfContentsExtension,
@@ -562,7 +564,7 @@ export function DocEditor() {
         ColumnLayoutExtension,
       ] : []),
       // Advanced formatting extensions — only loaded when feature flag is on
-      ...(featureFlags.docsAdvancedFormatting ? [
+      ...(flags.docsAdvancedFormatting ? [
         Superscript,
         Subscript,
         IndentExtension,
@@ -571,7 +573,7 @@ export function DocEditor() {
       // Client-side spell checking via nspell (replaces browser spellcheck attribute)
       SpellCheckExtension,
       // Editing tools — find/replace and grammar check (feature gap #3)
-      ...(featureFlags.docsEditingTools ? [
+      ...(flags.docsEditingTools ? [
         FindReplaceExtension,
         GrammarCheckExtension,
       ] : []),
@@ -581,12 +583,12 @@ export function DocEditor() {
     },
     onUpdate: ({ editor }) => {
       // Bump editorVersion so layout-dependent components (e.g. footnote list) re-render
-      if (featureFlags.docsLayoutStructure) {
+      if (flags.docsLayoutStructure) {
         setEditorVersion(v => v + 1);
       }
       // Use the stable ref so we always get fresh metadata values without
       // needing to re-create the editor when metadata changes.
-      const content = serializeContent(editor.getJSON(), layoutMetaRef.current);
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -638,7 +640,7 @@ export function DocEditor() {
     try {
       const parsed = JSON.parse(docContent);
       // Detect wrapper format { doc, _meta } written when the layout flag was on
-      if (featureFlags.docsLayoutStructure && parsed._meta) {
+      if (flags.docsLayoutStructure && parsed._meta) {
         editor.commands.setContent(parsed.doc, false);
         setHeaderText(parsed._meta.headerText ?? '');
         setFooterText(parsed._meta.footerText ?? '');
@@ -725,19 +727,19 @@ export function DocEditor() {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     const content = serializeContent(editor.getJSON(), {
       headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme,
-    });
+    }, flags.docsLayoutStructure);
     versionMutation.mutate(content);
   }, [editor, versionMutation, headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
 
   // Sync grammar-enabled state into the GrammarCheckExtension plugin
   useEffect(() => {
-    if (!featureFlags.docsEditingTools || !editor) return;
+    if (!flags.docsEditingTools || !editor) return;
     editor.commands.setGrammarEnabled(grammarEnabled);
   }, [grammarEnabled, editor]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && featureFlags.docsEditingTools) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && flags.docsEditingTools) {
         e.preventDefault();
         setShowFindReplace(true);
         return;
@@ -887,7 +889,7 @@ export function DocEditor() {
     if (editor) {
       const content = serializeContent(editor.getJSON(), {
         ...layoutMetaRef.current, headerText: h, footerText: f, showPageNumbers: spn,
-      });
+      }, flags.docsLayoutStructure);
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -901,7 +903,7 @@ export function DocEditor() {
     if (editor) {
       const content = serializeContent(editor.getJSON(), {
         ...layoutMetaRef.current, watermarkText: wt, bgColor: bg,
-      });
+      }, flags.docsLayoutStructure);
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -914,7 +916,7 @@ export function DocEditor() {
     if (editor) {
       const content = serializeContent(editor.getJSON(), {
         ...layoutMetaRef.current, docTheme: theme,
-      });
+      }, flags.docsLayoutStructure);
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -1003,7 +1005,7 @@ export function DocEditor() {
     }
 
     // Detect grammar issue at cursor position when grammar check is enabled
-    if (featureFlags.docsEditingTools && grammarEnabled && editor) {
+    if (flags.docsEditingTools && grammarEnabled && editor) {
       const view = editor.view;
       const pos = view.posAtCoords({ left: e.clientX, top: e.clientY });
       if (pos) {
@@ -1224,7 +1226,7 @@ export function DocEditor() {
     paddingBottom: pageSetup.marginBottom,
     paddingLeft: pageSetup.marginLeft,
     paddingRight: pageSetup.marginRight,
-    ...(featureFlags.docsLayoutStructure && bgColor ? { backgroundColor: bgColor } : {}),
+    ...(flags.docsLayoutStructure && bgColor ? { backgroundColor: bgColor } : {}),
   };
 
   if (isLoading || !docId) {
@@ -1245,18 +1247,18 @@ export function DocEditor() {
           onExport={handleExport}
           onPageSetup={() => setShowPageSetup(true)}
           onPrint={handlePrint}
-          {...(featureFlags.docsLayoutStructure ? {
+          {...(flags.docsLayoutStructure ? {
             onInsertFootnote: handleInsertFootnote,
             onInsertCrossRef: handleInsertCrossRef,
             onHeaderFooter: () => setShowHeaderFooterModal(true),
             onWatermark: () => setShowWatermarkModal(true),
             onTheme: () => setShowThemeModal(true),
           } : {})}
-          {...(featureFlags.docsAdvancedFormatting ? {
+          {...(flags.docsAdvancedFormatting ? {
             onStylesPalette: () => setShowStylesPalette(true),
             onInsertLocalImage: handleInsertLocalImage,
           } : {})}
-          {...(featureFlags.docsEditingTools ? {
+          {...(flags.docsEditingTools ? {
             onOpenFindReplace: () => setShowFindReplace(true),
             grammarEnabled,
             onToggleGrammar: () => setGrammarEnabled(v => !v),
@@ -1309,7 +1311,7 @@ export function DocEditor() {
           />
 
           {/* Local image upload input — only needed when advanced formatting flag is on */}
-          {featureFlags.docsAdvancedFormatting && (
+          {flags.docsAdvancedFormatting && (
             <input
               ref={localImageInputRef}
               type="file"
@@ -1352,13 +1354,13 @@ export function DocEditor() {
       <Toolbar
         editor={editor}
         onInsertImage={handleInsertImage}
-        {...(featureFlags.docsAdvancedFormatting ? {
+        {...(flags.docsAdvancedFormatting ? {
           onInsertLocalImage: handleInsertLocalImage,
           onOpenStylesPalette: () => setShowStylesPalette(true),
           onOpenImageProps: () => setShowImageProps(true),
           onOpenTableCellModal: () => setShowTableCellModal(true),
         } : {})}
-        {...(featureFlags.docsEditingTools ? {
+        {...(flags.docsEditingTools ? {
           grammarEnabled,
           onToggleGrammar: () => setGrammarEnabled(v => !v),
           onAiSuggestions: () => runAiOperation('suggestions'),
@@ -1369,7 +1371,7 @@ export function DocEditor() {
       />
 
       {/* ── Find & replace bar (editing tools flag) ── */}
-      {featureFlags.docsEditingTools && showFindReplace && editor && (
+      {flags.docsEditingTools && showFindReplace && editor && (
         <FindReplaceBar editor={editor} onClose={() => setShowFindReplace(false)} />
       )}
 
@@ -1381,7 +1383,7 @@ export function DocEditor() {
             ref={pageRef}
             className={styles.page}
             style={pageStyle}
-            {...(featureFlags.docsLayoutStructure && docTheme !== 'default'
+            {...(flags.docsLayoutStructure && docTheme !== 'default'
               ? { 'data-doc-theme': docTheme }
               : {})}
           >
@@ -1391,26 +1393,26 @@ export function DocEditor() {
               pageRef={pageRef}
             />
             {/* ── Header ── */}
-            {featureFlags.docsLayoutStructure && headerText && (
+            {flags.docsLayoutStructure && headerText && (
               <div className={styles.pageHeader}>
                 {showPageNumbers ? headerText.replace('{{page}}', '1') : headerText}
               </div>
             )}
             {/* ── Watermark ── */}
-            {featureFlags.docsLayoutStructure && watermarkText && (
+            {flags.docsLayoutStructure && watermarkText && (
               <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
             )}
-            <div className={styles.editorContent} onClick={featureFlags.docsLayoutStructure ? handleCrossRefClick : undefined}>
+            <div className={styles.editorContent} onClick={flags.docsLayoutStructure ? handleCrossRefClick : undefined}>
               <EditorContent editor={editor} />
             </div>
             {/* ── Footer ── */}
-            {featureFlags.docsLayoutStructure && footerText && (
+            {flags.docsLayoutStructure && footerText && (
               <div className={styles.pageFooter}>
                 {showPageNumbers ? footerText.replace('{{page}}', '1') : footerText}
               </div>
             )}
             {/* ── Footnote list ── */}
-            {featureFlags.docsLayoutStructure && editor && (() => {
+            {flags.docsLayoutStructure && editor && (() => {
               // editorVersion is read to trigger re-renders on document changes
               void editorVersion;
               const notes = getFootnoteItems(editor);
@@ -1479,7 +1481,7 @@ export function DocEditor() {
           spellWord={spellWord}
           spellSuggestions={spellSuggestions}
           onApplySuggestion={handleApplySuggestion}
-          {...(featureFlags.docsEditingTools && grammarIssue ? {
+          {...(flags.docsEditingTools && grammarIssue ? {
             grammarMessage: grammarIssue.message,
             grammarSuggestion: grammarIssue.suggestion,
             grammarRange: { from: grammarIssue.from, to: grammarIssue.to },
@@ -1499,7 +1501,7 @@ export function DocEditor() {
       )}
 
       {/* ── Layout & structure modals ── */}
-      {featureFlags.docsLayoutStructure && showHeaderFooterModal && (
+      {flags.docsLayoutStructure && showHeaderFooterModal && (
         <HeaderFooterModal
           headerText={headerText}
           footerText={footerText}
@@ -1508,7 +1510,7 @@ export function DocEditor() {
           onClose={() => setShowHeaderFooterModal(false)}
         />
       )}
-      {featureFlags.docsLayoutStructure && showWatermarkModal && (
+      {flags.docsLayoutStructure && showWatermarkModal && (
         <WatermarkModal
           watermarkText={watermarkText}
           bgColor={bgColor}
@@ -1516,7 +1518,7 @@ export function DocEditor() {
           onClose={() => setShowWatermarkModal(false)}
         />
       )}
-      {featureFlags.docsLayoutStructure && showThemeModal && (
+      {flags.docsLayoutStructure && showThemeModal && (
         <ThemeModal
           currentTheme={docTheme}
           onSave={handleThemeSave}
@@ -1525,13 +1527,13 @@ export function DocEditor() {
       )}
 
       {/* ── Advanced formatting modals ── */}
-      {featureFlags.docsAdvancedFormatting && showStylesPalette && editor && (
+      {flags.docsAdvancedFormatting && showStylesPalette && editor && (
         <ParagraphStylesModal
           editor={editor}
           onClose={() => setShowStylesPalette(false)}
         />
       )}
-      {featureFlags.docsAdvancedFormatting && showImageProps && editor && (
+      {flags.docsAdvancedFormatting && showImageProps && editor && (
         <ImagePropertiesModal
           editor={editor}
           initialAttrs={{
@@ -1544,7 +1546,7 @@ export function DocEditor() {
           onClose={() => setShowImageProps(false)}
         />
       )}
-      {featureFlags.docsAdvancedFormatting && showTableCellModal && editor && (
+      {flags.docsAdvancedFormatting && showTableCellModal && editor && (
         <TableCellModal
           editor={editor}
           onClose={() => setShowTableCellModal(false)}
@@ -1552,7 +1554,7 @@ export function DocEditor() {
       )}
 
       {/* ── Editing tools modals (feature gap #3) ── */}
-      {featureFlags.docsEditingTools && showChangeTone && (
+      {flags.docsEditingTools && showChangeTone && (
         <ChangeToneDialog
           hasSelection={editor ? !editor.state.selection.empty : false}
           onApply={(values) => {
@@ -1563,7 +1565,7 @@ export function DocEditor() {
         />
       )}
 
-      {featureFlags.docsEditingTools && showAiPanel && (
+      {flags.docsEditingTools && showAiPanel && (
         <div className={styles.aiPanelOverlay}>
           <AiPanel
             operation={aiOperation}

@@ -33,7 +33,7 @@ import { ShareDialog } from './ShareDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './page.module.css';
 
 
@@ -112,6 +112,7 @@ export default function DrivePage() {
   const toast = useToast();
   const router = useRouter();
   const currentUser = useUser();
+  const flags = useFeatureFlags();
 
   const [sortBy, setSortBy] = useState<SortField>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -405,7 +406,7 @@ export default function DrivePage() {
 
   // ── Area-wide drag-and-drop (gated by feature flag) ──────────────────────────
   const handleAreaDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!featureFlags.driveAreaDropTarget) return;
+    if (!flags.driveAreaDropTarget) return;
     // Only react to file drags, not text/link drags.
     if (!Array.from(e.dataTransfer.types).includes('Files')) return;
     dragDepthRef.current += 1;
@@ -416,14 +417,14 @@ export default function DrivePage() {
   }, []);
 
   const handleAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!featureFlags.driveAreaDropTarget) return;
+    if (!flags.driveAreaDropTarget) return;
     if (!Array.from(e.dataTransfer.types).includes('Files')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
   const handleAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!featureFlags.driveAreaDropTarget) return;
+    if (!flags.driveAreaDropTarget) return;
     dragDepthRef.current -= 1;
     if (dragDepthRef.current === 0) {
       setIsDraggingOver(false);
@@ -431,7 +432,7 @@ export default function DrivePage() {
   }, []);
 
   const handleAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!featureFlags.driveAreaDropTarget) return;
+    if (!flags.driveAreaDropTarget) return;
     e.preventDefault();
     dragDepthRef.current = 0;
     setIsDraggingOver(false);

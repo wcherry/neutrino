@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use crate::schema::{ransomware_events, siem_configs};

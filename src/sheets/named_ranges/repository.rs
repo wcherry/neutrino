@@ -58,6 +58,7 @@ impl NamedRangesRepository {
             })
     }
 
+    #[allow(dead_code)]
     pub fn get_by_sheet_db_id(&self, sheet_db_id: &str) -> Result<Vec<NamedRangeRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         named_ranges::table
@@ -78,6 +79,7 @@ impl NamedRangesRepository {
     ///
     /// Ranges whose `start_row >= at_row` are shifted entirely.
     /// Ranges that straddle `at_row` have their `end_row` adjusted.
+    #[allow(dead_code)]
     pub fn shift_rows(
         &self,
         sheet_db_id: &str,
@@ -119,6 +121,7 @@ impl NamedRangesRepository {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn update(
         &self,
         id: &str,

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::drive::notifications::{
     dto::{NotificationListResponse, NotificationResponse},
     model::NewNotification,

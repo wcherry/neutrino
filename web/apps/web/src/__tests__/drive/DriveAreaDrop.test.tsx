@@ -35,8 +35,8 @@ vi.mock('../../app/(apps)/drive/UploadZone', () => ({
 
 // Feature flags — toggled per test
 let driveAreaDropTarget = true;
-vi.mock('@/lib/featureFlags', () => ({
-  default: new Proxy(
+vi.mock('@/providers/FeatureFlagsProvider', () => ({
+  useFeatureFlags: () => new Proxy(
     {},
     {
       get: (_target, prop) => {
@@ -45,6 +45,7 @@ vi.mock('@/lib/featureFlags', () => ({
       },
     }
   ),
+  useFeatureFlagsLoaded: () => true,
 }));
 
 // Next.js router

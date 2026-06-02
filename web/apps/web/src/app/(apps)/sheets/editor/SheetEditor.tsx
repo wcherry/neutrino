@@ -28,7 +28,7 @@ import { FormulaBar } from './components/FormulaBar';
 import { HamburgerMenu } from './components/HamburgerMenu';
 import { ExportDialogs } from './components/ExportDialogs';
 import { SheetTabBar } from './components/SheetTabBar';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useCharts } from './charts/useCharts';
 import { ChartLayer } from './charts/ChartLayer';
 import { ChartCreationDialog } from './charts/ChartCreationDialog';
@@ -112,6 +112,7 @@ async function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 export function SheetEditor() {
     const searchParams = useSearchParams();
     const router = useRouter();
+    const flags = useFeatureFlags();
     const sheetId = searchParams.get('id') ?? '';
     // ── Core state & refs ────────────────────────────────────────────────────
     const [currentCell, setCurrentCell] = useState<CellProps | undefined>();
@@ -198,9 +199,9 @@ export function SheetEditor() {
         setData, setColWidths, setRowHeights,
         setSheetNames: sheets.setSheetNames,
         setSheetColors: sheets.setSheetColors,
-        sheetsChartsRef: featureFlags.sheetsCharts ? charts.sheetsChartsRef : undefined,
-        flushActiveCharts: featureFlags.sheetsCharts ? charts.flushActiveCharts : undefined,
-        setCharts: featureFlags.sheetsCharts ? charts.setCharts : undefined,
+        sheetsChartsRef: flags.sheetsCharts ? charts.sheetsChartsRef : undefined,
+        flushActiveCharts: flags.sheetsCharts ? charts.flushActiveCharts : undefined,
+        setCharts: flags.sheetsCharts ? charts.setCharts : undefined,
     });
 
     // ── Cross-sheet reference helper ─────────────────────────────────────────
@@ -948,7 +949,7 @@ export function SheetEditor() {
                 canRedo={history.historyLen.redo > 0}
                 onMergeCells={editing.mergeCells}
                 isMerged={editing.isMerged}
-                onInsertChart={featureFlags.sheetsCharts ? () => setShowChartDialog(true) : undefined}
+                onInsertChart={flags.sheetsCharts ? () => setShowChartDialog(true) : undefined}
             />
 
             <div className={styles.mainArea}>
@@ -974,7 +975,7 @@ export function SheetEditor() {
                         onCellContextMenu={handleCellContextMenu}
                         scrollBodyRef={scrollBodyRef}
                     />
-                    {featureFlags.sheetsCharts && (
+                    {flags.sheetsCharts && (
                         <ChartLayer
                             charts={charts.charts}
                             data={data}
@@ -996,7 +997,7 @@ export function SheetEditor() {
                         onClose={() => setShowHistory(false)}
                     />
                 )}
-                {featureFlags.sheetsCharts && selectedChartId && (() => {
+                {flags.sheetsCharts && selectedChartId && (() => {
                     const def = charts.charts.find(c => c.id === selectedChartId);
                     return def ? (
                         <ChartEditorPanel
@@ -1017,23 +1018,23 @@ export function SheetEditor() {
                 activeSheetIndex={sheets.activeSheetIndex}
                 dirtyRef={dirtyRef}
                 onSwitchSheet={(idx) => {
-                    if (featureFlags.sheetsCharts) {
+                    if (flags.sheetsCharts) {
                         // Flush before switchSheet updates activeSheetIndexRef, so
                         // the current sheet's charts land in the correct slot.
                         charts.flushActiveCharts();
                     }
                     sheets.switchSheet(idx);
-                    if (featureFlags.sheetsCharts) {
+                    if (flags.sheetsCharts) {
                         charts.switchSheetCharts(idx);
                         setSelectedChartId(null);
                     }
                 }}
                 onAddSheet={() => {
-                    if (featureFlags.sheetsCharts) {
+                    if (flags.sheetsCharts) {
                         charts.flushActiveCharts();
                     }
                     sheets.addSheet();
-                    if (featureFlags.sheetsCharts) {
+                    if (flags.sheetsCharts) {
                         charts.switchSheetCharts(sheets.activeSheetIndexRef.current);
                         setSelectedChartId(null);
                     }
@@ -1044,7 +1045,7 @@ export function SheetEditor() {
                 onCommitRename={sheets.commitRename}
             />
 
-            {featureFlags.sheetsCharts && showChartDialog && (
+            {flags.sheetsCharts && showChartDialog && (
                 <ChartCreationDialog
                     initialRange={
                         selectionAnchor && selectionActive

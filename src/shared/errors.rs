@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use thiserror::Error;
 
 pub type AppResult<T> = Result<T, AppError>;

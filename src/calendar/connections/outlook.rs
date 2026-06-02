@@ -33,6 +33,7 @@ pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: Option<String>,
@@ -172,6 +173,7 @@ pub async fn ensure_valid_token(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct OutlookDateTimeValue {
     pub date_time: String,
     pub time_zone: Option<String>,
@@ -208,6 +210,7 @@ struct DeltaResponse {
 
 /// Fetch events from Microsoft Graph using delta query for incremental sync.
 /// Returns (events, next_delta_link).
+#[allow(unused_assignments)]
 pub async fn fetch_events(
     http: &reqwest::Client,
     access_token: &str,

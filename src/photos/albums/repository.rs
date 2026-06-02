@@ -138,6 +138,7 @@ impl AlbumsRepository {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn list_album_photos(&self, album_id: &str) -> Result<Vec<AlbumPhotoRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         album_photos::table

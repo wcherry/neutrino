@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::*;

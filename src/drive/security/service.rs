@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::shared::ApiError;
 use crate::drive::security::{
     dto::*,

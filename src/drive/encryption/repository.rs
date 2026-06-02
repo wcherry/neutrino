@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::shared::ApiError;
 use crate::drive::encryption::model::{FileKeyRef, NewFileKeyRef};
 use crate::schema::file_key_refs;

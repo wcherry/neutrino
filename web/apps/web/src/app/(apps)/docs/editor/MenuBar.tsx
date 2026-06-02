@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { Editor } from '@tiptap/react';
 import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { applyTextCase } from '@/lib/textCase';
 import styles from './MenuBar.module.css';
 
@@ -144,6 +144,7 @@ export function HamburgerMenu({
   onAiSummarize,
   onAiChangeTone,
 }: HamburgerMenuProps) {
+  const flags = useFeatureFlags();
   const router = useRouter();
   const [showHelp, setShowHelp] = useState(false);
 
@@ -197,7 +198,7 @@ export function HamburgerMenu({
         { kind: 'action', label: 'Paste',      shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
         { kind: 'separator' },
         { kind: 'action', label: 'Select all', shortcut: 'Ctrl+A', action: () => editor?.chain().focus().selectAll().run() },
-        ...(featureFlags.docsEditingTools ? [
+        ...(flags.docsEditingTools ? [
           { kind: 'separator' as const },
           { kind: 'action' as const, label: 'Find and replace…', shortcut: 'Ctrl+F', action: () => onOpenFindReplace?.() },
           { kind: 'action' as const, label: grammarEnabled ? 'Grammar check ✓' : 'Grammar check', action: () => onToggleGrammar?.() },
@@ -234,13 +235,13 @@ export function HamburgerMenu({
             { kind: 'action', label: 'Double (2.0)',       action: () => {} },
           ],
         },
-        ...(featureFlags.docsLayoutStructure ? [
+        ...(flags.docsLayoutStructure ? [
           { kind: 'separator' as const },
           { kind: 'action' as const, label: 'Header & footer…',  action: () => onHeaderFooter?.() },
           { kind: 'action' as const, label: 'Watermark…',         action: () => onWatermark?.() },
           { kind: 'action' as const, label: 'Document theme…',    action: () => onTheme?.() },
         ] : []),
-        ...(featureFlags.docsAdvancedFormatting ? [
+        ...(flags.docsAdvancedFormatting ? [
           { kind: 'separator' as const },
           { kind: 'action' as const, label: 'Paragraph styles…', action: () => onStylesPalette?.() },
           { kind: 'separator' as const },
@@ -268,7 +269,7 @@ export function HamburgerMenu({
       label: 'Insert',
       items: [
         { kind: 'action', label: 'Link…',           shortcut: 'Ctrl+K', action: () => { const url = window.prompt('Enter URL:', 'https://'); if (url) editor?.chain().focus().setLink({ href: url }).run(); } },
-        featureFlags.docsAdvancedFormatting
+        flags.docsAdvancedFormatting
           ? { kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() }
           : { kind: 'action' as const, label: 'Image…',           action: () => { const url = window.prompt('Enter image URL:'); if (url) editor?.chain().focus().setImage({ src: url }).run(); } },
         { kind: 'separator' },
@@ -276,7 +277,7 @@ export function HamburgerMenu({
         { kind: 'action', label: 'Horizontal rule',                     action: () => editor?.chain().focus().setHorizontalRule().run() },
         { kind: 'action', label: 'Code block',                          action: () => editor?.chain().focus().toggleCodeBlock().run() },
         { kind: 'action', label: 'Blockquote',                          action: () => editor?.chain().focus().toggleBlockquote().run() },
-        ...(featureFlags.docsLayoutStructure ? [
+        ...(flags.docsLayoutStructure ? [
           { kind: 'separator' as const },
           { kind: 'action' as const, label: 'Table of contents',  action: () => editor?.chain().focus().insertContent({ type: 'tableOfContents' }).run() },
           { kind: 'action' as const, label: 'Footnote',           action: () => onInsertFootnote?.() },
@@ -287,7 +288,7 @@ export function HamburgerMenu({
         ] : []),
       ],
     },
-    ...(featureFlags.docsEditingTools ? [{
+    ...(flags.docsEditingTools ? [{
       kind: 'submenu' as const,
       label: 'AI Writing',
       items: [

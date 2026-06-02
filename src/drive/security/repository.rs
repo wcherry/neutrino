@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::shared::ApiError;
 use crate::schema::{ransomware_events, siem_configs};
 use crate::drive::security::model::{NewRansomwareEvent, NewSiemConfig, RansomwareEvent, SiemConfig};

@@ -706,35 +706,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    dlp_rules (id) {
-        id -> Text,
-        name -> Text,
-        description -> Nullable<Text>,
-        pattern -> Text,
-        pattern_type -> Text,
-        action -> Text,
-        severity -> Text,
-        is_active -> Integer,
-        created_by -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    dlp_violations (id) {
-        id -> Text,
-        file_id -> Text,
-        rule_id -> Text,
-        matched_at -> Timestamp,
-        notified_at -> Nullable<Timestamp>,
-        action_taken -> Nullable<Text>,
-        dismissed_at -> Nullable<Timestamp>,
-        dismissed_by -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
     legal_holds (id) {
         id -> Text,
         name -> Text,
@@ -835,6 +806,17 @@ diesel::table! {
     }
 }
 
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    feature_flags (key) {
+        key -> Text,
+        enabled -> Integer,
+        description -> Nullable<Text>,
+        updated_at -> Text,
+    }
+}
+
 // ── Joinable relationships ────────────────────────────────────────────────────
 
 // Auth
@@ -858,7 +840,6 @@ diesel::joinable!(files -> folders (folder_id));
 diesel::joinable!(shortcuts -> files (target_file_id));
 diesel::joinable!(file_versions -> files (file_id));
 diesel::joinable!(shared_drive_members -> shared_drives (shared_drive_id));
-diesel::joinable!(dlp_violations -> dlp_rules (rule_id));
 diesel::joinable!(file_legal_holds -> legal_holds (hold_id));
 diesel::joinable!(file_tags -> files (file_id));
 diesel::joinable!(file_tags -> tags (tag_id));
@@ -928,8 +909,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     file_classifications,
     shared_drives,
     shared_drive_members,
-    dlp_rules,
-    dlp_violations,
     legal_holds,
     retention_policies,
     file_legal_holds,
@@ -938,4 +917,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     tags,
     file_tags,
     file_key_refs,
+    // Admin
+    feature_flags,
 );

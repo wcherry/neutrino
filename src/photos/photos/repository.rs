@@ -152,6 +152,7 @@ impl PhotosRepository {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn delete_expired_trash(&self, before: NaiveDateTime) -> Result<usize, ApiError> {
         let mut conn = self.get_conn()?;
         diesel::delete(

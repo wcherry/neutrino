@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::drive::activity::{
     dto::{ActivityEntryResponse, ActivityListResponse},
     model::NewActivityEntry,

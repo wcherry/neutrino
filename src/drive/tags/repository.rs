@@ -221,6 +221,7 @@ impl TagsRepository {
 
     /// Get tag names for multiple files in a single query.
     /// Returns a map of file_id → sorted tag names.
+    #[allow(dead_code)]
     pub fn get_tag_names_for_files(
         &self,
         file_ids: &[String],

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::shared::ApiError;
 use crate::drive::compliance::model::{
     FileLegalHold, LegalHold, NewFileLegalHold, NewLegalHold, NewRetentionPolicy, RetentionPolicy,

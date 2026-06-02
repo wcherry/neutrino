@@ -84,6 +84,7 @@ impl AttendeesRepository {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn delete_for_event(&self, event_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         diesel::delete(event_attendees::table.filter(event_attendees::event_id.eq(event_id)))

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::drive::sharing::{
     dto::{
         GuestSessionResponse, ResolvedShareLinkResponse, ShareLinkResponse, UpdateShareLinkRequest,

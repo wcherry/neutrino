@@ -95,6 +95,7 @@ pub struct ZipContentsResponse {
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct FileVersionResponse {
     pub id: String,
     pub file_id: String,
@@ -134,6 +135,7 @@ pub struct UpdateVersionLabelRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct SaveVersionRequest {
     pub label: Option<String>,
 }

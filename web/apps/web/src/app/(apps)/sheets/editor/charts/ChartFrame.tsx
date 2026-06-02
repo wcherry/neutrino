@@ -5,7 +5,7 @@ import type { CellProps } from '../types';
 import type { ChartDef, ChartAnnotation } from './chartTypes';
 import { ChartRenderer } from './ChartRenderer';
 import { ChartAnnotationLayer } from './ChartAnnotationLayer';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './charts.module.css';
 import animStyles from './chartAnimation.module.css';
 
@@ -34,6 +34,7 @@ export function ChartFrame({
     containerRef,
     frameRef,
 }: ChartFrameProps) {
+    const flags = useFeatureFlags();
     const internalRef = useRef<HTMLDivElement | null>(null);
     const resolvedFrameRef = frameRef ?? internalRef;
 
@@ -150,7 +151,7 @@ export function ChartFrame({
     // ── Phase 5: Annotation handlers ─────────────────────────────────────────
 
     function handleAnnotationUpdate(annId: string, patch: Partial<ChartAnnotation>) {
-        if (!featureFlags.sheetsChartsPhase5) return;
+        if (!flags.sheetsChartsPhase5) return;
         const annotations = (def.annotations ?? []).map(a =>
             a.id === annId ? { ...a, ...patch } : a,
         );
@@ -158,7 +159,7 @@ export function ChartFrame({
     }
 
     function handleAnnotationDelete(annId: string) {
-        if (!featureFlags.sheetsChartsPhase5) return;
+        if (!flags.sheetsChartsPhase5) return;
         const annotations = (def.annotations ?? []).filter(a => a.id !== annId);
         onUpdate({ annotations });
     }
@@ -168,7 +169,7 @@ export function ChartFrame({
     const animCssStyle: Record<string, string> = {};
     let animClassName = '';
 
-    if (featureFlags.sheetsChartsPhase5 && def.animation && def.animation.mode !== 'none') {
+    if (flags.sheetsChartsPhase5 && def.animation && def.animation.mode !== 'none') {
         const { mode, durationMs = 600, delayMs = 150 } = def.animation;
         animCssStyle['--anim-duration'] = `${durationMs}ms`;
         animCssStyle['--anim-delay'] = `${delayMs}ms`;
@@ -201,7 +202,7 @@ export function ChartFrame({
             </div>
 
             {/* Phase 5: Annotation overlay */}
-            {featureFlags.sheetsChartsPhase5 && (
+            {flags.sheetsChartsPhase5 && (
                 <ChartAnnotationLayer
                     annotations={def.annotations ?? []}
                     frameW={frameDims.w}

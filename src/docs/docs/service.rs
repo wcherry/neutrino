@@ -166,7 +166,7 @@ impl DocsService {
 
     pub async fn write_content(
         &self,
-        user: &AuthenticatedUser,
+        _user: &AuthenticatedUser,
         doc_id: &str,
         content: &str,
     ) -> Result<(), ApiError> {

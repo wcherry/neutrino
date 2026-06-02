@@ -17,7 +17,7 @@ import {
   BULLET_LIST_STYLES,
   ORDERED_LIST_STYLES,
 } from '@/lib/extensions/ListStyleExtension';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './page.module.css';
 
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
@@ -289,6 +289,7 @@ export function Toolbar({
   onAiChangeTone,
   onOpenFindReplace,
 }: ToolbarProps) {
+  const flags = useFeatureFlags();
   if (!editor) return null;
 
   const currentHeading = HEADINGS.find(h =>
@@ -320,7 +321,7 @@ export function Toolbar({
       <ToolbarDivider />
 
       {/* ── Paragraph styles palette button (advanced flag only) ── */}
-      {featureFlags.docsAdvancedFormatting && onOpenStylesPalette && (
+      {flags.docsAdvancedFormatting && onOpenStylesPalette && (
         <>
           <ToolbarButton onClick={onOpenStylesPalette} title="Paragraph styles" wide>
             Styles
@@ -383,7 +384,7 @@ export function Toolbar({
         <ToolbarButton active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" style={{ textDecoration: 'line-through' }}>S</ToolbarButton>
 
         {/* Superscript / Subscript (advanced flag only) */}
-        {featureFlags.docsAdvancedFormatting && (
+        {flags.docsAdvancedFormatting && (
           <>
             <ToolbarButton
               active={editor.isActive('superscript')}
@@ -431,7 +432,7 @@ export function Toolbar({
       <ToolbarDivider />
 
       {/* Text case (advanced flag only) */}
-      {featureFlags.docsAdvancedFormatting && (
+      {flags.docsAdvancedFormatting && (
         <>
           <TextCaseMenu editor={editor} />
           <ToolbarDivider />
@@ -456,7 +457,7 @@ export function Toolbar({
         <ToolbarButton active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list"><ListOrdered size={15} /></ToolbarButton>
 
         {/* List style type dropdown (advanced flag only, shown only when a list is active) */}
-        {featureFlags.docsAdvancedFormatting && (
+        {flags.docsAdvancedFormatting && (
           <ListStyleMenu editor={editor} />
         )}
 
@@ -465,7 +466,7 @@ export function Toolbar({
       </ToolbarGroup>
 
       {/* Indent / Outdent (advanced flag only) */}
-      {featureFlags.docsAdvancedFormatting && (
+      {flags.docsAdvancedFormatting && (
         <>
           <ToolbarDivider />
           <ToolbarGroup>
@@ -493,7 +494,7 @@ export function Toolbar({
         <ToolbarButton active={editor.isActive('link')} onClick={setLink} title="Insert link"><Link size={15} /></ToolbarButton>
 
         {/* When advanced flag is on: show a URL insert + a local upload option */}
-        {featureFlags.docsAdvancedFormatting && onInsertLocalImage ? (
+        {flags.docsAdvancedFormatting && onInsertLocalImage ? (
           <>
             <ToolbarButton onClick={onInsertLocalImage} title="Upload local image"><Image size={15} /></ToolbarButton>
             {/* When an image is selected, show properties button */}
@@ -524,7 +525,7 @@ export function Toolbar({
             <ToolbarButton wide onClick={() => editor.chain().focus().deleteTable().run()} title="Delete table" style={{ color: '#d93025' }}>Del Table</ToolbarButton>
 
             {/* Cell formatting (advanced flag only) */}
-            {featureFlags.docsAdvancedFormatting && onOpenTableCellModal && (
+            {flags.docsAdvancedFormatting && onOpenTableCellModal && (
               <ToolbarButton wide onClick={onOpenTableCellModal} title="Cell formatting">Cell…</ToolbarButton>
             )}
           </ToolbarGroup>
@@ -532,7 +533,7 @@ export function Toolbar({
       )}
 
       {/* ── Editing tools: grammar toggle + find/replace + AI writing ── */}
-      {featureFlags.docsEditingTools && (
+      {flags.docsEditingTools && (
         <>
           <ToolbarDivider />
           <ToolbarGroup>

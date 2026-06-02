@@ -16,6 +16,7 @@ use std::path::Path;
 use std::sync::Arc;
 use uuid::Uuid;
 
+#[allow(dead_code)]
 const MAX_VERSIONS: i64 = 100;
 
 pub struct StorageService {
@@ -379,6 +380,7 @@ impl StorageService {
     }
 
     /// Returns the absolute filesystem path for serving the file.
+    #[allow(dead_code)]
     pub fn resolve_file_path(
         &self,
         user_id: &str,
@@ -456,6 +458,7 @@ impl StorageService {
 
     /// Decode an image file, resize it to fit within 512×512, and return base64 JPEG + MIME type.
     /// Returns None if the file cannot be decoded (e.g. unsupported format or encrypted).
+    #[allow(dead_code)]
     pub fn generate_image_thumbnail(path: &Path) -> Option<(String, String)> {
         let img = image::open(path).ok()?;
         let thumb = img.thumbnail(512, 512);

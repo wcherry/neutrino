@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::drive::activity::model::{ActivityEntry, NewActivityEntry};
 use crate::schema::file_activity_log;
 use crate::shared::ApiError;

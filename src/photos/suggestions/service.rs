@@ -147,8 +147,6 @@ impl SuggestionsService {
     }
 
     fn verify_face_ownership(&self, photo_id: &str, user_id: &str) -> Result<(), ApiError> {
-        use crate::schema::{faces, photos};
-        use diesel::prelude::*;
         let _ = self.faces_repo.get_photo_user_id(photo_id).and_then(|owner| {
             if owner == user_id {
                 Ok(())

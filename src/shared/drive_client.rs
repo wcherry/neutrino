@@ -20,6 +20,7 @@ pub struct DriveListItem {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct DriveFileRecord {
     pub id: String,
     pub name: String,

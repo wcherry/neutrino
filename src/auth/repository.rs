@@ -359,6 +359,7 @@ impl AuthRepository {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn find_and_use_backup_code(
         &self,
         user_id_val: &str,

@@ -1,132 +1,29 @@
-/**
- * Feature flags — all flags read NEXT_PUBLIC_FEATURE_* environment variables.
- * All flags default to false (feature off) unless explicitly enabled.
- *
- * To enable a flag in development, set the env var in .env.local:
- *   NEXT_PUBLIC_FEATURE_SETTINGS=true
- */
-const featureFlags = {
-  /**
-   * Settings page.
-   * Env var: NEXT_PUBLIC_FEATURE_SETTINGS
-   * Default: off
-   */
-  settingsPage: process.env.NEXT_PUBLIC_FEATURE_SETTINGS === 'true',
+export type FeatureFlags = {
+  settingsPage: boolean;
+  slidesVideoEmbeds: boolean;
+  sheetLiveEmbed: boolean;
+  driveAreaDropTarget: boolean;
+  colorPickerAlpha: boolean;
+  search: boolean;
+  sheetsCharts: boolean;
+  sheetsChartsPhase2: boolean;
+  sheetsChartsPhase5: boolean;
+  docsLayoutStructure: boolean;
+  docsAdvancedFormatting: boolean;
+  docsEditingTools: boolean;
+};
 
-  /**
-   * Video embeds in the slides editor.
-   * Adds a "Video" toolbar button that allows inserting YouTube, Vimeo, Loom,
-   * and direct MP4 video elements into slides.
-   * Env var: NEXT_PUBLIC_FEATURE_SLIDES_VIDEO_EMBEDS
-   * Default: off
-   */
-  slidesVideoEmbeds: process.env.NEXT_PUBLIC_FEATURE_SLIDES_VIDEO_EMBEDS === 'true',
-
-  /**
-   * Live sheet embeds in the slides editor.
-   * Enables pasting a copied Sheets selection as a live embed block, and adds
-   * a "Sheet" toolbar button to insert an embed by spreadsheet ID and range.
-   * Env var: NEXT_PUBLIC_FEATURE_SHEET_LIVE_EMBED
-   * Default: off
-   */
-  sheetLiveEmbed: process.env.NEXT_PUBLIC_FEATURE_SHEET_LIVE_EMBED === 'true',
-
-  /**
-   * Drive area-wide drag-and-drop upload.
-   * Makes the entire Drive view a drop target so users can drag files from their
-   * OS file manager and drop them anywhere in the drive area to upload.
-   * Env var: NEXT_PUBLIC_FEATURE_DRIVE_AREA_DROP_TARGET
-   * Default: off
-   */
-  driveAreaDropTarget: process.env.NEXT_PUBLIC_FEATURE_DRIVE_AREA_DROP_TARGET === 'true',
-
-  /**
-   * Alpha channel in the color picker.
-   * Adds an opacity slider to ColorPickerPopover when showAlpha=true is passed.
-   * Currently used for the slides background color picker.
-   * Env var: NEXT_PUBLIC_FEATURE_COLOR_PICKER_ALPHA
-   * Default: off
-   */
-  colorPickerAlpha: process.env.NEXT_PUBLIC_FEATURE_COLOR_PICKER_ALPHA === 'true',
-
-  /**
-   * Client-side encrypted search (phases 1-4).
-   * Keyword search over documents, notes, sheets, slides, events, reminders.
-   * Uses a local IndexedDB inverted index with HMAC-SHA256 token hashing.
-   * Env var: NEXT_PUBLIC_FEATURE_SEARCH
-   * Default: off
-   */
-  search: process.env.NEXT_PUBLIC_FEATURE_SEARCH === 'true',
-   /* Phase 1 charting for Neutrino Sheets.
-   * Adds chart creation, editing, and rendering (bar, line, area, pie,
-   * donut, scatter, combo) within the spreadsheet grid. Charts are inserted from
-   * a selected range, update live when cell values change, and are draggable and
-   * resizable. A side panel allows formatting the title, axes, legend, data
-   * labels, gridlines, and background colors.
-   * Env var: NEXT_PUBLIC_FEATURE_SHEETS_CHARTS
-   * Default: off
-   */
-  sheetsCharts: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS === 'true',
-
-  /**
-   * Phase 2 charting for Neutrino Sheets.
-   * Adds new chart types (stacked column/bar, 100% stacked, bubble, histogram,
-   * candlestick, waterfall, treemap, sunburst), axis controls (min/max, log
-   * scale, reverse, number formatting), per-series styling (color, line
-   * thickness, markers, visibility, secondary Y-axis), data label configuration
-   * (type, position, font size), and built-in chart themes (Default, Dark,
-   * Pastel, Corporate, Colorblind Safe).
-   * Requires NEXT_PUBLIC_FEATURE_SHEETS_CHARTS to also be enabled.
-   * Env var: NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE2
-   * Default: off
-   */
-  sheetsChartsPhase2: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE2 === 'true',
-
-  /**
-   * Phase 5 charting for Neutrino Sheets — Presentation Features.
-   * Adds annotation overlays (callouts, notes, arrows, shapes, text overlays),
-   * chart export (PNG, SVG, PDF, clipboard copy, print), and chart animation
-   * (reveal series, highlight data points, presentation transitions).
-   * Requires NEXT_PUBLIC_FEATURE_SHEETS_CHARTS to also be enabled.
-   * Env var: NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE5
-   * Default: off
-   */
-  sheetsChartsPhase5: process.env.NEXT_PUBLIC_FEATURE_SHEETS_CHARTS_PHASE5 === 'true',
-  /**
-   * Document layout & structure features for Neutrino Docs (Feature Gap #1).
-   * Adds: headers/footers with page numbering, footnotes, cross-references,
-   * table-of-contents generation, section breaks, multi-column layouts,
-   * page backgrounds, document themes, and watermarks.
-   * Env var: NEXT_PUBLIC_FEATURE_DOCS_LAYOUT_STRUCTURE
-   * Default: off
-   */
-  docsLayoutStructure: process.env.NEXT_PUBLIC_FEATURE_DOCS_LAYOUT_STRUCTURE === 'true',
-
-  /**
-   * Advanced formatting & styles features for Neutrino Docs (Feature Gap #2).
-   * Adds: superscript/subscript marks, text-case controls (UPPER / lower /
-   * Title / Sentence), indent/outdent for paragraphs and headings (Tab key),
-   * richer list formatting (disc/circle/square/none bullet styles and
-   * decimal/alpha/roman ordered list styles), a named paragraph styles palette
-   * (Normal, Title, Subtitle, Heading 1-6, Quote, Code Block, Caption),
-   * per-cell table formatting (background colour, border colour & width), and
-   * better image support (local file upload, width, alignment, alt text,
-   * caption).
-   * Env var: NEXT_PUBLIC_FEATURE_DOCS_ADVANCED_FORMATTING
-   * Default: off
-   */
-  docsAdvancedFormatting: process.env.NEXT_PUBLIC_FEATURE_DOCS_ADVANCED_FORMATTING === 'true',
-
-  /**
-   * Editing and productivity tools for Neutrino Docs (Feature Gap #3).
-   * Adds: find-and-replace dialog (Ctrl+F), grammar checking with inline
-   * underline decorations and context-menu suggestions, and AI-assisted
-   * writing (summarize, suggestions, change-tone) via the AI writing panel.
-   * Env var: NEXT_PUBLIC_FEATURE_DOCS_EDITING_TOOLS
-   * Default: off
-   */
-  docsEditingTools: process.env.NEXT_PUBLIC_FEATURE_DOCS_EDITING_TOOLS === 'true',
-} as const;
-
-export default featureFlags;
-export type FeatureFlags = typeof featureFlags;
+export const defaultFeatureFlags: FeatureFlags = {
+  settingsPage: false,
+  slidesVideoEmbeds: false,
+  sheetLiveEmbed: false,
+  driveAreaDropTarget: false,
+  colorPickerAlpha: false,
+  search: false,
+  sheetsCharts: false,
+  sheetsChartsPhase2: false,
+  sheetsChartsPhase5: false,
+  docsLayoutStructure: false,
+  docsAdvancedFormatting: false,
+  docsEditingTools: false,
+};

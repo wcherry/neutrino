@@ -59,7 +59,3 @@ pub struct CompleteGoogleRequest {
 pub struct TriggerSyncResponse {
     pub events_synced: usize,
 }
-
-// Keep old name for backwards compat with existing OpenApi references
-pub use ConnectAppleRequest as ConnectRequest;
-pub use ConnectionResponse as ConnectResponse;

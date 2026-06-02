@@ -363,6 +363,7 @@ impl StorageRepository {
 
     /// Deletes the oldest non-named version for a file and returns its storage_path for disk
     /// cleanup. Named versions (is_named = true) are never pruned automatically.
+    #[allow(dead_code)]
     pub fn delete_oldest_version(&self, file_id: &str) -> Result<Option<String>, ApiError> {
         let mut conn = self.get_conn()?;
 
@@ -394,6 +395,7 @@ impl StorageRepository {
 
     /// Returns the created_at timestamp of the most recent version for a file, or None if no
     /// versions exist yet.
+    #[allow(dead_code)]
     pub fn latest_version_created_at(
         &self,
         file_id: &str,

@@ -10,6 +10,7 @@ use crate::shared::drive_client::DriveClient;
 use std::sync::Arc;
 use uuid::Uuid;
 
+#[allow(dead_code)]
 pub struct NamedRangesService {
     repo: Arc<NamedRangesRepository>,
     sheets_repo: Arc<SheetsRepository>,

@@ -31,8 +31,9 @@ vi.mock('@neutrino/auth', () => ({
   }),
 }));
 
-vi.mock('@/lib/featureFlags', () => ({
-  default: { adminDashboard: true },
+vi.mock('@/providers/FeatureFlagsProvider', () => ({
+  useFeatureFlags: () => ({ adminDashboard: true }),
+  useFeatureFlagsLoaded: () => true,
 }));
 
 vi.mock('@neutrino/ui', () => ({

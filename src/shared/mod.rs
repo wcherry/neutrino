@@ -8,7 +8,6 @@ pub mod pagination;
 pub mod admin_extractor;
 
 pub use api_error::ApiError;
-pub use errors::{AppError, AppResult};
 pub use logger::init_logging;
 pub use helper::get_env_or_secret;
 
@@ -18,9 +17,8 @@ use diesel::r2d2::{ConnectionManager, Pool};
 pub use auth::extractor::AuthenticatedUser;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
-pub type DbConnection = diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>;
 
-pub use auth::tokens::{Claims, TokenService};
+pub use auth::tokens::TokenService;
 pub use auth::fetch_auth_profile;
 pub use pagination::*;
 pub use admin_extractor::AdminUser;

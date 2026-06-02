@@ -37,6 +37,7 @@ impl WorkspaceService {
     }
 
     /// Get the raw record for enforcement checks. Returns a default (all-false) record if none set.
+    #[allow(dead_code)]
     pub fn get_raw(&self) -> Result<WorkspaceSettingsRecord, ApiError> {
         self.repo.get_or_create()
     }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use crate::schema::{file_legal_holds, legal_holds, retention_policies};

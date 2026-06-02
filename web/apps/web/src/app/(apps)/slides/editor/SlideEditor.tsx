@@ -65,7 +65,7 @@ import { decryptFile } from '@neutrino/e2e-crypto';
 import type { SlideTheme } from '@neutrino/api-slides';
 import { FONT_FAMILY_NAMES as FONT_FAMILIES } from '@/constants/editor';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-embed';
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
 import { InsertSheetDialog } from './InsertSheetDialog';
@@ -305,6 +305,7 @@ export function SlideEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const flags = useFeatureFlags();
   const slideId = searchParams.get('id') ?? '';
   const { spellCheck } = useSpellCheck();
 
@@ -832,7 +833,7 @@ export function SlideEditor() {
   });
 
   useEffect(() => {
-    if (!featureFlags.sheetLiveEmbed) return;
+    if (!flags.sheetLiveEmbed) return;
     const listener = (e: ClipboardEvent) => {
       handleSheetPaste(e).then((consumed) => {
         if (consumed) e.preventDefault();
@@ -1222,7 +1223,7 @@ export function SlideEditor() {
                 color={(selectedElement as TextElement).style.color ?? '#202124'}
                 onChange={(hex) => updateTextStyle(selectedElement.id, { color: hex })}
                 title="Text color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
@@ -1233,7 +1234,7 @@ export function SlideEditor() {
                 color={(selectedElement as TextElement).style.backgroundColor ?? '#fef08a'}
                 onChange={(hex) => updateTextStyle(selectedElement.id, { backgroundColor: hex })}
                 title="Text background color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9632;</span>
@@ -1258,7 +1259,7 @@ export function SlideEditor() {
                   color={(selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)'}
                   onChange={(hex) => updateTextStyle(selectedElement.id, { shadowColor: hex })}
                   title="Shadow color"
-                  showAlpha={featureFlags.colorPickerAlpha}
+                  showAlpha={flags.colorPickerAlpha}
                 >
                   <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                     <span style={{ fontSize: 11, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>A</span>
@@ -1385,7 +1386,7 @@ export function SlideEditor() {
               color={(selectedElement as ImageElement).tintColor ?? '#ff0000'}
               onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, tintColor: hex } as ImageElement))}
               title="Tint color"
-              showAlpha={featureFlags.colorPickerAlpha}
+              showAlpha={flags.colorPickerAlpha}
             >
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                 <span style={{ fontSize: 11 }}>Tint</span>
@@ -1465,7 +1466,7 @@ export function SlideEditor() {
                 color={(selectedElement as ShapeElement).fill}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, fill: hex } as ShapeElement))}
                 title="Fill color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9632;</span>
@@ -1476,7 +1477,7 @@ export function SlideEditor() {
                 color={(selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as ShapeElement))}
                 title="Outline color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9633;</span>
@@ -1530,7 +1531,7 @@ export function SlideEditor() {
                 color={(selectedElement as LineElement).stroke}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as LineElement))}
                 title="Line color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9633;</span>
@@ -1953,7 +1954,7 @@ export function SlideEditor() {
                         <Video size={15} />
                         <span>Video</span>
                       </button>
-                      {featureFlags.sheetLiveEmbed && (
+                      {flags.sheetLiveEmbed && (
                         <button className={styles.insertBtn} onClick={() => setSheetDialogOpen(true)}>
                           <Table2 size={15} />
                           <span>Sheet</span>
@@ -2032,7 +2033,7 @@ export function SlideEditor() {
         />
       </div>
 
-      {featureFlags.sheetLiveEmbed && sheetPasteDialogState && (
+      {flags.sheetLiveEmbed && sheetPasteDialogState && (
         <PasteChoiceDialog
           previewData={sheetPasteDialogState.previewData}
           onPasteAsTable={sheetPasteDialogState.onPasteAsTable}

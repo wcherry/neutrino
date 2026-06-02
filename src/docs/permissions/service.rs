@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::shared::{fetch_auth_profile, ApiError, AuthenticatedUser};
 use crate::auth::service::AuthService;
 use crate::docs::permissions::{model::NewPermissionRecord, repository::PermissionsRepository};

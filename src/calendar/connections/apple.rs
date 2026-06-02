@@ -15,6 +15,7 @@ pub fn encode_credentials(username: &str, password: &str) -> String {
 }
 
 /// Decode stored credentials back to (username, password).
+#[allow(dead_code)]
 pub fn decode_credentials(token: &str) -> Option<(String, String)> {
     let decoded = String::from_utf8(B64.decode(token).ok()?).ok()?;
     let (user, pass) = decoded.split_once(':')?;

@@ -22,6 +22,7 @@ impl OpenAiClient {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_env() -> Option<Self> {
         get_env_or_secret("OPENAI_API_KEY").ok().map(Self::new)
     }

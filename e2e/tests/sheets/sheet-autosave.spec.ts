@@ -1,5 +1,5 @@
 import { test, expect } from '../../fixtures/base';
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { APIRequestContext, Page, Request } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -143,11 +143,12 @@ test.describe('Sheets autosave — flush on SPA navigation (sidebar)', () => {
     const sheetId = await createSheetAndGetId(page);
 
     const cellValue = 'SidebarSaveValue';
-    await setCell(page, 'A1', cellValue);
 
-    // Wait for the flush-on-unmount save that usePersistence's cleanup fires.
-    // The save is fire-and-forget, so we must wait for the server to respond
-    // (not just for the request to be sent) before reloading the sheet.
+    // Set up the response listener BEFORE editing the cell. The 3-second
+    // autosave timer may fire during setCell (after dirtyRef is set) and its
+    // response can arrive before waitForResponse is registered, causing a miss.
+    // Registering first ensures we capture any save — timer-fired or
+    // flush-on-unmount — regardless of timing.
     const saveResponse = page.waitForResponse(
       (r) =>
         r.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
@@ -155,12 +156,14 @@ test.describe('Sheets autosave — flush on SPA navigation (sidebar)', () => {
       { timeout: 15_000 },
     );
 
+    await setCell(page, 'A1', cellValue);
+
     // Navigate to Drive via the sidebar "My Drive" link (SPA navigation that
     // unmounts the SheetEditor and triggers the flush-on-unmount effect).
     const sidebar = page.getByRole('navigation', { name: 'Primary navigation' });
     await sidebar.getByRole('link', { name: 'My Drive' }).click();
 
-    // The flush must have fired and the server must have acknowledged it.
+    // The save must have been acknowledged by the server.
     await saveResponse;
 
     await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
@@ -172,5 +175,127 @@ test.describe('Sheets autosave — flush on SPA navigation (sidebar)', () => {
     await expect(page.locator('[data-type="cell"][id="A1"] span')).toHaveText(cellValue, {
       timeout: 10_000,
     });
+  });
+});
+
+test.describe('Sheets autosave — no spurious save on load', () => {
+  test('reopening an existing sheet does not trigger an autosave without user edits', async ({
+    page,
+    request,
+  }) => {
+    // The autosave timer fires every 3 seconds, so we observe for 4.5 s after the
+    // grid is visible — long enough to catch both an immediate spurious save and a
+    // timer-tick save.
+    test.setTimeout(75_000);
+
+    await registerAndLogin(request, page, 'nosave');
+    const sheetId = await createSheetAndGetId(page);
+
+    // Write data so the sheet is non-empty when we reopen it.
+    await setCell(page, 'A1', 'StableValue');
+
+    // Wait for the autosave that follows the edit.
+    await page.waitForResponse(
+      (r) =>
+        r.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
+        r.request().method() === 'PUT',
+      { timeout: 15_000 },
+    );
+
+    // Navigate away so the editor unmounts completely.
+    await page.goto('/drive');
+    await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
+
+    // Track any autosave requests that fire after reopening (before any edit).
+    let spuriousSaveCount = 0;
+    const trackSave = (req: Request) => {
+      if (
+        req.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
+        req.method() === 'PUT'
+      ) {
+        spuriousSaveCount++;
+      }
+    };
+    page.on('request', trackSave);
+
+    // Reopen the sheet and wait for the grid to be fully rendered.
+    await page.goto(`/sheets/editor?id=${sheetId}`);
+    await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 20_000 });
+
+    // Observe for longer than the 3-second autosave interval without interacting.
+    await page.waitForTimeout(4_500);
+    page.off('request', trackSave);
+
+    expect(
+      spuriousSaveCount,
+      'autosave must not fire when reopening a sheet with no pending changes',
+    ).toBe(0);
+  });
+
+  test('reopening an encrypted sheet does not trigger an autosave without user edits', async ({
+    page,
+    request,
+  }) => {
+    // Same as the non-encrypted test but with E2EE active; the old bug fired
+    // save() unconditionally at the end of load() whenever dekRef was set.
+    test.setTimeout(90_000);
+
+    await registerAndLogin(request, page, 'nosave_enc');
+
+    // Resolve the user ID via the profile endpoint so we can wait for the E2EE
+    // keypair (stored under `neutrino_e2e_<userId>` in localStorage).
+    const token = await page.evaluate(() => localStorage.getItem('access_token'));
+    if (!token) throw new Error('access_token not found in localStorage');
+    const profileRes = await request.get(`${BASE_URL}/api/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(profileRes.ok(), `profile fetch failed: ${profileRes.status()}`).toBeTruthy();
+    const { id: userId } = await profileRes.json() as { id: string };
+
+    // Wait for the browser to generate and store the E2EE keypair.
+    await page.waitForFunction(
+      (key) => localStorage.getItem(key) !== null,
+      `neutrino_e2e_${userId}`,
+      { timeout: 15_000 },
+    );
+
+    const sheetId = await createSheetAndGetId(page);
+
+    // Write data and wait for the initial autosave.
+    await setCell(page, 'A1', 'EncStable');
+    await page.waitForResponse(
+      (r) =>
+        r.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
+        r.request().method() === 'PUT',
+      { timeout: 15_000 },
+    );
+
+    // Navigate away.
+    await page.goto('/drive');
+    await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
+
+    let spuriousSaveCount = 0;
+    const trackSave = (req: Request) => {
+      if (
+        req.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
+        req.method() === 'PUT'
+      ) {
+        spuriousSaveCount++;
+      }
+    };
+    page.on('request', trackSave);
+
+    // Reopen the encrypted sheet.
+    await page.goto(`/sheets/editor?id=${sheetId}`);
+    await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 20_000 });
+
+    // Observe past the autosave interval.
+    await page.waitForTimeout(4_500);
+    page.off('request', trackSave);
+
+    expect(
+      spuriousSaveCount,
+      'autosave must not fire when reopening an encrypted sheet with no pending changes',
+    ).toBe(0);
   });
 });

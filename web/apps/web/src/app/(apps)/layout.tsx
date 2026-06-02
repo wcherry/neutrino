@@ -33,7 +33,7 @@ import {
 import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
 import { IndexEngine, type SearchableDocType } from '@neutrino/search';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { NewItemFAB } from './NewItemFAB';
 
 const SEARCH_KEY_STORAGE = 'search_key_v1';
@@ -142,6 +142,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const flags = useFeatureFlags();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
   const engineRef = useRef<IndexEngine | null>(null);
@@ -208,13 +209,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             : { usedBytes: 0, totalBytes: DEFAULT_QUOTA_BYTES },
         });
         ensureE2EKeys(user.id).catch(() => {});
-        if (featureFlags.search) {
-          const kp = loadKeyPair(user.id);
-          if (kp) {
-            engineRef.current = new IndexEngine();
-            searchKeyRef.current = getOrCreateSearchKey(user.id);
-          }
-        }
       } catch {
         // Not authenticated or refresh failed — redirect to sign-in.
         router.replace('/sign-in');
@@ -223,6 +217,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     init();
   }, [router]);
+
+  useEffect(() => {
+    if (auth.status !== 'ready' || !flags.search) return;
+    const kp = loadKeyPair(auth.user.id);
+    if (kp) {
+      engineRef.current = new IndexEngine();
+      searchKeyRef.current = getOrCreateSearchKey(auth.user.id);
+    }
+  }, [auth, flags.search]);
 
   const handleSearch = useCallback(async (query: string) => {
     const engine = engineRef.current;
@@ -276,8 +279,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       user={{ name: auth.user.name, email: auth.user.email, avatarSrc: profileDetails?.avatar ?? undefined }}
       onSearch={handleSearch}
       searchPlaceholder="Search in Drive..."
-      searchResults={featureFlags.search ? searchResults : undefined}
-      onResultClick={featureFlags.search ? handleResultClick : undefined}
+      searchResults={flags.search ? searchResults : undefined}
+      onResultClick={flags.search ? handleResultClick : undefined}
       onSettings={() => router.push('/settings')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}

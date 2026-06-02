@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::shared::ApiError;
 use crate::docs::permissions::model::{NewPermissionRecord, PermissionRecord};
 use crate::schema::{files, folders, permissions};

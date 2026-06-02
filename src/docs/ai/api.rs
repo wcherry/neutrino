@@ -60,6 +60,7 @@ pub struct HelpMeWriteRequest {
 
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct SummarizeRequest {
     /// Full document content (plain text or TipTap JSON-derived text).
     pub content: String,

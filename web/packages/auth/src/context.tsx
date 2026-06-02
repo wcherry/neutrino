@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi } from './client';
 import { ensureE2EKeys } from './e2e-keys';
-import { isCurrentUserAdmin } from './adminUtils';
 import type { UserProfile } from './types';
 
 // ---------------------------------------------------------------------------
@@ -44,9 +43,7 @@ export function AuthProvider({ children, onUnauthenticated }: AuthProviderProps)
     try {
       // request() handles 401 → refresh → retry automatically.
       const profile = await authApi.getProfile();
-      // Stamp admin status from the JWT claim so all consumers of useAuth
-      // can check user.isAdmin without re-decoding the token themselves.
-      profile.isAdmin = isCurrentUserAdmin();
+      profile.isAdmin = profile.role === 'admin';
       setUser(profile);
       ensureE2EKeys(profile.id).catch(() => {});
     } catch {

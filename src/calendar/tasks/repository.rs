@@ -144,6 +144,7 @@ impl TasksRepository {
             })
     }
 
+    #[allow(dead_code)]
     pub fn find_all_tasks_by_user(&self, user_id: &str) -> Result<Vec<TaskRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         tasks::table

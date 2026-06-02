@@ -23,6 +23,7 @@ pub struct TokenService {
 }
 
 impl TokenService {
+    #[allow(dead_code)]
     pub fn new(secret: String) -> Self {
         TokenService {
             secret,
@@ -39,6 +40,7 @@ impl TokenService {
         }
     }
 
+    #[allow(dead_code)]
     pub fn generate_access_token(&self, user_id: &str, email: &str) -> Result<String, ApiError> {
         self.generate_access_token_with_admin(user_id, email, false)
     }
@@ -77,6 +79,7 @@ impl TokenService {
         Ok((token, expires_at))
     }
 
+    #[allow(dead_code)]
     pub fn generate_token_with_custom_expiry(
         &self,
         user_id: &str,

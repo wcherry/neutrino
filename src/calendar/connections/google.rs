@@ -33,6 +33,7 @@ pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: Option<String>,
@@ -175,6 +176,7 @@ pub struct GoogleDateTime {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct GoogleEvent {
     pub id: String,
     pub status: Option<String>,
@@ -197,6 +199,7 @@ struct EventListResponse {
 
 /// Fetch all events from Google Calendar, using incremental sync when a cursor exists.
 /// Returns (events, next_sync_token).
+#[allow(unused_assignments)]
 pub async fn fetch_events(
     http: &reqwest::Client,
     access_token: &str,

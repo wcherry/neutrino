@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::dto::*;
 use super::repository::SearchRepository;
 use crate::shared::{ApiError, DbPool};

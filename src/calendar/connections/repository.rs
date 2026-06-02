@@ -88,6 +88,7 @@ impl ConnectionsRepository {
             })
     }
 
+    #[allow(dead_code)]
     pub fn find_by_user_provider(
         &self,
         user_id: &str,

@@ -8,7 +8,7 @@ import {
     TableCellsMerge, TableCellsSplit,
     BarChart2,
 } from 'lucide-react';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import type { CellStyle } from './types';
 import { ColorPickerPopover, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
 import { FONT_FAMILIES } from '@/constants/editor';
@@ -89,6 +89,7 @@ export type StyleToolbarProps = {
 };
 
 export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart }: StyleToolbarProps) {
+    const flags = useFeatureFlags();
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
     const isStrikethrough = cellStyle?.textDecoration === 'line-through';
@@ -317,7 +318,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                 ><DecimalIncIcon /></ToolbarButton>
             </ToolbarGroup>
 
-            {featureFlags.sheetsCharts && onInsertChart && (
+            {flags.sheetsCharts && onInsertChart && (
                 <>
                     <ToolbarDivider />
                     <ToolbarButton

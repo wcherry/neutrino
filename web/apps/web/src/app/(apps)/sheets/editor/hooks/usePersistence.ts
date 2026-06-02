@@ -187,7 +187,10 @@ export function usePersistence({
             dirtyRef.current = false;
             // Flush any pending startTransition updates so dataRef.current reflects
             // the latest committed cell values before serialising (same as timedSave).
-            flushSync(() => {});
+            // Wrapped in try-catch: calling flushSync during React 18 passive-effect
+            // cleanup may throw "flushSync was called from inside a lifecycle method".
+            // The save must still fire even if the flush is skipped.
+            try { flushSync(() => {}); } catch (_) {}
             saveRef.current(); // fire and forget
         };
         const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
@@ -204,17 +207,30 @@ export function usePersistence({
     const load = async () => {
         if (!sheetId) return;
 
+        // Reset dirty so a reload (e.g. version restore) doesn't trigger the
+        // colWidths/rowHeights save-on-change effect with stale unsaved state.
+        dirtyRef.current = false;
+
         // DEK resolution is handled by useEncryptedDocumentContent; dekRef is
         // already populated by the time the editor calls load().
         const sheet = await sheetsApi.getSheet(sheetId);
         sheetRef.current = sheet;
         setTitle(sheet.title);
+        // True only when decryptFile throws, meaning the server still holds the
+        // plaintext default content written at sheet creation time.
+        let serverHasPlaintextContent = false;
         try {
             let raw: string;
             if (dekRef.current) {
                 const blob = await storageApi.downloadFile(sheetId);
                 const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-                const plainBytes = decryptFile(cipherBytes, dekRef.current);
+                let plainBytes: Uint8Array;
+                try {
+                    plainBytes = decryptFile(cipherBytes, dekRef.current);
+                } catch {
+                    serverHasPlaintextContent = true;
+                    throw new Error('plaintext content detected');
+                }
                 raw = new TextDecoder().decode(plainBytes);
             } else {
                 raw = await driveReadContent(sheet.contentUrl);
@@ -272,10 +288,11 @@ export function usePersistence({
         // Signal the autosave useEffect to (re-)start the interval with a fresh closure.
         setLoadCount(c => c + 1);
 
-        // Immediately save encrypted content to overwrite the server's plaintext initial
-        // content (written by POST /api/v1/sheets on creation).  Without this, the server
-        // would hold plaintext bytes until the first user edit triggers the 3-second timer.
-        if (dekRef.current) {
+        // Overwrite the server's plaintext initial content with encrypted bytes.
+        // Only needed for brand-new encrypted sheets whose content was written as
+        // plaintext by POST /api/v1/sheets on creation; for existing encrypted sheets
+        // decryptFile succeeds and serverHasPlaintextContent stays false.
+        if (serverHasPlaintextContent) {
             save();
         }
     };

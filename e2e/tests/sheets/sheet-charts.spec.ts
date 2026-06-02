@@ -54,6 +54,17 @@ async function insertDefaultChart(page: Page): Promise<void> {
 }
 
 test.describe('Sheets charts', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/feature-flags', async route => {
+      const response = await route.fetch();
+      const flags = await response.json();
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ ...flags, sheetsCharts: true }),
+      });
+    });
+  });
+
   // ── Insert Chart dialog ──────────────────────────────────────────────────────
 
   test('clicking Insert Chart toolbar button opens the creation dialog', async ({ page, request }) => {
