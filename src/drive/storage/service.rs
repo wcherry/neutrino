@@ -254,6 +254,26 @@ impl StorageService {
         Ok(FileVersionResponse::from(version))
     }
 
+    /// Returns the absolute filesystem path for serving a specific version's content.
+    pub fn resolve_version_path(
+        &self,
+        user_id: &str,
+        file_id: &str,
+        version_id: &str,
+    ) -> Result<(std::path::PathBuf, String, String), ApiError> {
+        self.repo
+            .find_file(file_id, user_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
+
+        let version = self
+            .repo
+            .find_version(version_id, file_id, user_id)?
+            .ok_or_else(|| ApiError::not_found("Version not found"))?;
+
+        let path = self.store.resolve(&version.storage_path);
+        Ok((path, "application/json".to_string(), format!("version-{}.json", version.version_number)))
+    }
+
     pub fn restore_version(
         &self,
         user_id: &str,

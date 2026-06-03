@@ -887,3 +887,113 @@
     min-height: auto;
   }
 }
+
+/* ── Track changes marks ───────────────────────────────────────────────────── */
+/* Applied via TrackedInsertionMark and TrackedDeletionMark Tiptap extensions */
+.editorContent :global(ins[data-tracked="insertion"]) {
+  background-color: rgba(67, 160, 71, 0.18);
+  color: #2e7d32;
+  text-decoration: none;
+  border-bottom: 2px solid #43a047;
+}
+
+.editorContent :global(del[data-tracked="deletion"]) {
+  background-color: rgba(229, 57, 53, 0.12);
+  color: #c62828;
+  text-decoration: line-through;
+  text-decoration-color: #e53935;
+}
+
+/* ── Mobile / responsive editing (docsMobileEditor flag) ───────────────────── */
+@media (max-width: 768px) {
+  /* Top bar: compress layout for small screens */
+  .topbar {
+    padding: 0 8px;
+    gap: 6px;
+    height: 48px;
+    flex-wrap: nowrap;
+  }
+
+  /* Save status text is too wide on mobile — hide it */
+  .saveStatus {
+    display: none;
+  }
+
+  /* Title shrinks to use available space */
+  .titleInput {
+    font-size: 15px;
+    min-width: 0;
+  }
+
+  /* Top-bar action buttons: smaller + hide text labels */
+  .topbarActions {
+    gap: 4px;
+  }
+
+  .exportBtn {
+    padding: 6px 8px;
+    font-size: 12px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* Hide outline panel on mobile — it can be toggled via a button */
+  .outlinePanel,
+  .outlinePanelCollapsed {
+    display: none;
+  }
+
+  /* Toolbar: allow horizontal scrolling so all buttons are accessible */
+  /* The RickTextToolbar from @neutrino/ui renders a div — we target the
+     wrapping container via the shell's immediate flex child. */
+  .shell > *:nth-child(2) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .shell > *:nth-child(2)::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Toolbar buttons: larger tap targets for touch */
+  .shell :global(.toolbar-button),
+  .shell :global([role="toolbar"] button) {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* Editor scroll area: minimal padding */
+  .editorScroll {
+    padding: 8px;
+  }
+
+  /* Page: full viewport width, no paper shadow */
+  .page {
+    width: 100% !important;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 12px !important;
+    min-height: calc(100vh - 48px - 40px);
+  }
+
+  /* Status bar: simplify */
+  .statusBar {
+    padding: 2px 12px;
+    font-size: 11px;
+    gap: 10px;
+  }
+
+  /* Modals: full-width on small screens */
+  .modal {
+    min-width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+    padding: 16px;
+  }
+
+  /* AI panel overlay: full-width at bottom */
+  .aiPanelOverlay {
+    right: 8px;
+    bottom: 44px;
+    width: calc(100vw - 16px);
+  }
+}

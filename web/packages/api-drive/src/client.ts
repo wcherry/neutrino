@@ -151,6 +151,15 @@ export const storageApi = {
       method: 'POST',
     });
   },
+
+  /** Download the raw content of a specific version snapshot as text. */
+  async downloadVersionContent(fileId: string, versionId: string): Promise<string> {
+    const res = await fetch(`/api/v1/drive/files/${fileId}/versions/${versionId}/download`, {
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error(`Failed to download version: ${res.status}`);
+    return res.text();
+  },
 };
 
 // ---------------------------------------------------------------------------

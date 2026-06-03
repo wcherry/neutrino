@@ -178,3 +178,47 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* ── Compare section (docsCompare flag) ───────────────────────────────────── */
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.compareSection {
+  border-top: 1px solid var(--color-border, #e0e0e0);
+  padding: 10px 16px 16px;
+  flex-shrink: 0;
+}
+
+.compareSectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted, #5f6368);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.compareBtn {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 5px;
+  background: none;
+  font-size: 12px;
+  color: #1a73e8;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compareBtn:hover {
+  background: #e8f0fe;
+}

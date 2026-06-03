@@ -929,6 +929,54 @@ pub async fn restore_version(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v1/drive/files/{id}/versions/{vid}/download",
+    params(
+        ("id" = String, Path, description = "File ID"),
+        ("vid" = String, Path, description = "Version ID"),
+    ),
+    responses(
+        (status = 200, description = "Version content as file download"),
+        (status = 404, description = "File or version not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "versioning"
+)]
+#[get("/files/{id}/versions/{vid}/download")]
+pub async fn download_version(
+    state: web::Data<StorageApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<(String, String)>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ApiError> {
+    let (file_id, version_id) = path.into_inner();
+    let (file_path, mime_type, file_name) = state
+        .storage_service
+        .resolve_version_path(&user.user_id, &file_id, &version_id)?;
+
+    let content_type: mime::Mime = mime_type
+        .parse()
+        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+
+    let disposition = actix_web::http::header::ContentDisposition {
+        disposition: actix_web::http::header::DispositionType::Attachment,
+        parameters: vec![actix_web::http::header::DispositionParam::Filename(
+            file_name,
+        )],
+    };
+
+    let named_file = NamedFile::open(&file_path)
+        .map_err(|e| {
+            tracing::error!("Failed to open version file {:?}: {:?}", file_path, e);
+            ApiError::internal("Failed to serve version content")
+        })?
+        .set_content_type(content_type)
+        .set_content_disposition(disposition);
+
+    Ok(named_file.into_response(&req))
+}
+
+#[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{id}/versions/{vid}",
     params(
@@ -971,6 +1019,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         .service(get_version)
         .service(update_version_label)
         .service(restore_version)
+        .service(download_version)
         .service(delete_version);
 }
 
@@ -979,7 +1028,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
     paths(
         upload_file, create_file_record, get_file_info, list_files, get_file_metadata,
         preview_file, zip_contents, download_file, get_quota, autosave_file, save_version,
-        list_versions, get_version, update_version_label, restore_version, delete_version,
+        list_versions, get_version, update_version_label, restore_version, download_version, delete_version,
     ),
     components(schemas(
         FileMetadataResponse,

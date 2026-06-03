@@ -38,7 +38,7 @@ import CharacterCount from '@tiptap/extension-character-count';
 import Highlight from '@tiptap/extension-highlight';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, FileText, History, MessageSquare,
+  ArrowLeft, FileText, History, MessageSquare, GitCompare,
 } from 'lucide-react';
 import { Spinner } from '@neutrino/ui';
 import { docsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
@@ -75,6 +75,16 @@ import { ChangeToneDialog, type ToneValues } from './ChangeToneDialog';
 import { SaveAsDialog, type SaveAsOptions } from '@/components/SaveAsDialog';
 import { Sparkles } from 'lucide-react';
 import styles from './page.module.css';
+// Feature gap #4 — Real-time presence / cursor awareness
+import { usePresence } from '@/hooks/usePresence';
+import { PresenceBar } from './PresenceBar';
+import { RemoteCursorsExtension } from '@/lib/extensions/RemoteCursorsExtension';
+// Feature gap #5 — Track changes / suggesting mode
+import { TrackChangesExtension, isSuggestingMode } from '@/lib/extensions/TrackChangesExtension';
+import { TrackChangesBar } from './TrackChangesBar';
+// Feature gap #6 — Version compare
+import { DocComparePanel } from './DocComparePanel';
+import type { FileVersionItem } from '@neutrino/api-drive';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
 // Dimensions in inches; rendered at 96 dpi for screen display.
@@ -651,6 +661,21 @@ export function DocEditor() {
   // handleAiInsert knows exactly where to replace when the user accepts.
   const grammarAiRangeRef = useRef<{ from: number; to: number } | null>(null);
 
+  // ── Presence state (gated by flags.docsPresence) ──
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  // Read the JWT from localStorage (stored by the auth module as 'neutrino.access_token')
+  useEffect(() => {
+    if (!flags.docsPresence) return;
+    const stored = localStorage.getItem('neutrino.access_token');
+    setAuthToken(stored);
+  }, [flags.docsPresence]);
+
+  // ── Track changes state (gated by flags.docsTrackChanges) ──
+  const [suggestingMode, setSuggestingMode] = useState(false);
+
+  // ── Compare state (gated by flags.docsCompare) ──
+  const [compareVersion, setCompareVersion] = useState<FileVersionItem | null>(null);
+
   const importInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -820,6 +845,10 @@ export function DocEditor() {
         FindReplaceExtension,
         GrammarCheckExtension,
       ] : []),
+      // Presence / remote cursors (feature gap #4)
+      ...(flags.docsPresence ? [RemoteCursorsExtension] : []),
+      // Track changes / suggesting mode (feature gap #5)
+      ...(flags.docsTrackChanges ? [TrackChangesExtension] : []),
     ],
     editorProps: {
       attributes: { class: 'ProseMirror', spellcheck: 'false' },
@@ -843,6 +872,31 @@ export function DocEditor() {
 
   // Keep editorRef in sync so the stable onEmbed callback can access the editor.
   (editorRef as React.MutableRefObject<typeof editor>).current = editor;
+
+  // ── Presence / cursor awareness (feature gap #4) ───────────────────────────
+  const { remoteUsers, isConnected } = usePresence({
+    docId,
+    userName: doc?.title ?? 'Anonymous',
+    authToken,
+    editor,
+    enabled: flags.docsPresence && !!docId,
+  });
+
+  // Push remote cursor positions into the RemoteCursorsExtension plugin
+  useEffect(() => {
+    if (!flags.docsPresence || !editor) return;
+    editor.commands.updateRemoteCursors(remoteUsers);
+  }, [flags.docsPresence, editor, remoteUsers]);
+
+  // ── Track changes — keep React state in sync with plugin state ────────────
+  useEffect(() => {
+    if (!flags.docsTrackChanges || !editor) return;
+    const update = () => {
+      setSuggestingMode(isSuggestingMode(editor.state));
+    };
+    editor.on('transaction', update);
+    return () => { editor.off('transaction', update); };
+  }, [flags.docsTrackChanges, editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -1617,7 +1671,24 @@ export function DocEditor() {
           >
             <MessageSquare size={14} /> Comments
           </button>
+
+          {/* Compare button (docsCompare flag) */}
+          {flags.docsCompare && (
+            <button
+              className={styles.exportBtn}
+              onClick={() => setShowHistory(v => !v)}
+              title="Compare versions"
+              style={{ opacity: showHistory ? 1 : 0.5 }}
+            >
+              <GitCompare size={14} /> Compare
+            </button>
+          )}
         </div>
+
+        {/* Presence bar (docsPresence flag) */}
+        {flags.docsPresence && (
+          <PresenceBar users={remoteUsers} connected={isConnected} />
+        )}
       </div>
 
       {/* ── Toolbar ── */}
@@ -1643,6 +1714,15 @@ export function DocEditor() {
       {/* ── Find & replace bar (editing tools flag) ── */}
       {flags.docsEditingTools && showFindReplace && editor && (
         <FindReplaceBar editor={editor} onClose={() => setShowFindReplace(false)} />
+      )}
+
+      {/* ── Track changes bar (docsTrackChanges flag) ── */}
+      {flags.docsTrackChanges && editor && (
+        <TrackChangesBar
+          editor={editor}
+          suggestingMode={suggestingMode}
+          onToggle={() => editor.commands.toggleSuggestingMode()}
+        />
       )}
 
       {/* ── Main area ── */}
@@ -1707,7 +1787,32 @@ export function DocEditor() {
               queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
             }}
             onClose={() => setShowHistory(false)}
+            compareEnabled={flags.docsCompare}
+            onCompare={(v) => setCompareVersion(v)}
           />
+        )}
+        {flags.docsCompare && compareVersion && editor && (
+          (() => {
+            // Compare the selected older version against the current doc state
+            const currentVersionPlaceholder: FileVersionItem = {
+              id: '__current__',
+              fileId: docId,
+              versionNumber: 999,
+              sizeBytes: 0,
+              label: 'Current',
+              createdAt: new Date().toISOString(),
+            };
+            const currentContent = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+            return (
+              <DocComparePanel
+                fileId={docId}
+                baseVersion={compareVersion}
+                compareVersion={currentVersionPlaceholder}
+                currentContent={currentContent}
+                onClose={() => setCompareVersion(null)}
+              />
+            );
+          })()
         )}
         {showComments && (
           <CommentsPanel
