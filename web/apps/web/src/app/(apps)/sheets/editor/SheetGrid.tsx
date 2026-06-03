@@ -31,6 +31,8 @@ export type SheetGridProps = {
     onCellContextMenu?: (cellId: string, x: number, y: number) => void;
     // Expose the scrollable body container ref so the parent can scroll cells into view.
     scrollBodyRef?: React.RefObject<HTMLDivElement | null>;
+    // Rendered inside the scroll-content div so overlays (e.g. charts) scroll with the grid.
+    overlay?: React.ReactNode;
 };
 
 // ── Prefix-sum helpers ────────────────────────────────────────────────────────
@@ -160,7 +162,7 @@ export const SheetGrid = React.memo(function SheetGrid({
     colWidths, rowHeights, onColResize, onRowResize,
     onColHeaderClick, onRowHeaderClick, highlightedCol, highlightedRow,
     formulaPickMode, onFormulaPickMouseDown, onFormulaPickMouseMove, formulaPickCells,
-    onCellContextMenu, scrollBodyRef,
+    onCellContextMenu, scrollBodyRef, overlay,
 }: SheetGridProps) {
     const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -523,6 +525,7 @@ export const SheetGrid = React.memo(function SheetGrid({
                     {selectionOverlay}
                     {cutOverlay}
                     {formulaPickOverlay}
+                    {overlay}
                 </div>
             </div>
         </div>

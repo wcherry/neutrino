@@ -42,17 +42,20 @@ export function useCharts({
     }, []);
 
     const addChart = useCallback((def: ChartDef) => {
-        setCharts(prev => [...prev, def]);
+        chartsRef.current = [...chartsRef.current, def];
+        setCharts(chartsRef.current);
         dirtyRef.current = true;
     }, [dirtyRef]);
 
     const removeChart = useCallback((id: string) => {
-        setCharts(prev => prev.filter(c => c.id !== id));
+        chartsRef.current = chartsRef.current.filter(c => c.id !== id);
+        setCharts(chartsRef.current);
         dirtyRef.current = true;
     }, [dirtyRef]);
 
     const updateChart = useCallback((id: string, patch: Partial<ChartDef>) => {
-        setCharts(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+        chartsRef.current = chartsRef.current.map(c => c.id === id ? { ...c, ...patch } : c);
+        setCharts(chartsRef.current);
         dirtyRef.current = true;
     }, [dirtyRef]);
 

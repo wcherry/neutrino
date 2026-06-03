@@ -72,6 +72,7 @@ import { SpellCheckExtension } from '@/lib/extensions/SpellCheckExtension';
 import { FindReplaceBar } from './FindReplaceBar';
 import { AiPanel, type AiOperation } from './AiPanel';
 import { ChangeToneDialog, type ToneValues } from './ChangeToneDialog';
+import { SaveAsDialog, type SaveAsOptions } from '@/components/SaveAsDialog';
 import { Sparkles } from 'lucide-react';
 import styles from './page.module.css';
 
@@ -183,34 +184,272 @@ hr { border: none; border-top: 1px solid #ccc; margin: 12pt 0; }
 
 // ── DOCX / PDF export helpers ──────────────────────────────────────────────
 
-async function exportAsDocx(title: string, html: string) {
-  const { Document, Packer, Paragraph, TextRun } = await import('docx');
-  const { saveAs } = await import('file-saver');
-
-  const lines = html.replace(/<[^>]+>/g, '\n').split('\n').filter(l => l.trim());
-  const paras = lines.map(l => new Paragraph({ children: [new TextRun(l.trim())] }));
-
-  const doc = new Document({ sections: [{ children: paras }] });
-  const blob = await Packer.toBlob(doc);
-  saveAs(blob, `${title}.docx`);
+function downloadBlob(blob: Blob, filename: string) {
+  console.log('[downloadBlob] starting download', { filename, blobSize: blob.size, blobType: blob.type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Delay revoke so the browser has time to start the download
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+  console.log('[downloadBlob] click dispatched');
 }
 
-function exportAsHtml(title: string, html: string) {
+// Strip block-level inline margin/padding/line-height so pdfmake's own
+// default styles control spacing (inline values from the editor or pasted
+// content can otherwise produce enormous inter-paragraph gaps).
+function cleanBlockMargins(html: string): string {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  div.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, pre').forEach(el => {
+    const e = el as HTMLElement;
+    ['margin-top', 'margin-bottom', 'padding-top', 'padding-bottom', 'line-height']
+      .forEach(p => e.style.removeProperty(p));
+  });
+  return div.innerHTML;
+}
+
+// html-to-pdfmake emits { font: 'Inherit' } for elements with font-family: inherit;
+// strip those so pdfmake falls back to the defaultStyle font.
+function stripInheritFont(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripInheritFont);
+  if (node && typeof node === 'object') {
+    const obj = node as Record<string, unknown>;
+    if (obj.font === 'Inherit') delete obj.font;
+    for (const key of Object.keys(obj)) obj[key] = stripInheritFont(obj[key]);
+  }
+  return node;
+}
+
+async function buildPdfBlob(
+  html: string,
+  ps: PageSetup,
+  opts?: Pick<SaveAsOptions, 'password' | 'allowPrinting' | 'allowCopying' | 'allowModifying'>,
+): Promise<Blob> {
+  console.log('[buildPdfBlob] start — html length:', html.length, 'pageSetup:', ps);
+  const pdfMake = (await import('pdfmake/build/pdfmake')).default;
+  const pdfFonts = (await import('pdfmake/build/vfs_fonts')).default;
+  const { default: htmlToPdfmake } = await import('html-to-pdfmake');
+  console.log('[buildPdfBlob] imports loaded');
+
+  // pdfmake type stubs predate the vfs/fonts API shape — cast to reach runtime props.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pm = pdfMake as any;
+  pm.vfs = pdfFonts;
+  pm.fonts = {
+    Roboto: {
+      normal: 'Roboto-Regular.ttf',
+      bold: 'Roboto-Medium.ttf',
+      italics: 'Roboto-Italic.ttf',
+      bolditalics: 'Roboto-MediumItalic.ttf',
+    },
+  };
+
+  const pageSizeMap: Record<string, string | [number, number]> = {
+    letter: 'LETTER', a4: 'A4', legal: 'LEGAL',
+    a3: 'A3', a5: 'A5', tabloid: 'TABLOID', executive: [522, 756],
+  };
+
+  const rawContent = htmlToPdfmake(cleanBlockMargins(html), { window });
+  const content = stripInheritFont(rawContent) as Parameters<typeof pdfMake.createPdf>[0]['content'];
+
+  type DocDef = Parameters<typeof pdfMake.createPdf>[0];
+  const docDef: DocDef = {
+    content,
+    defaultStyle: { font: 'Roboto' },
+    pageSize: pageSizeMap[ps.pageSize] ?? 'LETTER',
+    pageOrientation: ps.orientation as 'portrait' | 'landscape',
+    pageMargins: [ps.marginLeft, ps.marginTop, ps.marginRight, ps.marginBottom],
+  };
+
+  if (opts?.password) {
+    (docDef as Record<string, unknown>).userPassword = opts.password;
+    (docDef as Record<string, unknown>).permissions = {
+      printing: opts.allowPrinting ? 'highResolution' : false,
+      copying: opts.allowCopying,
+      modifying: opts.allowModifying,
+      annotating: true,
+      fillingForms: true,
+      contentAccessibility: true,
+      documentAssembly: false,
+    };
+  }
+
+  // pdfmake 0.3.x changed getBlob() from callback-based (0.2.x) to Promise-based.
+  // The type stubs still declare the old callback signature, so cast through any.
+  console.log('[buildPdfBlob] calling pdfMake.createPdf');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const blob: Blob = await (pdfMake as any).createPdf(docDef).getBlob();
+  console.log('[buildPdfBlob] getBlob resolved', { size: blob?.size });
+  if (!blob) throw new Error('pdfmake returned no data.');
+  return blob;
+}
+
+async function buildDocxBlob(html: string): Promise<Blob> {
+  const {
+    Document, Packer, Paragraph, TextRun, ExternalHyperlink,
+    HeadingLevel, AlignmentType, LevelFormat,
+  } = await import('docx');
+
+  type DocxChild = InstanceType<typeof Paragraph>;
+  type RunChild = InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink>;
+
+  // Parse inline nodes into TextRun / ExternalHyperlink children
+  function parseInlineNodes(el: Element, inherited: {
+    bold?: boolean; italics?: boolean; underline?: boolean; strike?: boolean;
+    color?: string; size?: number;
+  } = {}): RunChild[] {
+    const runs: RunChild[] = [];
+    for (const node of Array.from(el.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent ?? '';
+        if (text) {
+          runs.push(new TextRun({
+            text,
+            bold: inherited.bold,
+            italics: inherited.italics,
+            underline: inherited.underline ? {} : undefined,
+            strike: inherited.strike,
+            color: inherited.color,
+            size: inherited.size,
+          }));
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const child = node as Element;
+        const tag = child.tagName.toLowerCase();
+        const style = (child as HTMLElement).style;
+
+        const next = { ...inherited };
+        if (tag === 'strong' || tag === 'b') next.bold = true;
+        if (tag === 'em' || tag === 'i') next.italics = true;
+        if (tag === 'u') next.underline = true;
+        if (tag === 's' || tag === 'del' || tag === 'strike') next.strike = true;
+        if (tag === 'br') { runs.push(new TextRun({ text: '', break: 1 })); continue; }
+        if (style?.fontWeight === 'bold' || style?.fontWeight === '700') next.bold = true;
+        if (style?.fontStyle === 'italic') next.italics = true;
+        if (style?.textDecoration?.includes('underline')) next.underline = true;
+        if (style?.color) next.color = style.color.replace('#', '');
+        if (style?.fontSize) {
+          const pt = parseFloat(style.fontSize);
+          if (!isNaN(pt)) next.size = Math.round(pt * 2); // half-points
+        }
+
+        if (tag === 'a') {
+          const href = child.getAttribute('href') ?? '';
+          const innerRuns = parseInlineNodes(child, { ...next, color: '1155CC', underline: true });
+          if (href && innerRuns.length) {
+            runs.push(new ExternalHyperlink({ link: href, children: innerRuns as InstanceType<typeof TextRun>[] }));
+          } else {
+            runs.push(...innerRuns);
+          }
+        } else {
+          runs.push(...parseInlineNodes(child, next));
+        }
+      }
+    }
+    return runs;
+  }
+
+  // Convert a block element to one or more Paragraph instances
+  function parseBlock(el: Element, numbering?: {
+    reference: string; level: number;
+  }): DocxChild[] {
+    const tag = el.tagName.toLowerCase();
+    const style = (el as HTMLElement).style;
+
+    const headingMap: Record<string, typeof HeadingLevel[keyof typeof HeadingLevel]> = {
+      h1: HeadingLevel.HEADING_1, h2: HeadingLevel.HEADING_2,
+      h3: HeadingLevel.HEADING_3, h4: HeadingLevel.HEADING_4,
+      h5: HeadingLevel.HEADING_5, h6: HeadingLevel.HEADING_6,
+    };
+
+    const alignMap: Record<string, typeof AlignmentType[keyof typeof AlignmentType]> = {
+      left: AlignmentType.LEFT, center: AlignmentType.CENTER,
+      right: AlignmentType.RIGHT, justify: AlignmentType.BOTH,
+    };
+
+    // Lists — recurse into li items
+    if (tag === 'ul' || tag === 'ol') {
+      const refId = tag === 'ol' ? 'ol-numbering' : 'ul-numbering';
+      const paras: DocxChild[] = [];
+      for (const child of Array.from(el.children)) {
+        if (child.tagName.toLowerCase() === 'li') {
+          paras.push(...parseBlock(child, { reference: refId, level: 0 }));
+        }
+      }
+      return paras;
+    }
+
+    // Blockquote — indent
+    if (tag === 'blockquote') {
+      const paras: DocxChild[] = [];
+      for (const child of Array.from(el.children)) {
+        const inner = parseBlock(child);
+        inner.forEach(p => paras.push(p));
+      }
+      if (paras.length === 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const P = Paragraph as any;
+        paras.push(new P({ children: parseInlineNodes(el), indent: { left: 720 } }));
+      }
+      return paras;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inlineChildren = parseInlineNodes(el) as any[];
+    const alignment = alignMap[style?.textAlign ?? ''];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const P = Paragraph as any;
+    return [new P({
+      children: inlineChildren,
+      ...(headingMap[tag] ? { heading: headingMap[tag] } : {}),
+      ...(alignment ? { alignment } : {}),
+      ...(numbering ? { numbering } : {}),
+    })];
+  }
+
+  const container = document.createElement('div');
+  container.innerHTML = html;
+
+  const children: DocxChild[] = [];
+  for (const node of Array.from(container.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = (node.textContent ?? '').trim();
+      if (text) children.push(new Paragraph({ children: [new TextRun(text)] }));
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      children.push(...parseBlock(node as Element));
+    }
+  }
+
+  const doc = new Document({
+    numbering: {
+      config: [
+        {
+          reference: 'ul-numbering',
+          levels: [{ level: 0, format: LevelFormat.BULLET, text: '•', alignment: AlignmentType.LEFT,
+            style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
+        },
+        {
+          reference: 'ol-numbering',
+          levels: [{ level: 0, format: LevelFormat.DECIMAL, text: '%1.', alignment: AlignmentType.LEFT,
+            style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
+        },
+      ],
+    },
+    sections: [{ children }],
+  });
+
+  return Packer.toBlob(doc);
+}
+
+function buildHtmlBlob(title: string, html: string): Blob {
   const full = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title></head><body>${html}</body></html>`;
-  const blob = new Blob([full], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `${title}.html`; a.click();
-  URL.revokeObjectURL(url);
-}
-
-async function exportAsTxt(title: string, docId: string) {
-  const result = await docsApi.exportText(docId);
-  const blob = new Blob([result.text], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `${title}.txt`; a.click();
-  URL.revokeObjectURL(url);
+  return new Blob([full], { type: 'text/html' });
 }
 
 // ── Page setup modal ────────────────────────────────────────────────────────
@@ -361,6 +600,9 @@ export function DocEditor() {
   });
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [showPageSetup, setShowPageSetup] = useState(false);
+  const [showSaveAs, setShowSaveAs] = useState(false);
+  const [saveAsFormat, setSaveAsFormat] = useState('pdf');
+  const pendingExportHtmlRef = useRef('');
   const [showOutline, setShowOutline] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -531,6 +773,7 @@ export function DocEditor() {
   });
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({ paragraph: false }),
       LineParagraph,
@@ -1200,18 +1443,45 @@ export function DocEditor() {
     printDoc(title, editor.getHTML(), pageSetup);
   }, [editor, title, pageSetup]);
 
-  const handleExport = async (format: string) => {
+  const handleExport = (format: string) => {
     if (!editor) return;
-    const html = editor.getHTML();
-    if (format === 'pdf') {
-      printDoc(title, html, pageSetup);
-    } else if (format === 'html') {
-      exportAsHtml(title, html);
-    } else if (format === 'txt') {
-      await exportAsTxt(title, docId);
-    } else if (format === 'docx') {
-      await exportAsDocx(title, html);
+    pendingExportHtmlRef.current = editor.getHTML();
+    setSaveAsFormat(format);
+    setShowSaveAs(true);
+  };
+
+  const handleSaveAs = async (opts: SaveAsOptions) => {
+    console.log('[handleSaveAs] called', { opts, saveAsFormat });
+    const html = pendingExportHtmlRef.current;
+    console.log('[handleSaveAs] html length:', html.length);
+    const ext: Record<string, string> = { pdf: '.pdf', docx: '.docx', html: '.html', txt: '.txt' };
+    const filename = opts.filename.includes('.') ? opts.filename : opts.filename + (ext[saveAsFormat] ?? '');
+    let blob: Blob;
+
+    if (saveAsFormat === 'pdf') {
+      console.log('[handleSaveAs] building PDF blob');
+      blob = await buildPdfBlob(html, pageSetup, opts);
+      console.log('[handleSaveAs] PDF blob built, size:', blob.size);
+    } else if (saveAsFormat === 'docx') {
+      blob = await buildDocxBlob(html);
+    } else if (saveAsFormat === 'html') {
+      blob = buildHtmlBlob(title, html);
+    } else {
+      const result = await docsApi.exportText(docId);
+      blob = new Blob([result.text], { type: 'text/plain' });
     }
+
+    if (opts.location === 'drive') {
+      console.log('[handleSaveAs] uploading to Drive, folderId:', opts.folderId);
+      const file = new File([blob], filename, { type: blob.type });
+      await storageApi.uploadFile(file, undefined, opts.folderId);
+      console.log('[handleSaveAs] Drive upload complete');
+    } else {
+      console.log('[handleSaveAs] downloading locally');
+      downloadBlob(blob, filename);
+    }
+    console.log('[handleSaveAs] closing dialog');
+    setShowSaveAs(false);
   };
 
   const wordCount = editor ? editor.storage.characterCount.words() : 0;
@@ -1554,6 +1824,15 @@ export function DocEditor() {
       )}
 
       {/* ── Editing tools modals (feature gap #3) ── */}
+      {showSaveAs && (
+        <SaveAsDialog
+          defaultFilename={`${title || 'Untitled document'}.${saveAsFormat}`}
+          format={saveAsFormat}
+          onSave={handleSaveAs}
+          onClose={() => setShowSaveAs(false)}
+        />
+      )}
+
       {flags.docsEditingTools && showChangeTone && (
         <ChangeToneDialog
           hasSelection={editor ? !editor.state.selection.empty : false}

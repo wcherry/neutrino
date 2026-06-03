@@ -77,6 +77,14 @@ export function navigateCell(
     return `${numToAlpha(col)}${row}`;
 }
 
+// Excel date serial: 1 = Jan 1, 1900. Excel incorrectly treats 1900 as a leap
+// year (serial 60 = non-existent Feb 29, 1900), so serials > 60 are off by one
+// relative to the real calendar — subtract 1 to compensate.
+function excelSerialToDate(serial: number): Date {
+    const adjusted = serial > 60 ? serial - 1 : serial;
+    return new Date(Date.UTC(1900, 0, 1) + (adjusted - 1) * 86400000);
+}
+
 function formatDateWithPattern(d: Date, fmt: string): string {
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const monthsShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -118,7 +126,9 @@ export function applyCustomFormat(value: string, fmt: string): string {
     if (!value) return value;
     // Date format
     if (isDateFormatStr(fmt)) {
-        const d = new Date(value);
+        const d = /^\d+$/.test(value.trim())
+            ? excelSerialToDate(parseFloat(value))
+            : new Date(value);
         if (isNaN(d.getTime())) return value;
         return formatDateWithPattern(d, fmt);
     }
@@ -154,7 +164,9 @@ export function formatCellValue(value: string, style?: CellStyle): string {
         case 'number':
             return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
         case 'date': {
-            const d = new Date(value);
+            const d = /^\d+$/.test(value.trim())
+                ? excelSerialToDate(num)
+                : new Date(value);
             return isNaN(d.getTime()) ? value : d.toLocaleDateString('en-US');
         }
         default:

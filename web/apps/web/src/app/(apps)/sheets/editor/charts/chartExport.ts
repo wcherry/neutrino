@@ -37,24 +37,77 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 // ── SVG serialisation ─────────────────────────────────────────────────────────
 
+// SVG presentation properties that may be set via CSS classes rather than
+// inline SVG attributes (e.g. from annotation layer styles or CSS Modules).
+const SVG_PRESENTATION_PROPS = [
+    'fill', 'fill-opacity', 'fill-rule',
+    'stroke', 'stroke-width', 'stroke-opacity',
+    'stroke-dasharray', 'stroke-dashoffset', 'stroke-linecap', 'stroke-linejoin',
+    'font-family', 'font-size', 'font-weight', 'font-style',
+    'text-anchor', 'dominant-baseline', 'letter-spacing',
+    'opacity', 'visibility',
+] as const;
+
 /**
- * Serialise the SVG subtree(s) inside a DOM element to a single SVG string.
- * If the element itself is not an <svg> we wrap all child SVGs in a new root.
+ * Recursively inline computed CSS presentation values onto a cloned SVG tree
+ * so that stylesheet-driven styles survive serialisation.
+ */
+function inlineSvgStyles(cloneEl: Element, liveEl: Element): void {
+    const computed = window.getComputedStyle(liveEl);
+    const parts: string[] = [];
+    for (const prop of SVG_PRESENTATION_PROPS) {
+        const val = computed.getPropertyValue(prop);
+        if (val) parts.push(`${prop}:${val}`);
+    }
+    if (parts.length) cloneEl.setAttribute('style', parts.join(';'));
+    const liveKids = liveEl.children;
+    const cloneKids = cloneEl.children;
+    for (let i = 0; i < liveKids.length; i++) {
+        if (cloneKids[i]) inlineSvgStyles(cloneKids[i], liveKids[i]);
+    }
+}
+
+/**
+ * Serialise all SVG elements inside a DOM element into a single SVG string.
  *
- * Recharts renders its charts as one or more <svg> elements inside the
- * container div, so this finds the first one and serialises it.
+ * When only one <svg> is present (the common Recharts case) it is serialised
+ * directly. When multiple are present (e.g. chart + annotation overlay) they
+ * are nested inside a new root SVG so nothing is lost.
  */
 function extractSvgString(frameEl: HTMLElement): string | null {
-    const svgEl = frameEl.querySelector('svg');
-    if (!svgEl) return null;
+    const svgEls = Array.from(frameEl.querySelectorAll('svg'));
+    if (svgEls.length === 0) return null;
 
-    // Clone to avoid mutating the live DOM
-    const clone = svgEl.cloneNode(true) as SVGElement;
-    // Ensure xmlns is set so the output is a self-contained SVG document
-    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    const serializer = new XMLSerializer();
 
-    return new XMLSerializer().serializeToString(clone);
+    if (svgEls.length === 1) {
+        const clone = svgEls[0].cloneNode(true) as SVGElement;
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+        inlineSvgStyles(clone, svgEls[0]);
+        return serializer.serializeToString(clone);
+    }
+
+    // Multiple SVGs: wrap each as a positioned nested <svg> inside a root element
+    // so IDs in each subtree remain scoped and don't conflict.
+    const frameRect = frameEl.getBoundingClientRect();
+    const root = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    root.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    root.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+    root.setAttribute('width', String(frameRect.width));
+    root.setAttribute('height', String(frameRect.height));
+    root.setAttribute('viewBox', `0 0 ${frameRect.width} ${frameRect.height}`);
+
+    for (const svgEl of svgEls) {
+        const svgRect = svgEl.getBoundingClientRect();
+        const clone = svgEl.cloneNode(true) as SVGElement;
+        clone.setAttribute('x', String(svgRect.left - frameRect.left));
+        clone.setAttribute('y', String(svgRect.top - frameRect.top));
+        inlineSvgStyles(clone, svgEl);
+        root.appendChild(clone);
+    }
+
+    return serializer.serializeToString(root);
 }
 
 // ── PNG export ────────────────────────────────────────────────────────────────
@@ -177,7 +230,8 @@ export function exportChartAsPdf(frameEl: HTMLElement, title: string): void {
     const container = document.createElement('div');
     container.id = printId;
     container.style.display = 'none';
-    container.innerHTML = svgStr;
+    const parsed = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
+    container.appendChild(document.adoptNode(parsed.documentElement));
     if (title) {
         const caption = document.createElement('div');
         caption.style.cssText = 'position:absolute;bottom:20px;left:0;right:0;text-align:center;font-size:13px;color:#444;';
@@ -191,9 +245,8 @@ export function exportChartAsPdf(frameEl: HTMLElement, title: string): void {
         container.remove();
     };
 
+    window.addEventListener('afterprint', cleanup, { once: true });
     window.print();
-    // Clean up after printing (synchronously — print() is blocking in most browsers)
-    cleanup();
 }
 
 // ── Print chart ───────────────────────────────────────────────────────────────
@@ -248,7 +301,14 @@ export async function copyChartToClipboard(
         img.src = url;
     });
 
-    const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
+    let blob: Blob | null;
+    try {
+        blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/png'));
+    } catch (err) {
+        // Canvas is tainted by a cross-origin image embedded in the SVG.
+        console.warn('[chartExport] Canvas tainted — cannot copy to clipboard:', err);
+        return false;
+    }
     if (!blob) return false;
 
     try {

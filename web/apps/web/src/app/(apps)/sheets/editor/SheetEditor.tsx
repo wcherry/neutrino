@@ -755,14 +755,6 @@ export function SheetEditor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [persist.dekResolved]);
 
-    // Save immediately when column/row sizes change so resizes persist without
-    // waiting for the 3-second timer. dirtyRef guards against spurious saves on load.
-    useEffect(() => {
-        if (!dirtyRef.current || !persist.sheetRef.current) return;
-        persist.save();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [colWidths, rowHeights]);
-
     // ── Header click handlers ────────────────────────────────────────────────
     const clearHeaderSelection = useCallback(() => {
         setHeaderSelectionLabel(null);
@@ -974,18 +966,18 @@ export function SheetEditor() {
                         formulaPickCells={editing.formulaPickMode ? editing.selectedCells : undefined}
                         onCellContextMenu={handleCellContextMenu}
                         scrollBodyRef={scrollBodyRef}
+                        overlay={flags.sheetsCharts ? (
+                            <ChartLayer
+                                charts={charts.charts}
+                                data={data}
+                                selectedChartId={selectedChartId}
+                                onSelectChart={setSelectedChartId}
+                                onUpdateChart={(id, patch) => { charts.updateChart(id, patch); dirtyRef.current = true; }}
+                                onDeleteChart={(id) => { charts.removeChart(id); setSelectedChartId(null); dirtyRef.current = true; }}
+                                containerRef={scrollBodyRef}
+                            />
+                        ) : null}
                     />
-                    {flags.sheetsCharts && (
-                        <ChartLayer
-                            charts={charts.charts}
-                            data={data}
-                            selectedChartId={selectedChartId}
-                            onSelectChart={setSelectedChartId}
-                            onUpdateChart={(id, patch) => { charts.updateChart(id, patch); dirtyRef.current = true; }}
-                            onDeleteChart={(id) => { charts.removeChart(id); setSelectedChartId(null); dirtyRef.current = true; }}
-                            containerRef={scrollBodyRef}
-                        />
-                    )}
                 </div>
                 {showHistory && (
                     <VersionHistoryPanel

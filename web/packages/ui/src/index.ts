@@ -171,6 +171,9 @@ export type { CommentsPanelProps, CommentItem, CommentReplyItem } from './compon
 export { VersionHistoryPanel } from './components/panels/VersionHistoryPanel';
 export type { VersionHistoryPanelProps, VersionItem } from './components/panels/VersionHistoryPanel';
 
+export { SaveAsDialog } from './components/panels/SaveAsDialog';
+export type { SaveAsDialogProps, SaveAsOptions, SaveAsDriveFolder, SaveAsBreadcrumb } from './components/panels/SaveAsDialog';
+
 // Shell components have moved to @neutrino/layout
 
 // Icons
