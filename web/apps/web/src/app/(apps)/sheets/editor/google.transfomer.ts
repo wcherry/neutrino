@@ -141,7 +141,12 @@ function translateNumberFormat(fmtData: any): Partial<CellStyle> {
         case 3: numberFormat = 'percent';  break;
         case 4: numberFormat = 'currency'; break;
         case 5: numberFormat = 'date';     break;
-        default: return {};
+        default:
+            // Unknown typeCode — still preserve the format string so that custom
+            // date patterns (e.g. 'dddd', 'DDDD') are not silently dropped when
+            // Google Sheets uses a typeCode outside the documented range.
+            if (fmtString) return { customFormat: fmtString };
+            return {};
     }
 
     const result: Partial<CellStyle> = { numberFormat };
@@ -206,19 +211,21 @@ export function parseGoogleSpreadsheetCompactTableJson(data : any[]) : ClipData[
     try {
     let indexVal;
     let index = -1;
+    // Tracks grid positions covered by a merge anchor so we can skip style reads
+    // for those cells — the compact-table style section only encodes styles for
+    // visible (non-covered) cells, one entry per visible cell in row-major order.
+    const coveredSet = new Set<string>();
     while((indexVal = indexReader.next()) != null) {
         index++;
         let raw;
         let value;
-
-        // console.log(`INDEX: ${index} IndexVal: ${indexVal}`);
 
         if(indexVal===UNUSED_CODE || indexVal===BLANK_CODE ) {
             // nothing;
         } else if(indexVal===VALUE_CODE) {
             const type = valuesIndexReader.next();
             if(type===NUMBER_TYPE) {
-                raw = `${numbersIndexReader.next()}`;    
+                raw = `${numbersIndexReader.next()}`;
             } else if(type===STRING_TYPE || type===UNKNOWN1_TYPE) {
                 raw = stringsIndexReader.next();
             } else {
@@ -227,8 +234,8 @@ export function parseGoogleSpreadsheetCompactTableJson(data : any[]) : ClipData[
             value = raw;
 
         } else if(indexVal===FUNCTION_CODE) {
-            const index = functionsIndexReader.next();
-            raw = functionsTable[parseInt(index)];   // TODO: Might not be required
+            const fnIdx = functionsIndexReader.next();
+            raw = functionsTable[parseInt(fnIdx)];
             valuesIndexReader.next();
             value = numbersIndexReader.next();
         } else {
@@ -236,17 +243,32 @@ export function parseGoogleSpreadsheetCompactTableJson(data : any[]) : ClipData[
             throw Error("Unknown index value: ", indexVal);
         }
 
-        const indexSty = stylesIndexReader.next();
-        const cellStyle = tanslateStyle(indexSty!=null ? stylesTable[indexSty] : undefined);
-        const rowSpan: number = rowSpanIndexReader.next();
-        const colSpan: number = colSpanIndexReader.next();
         const row = Math.floor(index/columnCount);
         const col = index%columnCount;
-        const id = `R[${row}]C[${col}]`
+        const rowSpan: number = rowSpanIndexReader.next();
+        const colSpan: number = colSpanIndexReader.next();
+
+        // If this cell is a merge anchor, register the cells it covers before
+        // consuming a style entry — covered cells must not pull from the reader.
+        if ((rowSpan ?? 1) > 1 || (colSpan ?? 1) > 1) {
+            const rs = rowSpan ?? 1;
+            const cs = colSpan ?? 1;
+            for (let dr = 0; dr < rs; dr++) {
+                for (let dc = 0; dc < cs; dc++) {
+                    if (dr === 0 && dc === 0) continue;
+                    coveredSet.add(`${row+dr},${col+dc}`);
+                }
+            }
+        }
+
+        const isCovered = coveredSet.has(`${row},${col}`);
+        const indexSty = isCovered ? null : stylesIndexReader.next();
+        const cellStyle = tanslateStyle(indexSty != null ? stylesTable[indexSty] : undefined);
+        const id = `R[${row}]C[${col}]`;
 
         cells.push({
-            id, raw, value, edit: false, deps: [], cellStyle, row, col, rowSpan,  colSpan,
-        })
+            id, raw, value, edit: false, deps: [], cellStyle, row, col, rowSpan, colSpan,
+        });
 
         console.log("CELL: ", cells[cells.length-1]);
     }
@@ -276,17 +298,175 @@ export function parseGoogleSpreadsheetCompactTableJson(data : any[]) : ClipData[
 }
 }
 
-export function fixRealtiveFormulas(raw: string, currentRow: number, currentCol: number) {
-    if(raw && raw.startsWith("=")){
-        const matcher = RegExp(/R\[(-?\d+)\]C\[(-?\d+)\]/);
-        let match = raw.match(matcher);
-        while(match){
-            const string = match[0];
-            const row = parseInt(match[1])+currentRow;
-            const col = parseInt(match[2])+currentCol;
-            raw = raw.replaceAll(string, `${numToAlpha(col)}${row}`);
-            match = raw.match(matcher);
+/**
+ * Extracts a partial CellStyle from a CSS inline style string.
+ * Handles properties that Google Sheets encodes in the td style attribute
+ * (background-color, color, font-weight, font-style, text-align, font-family).
+ */
+function parseCssStyle(style: string): Partial<CellStyle> {
+    const result: Partial<CellStyle> = {};
+    for (const rule of style.split(';')) {
+        const colon = rule.indexOf(':');
+        if (colon < 0) continue;
+        const prop = rule.slice(0, colon).trim().toLowerCase();
+        const val  = rule.slice(colon + 1).trim();
+        if (!val) continue;
+        switch (prop) {
+            case 'background-color':
+                if (val !== 'transparent' && val !== 'inherit' && val !== 'initial') {
+                    result.backgroundColor = val;
+                }
+                break;
+            case 'color':
+                if (val !== 'inherit' && val !== 'initial') result.color = val;
+                break;
+            case 'font-weight':
+                result.fontWeight = (val === 'bold' || parseInt(val) >= 600) ? 'bold' : 'normal';
+                break;
+            case 'font-style':
+                result.fontStyle = val.includes('italic') ? 'italic' : 'normal';
+                break;
+            case 'text-align':
+                if (val === 'center' || val === 'right' || val === 'left') result.textAlign = val;
+                break;
+            case 'text-decoration':
+                if (val.includes('line-through')) result.textDecoration = 'line-through';
+                break;
+            case 'font-family':
+                result.fontFamily = val.replace(/['"]/g, '').split(',')[0].trim();
+                break;
+            case 'vertical-align':
+                if (val === 'top' || val === 'middle' || val === 'bottom') result.verticalAlign = val;
+                break;
         }
+    }
+    return result;
+}
+
+/**
+ * Parses Google Sheets HTML clipboard data (text/html) to extract cell values,
+ * number/date formats, and visual styles (colors, font).
+ *
+ * Google Sheets annotates every <td> with:
+ *   data-sheets-value        — the underlying value (type + value fields)
+ *   data-sheets-numberformat — the number/date format string
+ *   style                    — inline CSS for visual formatting
+ *
+ * Colspan and rowspan attributes are respected so that cell positions in the
+ * logical grid match Google Sheets' layout.
+ *
+ * This is the reliable fallback (and enrichment source) when the proprietary
+ * compact-table JSON is not available or is missing format strings.
+ */
+export function parseGoogleSheetsHtml(html: string): ClipData[] {
+    if (!html.includes('data-sheets-') || typeof DOMParser === 'undefined') return [];
+
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const rows = Array.from(doc.querySelectorAll('tr'));
+    if (rows.length === 0) return [];
+
+    const cells: ClipData[] = [];
+    // Track grid positions occupied by a rowspan from a previous row.
+    // occupied.get(rowIdx) is the set of column indices covered by a prior span.
+    const occupied = new Map<number, Set<number>>();
+
+    const markOccupied = (r: number, c: number) => {
+        if (!occupied.has(r)) occupied.set(r, new Set());
+        occupied.get(r)!.add(c);
+    };
+
+    rows.forEach((tr, rowIdx) => {
+        const tds = Array.from(tr.querySelectorAll('td, th'));
+        let actualCol = 0;
+
+        tds.forEach(td => {
+            // Skip positions covered by a rowspan that started in a previous row.
+            while (occupied.get(rowIdx)?.has(actualCol)) actualCol++;
+
+            const colSpanAttr = Math.max(1, parseInt(td.getAttribute('colspan') ?? '1') || 1);
+            const rowSpanAttr = Math.max(1, parseInt(td.getAttribute('rowspan') ?? '1') || 1);
+
+            const valueAttr = td.getAttribute('data-sheets-value');
+            const fmtAttr   = td.getAttribute('data-sheets-numberformat');
+            const styleAttr = td.getAttribute('style');
+
+            // Default to the visible text content of the cell.
+            let raw: string = td.textContent?.trim() ?? '';
+
+            // Prefer the structured value when available.
+            // data-sheets-value: {"1": type, "2": string-value, "3": numeric-value}
+            //   type 1 = number (value in "3")
+            //   type 2 = string (value in "2")
+            if (valueAttr) {
+                try {
+                    const v = JSON.parse(valueAttr);
+                    if (v['1'] === 1 && v['3'] != null) {
+                        // Number — preserve the raw serial so date formats can be applied.
+                        raw = String(v['3']);
+                    } else if (v['1'] === 2 && v['2'] != null) {
+                        raw = String(v['2']);
+                    }
+                } catch { /* ignore */ }
+            }
+
+            // Build cellStyle from number format and inline CSS (merged).
+            let cellStyle: Partial<CellStyle> = {};
+
+            if (fmtAttr) {
+                try {
+                    const translated = translateNumberFormat(JSON.parse(fmtAttr));
+                    cellStyle = { ...cellStyle, ...translated };
+                } catch { /* ignore */ }
+            }
+
+            if (styleAttr) {
+                const css = parseCssStyle(styleAttr);
+                // CSS visual properties fill in what the number-format doesn't cover.
+                // Number-format properties (numberFormat, customFormat, decimalPlaces) take
+                // precedence if already set, since they carry more precise information.
+                cellStyle = { ...css, ...cellStyle };
+            }
+
+            const id = `R[${rowIdx}]C[${actualCol}]`;
+            cells.push({
+                id,
+                row: rowIdx,
+                col: actualCol,
+                raw,
+                cellStyle: Object.keys(cellStyle).length > 0 ? cellStyle as CellStyle : undefined,
+                ...(colSpanAttr > 1 ? { colSpan: colSpanAttr } : {}),
+                ...(rowSpanAttr > 1 ? { rowSpan: rowSpanAttr } : {}),
+            });
+
+            // Mark all grid positions covered by this cell's span as occupied
+            // so subsequent rows skip them correctly.
+            for (let rdr = 0; rdr < rowSpanAttr; rdr++) {
+                for (let rdc = 0; rdc < colSpanAttr; rdc++) {
+                    if (rdr === 0 && rdc === 0) continue;
+                    markOccupied(rowIdx + rdr, actualCol + rdc);
+                }
+            }
+
+            actualCol += colSpanAttr;
+        });
+    });
+
+    return cells;
+}
+
+export function fixRealtiveFormulas(raw: string, currentRow: number, currentCol: number) {
+    if (raw && raw.startsWith("=")) {
+        // Matches all R1C1-style ref forms: R[n]C[n] (relative), R1C1 (absolute), or mixed.
+        // Group 2 = relative row offset (bracketed), group 3 = absolute row (no brackets).
+        // Group 5 = relative col offset (bracketed), group 6 = absolute col (no brackets).
+        raw = raw.replace(/R(\[(-?\d+)\]|(\d+))C(\[(-?\d+)\]|(\d+))/g,
+            (_, _rp, relRow, absRow, _cp, relCol, absCol) => {
+                const row = absRow !== undefined ? parseInt(absRow) : parseInt(relRow) + currentRow;
+                const col = absCol !== undefined ? parseInt(absCol) : parseInt(relCol) + currentCol;
+                const colStr = (absCol !== undefined ? '$' : '') + numToAlpha(col);
+                const rowStr = (absRow !== undefined ? '$' : '') + row;
+                return `${colStr}${rowStr}`;
+            });
     }
     return raw;
 }

@@ -120,6 +120,36 @@ export const slidesApi = {
     });
   },
 
+  async autosaveContent(
+    slideId: string,
+    content: string,
+    filename: string,
+    metadata?: { title?: string },
+  ): Promise<SlideMetaResponse> {
+    const formData = new FormData();
+    formData.append('file', new Blob([content], { type: 'application/json' }), filename);
+    if (metadata) formData.append('metadata', JSON.stringify(metadata));
+    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave`, { method: 'PUT', body: formData });
+  },
+
+  async autosaveEncryptedContent(
+    slideId: string,
+    content: string,
+    filename: string,
+    dek: Uint8Array,
+    metadata?: { title?: string },
+  ): Promise<SlideMetaResponse> {
+    const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+    await initSodium();
+    const plainBytes = new TextEncoder().encode(content);
+    const cipherBytes = encryptFile(plainBytes, dek);
+    const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+    if (metadata) formData.append('metadata', JSON.stringify(metadata));
+    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave`, { method: 'PUT', body: formData });
+  },
+
   async retrieveText(slideId: string): Promise<string> {
     const slide = await request<SlideResponse>(`/api/v1/slides/${slideId}`);
     const raw = await request<string>(slide.contentUrl, {}, { responseType: 'text' }).catch(() => '');

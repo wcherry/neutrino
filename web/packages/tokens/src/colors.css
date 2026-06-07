@@ -1,4 +1,6 @@
 :root {
+  color-scheme: light;
+
   /* Neutrals */
   --color-neutral-50: #f9fafb;
   --color-neutral-100: #f3f4f6;
@@ -39,6 +41,7 @@
   --color-surface-secondary: var(--color-neutral-100);
   --color-surface-past: var(--color-neutral-50);
   --color-surface-hover: var(--color-neutral-100);
+  --color-bg-hover: var(--color-surface-hover);
   --color-primary: var(--color-accent);
   --color-primary-light: #dbeafe;
 
@@ -55,6 +58,8 @@
 
 /* ── Dark ─────────────────────────────────────────────────────────────────── */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   --color-bg: #0f172a;
   --color-bg-subtle: #1e293b;
   --color-surface: #1e293b;
@@ -93,6 +98,8 @@
 
 /* ── Glass — frosted dark navy, sky-blue accent ───────────────────────────── */
 [data-theme="glass"] {
+  color-scheme: dark;
+
   --color-bg: #0e1621;
   --color-bg-subtle: #162032;
   --color-surface: #1a2840;
@@ -128,6 +135,8 @@
 
 /* ── Midnight — near-black with indigo accent ─────────────────────────────── */
 [data-theme="midnight"] {
+  color-scheme: dark;
+
   --color-bg: #06060f;
   --color-bg-subtle: #0d0d1a;
   --color-surface: #10102a;
@@ -198,6 +207,8 @@
 
 /* ── Forest — deep evergreen, bright green accent ────────────────────────── */
 [data-theme="forest"] {
+  color-scheme: dark;
+
   --color-bg: #1a2416;
   --color-bg-subtle: #202d1c;
   --color-surface: #263020;

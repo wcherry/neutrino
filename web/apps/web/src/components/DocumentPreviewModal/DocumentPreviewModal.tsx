@@ -9,7 +9,6 @@
  * editor without closing the modal manually.
  *
  * Feature flag: feature.documents.preview
- * Env var: NEXT_PUBLIC_FEATURE_DOCUMENT_PREVIEW
  */
 
 import React, { useEffect } from 'react';

@@ -35,7 +35,7 @@
 }
 
 .backBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .docIcon {
@@ -65,11 +65,11 @@
 }
 
 .titleInput:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover);
 }
 
 .titleInput:focus {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover);
 }
 
 .topbarActions {
@@ -101,7 +101,7 @@
 }
 
 .exportBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .exportMenu {
@@ -133,7 +133,7 @@
 }
 
 .exportMenuItem:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 /* ── Main area ────────────────────────────────────────────────────────────── */
@@ -207,7 +207,7 @@
 }
 
 .outlineCollapseTab:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
   color: var(--color-text, #202124);
 }
 
@@ -228,7 +228,7 @@
 }
 
 .outlineExpandBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
   color: var(--color-text, #202124);
 }
 
@@ -253,7 +253,7 @@
 }
 
 .outlineIconBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .outlineIconBadge {
@@ -282,7 +282,7 @@
 }
 
 .outlineItem:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .outlineItem.active {
@@ -996,4 +996,33 @@
     bottom: 44px;
     width: calc(100vw - 16px);
   }
+}
+
+/* ── Distraction-free / focus mode ─────────────────────────────────────── */
+.distractionFreeShell {
+  background: #1c1c1e;
+}
+
+.dfmExitBtn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  backdrop-filter: blur(8px);
+}
+
+.dfmExitBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }

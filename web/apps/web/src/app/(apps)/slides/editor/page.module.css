@@ -49,6 +49,7 @@
 
 .titleInput:hover {
   border-color: var(--color-border);
+  background: transparent;
 }
 
 .titleInput:focus {

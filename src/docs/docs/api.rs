@@ -1,9 +1,11 @@
 use crate::shared::{ApiError, AuthenticatedUser};
 use crate::docs::docs::{
-    dto::{CreateDocRequest, DocMetaResponse, DocResponse, ExportTextResponse, ListDocsResponse, SaveDocRequest},
+    dto::{CreateDocRequest, DocMetaResponse, DocResponse, ExportTextResponse, ListDocsResponse, PageSetup, SaveDocRequest},
     service::DocsService,
 };
-use actix_web::{get, patch, post, web, HttpResponse};
+use actix_multipart::Multipart;
+use actix_web::{get, patch, post, put, web, HttpResponse};
+use futures_util::StreamExt;
 use std::sync::Arc;
 use utoipa::OpenApi;
 
@@ -130,17 +132,83 @@ pub async fn export_text(
     Ok(web::Json(result))
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1/docs/{id}/autosave",
+    params(("id" = String, Path, description = "Document ID")),
+    responses(
+        (status = 200, description = "Document autosaved", body = DocMetaResponse),
+        (status = 403, description = "Edit access required"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "docs"
+)]
+#[put("/{id}/autosave")]
+pub async fn autosave_doc(
+    state: web::Data<DocsApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    mut payload: Multipart,
+) -> Result<web::Json<DocMetaResponse>, ApiError> {
+    let doc_id = path.into_inner();
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut title: Option<String> = None;
+    let mut page_setup: Option<PageSetup> = None;
+
+    while let Some(field) = payload.next().await {
+        let mut field = field.map_err(|_| ApiError::bad_request("Invalid multipart data"))?;
+        let content_disposition = field.content_disposition().cloned();
+        let field_name = content_disposition
+            .as_ref()
+            .and_then(|cd| cd.get_name())
+            .unwrap_or("")
+            .to_string();
+        let has_filename = content_disposition
+            .as_ref()
+            .and_then(|cd| cd.get_filename())
+            .is_some();
+
+        let mut bytes = Vec::new();
+        while let Some(chunk) = field.next().await {
+            let data = chunk.map_err(|_| ApiError::bad_request("Upload interrupted"))?;
+            bytes.extend_from_slice(&data);
+        }
+
+        if has_filename || field_name == "file" {
+            file_bytes = Some(bytes);
+        } else if field_name == "metadata" {
+            if let Ok(s) = String::from_utf8(bytes) {
+                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&s) {
+                    title = meta.get("title").and_then(|v| v.as_str()).map(String::from);
+                    if let Some(ps_val) = meta.get("pageSetup") {
+                        page_setup = serde_json::from_value(ps_val.clone()).ok();
+                    }
+                }
+            }
+        }
+    }
+
+    let bytes = file_bytes.ok_or_else(|| ApiError::bad_request("No file provided"))?;
+    let meta = state
+        .docs_service
+        .autosave(&user, &doc_id, &bytes, title.as_deref(), page_setup.as_ref())
+        .await?;
+    Ok(web::Json(meta))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_docs)
         .service(create_doc)
         .service(get_doc)
         .service(save_doc)
-        .service(export_text);
+        .service(export_text)
+        .service(autosave_doc);
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_docs, create_doc, get_doc, save_doc, export_text),
+    paths(list_docs, create_doc, get_doc, save_doc, export_text, autosave_doc),
     components(schemas(
         CreateDocRequest,
         SaveDocRequest,

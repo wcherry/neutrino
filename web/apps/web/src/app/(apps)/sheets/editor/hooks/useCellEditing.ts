@@ -4,6 +4,44 @@ import React, { useRef, useState, useCallback, useTransition, useMemo } from 're
 import type { CellProps, CellStyle } from '../types';
 import { getRangeCells } from '../utils';
 import { alphaToNum, numToAlpha, rangeAddress } from '../utils';
+
+// ── Formula reference highlighting ────────────────────────────────────────────
+
+const FORMULA_REF_COLORS = [
+    '#1a73e8', // blue
+    '#e8341a', // red
+    '#0f9d58', // green
+    '#f5a623', // orange
+    '#9c27b0', // purple
+    '#00bcd4', // cyan
+    '#e91e63', // pink
+    '#795548', // brown
+];
+
+export type FormulaRefHighlight = { cells: Set<string>; color: string };
+
+// Parses a formula string and returns one highlight entry per unique cell reference
+// or range token, each assigned a distinct color. Cross-sheet refs (preceded by !)
+// are skipped since they belong to another sheet's grid.
+function parseFormulaRefs(raw: string): FormulaRefHighlight[] {
+    if (!raw.startsWith('=')) return [];
+    const formula = raw.slice(1);
+    const re = /(?<![!])\$?([A-Z]+)\$?(\d+)(?::\$?([A-Z]+)\$?(\d+))?/g;
+    const seen = new Map<string, FormulaRefHighlight>();
+    let colorIdx = 0;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(formula)) !== null) {
+        const [full, startCol, startRow, endCol, endRow] = match;
+        const normalizedRef = full.replace(/\$/g, '');
+        if (seen.has(normalizedRef)) continue;
+        const cells = (endCol && endRow)
+            ? getRangeCells(`${startCol}${startRow}`, `${endCol}${endRow}`)
+            : new Set([`${startCol}${startRow}`]);
+        seen.set(normalizedRef, { cells, color: FORMULA_REF_COLORS[colorIdx % FORMULA_REF_COLORS.length] });
+        colorIdx++;
+    }
+    return Array.from(seen.values());
+}
 import { computeCell, propagateDeps, functionsList, type SheetRef } from '../formula';
 import { insertCellRef, isFormulaPickActive } from '../formulaBarCellPick';
 import { applyPatch, buildReversePatch } from '../cellPatch';
@@ -89,8 +127,13 @@ export function useCellEditing({
             const rawToCommit = currentCell.raw ?? '';
             const eagerMap = new Map(dataRef.current);
             const prevCell = eagerMap.get(currentCell.id) ?? { id: currentCell.id, value: '', raw: '', edit: false };
-            eagerMap.set(currentCell.id, { ...prevCell, raw: rawToCommit, edit: false });
-            dataRef.current = eagerMap;
+            // Only flush currentCell.raw if the data map still shows the cell as actively
+            // edited. If edit is false, an external write (e.g. paste) already stored the
+            // correct raw value in the map — overwriting it here would erase pasted content.
+            if (prevCell.edit) {
+                eagerMap.set(currentCell.id, { ...prevCell, raw: rawToCommit, edit: false });
+                dataRef.current = eagerMap;
+            }
         }
 
         startTransition(() => {
@@ -100,11 +143,13 @@ export function useCellEditing({
 
             if (currentCell) {
                 const latestCell = next.get(currentCell.id) ?? currentCell;
-                // currentCell.raw is synchronously updated by handleTextChange (via setCurrentCell),
-                // while the corresponding setData call is deferred via startTransition and may not
-                // have reached dataRef.current yet. Prefer currentCell.raw to avoid committing
-                // a stale value from the data map.
-                const rawToCommit = currentCell.raw ?? latestCell.raw ?? '';
+                // When edit is true the user is actively typing; prefer currentCell.raw because
+                // the handleTextChange startTransition may not have reached dataRef.current yet.
+                // When edit is false an external write (e.g. paste) already stored the correct
+                // raw in the map — trust that instead of the stale currentCell.raw.
+                const rawToCommit = latestCell.edit
+                    ? (currentCell.raw ?? latestCell.raw ?? '')
+                    : (latestCell.raw ?? '');
                 const { value, deps: newDeps } = computeCell(rawToCommit, next, allSheets);
                 const oldDeps = latestCell.deps ?? [];
 
@@ -466,6 +511,11 @@ export function useCellEditing({
         return getRangeCells(selectionAnchor, selectionActive ?? selectionAnchor);
     }, [selectionAnchor, selectionActive]);
 
+    const formulaRefHighlights = useMemo((): FormulaRefHighlight[] => {
+        if (!currentCell?.edit || !currentCell.raw?.startsWith('=')) return [];
+        return parseFormulaRefs(currentCell.raw);
+    }, [currentCell?.edit, currentCell?.raw]);
+
     const selectedCellStyle = selectionAnchor ? data.get(selectionAnchor)?.cellStyle : undefined;
     const isMerged = (() => {
         const cell = selectionAnchor ? data.get(selectionAnchor) : undefined;
@@ -495,5 +545,7 @@ export function useCellEditing({
         formulaPickMode,
         handleFormulaPickMouseDown,
         handleFormulaPickMouseMove,
+        // Formula reference highlights
+        formulaRefHighlights,
     };
 }

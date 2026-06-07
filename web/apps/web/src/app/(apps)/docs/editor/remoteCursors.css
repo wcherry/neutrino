@@ -1,0 +1,26 @@
+/* Remote cursor overlay — applied via ProseMirror widget decorations in
+   useRemoteCursors.ts. Color is set via --cursor-color CSS custom property. */
+.remote-cursor {
+  position: relative;
+  border-left: 2px solid var(--cursor-color, #1a73e8);
+  margin-left: -1px;
+  pointer-events: none;
+  display: inline-block;
+  height: 1.2em;
+  vertical-align: text-bottom;
+}
+
+.remote-cursor-label {
+  position: absolute;
+  top: -18px;
+  left: -1px;
+  background: var(--cursor-color, #1a73e8);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px 3px 3px 0;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}

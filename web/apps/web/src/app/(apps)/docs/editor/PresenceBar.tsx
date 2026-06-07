@@ -3,6 +3,7 @@
 import React from 'react';
 import type { RemoteUser } from '@/hooks/usePresence';
 import styles from './PresenceBar.module.css';
+import './remoteCursors.css';
 
 interface PresenceBarProps {
   users: RemoteUser[];
