@@ -93,6 +93,36 @@ export const docsApi = {
     });
   },
 
+  async autosaveContent(
+    docId: string,
+    content: string,
+    filename: string,
+    metadata?: { title?: string; pageSetup?: PageSetup },
+  ): Promise<DocMetaResponse> {
+    const formData = new FormData();
+    formData.append('file', new Blob([content], { type: 'application/json' }), filename);
+    if (metadata) formData.append('metadata', JSON.stringify(metadata));
+    return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave`, { method: 'PUT', body: formData });
+  },
+
+  async autosaveEncryptedContent(
+    docId: string,
+    content: string,
+    filename: string,
+    dek: Uint8Array,
+    metadata?: { title?: string; pageSetup?: PageSetup },
+  ): Promise<DocMetaResponse> {
+    const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+    await initSodium();
+    const plainBytes = new TextEncoder().encode(content);
+    const cipherBytes = encryptFile(plainBytes, dek);
+    const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+    const formData = new FormData();
+    formData.append('file', blob, filename);
+    if (metadata) formData.append('metadata', JSON.stringify(metadata));
+    return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave`, { method: 'PUT', body: formData });
+  },
+
   async exportText(docId: string): Promise<ExportTextResponse> {
     console.log("Exporting text...");
     return request<ExportTextResponse>(`/api/v1/docs/${docId}/export/text`);

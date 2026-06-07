@@ -140,6 +140,52 @@ impl SheetsService {
         })
     }
 
+    pub async fn autosave(
+        &self,
+        user: &AuthenticatedUser,
+        sheet_id: &str,
+        bytes: &[u8],
+        title: Option<&str>,
+    ) -> Result<SheetMetaResponse, ApiError> {
+        let file = self
+            .drive
+            .get_file(user, sheet_id, "Spreadsheet not found")
+            .await?;
+        match file.your_role.as_str() {
+            "owner" | "editor" => {}
+            _ => return Err(ApiError::new(403, "FORBIDDEN", "Edit access required")),
+        }
+        if file.deleted_at.is_some() {
+            return Err(ApiError::not_found("Spreadsheet is in trash"));
+        }
+
+        self.drive.upload_content_bytes(sheet_id, bytes)?;
+
+        let new_title = if let Some(t) = title {
+            let trimmed = t.trim().to_string();
+            if !trimmed.is_empty() {
+                self.drive.update_file_name(user, sheet_id, &trimmed).await?;
+                trimmed
+            } else {
+                file.name.clone()
+            }
+        } else {
+            file.name.clone()
+        };
+
+        let now = Utc::now().naive_utc();
+        let changes = UpdateSheetRecord { updated_at: now };
+        self.repo.update_sheet(sheet_id, changes)?;
+
+        Ok(SheetMetaResponse {
+            id: file.id,
+            title: new_title,
+            folder_id: file.folder_id,
+            created_at: file.created_at.and_utc().to_rfc3339(),
+            updated_at: now.and_utc().to_rfc3339(),
+        })
+    }
+
     pub async fn save_sheet(
         &self,
         user: &AuthenticatedUser,

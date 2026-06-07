@@ -17,6 +17,8 @@ import { useSheets } from './hooks/useSheets';
 import { usePersistence } from './hooks/usePersistence';
 import { useExport } from './hooks/useExport';
 import { useCellEditing } from './hooks/useCellEditing';
+import { useConditionalFormatting } from './hooks/useConditionalFormatting';
+import { ConditionalFormattingDialog } from './ConditionalFormattingDialog';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useNspell } from '@/hooks/useNspell';
 import { computeCell, propagateDeps, type SheetRef } from './formula';
@@ -24,6 +26,9 @@ import { computeCell, propagateDeps, type SheetRef } from './formula';
 import { StyleToolbar } from './StyleToolbar';
 import { SheetGrid } from './SheetGrid';
 import { SheetContextMenu } from './SheetContextMenu';
+import { HeaderContextMenu } from './HeaderContextMenu';
+import { FilterDialog } from './FilterDialog';
+import { FindReplaceDialog } from './FindReplaceDialog';
 import { FormulaBar } from './components/FormulaBar';
 import { HamburgerMenu } from './components/HamburgerMenu';
 import { ExportDialogs } from './components/ExportDialogs';
@@ -148,6 +153,13 @@ export function SheetEditor() {
     const [hamburgerDialog, setHamburgerDialog] = useState<string | null>(null);
     const [hamburgerDeleteConfirm, setHamburgerDeleteConfirm] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
+    const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null);
+
+    // ── Conditional formatting state (feature-flagged) ───────────────────────
+    const [showCFDialog, setShowCFDialog] = useState(false);
+    const [cfVariables, setCfVariables] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('neutrino:sheets:cf-variables') ?? '[]'); } catch { return []; }
+    });
 
     // ── Chart state (feature-flagged) ────────────────────────────────────────
     const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
@@ -187,6 +199,11 @@ export function SheetEditor() {
         activeSheetIndexRef: sheets.activeSheetIndexRef,
     });
 
+    const cf = useConditionalFormatting({
+        dirtyRef,
+        activeSheetIndexRef: sheets.activeSheetIndexRef,
+    });
+
     const persist = usePersistence({
         sheetId, dirtyRef,
         sheetsDataRef: sheets.sheetsDataRef,
@@ -202,6 +219,9 @@ export function SheetEditor() {
         sheetsChartsRef: flags.sheetsCharts ? charts.sheetsChartsRef : undefined,
         flushActiveCharts: flags.sheetsCharts ? charts.flushActiveCharts : undefined,
         setCharts: flags.sheetsCharts ? charts.setCharts : undefined,
+        sheetsConditionalFormatsRef: flags.sheetsConditionalFormatting ? cf.sheetsConditionalFormatsRef : undefined,
+        flushActiveConditionalFormats: flags.sheetsConditionalFormatting ? cf.flushActiveConditionalFormats : undefined,
+        setConditionalFormats: flags.sheetsConditionalFormatting ? cf.setConditionalFormats : undefined,
     });
 
     // ── Cross-sheet reference helper ─────────────────────────────────────────
@@ -254,6 +274,22 @@ export function SheetEditor() {
         document.addEventListener('keydown', handler);
         return () => document.removeEventListener('keydown', handler);
     }, []); // empty deps — handler reads from refs, never stale
+
+    // Ctrl/Cmd+F = Find, Ctrl/Cmd+H = Find & Replace
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+            if (e.key === 'f') {
+                e.preventDefault();
+                setFindReplaceMode('find');
+            } else if (e.key === 'h') {
+                e.preventDefault();
+                setFindReplaceMode('replace');
+            }
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, []); // empty deps — setFindReplaceMode is a stable setter
 
     // Stable refs for arrow-key navigation; updated every render so the effect
     // with empty deps always reads the latest values without re-registering.
@@ -377,6 +413,8 @@ export function SheetEditor() {
         spreadsheetId: sheetId,
         activeSheetIndexRef: sheets.activeSheetIndexRef,
         getAllSheets,
+        conditionalFormatsRef: cf.conditionalFormatsRef,
+        updateConditionalFormats: cf.updateConditionalFormats,
     });
 
     const exports = useExport({
@@ -401,6 +439,16 @@ export function SheetEditor() {
     const [contextMenu, setContextMenu] = useState<{ cellId: string; x: number; y: number } | null>(null);
     const [spellWord, setSpellWord] = useState<string | undefined>(undefined);
     const [spellSuggestions, setSpellSuggestions] = useState<string[] | undefined>(undefined);
+
+    // ── Header context menu & sort/filter state ──────────────────────────────
+    const [headerContextMenu, setHeaderContextMenu] = useState<{
+        type: 'col' | 'row';
+        index: number;
+        x: number;
+        y: number;
+    } | null>(null);
+    const [columnFilters, setColumnFilters] = useState<Map<number, Set<string>>>(new Map());
+    const [filterDialogCol, setFilterDialogCol] = useState<number | null>(null);
 
     // nspell only handles single words — extract the first misspelled word from
     // a cell's raw value so multi-word cells work correctly.
@@ -474,6 +522,109 @@ export function SheetEditor() {
         setContextMenu(null);
         setSpellWord(undefined);
         setSpellSuggestions(undefined);
+    }, []);
+
+    // ── Sort helpers ─────────────────────────────────────────────────────────
+    function compareValues(a: string, b: string, asc: boolean): number {
+        if (a === '' && b !== '') return asc ? 1 : -1;
+        if (b === '' && a !== '') return asc ? -1 : 1;
+        const an = parseFloat(a);
+        const bn = parseFloat(b);
+        const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : a.localeCompare(b, undefined, { sensitivity: 'base' });
+        return asc ? cmp : -cmp;
+    }
+
+    const handleSortByCol = useCallback((colIndex: number, asc: boolean) => {
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            let maxRow = 0;
+            for (const id of prev.keys()) {
+                const m = id.match(/^[A-Z]+(\d+)$/);
+                if (m) maxRow = Math.max(maxRow, parseInt(m[1]));
+            }
+            if (maxRow === 0) return prev;
+
+            const rowCells: Array<Map<string, CellProps>> = Array.from({ length: maxRow }, () => new Map());
+            for (const [id, cell] of prev) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (!m) continue;
+                const rowNum = parseInt(m[2]);
+                if (rowNum >= 1 && rowNum <= maxRow) rowCells[rowNum - 1].set(m[1], cell);
+            }
+
+            const colLetter = numToAlpha(colIndex + 1);
+            rowCells.sort((a, b) => {
+                const ac = a.get(colLetter);
+                const bc = b.get(colLetter);
+                return compareValues(String(ac?.value ?? ac?.raw ?? ''), String(bc?.value ?? bc?.raw ?? ''), asc);
+            });
+
+            const next = new Map<string, CellProps>();
+            for (const [id, cell] of prev) {
+                if (!id.match(/^[A-Z]+\d+$/)) next.set(id, cell);
+            }
+            rowCells.forEach((rowData, newIdx) => {
+                const newRow = newIdx + 1;
+                for (const [col, cell] of rowData) {
+                    const newId = `${col}${newRow}`;
+                    next.set(newId, { ...cell, id: newId });
+                }
+            });
+            dirtyRef.current = true;
+            return next;
+        });
+    }, [history, setData, dirtyRef]);
+
+    const handleSortByRow = useCallback((rowIndex: number, asc: boolean) => {
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            let maxCol = 0;
+            for (const id of prev.keys()) {
+                const m = id.match(/^([A-Z]+)\d+$/);
+                if (m) maxCol = Math.max(maxCol, alphaToNum(m[1]));
+            }
+            if (maxCol === 0) return prev;
+
+            const colCells: Array<Map<number, CellProps>> = Array.from({ length: maxCol }, () => new Map());
+            for (const [id, cell] of prev) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (!m) continue;
+                const colNum = alphaToNum(m[1]);
+                const rowNum = parseInt(m[2]);
+                if (colNum >= 1 && colNum <= maxCol) colCells[colNum - 1].set(rowNum, cell);
+            }
+
+            const targetRow = rowIndex + 1;
+            colCells.sort((a, b) => {
+                const ac = a.get(targetRow);
+                const bc = b.get(targetRow);
+                return compareValues(String(ac?.value ?? ac?.raw ?? ''), String(bc?.value ?? bc?.raw ?? ''), asc);
+            });
+
+            const next = new Map<string, CellProps>();
+            for (const [id, cell] of prev) {
+                if (!id.match(/^[A-Z]+\d+$/)) next.set(id, cell);
+            }
+            colCells.forEach((colData, newIdx) => {
+                const newColLetter = numToAlpha(newIdx + 1);
+                for (const [rowNum, cell] of colData) {
+                    const newId = `${newColLetter}${rowNum}`;
+                    next.set(newId, { ...cell, id: newId });
+                }
+            });
+            dirtyRef.current = true;
+            return next;
+        });
+    }, [history, setData, dirtyRef]);
+
+    // ── Filter handlers ──────────────────────────────────────────────────────
+    const handleApplyFilter = useCallback((colIndex: number, values: Set<string> | null) => {
+        setColumnFilters(prev => {
+            const next = new Map(prev);
+            if (values === null) next.delete(colIndex);
+            else next.set(colIndex, values);
+            return next;
+        });
     }, []);
 
     // ── Insert / delete rows and columns ─────────────────────────────────────
@@ -653,6 +804,240 @@ export function SheetEditor() {
     // Keep the delete-key ref up-to-date with the latest version of handleClearCells.
     handleClearCellsNavRef.current = handleClearCells;
 
+    // ── Header context menu: row operations ──────────────────────────────────
+    const handleHeaderInsertRowAbove = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
+        const rowN = headerContextMenu.index + 1;
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map<string, CellProps>();
+            for (const [id, cell] of prev) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (!m) { next.set(id, cell); continue; }
+                const r = parseInt(m[2]);
+                if (r >= rowN) {
+                    const newId = `${m[1]}${r + 1}`;
+                    next.set(newId, { ...cell, id: newId });
+                } else {
+                    next.set(id, cell);
+                }
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setData, history, dirtyRef]);
+
+    const handleHeaderInsertRowBelow = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
+        const rowN = headerContextMenu.index + 1;
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map<string, CellProps>();
+            for (const [id, cell] of prev) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (!m) { next.set(id, cell); continue; }
+                const r = parseInt(m[2]);
+                if (r > rowN) {
+                    const newId = `${m[1]}${r + 1}`;
+                    next.set(newId, { ...cell, id: newId });
+                } else {
+                    next.set(id, cell);
+                }
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setData, history, dirtyRef]);
+
+    const handleHeaderDeleteRow = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
+        const rowN = headerContextMenu.index + 1;
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map<string, CellProps>();
+            for (const [id, cell] of prev) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (!m) { next.set(id, cell); continue; }
+                const r = parseInt(m[2]);
+                if (r === rowN) continue;
+                if (r > rowN) {
+                    const newId = `${m[1]}${r - 1}`;
+                    next.set(newId, { ...cell, id: newId });
+                } else {
+                    next.set(id, cell);
+                }
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setData, history, dirtyRef]);
+
+    const handleHeaderClearRow = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
+        const rowN = headerContextMenu.index + 1;
+        const allSheets = getAllSheets();
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map(prev);
+            const toClear: string[] = [];
+            for (const id of prev.keys()) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (m && parseInt(m[2]) === rowN) toClear.push(id);
+            }
+            for (const id of toClear) {
+                const cell = next.get(id)!;
+                const { value, deps } = computeCell('', next, allSheets);
+                next.set(id, { ...cell, raw: '', value, deps, edit: false });
+            }
+            for (const id of toClear) {
+                propagateDeps(id, next, new Set([id]), allSheets);
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setData, history, dirtyRef, getAllSheets]);
+
+    const handleHeaderHideRow = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
+        const idx = headerContextMenu.index;
+        setRowHeights(prev => { const next = new Map(prev); next.set(idx, 0); return next; });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setRowHeights, dirtyRef]);
+
+    // ── Header context menu: column operations ───────────────────────────────
+    const handleHeaderInsertColLeft = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
+        const colN = headerContextMenu.index + 1;
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map<string, CellProps>();
+            for (const [id, cell] of prev) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (!m) { next.set(id, cell); continue; }
+                const c = alphaToNum(m[1]);
+                if (c >= colN) {
+                    const newId = `${numToAlpha(c + 1)}${m[2]}`;
+                    next.set(newId, { ...cell, id: newId });
+                } else {
+                    next.set(id, cell);
+                }
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setData, history, dirtyRef]);
+
+    const handleHeaderInsertColRight = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
+        const colN = headerContextMenu.index + 1;
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map<string, CellProps>();
+            for (const [id, cell] of prev) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (!m) { next.set(id, cell); continue; }
+                const c = alphaToNum(m[1]);
+                if (c > colN) {
+                    const newId = `${numToAlpha(c + 1)}${m[2]}`;
+                    next.set(newId, { ...cell, id: newId });
+                } else {
+                    next.set(id, cell);
+                }
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setData, history, dirtyRef]);
+
+    const handleHeaderDeleteCol = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
+        const colN = headerContextMenu.index + 1;
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map<string, CellProps>();
+            for (const [id, cell] of prev) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (!m) { next.set(id, cell); continue; }
+                const c = alphaToNum(m[1]);
+                if (c === colN) continue;
+                if (c > colN) {
+                    const newId = `${numToAlpha(c - 1)}${m[2]}`;
+                    next.set(newId, { ...cell, id: newId });
+                } else {
+                    next.set(id, cell);
+                }
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setData, history, dirtyRef]);
+
+    const handleHeaderClearCol = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
+        const colN = headerContextMenu.index + 1;
+        const allSheets = getAllSheets();
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map(prev);
+            const toClear: string[] = [];
+            for (const id of prev.keys()) {
+                const m = id.match(/^([A-Z]+)(\d+)$/);
+                if (m && alphaToNum(m[1]) === colN) toClear.push(id);
+            }
+            for (const id of toClear) {
+                const cell = next.get(id)!;
+                const { value, deps } = computeCell('', next, allSheets);
+                next.set(id, { ...cell, raw: '', value, deps, edit: false });
+            }
+            for (const id of toClear) {
+                propagateDeps(id, next, new Set([id]), allSheets);
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setData, history, dirtyRef, getAllSheets]);
+
+    const handleHeaderHideCol = useCallback(() => {
+        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
+        const idx = headerContextMenu.index;
+        setColWidths(prev => { const next = new Map(prev); next.set(idx, 0); return next; });
+        dirtyRef.current = true;
+    }, [headerContextMenu, setColWidths, dirtyRef]);
+
+    // ── Find & Replace handlers ──────────────────────────────────────────────
+    const handleFindReplaceOne = useCallback((cellId: string, newRaw: string) => {
+        const allSheets = getAllSheets();
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map(prev);
+            const existing = next.get(cellId) ?? { id: cellId, edit: false };
+            const { value, deps } = computeCell(newRaw, next, allSheets);
+            next.set(cellId, { ...existing, raw: newRaw, value, deps, edit: false });
+            propagateDeps(cellId, next, new Set([cellId]), allSheets);
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [getAllSheets, setData, history, dirtyRef]);
+
+    const handleFindReplaceAll = useCallback((replacements: Map<string, string>) => {
+        if (replacements.size === 0) return;
+        const allSheets = getAllSheets();
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map(prev);
+            for (const [cellId, newRaw] of replacements) {
+                const existing = next.get(cellId) ?? { id: cellId, edit: false };
+                const { value, deps } = computeCell(newRaw, next, allSheets);
+                next.set(cellId, { ...existing, raw: newRaw, value, deps, edit: false });
+            }
+            for (const cellId of replacements.keys()) {
+                propagateDeps(cellId, next, new Set([cellId]), allSheets);
+            }
+            return next;
+        });
+        dirtyRef.current = true;
+    }, [getAllSheets, setData, history, dirtyRef]);
+
     // ── Clipboard wrappers for context menu ──────────────────────────────────
     // The native clipboard handlers in useClipboard fire on document copy/cut/paste
     // events. To trigger them from the context menu we synthesise clipboard events.
@@ -673,6 +1058,11 @@ export function SheetEditor() {
         await persist.manualSave();
         queryClient.invalidateQueries({ queryKey: ['versions', sheetId] });
     }, [persist, queryClient, sheetId]);
+
+    const handleBack = useCallback(async () => {
+        try { flushSync(() => {}); } catch (_) {}
+        try { await persist.save(); } finally { router.push('/drive'); }
+    }, [persist, router]);
 
     // ── New / Duplicate / Delete ─────────────────────────────────────────────
     const handleNew = useCallback(async (newTitle: string) => {
@@ -799,6 +1189,19 @@ export function SheetEditor() {
         setHighlightedCol(null);
     }, [setSelectionAnchor, setSelectionActive]);
 
+    // ── Header context menu handlers ─────────────────────────────────────────
+    const handleColHeaderContextMenu = useCallback((colIndex: number, x: number, y: number) => {
+        handleColHeaderClick(colIndex);
+        setHeaderContextMenu({ type: 'col', index: colIndex, x, y });
+    }, [handleColHeaderClick]);
+
+    const handleRowHeaderContextMenu = useCallback((rowIndex: number, x: number, y: number) => {
+        handleRowHeaderClick(rowIndex);
+        setHeaderContextMenu({ type: 'row', index: rowIndex, x, y });
+    }, [handleRowHeaderClick]);
+
+    const closeHeaderContextMenu = useCallback(() => setHeaderContextMenu(null), []);
+
     // Wrap cell-activate and selection-extend to clear any header selection.
     const handleCellActivate = useCallback((id: string) => {
         setKeyboardMode('movement');
@@ -815,6 +1218,14 @@ export function SheetEditor() {
         selectionActiveRef.current = id;
         stableOnSelectionExtend(id);
     }, [clearHeaderSelection, stableOnSelectionExtend]);
+
+    const handleFindNavigateTo = useCallback((cellId: string) => {
+        handleCellActivate(cellId);
+        requestAnimationFrame(() => {
+            const el = document.getElementById(cellId);
+            if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        });
+    }, [handleCellActivate]);
 
     const handleFormulaBarKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'Enter' || event.key === 'Tab') {
@@ -871,7 +1282,7 @@ export function SheetEditor() {
                     setHamburgerDialog={setHamburgerDialog}
                     setHamburgerDeleteConfirm={setHamburgerDeleteConfirm}
                 />
-                <button className={styles.backBtn} aria-label="Sheets" onClick={async () => { flushSync(() => {}); try { await persist.save(); } finally { router.push('/drive'); } }}>
+                <button className={styles.backBtn} aria-label="Sheets" onClick={handleBack}>
                     <ArrowLeft size={16} />
                 </button>
                 <div className={styles.titleArea}>
@@ -882,6 +1293,7 @@ export function SheetEditor() {
                         contentEditable={true}
                         suppressContentEditableWarning={true}
                         spellCheck={spellCheck}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
                         onBlur={persist.updateTitle}
                     />
                 </div>
@@ -942,6 +1354,8 @@ export function SheetEditor() {
                 onMergeCells={editing.mergeCells}
                 isMerged={editing.isMerged}
                 onInsertChart={flags.sheetsCharts ? () => setShowChartDialog(true) : undefined}
+                onFindReplace={() => setFindReplaceMode('replace')}
+                onConditionalFormat={flags.sheetsConditionalFormatting ? () => setShowCFDialog(v => !v) : undefined}
             />
 
             <div className={styles.mainArea}>
@@ -964,8 +1378,14 @@ export function SheetEditor() {
                         onFormulaPickMouseDown={editing.handleFormulaPickMouseDown}
                         onFormulaPickMouseMove={editing.handleFormulaPickMouseMove}
                         formulaPickCells={editing.formulaPickMode ? editing.selectedCells : undefined}
+                        formulaRefHighlights={editing.formulaRefHighlights}
                         onCellContextMenu={handleCellContextMenu}
+                        onColHeaderContextMenu={handleColHeaderContextMenu}
+                        onRowHeaderContextMenu={handleRowHeaderContextMenu}
+                        columnFilters={columnFilters.size > 0 ? columnFilters : undefined}
                         scrollBodyRef={scrollBodyRef}
+                        conditionalFormats={flags.sheetsConditionalFormatting ? cf.conditionalFormats : undefined}
+                        cfVariables={flags.sheetsConditionalFormatting ? cfVariables : undefined}
                         overlay={flags.sheetsCharts ? (
                             <ChartLayer
                                 charts={charts.charts}
@@ -1015,20 +1435,32 @@ export function SheetEditor() {
                         // the current sheet's charts land in the correct slot.
                         charts.flushActiveCharts();
                     }
+                    if (flags.sheetsConditionalFormatting) {
+                        cf.flushActiveConditionalFormats();
+                    }
                     sheets.switchSheet(idx);
                     if (flags.sheetsCharts) {
                         charts.switchSheetCharts(idx);
                         setSelectedChartId(null);
+                    }
+                    if (flags.sheetsConditionalFormatting) {
+                        cf.switchSheetConditionalFormats(idx);
                     }
                 }}
                 onAddSheet={() => {
                     if (flags.sheetsCharts) {
                         charts.flushActiveCharts();
                     }
+                    if (flags.sheetsConditionalFormatting) {
+                        cf.flushActiveConditionalFormats();
+                    }
                     sheets.addSheet();
                     if (flags.sheetsCharts) {
                         charts.switchSheetCharts(sheets.activeSheetIndexRef.current);
                         setSelectedChartId(null);
+                    }
+                    if (flags.sheetsConditionalFormatting) {
+                        cf.switchSheetConditionalFormats(sheets.activeSheetIndexRef.current);
                     }
                 }}
                 onDeleteSheet={sheets.deleteSheet}
@@ -1075,6 +1507,71 @@ export function SheetEditor() {
                     onDeleteCol={handleDeleteCol}
                     onClearCells={handleClearCells}
                     onClose={closeContextMenu}
+                />
+            )}
+
+            {headerContextMenu && (
+                <HeaderContextMenu
+                    x={headerContextMenu.x}
+                    y={headerContextMenu.y}
+                    type={headerContextMenu.type}
+                    hasFilter={headerContextMenu.type === 'col' && columnFilters.has(headerContextMenu.index)}
+                    onSortAsc={() => {
+                        if (headerContextMenu.type === 'col') handleSortByCol(headerContextMenu.index, true);
+                        else handleSortByRow(headerContextMenu.index, true);
+                    }}
+                    onSortDesc={() => {
+                        if (headerContextMenu.type === 'col') handleSortByCol(headerContextMenu.index, false);
+                        else handleSortByRow(headerContextMenu.index, false);
+                    }}
+                    onFilter={headerContextMenu.type === 'col' ? () => setFilterDialogCol(headerContextMenu.index) : undefined}
+                    onClearFilter={headerContextMenu.type === 'col' ? () => handleApplyFilter(headerContextMenu.index, null) : undefined}
+                    onInsertBefore={headerContextMenu.type === 'col' ? handleHeaderInsertColLeft : handleHeaderInsertRowAbove}
+                    onInsertAfter={headerContextMenu.type === 'col' ? handleHeaderInsertColRight : handleHeaderInsertRowBelow}
+                    onDelete={headerContextMenu.type === 'col' ? handleHeaderDeleteCol : handleHeaderDeleteRow}
+                    onClear={headerContextMenu.type === 'col' ? handleHeaderClearCol : handleHeaderClearRow}
+                    onHide={headerContextMenu.type === 'col' ? handleHeaderHideCol : handleHeaderHideRow}
+                    onClose={closeHeaderContextMenu}
+                />
+            )}
+
+            {filterDialogCol !== null && (
+                <FilterDialog
+                    colIndex={filterDialogCol}
+                    data={data}
+                    currentFilter={columnFilters.get(filterDialogCol)}
+                    onApply={handleApplyFilter}
+                    onClose={() => setFilterDialogCol(null)}
+                />
+            )}
+
+            {findReplaceMode !== null && (
+                <FindReplaceDialog
+                    data={data}
+                    initialMode={findReplaceMode}
+                    onNavigateTo={handleFindNavigateTo}
+                    onReplaceOne={handleFindReplaceOne}
+                    onReplaceAll={handleFindReplaceAll}
+                    onClose={() => setFindReplaceMode(null)}
+                />
+            )}
+
+            {flags.sheetsConditionalFormatting && showCFDialog && (
+                <ConditionalFormattingDialog
+                    rules={cf.conditionalFormats}
+                    selectionRange={
+                        selectionAnchor && selectionActive
+                            ? `${selectionAnchor}:${selectionActive}`
+                            : selectionAnchor ?? undefined
+                    }
+                    data={data}
+                    onUpdate={cf.updateConditionalFormats}
+                    onClose={() => {
+                        setShowCFDialog(false);
+                        try {
+                            setCfVariables(JSON.parse(localStorage.getItem('neutrino:sheets:cf-variables') ?? '[]'));
+                        } catch { /* ignore */ }
+                    }}
                 />
             )}
         </div>

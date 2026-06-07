@@ -39,13 +39,13 @@
 }
 
 .toolBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
   color: var(--color-text, #202124);
 }
 
 .toolBtn.active {
-  background: #e8f0fe;
-  color: #1a73e8;
+  background: var(--color-accent-subtle, #e8f0fe);
+  color: var(--color-accent, #1a73e8);
 }
 
 .toolBtnWide {
@@ -76,7 +76,7 @@
 }
 
 .toolbarSelect:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .hiddenInput {

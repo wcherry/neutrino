@@ -1,10 +1,13 @@
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { Filter } from 'lucide-react';
 import type { CellProps } from './types';
 import { CELL_W, CELL_H, ROW_HDR_W, COL_HDR_H, MAX_ROWS, MAX_COLS, V_BUF, H_BUF } from './constants';
 import { numToAlpha, alphaToNum } from './utils';
 import { Cell } from './Cell';
+import { evaluateConditionalFormats } from './conditionalFormatting';
+import type { CFRule, CFVariable } from './types';
 import styles from './page.module.css';
 
 export type SheetGridProps = {
@@ -29,10 +32,20 @@ export type SheetGridProps = {
     formulaPickCells?: Set<string>;
     // Context menu
     onCellContextMenu?: (cellId: string, x: number, y: number) => void;
+    onColHeaderContextMenu?: (colIndex: number, x: number, y: number) => void;
+    onRowHeaderContextMenu?: (rowIndex: number, x: number, y: number) => void;
+    // Active column filters — rows not matching are rendered at height 0 (hidden).
+    columnFilters?: Map<number, Set<string>>;
     // Expose the scrollable body container ref so the parent can scroll cells into view.
     scrollBodyRef?: React.RefObject<HTMLDivElement | null>;
     // Rendered inside the scroll-content div so overlays (e.g. charts) scroll with the grid.
     overlay?: React.ReactNode;
+    // Colored border overlays for each cell reference in the active formula.
+    formulaRefHighlights?: Array<{ cells: Set<string>; color: string }>;
+    // Conditional formatting rules for the active sheet.
+    conditionalFormats?: CFRule[];
+    // Named CF variable definitions (item 19).
+    cfVariables?: CFVariable[];
 };
 
 // ── Prefix-sum helpers ────────────────────────────────────────────────────────
@@ -162,7 +175,8 @@ export const SheetGrid = React.memo(function SheetGrid({
     colWidths, rowHeights, onColResize, onRowResize,
     onColHeaderClick, onRowHeaderClick, highlightedCol, highlightedRow,
     formulaPickMode, onFormulaPickMouseDown, onFormulaPickMouseMove, formulaPickCells,
-    onCellContextMenu, scrollBodyRef, overlay,
+    onCellContextMenu, onColHeaderContextMenu, onRowHeaderContextMenu,
+    columnFilters, scrollBodyRef, overlay, formulaRefHighlights, conditionalFormats, cfVariables,
 }: SheetGridProps) {
     const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -181,6 +195,45 @@ export const SheetGrid = React.memo(function SheetGrid({
     const [dragCol, setDragCol] = useState<{ index: number; width: number } | null>(null);
     const [dragRow, setDragRow] = useState<{ index: number; height: number } | null>(null);
 
+    // ── Filter-derived hidden rows ────────────────────────────────────────────
+    // Rows that don't match the active column filters get height 0 so they are
+    // invisible in the virtualized grid without being deleted from the data map.
+    const hiddenRows = useMemo(() => {
+        if (!columnFilters || columnFilters.size === 0) return new Set<number>();
+        const hidden = new Set<number>();
+        let maxRow = 0;
+        for (const id of data.keys()) {
+            const m = id.match(/^[A-Z]+(\d+)$/);
+            if (m) maxRow = Math.max(maxRow, parseInt(m[1]));
+        }
+        for (let r = 0; r < maxRow; r++) {
+            for (const [colIdx, allowedValues] of columnFilters) {
+                const cellId = `${numToAlpha(colIdx + 1)}${r + 1}`;
+                const raw = data.get(cellId)?.raw ?? '';
+                if (!allowedValues.has(raw)) {
+                    hidden.add(r);
+                    break;
+                }
+            }
+        }
+        return hidden;
+    }, [columnFilters, data]);
+
+    const effectiveRowHeights = useMemo(() => {
+        if (hiddenRows.size === 0) return rowHeights;
+        const m = new Map(rowHeights);
+        for (const r of hiddenRows) m.set(r, 0);
+        return m;
+    }, [rowHeights, hiddenRows]);
+
+    // ── Conditional formatting ────────────────────────────────────────────────
+    const cfMap = useMemo(
+        () => conditionalFormats && conditionalFormats.length > 0
+            ? evaluateConditionalFormats(data, conditionalFormats, cfVariables, hiddenRows)
+            : null,
+        [data, conditionalFormats, cfVariables, hiddenRows],
+    );
+
     // ── Cached prefix-sum arrays ──────────────────────────────────────────────
     // Recomputed only when colWidths/rowHeights maps or the active drag change.
     // All offset and visible-range lookups use these arrays instead of linear scans.
@@ -189,8 +242,8 @@ export const SheetGrid = React.memo(function SheetGrid({
         [colWidths, dragCol],
     );
     const rowPrefix = useMemo(
-        () => buildRowPrefixSums(rowHeights, dragRow),
-        [rowHeights, dragRow],
+        () => buildRowPrefixSums(effectiveRowHeights, dragRow),
+        [effectiveRowHeights, dragRow],
     );
 
     // Stable refs for colPrefix/rowPrefix used in the scroll handler so the
@@ -231,8 +284,8 @@ export const SheetGrid = React.memo(function SheetGrid({
 
     const getRowHeight = useCallback((r: number) => {
         if (dragRow?.index === r) return dragRow.height;
-        return rowHeights.get(r) ?? CELL_H;
-    }, [rowHeights, dragRow]);
+        return effectiveRowHeights.get(r) ?? CELL_H;
+    }, [effectiveRowHeights, dragRow]);
 
     const { sr, er, sc, ec } = viewport;
 
@@ -263,10 +316,10 @@ export const SheetGrid = React.memo(function SheetGrid({
 
     const totalHeight = useMemo(() => {
         let h = MAX_ROWS * CELL_H;
-        for (const [, height] of rowHeights) h += height - CELL_H;
-        if (dragRow) h += dragRow.height - (rowHeights.get(dragRow.index) ?? CELL_H);
+        for (const [, height] of effectiveRowHeights) h += height - CELL_H;
+        if (dragRow) h += dragRow.height - (effectiveRowHeights.get(dragRow.index) ?? CELL_H);
         return h;
-    }, [rowHeights, dragRow]);
+    }, [effectiveRowHeights, dragRow]);
 
     const handleColResizeStart = useCallback((e: React.MouseEvent, colIndex: number) => {
         e.preventDefault();
@@ -430,24 +483,49 @@ export const SheetGrid = React.memo(function SheetGrid({
                 position: 'absolute', ...box,
                 border: '2px dashed #0f9d58',
                 background: 'rgba(15, 157, 88, 0.08)',
-                pointerEvents: 'none', zIndex: 2,
+                pointerEvents: 'none', zIndex: 3,
             }} />
         );
     }, [formulaPickMode, formulaPickCells, computeRangeBox]);
+
+    // Formula reference overlays — one colored border per unique cell ref/range
+    // in the formula being typed. Mirrors the behavior in Excel / Google Sheets.
+    const formulaRefOverlays = useMemo(() => {
+        if (!formulaRefHighlights || formulaRefHighlights.length === 0) return null;
+        return formulaRefHighlights.map(({ cells, color }, i) => {
+            const box = computeRangeBox(cells);
+            if (!box) return null;
+            return (
+                <div
+                    key={`formula-ref-${i}`}
+                    style={{
+                        position: 'absolute', ...box,
+                        border: `2px solid ${color}`,
+                        pointerEvents: 'none', zIndex: 2,
+                    }}
+                />
+            );
+        });
+    }, [formulaRefHighlights, computeRangeBox]);
 
     const colHeaders: React.ReactNode[] = [];
     for (let c = sc; c < ec; c++) {
         const left = colLeftArr[c - sc];
         const width = getColWidth(c);
         const isColHighlighted = highlightedCol === c;
+        const isFiltered = columnFilters?.has(c) ?? false;
         colHeaders.push(
             <div
                 key={c}
                 className={`${styles.headerRowCell}${isColHighlighted ? ` ${styles.headerRowCellSelected}` : ''}`}
-                style={{ position: 'absolute', left, top: 0, width, height: COL_HDR_H, minWidth: 'unset', cursor: 'pointer' }}
+                style={{ position: 'absolute', left, top: 0, width, height: COL_HDR_H, minWidth: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 onClick={() => onColHeaderClick?.(c)}
+                onContextMenu={e => { e.preventDefault(); onColHeaderContextMenu?.(c, e.clientX, e.clientY); }}
             >
-                <span className={styles.center}>{numToAlpha(c + 1)}</span>
+                <span className={styles.center} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                    {numToAlpha(c + 1)}
+                    {isFiltered && <Filter size={9} style={{ color: '#0064ff', flexShrink: 0 }} />}
+                </span>
                 <div className={styles.colResizeHandle} onMouseDown={e => handleColResizeStart(e, c)} onClick={e => e.stopPropagation()} />
             </div>
         );
@@ -457,13 +535,15 @@ export const SheetGrid = React.memo(function SheetGrid({
     for (let r = sr; r < er; r++) {
         const top = rowTopArr[r - sr];
         const height = getRowHeight(r);
+        if (height === 0) continue;
         const isRowHighlighted = highlightedRow === r;
         rowHeaders.push(
             <div
                 key={r}
                 className={`${styles.headerColumnCell}${isRowHighlighted ? ` ${styles.headerColumnCellSelected}` : ''}`}
-                style={{ position: 'absolute', top, left: 0, width: ROW_HDR_W, height, minWidth: 'unset', maxHeight: 'unset', cursor: 'pointer' }}
+                style={{ position: 'absolute', top, left: 0, width: ROW_HDR_W, height, minWidth: 'unset', maxHeight: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 onClick={() => onRowHeaderClick?.(r)}
+                onContextMenu={e => { e.preventDefault(); onRowHeaderContextMenu?.(r, e.clientX, e.clientY); }}
             >
                 <span className={styles.center}>{r + 1}</span>
                 <div className={styles.rowResizeHandle} onMouseDown={e => handleRowResizeStart(e, r)} onClick={e => e.stopPropagation()} />
@@ -483,6 +563,15 @@ export const SheetGrid = React.memo(function SheetGrid({
             for (let cs = 0; cs < colSpan; cs++) cellWidth += getColWidth(c + cs);
             let cellHeight = 0;
             for (let rs = 0; rs < rowSpan; rs++) cellHeight += getRowHeight(r + rs);
+
+            // Empty cells (no content, no explicit background, no CF) are made
+            // transparent so that overflow text from the left neighbour shows
+            // through. Later-in-DOM siblings with content paint over the overflow
+            // naturally, clipping it at the correct column boundary.
+            const hasContent = !!(cell.raw?.trim() || cell.value?.toString().trim());
+            const hasBackground = !!(cell.cellStyle?.backgroundColor || cfMap?.get(id));
+            const transparentBg = !hasContent && !hasBackground;
+
             cells.push(
                 <Cell
                     key={id}
@@ -492,7 +581,8 @@ export const SheetGrid = React.memo(function SheetGrid({
                     edit={false}
                     selected={selectedCells.has(id)}
                     cellStyle={cell.cellStyle}
-                    style={{ position: 'absolute', top: rowTopArr[r - sr], left: colLeftArr[c - sc], width: cellWidth, height: cellHeight, minWidth: 'unset', maxWidth: 'unset', zIndex: colSpan > 1 || rowSpan > 1 ? 1 : undefined }}
+                    cfResult={cfMap?.get(id)}
+                    style={{ position: 'absolute', top: rowTopArr[r - sr], left: colLeftArr[c - sc], width: cellWidth, height: cellHeight, minWidth: 'unset', maxWidth: 'unset', zIndex: colSpan > 1 || rowSpan > 1 ? 1 : undefined, ...(transparentBg ? { backgroundColor: 'transparent' } : {}) }}
                 />
             );
         }
@@ -520,10 +610,11 @@ export const SheetGrid = React.memo(function SheetGrid({
                 onMouseUp={handleMouseUp}
                 onContextMenu={handleContextMenu}
             >
-                <div style={{ position: 'relative', width: totalWidth, height: totalHeight }}>
+                <div style={{ position: 'relative', width: totalWidth, height: totalHeight, backgroundColor: '#ffffff' }}>
                     {cells}
                     {selectionOverlay}
                     {cutOverlay}
+                    {formulaRefOverlays}
                     {formulaPickOverlay}
                     {overlay}
                 </div>

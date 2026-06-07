@@ -1,20 +1,22 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { type FeatureFlags, defaultFeatureFlags } from '@/lib/featureFlags';
+import { type FeatureFlags } from '@/lib/featureFlags';
 
 type FeatureFlagsContextValue = {
   flags: FeatureFlags;
   loaded: boolean;
 };
 
+const emptyFlags = {} as FeatureFlags;
+
 const FeatureFlagsContext = createContext<FeatureFlagsContextValue>({
-  flags: defaultFeatureFlags,
+  flags: emptyFlags,
   loaded: false,
 });
 
 export function FeatureFlagsProvider({ children }: { children: React.ReactNode }) {
-  const [flags, setFlags] = useState<FeatureFlags>(defaultFeatureFlags);
+  const [flags, setFlags] = useState<FeatureFlags>(emptyFlags);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {

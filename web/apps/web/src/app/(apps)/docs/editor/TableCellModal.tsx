@@ -10,7 +10,6 @@
  *
  * Requires the AdvancedTableCellExtension to be loaded (which adds the extra
  * attributes to the tableCell node).
- * Gated behind NEXT_PUBLIC_FEATURE_DOCS_ADVANCED_FORMATTING.
  */
 
 import React, { useState } from 'react';

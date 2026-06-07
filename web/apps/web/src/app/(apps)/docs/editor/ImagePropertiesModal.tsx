@@ -5,7 +5,6 @@
  * and caption for a selected image in the Docs editor.
  *
  * Requires the AdvancedImageExtension to be loaded (which adds the extra attrs).
- * Gated behind NEXT_PUBLIC_FEATURE_DOCS_ADVANCED_FORMATTING.
  */
 
 import React, { useState } from 'react';

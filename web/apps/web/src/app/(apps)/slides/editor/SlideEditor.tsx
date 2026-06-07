@@ -59,7 +59,7 @@ import {
   ToolbarSelect,
   ColorPickerPopover,
 } from '@neutrino/ui';
-import { slidesApi, driveReadContent, driveWriteContent, driveWriteEncryptedContent, driveAutosaveEncryptedContent, storageApi } from '@/lib/api';
+import { slidesApi, driveReadContent, storageApi } from '@/lib/api';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import type { SlideTheme } from '@neutrino/api-slides';
@@ -400,19 +400,19 @@ export function SlideEditor() {
     if (initialSaveDoneRef.current || lastSavedRef.current !== '') return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(presentation);
-    driveAutosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
+    slidesApi.autosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // presentation intentionally omitted: we capture the default once, not on every change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dekResolved, slideData, contentLoading, slideContent]);
 
   const contentMutation = useMutation({
-    mutationFn: (content: string) =>
+    mutationFn: ({ content, metadata }: { content: string; metadata?: { title?: string } }) =>
       dekRef.current
-        ? driveWriteEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current)
-        : driveWriteContent(slideData!.contentWriteUrl, content, 'slide.json'),
+        ? slidesApi.autosaveEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current, metadata)
+        : slidesApi.autosaveContent(slideData!.id, content, 'slide.json', metadata),
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: (_, content) => {
+    onSuccess: (_, { content }) => {
       setSaveStatus('saved');
       lastSavedRef.current = content;
       queryClient.invalidateQueries({ queryKey: ['slides'] });
@@ -420,20 +420,14 @@ export function SlideEditor() {
     onError: () => setSaveStatus('error'),
   });
 
-  const metaMutation = useMutation({
-    mutationFn: (newTitle: string) =>
-      slidesApi.saveSlide(slideId, { title: newTitle }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['slides'] }),
-  });
-
   const scheduleAutoSave = useCallback((pres: SlidePresentation) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaveStatus('unsaved');
     saveTimerRef.current = setTimeout(() => {
       const content = JSON.stringify(pres);
-      contentMutation.mutate(content);
+      contentMutation.mutate({ content, metadata: { title } });
     }, 2000);
-  }, [contentMutation]);
+  }, [contentMutation, title]);
 
   function updatePresentation(updater: (p: SlidePresentation) => SlidePresentation) {
     setPresentation((prev) => {
@@ -450,7 +444,7 @@ export function SlideEditor() {
     }
     const content = JSON.stringify(presentation);
     if (content !== lastSavedRef.current) {
-      await contentMutation.mutateAsync(content);
+      await contentMutation.mutateAsync({ content, metadata: { title } });
     }
     queryClient.invalidateQueries({ queryKey: ['slides'] });
     router.push('/drive');
@@ -459,7 +453,9 @@ export function SlideEditor() {
   function handleTitleBlur() {
     const trimmed = title.trim();
     if (!trimmed) return;
-    metaMutation.mutate(trimmed);
+    // Save title together with current content in one combined call.
+    const content = JSON.stringify(presentation);
+    contentMutation.mutate({ content, metadata: { title: trimmed } });
   }
 
   // Close dropdowns on outside click

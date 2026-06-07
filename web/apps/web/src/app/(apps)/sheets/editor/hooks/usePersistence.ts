@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import type { CellProps, SheetFile } from '../types';
+import type { CellProps, SheetFile, CFRule } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
-import { sheetsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
+import { sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { computeCell, type SheetRef } from '../formula';
@@ -72,6 +72,9 @@ export function usePersistence({
     sheetsChartsRef,
     flushActiveCharts,
     setCharts,
+    sheetsConditionalFormatsRef,
+    flushActiveConditionalFormats,
+    setConditionalFormats,
 }: {
     sheetId: string;
     dirtyRef: React.MutableRefObject<boolean>;
@@ -91,6 +94,10 @@ export function usePersistence({
     sheetsChartsRef?: React.MutableRefObject<ChartDef[][]>;
     flushActiveCharts?: () => void;
     setCharts?: React.Dispatch<React.SetStateAction<ChartDef[]>>;
+    // Optional conditional formatting persistence — omit if feature is disabled
+    sheetsConditionalFormatsRef?: React.MutableRefObject<CFRule[][]>;
+    flushActiveConditionalFormats?: () => void;
+    setConditionalFormats?: React.Dispatch<React.SetStateAction<CFRule[]>>;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
@@ -106,6 +113,7 @@ export function usePersistence({
     const serialize = (): string => {
         flushActiveSheet();
         flushActiveCharts?.();
+        flushActiveConditionalFormats?.();
         const fileSheets = sheetsDataRef.current.map((sheetData, i) => {
             const cells: SheetFile['sheets'][0]['cells'] = {};
             for (const [id, cell] of sheetData) {
@@ -122,6 +130,7 @@ export function usePersistence({
                 : undefined;
             const color = sheetColorsRef.current[i] ?? undefined;
             const sheetCharts = sheetsChartsRef?.current[i];
+            const sheetCF = sheetsConditionalFormatsRef?.current[i];
             return {
                 name: sheetNamesRef.current[i] ?? `Sheet ${i + 1}`,
                 color,
@@ -129,6 +138,7 @@ export function usePersistence({
                 colWidths: colWidthsObj,
                 rowHeights: rowHeightsObj,
                 charts: sheetCharts && sheetCharts.length > 0 ? sheetCharts : undefined,
+                conditionalFormats: sheetCF && sheetCF.length > 0 ? sheetCF : undefined,
             };
         });
         return JSON.stringify({ sheets: fileSheets } as SheetFile);
@@ -136,10 +146,11 @@ export function usePersistence({
 
     const save = async () => {
         if (!sheetRef.current) return;
+        const metadata = { title };
         if (dekRef.current) {
-            await driveAutosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current);
+            await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
         } else {
-            await driveAutosaveContent(sheetId, serialize(), 'sheet.json');
+            await sheetsApi.autosaveContent(sheetId, serialize(), 'sheet.json', metadata);
         }
     };
     saveRef.current = save;
@@ -158,8 +169,11 @@ export function usePersistence({
         dirtyRef.current = false;
         // Flush any pending React startTransition updates (e.g. from cell editing)
         // so dataRef.current reflects the latest committed state before serialising.
-        flushSync(() => {});
-        await save();
+        // Wrapped in try-catch for the same reason as the unmount flush: flushSync can
+        // throw "flushSync was called from inside a lifecycle method" in React 18
+        // concurrent mode. The drive save must still fire even if the flush is skipped.
+        try { flushSync(() => {}); } catch (_) {}
+        await saveRef.current();
     };
 
     // Single autosave interval, restarted cleanly after every load().
@@ -281,6 +295,15 @@ export function usePersistence({
                     ];
                     setCharts(sheetsChartsRef.current[0] ?? []);
                 }
+                // Restore conditional formats if the hook is wired up.
+                if (sheetsConditionalFormatsRef && setConditionalFormats) {
+                    const extraCF = sheetsConditionalFormatsRef.current.slice(allData.length);
+                    sheetsConditionalFormatsRef.current = [
+                        ...rawSheets.map(s => s.conditionalFormats ?? []),
+                        ...extraCF,
+                    ];
+                    setConditionalFormats(sheetsConditionalFormatsRef.current[0] ?? []);
+                }
             }
         } catch {
             // empty sheet, start fresh
@@ -301,8 +324,14 @@ export function usePersistence({
         const newTitle = (event.currentTarget as HTMLElement).innerHTML;
         setTitle(newTitle);
         if (sheetRef.current && newTitle !== sheetRef.current.title) {
-            await sheetsApi.saveSheet(sheetRef.current.id, { title: newTitle });
             sheetRef.current.title = newTitle;
+            // Save title together with current content in one combined call.
+            const metadata = { title: newTitle };
+            if (dekRef.current) {
+                await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
+            } else {
+                await sheetsApi.autosaveContent(sheetId, serialize(), 'sheet.json', metadata);
+            }
         }
     };
 

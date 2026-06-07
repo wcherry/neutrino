@@ -102,6 +102,15 @@ export interface HamburgerMenuProps {
   onExport: (format: 'docx' | 'pdf' | 'html' | 'txt') => void;
   onPageSetup: () => void;
   onPrint: () => void;
+  // View panel toggles
+  showOutline: boolean;
+  onToggleOutline: () => void;
+  showHistory: boolean;
+  onToggleHistory: () => void;
+  showComments: boolean;
+  onToggleComments: () => void;
+  distractionFree?: boolean;
+  onToggleFocus?: () => void;
   // Layout & structure feature callbacks (only used when docsLayoutStructure flag is on)
   onInsertFootnote?: () => void;
   onInsertCrossRef?: () => void;
@@ -130,6 +139,14 @@ export function HamburgerMenu({
   onExport,
   onPageSetup,
   onPrint,
+  showOutline,
+  onToggleOutline,
+  showHistory,
+  onToggleHistory,
+  showComments,
+  onToggleComments,
+  distractionFree,
+  onToggleFocus,
   onInsertFootnote,
   onInsertCrossRef,
   onHeaderFooter,
@@ -297,6 +314,22 @@ export function HamburgerMenu({
         { kind: 'action' as const, label: 'Change tone…', action: () => onAiChangeTone?.() },
       ],
     }] : []),
+    {
+      kind: 'submenu',
+      label: 'View',
+      items: [
+        { kind: 'action', label: showOutline ? 'Outline ✓'          : 'Outline',          action: () => onToggleOutline() },
+        { kind: 'action', label: showHistory ? 'Version history ✓'  : 'Version history',  action: () => onToggleHistory() },
+        { kind: 'action', label: showComments ? 'Comments ✓'        : 'Comments',         action: () => onToggleComments() },
+        ...(flags.docsCompare ? [
+          { kind: 'action' as const, label: 'Compare versions…', action: () => onToggleHistory() },
+        ] : []),
+        ...(flags.docsDistractionFree ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: distractionFree ? 'Focus mode ✓' : 'Focus mode', shortcut: 'Ctrl+Shift+F', action: () => onToggleFocus?.() },
+        ] : []),
+      ],
+    },
     {
       kind: 'submenu',
       label: 'Help',

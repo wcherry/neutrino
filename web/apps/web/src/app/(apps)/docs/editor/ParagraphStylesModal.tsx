@@ -7,7 +7,6 @@
  * Quote, Code Block, Caption).  Clicking a style applies it to the current
  * paragraph / selection via TipTap commands.
  *
- * Gated behind NEXT_PUBLIC_FEATURE_DOCS_ADVANCED_FORMATTING.
  */
 
 import React from 'react';

@@ -181,4 +181,29 @@ impl DriveClient {
         self.fs_repo.update_file(file_id, &user.user_id, Some(name), None, None)?;
         Ok(())
     }
+
+    /// Autosave raw bytes as the file's current content without creating a version snapshot.
+    /// Used by per-app autosave endpoints that receive multipart binary data.
+    pub fn upload_content_bytes(&self, file_id: &str, bytes: &[u8]) -> Result<(), ApiError> {
+        let file = self.storage
+            .find_file_any_user(file_id)?
+            .ok_or_else(|| ApiError::internal("File not found"))?;
+        let store = self.storage.store();
+        store.ensure_user_dir(&file.user_id).map_err(|e| {
+            tracing::error!("upload_content_bytes dir error: {:?}", e);
+            ApiError::internal("Failed to prepare storage directory")
+        })?;
+        let temp_id = Uuid::new_v4().to_string();
+        let temp_path = store.temp_path(&file.user_id, &temp_id);
+        std::fs::write(&temp_path, bytes).map_err(|e| {
+            tracing::error!("upload_content_bytes write error: {:?}", e);
+            ApiError::internal("Failed to write content")
+        })?;
+        let size_bytes = bytes.len() as i64;
+        self.storage.autosave(file_id, &temp_path, size_bytes).map_err(|e| {
+            let _ = std::fs::remove_file(&temp_path);
+            e
+        })?;
+        Ok(())
+    }
 }

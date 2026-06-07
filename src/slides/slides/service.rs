@@ -206,6 +206,52 @@ impl SlidesService {
         self.repo.delete_theme(theme_id, &user.user_id)
     }
 
+    pub async fn autosave(
+        &self,
+        user: &AuthenticatedUser,
+        slide_id: &str,
+        bytes: &[u8],
+        title: Option<&str>,
+    ) -> Result<SlideMetaResponse, ApiError> {
+        let file = self
+            .drive
+            .get_file(user, slide_id, "Presentation not found")
+            .await?;
+        match file.your_role.as_str() {
+            "owner" | "editor" => {}
+            _ => return Err(ApiError::new(403, "FORBIDDEN", "Edit access required")),
+        }
+        if file.deleted_at.is_some() {
+            return Err(ApiError::not_found("Presentation is in trash"));
+        }
+
+        self.drive.upload_content_bytes(slide_id, bytes)?;
+
+        let new_title = if let Some(t) = title {
+            let trimmed = t.trim().to_string();
+            if !trimmed.is_empty() {
+                self.drive.update_file_name(user, slide_id, &trimmed).await?;
+                trimmed
+            } else {
+                file.name.clone()
+            }
+        } else {
+            file.name.clone()
+        };
+
+        let now = Utc::now().naive_utc();
+        let changes = UpdateSlideRecord { updated_at: now };
+        self.repo.update_slide(slide_id, changes)?;
+
+        Ok(SlideMetaResponse {
+            id: file.id,
+            title: new_title,
+            folder_id: file.folder_id,
+            created_at: file.created_at.and_utc().to_rfc3339(),
+            updated_at: now.and_utc().to_rfc3339(),
+        })
+    }
+
     pub async fn save_slide(
         &self,
         user: &AuthenticatedUser,

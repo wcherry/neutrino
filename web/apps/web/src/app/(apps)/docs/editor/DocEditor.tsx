@@ -38,10 +38,10 @@ import CharacterCount from '@tiptap/extension-character-count';
 import Highlight from '@tiptap/extension-highlight';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, FileText, History, MessageSquare,
+  ArrowLeft, FileText, Minimize2,
 } from 'lucide-react';
 import { Spinner } from '@neutrino/ui';
-import { docsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
+import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { Toolbar } from './Toolbar';
@@ -75,6 +75,16 @@ import { ChangeToneDialog, type ToneValues } from './ChangeToneDialog';
 import { SaveAsDialog, type SaveAsOptions } from '@/components/SaveAsDialog';
 import { Sparkles } from 'lucide-react';
 import styles from './page.module.css';
+// Feature gap #4 — Real-time presence / cursor awareness
+import { usePresence } from '@/hooks/usePresence';
+import { PresenceBar } from './PresenceBar';
+import { RemoteCursorsExtension } from '@/lib/extensions/RemoteCursorsExtension';
+// Feature gap #5 — Track changes / suggesting mode
+import { TrackChangesExtension, isSuggestingMode } from '@/lib/extensions/TrackChangesExtension';
+import { TrackChangesBar } from './TrackChangesBar';
+// Feature gap #6 — Version compare
+import { DocComparePanel } from './DocComparePanel';
+import type { FileVersionItem } from '@neutrino/api-drive';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
 // Dimensions in inches; rendered at 96 dpi for screen display.
@@ -651,6 +661,24 @@ export function DocEditor() {
   // handleAiInsert knows exactly where to replace when the user accepts.
   const grammarAiRangeRef = useRef<{ from: number; to: number } | null>(null);
 
+  // ── Presence state (gated by flags.docsPresence) ──
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  // Read the JWT from localStorage (stored by the auth module as 'neutrino.access_token')
+  useEffect(() => {
+    if (!flags.docsPresence) return;
+    const stored = localStorage.getItem('neutrino.access_token');
+    setAuthToken(stored);
+  }, [flags.docsPresence]);
+
+  // ── Track changes state (gated by flags.docsTrackChanges) ──
+  const [suggestingMode, setSuggestingMode] = useState(false);
+
+  // ── Compare state (gated by flags.docsCompare) ──
+  const [compareVersion, setCompareVersion] = useState<FileVersionItem | null>(null);
+
+  // ── Distraction-free / focus mode ──────────────────────────────────────────
+  const [distractionFree, setDistractionFree] = useState(false);
+
   const importInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -664,6 +692,13 @@ export function DocEditor() {
     headerText: '', footerText: '', showPageNumbers: false,
     watermarkText: '', bgColor: '', docTheme: 'default',
   });
+  // Stable refs for title and pageSetup so the onUpdate closure can include
+  // current metadata in each autosave without re-creating the editor.
+  const titleRef = useRef<string>('');
+  const pageSetupRef = useRef<PageSetup>({
+    marginTop: 72, marginBottom: 72, marginLeft: 72, marginRight: 72,
+    orientation: 'portrait', pageSize: 'letter',
+  });
 
   const { data: doc, isLoading: metaLoading } = useQuery({
     queryKey: ['doc', docId],
@@ -673,7 +708,9 @@ export function DocEditor() {
   });
 
   const { data: docContent, isLoading: contentLoading } = useQuery({
-    queryKey: ['doc-content', docId, dekResolved],
+    // Include contentUrl in the key so the queryFn closure is always consistent
+    // with the key and the query re-fires if the URL changes (e.g. after restore).
+    queryKey: ['doc-content', docId, dekResolved, doc?.contentUrl ?? ''],
     queryFn: async () => {
       if (!doc?.contentUrl) return null;
       if (dekRef.current) {
@@ -686,18 +723,18 @@ export function DocEditor() {
     },
     enabled: !!doc?.contentUrl && dekResolved,
     staleTime: 0,
-    retry: 0,
+    // Omit retry:0 — use the global retry policy so transient failures
+    // (e.g. a race on first load or a brief network hiccup) are retried,
+    // matching the try/catch fallback in sheets' usePersistence.load().
   });
 
   const isLoading = metaLoading || contentLoading;
 
   const contentMutation = useMutation({
-    mutationFn: (content: string) =>
-      // dekRef is provided by useEncryptedDocumentContent; no need to resolve
-      // the DEK here — the hook already did that.
+    mutationFn: ({ content, metadata }: { content: string; metadata?: { title?: string; pageSetup?: PageSetup } }) =>
       dekRef.current
-        ? driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current)
-        : driveAutosaveContent(docId, content, 'doc.json'),
+        ? docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata)
+        : docsApi.autosaveContent(docId, content, 'doc.json', metadata),
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
       setSaveStatus('saved');
@@ -729,8 +766,8 @@ export function DocEditor() {
   });
 
   const triggerSave = useCallback(
-    (content: string) => {
-      contentMutation.mutate(content);
+    (content: string, metadata?: { title?: string; pageSetup?: PageSetup }) => {
+      contentMutation.mutate({ content, metadata });
     },
     [contentMutation]
   );
@@ -820,6 +857,10 @@ export function DocEditor() {
         FindReplaceExtension,
         GrammarCheckExtension,
       ] : []),
+      // Presence / remote cursors (feature gap #4)
+      ...(flags.docsPresence ? [RemoteCursorsExtension] : []),
+      // Track changes / suggesting mode (feature gap #5)
+      ...(flags.docsTrackChanges ? [TrackChangesExtension] : []),
     ],
     editorProps: {
       attributes: { class: 'ProseMirror', spellcheck: 'false' },
@@ -836,13 +877,38 @@ export function DocEditor() {
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
-        triggerSave(content);
+        triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current });
       }, AUTO_SAVE_DELAY_MS);
     },
   });
 
   // Keep editorRef in sync so the stable onEmbed callback can access the editor.
   (editorRef as React.MutableRefObject<typeof editor>).current = editor;
+
+  // ── Presence / cursor awareness (feature gap #4) ───────────────────────────
+  const { remoteUsers, isConnected } = usePresence({
+    docId,
+    userName: doc?.title ?? 'Anonymous',
+    authToken,
+    editor,
+    enabled: flags.docsPresence && !!docId,
+  });
+
+  // Push remote cursor positions into the RemoteCursorsExtension plugin
+  useEffect(() => {
+    if (!flags.docsPresence || !editor) return;
+    editor.commands.updateRemoteCursors(remoteUsers);
+  }, [flags.docsPresence, editor, remoteUsers]);
+
+  // ── Track changes — keep React state in sync with plugin state ────────────
+  useEffect(() => {
+    if (!flags.docsTrackChanges || !editor) return;
+    const update = () => {
+      setSuggestingMode(isSuggestingMode(editor.state));
+    };
+    editor.on('transaction', update);
+    return () => { editor.off('transaction', update); };
+  }, [flags.docsTrackChanges, editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -868,6 +934,9 @@ export function DocEditor() {
   useEffect(() => {
     layoutMetaRef.current = { headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme };
   }, [headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
+
+  useEffect(() => { titleRef.current = title; }, [title]);
+  useEffect(() => { pageSetupRef.current = pageSetup; }, [pageSetup]);
 
   useEffect(() => {
     if (!doc || !editor) return;
@@ -909,7 +978,7 @@ export function DocEditor() {
     if (docContent !== null && docContent !== undefined) return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(editor.getJSON());
-    driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
+    docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dekResolved, editor, doc, contentLoading, docContent, docId]);
@@ -923,10 +992,11 @@ export function DocEditor() {
       }
       const content = pendingContent.current;
       pendingContent.current = null;
+      const metadata = { title: titleRef.current, pageSetup: pageSetupRef.current };
       if (dekRef.current) {
-        driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current);
+        docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata);
       } else {
-        driveAutosaveContent(docId, content, 'doc.json');
+        docsApi.autosaveContent(docId, content, 'doc.json', metadata);
       }
     };
     const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
@@ -949,7 +1019,13 @@ export function DocEditor() {
 
   const handleTitleBlur = () => {
     if (!title.trim() || title === doc?.title) return;
-    metaMutation.mutate({ title });
+    // Save title together with current content in one combined call.
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+      triggerSave(content, { title, pageSetup });
+    } else {
+      metaMutation.mutate({ title });
+    }
   };
 
   const handleBack = useCallback(async () => {
@@ -958,7 +1034,7 @@ export function DocEditor() {
       autoSaveTimer.current = null;
     }
     if (pendingContent.current !== null) {
-      await contentMutation.mutateAsync(pendingContent.current);
+      await contentMutation.mutateAsync({ content: pendingContent.current, metadata: { title: titleRef.current, pageSetup: pageSetupRef.current } });
       pendingContent.current = null;
     }
     queryClient.invalidateQueries({ queryKey: ['docs'] });
@@ -982,6 +1058,17 @@ export function DocEditor() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && distractionFree) {
+        setDistractionFree(false);
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f' && flags.docsDistractionFree) {
+        e.preventDefault();
+        setDistractionFree(v => !v);
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && flags.docsEditingTools) {
         e.preventDefault();
         setShowFindReplace(true);
@@ -1022,7 +1109,7 @@ export function DocEditor() {
     // "delete to end of line" before our stopPropagation can take effect.
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [handleManualSave, editor]);
+  }, [handleManualSave, editor, distractionFree, setDistractionFree, flags.docsDistractionFree]);
 
   const handleNewDoc = useCallback(async () => {
     const newDoc = await docsApi.createDoc({ title: 'Untitled document' });
@@ -1039,7 +1126,13 @@ export function DocEditor() {
 
   const handlePageSetupSave = (ps: PageSetup) => {
     setPageSetup(ps);
-    metaMutation.mutate({ pageSetup: ps });
+    // Save page setup together with current content in one combined call.
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+      triggerSave(content, { title, pageSetup: ps });
+    } else {
+      metaMutation.mutate({ pageSetup: ps });
+    }
   };
 
   const handleInsertImage = () => {
@@ -1128,7 +1221,6 @@ export function DocEditor() {
     setHeaderText(h);
     setFooterText(f);
     setShowPageNumbers(spn);
-    // Trigger an autosave with the new metadata
     if (editor) {
       const content = serializeContent(editor.getJSON(), {
         ...layoutMetaRef.current, headerText: h, footerText: f, showPageNumbers: spn,
@@ -1136,7 +1228,7 @@ export function DocEditor() {
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(() => triggerSave(content), AUTO_SAVE_DELAY_MS);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
     }
   }, [editor, triggerSave]);
 
@@ -1150,7 +1242,7 @@ export function DocEditor() {
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(() => triggerSave(content), AUTO_SAVE_DELAY_MS);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
     }
   }, [editor, triggerSave]);
 
@@ -1163,7 +1255,7 @@ export function DocEditor() {
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(() => triggerSave(content), AUTO_SAVE_DELAY_MS);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
     }
   }, [editor, triggerSave]);
 
@@ -1504,9 +1596,9 @@ export function DocEditor() {
   }
 
   return (
-    <div className={styles.shell}>
+    <div className={distractionFree ? `${styles.shell} ${styles.distractionFreeShell}` : styles.shell}>
       {/* ── Top bar ── */}
-      <div className={styles.topbar}>
+      {!distractionFree && (<div className={styles.topbar}>
         <HamburgerMenu
           editor={editor}
           titleInputRef={titleInputRef}
@@ -1517,6 +1609,14 @@ export function DocEditor() {
           onExport={handleExport}
           onPageSetup={() => setShowPageSetup(true)}
           onPrint={handlePrint}
+          showOutline={showOutline}
+          onToggleOutline={() => setShowOutline(v => !v)}
+          showHistory={showHistory}
+          onToggleHistory={() => setShowHistory(v => !v)}
+          showComments={showComments}
+          onToggleComments={() => setShowComments(v => !v)}
+          distractionFree={distractionFree}
+          onToggleFocus={() => setDistractionFree(v => !v)}
           {...(flags.docsLayoutStructure ? {
             onInsertFootnote: handleInsertFootnote,
             onInsertCrossRef: handleInsertCrossRef,
@@ -1553,6 +1653,7 @@ export function DocEditor() {
           value={title}
           onChange={e => setTitle(e.target.value)}
           onBlur={handleTitleBlur}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
           placeholder="Untitled document"
           spellCheck={false}
         />
@@ -1591,37 +1692,16 @@ export function DocEditor() {
             />
           )}
 
-          <button
-            className={styles.exportBtn}
-            onClick={() => setShowOutline(v => !v)}
-            title="Toggle outline"
-            style={{ opacity: showOutline ? 1 : 0.5 }}
-          >
-            ≡ Outline
-          </button>
-
-          <button
-            className={styles.exportBtn}
-            onClick={() => setShowHistory(v => !v)}
-            title="Version history"
-            style={{ opacity: showHistory ? 1 : 0.5 }}
-          >
-            <History size={14} /> History
-          </button>
-
-          <button
-            className={styles.exportBtn}
-            onClick={() => setShowComments(v => !v)}
-            title="Comments"
-            style={{ opacity: showComments ? 1 : 0.5 }}
-          >
-            <MessageSquare size={14} /> Comments
-          </button>
         </div>
-      </div>
+
+        {/* Presence bar (docsPresence flag) */}
+        {flags.docsPresence && (
+          <PresenceBar users={remoteUsers} connected={isConnected} />
+        )}
+      </div>)}
 
       {/* ── Toolbar ── */}
-      <Toolbar
+      {!distractionFree && (<Toolbar
         editor={editor}
         onInsertImage={handleInsertImage}
         {...(flags.docsAdvancedFormatting ? {
@@ -1638,16 +1718,25 @@ export function DocEditor() {
           onAiChangeTone: () => setShowChangeTone(true),
           onOpenFindReplace: () => setShowFindReplace(true),
         } : {})}
-      />
+      />)}
 
       {/* ── Find & replace bar (editing tools flag) ── */}
-      {flags.docsEditingTools && showFindReplace && editor && (
+      {!distractionFree && flags.docsEditingTools && showFindReplace && editor && (
         <FindReplaceBar editor={editor} onClose={() => setShowFindReplace(false)} />
+      )}
+
+      {/* ── Track changes bar (docsTrackChanges flag) ── */}
+      {!distractionFree && flags.docsTrackChanges && editor && (
+        <TrackChangesBar
+          editor={editor}
+          suggestingMode={suggestingMode}
+          onToggle={() => editor.commands.toggleSuggestingMode()}
+        />
       )}
 
       {/* ── Main area ── */}
       <div className={styles.mainArea}>
-        {showOutline && <DocOutline editor={editor} />}
+        {!distractionFree && showOutline && <DocOutline editor={editor} />}
         <div className={styles.editorScroll} onContextMenu={handleContextMenu}>
           <div
             ref={pageRef}
@@ -1700,16 +1789,41 @@ export function DocEditor() {
             })()}
           </div>
         </div>
-        {showHistory && (
+        {!distractionFree && showHistory && (
           <VersionHistoryPanel
             fileId={docId}
             onRestore={() => {
               queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
             }}
             onClose={() => setShowHistory(false)}
+            compareEnabled={flags.docsCompare}
+            onCompare={(v) => setCompareVersion(v)}
           />
         )}
-        {showComments && (
+        {!distractionFree && flags.docsCompare && compareVersion && editor && (
+          (() => {
+            // Compare the selected older version against the current doc state
+            const currentVersionPlaceholder: FileVersionItem = {
+              id: '__current__',
+              fileId: docId,
+              versionNumber: 999,
+              sizeBytes: 0,
+              label: 'Current',
+              createdAt: new Date().toISOString(),
+            };
+            const currentContent = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+            return (
+              <DocComparePanel
+                fileId={docId}
+                baseVersion={compareVersion}
+                compareVersion={currentVersionPlaceholder}
+                currentContent={currentContent}
+                onClose={() => setCompareVersion(null)}
+              />
+            );
+          })()
+        )}
+        {!distractionFree && showComments && (
           <CommentsPanel
             fileId={docId}
             onClose={() => { setShowComments(false); setCommentInitialText(''); }}
@@ -1719,15 +1833,23 @@ export function DocEditor() {
       </div>
 
       {/* ── Status bar ── */}
-      <div className={styles.statusBar}>
-        <span>{wordCount.toLocaleString()} words</span>
-        <span>{charCount.toLocaleString()} characters</span>
-        {charCount > 1_020_000 && (
-          <span style={{ color: '#d93025' }}>
-            ⚠ Approaching 1M character limit ({charCount.toLocaleString()} / 1,020,000)
-          </span>
-        )}
-      </div>
+      {!distractionFree && (
+        <div className={styles.statusBar}>
+          <span>{wordCount.toLocaleString()} words</span>
+          <span>{charCount.toLocaleString()} characters</span>
+          {charCount > 1_020_000 && (
+            <span style={{ color: '#d93025' }}>
+              ⚠ Approaching 1M character limit ({charCount.toLocaleString()} / 1,020,000)
+            </span>
+          )}
+        </div>
+      )}
+
+      {distractionFree && (
+        <button className={styles.dfmExitBtn} onClick={() => setDistractionFree(false)}>
+          <Minimize2 size={14} /> Exit focus
+        </button>
+      )}
 
       {showPageSetup && (
         <PageSetupModal pageSetup={pageSetup} onSave={handlePageSetupSave} onClose={() => setShowPageSetup(false)} />

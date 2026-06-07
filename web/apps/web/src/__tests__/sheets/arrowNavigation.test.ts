@@ -103,6 +103,79 @@ describe('navigateCell — Ctrl movement', () => {
     });
 });
 
+// ── Merged cell navigation ─────────────────────────────────────────────────────
+
+describe('navigateCell — merged cells', () => {
+    // A1:C1 merged horizontally (colSpan=3); B1 and C1 are slaves.
+    const hMerge = new Map<string, CellProps>([
+        ['A1', { id: 'A1', raw: '', value: '', edit: false, colSpan: 3 }],
+        ['B1', { id: 'B1', raw: '', value: '', edit: false, mergeAnchor: 'A1' }],
+        ['C1', { id: 'C1', raw: '', value: '', edit: false, mergeAnchor: 'A1' }],
+    ]);
+
+    it('ArrowRight from merge anchor jumps past the merged columns', () => {
+        expect(navigateCell('A1', 'ArrowRight', { data: hMerge })).toBe('D1');
+    });
+
+    it('ArrowLeft into a merged slave resolves to the anchor', () => {
+        expect(navigateCell('D1', 'ArrowLeft', { data: hMerge })).toBe('A1');
+    });
+
+    it('ArrowLeft from the anchor exits to the left normally', () => {
+        // Z1 is not in the map, so no mergeAnchor redirection expected
+        expect(navigateCell('A1', 'ArrowLeft', { data: hMerge })).toBe('A1'); // clamped at col 1
+    });
+
+    // A1:A3 merged vertically (rowSpan=3); A2 and A3 are slaves.
+    const vMerge = new Map<string, CellProps>([
+        ['A1', { id: 'A1', raw: '', value: '', edit: false, rowSpan: 3 }],
+        ['A2', { id: 'A2', raw: '', value: '', edit: false, mergeAnchor: 'A1' }],
+        ['A3', { id: 'A3', raw: '', value: '', edit: false, mergeAnchor: 'A1' }],
+    ]);
+
+    it('ArrowDown from merge anchor jumps past the merged rows', () => {
+        expect(navigateCell('A1', 'ArrowDown', { data: vMerge })).toBe('A4');
+    });
+
+    it('ArrowUp into a merged slave resolves to the anchor', () => {
+        expect(navigateCell('A4', 'ArrowUp', { data: vMerge })).toBe('A1');
+    });
+
+    // B2:D4 merged (colSpan=3, rowSpan=3); interior cells have mergeAnchor='B2'.
+    const blockMerge = new Map<string, CellProps>([
+        ['B2', { id: 'B2', raw: '', value: '', edit: false, colSpan: 3, rowSpan: 3 }],
+        ['C2', { id: 'C2', raw: '', value: '', edit: false, mergeAnchor: 'B2' }],
+        ['D2', { id: 'D2', raw: '', value: '', edit: false, mergeAnchor: 'B2' }],
+        ['B3', { id: 'B3', raw: '', value: '', edit: false, mergeAnchor: 'B2' }],
+        ['C3', { id: 'C3', raw: '', value: '', edit: false, mergeAnchor: 'B2' }],
+        ['D3', { id: 'D3', raw: '', value: '', edit: false, mergeAnchor: 'B2' }],
+        ['B4', { id: 'B4', raw: '', value: '', edit: false, mergeAnchor: 'B2' }],
+        ['C4', { id: 'C4', raw: '', value: '', edit: false, mergeAnchor: 'B2' }],
+        ['D4', { id: 'D4', raw: '', value: '', edit: false, mergeAnchor: 'B2' }],
+    ]);
+
+    it('ArrowRight from block merge anchor jumps past the merged columns', () => {
+        expect(navigateCell('B2', 'ArrowRight', { data: blockMerge })).toBe('E2');
+    });
+
+    it('ArrowDown from block merge anchor jumps past the merged rows', () => {
+        expect(navigateCell('B2', 'ArrowDown', { data: blockMerge })).toBe('B5');
+    });
+
+    it('ArrowLeft into block merge slave resolves to anchor', () => {
+        expect(navigateCell('E2', 'ArrowLeft', { data: blockMerge })).toBe('B2');
+    });
+
+    it('ArrowUp into block merge slave resolves to anchor', () => {
+        expect(navigateCell('B5', 'ArrowUp', { data: blockMerge })).toBe('B2');
+    });
+
+    it('ArrowRight into a merge anchor (not a slave) lands on the anchor normally', () => {
+        // Navigating into B2 itself, which is the anchor — no mergeAnchor field, so stays B2
+        expect(navigateCell('A2', 'ArrowRight', { data: blockMerge })).toBe('B2');
+    });
+});
+
 // ── Cell ID parsing robustness ─────────────────────────────────────────────────
 
 describe('navigateCell — ID parsing', () => {
