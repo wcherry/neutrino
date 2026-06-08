@@ -14,6 +14,7 @@ use crate::shared::{DbPool, init_logging};
 mod auth;
 mod calendar;
 mod config;
+mod diagrams;
 mod docs;
 mod drive;
 mod notes;
@@ -678,6 +679,26 @@ async fn main() -> std::io::Result<()> {
         ai_service: slides_ai_service,
     });
 
+    // ── Diagrams service ──────────────────────────────────────────────────────
+
+    use diagrams::diagrams::repository::DiagramsRepository;
+    use diagrams::diagrams::service::DiagramsService;
+    use diagrams::collab::repository::DiagramCollabRepository;
+    use diagrams::collab::state::DiagramCollabState;
+
+    let drive_client_for_diagrams = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
+    let diagrams_repo = Arc::new(DiagramsRepository::new(pool.clone()));
+    let diagrams_service = Arc::new(DiagramsService::new(diagrams_repo, drive_client_for_diagrams));
+    let diagrams_state = web::Data::new(diagrams::diagrams::api::DiagramsApiState {
+        diagrams_service,
+    });
+    let diagrams_collab_repo = web::Data::new(Arc::new(DiagramCollabRepository::new(pool.clone())));
+    let diagrams_collab_state = web::Data::new(Arc::new(DiagramCollabState::new()));
+
     // ── HTTP server ───────────────────────────────────────────────────────────
 
     let token_service_data = web::Data::new(token_service.clone());
@@ -745,6 +766,8 @@ async fn main() -> std::io::Result<()> {
         doc.merge(sheets::ai::api::SheetsAIApiDoc::openapi());
         doc.merge(slides::slides::api::SlidesApiDoc::openapi());
         doc.merge(slides::ai::api::SlidesAIApiDoc::openapi());
+        doc.merge(diagrams::diagrams::api::DiagramsApiDoc::openapi());
+        doc.merge(diagrams::collab::api::DiagramsCollabApiDoc::openapi());
         doc
     };
 
@@ -811,6 +834,10 @@ async fn main() -> std::io::Result<()> {
             // Slides
             .app_data(slides_state.clone())
             .app_data(slides_ai_state.clone())
+            // Diagrams
+            .app_data(diagrams_state.clone())
+            .app_data(diagrams_collab_repo.clone())
+            .app_data(diagrams_collab_state.clone())
             // Middleware
             .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
             .wrap(Logger::default())
@@ -863,7 +890,9 @@ async fn main() -> std::io::Result<()> {
                     .configure(sheets::ai::api::configure)
                     // Slides
                     .configure(slides::slides::api::configure)
-                    .configure(slides::ai::api::configure),
+                    .configure(slides::ai::api::configure)
+                    // Diagrams
+                    .configure(diagrams::configure),
             )
             // Static web app — registered last so API routes take priority.
             // Falls back to index.html for client-side navigation.

@@ -390,6 +390,38 @@ diesel::table! {
     }
 }
 
+// ── Diagrams ─────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    diagrams (file_id) {
+        file_id -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    diagram_yjs_state (file_id) {
+        file_id -> Text,
+        state -> Binary,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    diagram_comments (id) {
+        id -> Text,
+        file_id -> Text,
+        user_id -> Text,
+        content -> Text,
+        parent_id -> Nullable<Text>,
+        shape_id -> Nullable<Text>,
+        resolved -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
 // ── Drive ────────────────────────────────────────────────────────────────────
 
 diesel::table! {

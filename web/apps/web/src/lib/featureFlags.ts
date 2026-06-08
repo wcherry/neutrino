@@ -17,4 +17,5 @@ export type FeatureFlags = {
   docsMobileEditor: boolean;
   sheetsConditionalFormatting: boolean;
   docsDistractionFree: boolean;
+  diagramsApp: boolean;
 };
