@@ -1,13 +1,12 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::calendar::tasks::{
     dto::{
-        BulkCreateTaskItem, BulkCreateTasksRequest, BulkCreateTasksResponse,
-        CreateTaskListRequest, CreateTaskRequest, ListTaskListsResponse, ListTasksQuery,
-        ReorderTasksRequest, TaskListResponse, TaskResponse,
-        UpdateTaskListRequest, UpdateTaskRequest,
+        BulkCreateTaskItem, BulkCreateTasksRequest, BulkCreateTasksResponse, CreateTaskListRequest,
+        CreateTaskRequest, ListTaskListsResponse, ListTasksQuery, ReorderTasksRequest,
+        TaskListResponse, TaskResponse, UpdateTaskListRequest, UpdateTaskRequest,
     },
     service::TasksService,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
@@ -101,9 +100,10 @@ pub async fn update_task_list(
     path: web::Path<String>,
     body: web::Json<UpdateTaskListRequest>,
 ) -> Result<web::Json<TaskListResponse>, ApiError> {
-    let list = state
-        .tasks_service
-        .update_task_list(&user, &path.into_inner(), body.into_inner())?;
+    let list =
+        state
+            .tasks_service
+            .update_task_list(&user, &path.into_inner(), body.into_inner())?;
     Ok(web::Json(list))
 }
 
@@ -172,9 +172,7 @@ pub async fn create_task(
     user: AuthenticatedUser,
     body: web::Json<CreateTaskRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let task = state
-        .tasks_service
-        .create_task(&user, body.into_inner())?;
+    let task = state.tasks_service.create_task(&user, body.into_inner())?;
     Ok(HttpResponse::Created().json(task))
 }
 

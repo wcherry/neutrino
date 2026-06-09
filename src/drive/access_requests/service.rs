@@ -44,11 +44,15 @@ impl AccessRequestsService {
         req: CreateAccessRequestRequest,
     ) -> Result<AccessRequestResponse, ApiError> {
         // Check if user already has access
-        let existing_role =
-            self.permissions_service
-                .get_effective_role(requester_id, resource_type, resource_id)?;
+        let existing_role = self.permissions_service.get_effective_role(
+            requester_id,
+            resource_type,
+            resource_id,
+        )?;
         if existing_role.is_some() {
-            return Err(ApiError::bad_request("You already have access to this resource"));
+            return Err(ApiError::bad_request(
+                "You already have access to this resource",
+            ));
         }
 
         // Check for existing pending request
@@ -77,7 +81,11 @@ impl AccessRequestsService {
         let result = self.repo.create(&record)?;
         tracing::info!(
             "Access request notification: {} ({}) requested {} access to {} {}",
-            req.requester_name, requester_email, req.requested_role, resource_type, resource_id
+            req.requester_name,
+            requester_email,
+            req.requested_role,
+            resource_type,
+            resource_id
         );
         Ok(AccessRequestResponse::from(result))
     }
@@ -125,7 +133,9 @@ impl AccessRequestsService {
             .ok_or_else(|| ApiError::not_found("Access request not found"))?;
 
         if access_req.status != "pending" {
-            return Err(ApiError::bad_request("This request has already been resolved"));
+            return Err(ApiError::bad_request(
+                "This request has already been resolved",
+            ));
         }
 
         // Check that caller owns the resource
@@ -135,7 +145,11 @@ impl AccessRequestsService {
             &access_req.resource_id,
         )?;
         if caller_role.as_deref() != Some("owner") {
-            return Err(ApiError::new(403, "FORBIDDEN", "Only owners can approve access requests"));
+            return Err(ApiError::new(
+                403,
+                "FORBIDDEN",
+                "Only owners can approve access requests",
+            ));
         }
 
         let role_str = req.role.as_deref().unwrap_or(&access_req.requested_role);
@@ -186,7 +200,9 @@ impl AccessRequestsService {
             .ok_or_else(|| ApiError::not_found("Access request not found"))?;
 
         if access_req.status != "pending" {
-            return Err(ApiError::bad_request("This request has already been resolved"));
+            return Err(ApiError::bad_request(
+                "This request has already been resolved",
+            ));
         }
 
         let caller_role = self.permissions_service.get_effective_role(
@@ -195,13 +211,19 @@ impl AccessRequestsService {
             &access_req.resource_id,
         )?;
         if caller_role.as_deref() != Some("owner") {
-            return Err(ApiError::new(403, "FORBIDDEN", "Only owners can deny access requests"));
+            return Err(ApiError::new(
+                403,
+                "FORBIDDEN",
+                "Only owners can deny access requests",
+            ));
         }
 
         self.repo.update_status(request_id, "denied")?;
         tracing::info!(
             "Access request denied: {} for {} {}",
-            access_req.requester_email, access_req.resource_type, access_req.resource_id
+            access_req.requester_email,
+            access_req.resource_type,
+            access_req.resource_id
         );
 
         let updated = self

@@ -33,7 +33,9 @@ pub async fn list_suggestions(
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
     let status = query.get("status").map(|s| s.as_str());
-    let result = state.suggestions_service.list_suggestions(&user, &file_id, status)?;
+    let result = state
+        .suggestions_service
+        .list_suggestions(&user, &file_id, status)?;
     Ok(HttpResponse::Ok().json(result))
 }
 
@@ -57,7 +59,9 @@ pub async fn create_suggestion(
     body: web::Json<CreateSuggestionRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
-    let result = state.suggestions_service.create_suggestion(&user, &file_id, body.into_inner())?;
+    let result = state
+        .suggestions_service
+        .create_suggestion(&user, &file_id, body.into_inner())?;
     Ok(HttpResponse::Created().json(result))
 }
 
@@ -83,7 +87,10 @@ pub async fn accept_suggestion(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ApiError> {
     let (file_id, suggestion_id) = path.into_inner();
-    let result = state.suggestions_service.accept_suggestion(&user, &file_id, &suggestion_id).await?;
+    let result = state
+        .suggestions_service
+        .accept_suggestion(&user, &file_id, &suggestion_id)
+        .await?;
     Ok(HttpResponse::Ok().json(result))
 }
 
@@ -109,7 +116,10 @@ pub async fn reject_suggestion(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ApiError> {
     let (file_id, suggestion_id) = path.into_inner();
-    let result = state.suggestions_service.reject_suggestion(&user, &file_id, &suggestion_id).await?;
+    let result = state
+        .suggestions_service
+        .reject_suggestion(&user, &file_id, &suggestion_id)
+        .await?;
     Ok(HttpResponse::Ok().json(result))
 }
 

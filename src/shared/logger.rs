@@ -1,6 +1,8 @@
-use tracing_appender::{rolling, non_blocking};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, fmt, fmt::time::UtcTime};
+use tracing_appender::{non_blocking, rolling};
+use tracing_subscriber::{
+    fmt, fmt::time::UtcTime, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
+};
 
 pub fn init_logging(log_level: &str, log_path: Option<String>) -> Option<WorkerGuard> {
     let stdout_layer = fmt::layer()

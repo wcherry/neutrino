@@ -43,7 +43,8 @@ pub async fn create_folder(
 ) -> Result<HttpResponse, ApiError> {
     let folder = state
         .filesystem_service
-        .create_folder(&user, body.into_inner()).await?;
+        .create_folder(&user, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(folder))
 }
 
@@ -78,9 +79,10 @@ pub async fn get_root_contents(
             order_by: query.order_by,
             direction: query.direction,
         };
-        let contents = state
-            .filesystem_service
-            .get_view_contents(&user.user_id, view, &list_params)?;
+        let contents =
+            state
+                .filesystem_service
+                .get_view_contents(&user.user_id, view, &list_params)?;
         return Ok(web::Json(contents));
     }
 
@@ -90,9 +92,10 @@ pub async fn get_root_contents(
         order_by: query.order_by,
         direction: query.direction,
     };
-    let contents = state
-        .filesystem_service
-        .get_folder_contents(&user.user_id, None, &list_params)?;
+    let contents =
+        state
+            .filesystem_service
+            .get_folder_contents(&user.user_id, None, &list_params)?;
     Ok(web::Json(contents))
 }
 
@@ -121,9 +124,10 @@ pub async fn get_folder_contents(
     query: web::Query<ListQueryParams<FolderContentsOrderField>>,
 ) -> Result<web::Json<FolderContentsResponse>, ApiError> {
     let folder_id = path.into_inner();
-    let contents = state
-        .filesystem_service
-        .get_folder_contents(&user.user_id, Some(&folder_id), &query)?;
+    let contents =
+        state
+            .filesystem_service
+            .get_folder_contents(&user.user_id, Some(&folder_id), &query)?;
     Ok(web::Json(contents))
 }
 
@@ -147,9 +151,10 @@ pub async fn update_folder(
     body: web::Json<UpdateFolderRequest>,
 ) -> Result<web::Json<FolderResponse>, ApiError> {
     let folder_id = path.into_inner();
-    let folder = state
-        .filesystem_service
-        .update_folder(&user.user_id, &folder_id, body.into_inner())?;
+    let folder =
+        state
+            .filesystem_service
+            .update_folder(&user.user_id, &folder_id, body.into_inner())?;
     Ok(web::Json(folder))
 }
 
@@ -394,9 +399,7 @@ pub async fn list_trash(
     user: AuthenticatedUser,
     query: web::Query<ListQueryParams<TrashOrderField>>,
 ) -> Result<web::Json<TrashContentsResponse>, ApiError> {
-    let contents = state
-        .filesystem_service
-        .list_trash(&user.user_id, &query)?;
+    let contents = state.filesystem_service.list_trash(&user.user_id, &query)?;
     Ok(web::Json(contents))
 }
 

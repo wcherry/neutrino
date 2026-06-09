@@ -17,6 +17,7 @@ import {
 } from '@neutrino/ui';
 import {
   Calendar,
+  GitBranch,
   HardDrive,
   Users,
   Star,
@@ -92,6 +93,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     items: [
       { id: 'my-drive', label: 'My Drive', icon: HardDrive, href: '/drive' },
       { id: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes' },
+      { id: 'diagrams', label: 'Diagrams', icon: GitBranch, href: '/diagrams' },
       { id: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar' },
       { id: 'shared', label: 'Shared with me', icon: Share2, href: '/drive/shared' },
       { id: 'recent', label: 'Recent', icon: Clock, href: '/drive/recent' },
@@ -284,13 +286,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       onSettings={() => router.push('/settings')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}
-    />
+    >
+      <NewItemFAB />
+    </Topbar>
   );
 
   return (
     <AppShell sidebar={sidebar} topbar={topbar}>
       {children}
-      <NewItemFAB />
     </AppShell>
   );
 }

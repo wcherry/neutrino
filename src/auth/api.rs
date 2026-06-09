@@ -1,12 +1,11 @@
 use super::dto::{
-        AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse, AuthResponse,
-        LoginRequest, LoginResponse, PublicKeyResponse, PublicProfileResponse, RefreshRequest,
-        RegisterRequest, RegisterResponse, SessionListResponse, SetPublicKeyRequest,
-        TwoFactorConfirmRequest, TwoFactorDisableRequest, TwoFactorEnrollResponse,
-        TwoFactorStatusResponse, UpdateProfileRequest, UserLookupResponse,
-        UserProfileDetailsResponse, UserProfileResponse, EmailPreferences, SessionResponse,
-        SocialLinks,
-    };
+    AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse, AuthResponse,
+    EmailPreferences, LoginRequest, LoginResponse, PublicKeyResponse, PublicProfileResponse,
+    RefreshRequest, RegisterRequest, RegisterResponse, SessionListResponse, SessionResponse,
+    SetPublicKeyRequest, SocialLinks, TwoFactorConfirmRequest, TwoFactorDisableRequest,
+    TwoFactorEnrollResponse, TwoFactorStatusResponse, UpdateProfileRequest, UserLookupResponse,
+    UserProfileDetailsResponse, UserProfileResponse,
+};
 use super::service::AuthService;
 
 use crate::shared::{ApiError, AuthenticatedUser};
@@ -82,9 +81,10 @@ pub async fn login(
         .realip_remote_addr()
         .map(|s| s.to_string());
 
-    let response = state
-        .auth_service
-        .login(body.into_inner(), device_name, user_agent, ip_address)?;
+    let response =
+        state
+            .auth_service
+            .login(body.into_inner(), device_name, user_agent, ip_address)?;
     Ok(web::Json(response))
 }
 
@@ -332,7 +332,9 @@ pub async fn revoke_session(
     path: web::Path<String>,
 ) -> Result<actix_web::HttpResponse, ApiError> {
     let session_id = path.into_inner();
-    state.auth_service.revoke_session(&user.user_id, &session_id)?;
+    state
+        .auth_service
+        .revoke_session(&user.user_id, &session_id)?;
     Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
@@ -390,10 +392,9 @@ pub async fn admin_list_users(
     query: web::Query<AdminListQuery>,
 ) -> Result<web::Json<AdminUserListResponse>, ApiError> {
     require_admin(&user)?;
-    let result = state.auth_service.admin_list_users(
-        query.page.unwrap_or(1),
-        query.page_size.unwrap_or(20),
-    )?;
+    let result = state
+        .auth_service
+        .admin_list_users(query.page.unwrap_or(1), query.page_size.unwrap_or(20))?;
     Ok(web::Json(result))
 }
 

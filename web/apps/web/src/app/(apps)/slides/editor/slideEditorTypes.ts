@@ -120,7 +120,19 @@ export interface ImageElement {
   animation?: ElementAnimation;
 }
 
-export type SlideElement = TextElement | ShapeElement | LineElement | SheetEmbedElement | VideoElement | ImageElement;
+export interface DiagramElement {
+  id: string;
+  type: 'diagram';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  diagramId: string;
+  pageIndex: number;
+  animation?: ElementAnimation;
+}
+
+export type SlideElement = TextElement | ShapeElement | LineElement | SheetEmbedElement | VideoElement | ImageElement | DiagramElement;
 
 export type SlideBackground =
   | { type: 'color'; value: string }

@@ -42,7 +42,9 @@ impl LocalFileStore {
     }
 
     pub fn temp_path(&self, user_id: &str, temp_id: &str) -> PathBuf {
-        self.base_path.join(user_id).join(format!("tmp_{}", temp_id))
+        self.base_path
+            .join(user_id)
+            .join(format!("tmp_{}", temp_id))
     }
 
     pub fn ensure_user_dir(&self, user_id: &str) -> Result<(), String> {
@@ -51,13 +53,8 @@ impl LocalFileStore {
     }
 
     pub fn ensure_versions_dir(&self, user_id: &str, file_id: &str) -> Result<(), String> {
-        std::fs::create_dir_all(
-            self.base_path
-                .join(user_id)
-                .join("versions")
-                .join(file_id),
-        )
-        .map_err(|e| format!("Failed to create versions directory: {}", e))
+        std::fs::create_dir_all(self.base_path.join(user_id).join("versions").join(file_id))
+            .map_err(|e| format!("Failed to create versions directory: {}", e))
     }
 
     #[allow(dead_code)]

@@ -1,23 +1,25 @@
 use super::dto::{
-        AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse, AuthResponse,
-        EmailPreferences, LoginResponse, PublicProfileResponse, RefreshRequest, RegisterRequest,
-        RegisterResponse, SessionListResponse, SessionResponse, SocialLinks,
-        TwoFactorDisableRequest, TwoFactorEnrollResponse, TwoFactorStatusResponse,
-        UpdateProfileRequest, UserLookupResponse, UserProfileDetailsResponse, UserProfileResponse,
-    };
-use super::repository::{AuthRepository, NewRefreshToken, NewTotpBackupCode, NewUser, UpsertUserProfile};
-use super::totp::{generate_otpauth_uri, generate_secret, verify_totp};
+    AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse, AuthResponse,
+    EmailPreferences, LoginResponse, PublicProfileResponse, RefreshRequest, RegisterRequest,
+    RegisterResponse, SessionListResponse, SessionResponse, SocialLinks, TwoFactorDisableRequest,
+    TwoFactorEnrollResponse, TwoFactorStatusResponse, UpdateProfileRequest, UserLookupResponse,
+    UserProfileDetailsResponse, UserProfileResponse,
+};
+use super::repository::{
+    AuthRepository, NewRefreshToken, NewTotpBackupCode, NewUser, UpsertUserProfile,
+};
 use super::tokens::{hash_token, TokenService};
+use super::totp::{generate_otpauth_uri, generate_secret, verify_totp};
 
 use super::dto::LoginRequest;
 use crate::shared::ApiError;
-use serde_json;
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
 use chrono::Utc;
 use rand::Rng;
+use serde_json;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -109,9 +111,10 @@ impl AuthService {
                     });
                 }
                 Some(code) => {
-                    let secret = user.totp_secret.as_deref().ok_or_else(|| {
-                        ApiError::internal("TOTP configuration error")
-                    })?;
+                    let secret = user
+                        .totp_secret
+                        .as_deref()
+                        .ok_or_else(|| ApiError::internal("TOTP configuration error"))?;
                     if !verify_totp(secret, code) {
                         return Err(ApiError::unauthorized("Invalid two-factor code"));
                     }
@@ -120,9 +123,9 @@ impl AuthService {
         }
 
         let is_admin = user.role == "admin";
-        let access_token = self
-            .token_service
-            .generate_access_token_with_admin(&user.id, &user.email, is_admin)?;
+        let access_token =
+            self.token_service
+                .generate_access_token_with_admin(&user.id, &user.email, is_admin)?;
         let (refresh_token_raw, expires_at) = self.token_service.generate_refresh_token()?;
         let token_hash = hash_token(&refresh_token_raw);
 
@@ -170,10 +173,11 @@ impl AuthService {
         self.repo.delete_refresh_token(&stored_token.id)?;
 
         let is_admin = user.role == "admin";
-        let access_token = self
-            .token_service
-            .generate_access_token_with_admin(&user.id, &user.email, is_admin)?;
-        let (new_refresh_token_raw, new_expires_at) = self.token_service.generate_refresh_token()?;
+        let access_token =
+            self.token_service
+                .generate_access_token_with_admin(&user.id, &user.email, is_admin)?;
+        let (new_refresh_token_raw, new_expires_at) =
+            self.token_service.generate_refresh_token()?;
         let new_token_hash = hash_token(&new_refresh_token_raw);
 
         let token_id = Uuid::new_v4().to_string();
@@ -210,7 +214,10 @@ impl AuthService {
         })
     }
 
-    pub fn lookup_user_by_email(&self, email: &str) -> Result<Option<UserLookupResponse>, ApiError> {
+    pub fn lookup_user_by_email(
+        &self,
+        email: &str,
+    ) -> Result<Option<UserLookupResponse>, ApiError> {
         let user = self.repo.find_user_by_email(email)?;
         Ok(user.map(|u| UserLookupResponse {
             id: u.id,
@@ -230,7 +237,10 @@ impl AuthService {
 
     // ── 2FA ───────────────────────────────────────────────────────────────────
 
-    pub fn get_two_factor_status(&self, user_id: &str) -> Result<TwoFactorStatusResponse, ApiError> {
+    pub fn get_two_factor_status(
+        &self,
+        user_id: &str,
+    ) -> Result<TwoFactorStatusResponse, ApiError> {
         let user = self
             .repo
             .find_user_by_id(user_id)?
@@ -240,7 +250,11 @@ impl AuthService {
         })
     }
 
-    pub fn enroll_two_factor(&self, user_id: &str, email: &str) -> Result<TwoFactorEnrollResponse, ApiError> {
+    pub fn enroll_two_factor(
+        &self,
+        user_id: &str,
+        email: &str,
+    ) -> Result<TwoFactorEnrollResponse, ApiError> {
         let secret = generate_secret();
         let otpauth_uri = generate_otpauth_uri(&secret, email, "Neutrino")
             .map_err(|e| ApiError::internal(&format!("TOTP error: {e}")))?;
@@ -289,9 +303,10 @@ impl AuthService {
             .find_user_by_id(user_id)?
             .ok_or_else(|| ApiError::not_found("User not found"))?;
 
-        let secret = user.totp_secret.as_deref().ok_or_else(|| {
-            ApiError::bad_request("2FA enrollment not started")
-        })?;
+        let secret = user
+            .totp_secret
+            .as_deref()
+            .ok_or_else(|| ApiError::bad_request("2FA enrollment not started"))?;
 
         if !verify_totp(secret, code) {
             return Err(ApiError::bad_request("Invalid verification code"));
@@ -311,16 +326,16 @@ impl AuthService {
             .find_user_by_id(user_id)?
             .ok_or_else(|| ApiError::not_found("User not found"))?;
 
-        let parsed_hash = PasswordHash::new(&user.password_hash).map_err(|_| {
-            ApiError::internal("Authentication error")
-        })?;
+        let parsed_hash = PasswordHash::new(&user.password_hash)
+            .map_err(|_| ApiError::internal("Authentication error"))?;
         Argon2::default()
             .verify_password(req.password.as_bytes(), &parsed_hash)
             .map_err(|_| ApiError::unauthorized("Invalid password"))?;
 
-        let secret = user.totp_secret.as_deref().ok_or_else(|| {
-            ApiError::bad_request("2FA is not enabled")
-        })?;
+        let secret = user
+            .totp_secret
+            .as_deref()
+            .ok_or_else(|| ApiError::bad_request("2FA is not enabled"))?;
         if !verify_totp(secret, &req.code) {
             return Err(ApiError::unauthorized("Invalid two-factor code"));
         }
@@ -448,7 +463,15 @@ impl AuthService {
                     .and_then(|s| serde_json::from_str(s).ok())
                     .map(SocialLinks)
                     .unwrap_or_default();
-                (p.bio, p.avatar, p.profile_image, p.website, sl, p.language, p.country)
+                (
+                    p.bio,
+                    p.avatar,
+                    p.profile_image,
+                    p.website,
+                    sl,
+                    p.language,
+                    p.country,
+                )
             }
         };
         Ok(PublicProfileResponse {
@@ -464,7 +487,10 @@ impl AuthService {
         })
     }
 
-    pub fn get_extended_profile(&self, user_id: &str) -> Result<UserProfileDetailsResponse, ApiError> {
+    pub fn get_extended_profile(
+        &self,
+        user_id: &str,
+    ) -> Result<UserProfileDetailsResponse, ApiError> {
         // Verify user exists
         self.repo
             .find_user_by_id(user_id)?
@@ -489,7 +515,12 @@ impl AuthService {
         let defaults = EmailPreferences::default();
 
         let (cur_marketing, cur_general, cur_updates, cur_critical) = match &existing {
-            Some(p) => (p.email_marketing, p.email_general, p.email_updates, p.email_critical),
+            Some(p) => (
+                p.email_marketing,
+                p.email_general,
+                p.email_updates,
+                p.email_critical,
+            ),
             None => (
                 defaults.marketing as i32,
                 defaults.general as i32,
@@ -505,7 +536,8 @@ impl AuthService {
             critical: cur_critical != 0,
         });
 
-        let social_json = req.social_links
+        let social_json = req
+            .social_links
             .as_ref()
             .map(|sl| serde_json::to_string(&sl.0))
             .transpose()
@@ -660,7 +692,9 @@ mod tests {
     #[test]
     fn register_success_returns_user_info() {
         let svc = make_service();
-        let resp = svc.register(reg("alice@test.com", "password123", "Alice")).unwrap();
+        let resp = svc
+            .register(reg("alice@test.com", "password123", "Alice"))
+            .unwrap();
         assert_eq!(resp.email, "alice@test.com");
         assert_eq!(resp.name, "Alice");
         assert!(!resp.id.is_empty());
@@ -676,22 +710,29 @@ mod tests {
     #[test]
     fn register_password_too_short_returns_400() {
         let svc = make_service();
-        let err = svc.register(reg("alice@test.com", "short", "Alice")).unwrap_err();
+        let err = svc
+            .register(reg("alice@test.com", "short", "Alice"))
+            .unwrap_err();
         assert_eq!(err.status, 400);
     }
 
     #[test]
     fn register_empty_name_returns_400() {
         let svc = make_service();
-        let err = svc.register(reg("alice@test.com", "password123", "")).unwrap_err();
+        let err = svc
+            .register(reg("alice@test.com", "password123", ""))
+            .unwrap_err();
         assert_eq!(err.status, 400);
     }
 
     #[test]
     fn register_duplicate_email_returns_409() {
         let svc = make_service();
-        svc.register(reg("dup@test.com", "password123", "First")).unwrap();
-        let err = svc.register(reg("dup@test.com", "password456", "Second")).unwrap_err();
+        svc.register(reg("dup@test.com", "password123", "First"))
+            .unwrap();
+        let err = svc
+            .register(reg("dup@test.com", "password456", "Second"))
+            .unwrap_err();
         assert_eq!(err.status, 409);
     }
 
@@ -700,8 +741,11 @@ mod tests {
     #[test]
     fn login_success_returns_tokens() {
         let svc = make_service();
-        svc.register(reg("bob@test.com", "mypassword", "Bob")).unwrap();
-        let resp = svc.login(login_req("bob@test.com", "mypassword"), None, None, None).unwrap();
+        svc.register(reg("bob@test.com", "mypassword", "Bob"))
+            .unwrap();
+        let resp = svc
+            .login(login_req("bob@test.com", "mypassword"), None, None, None)
+            .unwrap();
         assert!(!resp.requires_two_factor);
         let auth = resp.auth.unwrap();
         assert!(!auth.access_token.is_empty());
@@ -712,15 +756,25 @@ mod tests {
     #[test]
     fn login_wrong_password_returns_401() {
         let svc = make_service();
-        svc.register(reg("carol@test.com", "correct-password", "Carol")).unwrap();
-        let err = svc.login(login_req("carol@test.com", "wrongpassword"), None, None, None).unwrap_err();
+        svc.register(reg("carol@test.com", "correct-password", "Carol"))
+            .unwrap();
+        let err = svc
+            .login(
+                login_req("carol@test.com", "wrongpassword"),
+                None,
+                None,
+                None,
+            )
+            .unwrap_err();
         assert_eq!(err.status, 401);
     }
 
     #[test]
     fn login_unknown_user_returns_401() {
         let svc = make_service();
-        let err = svc.login(login_req("nobody@test.com", "anything"), None, None, None).unwrap_err();
+        let err = svc
+            .login(login_req("nobody@test.com", "anything"), None, None, None)
+            .unwrap_err();
         assert_eq!(err.status, 401);
     }
 
@@ -729,11 +783,18 @@ mod tests {
     #[test]
     fn refresh_with_valid_token_returns_new_tokens() {
         let svc = make_service();
-        svc.register(reg("dave@test.com", "password123", "Dave")).unwrap();
-        let login_resp = svc.login(login_req("dave@test.com", "password123"), None, None, None).unwrap();
+        svc.register(reg("dave@test.com", "password123", "Dave"))
+            .unwrap();
+        let login_resp = svc
+            .login(login_req("dave@test.com", "password123"), None, None, None)
+            .unwrap();
         let old_refresh = login_resp.auth.unwrap().refresh_token;
 
-        let result = svc.refresh(RefreshRequest { refresh_token: old_refresh.clone() }).unwrap();
+        let result = svc
+            .refresh(RefreshRequest {
+                refresh_token: old_refresh.clone(),
+            })
+            .unwrap();
         assert!(!result.access_token.is_empty());
         assert_ne!(result.refresh_token, old_refresh, "Token should be rotated");
     }
@@ -741,18 +802,28 @@ mod tests {
     #[test]
     fn refresh_with_invalid_token_returns_401() {
         let svc = make_service();
-        let err = svc.refresh(RefreshRequest { refresh_token: "fake-token".to_string() }).unwrap_err();
+        let err = svc
+            .refresh(RefreshRequest {
+                refresh_token: "fake-token".to_string(),
+            })
+            .unwrap_err();
         assert_eq!(err.status, 401);
     }
 
     #[test]
     fn refresh_token_can_only_be_used_once() {
         let svc = make_service();
-        svc.register(reg("eve@test.com", "password123", "Eve")).unwrap();
-        let login_resp = svc.login(login_req("eve@test.com", "password123"), None, None, None).unwrap();
+        svc.register(reg("eve@test.com", "password123", "Eve"))
+            .unwrap();
+        let login_resp = svc
+            .login(login_req("eve@test.com", "password123"), None, None, None)
+            .unwrap();
         let refresh_token = login_resp.auth.unwrap().refresh_token;
 
-        svc.refresh(RefreshRequest { refresh_token: refresh_token.clone() }).unwrap();
+        svc.refresh(RefreshRequest {
+            refresh_token: refresh_token.clone(),
+        })
+        .unwrap();
         let err = svc.refresh(RefreshRequest { refresh_token }).unwrap_err();
         assert_eq!(err.status, 401);
     }
@@ -762,7 +833,9 @@ mod tests {
     #[test]
     fn get_profile_returns_correct_data() {
         let svc = make_service();
-        let reg_resp = svc.register(reg("frank@test.com", "password123", "Frank")).unwrap();
+        let reg_resp = svc
+            .register(reg("frank@test.com", "password123", "Frank"))
+            .unwrap();
         let profile = svc.get_profile(&reg_resp.id).unwrap();
         assert_eq!(profile.email, "frank@test.com");
         assert_eq!(profile.name, "Frank");
@@ -782,8 +855,15 @@ mod tests {
     #[test]
     fn list_sessions_returns_one_after_login() {
         let svc = make_service();
-        svc.register(reg("grace@test.com", "password123", "Grace")).unwrap();
-        svc.login(login_req("grace@test.com", "password123"), Some("iPhone".into()), None, None).unwrap();
+        svc.register(reg("grace@test.com", "password123", "Grace"))
+            .unwrap();
+        svc.login(
+            login_req("grace@test.com", "password123"),
+            Some("iPhone".into()),
+            None,
+            None,
+        )
+        .unwrap();
         let user = svc.lookup_user_by_email("grace@test.com").unwrap().unwrap();
         let sessions = svc.list_sessions(&user.id).unwrap();
         assert_eq!(sessions.sessions.len(), 1);
@@ -792,8 +872,10 @@ mod tests {
     #[test]
     fn revoke_session_removes_it() {
         let svc = make_service();
-        svc.register(reg("henry@test.com", "password123", "Henry")).unwrap();
-        svc.login(login_req("henry@test.com", "password123"), None, None, None).unwrap();
+        svc.register(reg("henry@test.com", "password123", "Henry"))
+            .unwrap();
+        svc.login(login_req("henry@test.com", "password123"), None, None, None)
+            .unwrap();
         let user = svc.lookup_user_by_email("henry@test.com").unwrap().unwrap();
         let sessions = svc.list_sessions(&user.id).unwrap();
         let session_id = sessions.sessions[0].id.clone();
@@ -809,18 +891,28 @@ mod tests {
         let svc = make_service();
         let result = svc.admin_list_users(0, 200).unwrap();
         assert_eq!(result.page, 1, "page < 1 should be clamped to 1");
-        assert_eq!(result.page_size, 100, "page_size > 100 should be clamped to 100");
+        assert_eq!(
+            result.page_size, 100,
+            "page_size > 100 should be clamped to 100"
+        );
     }
 
     #[test]
     fn admin_update_user_invalid_role_returns_400() {
         let svc = make_service();
-        let reg_resp = svc.register(reg("admin@test.com", "password123", "Admin")).unwrap();
-        let err = svc.admin_update_user(&reg_resp.id, AdminUpdateUserRequest {
-            name: None,
-            role: Some("superuser".to_string()),
-            totp_enabled: None,
-        }).unwrap_err();
+        let reg_resp = svc
+            .register(reg("admin@test.com", "password123", "Admin"))
+            .unwrap();
+        let err = svc
+            .admin_update_user(
+                &reg_resp.id,
+                AdminUpdateUserRequest {
+                    name: None,
+                    role: Some("superuser".to_string()),
+                    totp_enabled: None,
+                },
+            )
+            .unwrap_err();
         assert_eq!(err.status, 400);
     }
 

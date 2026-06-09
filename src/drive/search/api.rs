@@ -1,7 +1,7 @@
-use actix_web::{get, put, web, HttpResponse};
-use crate::shared::{ApiError, AuthenticatedUser};
 use super::dto::*;
 use super::service::SearchService;
+use crate::shared::{ApiError, AuthenticatedUser};
+use actix_web::{get, put, web, HttpResponse};
 use std::sync::Arc;
 
 pub struct SearchApiState {

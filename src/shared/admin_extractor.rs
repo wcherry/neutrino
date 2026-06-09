@@ -1,7 +1,7 @@
+use crate::shared::{ApiError, TokenService};
 use actix_web::{web, FromRequest, HttpRequest};
 use std::future::{ready, Ready};
 use std::sync::Arc;
-use crate::shared::{ApiError, TokenService};
 
 #[allow(dead_code)]
 pub struct AdminUser {

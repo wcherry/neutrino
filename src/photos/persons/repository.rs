@@ -1,11 +1,11 @@
 use crate::photos::faces::model::FaceRecord;
 use crate::photos::persons::model::{NewPersonRecord, PersonRecord};
 use crate::schema::{faces, persons};
+use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::SqliteConnection;
-use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
@@ -63,10 +63,7 @@ impl PersonsRepository {
                 .filter(persons::id.eq(person_id))
                 .filter(persons::user_id.eq(user_id)),
         )
-        .set((
-            persons::name.eq(name),
-            persons::updated_at.eq(now),
-        ))
+        .set((persons::name.eq(name), persons::updated_at.eq(now)))
         .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB update person name error: {:?}", e);
@@ -306,7 +303,10 @@ impl PersonsRepository {
     }
 
     /// Return face records for a set of persons in one query (avoids N+1).
-    pub fn list_faces_for_persons(&self, person_ids: &[String]) -> Result<Vec<FaceRecord>, ApiError> {
+    pub fn list_faces_for_persons(
+        &self,
+        person_ids: &[String],
+    ) -> Result<Vec<FaceRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         faces::table
             .filter(faces::person_id.eq_any(person_ids))
@@ -337,7 +337,14 @@ impl PersonsRepository {
     pub fn apply_clusters(
         &self,
         user_id: &str,
-        clusters: &[(String, Vec<String>, Option<String>, Option<String>, Option<String>, Option<String>)],
+        clusters: &[(
+            String,
+            Vec<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        )],
         now: NaiveDateTime,
     ) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
@@ -357,11 +364,12 @@ impl PersonsRepository {
             }
 
             // 2. Delete all existing persons for this user (they are fully replaced by the new cluster set).
-            diesel::delete(persons::table.filter(persons::user_id.eq(user_id)))
-                .execute(conn)?;
+            diesel::delete(persons::table.filter(persons::user_id.eq(user_id))).execute(conn)?;
 
             // 3. Insert new persons and assign face person_ids.
-            for (person_id, face_ids, cover_face_id, cover_thumb, cover_thumb_mime, name) in clusters {
+            for (person_id, face_ids, cover_face_id, cover_thumb, cover_thumb_mime, name) in
+                clusters
+            {
                 let new_person = NewPersonRecord {
                     id: person_id,
                     user_id,
@@ -435,7 +443,10 @@ impl PersonsRepository {
     }
 
     /// Return all named persons (name IS NOT NULL) for a user.
-    pub fn list_named_persons_for_user(&self, user_id: &str) -> Result<Vec<PersonRecord>, ApiError> {
+    pub fn list_named_persons_for_user(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<PersonRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         persons::table
             .filter(persons::user_id.eq(user_id))

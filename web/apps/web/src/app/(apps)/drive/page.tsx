@@ -100,6 +100,7 @@ function fileToGridItem(file: FileItem): GridItem {
 const DOC_MIME = 'application/x-neutrino-doc';
 const SHEET_MIME = 'application/x-neutrino-sheet';
 const SLIDES_MIME = 'application/x-neutrino-slide';
+const DIAGRAM_MIME = 'application/x-neutrino-diagram';
 
 interface ContextMenuState {
   file: FileItem;
@@ -288,6 +289,8 @@ export default function DrivePage() {
       router.push(`/sheets/editor?id=${file.id}`);
     } else if (file.mimeType === SLIDES_MIME) {
       router.push(`/slides/editor?id=${file.id}`);
+    } else if (file.mimeType === DIAGRAM_MIME) {
+      router.push(`/diagrams/editor?id=${file.id}`);
     } else {
       setPreviewFile(file);
     }
@@ -496,6 +499,8 @@ export default function DrivePage() {
                       router.push(`/sheets/editor?id=${file.id}`);
                     } else if (file.mimeType === SLIDES_MIME) {
                       router.push(`/slides/editor?id=${file.id}`);
+                    } else if (file.mimeType === DIAGRAM_MIME) {
+                      router.push(`/diagrams/editor?id=${file.id}`);
                     } else {
                       setPreviewFile(file);
                     }
@@ -613,6 +618,8 @@ export default function DrivePage() {
               return () => { setDocPreview({ id: f.id, kind: 'sheet' }); setContextMenu(null); };
             if (f.mimeType === SLIDES_MIME)
               return () => { setDocPreview({ id: f.id, kind: 'slide' }); setContextMenu(null); };
+            if (f.mimeType === DIAGRAM_MIME)
+              return () => { router.push(`/diagrams/editor?id=${f.id}`); setContextMenu(null); };
             return () => { setPreviewFile(f); setContextMenu(null); };
           })()}
           onInfo={() => { setInfoFile(contextMenu.file); setContextMenu(null); }}

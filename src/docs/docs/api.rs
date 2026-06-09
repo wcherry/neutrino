@@ -1,8 +1,11 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::docs::docs::{
-    dto::{CreateDocRequest, DocMetaResponse, DocResponse, ExportTextResponse, ListDocsResponse, PageSetup, SaveDocRequest},
+    dto::{
+        CreateDocRequest, DocMetaResponse, DocResponse, ExportTextResponse, ListDocsResponse,
+        PageSetup, SaveDocRequest,
+    },
     service::DocsService,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_multipart::Multipart;
 use actix_web::{get, patch, post, put, web, HttpResponse};
 use futures_util::StreamExt;
@@ -48,7 +51,10 @@ pub async fn create_doc(
     user: AuthenticatedUser,
     body: web::Json<CreateDocRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let doc = state.docs_service.create_doc(&user, body.into_inner()).await?;
+    let doc = state
+        .docs_service
+        .create_doc(&user, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(doc))
 }
 
@@ -192,7 +198,13 @@ pub async fn autosave_doc(
     let bytes = file_bytes.ok_or_else(|| ApiError::bad_request("No file provided"))?;
     let meta = state
         .docs_service
-        .autosave(&user, &doc_id, &bytes, title.as_deref(), page_setup.as_ref())
+        .autosave(
+            &user,
+            &doc_id,
+            &bytes,
+            title.as_deref(),
+            page_setup.as_ref(),
+        )
         .await?;
     Ok(web::Json(meta))
 }

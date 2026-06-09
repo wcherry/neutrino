@@ -1,15 +1,15 @@
 #![allow(dead_code)]
 
+use crate::drive::irm::service::IrmService;
 use crate::drive::sharing::{
     dto::{
-        GuestSessionResponse, ResolvedShareLinkResponse, ShareLinkResponse, UpdateShareLinkRequest,
-        UpsertShareLinkRequest, LinkVisibility, LinkRole,
+        GuestSessionResponse, LinkRole, LinkVisibility, ResolvedShareLinkResponse,
+        ShareLinkResponse, UpdateShareLinkRequest, UpsertShareLinkRequest,
     },
     service::SharingService,
 };
-use crate::shared::{ApiError, AuthenticatedUser, TokenService};
-use crate::drive::irm::service::IrmService;
 use crate::drive::storage::api::StorageApiState;
+use crate::shared::{ApiError, AuthenticatedUser, TokenService};
 use actix_files::NamedFile;
 use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
 use std::sync::Arc;
@@ -42,20 +42,27 @@ pub async fn get_file_share_link(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
-    Ok(HttpResponse::Ok().json(match state
-        .sharing_service
-        .get_share_link(&user.user_id, "file", &file_id)?
-    {
-        Some(link) => link,
-        // None => Ok(HttpResponse::NotFound().json(serde_json::json!({
-        //     "error": { "code": "NOT_FOUND", "message": "No share link exists for this file" }
-        // }))),
-        None => state.sharing_service.upsert_share_link(&user.user_id, "file", &file_id, 
-            UpsertShareLinkRequest{
-                visibility: LinkVisibility::AnyoneWithLink, 
-                role: LinkRole::Viewer, 
-                expires_at: None})?,
-    }))
+    Ok(HttpResponse::Ok().json(
+        match state
+            .sharing_service
+            .get_share_link(&user.user_id, "file", &file_id)?
+        {
+            Some(link) => link,
+            // None => Ok(HttpResponse::NotFound().json(serde_json::json!({
+            //     "error": { "code": "NOT_FOUND", "message": "No share link exists for this file" }
+            // }))),
+            None => state.sharing_service.upsert_share_link(
+                &user.user_id,
+                "file",
+                &file_id,
+                UpsertShareLinkRequest {
+                    visibility: LinkVisibility::AnyoneWithLink,
+                    role: LinkRole::Viewer,
+                    expires_at: None,
+                },
+            )?,
+        },
+    ))
 }
 
 #[utoipa::path(
@@ -304,13 +311,16 @@ pub async fn download_shared_file(
     let resolved = state.sharing_service.resolve_token(&token)?;
 
     if resolved.resource_type != "file" {
-        return Err(ApiError::bad_request("Share link does not reference a file"));
+        return Err(ApiError::bad_request(
+            "Share link does not reference a file",
+        ));
     }
 
     // Enforce IRM download restriction based on the share link's role
-    let restrictions = state
-        .irm_service
-        .get_restrictions("file", &resolved.resource_id, &resolved.role)?;
+    let restrictions =
+        state
+            .irm_service
+            .get_restrictions("file", &resolved.resource_id, &resolved.role)?;
     if restrictions.restrict_download {
         return Err(ApiError::new(
             403,
@@ -323,9 +333,7 @@ pub async fn download_shared_file(
         .storage_service
         .resolve_file_path_by_id(&resolved.resource_id)?;
 
-    let content_type: mime::Mime = mime_type
-        .parse()
-        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+    let content_type: mime::Mime = mime_type.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
     let disposition = actix_web::http::header::ContentDisposition {
         disposition: actix_web::http::header::DispositionType::Attachment,
@@ -368,21 +376,22 @@ pub async fn preview_shared_file(
     let resolved = state.sharing_service.resolve_token(&token)?;
 
     if resolved.resource_type != "file" {
-        return Err(ApiError::bad_request("Share link does not reference a file"));
+        return Err(ApiError::bad_request(
+            "Share link does not reference a file",
+        ));
     }
 
     // Check IRM print/copy restrictions based on the share link's role
-    let restrictions = state
-        .irm_service
-        .get_restrictions("file", &resolved.resource_id, &resolved.role)?;
+    let restrictions =
+        state
+            .irm_service
+            .get_restrictions("file", &resolved.resource_id, &resolved.role)?;
 
     let (file_path, mime_type, _) = storage_state
         .storage_service
         .resolve_file_path_by_id(&resolved.resource_id)?;
 
-    let content_type: mime::Mime = mime_type
-        .parse()
-        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+    let content_type: mime::Mime = mime_type.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
     let disposition = actix_web::http::header::ContentDisposition {
         disposition: actix_web::http::header::DispositionType::Inline,

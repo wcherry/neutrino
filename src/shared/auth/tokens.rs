@@ -1,10 +1,8 @@
 use crate::shared::ApiError;
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
-use serde::{Deserialize, Serialize};
 use rand_core::{OsRng, RngCore};
-
-
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
@@ -32,7 +30,11 @@ impl TokenService {
         }
     }
 
-    pub fn new_with_expiry(secret: String, access_expiry_secs: u64, refresh_expiry_secs: u64) -> Self {
+    pub fn new_with_expiry(
+        secret: String,
+        access_expiry_secs: u64,
+        refresh_expiry_secs: u64,
+    ) -> Self {
         TokenService {
             secret,
             access_expiry_secs,
@@ -45,7 +47,12 @@ impl TokenService {
         self.generate_access_token_with_admin(user_id, email, false)
     }
 
-    pub fn generate_access_token_with_admin(&self, user_id: &str, email: &str, is_admin: bool) -> Result<String, ApiError> {
+    pub fn generate_access_token_with_admin(
+        &self,
+        user_id: &str,
+        email: &str,
+        is_admin: bool,
+    ) -> Result<String, ApiError> {
         let now = Utc::now();
         let expiry = now + Duration::seconds(self.access_expiry_secs as i64);
 
@@ -73,8 +80,8 @@ impl TokenService {
         OsRng.fill_bytes(&mut bytes);
         let token = hex::encode(bytes);
 
-        let expires_at = (Utc::now() + Duration::seconds(self.refresh_expiry_secs as i64))
-            .naive_utc();
+        let expires_at =
+            (Utc::now() + Duration::seconds(self.refresh_expiry_secs as i64)).naive_utc();
 
         Ok((token, expires_at))
     }

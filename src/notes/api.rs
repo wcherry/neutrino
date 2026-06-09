@@ -1,11 +1,11 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::notes::{
     dto::{
-        BacklinksResponse, CreateNoteRequest, ListNotesResponse, NoteMetaResponse, NoteLinkItem,
+        BacklinksResponse, CreateNoteRequest, ListNotesResponse, NoteLinkItem, NoteMetaResponse,
         NoteResponse, SaveNoteRequest,
     },
     service::NotesService,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
@@ -49,7 +49,10 @@ pub async fn create_note(
     user: AuthenticatedUser,
     body: web::Json<CreateNoteRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let note = state.notes_service.create_note(&user, body.into_inner()).await?;
+    let note = state
+        .notes_service
+        .create_note(&user, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(note))
 }
 

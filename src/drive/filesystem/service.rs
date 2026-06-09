@@ -1,4 +1,4 @@
-use crate::drive::{filesystem::{
+use crate::drive::filesystem::{
     dto::{
         BulkMoveRequest, BulkResult, BulkTrashRequest, CreateFolderRequest, CreateShortcutRequest,
         DriveView, FileResponse, FolderContentsOrderField, FolderContentsResponse, FolderResponse,
@@ -7,10 +7,12 @@ use crate::drive::{filesystem::{
     },
     model::{NewFolderRecord, NewShortcutRecord, UpdateFolderRecord},
     repository::FilesystemRepository,
-}};
+};
 use crate::drive::permissions::service::PermissionsService;
-use crate::shared::{apply_list_query, ApiError, ListQueryParams, OrderDirection, AuthenticatedUser};
 use crate::drive::storage::store::LocalFileStore;
+use crate::shared::{
+    apply_list_query, ApiError, AuthenticatedUser, ListQueryParams, OrderDirection,
+};
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -125,10 +127,7 @@ impl FilesystemService {
             folder: folder_response,
             folders: subfolders.into_iter().map(FolderResponse::from).collect(),
             files: files.into_iter().map(FileResponse::from).collect(),
-            shortcuts: shortcuts
-                .into_iter()
-                .map(ShortcutResponse::from)
-                .collect(),
+            shortcuts: shortcuts.into_iter().map(ShortcutResponse::from).collect(),
         })
     }
 
@@ -235,9 +234,7 @@ impl FilesystemService {
         let mut affected = 0;
 
         if !req.file_ids.is_empty() {
-            affected += self
-                .repo
-                .bulk_move_files(&req.file_ids, user_id, target)?;
+            affected += self.repo.bulk_move_files(&req.file_ids, user_id, target)?;
         }
         if !req.folder_ids.is_empty() {
             affected += self
@@ -248,20 +245,14 @@ impl FilesystemService {
         Ok(BulkResult { affected })
     }
 
-    pub fn bulk_trash(
-        &self,
-        user_id: &str,
-        req: BulkTrashRequest,
-    ) -> Result<BulkResult, ApiError> {
+    pub fn bulk_trash(&self, user_id: &str, req: BulkTrashRequest) -> Result<BulkResult, ApiError> {
         let mut affected = 0;
 
         if !req.file_ids.is_empty() {
             affected += self.repo.bulk_trash_files(&req.file_ids, user_id)?;
         }
         if !req.folder_ids.is_empty() {
-            affected += self
-                .repo
-                .bulk_trash_folders(&req.folder_ids, user_id)?;
+            affected += self.repo.bulk_trash_folders(&req.folder_ids, user_id)?;
         }
 
         Ok(BulkResult { affected })
@@ -350,7 +341,11 @@ impl FilesystemService {
 
     // ── Starred (Quick Access) ────────────────────────────────────────────────
 
-    pub fn list_starred(&self, user_id: &str, limit: usize) -> Result<StarredContentsResponse, ApiError> {
+    pub fn list_starred(
+        &self,
+        user_id: &str,
+        limit: usize,
+    ) -> Result<StarredContentsResponse, ApiError> {
         let files = self.repo.list_starred_files(user_id)?;
         let folders = self.repo.list_starred_folders(user_id)?;
 
@@ -361,7 +356,12 @@ impl FilesystemService {
             .iter()
             .enumerate()
             .map(|(i, f)| (f.starred_at, false, i))
-            .chain(folders.iter().enumerate().map(|(i, f)| (f.starred_at, true, i)))
+            .chain(
+                folders
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| (f.starred_at, true, i)),
+            )
             .collect();
         combined.sort_by_key(|(ts, _, _)| Reverse(*ts));
         combined.truncate(limit);
@@ -376,7 +376,10 @@ impl FilesystemService {
             }
         }
 
-        Ok(StarredContentsResponse { files: out_files, folders: out_folders })
+        Ok(StarredContentsResponse {
+            files: out_files,
+            folders: out_folders,
+        })
     }
 
     // ── Trash operations ──────────────────────────────────────────────────────
@@ -437,11 +440,7 @@ impl FilesystemService {
         self.repo.restore_folder(folder_id, user_id)
     }
 
-    pub fn permanently_delete_file(
-        &self,
-        user_id: &str,
-        file_id: &str,
-    ) -> Result<(), ApiError> {
+    pub fn permanently_delete_file(&self, user_id: &str, file_id: &str) -> Result<(), ApiError> {
         if let Some(file) = self.repo.permanently_delete_file(file_id, user_id)? {
             let abs_path = self.store.resolve(&file.storage_path);
             if let Err(e) = std::fs::remove_file(&abs_path) {

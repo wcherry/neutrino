@@ -1,6 +1,6 @@
+use crate::schema::file_activity_log;
 use diesel::prelude::*;
 use serde::Serialize;
-use crate::schema::file_activity_log;
 
 #[derive(Debug, Queryable, Selectable, Serialize, Clone)]
 #[diesel(table_name = file_activity_log)]

@@ -38,7 +38,10 @@ pub async fn verify_connection(
 </d:propfind>"#;
 
     let resp = http
-        .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), caldav_url)
+        .request(
+            reqwest::Method::from_bytes(b"PROPFIND").unwrap(),
+            caldav_url,
+        )
         .header("Content-Type", "application/xml; charset=utf-8")
         .header("Depth", "0")
         .header("Authorization", format!("Basic {}", access_token))
@@ -51,7 +54,9 @@ pub async fn verify_connection(
         })?;
 
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-        return Err(ApiError::bad_request("CalDAV authentication failed – check username and password"));
+        return Err(ApiError::bad_request(
+            "CalDAV authentication failed – check username and password",
+        ));
     }
 
     if !resp.status().is_success() && resp.status().as_u16() != 207 {
@@ -60,8 +65,7 @@ pub async fn verify_connection(
 
     // Try to extract email / display name from the response
     let body = resp.text().await.unwrap_or_default();
-    let email = extract_tag_content(&body, "displayname")
-        .filter(|s| !s.is_empty());
+    let email = extract_tag_content(&body, "displayname").filter(|s| !s.is_empty());
 
     Ok(email)
 }
@@ -127,8 +131,8 @@ async fn discover_calendar_home(
         if href.starts_with("http") {
             return Ok(href);
         }
-        let base = url::Url::parse(base_url)
-            .map_err(|_| ApiError::internal("Invalid CalDAV URL"))?;
+        let base =
+            url::Url::parse(base_url).map_err(|_| ApiError::internal("Invalid CalDAV URL"))?;
         let resolved = base
             .join(&href)
             .map_err(|_| ApiError::internal("Invalid CalDAV href"))?;
@@ -172,7 +176,10 @@ async fn report_events(
     );
 
     let resp = http
-        .request(reqwest::Method::from_bytes(b"REPORT").unwrap(), calendar_url)
+        .request(
+            reqwest::Method::from_bytes(b"REPORT").unwrap(),
+            calendar_url,
+        )
         .header("Content-Type", "application/xml; charset=utf-8")
         .header("Depth", "1")
         .header("Authorization", format!("Basic {}", access_token))
@@ -190,7 +197,10 @@ async fn report_events(
         return Err(ApiError::internal("CalDAV REPORT request failed"));
     }
 
-    let body = resp.text().await.map_err(|_| ApiError::internal("Failed to read CalDAV response"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|_| ApiError::internal("Failed to read CalDAV response"))?;
 
     // Extract all calendar-data blocks (raw iCal text inside the XML)
     Ok(extract_calendar_data_blocks(&body))
@@ -290,7 +300,8 @@ fn parse_ical_dt(s: &str) -> Option<(NaiveDateTime, bool)> {
     }
     // DateTime UTC: 20260101T100000Z
     if s.ends_with('Z') {
-        let dt = chrono::NaiveDateTime::parse_from_str(s.trim_end_matches('Z'), "%Y%m%dT%H%M%S").ok()?;
+        let dt =
+            chrono::NaiveDateTime::parse_from_str(s.trim_end_matches('Z'), "%Y%m%dT%H%M%S").ok()?;
         return Some((dt, false));
     }
     // DateTime local (no TZ suffix): 20260101T100000

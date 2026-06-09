@@ -1,5 +1,5 @@
-use crate::slides::ai::service::SlidesAIService;
 use crate::shared::{ApiError, AuthenticatedUser};
+use crate::slides::ai::service::SlidesAIService;
 use actix_web::{post, web, HttpResponse};
 use serde::Deserialize;
 use std::sync::Arc;

@@ -5,9 +5,9 @@ use crate::photos::albums::{
     },
     service::AlbumsService,
 };
-use actix_web::{delete, get, patch, post, web, HttpResponse};
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::ApiError;
+use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
 

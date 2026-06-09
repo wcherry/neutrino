@@ -7,9 +7,9 @@ use crate::photos::albums::{
     repository::AlbumsRepository,
 };
 use crate::photos::photos::repository::PhotosRepository;
-use chrono::Utc;
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::ApiError;
+use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -87,7 +87,9 @@ impl AlbumsService {
         person_name: &str,
         photo_ids: &[String],
     ) -> Result<AlbumResponse, ApiError> {
-        let existing = self.albums_repo.find_auto_album_for_person(user_id, person_id)?;
+        let existing = self
+            .albums_repo
+            .find_auto_album_for_person(user_id, person_id)?;
         let album_id = if let Some(existing_album) = existing {
             existing_album.id
         } else {
@@ -174,11 +176,7 @@ impl AlbumsService {
         })
     }
 
-    pub fn delete_album(
-        &self,
-        user: &AuthenticatedUser,
-        album_id: &str,
-    ) -> Result<(), ApiError> {
+    pub fn delete_album(&self, user: &AuthenticatedUser, album_id: &str) -> Result<(), ApiError> {
         let album = self.albums_repo.get_album(album_id)?;
         if album.user_id != user.user_id {
             return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));

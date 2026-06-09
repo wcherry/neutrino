@@ -1,6 +1,6 @@
-use crate::shared::ApiError;
 use crate::docs::docs::model::{DocRecord, NewDocRecord, UpdateDocRecord};
-use crate::schema::{docs};
+use crate::schema::docs;
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 

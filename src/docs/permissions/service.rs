@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use crate::shared::{fetch_auth_profile, ApiError, AuthenticatedUser};
 use crate::auth::service::AuthService;
 use crate::docs::permissions::{model::NewPermissionRecord, repository::PermissionsRepository};
+use crate::shared::{fetch_auth_profile, ApiError, AuthenticatedUser};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -47,7 +47,10 @@ impl PermissionsService {
         resource_type: &str,
         resource_id: &str,
     ) -> Result<Option<String>, ApiError> {
-        if let Some(perm) = self.repo.find_permission(resource_type, resource_id, user_id)? {
+        if let Some(perm) = self
+            .repo
+            .find_permission(resource_type, resource_id, user_id)?
+        {
             return Ok(Some(perm.role));
         }
         match resource_type {

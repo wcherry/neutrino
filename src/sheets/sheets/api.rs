@@ -1,6 +1,8 @@
 use crate::shared::{ApiError, AuthenticatedUser};
 use crate::sheets::sheets::{
-    dto::{CreateSheetRequest, ListSheetsResponse, SaveSheetRequest, SheetMetaResponse, SheetResponse},
+    dto::{
+        CreateSheetRequest, ListSheetsResponse, SaveSheetRequest, SheetMetaResponse, SheetResponse,
+    },
     service::SheetsService,
 };
 use actix_multipart::Multipart;
@@ -48,7 +50,10 @@ pub async fn create_sheet(
     user: AuthenticatedUser,
     body: web::Json<CreateSheetRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let sheet = state.sheets_service.create_sheet(&user, body.into_inner()).await?;
+    let sheet = state
+        .sheets_service
+        .create_sheet(&user, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(sheet))
 }
 

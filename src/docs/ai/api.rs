@@ -188,7 +188,11 @@ pub async fn translate(
     let body = body.into_inner();
     let translated = state
         .ai_service
-        .translate(&body.content, &body.target_lang, body.provider_fields.into())
+        .translate(
+            &body.content,
+            &body.target_lang,
+            body.provider_fields.into(),
+        )
         .await?;
     Ok(web::Json(TranslateResponse { translated }))
 }

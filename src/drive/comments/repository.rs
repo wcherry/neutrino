@@ -94,22 +94,21 @@ impl CommentsRepository {
                 query = query.filter(comments::status.eq(status));
             }
         }
-        query
-            .count()
-            .get_result(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB count comments error: {:?}", e);
-                ApiError::internal("Database error")
-            })
+        query.count().get_result(&mut conn).map_err(|e| {
+            tracing::error!("DB count comments error: {:?}", e);
+            ApiError::internal("Database error")
+        })
     }
 
-    pub fn update_comment_body(&self, comment_id: &str, body: &str, now: chrono::NaiveDateTime) -> Result<Comment, ApiError> {
+    pub fn update_comment_body(
+        &self,
+        comment_id: &str,
+        body: &str,
+        now: chrono::NaiveDateTime,
+    ) -> Result<Comment, ApiError> {
         let mut conn = self.get_conn()?;
         diesel::update(comments::table.filter(comments::id.eq(comment_id)))
-            .set((
-                comments::body.eq(body),
-                comments::updated_at.eq(now),
-            ))
+            .set((comments::body.eq(body), comments::updated_at.eq(now)))
             .execute(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB update comment body error: {:?}", e);
@@ -159,7 +158,10 @@ impl CommentsRepository {
             })
     }
 
-    pub fn list_replies_for_comment(&self, comment_id: &str) -> Result<Vec<CommentReply>, ApiError> {
+    pub fn list_replies_for_comment(
+        &self,
+        comment_id: &str,
+    ) -> Result<Vec<CommentReply>, ApiError> {
         let mut conn = self.get_conn()?;
         comment_replies::table
             .filter(comment_replies::comment_id.eq(comment_id))

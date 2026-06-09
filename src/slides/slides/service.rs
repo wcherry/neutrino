@@ -1,10 +1,10 @@
 use crate::shared::{ApiError, AuthenticatedUser};
 use crate::slides::slides::{
     dto::{
-        CreateSlideRequest, ListSlidesResponse, SaveSlideRequest, SlideMetaResponse, SlideResponse,
-        CreateThemeRequest, UpdateThemeRequest, ThemeResponse, ListThemesResponse,
+        CreateSlideRequest, CreateThemeRequest, ListSlidesResponse, ListThemesResponse,
+        SaveSlideRequest, SlideMetaResponse, SlideResponse, ThemeResponse, UpdateThemeRequest,
     },
-    model::{NewSlideRecord, UpdateSlideRecord, NewThemeRecord, UpdateThemeRecord},
+    model::{NewSlideRecord, NewThemeRecord, UpdateSlideRecord, UpdateThemeRecord},
     repository::SlidesRepository,
 };
 
@@ -57,7 +57,10 @@ impl SlidesService {
         SlidesService { repo, drive }
     }
 
-    pub async fn list_slides(&self, user: &AuthenticatedUser) -> Result<ListSlidesResponse, ApiError> {
+    pub async fn list_slides(
+        &self,
+        user: &AuthenticatedUser,
+    ) -> Result<ListSlidesResponse, ApiError> {
         let items = self.drive.list_files(user, MIME_TYPE).await?;
         let slides = items
             .into_iter()
@@ -181,10 +184,18 @@ impl SlidesService {
                 return Err(ApiError::bad_request("Theme name cannot be empty"));
             }
         }
-        if let Some(ref c) = req.primary_color { validate_hex_color(c, "primaryColor")?; }
-        if let Some(ref c) = req.background_color { validate_hex_color(c, "backgroundColor")?; }
-        if let Some(ref c) = req.text_color { validate_hex_color(c, "textColor")?; }
-        if let Some(ref c) = req.accent_color { validate_hex_color(c, "accentColor")?; }
+        if let Some(ref c) = req.primary_color {
+            validate_hex_color(c, "primaryColor")?;
+        }
+        if let Some(ref c) = req.background_color {
+            validate_hex_color(c, "backgroundColor")?;
+        }
+        if let Some(ref c) = req.text_color {
+            validate_hex_color(c, "textColor")?;
+        }
+        if let Some(ref c) = req.accent_color {
+            validate_hex_color(c, "accentColor")?;
+        }
 
         let changes = UpdateThemeRecord {
             name: req.name.map(|n| n.trim().to_string()),
@@ -230,7 +241,9 @@ impl SlidesService {
         let new_title = if let Some(t) = title {
             let trimmed = t.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(user, slide_id, &trimmed).await?;
+                self.drive
+                    .update_file_name(user, slide_id, &trimmed)
+                    .await?;
                 trimmed
             } else {
                 file.name.clone()
@@ -273,7 +286,9 @@ impl SlidesService {
         let new_title = if let Some(ref title) = req.title {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(user, slide_id, &trimmed).await?;
+                self.drive
+                    .update_file_name(user, slide_id, &trimmed)
+                    .await?;
                 trimmed
             } else {
                 file.name.clone()
@@ -321,9 +336,14 @@ fn theme_record_to_response(r: ThemeRecord) -> ThemeResponse {
 /// Reject obviously non-hex values to prevent garbage data in the DB.
 fn validate_hex_color(value: &str, field: &str) -> Result<(), ApiError> {
     let s = value.trim();
-    if s.starts_with('#') && (s.len() == 7 || s.len() == 4) && s[1..].chars().all(|c| c.is_ascii_hexdigit()) {
+    if s.starts_with('#')
+        && (s.len() == 7 || s.len() == 4)
+        && s[1..].chars().all(|c| c.is_ascii_hexdigit())
+    {
         Ok(())
     } else {
-        Err(ApiError::bad_request(&format!("{field} must be a valid hex colour (e.g. #ff0000)")))
+        Err(ApiError::bad_request(&format!(
+            "{field} must be a valid hex colour (e.g. #ff0000)"
+        )))
     }
 }

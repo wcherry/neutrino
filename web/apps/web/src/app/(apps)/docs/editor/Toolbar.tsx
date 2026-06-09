@@ -6,7 +6,7 @@ import {
   Code, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Link, Image, Table, Minus, Undo, Redo, Quote, ArrowUpDown,
-  Superscript, Subscript, Indent, Outdent, Sparkles, Search, SpellCheck,
+  Superscript, Subscript, Indent, Outdent, Sparkles, Search, SpellCheck, Network,
 } from 'lucide-react';
 import {
   Toolbar as RickTextToolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect, ColorPickerPopover,
@@ -273,6 +273,7 @@ export interface ToolbarProps {
   onAiSummarize?: () => void;
   onAiChangeTone?: () => void;
   onOpenFindReplace?: () => void;
+  onInsertDiagram?: () => void;
 }
 
 export function Toolbar({
@@ -288,6 +289,7 @@ export function Toolbar({
   onAiSummarize,
   onAiChangeTone,
   onOpenFindReplace,
+  onInsertDiagram,
 }: ToolbarProps) {
   const flags = useFeatureFlags();
   if (!editor) return null;
@@ -510,6 +512,11 @@ export function Toolbar({
 
         <ToolbarButton onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert table"><Table size={15} /></ToolbarButton>
         <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal rule"><Minus size={15} /></ToolbarButton>
+        {onInsertDiagram && (
+          <ToolbarButton onClick={onInsertDiagram} title="Insert diagram">
+            <Network size={15} />
+          </ToolbarButton>
+        )}
       </ToolbarGroup>
 
       {editor.isActive('table') && (

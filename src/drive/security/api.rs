@@ -1,10 +1,7 @@
+use crate::drive::security::{dto::*, service::SecurityService};
+use crate::shared::{AdminUser, ApiError};
 use actix_web::{delete, get, post, web, HttpResponse};
 use std::sync::Arc;
-use crate::shared::{AdminUser, ApiError};
-use crate::drive::security::{
-    dto::*,
-    service::SecurityService,
-};
 
 pub struct SecurityApiState {
     pub service: Arc<SecurityService>,
@@ -45,7 +42,9 @@ pub async fn resolve_ransomware_event(
     admin: AdminUser,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    state.service.resolve_ransomware_event(&path.into_inner(), &admin.user_id)?;
+    state
+        .service
+        .resolve_ransomware_event(&path.into_inner(), &admin.user_id)?;
     Ok(HttpResponse::NoContent().finish())
 }
 

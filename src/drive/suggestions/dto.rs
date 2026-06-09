@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::drive::suggestions::model::DocSuggestion;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]

@@ -4,8 +4,8 @@ use serde_json::json;
 use std::sync::Arc;
 use utoipa::OpenApi;
 
-use crate::shared::{AdminUser, ApiError};
 use super::repository::FeatureFlagsRepository;
+use crate::shared::{AdminUser, ApiError};
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -178,10 +178,10 @@ mod tests {
     use crate::shared::{DbPool, TokenService};
 
     fn test_pool() -> DbPool {
+        use crate::MIGRATIONS;
         use diesel::r2d2::{ConnectionManager, Pool};
         use diesel::SqliteConnection;
         use diesel_migrations::MigrationHarness;
-        use crate::MIGRATIONS;
 
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
         let pool = Pool::builder()
@@ -247,7 +247,9 @@ mod tests {
     #[actix_web::test]
     async fn admin_list_requires_admin_auth() {
         let app = make_app!(test_state(), make_token_service());
-        let req = test::TestRequest::get().uri("/admin/feature-flags").to_request();
+        let req = test::TestRequest::get()
+            .uri("/admin/feature-flags")
+            .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 401);
     }

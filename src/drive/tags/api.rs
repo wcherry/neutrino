@@ -1,11 +1,11 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::drive::tags::{
     dto::{
-        CreateTagRequest, ListTaggedFilesResponse, ListTagsResponse, TagResponse,
-        UpdateTagRequest, SetFileTagsRequest,
+        CreateTagRequest, ListTaggedFilesResponse, ListTagsResponse, SetFileTagsRequest,
+        TagResponse, UpdateTagRequest,
     },
     service::TagsService,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, put, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
@@ -62,9 +62,7 @@ pub async fn list_tags(
     user: AuthenticatedUser,
     query: web::Query<TagsListQuery>,
 ) -> Result<web::Json<ListTagsResponse>, ApiError> {
-    let response = state
-        .tags_service
-        .list_tags(&user, query.q.as_deref())?;
+    let response = state.tags_service.list_tags(&user, query.q.as_deref())?;
     Ok(web::Json(response))
 }
 
@@ -111,7 +109,9 @@ pub async fn rename_tag(
     body: web::Json<UpdateTagRequest>,
 ) -> Result<web::Json<TagResponse>, ApiError> {
     let tag_id = path.into_inner();
-    let tag = state.tags_service.rename_tag(&user, &tag_id, body.into_inner())?;
+    let tag = state
+        .tags_service
+        .rename_tag(&user, &tag_id, body.into_inner())?;
     Ok(web::Json(tag))
 }
 
@@ -260,7 +260,9 @@ pub async fn remove_file_tag(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ApiError> {
     let (file_id, tag_id) = path.into_inner();
-    state.tags_service.remove_file_tag(&user, &file_id, &tag_id)?;
+    state
+        .tags_service
+        .remove_file_tag(&user, &file_id, &tag_id)?;
     Ok(HttpResponse::NoContent().finish())
 }
 

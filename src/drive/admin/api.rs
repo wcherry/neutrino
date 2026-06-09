@@ -3,9 +3,9 @@ use serde::Deserialize;
 use std::sync::Arc;
 use utoipa::OpenApi;
 
-use crate::shared::{AdminUser, ApiError};
-use crate::drive::service_registry::ServiceRegistry;
 use super::service::{AdminDashboardService, DiskUsageInfo, ProcessInfo};
+use crate::drive::service_registry::ServiceRegistry;
+use crate::shared::{AdminUser, ApiError};
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -126,11 +126,9 @@ async fn update_service_flags(
     let name = path.into_inner();
     let body = body.into_inner();
     let registry = state.service_registry.clone();
-    let info = web::block(move || {
-        registry.update_flags(&name, body.enabled, body.auto_update)
-    })
-    .await
-    .map_err(|_| ApiError::internal("Task error"))??;
+    let info = web::block(move || registry.update_flags(&name, body.enabled, body.auto_update))
+        .await
+        .map_err(|_| ApiError::internal("Task error"))??;
     Ok(HttpResponse::Ok().json(info))
 }
 
@@ -189,15 +187,17 @@ mod tests {
     use std::sync::Arc;
 
     use crate::drive::admin::service::AdminDashboardService;
-    use crate::drive::service_registry::{ServiceRegistry, repository::ServiceRegistrationRepository};
+    use crate::drive::service_registry::{
+        repository::ServiceRegistrationRepository, ServiceRegistry,
+    };
     use crate::shared::{DbPool, TokenService};
 
     // Build a minimal in-memory SQLite pool for tests
     fn test_pool() -> DbPool {
+        use crate::MIGRATIONS;
         use diesel::r2d2::{ConnectionManager, Pool};
         use diesel::SqliteConnection;
         use diesel_migrations::MigrationHarness;
-        use crate::MIGRATIONS;
 
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
         let pool = Pool::builder()
@@ -256,7 +256,9 @@ mod tests {
     #[actix_web::test]
     async fn get_processes_requires_admin_auth() {
         let app = make_app!(test_state(), make_token_service());
-        let req = test::TestRequest::get().uri("/api/v1/admin/processes").to_request();
+        let req = test::TestRequest::get()
+            .uri("/api/v1/admin/processes")
+            .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 401);
     }
@@ -264,7 +266,9 @@ mod tests {
     #[actix_web::test]
     async fn get_disk_requires_admin_auth() {
         let app = make_app!(test_state(), make_token_service());
-        let req = test::TestRequest::get().uri("/api/v1/admin/disk").to_request();
+        let req = test::TestRequest::get()
+            .uri("/api/v1/admin/disk")
+            .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 401);
     }
@@ -272,7 +276,9 @@ mod tests {
     #[actix_web::test]
     async fn get_services_requires_admin_auth() {
         let app = make_app!(test_state(), make_token_service());
-        let req = test::TestRequest::get().uri("/api/v1/admin/services").to_request();
+        let req = test::TestRequest::get()
+            .uri("/api/v1/admin/services")
+            .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 401);
     }

@@ -1,7 +1,7 @@
-use crate::shared::{ApiError, DbPool};
 use crate::schema::event_attendees;
+use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager};
+use diesel::r2d2::ConnectionManager;
 use uuid::Uuid;
 
 #[allow(dead_code)]
@@ -52,11 +52,7 @@ impl AttendeesRepository {
             })
     }
 
-    pub fn replace_for_event(
-        &self,
-        event_id: &str,
-        emails: &[String],
-    ) -> Result<(), ApiError> {
+    pub fn replace_for_event(&self, event_id: &str, emails: &[String]) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         diesel::delete(event_attendees::table.filter(event_attendees::event_id.eq(event_id)))
             .execute(&mut conn)

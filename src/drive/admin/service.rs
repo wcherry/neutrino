@@ -153,7 +153,11 @@ fn parse_linux_state(state: &str) -> String {
     } else if state.starts_with('T') {
         "Stopped".to_string()
     } else {
-        state.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "Unknown".to_string())
+        state
+            .chars()
+            .next()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "Unknown".to_string())
     }
 }
 
@@ -167,7 +171,10 @@ fn count_open_files(pid: u32) -> u32 {
 pub fn get_disk_usage_for_path(path_str: &str) -> Result<DiskUsageInfo, ApiError> {
     let path = Path::new(path_str);
     if !path.exists() {
-        return Err(ApiError::not_found(&format!("Path not found: {}", path_str)));
+        return Err(ApiError::not_found(&format!(
+            "Path not found: {}",
+            path_str
+        )));
     }
 
     let (total_bytes, free_bytes) = statvfs_stats(path)?;
@@ -194,9 +201,9 @@ pub fn get_disk_usage_for_path(path_str: &str) -> Result<DiskUsageInfo, ApiError
 
 #[cfg(unix)]
 fn statvfs_stats(path: &Path) -> Result<(u64, u64), ApiError> {
+    use std::ffi::CString;
     use std::mem;
     use std::os::unix::ffi::OsStrExt;
-    use std::ffi::CString;
 
     let c_path = CString::new(path.as_os_str().as_bytes())
         .map_err(|_| ApiError::internal("Invalid path"))?;

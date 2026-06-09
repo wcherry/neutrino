@@ -1,11 +1,11 @@
 use actix_web::{get, web, HttpRequest, HttpResponse};
 use actix_ws::AggregatedMessage;
 use futures_util::StreamExt;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use tracing::{error, warn};
-use yrs::{ReadTxn, StateVector, Transact, Update};
 use yrs::updates::decoder::Decode;
+use yrs::{ReadTxn, StateVector, Transact, Update};
 
 use crate::docs::collab::repository::CollabRepository;
 use crate::docs::collab::state::{CollabState, DocRoom};
@@ -132,14 +132,11 @@ pub async fn collab_ws(
     let file_id = path.into_inner();
 
     // Authenticate via ?token=<jwt> query param (standard for WebSocket auth)
-    let token = req
-        .uri()
-        .query()
-        .and_then(|q| {
-            q.split('&')
-                .find(|kv| kv.starts_with("token="))
-                .map(|kv| kv["token=".len()..].to_string())
-        });
+    let token = req.uri().query().and_then(|q| {
+        q.split('&')
+            .find(|kv| kv.starts_with("token="))
+            .map(|kv| kv["token=".len()..].to_string())
+    });
 
     let _claims = match token {
         Some(ref t) => match token_service.validate_access_token(t) {
@@ -189,7 +186,11 @@ pub async fn collab_ws(
             let txn = room_clone.doc.transact();
             txn.encode_state_as_update_v1(&StateVector::default())
         };
-        if session.binary(encode_sync_step2(&initial_state)).await.is_err() {
+        if session
+            .binary(encode_sync_step2(&initial_state))
+            .await
+            .is_err()
+        {
             decrement_and_save(&room_clone, &repo_clone, &file_id_clone).await;
             return;
         }

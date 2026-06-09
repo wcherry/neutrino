@@ -1,9 +1,9 @@
-use crate::shared::ApiError;
 use crate::drive::compliance::{
     dto::*,
     model::{NewFileLegalHold, NewLegalHold, NewRetentionPolicy},
     repository::ComplianceRepository,
 };
+use crate::shared::ApiError;
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -16,7 +16,10 @@ pub struct ComplianceService {
 }
 
 impl ComplianceService {
-    pub fn new(repo: Arc<ComplianceRepository>, pool: Pool<ConnectionManager<SqliteConnection>>) -> Self {
+    pub fn new(
+        repo: Arc<ComplianceRepository>,
+        pool: Pool<ConnectionManager<SqliteConnection>>,
+    ) -> Self {
         ComplianceService { repo, pool }
     }
 
@@ -51,7 +54,9 @@ impl ComplianceService {
     }
 
     pub fn get_hold(&self, id: &str) -> Result<LegalHoldResponse, ApiError> {
-        let hold = self.repo.find_hold_by_id(id)?
+        let hold = self
+            .repo
+            .find_hold_by_id(id)?
             .ok_or_else(|| ApiError::not_found("Legal hold not found"))?;
         Ok(hold_to_response(hold))
     }
@@ -61,7 +66,8 @@ impl ComplianceService {
         id: &str,
         req: UpdateLegalHoldRequest,
     ) -> Result<LegalHoldResponse, ApiError> {
-        self.repo.find_hold_by_id(id)?
+        self.repo
+            .find_hold_by_id(id)?
             .ok_or_else(|| ApiError::not_found("Legal hold not found"))?;
 
         let custodian_str: Option<String> = req.custodian_ids.map(|v| v.join(","));
@@ -76,13 +82,15 @@ impl ComplianceService {
     }
 
     pub fn delete_hold(&self, id: &str) -> Result<(), ApiError> {
-        self.repo.find_hold_by_id(id)?
+        self.repo
+            .find_hold_by_id(id)?
             .ok_or_else(|| ApiError::not_found("Legal hold not found"))?;
         self.repo.delete_hold(id)
     }
 
     pub fn apply_hold_to_file(&self, hold_id: &str, file_id: &str) -> Result<(), ApiError> {
-        self.repo.find_hold_by_id(hold_id)?
+        self.repo
+            .find_hold_by_id(hold_id)?
             .ok_or_else(|| ApiError::not_found("Legal hold not found"))?;
         let now = Utc::now().naive_utc();
         self.repo.apply_hold_to_file(NewFileLegalHold {
@@ -125,13 +133,16 @@ impl ComplianceService {
     }
 
     pub fn get_policy(&self, id: &str) -> Result<RetentionPolicyResponse, ApiError> {
-        let policy = self.repo.find_policy_by_id(id)?
+        let policy = self
+            .repo
+            .find_policy_by_id(id)?
             .ok_or_else(|| ApiError::not_found("Retention policy not found"))?;
         Ok(policy_to_response(policy))
     }
 
     pub fn delete_policy(&self, id: &str) -> Result<(), ApiError> {
-        self.repo.find_policy_by_id(id)?
+        self.repo
+            .find_policy_by_id(id)?
             .ok_or_else(|| ApiError::not_found("Retention policy not found"))?;
         self.repo.delete_policy(id)
     }
@@ -146,7 +157,10 @@ impl ComplianceService {
         let page_size = req.page_size.unwrap_or(20).min(100).max(1);
         let offset = (page - 1) * page_size;
 
-        let mut conn = self.pool.get().map_err(|_| ApiError::internal("DB error"))?;
+        let mut conn = self
+            .pool
+            .get()
+            .map_err(|_| ApiError::internal("DB error"))?;
 
         // Search file_content_index for query term
         let query_lower = req.query.to_lowercase();
@@ -217,7 +231,10 @@ fn hold_to_response(hold: crate::drive::compliance::model::LegalHold) -> LegalHo
     let custodian_ids: Vec<String> = if hold.custodian_ids.is_empty() {
         vec![]
     } else {
-        hold.custodian_ids.split(',').map(|s| s.to_string()).collect()
+        hold.custodian_ids
+            .split(',')
+            .map(|s| s.to_string())
+            .collect()
     };
     LegalHoldResponse {
         id: hold.id,
@@ -231,7 +248,9 @@ fn hold_to_response(hold: crate::drive::compliance::model::LegalHold) -> LegalHo
     }
 }
 
-fn policy_to_response(policy: crate::drive::compliance::model::RetentionPolicy) -> RetentionPolicyResponse {
+fn policy_to_response(
+    policy: crate::drive::compliance::model::RetentionPolicy,
+) -> RetentionPolicyResponse {
     RetentionPolicyResponse {
         id: policy.id,
         name: policy.name,

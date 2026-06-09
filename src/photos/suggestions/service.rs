@@ -24,7 +24,12 @@ impl SuggestionsService {
         persons_repo: Arc<PersonsRepository>,
         learning_repo: Arc<LearningRepository>,
     ) -> Self {
-        SuggestionsService { repo, faces_repo, persons_repo, learning_repo }
+        SuggestionsService {
+            repo,
+            faces_repo,
+            persons_repo,
+            learning_repo,
+        }
     }
 
     pub fn list_suggestions(
@@ -41,7 +46,10 @@ impl SuggestionsService {
             let faces = self.faces_repo.get_faces_by_ids(&face_ids)?;
             faces.into_iter().map(|f| (f.id.clone(), f)).collect()
         };
-        let person_map: std::collections::HashMap<String, crate::photos::persons::model::PersonRecord> = {
+        let person_map: std::collections::HashMap<
+            String,
+            crate::photos::persons::model::PersonRecord,
+        > = {
             let persons = self.persons_repo.get_persons_by_ids(&person_ids)?;
             persons.into_iter().map(|p| (p.id.clone(), p)).collect()
         };
@@ -147,13 +155,16 @@ impl SuggestionsService {
     }
 
     fn verify_face_ownership(&self, photo_id: &str, user_id: &str) -> Result<(), ApiError> {
-        let _ = self.faces_repo.get_photo_user_id(photo_id).and_then(|owner| {
-            if owner == user_id {
-                Ok(())
-            } else {
-                Err(ApiError::new(403, "FORBIDDEN", "Access denied"))
-            }
-        })?;
+        let _ = self
+            .faces_repo
+            .get_photo_user_id(photo_id)
+            .and_then(|owner| {
+                if owner == user_id {
+                    Ok(())
+                } else {
+                    Err(ApiError::new(403, "FORBIDDEN", "Access denied"))
+                }
+            })?;
         Ok(())
     }
 }

@@ -1,6 +1,6 @@
+use crate::schema::doc_suggestions;
 use diesel::prelude::*;
 use serde::Serialize;
-use crate::schema::doc_suggestions;
 
 #[derive(Debug, Queryable, Selectable, Serialize, Clone)]
 #[diesel(table_name = doc_suggestions)]

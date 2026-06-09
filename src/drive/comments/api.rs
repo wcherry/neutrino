@@ -1,5 +1,8 @@
 use crate::drive::comments::{
-    dto::{CreateCommentRequest, CreateReplyRequest, UpdateCommentRequest, CommentListResponse, CommentResponse, CommentReplyResponse},
+    dto::{
+        CommentListResponse, CommentReplyResponse, CommentResponse, CreateCommentRequest,
+        CreateReplyRequest, UpdateCommentRequest,
+    },
     service::CommentsService,
 };
 use crate::shared::{ApiError, AuthenticatedUser};
@@ -33,7 +36,9 @@ pub async fn list_comments(
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
     let status = query.get("status").map(|s| s.as_str());
-    let result = state.comments_service.list_comments(&user, &file_id, status)?;
+    let result = state
+        .comments_service
+        .list_comments(&user, &file_id, status)?;
     Ok(HttpResponse::Ok().json(result))
 }
 
@@ -57,7 +62,10 @@ pub async fn create_comment(
     body: web::Json<CreateCommentRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
-    let result = state.comments_service.create_comment(&user, &file_id, body.into_inner()).await?;
+    let result = state
+        .comments_service
+        .create_comment(&user, &file_id, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(result))
 }
 
@@ -85,7 +93,10 @@ pub async fn update_comment(
     body: web::Json<UpdateCommentRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let (file_id, comment_id) = path.into_inner();
-    let result = state.comments_service.update_comment(&user, &file_id, &comment_id, body.into_inner())?;
+    let result =
+        state
+            .comments_service
+            .update_comment(&user, &file_id, &comment_id, body.into_inner())?;
     Ok(HttpResponse::Ok().json(result))
 }
 
@@ -111,7 +122,9 @@ pub async fn delete_comment(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ApiError> {
     let (file_id, comment_id) = path.into_inner();
-    state.comments_service.delete_comment(&user, &file_id, &comment_id)?;
+    state
+        .comments_service
+        .delete_comment(&user, &file_id, &comment_id)?;
     Ok(HttpResponse::NoContent().finish())
 }
 
@@ -139,7 +152,10 @@ pub async fn add_reply(
     body: web::Json<CreateReplyRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let (file_id, comment_id) = path.into_inner();
-    let result = state.comments_service.add_reply(&user, &file_id, &comment_id, body.into_inner()).await?;
+    let result = state
+        .comments_service
+        .add_reply(&user, &file_id, &comment_id, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(result))
 }
 
@@ -166,7 +182,9 @@ pub async fn delete_reply(
     path: web::Path<(String, String, String)>,
 ) -> Result<HttpResponse, ApiError> {
     let (file_id, comment_id, reply_id) = path.into_inner();
-    state.comments_service.delete_reply(&user, &file_id, &comment_id, &reply_id)?;
+    state
+        .comments_service
+        .delete_reply(&user, &file_id, &comment_id, &reply_id)?;
     Ok(HttpResponse::NoContent().finish())
 }
 

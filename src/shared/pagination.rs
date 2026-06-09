@@ -79,18 +79,36 @@ mod tests {
     use super::*;
 
     #[derive(Clone, Copy, PartialEq, Eq)]
-    enum Field { Name }
+    enum Field {
+        Name,
+    }
 
     fn q(limit: Option<i64>, offset: Option<i64>) -> ListQueryParams<Field> {
-        ListQueryParams { limit, offset, order_by: None, direction: None }
+        ListQueryParams {
+            limit,
+            offset,
+            order_by: None,
+            direction: None,
+        }
     }
 
     fn sorted_q(dir: OrderDirection) -> ListQueryParams<Field> {
-        ListQueryParams { limit: None, offset: None, order_by: Some(Field::Name), direction: Some(dir) }
+        ListQueryParams {
+            limit: None,
+            offset: None,
+            order_by: Some(Field::Name),
+            direction: Some(dir),
+        }
     }
 
     fn run(items: Vec<i32>, params: &ListQueryParams<Field>) -> Vec<i32> {
-        apply_list_query(items, params, Field::Name, OrderDirection::Asc, |a, b, _| a.cmp(b))
+        apply_list_query(
+            items,
+            params,
+            Field::Name,
+            OrderDirection::Asc,
+            |a, b, _| a.cmp(b),
+        )
     }
 
     #[test]

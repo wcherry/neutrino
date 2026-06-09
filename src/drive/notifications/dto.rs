@@ -1,5 +1,5 @@
-use serde::Serialize;
 use crate::drive::notifications::model::Notification;
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

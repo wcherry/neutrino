@@ -1,10 +1,10 @@
-use crate::schema::{face_suggestions, faces, photos};
 use crate::photos::suggestions::model::{NewSuggestionRecord, SuggestionRecord};
+use crate::schema::{face_suggestions, faces, photos};
+use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::SqliteConnection;
-use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
@@ -72,10 +72,7 @@ impl SuggestionsRepository {
     }
 
     /// List all pending suggestions for photos owned by a given user.
-    pub fn list_pending_for_user(
-        &self,
-        user_id: &str,
-    ) -> Result<Vec<SuggestionRecord>, ApiError> {
+    pub fn list_pending_for_user(&self, user_id: &str) -> Result<Vec<SuggestionRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         face_suggestions::table
             .inner_join(faces::table.on(face_suggestions::face_id.eq(faces::id)))

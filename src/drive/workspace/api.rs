@@ -45,9 +45,7 @@ pub async fn update_workspace_settings(
     _user: AuthenticatedUser,
     body: web::Json<UpdateWorkspaceSettingsRequest>,
 ) -> Result<web::Json<WorkspaceSettingsResponse>, ApiError> {
-    let settings = state
-        .workspace_service
-        .update_settings(body.into_inner())?;
+    let settings = state.workspace_service.update_settings(body.into_inner())?;
     Ok(web::Json(settings))
 }
 

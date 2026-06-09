@@ -1,5 +1,5 @@
-use crate::shared::{ApiError, DbPool};
 use super::dto::*;
+use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::*;
@@ -13,7 +13,11 @@ impl PriorityService {
         Self { pool }
     }
 
-    pub fn get_quick_access(&self, user_id: &str, limit: i64) -> Result<Vec<QuickAccessItem>, ApiError> {
+    pub fn get_quick_access(
+        &self,
+        user_id: &str,
+        limit: i64,
+    ) -> Result<Vec<QuickAccessItem>, ApiError> {
         let conn = &mut self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection unavailable")
@@ -101,7 +105,10 @@ impl PriorityService {
         Ok(items)
     }
 
-    pub fn get_suggested_collaborators(&self, user_id: &str) -> Result<Vec<SuggestedCollaborator>, ApiError> {
+    pub fn get_suggested_collaborators(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<SuggestedCollaborator>, ApiError> {
         #[derive(QueryableByName)]
         struct CollabRow {
             #[diesel(sql_type = Text)]
@@ -141,7 +148,11 @@ impl PriorityService {
             .collect())
     }
 
-    pub fn get_suggested_actions(&self, user_id: &str, file_id: &str) -> Result<Vec<SuggestedAction>, ApiError> {
+    pub fn get_suggested_actions(
+        &self,
+        user_id: &str,
+        file_id: &str,
+    ) -> Result<Vec<SuggestedAction>, ApiError> {
         let conn = &mut self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection unavailable")

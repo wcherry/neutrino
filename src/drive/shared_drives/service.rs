@@ -1,9 +1,9 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::drive::shared_drives::{
     dto::*,
     model::{NewSharedDrive, NewSharedDriveMember},
     repository::SharedDrivesRepository,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -18,7 +18,13 @@ impl SharedDrivesService {
     }
 
     fn valid_roles() -> &'static [&'static str] {
-        &["manager", "content_manager", "contributor", "commenter", "viewer"]
+        &[
+            "manager",
+            "content_manager",
+            "contributor",
+            "commenter",
+            "viewer",
+        ]
     }
 
     fn get_user_role(&self, drive_id: &str, user_id: &str) -> Result<Option<String>, ApiError> {
@@ -80,7 +86,10 @@ impl SharedDrivesService {
         })
     }
 
-    pub fn list_for_user(&self, user: &AuthenticatedUser) -> Result<SharedDriveListResponse, ApiError> {
+    pub fn list_for_user(
+        &self,
+        user: &AuthenticatedUser,
+    ) -> Result<SharedDriveListResponse, ApiError> {
         let drives = self.repo.list_for_user(&user.user_id)?;
         let total = drives.len() as i64;
         let mut items = Vec::new();
@@ -101,7 +110,10 @@ impl SharedDrivesService {
                 user_role,
             });
         }
-        Ok(SharedDriveListResponse { drives: items, total })
+        Ok(SharedDriveListResponse {
+            drives: items,
+            total,
+        })
     }
 
     pub fn get_by_id(
@@ -228,13 +240,16 @@ impl SharedDrivesService {
         // Cannot demote last manager
         if req.role != "manager" {
             let managers = self.repo.count_managers(drive_id)?;
-            let target_member = self.repo.find_member(drive_id, target_user_id)?
+            let target_member = self
+                .repo
+                .find_member(drive_id, target_user_id)?
                 .ok_or_else(|| ApiError::not_found("Member not found"))?;
             if target_member.role == "manager" && managers <= 1 {
                 return Err(ApiError::bad_request("Cannot demote the last manager"));
             }
         }
-        self.repo.update_member_role(drive_id, target_user_id, &req.role)
+        self.repo
+            .update_member_role(drive_id, target_user_id, &req.role)
     }
 
     pub fn remove_member(
@@ -245,7 +260,9 @@ impl SharedDrivesService {
     ) -> Result<(), ApiError> {
         self.require_manager(drive_id, &user.user_id)?;
         // Prevent removing last manager
-        let target_member = self.repo.find_member(drive_id, target_user_id)?
+        let target_member = self
+            .repo
+            .find_member(drive_id, target_user_id)?
             .ok_or_else(|| ApiError::not_found("Member not found"))?;
         if target_member.role == "manager" {
             let managers = self.repo.count_managers(drive_id)?;

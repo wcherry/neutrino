@@ -29,7 +29,11 @@ impl LearningService {
         persons_repo: Arc<PersonsRepository>,
         suggestions_repo: Arc<SuggestionsRepository>,
     ) -> Self {
-        LearningService { repo, persons_repo, suggestions_repo }
+        LearningService {
+            repo,
+            persons_repo,
+            suggestions_repo,
+        }
     }
 
     /// Return the current recognition thresholds for a user (defaults if none stored).
@@ -55,13 +59,19 @@ impl LearningService {
     /// Process unprocessed feedback signals for a user:
     /// 1. Adjust recognition thresholds based on the accept/reject ratio.
     /// 2. Re-evaluate unassigned faces against named persons using updated thresholds.
-    pub fn process_pending_for_user(&self, user_id: &str) -> Result<ReprocessingResponse, ApiError> {
+    pub fn process_pending_for_user(
+        &self,
+        user_id: &str,
+    ) -> Result<ReprocessingResponse, ApiError> {
         let now = chrono::Utc::now().naive_utc();
 
         // ── 1. Load unprocessed signals ───────────────────────────────────────
         let signals = self.repo.list_unprocessed_signals_for_user(user_id)?;
         if signals.is_empty() {
-            return Ok(ReprocessingResponse { suggestions_created: 0, faces_auto_tagged: 0 });
+            return Ok(ReprocessingResponse {
+                suggestions_created: 0,
+                faces_auto_tagged: 0,
+            });
         }
 
         // ── 2. Adjust thresholds ──────────────────────────────────────────────
@@ -71,7 +81,12 @@ impl LearningService {
         // Load existing cumulative counts.
         let existing = self.repo.get_thresholds(user_id)?;
         let (mut auto_thresh, mut suggest_thresh, cum_accepts, cum_rejects) = match &existing {
-            Some(t) => (t.auto_tag_threshold, t.suggest_threshold, t.total_accepts, t.total_rejects),
+            Some(t) => (
+                t.auto_tag_threshold,
+                t.suggest_threshold,
+                t.total_accepts,
+                t.total_rejects,
+            ),
             None => (DEFAULT_AUTO_TAG, DEFAULT_SUGGEST, 0, 0),
         };
         let total_accepts = cum_accepts + new_accepts as i32;
@@ -151,15 +166,23 @@ impl LearningService {
         suggest_thresh: f32,
         now: chrono::NaiveDateTime,
     ) -> Result<ReprocessingResponse, ApiError> {
-        let unassigned = self.persons_repo.list_unassigned_faces_with_embeddings(user_id)?;
+        let unassigned = self
+            .persons_repo
+            .list_unassigned_faces_with_embeddings(user_id)?;
         if unassigned.is_empty() {
-            return Ok(ReprocessingResponse { suggestions_created: 0, faces_auto_tagged: 0 });
+            return Ok(ReprocessingResponse {
+                suggestions_created: 0,
+                faces_auto_tagged: 0,
+            });
         }
 
         // Build average embedding per named person.
         let named_persons = self.persons_repo.list_named_persons_for_user(user_id)?;
         if named_persons.is_empty() {
-            return Ok(ReprocessingResponse { suggestions_created: 0, faces_auto_tagged: 0 });
+            return Ok(ReprocessingResponse {
+                suggestions_created: 0,
+                faces_auto_tagged: 0,
+            });
         }
 
         let person_avg_embeddings: Vec<(String, Vec<f32>)> = named_persons
@@ -168,9 +191,7 @@ impl LearningService {
                 let face_records = self.persons_repo.list_faces_for_person(&p.id).ok()?;
                 let embs: Vec<Vec<f32>> = face_records
                     .iter()
-                    .filter_map(|f| {
-                        serde_json::from_str::<Vec<f32>>(f.embedding.as_deref()?).ok()
-                    })
+                    .filter_map(|f| serde_json::from_str::<Vec<f32>>(f.embedding.as_deref()?).ok())
                     .collect();
                 if embs.is_empty() {
                     return None;
@@ -184,17 +205,21 @@ impl LearningService {
             .collect();
 
         if person_avg_embeddings.is_empty() {
-            return Ok(ReprocessingResponse { suggestions_created: 0, faces_auto_tagged: 0 });
+            return Ok(ReprocessingResponse {
+                suggestions_created: 0,
+                faces_auto_tagged: 0,
+            });
         }
 
         let mut suggestions_created = 0usize;
         let mut faces_auto_tagged = 0usize;
 
         for face in &unassigned {
-            let face_emb: Vec<f32> = match serde_json::from_str(face.embedding.as_deref().unwrap_or("")) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
+            let face_emb: Vec<f32> =
+                match serde_json::from_str(face.embedding.as_deref().unwrap_or("")) {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
 
             // Find closest named person.
             let best: Option<(&str, f32)> = person_avg_embeddings
@@ -210,12 +235,9 @@ impl LearningService {
                     // High confidence: auto-assign.
                     if let Ok(photo_user) = self.persons_repo.get_photo_user_id_for_face(&face.id) {
                         if photo_user == user_id {
-                            let _ = self.persons_repo.assign_face_to_person(
-                                &face.id,
-                                person_id,
-                                user_id,
-                                now,
-                            );
+                            let _ = self
+                                .persons_repo
+                                .assign_face_to_person(&face.id, person_id, user_id, now);
                             faces_auto_tagged += 1;
                         }
                     }
@@ -223,19 +245,18 @@ impl LearningService {
                     // Medium confidence: create suggestion.
                     let id = Uuid::new_v4().to_string();
                     let confidence = 1.0 - dist;
-                    let _ = self.suggestions_repo.insert_if_not_rejected(
-                        &id,
-                        &face.id,
-                        person_id,
-                        confidence,
-                        now,
-                    );
+                    let _ = self
+                        .suggestions_repo
+                        .insert_if_not_rejected(&id, &face.id, person_id, confidence, now);
                     suggestions_created += 1;
                 }
             }
         }
 
-        Ok(ReprocessingResponse { suggestions_created, faces_auto_tagged })
+        Ok(ReprocessingResponse {
+            suggestions_created,
+            faces_auto_tagged,
+        })
     }
 }
 
@@ -260,7 +281,10 @@ mod tests {
     #[test]
     fn adjust_step_is_positive_and_small() {
         assert!(ADJUST_STEP > 0.0);
-        assert!(ADJUST_STEP < 0.20, "Step should be small to avoid wild swings");
+        assert!(
+            ADJUST_STEP < 0.20,
+            "Step should be small to avoid wild swings"
+        );
     }
 
     #[test]

@@ -2,9 +2,9 @@ use chrono::Utc;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
-use crate::shared::ApiError;
-use crate::schema::service_registrations;
 use super::model::{NewServiceRegistration, ServiceRegistrationRecord};
+use crate::schema::service_registrations;
+use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
@@ -62,8 +62,7 @@ impl ServiceRegistrationRepository {
             }
             Some(ref rec) if rec.auto_update != 0 => {
                 diesel::update(
-                    service_registrations::table
-                        .filter(service_registrations::name.eq(name)),
+                    service_registrations::table.filter(service_registrations::name.eq(name)),
                 )
                 .set((
                     service_registrations::endpoint.eq(endpoint),
@@ -80,8 +79,7 @@ impl ServiceRegistrationRepository {
             Some(_) => {
                 // auto_update is disabled — only refresh the heartbeat timestamp.
                 diesel::update(
-                    service_registrations::table
-                        .filter(service_registrations::name.eq(name)),
+                    service_registrations::table.filter(service_registrations::name.eq(name)),
                 )
                 .set(service_registrations::registered_at.eq(now))
                 .execute(&mut conn)
@@ -136,8 +134,7 @@ impl ServiceRegistrationRepository {
 
         if let Some(v) = enabled {
             diesel::update(
-                service_registrations::table
-                    .filter(service_registrations::name.eq(name)),
+                service_registrations::table.filter(service_registrations::name.eq(name)),
             )
             .set(service_registrations::enabled.eq(v as i32))
             .execute(&mut conn)
@@ -149,8 +146,7 @@ impl ServiceRegistrationRepository {
 
         if let Some(v) = auto_update {
             diesel::update(
-                service_registrations::table
-                    .filter(service_registrations::name.eq(name)),
+                service_registrations::table.filter(service_registrations::name.eq(name)),
             )
             .set(service_registrations::auto_update.eq(v as i32))
             .execute(&mut conn)
@@ -172,8 +168,7 @@ impl ServiceRegistrationRepository {
 
     fn get_conn(
         &self,
-    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError>
-    {
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {
         self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")

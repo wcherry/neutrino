@@ -1,11 +1,11 @@
-use crate::shared::{ApiError, DbPool};
-use crate::schema::{task_list_memberships, task_lists, tasks};
 use crate::calendar::tasks::model::{
     NewTaskListMembershipRecord, NewTaskListRecord, NewTaskRecord, TaskListMembershipRecord,
     TaskListRecord, TaskRecord, UpdateTaskListRecord, UpdateTaskRecord,
 };
+use crate::schema::{task_list_memberships, task_lists, tasks};
+use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager};
+use diesel::r2d2::ConnectionManager;
 
 pub struct TasksRepository {
     pool: DbPool,
@@ -83,8 +83,7 @@ impl TasksRepository {
     ) -> Result<TaskListRecord, ApiError> {
         let mut conn = self.get_conn()?;
         let affected = diesel::update(
-            task_lists::table
-                .filter(task_lists::id.eq(id).and(task_lists::user_id.eq(user_id))),
+            task_lists::table.filter(task_lists::id.eq(id).and(task_lists::user_id.eq(user_id))),
         )
         .set(&changes)
         .execute(&mut conn)
@@ -108,8 +107,7 @@ impl TasksRepository {
     pub fn delete(&self, id: &str, user_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         let affected = diesel::delete(
-            task_lists::table
-                .filter(task_lists::id.eq(id).and(task_lists::user_id.eq(user_id))),
+            task_lists::table.filter(task_lists::id.eq(id).and(task_lists::user_id.eq(user_id))),
         )
         .execute(&mut conn)
         .map_err(|e| {
@@ -165,12 +163,14 @@ impl TasksRepository {
         let mut conn = self.get_conn()?;
         tasks::table
             .left_join(
-                task_list_memberships::table
-                    .on(task_list_memberships::task_id.eq(tasks::id)),
+                task_list_memberships::table.on(task_list_memberships::task_id.eq(tasks::id)),
             )
             .filter(tasks::user_id.eq(user_id))
             .order((tasks::position.asc(), tasks::created_at.asc()))
-            .select((TaskRecord::as_select(), task_list_memberships::list_id.nullable()))
+            .select((
+                TaskRecord::as_select(),
+                task_list_memberships::list_id.nullable(),
+            ))
             .load(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB list all tasks with list_id error: {:?}", e);
@@ -186,8 +186,7 @@ impl TasksRepository {
         let mut conn = self.get_conn()?;
         tasks::table
             .inner_join(
-                task_list_memberships::table
-                    .on(task_list_memberships::task_id.eq(tasks::id)),
+                task_list_memberships::table.on(task_list_memberships::task_id.eq(tasks::id)),
             )
             .filter(
                 tasks::user_id
@@ -225,15 +224,14 @@ impl TasksRepository {
         changes: UpdateTaskRecord,
     ) -> Result<TaskRecord, ApiError> {
         let mut conn = self.get_conn()?;
-        let affected = diesel::update(
-            tasks::table.filter(tasks::id.eq(id).and(tasks::user_id.eq(user_id))),
-        )
-        .set(&changes)
-        .execute(&mut conn)
-        .map_err(|e| {
-            tracing::error!("DB update task error: {:?}", e);
-            ApiError::internal("Database error")
-        })?;
+        let affected =
+            diesel::update(tasks::table.filter(tasks::id.eq(id).and(tasks::user_id.eq(user_id))))
+                .set(&changes)
+                .execute(&mut conn)
+                .map_err(|e| {
+                    tracing::error!("DB update task error: {:?}", e);
+                    ApiError::internal("Database error")
+                })?;
         if affected == 0 {
             return Err(ApiError::not_found("Task not found"));
         }
@@ -283,8 +281,7 @@ impl TasksRepository {
         conn.transaction::<(), diesel::result::Error, _>(|conn| {
             for (id, pos) in updates {
                 diesel::update(
-                    tasks::table
-                        .filter(tasks::id.eq(id).and(tasks::user_id.eq(user_id))),
+                    tasks::table.filter(tasks::id.eq(id).and(tasks::user_id.eq(user_id))),
                 )
                 .set((tasks::position.eq(pos), tasks::updated_at.eq(now)))
                 .execute(conn)?;
@@ -299,14 +296,13 @@ impl TasksRepository {
 
     pub fn delete_task(&self, id: &str, user_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
-        let affected = diesel::delete(
-            tasks::table.filter(tasks::id.eq(id).and(tasks::user_id.eq(user_id))),
-        )
-        .execute(&mut conn)
-        .map_err(|e| {
-            tracing::error!("DB delete task error: {:?}", e);
-            ApiError::internal("Database error")
-        })?;
+        let affected =
+            diesel::delete(tasks::table.filter(tasks::id.eq(id).and(tasks::user_id.eq(user_id))))
+                .execute(&mut conn)
+                .map_err(|e| {
+                    tracing::error!("DB delete task error: {:?}", e);
+                    ApiError::internal("Database error")
+                })?;
         if affected == 0 {
             return Err(ApiError::not_found("Task not found"));
         }
@@ -316,8 +312,7 @@ impl TasksRepository {
     pub fn delete_memberships_by_list(&self, list_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         diesel::delete(
-            task_list_memberships::table
-                .filter(task_list_memberships::list_id.eq(list_id)),
+            task_list_memberships::table.filter(task_list_memberships::list_id.eq(list_id)),
         )
         .execute(&mut conn)
         .map_err(|e| {

@@ -1,6 +1,6 @@
-use crate::shared::ApiError;
-use crate::schema::doc_templates;
 use crate::docs::templates::model::{DocTemplate, NewDocTemplate, UpdateDocTemplate};
+use crate::schema::doc_templates;
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -69,11 +69,7 @@ impl TemplatesRepository {
             })
     }
 
-    pub fn update(
-        &self,
-        id: &str,
-        changes: UpdateDocTemplate,
-    ) -> Result<DocTemplate, ApiError> {
+    pub fn update(&self, id: &str, changes: UpdateDocTemplate) -> Result<DocTemplate, ApiError> {
         let mut conn = self.get_conn()?;
         diesel::update(doc_templates::table.filter(doc_templates::id.eq(id)))
             .set(&changes)

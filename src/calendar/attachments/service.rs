@@ -46,7 +46,9 @@ impl AttachmentsService {
     }
 }
 
-fn attachment_to_response(r: crate::calendar::attachments::model::AttachmentRecord) -> AttachmentResponse {
+fn attachment_to_response(
+    r: crate::calendar::attachments::model::AttachmentRecord,
+) -> AttachmentResponse {
     AttachmentResponse {
         id: r.id,
         event_id: r.event_id,
