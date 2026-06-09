@@ -1,5 +1,5 @@
-use crate::sheets::ai::service::SheetsAIService;
 use crate::shared::{ApiError, AuthenticatedUser};
+use crate::sheets::ai::service::SheetsAIService;
 use actix_web::{post, web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

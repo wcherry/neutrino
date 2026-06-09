@@ -1,14 +1,14 @@
-use crate::shared::{ApiError, AuthenticatedUser};
-use crate::config::OAuthConfig;
-use crate::calendar::connections::{apple, google, outlook};
 use crate::calendar::connections::dto::{
     ConnectAppleRequest, ConnectionResponse, ListConnectionsResponse, OAuthInitResponse,
     TriggerSyncRequest,
 };
 use crate::calendar::connections::model::{ConnectionRecord, NewConnectionRecord};
 use crate::calendar::connections::repository::ConnectionsRepository;
-use crate::calendar::events::repository::EventsRepository;
+use crate::calendar::connections::{apple, google, outlook};
 use crate::calendar::events::model::NewEventRecord;
+use crate::calendar::events::repository::EventsRepository;
+use crate::config::OAuthConfig;
+use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -61,9 +61,9 @@ impl ConnectionsService {
         let tokens = google::exchange_code(&self.oauth, &self.http, code).await?;
 
         let email = google::fetch_user_email(&self.http, &tokens.access_token).await;
-        let expires_at = tokens.expires_in.map(|secs| {
-            Utc::now().naive_utc() + chrono::Duration::seconds(secs)
-        });
+        let expires_at = tokens
+            .expires_in
+            .map(|secs| Utc::now().naive_utc() + chrono::Duration::seconds(secs));
 
         let record = NewConnectionRecord {
             id: Uuid::new_v4().to_string(),
@@ -99,9 +99,9 @@ impl ConnectionsService {
         let tokens = outlook::exchange_code(&self.oauth, &self.http, code).await?;
 
         let email = outlook::fetch_user_email(&self.http, &tokens.access_token).await;
-        let expires_at = tokens.expires_in.map(|secs| {
-            Utc::now().naive_utc() + chrono::Duration::seconds(secs)
-        });
+        let expires_at = tokens
+            .expires_in
+            .map(|secs| Utc::now().naive_utc() + chrono::Duration::seconds(secs));
 
         let record = NewConnectionRecord {
             id: Uuid::new_v4().to_string(),
@@ -131,8 +131,7 @@ impl ConnectionsService {
         let token = apple::encode_credentials(&req.username, &req.password);
 
         // Verify connectivity before saving
-        let display_name =
-            apple::verify_connection(&self.http, &req.caldav_url, &token).await?;
+        let display_name = apple::verify_connection(&self.http, &req.caldav_url, &token).await?;
         let email = display_name.or(Some(req.username.clone()));
 
         let record = NewConnectionRecord {
@@ -220,16 +219,21 @@ impl ConnectionsService {
             )?;
         }
 
-        let (events, next_cursor) =
-            match google::fetch_events(&self.http, &access_token, conn.sync_cursor.as_deref()).await {
-                Ok(r) => r,
-                Err(e) if e.to_string().contains("sync token expired") => {
-                    // Reset cursor and do full sync
-                    self.repo.update_sync_cursor(&conn.id, None)?;
-                    google::fetch_events(&self.http, &access_token, None).await?
-                }
-                Err(e) => return Err(e),
-            };
+        let (events, next_cursor) = match google::fetch_events(
+            &self.http,
+            &access_token,
+            conn.sync_cursor.as_deref(),
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(e) if e.to_string().contains("sync token expired") => {
+                // Reset cursor and do full sync
+                self.repo.update_sync_cursor(&conn.id, None)?;
+                google::fetch_events(&self.http, &access_token, None).await?
+            }
+            Err(e) => return Err(e),
+        };
 
         tracing::info!(
             "Google sync: {} events for user {}",
@@ -255,7 +259,9 @@ impl ConnectionsService {
             };
 
             let rrule = ev.recurrence.and_then(|rules| {
-                rules.into_iter().find(|r| r.starts_with("RRULE:"))
+                rules
+                    .into_iter()
+                    .find(|r| r.starts_with("RRULE:"))
                     .map(|r| r["RRULE:".len()..].to_string())
             });
 
@@ -368,8 +374,7 @@ impl ConnectionsService {
             .as_deref()
             .unwrap_or(apple::DEFAULT_CALDAV_URL);
 
-        let events =
-            apple::fetch_events(&self.http, caldav_url, &conn.access_token).await?;
+        let events = apple::fetch_events(&self.http, caldav_url, &conn.access_token).await?;
 
         tracing::info!(
             "Apple CalDAV sync: {} events for user {}",
@@ -421,7 +426,9 @@ fn conn_to_response(r: ConnectionRecord) -> ConnectionResponse {
         provider: r.provider,
         email: r.email,
         caldav_url: r.caldav_url,
-        expires_at: r.expires_at.map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+        expires_at: r
+            .expires_at
+            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
         sync_cursor: r.sync_cursor,
         created_at: r.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
     }

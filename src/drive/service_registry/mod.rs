@@ -2,14 +2,14 @@ pub mod api;
 pub mod model;
 pub mod repository;
 
-use std::sync::Arc;
 use chrono::DateTime;
 use chrono::Utc;
 use serde::Serialize;
+use std::sync::Arc;
 
 use crate::shared::ApiError;
-use repository::ServiceRegistrationRepository;
 use model::ServiceRegistrationRecord;
+use repository::ServiceRegistrationRepository;
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -59,7 +59,9 @@ impl ServiceRegistry {
     }
 
     pub fn list(&self) -> Result<Vec<ServiceInfo>, ApiError> {
-        self.repo.list().map(|v| v.into_iter().map(ServiceInfo::from).collect())
+        self.repo
+            .list()
+            .map(|v| v.into_iter().map(ServiceInfo::from).collect())
     }
 
     pub fn update_flags(

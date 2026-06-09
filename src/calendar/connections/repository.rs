@@ -1,8 +1,8 @@
-use crate::shared::ApiError;
 use crate::calendar::connections::model::{
     ConnectionRecord, NewConnectionRecord, UpdateConnectionTokens, UpdateSyncCursor,
 };
 use crate::schema::calendar_connections;
+use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};

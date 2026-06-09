@@ -5,14 +5,16 @@ use crate::photos::photos::{
         PhotoMapResponse, PhotoResponse, RegisterPhotoRequest, ShareSettingsRequest,
         UnlockTokenResponse, UpdatePhotoRequest, YearInReviewResponse,
     },
-    model::{NewLockedFolderSettings, NewPhotoEdit, NewPhotoRecord, PhotoRecord, UpdatePhotoRecord},
+    model::{
+        NewLockedFolderSettings, NewPhotoEdit, NewPhotoRecord, PhotoRecord, UpdatePhotoRecord,
+    },
     repository::PhotosRepository,
 };
-use chrono::{Datelike, Utc};
-use sha2::{Digest, Sha256};
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::drive_client::{DriveClient, DriveFileRecord};
 use crate::shared::ApiError;
+use chrono::{Datelike, Utc};
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -74,16 +76,28 @@ impl PhotosService {
 
         // Enqueue thumbnail + face detection jobs via drive API — failures are non-fatal.
         if let Err(e) = self.enqueue_thumbnail_job(&req.file_id).await {
-            tracing::warn!("Failed to enqueue thumbnail job for file {}: {}", req.file_id, e);
+            tracing::warn!(
+                "Failed to enqueue thumbnail job for file {}: {}",
+                req.file_id,
+                e
+            );
         }
-        if let Err(e) = self.enqueue_face_detect_job(&id, &req.file_id, &user.user_id).await {
+        if let Err(e) = self
+            .enqueue_face_detect_job(&id, &req.file_id, &user.user_id)
+            .await
+        {
             tracing::warn!("Failed to enqueue face_detect job for photo {}: {}", id, e);
         }
 
         Ok(self.to_response(photo, Some(&file)))
     }
 
-    async fn enqueue_face_detect_job(&self, photo_id: &str, file_id: &str, user_id: &str) -> Result<(), String> {
+    async fn enqueue_face_detect_job(
+        &self,
+        photo_id: &str,
+        file_id: &str,
+        user_id: &str,
+    ) -> Result<(), String> {
         let url = format!("{}/api/v1/jobs", self.drive_base_url);
         let body = serde_json::json!({
             "jobType": "face_detect",
@@ -242,10 +256,7 @@ impl PhotosService {
             .drive
             .get_file(user, &updated.file_id, "File not found")
             .await?;
-        Ok(self.to_response(
-            updated,
-            Some(&file),
-        ))
+        Ok(self.to_response(updated, Some(&file)))
     }
 
     pub async fn trash_photo(
@@ -290,10 +301,7 @@ impl PhotosService {
             .drive
             .get_file(user, &updated.file_id, "File not found")
             .await?;
-        Ok(self.to_response(
-            updated,
-            Some(&file),
-        ))
+        Ok(self.to_response(updated, Some(&file)))
     }
 
     pub async fn list_trash(
@@ -446,8 +454,8 @@ impl PhotosService {
         if photo.user_id != user.user_id {
             return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
         }
-        let edits_json =
-            serde_json::to_string(&params).map_err(|_| ApiError::internal("Serialization error"))?;
+        let edits_json = serde_json::to_string(&params)
+            .map_err(|_| ApiError::internal("Serialization error"))?;
         let now = Utc::now().naive_utc();
         let new_edit = NewPhotoEdit {
             photo_id: photo_id.to_string(),
@@ -512,7 +520,9 @@ impl PhotosService {
         let month = today.month();
         let day = today.day();
 
-        let records = self.repo.list_photos_by_month_day(&user.user_id, month, day)?;
+        let records = self
+            .repo
+            .list_photos_by_month_day(&user.user_id, month, day)?;
 
         // Group by year
         let mut by_year: std::collections::BTreeMap<i32, Vec<MemoryPhotoItem>> =
@@ -551,7 +561,9 @@ impl PhotosService {
         year: Option<i32>,
     ) -> Result<YearInReviewResponse, ApiError> {
         let target_year = year.unwrap_or_else(|| Utc::now().naive_utc().year());
-        let records = self.repo.list_photos_by_year(&user.user_id, target_year, 20)?;
+        let records = self
+            .repo
+            .list_photos_by_year(&user.user_id, target_year, 20)?;
         let photos = records
             .into_iter()
             .map(|r| MemoryPhotoItem {
@@ -574,11 +586,7 @@ impl PhotosService {
         format!("{:x}", hasher.finalize())
     }
 
-    pub fn setup_locked_folder(
-        &self,
-        user: &AuthenticatedUser,
-        pin: &str,
-    ) -> Result<(), ApiError> {
+    pub fn setup_locked_folder(&self, user: &AuthenticatedUser, pin: &str) -> Result<(), ApiError> {
         if pin.is_empty() {
             return Err(ApiError::bad_request("PIN must not be empty"));
         }
@@ -665,7 +673,9 @@ impl PhotosService {
                 .get_file(user, &r.file_id, "File not found")
                 .await
                 .ok();
-            let name = file.map(|f| f.name).unwrap_or_else(|| "Unknown".to_string());
+            let name = file
+                .map(|f| f.name)
+                .unwrap_or_else(|| "Unknown".to_string());
             photos.push(BackedUpPhotoItem {
                 id: r.id.clone(),
                 name,

@@ -2,9 +2,9 @@ use chrono::Utc;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
+use super::model::FeatureFlagRecord;
 use crate::schema::feature_flags;
 use crate::shared::ApiError;
-use super::model::FeatureFlagRecord;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 

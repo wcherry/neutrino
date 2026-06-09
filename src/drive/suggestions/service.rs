@@ -1,11 +1,11 @@
+use crate::drive::activity::service::ActivityService;
+use crate::drive::notifications::service::NotificationService;
+use crate::drive::permissions::service::PermissionsService;
 use crate::drive::suggestions::{
     dto::{CreateSuggestionRequest, SuggestionListResponse, SuggestionResponse},
     model::NewDocSuggestion,
     repository::SuggestionsRepository,
 };
-use crate::drive::notifications::service::NotificationService;
-use crate::drive::activity::service::ActivityService;
-use crate::drive::permissions::service::PermissionsService;
 use crate::shared::{ApiError, AuthenticatedUser};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -38,7 +38,9 @@ impl SuggestionsService {
         file_id: &str,
         req: CreateSuggestionRequest,
     ) -> Result<SuggestionResponse, ApiError> {
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         match role.as_deref() {
             Some("editor") | Some("owner") | Some("commenter") => {}
             _ => return Err(ApiError::new(403, "FORBIDDEN", "Access denied")),
@@ -46,7 +48,12 @@ impl SuggestionsService {
 
         let now = chrono::Local::now().naive_local();
         let id = Uuid::new_v4().to_string();
-        let user_name = user.email.split('@').next().unwrap_or(&user.email).to_string();
+        let user_name = user
+            .email
+            .split('@')
+            .next()
+            .unwrap_or(&user.email)
+            .to_string();
 
         let new_sug = NewDocSuggestion {
             id: id.clone(),
@@ -78,16 +85,23 @@ impl SuggestionsService {
         file_id: &str,
         status_filter: Option<&str>,
     ) -> Result<SuggestionListResponse, ApiError> {
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         if role.is_none() {
             return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
         }
 
-        let suggestions = self.repo.list_suggestions_for_file(file_id, status_filter)?;
+        let suggestions = self
+            .repo
+            .list_suggestions_for_file(file_id, status_filter)?;
         let total = suggestions.len() as i64;
 
         Ok(SuggestionListResponse {
-            suggestions: suggestions.into_iter().map(SuggestionResponse::from).collect(),
+            suggestions: suggestions
+                .into_iter()
+                .map(SuggestionResponse::from)
+                .collect(),
             total,
         })
     }
@@ -98,23 +112,40 @@ impl SuggestionsService {
         file_id: &str,
         suggestion_id: &str,
     ) -> Result<SuggestionResponse, ApiError> {
-        let sug = self.repo.find_suggestion(suggestion_id)?
+        let sug = self
+            .repo
+            .find_suggestion(suggestion_id)?
             .ok_or_else(|| ApiError::not_found("Suggestion not found"))?;
 
         if sug.file_id != file_id {
             return Err(ApiError::not_found("Suggestion not found"));
         }
 
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         match role.as_deref() {
             Some("editor") | Some("owner") => {}
-            _ => return Err(ApiError::new(403, "FORBIDDEN", "Only editors/owners can accept suggestions")),
+            _ => {
+                return Err(ApiError::new(
+                    403,
+                    "FORBIDDEN",
+                    "Only editors/owners can accept suggestions",
+                ))
+            }
         }
 
         let now = chrono::Local::now().naive_local();
-        let updated = self.repo.resolve_suggestion(suggestion_id, "accepted", &user.user_id, now)?;
+        let updated =
+            self.repo
+                .resolve_suggestion(suggestion_id, "accepted", &user.user_id, now)?;
 
-        let user_name = user.email.split('@').next().unwrap_or(&user.email).to_string();
+        let user_name = user
+            .email
+            .split('@')
+            .next()
+            .unwrap_or(&user.email)
+            .to_string();
         let _ = self.activity_service.log(
             file_id,
             &user.user_id,
@@ -125,15 +156,18 @@ impl SuggestionsService {
 
         // Notify suggestion author
         if sug.user_id != user.user_id {
-            let _ = self.notification_service.notify(
-                vec![sug.user_id.clone()],
-                "suggestion_accepted",
-                serde_json::json!({
-                    "fileId": file_id,
-                    "actorName": user_name,
-                    "suggestionId": suggestion_id,
-                }),
-            ).await;
+            let _ = self
+                .notification_service
+                .notify(
+                    vec![sug.user_id.clone()],
+                    "suggestion_accepted",
+                    serde_json::json!({
+                        "fileId": file_id,
+                        "actorName": user_name,
+                        "suggestionId": suggestion_id,
+                    }),
+                )
+                .await;
         }
 
         Ok(SuggestionResponse::from(updated))
@@ -145,23 +179,40 @@ impl SuggestionsService {
         file_id: &str,
         suggestion_id: &str,
     ) -> Result<SuggestionResponse, ApiError> {
-        let sug = self.repo.find_suggestion(suggestion_id)?
+        let sug = self
+            .repo
+            .find_suggestion(suggestion_id)?
             .ok_or_else(|| ApiError::not_found("Suggestion not found"))?;
 
         if sug.file_id != file_id {
             return Err(ApiError::not_found("Suggestion not found"));
         }
 
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         match role.as_deref() {
             Some("editor") | Some("owner") => {}
-            _ => return Err(ApiError::new(403, "FORBIDDEN", "Only editors/owners can reject suggestions")),
+            _ => {
+                return Err(ApiError::new(
+                    403,
+                    "FORBIDDEN",
+                    "Only editors/owners can reject suggestions",
+                ))
+            }
         }
 
         let now = chrono::Local::now().naive_local();
-        let updated = self.repo.resolve_suggestion(suggestion_id, "rejected", &user.user_id, now)?;
+        let updated =
+            self.repo
+                .resolve_suggestion(suggestion_id, "rejected", &user.user_id, now)?;
 
-        let user_name = user.email.split('@').next().unwrap_or(&user.email).to_string();
+        let user_name = user
+            .email
+            .split('@')
+            .next()
+            .unwrap_or(&user.email)
+            .to_string();
         let _ = self.activity_service.log(
             file_id,
             &user.user_id,
@@ -172,15 +223,18 @@ impl SuggestionsService {
 
         // Notify suggestion author
         if sug.user_id != user.user_id {
-            let _ = self.notification_service.notify(
-                vec![sug.user_id.clone()],
-                "suggestion_rejected",
-                serde_json::json!({
-                    "fileId": file_id,
-                    "actorName": user_name,
-                    "suggestionId": suggestion_id,
-                }),
-            ).await;
+            let _ = self
+                .notification_service
+                .notify(
+                    vec![sug.user_id.clone()],
+                    "suggestion_rejected",
+                    serde_json::json!({
+                        "fileId": file_id,
+                        "actorName": user_name,
+                        "suggestionId": suggestion_id,
+                    }),
+                )
+                .await;
         }
 
         Ok(SuggestionResponse::from(updated))

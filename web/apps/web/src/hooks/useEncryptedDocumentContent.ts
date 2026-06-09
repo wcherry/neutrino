@@ -136,18 +136,18 @@ export function useEncryptedDocumentContent({
 
   // ── Step 2: Autosave mutation ─────────────────────────────────────────────
   const autosaveMutation = useMutation({
-    mutationFn: (content: string) =>
-      dekRef.current
-        ? driveAutosaveEncryptedContent(id, content, filename, dekRef.current)
-        : driveAutosaveContent(id, content, filename),
+    mutationFn: async (content: string) => {
+      if (!dekRef.current) throw new Error('no-dek');
+      return driveAutosaveEncryptedContent(id, content, filename, dekRef.current);
+    },
   });
 
   // ── Step 3: Create-version mutation ──────────────────────────────────────
   const createVersionMutation = useMutation({
-    mutationFn: (content: string) =>
-      dekRef.current
-        ? driveCreateEncryptedVersion(id, content, filename, dekRef.current)
-        : driveCreateVersion(id, content, filename),
+    mutationFn: async (content: string) => {
+      if (!dekRef.current) throw new Error('no-dek');
+      return driveCreateEncryptedVersion(id, content, filename, dekRef.current);
+    },
   });
 
   return {

@@ -20,8 +20,8 @@ pub struct SlidesAIService {
 
 impl SlidesAIService {
     pub fn new(claude: Option<ClaudeClient>) -> Self {
-        let drive_url = std::env::var("DRIVE_URL")
-            .unwrap_or_else(|_| "http://localhost:8080".to_string());
+        let drive_url =
+            std::env::var("DRIVE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
         SlidesAIService {
             claude,
             drive_url,
@@ -55,12 +55,17 @@ impl SlidesAIService {
         // Encode query for URL inclusion
         let encoded_query: String = query
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c.to_string() } else { format!("%{:02X}", c as u32) })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                    c.to_string()
+                } else {
+                    format!("%{:02X}", c as u32)
+                }
+            })
             .collect();
         let url = format!(
             "{}/api/v1/drive/files?mime_type=image&name={}&limit=20",
-            self.drive_url,
-            encoded_query
+            self.drive_url, encoded_query
         );
 
         let resp = self
@@ -79,9 +84,10 @@ impl SlidesAIService {
             Err(_) => Ok(vec![]),
             Ok(r) if !r.status().is_success() => Ok(vec![]),
             Ok(r) => {
-                let json: serde_json::Value = r.json().await.map_err(|_| {
-                    "Failed to parse drive response".to_string()
-                })?;
+                let json: serde_json::Value = r
+                    .json()
+                    .await
+                    .map_err(|_| "Failed to parse drive response".to_string())?;
                 let files = json["files"].as_array().cloned().unwrap_or_default();
                 let results = files
                     .into_iter()
@@ -91,7 +97,13 @@ impl SlidesAIService {
                         let mime_type = f["mimeType"].as_str()?.to_string();
                         let size_bytes = f["sizeBytes"].as_i64().unwrap_or(0);
                         let url = format!("/api/v1/drive/files/{}/preview", id);
-                        Some(ImageResult { id, name, mime_type, size_bytes, url })
+                        Some(ImageResult {
+                            id,
+                            name,
+                            mime_type,
+                            size_bytes,
+                            url,
+                        })
                     })
                     .collect();
                 Ok(results)

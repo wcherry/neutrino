@@ -2,8 +2,8 @@ use actix_web::{web, FromRequest, HttpRequest};
 use std::future::{ready, Ready};
 use std::sync::Arc;
 
-use crate::shared::ApiError;
 use crate::shared::auth::tokens::TokenService;
+use crate::shared::ApiError;
 
 #[allow(dead_code)]
 pub struct AuthenticatedUser {
@@ -45,7 +45,11 @@ fn extract_user(req: &HttpRequest) -> Result<AuthenticatedUser, ApiError> {
                 let mut parts = pair.splitn(2, '=');
                 let key = parts.next()?;
                 let val = parts.next()?;
-                if key == "token" { Some(val.to_string()) } else { None }
+                if key == "token" {
+                    Some(val.to_string())
+                } else {
+                    None
+                }
             })
             .ok_or_else(|| ApiError::unauthorized("Missing Authorization header"))?
     };

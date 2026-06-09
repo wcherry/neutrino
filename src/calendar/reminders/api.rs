@@ -1,4 +1,3 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::calendar::reminders::{
     dto::{
         CreateReminderRequest, ListRemindersQuery, ListRemindersResponse, ReminderResponse,
@@ -6,6 +5,7 @@ use crate::calendar::reminders::{
     },
     service::RemindersService,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
@@ -32,7 +32,9 @@ pub async fn list_reminders(
     user: AuthenticatedUser,
     query: web::Query<ListRemindersQuery>,
 ) -> Result<web::Json<ListRemindersResponse>, ApiError> {
-    let result = state.reminders_service.list_reminders(&user, query.into_inner())?;
+    let result = state
+        .reminders_service
+        .list_reminders(&user, query.into_inner())?;
     Ok(web::Json(result))
 }
 
@@ -101,9 +103,10 @@ pub async fn update_reminder(
     path: web::Path<String>,
     body: web::Json<UpdateReminderRequest>,
 ) -> Result<web::Json<ReminderResponse>, ApiError> {
-    let reminder = state
-        .reminders_service
-        .update_reminder(&user, &path.into_inner(), body.into_inner())?;
+    let reminder =
+        state
+            .reminders_service
+            .update_reminder(&user, &path.into_inner(), body.into_inner())?;
     Ok(web::Json(reminder))
 }
 

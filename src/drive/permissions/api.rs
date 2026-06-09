@@ -144,12 +144,9 @@ pub async fn revoke_file_permission(
     path: web::Path<FilePermissionPath>,
 ) -> Result<HttpResponse, ApiError> {
     let p = path.into_inner();
-    state.permissions_service.revoke_permission(
-        &user.user_id,
-        "file",
-        &p.file_id,
-        &p.user_id,
-    )?;
+    state
+        .permissions_service
+        .revoke_permission(&user.user_id, "file", &p.file_id, &p.user_id)?;
     Ok(HttpResponse::NoContent().finish())
 }
 

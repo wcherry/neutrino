@@ -91,7 +91,6 @@ impl ShareLinkResponse {
             updated_at: emstring.clone(),
         }
     }
-    
 }
 
 impl From<ShareLinkRecord> for ShareLinkResponse {

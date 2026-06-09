@@ -286,13 +286,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       onSettings={() => router.push('/settings')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}
-    />
+    >
+      <NewItemFAB />
+    </Topbar>
   );
 
   return (
     <AppShell sidebar={sidebar} topbar={topbar}>
       {children}
-      <NewItemFAB />
     </AppShell>
   );
 }

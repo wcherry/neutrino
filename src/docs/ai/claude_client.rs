@@ -1,7 +1,7 @@
+use crate::shared::{get_env_or_secret, ApiError};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
-use crate::shared::{get_env_or_secret, ApiError};
 
 use super::provider::AiProvider;
 

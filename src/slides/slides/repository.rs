@@ -1,9 +1,8 @@
+use crate::schema::{slide_themes, slides};
 use crate::shared::ApiError;
 use crate::slides::slides::model::{
-    NewSlideRecord, SlideRecord, UpdateSlideRecord,
-    NewThemeRecord, ThemeRecord, UpdateThemeRecord,
+    NewSlideRecord, NewThemeRecord, SlideRecord, ThemeRecord, UpdateSlideRecord, UpdateThemeRecord,
 };
-use crate::schema::{slides, slide_themes};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -106,7 +105,10 @@ impl SlidesRepository {
                     .eq(true)
                     .or(slide_themes::user_id.eq(user_id)),
             )
-            .order((slide_themes::is_system.desc(), slide_themes::created_at.asc()))
+            .order((
+                slide_themes::is_system.desc(),
+                slide_themes::created_at.asc(),
+            ))
             .select(ThemeRecord::as_select())
             .load(&mut conn)
             .map_err(|e| {

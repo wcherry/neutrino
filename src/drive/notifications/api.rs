@@ -28,7 +28,9 @@ pub async fn list_notifications(
 ) -> Result<HttpResponse, ApiError> {
     let page = query.get("page").and_then(|p| p.parse().ok());
     let page_size = query.get("pageSize").and_then(|p| p.parse().ok());
-    let result = state.notification_service.get_notifications(&user, page, page_size)?;
+    let result = state
+        .notification_service
+        .get_notifications(&user, page, page_size)?;
     Ok(HttpResponse::Ok().json(result))
 }
 
@@ -50,7 +52,9 @@ pub async fn mark_notification_read(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let notification_id = path.into_inner();
-    state.notification_service.mark_read(&user, &notification_id)?;
+    state
+        .notification_service
+        .mark_read(&user, &notification_id)?;
     Ok(HttpResponse::NoContent().finish())
 }
 

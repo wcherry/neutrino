@@ -32,7 +32,10 @@ pub async fn get_file_irm(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
-    match state.irm_service.get_policy(&user.user_id, "file", &file_id)? {
+    match state
+        .irm_service
+        .get_policy(&user.user_id, "file", &file_id)?
+    {
         Some(policy) => Ok(HttpResponse::Ok().json(policy)),
         None => Ok(HttpResponse::NoContent().finish()),
     }
@@ -58,9 +61,10 @@ pub async fn set_file_irm(
     body: web::Json<SetIrmPolicyRequest>,
 ) -> Result<web::Json<IrmPolicyResponse>, ApiError> {
     let file_id = path.into_inner();
-    let policy = state
-        .irm_service
-        .set_policy(&user.user_id, "file", &file_id, body.into_inner())?;
+    let policy =
+        state
+            .irm_service
+            .set_policy(&user.user_id, "file", &file_id, body.into_inner())?;
     Ok(web::Json(policy))
 }
 
@@ -138,9 +142,10 @@ pub async fn set_folder_irm(
     body: web::Json<SetIrmPolicyRequest>,
 ) -> Result<web::Json<IrmPolicyResponse>, ApiError> {
     let folder_id = path.into_inner();
-    let policy = state
-        .irm_service
-        .set_policy(&user.user_id, "folder", &folder_id, body.into_inner())?;
+    let policy =
+        state
+            .irm_service
+            .set_policy(&user.user_id, "folder", &folder_id, body.into_inner())?;
     Ok(web::Json(policy))
 }
 

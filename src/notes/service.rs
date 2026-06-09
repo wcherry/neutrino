@@ -1,15 +1,15 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::notes::{
     dto::{
-        BacklinksResponse, CreateNoteRequest, ListNotesResponse, NoteMetaResponse, NoteLinkItem,
+        BacklinksResponse, CreateNoteRequest, ListNotesResponse, NoteLinkItem, NoteMetaResponse,
         NoteResponse, SaveNoteRequest,
     },
     model::{NewNoteRecord, UpdateNoteRecord},
     repository::NotesRepository,
 };
+use crate::shared::drive_client::DriveClient;
+use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::Utc;
 use reqwest::Client;
-use crate::shared::drive_client::DriveClient;
 use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -52,7 +52,11 @@ pub struct NotesService {
 }
 
 impl NotesService {
-    pub fn new(repo: Arc<NotesRepository>, drive: Arc<DriveClient>, drive_base_url: String) -> Self {
+    pub fn new(
+        repo: Arc<NotesRepository>,
+        drive: Arc<DriveClient>,
+        drive_base_url: String,
+    ) -> Self {
         NotesService {
             repo,
             drive,
@@ -61,7 +65,10 @@ impl NotesService {
         }
     }
 
-    pub async fn list_notes(&self, user: &AuthenticatedUser) -> Result<ListNotesResponse, ApiError> {
+    pub async fn list_notes(
+        &self,
+        user: &AuthenticatedUser,
+    ) -> Result<ListNotesResponse, ApiError> {
         let items = self.drive.list_files(user, MIME_TYPE).await?;
         let notes = items
             .into_iter()
@@ -113,10 +120,7 @@ impl NotesService {
         user: &AuthenticatedUser,
         note_id: &str,
     ) -> Result<NoteResponse, ApiError> {
-        let file = self
-            .drive
-            .get_file(user, note_id, "Note not found")
-            .await?;
+        let file = self.drive.get_file(user, note_id, "Note not found").await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Note is in trash"));
         }
@@ -141,10 +145,7 @@ impl NotesService {
         note_id: &str,
         req: SaveNoteRequest,
     ) -> Result<NoteMetaResponse, ApiError> {
-        let file = self
-            .drive
-            .get_file(user, note_id, "Note not found")
-            .await?;
+        let file = self.drive.get_file(user, note_id, "Note not found").await?;
         match file.your_role.as_str() {
             "owner" | "editor" => {}
             _ => return Err(ApiError::new(403, "FORBIDDEN", "Edit access required")),
@@ -156,9 +157,7 @@ impl NotesService {
         let new_title = if let Some(ref title) = req.title {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive
-                    .update_file_name(user, note_id, &trimmed)
-                    .await?;
+                self.drive.update_file_name(user, note_id, &trimmed).await?;
                 trimmed
             } else {
                 file.name.clone()
@@ -210,10 +209,7 @@ impl NotesService {
         note_id: &str,
     ) -> Result<BacklinksResponse, ApiError> {
         // Verify the user can see this note.
-        let file = self
-            .drive
-            .get_file(user, note_id, "Note not found")
-            .await?;
+        let file = self.drive.get_file(user, note_id, "Note not found").await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Note is in trash"));
         }
@@ -238,13 +234,16 @@ impl NotesService {
         user: &AuthenticatedUser,
         note_id: &str,
     ) -> Result<(), ApiError> {
-        let file = self
-            .drive
-            .get_file(user, note_id, "Note not found")
-            .await?;
+        let file = self.drive.get_file(user, note_id, "Note not found").await?;
         match file.your_role.as_str() {
             "owner" => {}
-            _ => return Err(ApiError::new(403, "FORBIDDEN", "Only the owner can delete a note")),
+            _ => {
+                return Err(ApiError::new(
+                    403,
+                    "FORBIDDEN",
+                    "Only the owner can delete a note",
+                ))
+            }
         }
 
         let url = format!("{}/api/v1/drive/files/{}", self.drive_base_url, note_id);

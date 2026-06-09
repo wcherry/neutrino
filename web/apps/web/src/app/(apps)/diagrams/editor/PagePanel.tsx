@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Maximize2 } from 'lucide-react';
+import { ZoomSlider } from '@neutrino/ui';
 import type { DiagramPage } from '../types';
 import styles from './PagePanel.module.css';
 
@@ -12,6 +13,9 @@ interface PagePanelProps {
   onAdd: () => void;
   onRemove: (pageId: string) => void;
   onRename: (pageId: string, name: string) => void;
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
+  onFitToScreen: () => void;
 }
 
 export function PagePanel({
@@ -21,6 +25,9 @@ export function PagePanel({
   onAdd,
   onRemove,
   onRename,
+  zoom,
+  onZoomChange,
+  onFitToScreen,
 }: PagePanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -39,6 +46,7 @@ export function PagePanel({
 
   return (
     <div className={styles.panel}>
+      <div className={styles.tabs}>
       {pages.map((page, i) => (
         <div
           key={page.id}
@@ -79,6 +87,25 @@ export function PagePanel({
       <button className={styles.addBtn} onClick={onAdd} title="Add page">
         <Plus size={14} />
       </button>
+      </div>
+      <div className={styles.zoomArea}>
+        <div className={styles.zoomDivider} />
+        <button
+          className={styles.fitBtn}
+          onClick={onFitToScreen}
+          title="Fit to screen"
+          aria-label="Fit to screen"
+        >
+          <Maximize2 size={13} />
+        </button>
+        <ZoomSlider
+          value={Math.min(400, Math.max(25, Math.round(zoom)))}
+          onChange={onZoomChange}
+          min={25}
+          max={400}
+          step={25}
+        />
+      </div>
     </div>
   );
 }

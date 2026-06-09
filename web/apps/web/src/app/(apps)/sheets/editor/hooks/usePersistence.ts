@@ -7,6 +7,8 @@ import type { ChartDef } from '../charts/chartTypes';
 import { sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
+import { useToast } from '@neutrino/ui';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { computeCell, type SheetRef } from '../formula';
 
 /**
@@ -101,6 +103,7 @@ export function usePersistence({
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
+    const toast = useToast();
     const [title, setTitle] = useState('Untitled');
     // loadCount increments every time load() completes successfully.
     // The autosave useEffect depends on it so it restarts (with cleanup) on each reload.
@@ -146,12 +149,12 @@ export function usePersistence({
 
     const save = async () => {
         if (!sheetRef.current) return;
-        const metadata = { title };
-        if (dekRef.current) {
-            await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
-        } else {
-            await sheetsApi.autosaveContent(sheetId, serialize(), 'sheet.json', metadata);
+        if (!dekRef.current) {
+            toast.warning(ENCRYPTION_WARNING_MESSAGE);
+            return;
         }
+        const metadata = { title };
+        await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
     };
     saveRef.current = save;
 
@@ -315,7 +318,7 @@ export function usePersistence({
         // Only needed for brand-new encrypted sheets whose content was written as
         // plaintext by POST /api/v1/sheets on creation; for existing encrypted sheets
         // decryptFile succeeds and serverHasPlaintextContent stays false.
-        if (serverHasPlaintextContent) {
+        if (serverHasPlaintextContent && dekRef.current) {
             save();
         }
     };
@@ -325,13 +328,13 @@ export function usePersistence({
         setTitle(newTitle);
         if (sheetRef.current && newTitle !== sheetRef.current.title) {
             sheetRef.current.title = newTitle;
+            if (!dekRef.current) {
+                toast.warning(ENCRYPTION_WARNING_MESSAGE);
+                return;
+            }
             // Save title together with current content in one combined call.
             const metadata = { title: newTitle };
-            if (dekRef.current) {
-                await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
-            } else {
-                await sheetsApi.autosaveContent(sheetId, serialize(), 'sheet.json', metadata);
-            }
+            await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
         }
     };
 

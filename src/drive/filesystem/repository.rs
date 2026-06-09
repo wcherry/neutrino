@@ -2,9 +2,9 @@ use crate::drive::filesystem::model::{
     FolderRecord, NewFolderRecord, NewShortcutRecord, ShortcutRecord, TrashFolderRecord,
     UpdateFolderRecord,
 };
-use crate::shared::ApiError;
 use crate::drive::storage::model::FileRecord;
 use crate::schema::{files, folders, shortcuts};
+use crate::shared::ApiError;
 use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -206,7 +206,10 @@ impl FilesystemRepository {
                     .set((files::folder_id.eq(Some(id)), files::updated_at.eq(now)))
                     .execute(&mut conn),
                 None => diesel::update(base)
-                    .set((files::folder_id.eq(None::<String>), files::updated_at.eq(now)))
+                    .set((
+                        files::folder_id.eq(None::<String>),
+                        files::updated_at.eq(now),
+                    ))
                     .execute(&mut conn),
             }
             .map_err(|e| {
@@ -251,10 +254,7 @@ impl FilesystemRepository {
                 .filter(files::user_id.eq(user_id))
                 .filter(files::deleted_at.is_null()),
         )
-        .set((
-            files::deleted_at.eq(now),
-            files::updated_at.eq(now),
-        ))
+        .set((files::deleted_at.eq(now), files::updated_at.eq(now)))
         .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB trash file error: {:?}", e);
@@ -501,11 +501,7 @@ impl FilesystemRepository {
 
     // ── Bulk operations ───────────────────────────────────────────────────────
 
-    pub fn bulk_trash_files(
-        &self,
-        file_ids: &[String],
-        user_id: &str,
-    ) -> Result<usize, ApiError> {
+    pub fn bulk_trash_files(&self, file_ids: &[String], user_id: &str) -> Result<usize, ApiError> {
         let mut conn = self.get_conn()?;
         let now = Utc::now().naive_utc();
 
@@ -515,10 +511,7 @@ impl FilesystemRepository {
                 .filter(files::user_id.eq(user_id))
                 .filter(files::deleted_at.is_null()),
         )
-        .set((
-            files::deleted_at.eq(now),
-            files::updated_at.eq(now),
-        ))
+        .set((files::deleted_at.eq(now), files::updated_at.eq(now)))
         .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB bulk trash files error: {:?}", e);
@@ -755,7 +748,11 @@ impl FilesystemRepository {
 
     // ── Recent ────────────────────────────────────────────────────────────────
 
-    pub fn list_recent_files(&self, user_id: &str, limit: i64) -> Result<Vec<FileRecord>, ApiError> {
+    pub fn list_recent_files(
+        &self,
+        user_id: &str,
+        limit: i64,
+    ) -> Result<Vec<FileRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         files::table
             .filter(files::user_id.eq(user_id))
@@ -804,8 +801,7 @@ impl FilesystemRepository {
 
     fn get_conn(
         &self,
-    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError>
-    {
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {
         self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")

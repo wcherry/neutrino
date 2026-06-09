@@ -7,6 +7,9 @@ import type {
   DiagramShape,
   DiagramConnector,
   DiagramPage,
+  FreehandStroke,
+  DataBinding,
+  ConditionalRule,
   Viewport,
   ShapeType,
   ConnectorType,
@@ -19,6 +22,8 @@ import {
   distributeShapes,
   type AlignDirection,
 } from '../utils/shapeUtils';
+import { applyLayout, type LayoutAlgorithm } from '../layout/layoutEngine';
+import { SHAPE_LIBRARY } from '../shapes/ShapeLibrary';
 
 const uuidv4 = () => crypto.randomUUID();
 
@@ -47,6 +52,7 @@ export interface DiagramEditorActions {
     y: number,
     width?: number,
     height?: number,
+    extraData?: Record<string, unknown>,
   ) => string;
   updateShape: (id: string, changes: Partial<DiagramShape>) => void;
   removeShapes: (ids: string[]) => void;
@@ -62,6 +68,8 @@ export interface DiagramEditorActions {
     startY?: number,
     endX?: number,
     endY?: number,
+    sourcePort?: string,
+    targetPort?: string,
   ) => string;
   updateConnector: (id: string, changes: Partial<DiagramConnector>) => void;
   removeConnectors: (ids: string[]) => void;
@@ -75,6 +83,22 @@ export interface DiagramEditorActions {
   // Align / distribute
   align: (ids: string[], direction: AlignDirection) => void;
   distribute: (ids: string[], axis: 'horizontal' | 'vertical') => void;
+
+  // Phase 4 — Freehand strokes
+  addStroke: (stroke: FreehandStroke) => void;
+  removeStrokes: (ids: string[]) => void;
+  clearStrokes: () => void;
+
+  // Phase 5 — Auto layout
+  runLayout: (algorithm: LayoutAlgorithm) => void;
+
+  // Phase 6 — Data binding
+  updateDataBinding: (shapeId: string, binding: DataBinding | undefined) => void;
+  updateConditionalRules: (shapeId: string, rules: ConditionalRule[]) => void;
+  /** Import CSV/JSON: creates one shape per record at a grid layout */
+  importData: (rows: Record<string, string>[], labelField: string) => void;
+  /** Apply live data to all shapes that have a dataBinding */
+  refreshBoundData: (dataset: Record<string, Record<string, string>>) => void;
 
   // Viewport
   setViewport: (v: Partial<Viewport>) => void;
@@ -111,8 +135,49 @@ const DEFAULT_SHAPE_SIZES: Partial<Record<ShapeType, { w: number; h: number }>> 
   'network-server': { w: 80, h: 80 },
   'network-database': { w: 80, h: 80 },
   'network-cloud': { w: 120, h: 80 },
+  'drawio-image': { w: 64, h: 64 },
   swimlane: { w: 300, h: 200 },
   group: { w: 200, h: 150 },
+  'sticky-note': { w: 160, h: 140 },
+  // BPMN
+  'bpmn-start-event':        { w: 40,  h: 40  },
+  'bpmn-end-event':          { w: 40,  h: 40  },
+  'bpmn-intermediate-event': { w: 40,  h: 40  },
+  'bpmn-task':               { w: 120, h: 60  },
+  'bpmn-gateway-exclusive':  { w: 50,  h: 50  },
+  'bpmn-gateway-parallel':   { w: 50,  h: 50  },
+  'bpmn-gateway-inclusive':  { w: 50,  h: 50  },
+  'bpmn-pool':               { w: 400, h: 200 },
+  // ERD
+  'erd-entity':                   { w: 140, h: 60 },
+  'erd-weak-entity':               { w: 140, h: 60 },
+  'erd-attribute':                 { w: 110, h: 50 },
+  'erd-key-attribute':             { w: 110, h: 50 },
+  'erd-relationship':              { w: 120, h: 70 },
+  'erd-identifying-relationship':  { w: 120, h: 70 },
+  // AWS
+  'aws-ec2':         { w: 80,  h: 80  },
+  'aws-s3':          { w: 80,  h: 80  },
+  'aws-rds':         { w: 80,  h: 80  },
+  'aws-lambda':      { w: 80,  h: 80  },
+  'aws-api-gateway': { w: 100, h: 60  },
+  'aws-sns':         { w: 80,  h: 80  },
+  'aws-sqs':         { w: 100, h: 60  },
+  'aws-vpc':         { w: 240, h: 180 },
+  'aws-cloudfront':  { w: 80,  h: 80  },
+  'aws-elb':         { w: 120, h: 60  },
+  // Azure
+  'azure-vm':       { w: 80,  h: 80 },
+  'azure-blob':     { w: 80,  h: 80 },
+  'azure-sql':      { w: 80,  h: 80 },
+  'azure-function': { w: 80,  h: 80 },
+  'azure-apim':     { w: 100, h: 60 },
+  // GCP
+  'gcp-compute':  { w: 80,  h: 80 },
+  'gcp-storage':  { w: 80,  h: 80 },
+  'gcp-sql':      { w: 80,  h: 80 },
+  'gcp-function': { w: 80,  h: 80 },
+  'gcp-pubsub':   { w: 100, h: 60 },
 };
 
 // ---------------------------------------------------------------------------
@@ -185,11 +250,12 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
   // ── Shapes ─────────────────────────────────────────────────────────────────
 
   const addShape = useCallback(
-    (type: ShapeType, x: number, y: number, width?: number, height?: number): string => {
+    (type: ShapeType, x: number, y: number, width?: number, height?: number, extraData?: Record<string, unknown>): string => {
       const id = uuidv4();
       const page = activePage();
       const snapped = snapXY(x, y, page);
       const defaults = DEFAULT_SHAPE_SIZES[type] ?? { w: 120, h: 60 };
+      const libraryItem = SHAPE_LIBRARY.find((item) => item.type === type);
       const shape: DiagramShape = {
         id,
         type,
@@ -198,7 +264,8 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
         width: width ?? defaults.w,
         height: height ?? defaults.h,
         label: '',
-        style: defaultShapeStyle(),
+        style: { ...defaultShapeStyle(), ...(libraryItem?.defaultStyle ?? {}) },
+        ...(extraData ? { data: extraData } : {}),
       };
       updatePage(page.id, (p) => ({ ...p, shapes: [...p.shapes, shape] }));
       return id;
@@ -281,6 +348,8 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
       startY?: number,
       endX?: number,
       endY?: number,
+      sourcePort?: string,
+      targetPort?: string,
     ): string => {
       const id = uuidv4();
       const page = activePage();
@@ -289,6 +358,8 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
         type,
         sourceId,
         targetId,
+        sourcePort,
+        targetPort,
         waypoints: [],
         label: '',
         style: defaultConnectorStyle(),
@@ -405,6 +476,134 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
     [updatePage, document, activePageIndex],
   );
 
+  // ── Phase 4: Freehand strokes ──────────────────────────────────────────────
+
+  const addStroke = useCallback(
+    (stroke: FreehandStroke) => {
+      const page = activePage();
+      updatePage(page.id, (p) => ({
+        ...p,
+        strokes: [...(p.strokes ?? []), stroke],
+      }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
+  const removeStrokes = useCallback(
+    (ids: string[]) => {
+      const page = activePage();
+      const idSet = new Set(ids);
+      updatePage(page.id, (p) => ({
+        ...p,
+        strokes: (p.strokes ?? []).filter((s) => !idSet.has(s.id)),
+      }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
+  const clearStrokes = useCallback(
+    () => {
+      const page = activePage();
+      updatePage(page.id, (p) => ({ ...p, strokes: [] }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
+  // ── Phase 5: Auto layout ───────────────────────────────────────────────────
+
+  const runLayout = useCallback(
+    (algorithm: LayoutAlgorithm) => {
+      const page = activePage();
+      const laid = applyLayout(algorithm, page.shapes, page.connectors);
+      updatePage(page.id, (p) => ({ ...p, shapes: laid }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
+  // ── Phase 6: Data binding & import ────────────────────────────────────────
+
+  const updateDataBinding = useCallback(
+    (shapeId: string, binding: DataBinding | undefined) => {
+      const page = activePage();
+      updatePage(page.id, (p) => ({
+        ...p,
+        shapes: p.shapes.map((s) =>
+          s.id === shapeId ? { ...s, dataBinding: binding } : s,
+        ),
+      }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
+  const updateConditionalRules = useCallback(
+    (shapeId: string, rules: ConditionalRule[]) => {
+      const page = activePage();
+      updatePage(page.id, (p) => ({
+        ...p,
+        shapes: p.shapes.map((s) =>
+          s.id === shapeId ? { ...s, conditionalRules: rules } : s,
+        ),
+      }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
+  const importData = useCallback(
+    (rows: Record<string, string>[], labelField: string) => {
+      if (rows.length === 0) return;
+      const page = activePage();
+      const COLS = 5;
+      const COL_GAP = 160;
+      const ROW_GAP = 100;
+      const START_X = 60;
+      const START_Y = 60;
+      const newShapes: DiagramShape[] = rows.map((row, i) => {
+        const id = uuidv4();
+        return {
+          id,
+          type: 'rectangle',
+          x: START_X + (i % COLS) * COL_GAP,
+          y: START_Y + Math.floor(i / COLS) * ROW_GAP,
+          width: 120,
+          height: 60,
+          label: row[labelField] ?? '',
+          style: defaultShapeStyle(),
+          boundData: row as Record<string, string>,
+          dataBinding: { labelField },
+        };
+      });
+      updatePage(page.id, (p) => ({ ...p, shapes: [...p.shapes, ...newShapes] }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
+  const refreshBoundData = useCallback(
+    (dataset: Record<string, Record<string, string>>) => {
+      const page = activePage();
+      updatePage(page.id, (p) => ({
+        ...p,
+        shapes: p.shapes.map((s) => {
+          if (!s.dataBinding || !dataset[s.id]) return s;
+          const data = dataset[s.id];
+          return {
+            ...s,
+            boundData: data,
+            label: data[s.dataBinding.labelField] ?? s.label,
+          };
+        }),
+      }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
   // ── Viewport ───────────────────────────────────────────────────────────────
 
   const setViewport = useCallback(
@@ -453,6 +652,17 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
     // Arrange
     align,
     distribute,
+    // Phase 4 — Strokes
+    addStroke,
+    removeStrokes,
+    clearStrokes,
+    // Phase 5 — Layout
+    runLayout,
+    // Phase 6 — Data
+    updateDataBinding,
+    updateConditionalRules,
+    importData,
+    refreshBoundData,
     // Viewport
     setViewport,
     // History

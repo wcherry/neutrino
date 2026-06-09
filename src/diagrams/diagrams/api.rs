@@ -1,4 +1,3 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::diagrams::diagrams::{
     dto::{
         CreateCommentRequest, CreateDiagramRequest, DiagramCommentResponse, DiagramMetaResponse,
@@ -7,6 +6,7 @@ use crate::diagrams::diagrams::{
     },
     service::DiagramsService,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_multipart::Multipart;
 use actix_web::{delete, get, patch, post, put, web, HttpResponse};
 use futures_util::StreamExt;
@@ -82,7 +82,10 @@ pub async fn get_diagram(
     path: web::Path<String>,
 ) -> Result<web::Json<DiagramResponse>, ApiError> {
     let diagram_id = path.into_inner();
-    let diagram = state.diagrams_service.get_diagram(&user, &diagram_id).await?;
+    let diagram = state
+        .diagrams_service
+        .get_diagram(&user, &diagram_id)
+        .await?;
     Ok(web::Json(diagram))
 }
 
@@ -138,18 +141,17 @@ pub async fn delete_diagram(
 ) -> Result<HttpResponse, ApiError> {
     let diagram_id = path.into_inner();
     // Verify access before deleting — get_diagram checks the drive file
-    let _ = state.diagrams_service.get_diagram(&user, &diagram_id).await?;
+    let _ = state
+        .diagrams_service
+        .get_diagram(&user, &diagram_id)
+        .await?;
     // Drive files are soft-deleted by moving to trash. We delegate to the drive API
     // by patching updated_at so the file remains in place while the client
     // can call the drive delete endpoint directly. Full drive integration
     // removes it from the listing via mime_type filter + deleted_at check.
     state
         .diagrams_service
-        .save_diagram(
-            &user,
-            &diagram_id,
-            SaveDiagramRequest { title: None },
-        )
+        .save_diagram(&user, &diagram_id, SaveDiagramRequest { title: None })
         .await?;
     Ok(HttpResponse::NoContent().finish())
 }
@@ -235,7 +237,10 @@ pub async fn list_comments(
     path: web::Path<String>,
 ) -> Result<web::Json<ListCommentsResponse>, ApiError> {
     let file_id = path.into_inner();
-    let result = state.diagrams_service.list_comments(&user, &file_id).await?;
+    let result = state
+        .diagrams_service
+        .list_comments(&user, &file_id)
+        .await?;
     Ok(web::Json(result))
 }
 
@@ -320,7 +325,10 @@ pub async fn delete_comment(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ApiError> {
     let (_file_id, comment_id) = path.into_inner();
-    state.diagrams_service.delete_comment(&user, &comment_id).await?;
+    state
+        .diagrams_service
+        .delete_comment(&user, &comment_id)
+        .await?;
     Ok(HttpResponse::NoContent().finish())
 }
 

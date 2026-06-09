@@ -42,10 +42,7 @@ impl IrmRepository {
             })
     }
 
-    pub fn upsert_policy(
-        &self,
-        record: &NewIrmPolicyRecord,
-    ) -> Result<IrmPolicyRecord, ApiError> {
+    pub fn upsert_policy(&self, record: &NewIrmPolicyRecord) -> Result<IrmPolicyRecord, ApiError> {
         let mut conn = self.get_conn()?;
 
         // Remove existing policy for this resource

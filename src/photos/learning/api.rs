@@ -2,9 +2,9 @@ use crate::photos::learning::{
     dto::{ReprocessingResponse, ThresholdsResponse},
     service::LearningService,
 };
-use actix_web::{get, post, web};
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::ApiError;
+use actix_web::{get, post, web};
 use std::sync::Arc;
 use utoipa::OpenApi;
 
@@ -48,7 +48,9 @@ async fn trigger_reprocess(
     state: web::Data<LearningApiState>,
     user: AuthenticatedUser,
 ) -> Result<web::Json<ReprocessingResponse>, ApiError> {
-    let resp = state.learning_service.process_pending_for_user(&user.user_id)?;
+    let resp = state
+        .learning_service
+        .process_pending_for_user(&user.user_id)?;
     Ok(web::Json(resp))
 }
 

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::drive::comments::model::{Comment, CommentReply};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -81,7 +81,10 @@ impl CommentResponse {
             updated_at: c.updated_at.to_string(),
             resolved_at: c.resolved_at.map(|d| d.to_string()),
             resolved_by: c.resolved_by,
-            replies: replies.into_iter().map(CommentReplyResponse::from).collect(),
+            replies: replies
+                .into_iter()
+                .map(CommentReplyResponse::from)
+                .collect(),
         }
     }
 }

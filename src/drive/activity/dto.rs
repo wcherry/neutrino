@@ -1,5 +1,5 @@
-use serde::Serialize;
 use crate::drive::activity::model::ActivityEntry;
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,7 +15,10 @@ pub struct ActivityEntryResponse {
 
 impl From<ActivityEntry> for ActivityEntryResponse {
     fn from(e: ActivityEntry) -> Self {
-        let detail = e.detail_json.as_deref().and_then(|d| serde_json::from_str(d).ok());
+        let detail = e
+            .detail_json
+            .as_deref()
+            .and_then(|d| serde_json::from_str(d).ok());
         ActivityEntryResponse {
             id: e.id,
             file_id: e.file_id,

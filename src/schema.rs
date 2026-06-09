@@ -422,6 +422,17 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    diagram_third_party_libraries (id) {
+        id -> Text,
+        name -> Text,
+        url -> Text,
+        private_path -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
 // ── Drive ────────────────────────────────────────────────────────────────────
 
 diesel::table! {

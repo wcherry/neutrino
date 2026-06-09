@@ -2,11 +2,11 @@ use crate::photos::learning::model::{
     NewTrainingSignalRecord, NewUserThresholdRecord, TrainingSignalRecord, UserThresholdRecord,
 };
 use crate::schema::{training_signals, user_recognition_thresholds};
+use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::SqliteConnection;
-use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
@@ -90,10 +90,7 @@ impl LearningRepository {
     }
 
     /// Mark all unprocessed signals for a user as processed.
-    pub fn mark_signals_processed(
-        &self,
-        user_id: &str,
-    ) -> Result<(), ApiError> {
+    pub fn mark_signals_processed(&self, user_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         diesel::update(
             training_signals::table

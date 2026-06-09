@@ -49,6 +49,7 @@ import {
   List,
   ListOrdered,
   ArrowUpDown,
+  Network,
 } from 'lucide-react';
 import {
   Button,
@@ -58,10 +59,12 @@ import {
   ToolbarButton,
   ToolbarSelect,
   ColorPickerPopover,
+  useToast,
 } from '@neutrino/ui';
 import { slidesApi, driveReadContent, storageApi } from '@/lib/api';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme } from '@neutrino/api-slides';
 import { FONT_FAMILY_NAMES as FONT_FAMILIES } from '@/constants/editor';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
@@ -70,6 +73,7 @@ import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-emb
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
 import { InsertSheetDialog } from './InsertSheetDialog';
 import { InsertImageDialog } from './InsertImageDialog';
+import { InsertDiagramDialog } from './InsertDiagramDialog';
 
 // ── Domain modules ────────────────────────────────────────────────────────────
 import type {
@@ -80,6 +84,7 @@ import type {
   LineElement,
   VideoElement,
   ImageElement,
+  DiagramElement,
   SlideElement,
   SlideBackground,
   Slide,
@@ -111,7 +116,7 @@ import styles from './page.module.css';
 const FONT_SIZES = ['8', '10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '60', '72', '96'];
 
 // ── Re-exports ────────────────────────────────────────────────────────────────
-export type { TextStyle, ElementAnimation, TextElement, ShapeElement, VideoElement, ImageElement, SheetEmbedElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
+export type { TextStyle, ElementAnimation, TextElement, ShapeElement, VideoElement, ImageElement, SheetEmbedElement, DiagramElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
 // importFromPptx is intentionally NOT re-exported here so that pptxImport (and
 // its jszip dependency) stays out of the initial bundle. Callers that need it
 // should use: const { importFromPptx } = await import('./pptxImport')
@@ -311,6 +316,7 @@ export function SlideEditor() {
 
   const { dekRef, dekResolved } =
     useEncryptedDocumentContent({ id: slideId, filename: 'slide.json' });
+  const toast = useToast();
 
   const [title, setTitle] = useState('');
   const [presentation, setPresentation] = useState<SlidePresentation>(makeDefaultPresentation);
@@ -334,6 +340,7 @@ export function SlideEditor() {
   const [videoUrlInput, setVideoUrlInput] = useState('');
   const [sheetDialogOpen, setSheetDialogOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [diagramDialogOpen, setDiagramDialogOpen] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef('');
@@ -407,17 +414,22 @@ export function SlideEditor() {
   }, [dekResolved, slideData, contentLoading, slideContent]);
 
   const contentMutation = useMutation({
-    mutationFn: ({ content, metadata }: { content: string; metadata?: { title?: string } }) =>
-      dekRef.current
-        ? slidesApi.autosaveEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current, metadata)
-        : slidesApi.autosaveContent(slideData!.id, content, 'slide.json', metadata),
+    mutationFn: async ({ content, metadata }: { content: string; metadata?: { title?: string } }) => {
+      if (!dekRef.current) throw new Error('no-dek');
+      return slidesApi.autosaveEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current, metadata);
+    },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: (_, { content }) => {
       setSaveStatus('saved');
       lastSavedRef.current = content;
       queryClient.invalidateQueries({ queryKey: ['slides'] });
     },
-    onError: () => setSaveStatus('error'),
+    onError: (err) => {
+      setSaveStatus('error');
+      if (err instanceof Error && err.message === 'no-dek') {
+        toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      }
+    },
   });
 
   const scheduleAutoSave = useCallback((pres: SlidePresentation) => {
@@ -755,6 +767,20 @@ export function SlideEditor() {
       saturation: 0,
       warmth: 0,
       objectFit: 'cover',
+    };
+    updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+    setSelectedElementId(el.id);
+  }
+
+  // ── Diagram embed operations ──────────────────────────────────────────────
+
+  function addDiagram(diagramId: string) {
+    const el: DiagramElement = {
+      id: uid(),
+      type: 'diagram',
+      x: 10, y: 10, w: 80, h: 60,
+      diagramId,
+      pageIndex: 0,
     };
     updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
     setSelectedElementId(el.id);
@@ -1956,6 +1982,12 @@ export function SlideEditor() {
                           <span>Sheet</span>
                         </button>
                       )}
+                      {flags.diagramsApp && (
+                        <button className={styles.insertBtn} onClick={() => setDiagramDialogOpen(true)}>
+                          <Network size={15} />
+                          <span>Diagram</span>
+                        </button>
+                      )}
                     </div>
                     {SHAPE_GROUPS.map((group) => (
                       <div key={group.key} className={styles.insertSection}>
@@ -2090,6 +2122,13 @@ export function SlideEditor() {
             </div>
           </div>
         </div>
+      )}
+
+      {diagramDialogOpen && (
+        <InsertDiagramDialog
+          onInsert={(diagramId) => { addDiagram(diagramId); setDiagramDialogOpen(false); }}
+          onClose={() => setDiagramDialogOpen(false)}
+        />
       )}
     </div>
   );

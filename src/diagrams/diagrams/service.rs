@@ -1,14 +1,16 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::diagrams::diagrams::{
     dto::{
         CreateCommentRequest, CreateDiagramRequest, DiagramCommentResponse, DiagramMetaResponse,
         DiagramResponse, ListCommentsResponse, ListDiagramsResponse, SaveDiagramRequest,
         UpdateCommentRequest,
     },
-    model::{NewDiagramCommentRecord, NewDiagramRecord, UpdateDiagramCommentRecord, UpdateDiagramRecord},
+    model::{
+        NewDiagramCommentRecord, NewDiagramRecord, UpdateDiagramCommentRecord, UpdateDiagramRecord,
+    },
     repository::DiagramsRepository,
 };
 use crate::shared::drive_client::DriveClient;
+use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -132,7 +134,9 @@ impl DiagramsService {
         let new_title = if let Some(ref title) = req.title {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(user, diagram_id, &trimmed).await?;
+                self.drive
+                    .update_file_name(user, diagram_id, &trimmed)
+                    .await?;
                 trimmed
             } else {
                 file.name.clone()
@@ -178,7 +182,9 @@ impl DiagramsService {
         let new_title = if let Some(t) = title {
             let trimmed = t.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(user, diagram_id, &trimmed).await?;
+                self.drive
+                    .update_file_name(user, diagram_id, &trimmed)
+                    .await?;
                 trimmed
             } else {
                 file.name.clone()
@@ -209,7 +215,10 @@ impl DiagramsService {
         req: CreateCommentRequest,
     ) -> Result<DiagramCommentResponse, ApiError> {
         // Verify access to the diagram
-        let file = self.drive.get_file(user, file_id, "Diagram not found").await?;
+        let file = self
+            .drive
+            .get_file(user, file_id, "Diagram not found")
+            .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Diagram is in trash"));
         }
@@ -237,12 +246,18 @@ impl DiagramsService {
         file_id: &str,
     ) -> Result<ListCommentsResponse, ApiError> {
         // Verify access to the diagram
-        let file = self.drive.get_file(user, file_id, "Diagram not found").await?;
+        let file = self
+            .drive
+            .get_file(user, file_id, "Diagram not found")
+            .await?;
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Diagram is in trash"));
         }
         let records = self.repo.list_comments(file_id)?;
-        let comments = records.into_iter().map(comment_record_to_response).collect();
+        let comments = records
+            .into_iter()
+            .map(comment_record_to_response)
+            .collect();
         Ok(ListCommentsResponse { comments })
     }
 
@@ -265,7 +280,9 @@ impl DiagramsService {
             resolved: req.resolved,
             updated_at: Utc::now().naive_utc(),
         };
-        let record = self.repo.update_comment(comment_id, &user.user_id, changes)?;
+        let record = self
+            .repo
+            .update_comment(comment_id, &user.user_id, changes)?;
         Ok(comment_record_to_response(record))
     }
 
@@ -280,7 +297,9 @@ impl DiagramsService {
 
 // ── Free helpers ──────────────────────────────────────────────────────────────
 
-fn comment_record_to_response(r: crate::diagrams::diagrams::model::DiagramCommentRecord) -> DiagramCommentResponse {
+fn comment_record_to_response(
+    r: crate::diagrams::diagrams::model::DiagramCommentRecord,
+) -> DiagramCommentResponse {
     DiagramCommentResponse {
         id: r.id,
         file_id: r.file_id,

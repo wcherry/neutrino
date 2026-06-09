@@ -48,7 +48,11 @@ impl NotificationService {
                 created_at: now,
             };
             if let Err(e) = self.repo.insert_notification(&new_notif) {
-                tracing::error!("Failed to insert notification for {}: {:?}", recipient_id, e);
+                tracing::error!(
+                    "Failed to insert notification for {}: {:?}",
+                    recipient_id,
+                    e
+                );
             }
         }
 
@@ -90,7 +94,8 @@ impl NotificationService {
         let page_size = page_size.unwrap_or(20).min(100).max(1);
 
         let (items, total, unread_count) =
-            self.repo.list_notifications(&user.user_id, page, page_size)?;
+            self.repo
+                .list_notifications(&user.user_id, page, page_size)?;
 
         Ok(NotificationListResponse {
             notifications: items.into_iter().map(NotificationResponse::from).collect(),
@@ -99,7 +104,11 @@ impl NotificationService {
         })
     }
 
-    pub fn mark_read(&self, user: &AuthenticatedUser, notification_id: &str) -> Result<(), ApiError> {
+    pub fn mark_read(
+        &self,
+        user: &AuthenticatedUser,
+        notification_id: &str,
+    ) -> Result<(), ApiError> {
         let updated = self.repo.mark_read(notification_id, &user.user_id)?;
         if updated == 0 {
             return Err(ApiError::not_found("Notification not found"));

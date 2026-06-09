@@ -23,10 +23,7 @@ impl JobsRepository {
 
     fn get_conn(
         &self,
-    ) -> Result<
-        diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>,
-        ApiError,
-    > {
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {
         self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection unavailable")
@@ -103,11 +100,7 @@ impl JobsRepository {
 
     /// Atomically mark a single ready job as in-progress for a worker.
     /// Returns true if the job was successfully claimed.
-    pub fn try_claim_job(
-        &self,
-        job_id: &str,
-        worker_id: &str,
-    ) -> Result<bool, ApiError> {
+    pub fn try_claim_job(&self, job_id: &str, worker_id: &str) -> Result<bool, ApiError> {
         let mut conn = self.get_conn()?;
         let now = chrono::Utc::now().naive_utc();
         let rows = diesel::update(
@@ -211,14 +204,12 @@ impl JobsRepository {
 
     pub fn deregister_worker(&self, worker_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
-        diesel::delete(
-            worker_registrations::table.filter(worker_registrations::id.eq(worker_id)),
-        )
-        .execute(&mut conn)
-        .map_err(|e| {
-            tracing::error!("DB deregister worker error: {:?}", e);
-            ApiError::internal("Database error")
-        })?;
+        diesel::delete(worker_registrations::table.filter(worker_registrations::id.eq(worker_id)))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB deregister worker error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
         Ok(())
     }
 

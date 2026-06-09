@@ -1,11 +1,11 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::calendar::connections::dto::{
     CompleteGoogleRequest, ConnectAppleRequest, ConnectionResponse, ListConnectionsResponse,
     OAuthInitResponse, TriggerSyncRequest, TriggerSyncResponse,
 };
 use crate::calendar::connections::service::ConnectionsService;
-use actix_web::{delete, get, post, web, HttpResponse};
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::http::header;
+use actix_web::{delete, get, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
 
@@ -80,7 +80,10 @@ pub async fn google_callback(
     query: web::Query<OAuthCallbackQuery>,
 ) -> Result<HttpResponse, ApiError> {
     if let Some(err) = &query.error {
-        return Err(ApiError::bad_request(&format!("Google OAuth error: {}", err)));
+        return Err(ApiError::bad_request(&format!(
+            "Google OAuth error: {}",
+            err
+        )));
     }
     let oauth_state = query.state.as_deref().unwrap_or("");
     let user_id = oauth_state
@@ -172,7 +175,10 @@ pub async fn outlook_callback(
     query: web::Query<OAuthCallbackQuery>,
 ) -> Result<web::Json<ConnectionResponse>, ApiError> {
     if let Some(err) = &query.error {
-        return Err(ApiError::bad_request(&format!("Outlook OAuth error: {}", err)));
+        return Err(ApiError::bad_request(&format!(
+            "Outlook OAuth error: {}",
+            err
+        )));
     }
     let conn = state
         .connections_service
@@ -297,4 +303,3 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     security(("bearer_auth" = []))
 )]
 pub struct ConnectionsApiDoc;
-

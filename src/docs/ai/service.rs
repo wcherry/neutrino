@@ -48,8 +48,9 @@ impl DocsAIService {
                 })?;
                 match kind {
                     ProviderKind::Claude => {
-                        let key = get_env_or_secret("ANTHROPIC_API_KEY")
-                            .map_err(|_| ApiError::bad_request("ANTHROPIC_API_KEY not configured"))?;
+                        let key = get_env_or_secret("ANTHROPIC_API_KEY").map_err(|_| {
+                            ApiError::bad_request("ANTHROPIC_API_KEY not configured")
+                        })?;
                         Ok(build_provider(ProviderKind::Claude, key))
                     }
                     ProviderKind::OpenAi => {
@@ -125,9 +126,8 @@ impl DocsAIService {
         } else {
             ""
         };
-        let prompt = format!(
-            "Summarize this document in 3-5 bullet points. {context_note}\n\n{text}"
-        );
+        let prompt =
+            format!("Summarize this document in 3-5 bullet points. {context_note}\n\n{text}");
         provider.complete(&prompt, 300).await
     }
 
@@ -256,7 +256,10 @@ mod tests {
     #[test]
     fn provider_kind_from_str_claude() {
         assert_eq!(ProviderKind::from_str("claude"), Some(ProviderKind::Claude));
-        assert_eq!(ProviderKind::from_str("anthropic"), Some(ProviderKind::Claude));
+        assert_eq!(
+            ProviderKind::from_str("anthropic"),
+            Some(ProviderKind::Claude)
+        );
         assert_eq!(ProviderKind::from_str("Claude"), Some(ProviderKind::Claude));
     }
 

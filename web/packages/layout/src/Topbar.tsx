@@ -188,10 +188,10 @@ export function Topbar({
         </div>
       )}
 
-      {children}
-
       {/* Actions */}
       <div className={styles.actions}>
+        {children}
+
         {actions.map((action) => (
           <button
             key={action.id}

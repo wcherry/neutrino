@@ -3,7 +3,6 @@ use std::sync::Arc;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::docs::docs::dto::CreateDocRequest;
 use crate::docs::docs::service::DocsService;
 use crate::docs::templates::{
@@ -14,6 +13,7 @@ use crate::docs::templates::{
     model::{DocTemplate, NewDocTemplate, UpdateDocTemplate},
     repository::TemplatesRepository,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 
 pub struct TemplatesService {
     repo: Arc<TemplatesRepository>,

@@ -1,10 +1,10 @@
-use crate::shared::{ApiError, ListQuery, OrderDirection};
+use crate::drive::storage::dto::FileOrderField;
 use crate::drive::storage::model::{
     AutosaveFileContent, FileRecord, FileVersionRecord, NewFileRecord, NewFileVersionRecord,
     NewUserQuota, UpdateFileContent, UserQuota,
 };
-use crate::drive::storage::dto::FileOrderField;
 use crate::schema::{file_versions, files, user_quotas};
+use crate::shared::{ApiError, ListQuery, OrderDirection};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -64,14 +64,30 @@ impl StorageRepository {
         }
 
         let result = match (order_by, direction) {
-            (FileOrderField::Name, OrderDirection::Asc) => base.order(files::name.asc()).load(&mut conn),
-            (FileOrderField::Name, OrderDirection::Desc) => base.order(files::name.desc()).load(&mut conn),
-            (FileOrderField::Size, OrderDirection::Asc) => base.order(files::size_bytes.asc()).load(&mut conn),
-            (FileOrderField::Size, OrderDirection::Desc) => base.order(files::size_bytes.desc()).load(&mut conn),
-            (FileOrderField::CreatedAt, OrderDirection::Asc) => base.order(files::created_at.asc()).load(&mut conn),
-            (FileOrderField::CreatedAt, OrderDirection::Desc) => base.order(files::created_at.desc()).load(&mut conn),
-            (FileOrderField::UpdatedAt, OrderDirection::Asc) => base.order(files::updated_at.asc()).load(&mut conn),
-            (FileOrderField::UpdatedAt, OrderDirection::Desc) => base.order(files::updated_at.desc()).load(&mut conn),
+            (FileOrderField::Name, OrderDirection::Asc) => {
+                base.order(files::name.asc()).load(&mut conn)
+            }
+            (FileOrderField::Name, OrderDirection::Desc) => {
+                base.order(files::name.desc()).load(&mut conn)
+            }
+            (FileOrderField::Size, OrderDirection::Asc) => {
+                base.order(files::size_bytes.asc()).load(&mut conn)
+            }
+            (FileOrderField::Size, OrderDirection::Desc) => {
+                base.order(files::size_bytes.desc()).load(&mut conn)
+            }
+            (FileOrderField::CreatedAt, OrderDirection::Asc) => {
+                base.order(files::created_at.asc()).load(&mut conn)
+            }
+            (FileOrderField::CreatedAt, OrderDirection::Desc) => {
+                base.order(files::created_at.desc()).load(&mut conn)
+            }
+            (FileOrderField::UpdatedAt, OrderDirection::Asc) => {
+                base.order(files::updated_at.asc()).load(&mut conn)
+            }
+            (FileOrderField::UpdatedAt, OrderDirection::Desc) => {
+                base.order(files::updated_at.desc()).load(&mut conn)
+            }
         };
 
         result.map_err(|e| {
@@ -80,11 +96,7 @@ impl StorageRepository {
         })
     }
 
-    pub fn find_file(
-        &self,
-        file_id: &str,
-        user_id: &str,
-    ) -> Result<Option<FileRecord>, ApiError> {
+    pub fn find_file(&self, file_id: &str, user_id: &str) -> Result<Option<FileRecord>, ApiError> {
         let mut conn = self.get_conn()?;
 
         files::table
@@ -159,7 +171,11 @@ impl StorageRepository {
     ) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
 
-        let new_daily = if reset_daily { file_size } else { prev_daily + file_size };
+        let new_daily = if reset_daily {
+            file_size
+        } else {
+            prev_daily + file_size
+        };
 
         diesel::update(user_quotas::table.filter(user_quotas::user_id.eq(user_id)))
             .set((
@@ -466,8 +482,7 @@ impl StorageRepository {
 
     fn get_conn(
         &self,
-    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError>
-    {
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {
         self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")

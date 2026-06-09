@@ -1,8 +1,8 @@
 use crate::shared::{ApiError, AuthenticatedUser};
 use crate::slides::slides::{
     dto::{
-        CreateSlideRequest, ListSlidesResponse, SaveSlideRequest, SlideMetaResponse, SlideResponse,
-        CreateThemeRequest, UpdateThemeRequest, ThemeResponse, ListThemesResponse,
+        CreateSlideRequest, CreateThemeRequest, ListSlidesResponse, ListThemesResponse,
+        SaveSlideRequest, SlideMetaResponse, SlideResponse, ThemeResponse, UpdateThemeRequest,
     },
     service::SlidesService,
 };
@@ -51,7 +51,10 @@ pub async fn create_slide(
     user: AuthenticatedUser,
     body: web::Json<CreateSlideRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let slide = state.slides_service.create_slide(&user, body.into_inner()).await?;
+    let slide = state
+        .slides_service
+        .create_slide(&user, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(slide))
 }
 
@@ -147,7 +150,9 @@ pub async fn create_theme(
     user: AuthenticatedUser,
     body: web::Json<CreateThemeRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let theme = state.slides_service.create_theme(&user, body.into_inner())?;
+    let theme = state
+        .slides_service
+        .create_theme(&user, body.into_inner())?;
     Ok(HttpResponse::Created().json(theme))
 }
 
@@ -171,7 +176,9 @@ pub async fn update_theme(
     body: web::Json<UpdateThemeRequest>,
 ) -> Result<web::Json<ThemeResponse>, ApiError> {
     let theme_id = path.into_inner();
-    let theme = state.slides_service.update_theme(&user, &theme_id, body.into_inner())?;
+    let theme = state
+        .slides_service
+        .update_theme(&user, &theme_id, body.into_inner())?;
     Ok(web::Json(theme))
 }
 

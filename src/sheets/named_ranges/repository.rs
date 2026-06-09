@@ -1,6 +1,8 @@
-use crate::shared::ApiError;
-use crate::sheets::named_ranges::model::{NamedRangeRecord, NewNamedRangeRecord, UpdateNamedRangeRecord};
 use crate::schema::named_ranges;
+use crate::shared::ApiError;
+use crate::sheets::named_ranges::model::{
+    NamedRangeRecord, NewNamedRangeRecord, UpdateNamedRangeRecord,
+};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -80,12 +82,7 @@ impl NamedRangesRepository {
     /// Ranges whose `start_row >= at_row` are shifted entirely.
     /// Ranges that straddle `at_row` have their `end_row` adjusted.
     #[allow(dead_code)]
-    pub fn shift_rows(
-        &self,
-        sheet_db_id: &str,
-        at_row: i32,
-        delta: i32,
-    ) -> Result<(), ApiError> {
+    pub fn shift_rows(&self, sheet_db_id: &str, at_row: i32, delta: i32) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
 
         // Shift ranges that start at or after `at_row`.

@@ -1,6 +1,6 @@
-use crate::shared::ApiError;
 use crate::calendar::events::model::{EventRecord, NewEventRecord, UpdateEventRecord};
 use crate::schema::events;
+use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -58,8 +58,11 @@ impl EventsRepository {
         if let Some(f) = from {
             // Events that end at or after the range start, OR are recurring masters
             // (recurring masters have their start in the past but generate future occurrences)
-            query = query
-                .filter(events::end_time.ge(f).or(events::recurrence_rule.is_not_null()));
+            query = query.filter(
+                events::end_time
+                    .ge(f)
+                    .or(events::recurrence_rule.is_not_null()),
+            );
         }
         if let Some(t) = to {
             // Events that start at or before the range end
@@ -121,13 +124,14 @@ impl EventsRepository {
 
     pub fn delete(&self, id: &str, user_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
-        let affected =
-            diesel::delete(events::table.filter(events::id.eq(id).and(events::user_id.eq(user_id))))
-                .execute(&mut conn)
-                .map_err(|e| {
-                    tracing::error!("DB delete event error: {:?}", e);
-                    ApiError::internal("Database error")
-                })?;
+        let affected = diesel::delete(
+            events::table.filter(events::id.eq(id).and(events::user_id.eq(user_id))),
+        )
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB delete event error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
         if affected == 0 {
             return Err(ApiError::not_found("Event not found"));
         }
@@ -193,7 +197,12 @@ impl EventsRepository {
     }
 
     /// Delete an externally-sourced event by its external ID (used when the provider reports deletion).
-    pub fn delete_by_external(&self, user_id: &str, source: &str, external_id: &str) -> Result<(), ApiError> {
+    pub fn delete_by_external(
+        &self,
+        user_id: &str,
+        source: &str,
+        external_id: &str,
+    ) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         diesel::delete(
             events::table.filter(

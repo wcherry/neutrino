@@ -53,10 +53,7 @@ impl WorkspaceService {
             Some(d) => d.clone(),
             None => return Ok(()), // No domain configured — allow all
         };
-        let email_domain = user_email
-            .split('@')
-            .nth(1)
-            .unwrap_or("");
+        let email_domain = user_email.split('@').nth(1).unwrap_or("");
         if !email_domain.eq_ignore_ascii_case(&allowed_domain) {
             return Err(ApiError::new(
                 403,

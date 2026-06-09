@@ -1,5 +1,5 @@
-use std::env;
 use crate::shared::get_env_or_secret;
+use std::env;
 
 /// Unified configuration for the neutrino service.
 /// Each domain reads its own sub-config. This top-level struct gathers all
@@ -48,8 +48,8 @@ impl Config {
             .parse::<u16>()
             .map_err(|e| format!("Invalid PORT: {}", e))?;
 
-        let jwt_secret =
-            get_env_or_secret("JWT_SECRET").map_err(|_| "JWT_SECRET environment variable is required")?;
+        let jwt_secret = get_env_or_secret("JWT_SECRET")
+            .map_err(|_| "JWT_SECRET environment variable is required")?;
         if jwt_secret.is_empty() {
             return Err("JWT_SECRET must not be empty".to_string());
         }
@@ -67,8 +67,8 @@ impl Config {
         let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
         let log_path = env::var("LOG_PATH").ok();
 
-        let database_url = env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "./data/neutrino.db".to_string());
+        let database_url =
+            env::var("DATABASE_URL").unwrap_or_else(|_| "./data/neutrino.db".to_string());
 
         let storage_path = env::var("STORAGE_PATH").unwrap_or_else(|_| "./storage".to_string());
 
@@ -95,12 +95,14 @@ impl Config {
         let oauth = OAuthConfig {
             google_client_id: get_env_or_secret("GOOGLE_CLIENT_ID").ok(),
             google_client_secret: get_env_or_secret("GOOGLE_CLIENT_SECRET").ok(),
-            google_redirect_uri: get_env_or_secret("GOOGLE_REDIRECT_URI")
-                .unwrap_or_else(|_| format!("{}/api/v1/connections/google/callback", drive_base_url)),
+            google_redirect_uri: get_env_or_secret("GOOGLE_REDIRECT_URI").unwrap_or_else(|_| {
+                format!("{}/api/v1/connections/google/callback", drive_base_url)
+            }),
             outlook_client_id: get_env_or_secret("OUTLOOK_CLIENT_ID").ok(),
             outlook_client_secret: get_env_or_secret("OUTLOOK_CLIENT_SECRET").ok(),
-            outlook_redirect_uri: get_env_or_secret("OUTLOOK_REDIRECT_URI")
-                .unwrap_or_else(|_| format!("{}/api/v1/connections/outlook/callback", drive_base_url)),
+            outlook_redirect_uri: get_env_or_secret("OUTLOOK_REDIRECT_URI").unwrap_or_else(|_| {
+                format!("{}/api/v1/connections/outlook/callback", drive_base_url)
+            }),
         };
 
         let web_dir = env::var("WEB_DIR").unwrap_or_else(|_| "web/apps/web/out".to_string());

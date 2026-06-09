@@ -44,8 +44,16 @@ fn to_drive_record(file: FileRecord, role: String) -> DriveFileRecord {
         folder_id: file.folder_id,
         deleted_at: file.deleted_at,
         your_role: role,
-        storage_path: if file.storage_path.is_empty() { None } else { Some(file.storage_path) },
-        mime_type: if file.mime_type.is_empty() { None } else { Some(file.mime_type) },
+        storage_path: if file.storage_path.is_empty() {
+            None
+        } else {
+            Some(file.storage_path)
+        },
+        mime_type: if file.mime_type.is_empty() {
+            None
+        } else {
+            Some(file.mime_type)
+        },
         created_at: file.created_at,
         updated_at: file.updated_at,
         cover_thumbnail: file.cover_thumbnail,
@@ -65,7 +73,11 @@ impl DriveClient {
         permissions: Arc<PermissionsService>,
         fs_repo: Arc<FilesystemRepository>,
     ) -> Self {
-        DriveClient { storage, permissions, fs_repo }
+        DriveClient {
+            storage,
+            permissions,
+            fs_repo,
+        }
     }
 
     pub async fn list_files(
@@ -83,13 +95,17 @@ impl DriveClient {
             filters,
         };
         let resp = self.storage.list_files(&user.user_id, &query)?;
-        Ok(resp.files.into_iter().map(|f| DriveListItem {
-            id: f.id,
-            name: f.name,
-            folder_id: f.folder_id,
-            created_at: f.created_at,
-            updated_at: f.updated_at,
-        }).collect())
+        Ok(resp
+            .files
+            .into_iter()
+            .map(|f| DriveListItem {
+                id: f.id,
+                name: f.name,
+                folder_id: f.folder_id,
+                created_at: f.created_at,
+                updated_at: f.updated_at,
+            })
+            .collect())
     }
 
     pub async fn create_file(
@@ -100,7 +116,10 @@ impl DriveClient {
         mime_type: &str,
         folder_id: Option<&str>,
     ) -> Result<DriveFileRecord, ApiError> {
-        let file = self.storage.save_file(user, id, name, mime_type, folder_id).await?;
+        let file = self
+            .storage
+            .save_file(user, id, name, mime_type, folder_id)
+            .await?;
         Ok(to_drive_record(file, "owner".to_string()))
     }
 
@@ -110,10 +129,12 @@ impl DriveClient {
         file_id: &str,
         not_found_msg: &str,
     ) -> Result<DriveFileRecord, ApiError> {
-        let file = self.storage
+        let file = self
+            .storage
             .find_file_any_user(file_id)?
             .ok_or_else(|| ApiError::not_found(not_found_msg))?;
-        let role = self.permissions
+        let role = self
+            .permissions
             .get_effective_role(&user.user_id, "file", file_id)?
             .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
         Ok(to_drive_record(file, role))
@@ -124,7 +145,8 @@ impl DriveClient {
         file_id: &str,
         not_found_msg: &str,
     ) -> Result<String, ApiError> {
-        let file = self.storage
+        let file = self
+            .storage
             .find_file_any_user(file_id)?
             .ok_or_else(|| ApiError::not_found(not_found_msg))?;
 
@@ -145,7 +167,8 @@ impl DriveClient {
         content: &str,
         label: &str,
     ) -> Result<(), ApiError> {
-        let file = self.storage
+        let file = self
+            .storage
             .find_file_any_user(file_id)?
             .ok_or_else(|| ApiError::internal("File not found for upload"))?;
 
@@ -164,10 +187,12 @@ impl DriveClient {
         })?;
 
         let size_bytes = content.len() as i64;
-        self.storage.autosave(file_id, &temp_path, size_bytes).map_err(|e| {
-            let _ = std::fs::remove_file(&temp_path);
-            e
-        })?;
+        self.storage
+            .autosave(file_id, &temp_path, size_bytes)
+            .map_err(|e| {
+                let _ = std::fs::remove_file(&temp_path);
+                e
+            })?;
 
         Ok(())
     }
@@ -178,14 +203,16 @@ impl DriveClient {
         file_id: &str,
         name: &str,
     ) -> Result<(), ApiError> {
-        self.fs_repo.update_file(file_id, &user.user_id, Some(name), None, None)?;
+        self.fs_repo
+            .update_file(file_id, &user.user_id, Some(name), None, None)?;
         Ok(())
     }
 
     /// Autosave raw bytes as the file's current content without creating a version snapshot.
     /// Used by per-app autosave endpoints that receive multipart binary data.
     pub fn upload_content_bytes(&self, file_id: &str, bytes: &[u8]) -> Result<(), ApiError> {
-        let file = self.storage
+        let file = self
+            .storage
             .find_file_any_user(file_id)?
             .ok_or_else(|| ApiError::internal("File not found"))?;
         let store = self.storage.store();
@@ -200,10 +227,12 @@ impl DriveClient {
             ApiError::internal("Failed to write content")
         })?;
         let size_bytes = bytes.len() as i64;
-        self.storage.autosave(file_id, &temp_path, size_bytes).map_err(|e| {
-            let _ = std::fs::remove_file(&temp_path);
-            e
-        })?;
+        self.storage
+            .autosave(file_id, &temp_path, size_bytes)
+            .map_err(|e| {
+                let _ = std::fs::remove_file(&temp_path);
+                e
+            })?;
         Ok(())
     }
 }

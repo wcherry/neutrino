@@ -1,12 +1,40 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
-import type { Slide, SlideElement, TextElement, ShapeElement, LineElement, SheetEmbedElement, VideoElement, ImageElement } from './slideEditorTypes';
+'use client';
+
+import React, { useEffect, useState as useStateHook, useRef, useState } from 'react';
+import type { Slide, SlideElement, TextElement, ShapeElement, LineElement, SheetEmbedElement, VideoElement, ImageElement, DiagramElement } from './slideEditorTypes';
 import { SHAPE_CATALOG, RESIZE_HANDLES } from './slideEditorConstants';
 import { slideBackgroundStyle, getVideoEmbedInfo } from './slideEditorHelpers';
 import { SheetEmbedRenderer } from '@neutrino/sheet-embed';
 import type { CellValue } from '@neutrino/sheet-embed';
+import { EmbeddedDiagramView } from '@/app/(apps)/diagrams/editor/EmbeddedDiagramView';
+import { diagramsApi } from '@neutrino/api-drawing';
+import type { DiagramDocument, DiagramPage } from '@/app/(apps)/diagrams/types';
 import styles from './page.module.css';
+
+function DiagramSlideElement({ el }: { el: DiagramElement }) {
+  const [page, setPage] = useStateHook<DiagramPage | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    diagramsApi.getDiagram(el.diagramId)
+      .then(async (meta) => {
+        if (cancelled || !meta.contentUrl) return;
+        const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') ?? '' : '';
+        const res = await fetch(meta.contentUrl, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok || cancelled) return;
+        const doc = await res.json() as DiagramDocument;
+        const p = doc.pages[el.pageIndex] ?? doc.pages[0] ?? null;
+        if (!cancelled) setPage(p);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [el.diagramId, el.pageIndex]);
+
+  if (!page) return <div style={{ width: '100%', height: '100%', background: '#f8fafc', borderRadius: 4 }} />;
+  return <EmbeddedDiagramView page={page} width="100%" height="100%" />;
+}
 
 // ── ShapeRenderer ─────────────────────────────────────────────────────────────
 
@@ -716,6 +744,39 @@ export default function SlideCanvas({
                   pointerEvents: 'none',
                 }} />
               )}
+              {isSelected && RESIZE_HANDLES.map((h) => (
+                <div
+                  key={h.id}
+                  className={styles.resizeHandle}
+                  style={{ top: h.top, left: h.left, cursor: h.cursor }}
+                  onMouseDown={(e) => handleResizeMouseDown(e, el.id, el, h.id)}
+                />
+              ))}
+            </div>
+          );
+        }
+
+        if (el.type === 'diagram') {
+          const diagEl = el as DiagramElement;
+          return (
+            <div
+              key={el.id}
+              className={`${styles.slideElement} ${isSelected ? styles.slideElementSelected : ''}`}
+              style={{
+                left: `${el.x}%`,
+                top: `${el.y}%`,
+                width: `${el.w}%`,
+                height: `${el.h}%`,
+                cursor: 'move',
+                overflow: 'hidden',
+                background: '#fff',
+                border: '1px solid #e2e8f0',
+                borderRadius: 4,
+              }}
+              onMouseDown={(e) => handleMouseDown(e, el.id, el)}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DiagramSlideElement el={diagEl} />
               {isSelected && RESIZE_HANDLES.map((h) => (
                 <div
                   key={h.id}

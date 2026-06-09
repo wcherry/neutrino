@@ -86,6 +86,17 @@ export function NewItemFAB() {
     <>
       {open && <div className={styles.backdrop} onClick={() => setOpen(false)} aria-hidden="true" />}
       <div className={styles.fab}>
+        <button
+          className={`${styles.trigger}${open ? ` ${styles.open}` : ''}`}
+          onClick={() => setOpen((v) => !v)}
+          disabled={pending}
+          aria-label="Create new item"
+          aria-expanded={open}
+          aria-haspopup="menu"
+        >
+          <Plus size={14} strokeWidth={2.5} />
+          New
+        </button>
         {open && (
           <div className={styles.menu} role="menu" aria-label="Create new item">
             {visibleActions.map(({ id, label, icon: Icon, color }) => (
@@ -103,16 +114,6 @@ export function NewItemFAB() {
             ))}
           </div>
         )}
-        <button
-          className={`${styles.trigger}${open ? ` ${styles.open}` : ''}`}
-          onClick={() => setOpen((v) => !v)}
-          disabled={pending}
-          aria-label="Create new item"
-          aria-expanded={open}
-          aria-haspopup="menu"
-        >
-          <Plus size={22} strokeWidth={2} />
-        </button>
       </div>
     </>
   );

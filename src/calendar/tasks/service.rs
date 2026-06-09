@@ -1,9 +1,8 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::calendar::tasks::{
     dto::{
         BulkCreateTasksRequest, BulkCreateTasksResponse, CreateTaskListRequest, CreateTaskRequest,
-        ListTaskListsResponse, ReorderTasksRequest, TaskListResponse,
-        TaskResponse, UpdateTaskListRequest, UpdateTaskRequest,
+        ListTaskListsResponse, ReorderTasksRequest, TaskListResponse, TaskResponse,
+        UpdateTaskListRequest, UpdateTaskRequest,
     },
     model::{
         NewTaskListMembershipRecord, NewTaskListRecord, NewTaskRecord, UpdateTaskListRecord,
@@ -11,6 +10,7 @@ use crate::calendar::tasks::{
     },
     repository::TasksRepository,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::{NaiveDateTime, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -107,7 +107,9 @@ impl TasksService {
                     .collect())
             }
             None => {
-                let records = self.repo.find_all_tasks_with_list_id_by_user(&user.user_id)?;
+                let records = self
+                    .repo
+                    .find_all_tasks_with_list_id_by_user(&user.user_id)?;
                 Ok(records
                     .into_iter()
                     .map(|(r, lid)| task_to_response(r, lid))
@@ -146,7 +148,9 @@ impl TasksService {
             return Err(ApiError::bad_request("tasks must not be empty"));
         }
         if req.tasks.len() > 200 {
-            return Err(ApiError::bad_request("tasks must not exceed 200 per request"));
+            return Err(ApiError::bad_request(
+                "tasks must not exceed 200 per request",
+            ));
         }
         self.repo.find_by_id(&req.list_id, &user.user_id)?;
 
@@ -177,7 +181,10 @@ impl TasksService {
         let saved = self
             .repo
             .bulk_insert_tasks_with_memberships(task_records, membership_records)?;
-        let tasks = saved.into_iter().map(|r| task_to_response(r, None)).collect();
+        let tasks = saved
+            .into_iter()
+            .map(|r| task_to_response(r, None))
+            .collect();
         Ok(BulkCreateTasksResponse { tasks })
     }
 
@@ -208,11 +215,7 @@ impl TasksService {
         Ok(task_to_response(updated, None))
     }
 
-    pub fn delete_task(
-        &self,
-        user: &AuthenticatedUser,
-        task_id: &str,
-    ) -> Result<(), ApiError> {
+    pub fn delete_task(&self, user: &AuthenticatedUser, task_id: &str) -> Result<(), ApiError> {
         self.repo.delete_task(task_id, &user.user_id)
     }
 
@@ -225,7 +228,9 @@ impl TasksService {
         self.repo.find_by_id(&req.list_id, &user.user_id)?;
 
         // Verify all requested task IDs belong to this list
-        let list_tasks = self.repo.find_tasks_by_list_id(&user.user_id, &req.list_id)?;
+        let list_tasks = self
+            .repo
+            .find_tasks_by_list_id(&user.user_id, &req.list_id)?;
         let list_task_ids: std::collections::HashSet<&str> =
             list_tasks.iter().map(|t| t.id.as_str()).collect();
         for task_id in &req.task_ids {
@@ -245,7 +250,8 @@ impl TasksService {
             .map(|(i, id)| (id, i as i32))
             .collect();
 
-        self.repo.bulk_update_positions(&user.user_id, &updates, now)
+        self.repo
+            .bulk_update_positions(&user.user_id, &updates, now)
     }
 
     // ── List Membership ───────────────────────────────────────────────────────
@@ -300,13 +306,18 @@ fn task_list_to_response(r: crate::calendar::tasks::model::TaskListRecord) -> Ta
     }
 }
 
-fn task_to_response(r: crate::calendar::tasks::model::TaskRecord, list_id: Option<String>) -> TaskResponse {
+fn task_to_response(
+    r: crate::calendar::tasks::model::TaskRecord,
+    list_id: Option<String>,
+) -> TaskResponse {
     TaskResponse {
         id: r.id,
         title: r.title,
         notes: r.notes,
         done: r.done,
-        due_date: r.due_date.map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+        due_date: r
+            .due_date
+            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
         position: r.position,
         list_id,
         created_at: r.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),

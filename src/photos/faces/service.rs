@@ -19,7 +19,11 @@ impl FacesService {
     }
 
     /// Called by the worker to persist a detected face.
-    pub fn save_face(&self, photo_id: &str, req: SaveFaceRequest) -> Result<FaceResponse, ApiError> {
+    pub fn save_face(
+        &self,
+        photo_id: &str,
+        req: SaveFaceRequest,
+    ) -> Result<FaceResponse, ApiError> {
         // Verify the photo exists (including deleted, so worker can still write to trashed photos).
         self.photos_repo.get_photo_including_deleted(photo_id)?;
 
@@ -64,8 +68,8 @@ impl FacesService {
     }
 
     fn to_response(&self, face: FaceRecord) -> FaceResponse {
-        let bounding_box: FaceBoundingBox = serde_json::from_str(&face.bounding_box)
-            .unwrap_or(FaceBoundingBox {
+        let bounding_box: FaceBoundingBox =
+            serde_json::from_str(&face.bounding_box).unwrap_or(FaceBoundingBox {
                 x: 0.0,
                 y: 0.0,
                 width: 0.0,

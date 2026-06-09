@@ -1,6 +1,6 @@
+use crate::schema::notifications;
 use diesel::prelude::*;
 use serde::Serialize;
-use crate::schema::notifications;
 
 #[derive(Debug, Queryable, Selectable, Serialize, Clone)]
 #[diesel(table_name = notifications)]

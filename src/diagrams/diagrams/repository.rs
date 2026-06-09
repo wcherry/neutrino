@@ -1,9 +1,9 @@
-use crate::shared::ApiError;
 use crate::diagrams::diagrams::model::{
     DiagramCommentRecord, DiagramRecord, NewDiagramCommentRecord, NewDiagramRecord,
     UpdateDiagramCommentRecord, UpdateDiagramRecord,
 };
 use crate::schema::{diagram_comments, diagrams};
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -150,7 +150,9 @@ impl DiagramsRepository {
             ApiError::internal("Database error")
         })?;
         if rows == 0 {
-            return Err(ApiError::not_found("Comment not found or permission denied"));
+            return Err(ApiError::not_found(
+                "Comment not found or permission denied",
+            ));
         }
         self.get_comment(id)
     }
@@ -168,7 +170,9 @@ impl DiagramsRepository {
             ApiError::internal("Database error")
         })?;
         if rows == 0 {
-            return Err(ApiError::not_found("Comment not found or permission denied"));
+            return Err(ApiError::not_found(
+                "Comment not found or permission denied",
+            ));
         }
         Ok(())
     }

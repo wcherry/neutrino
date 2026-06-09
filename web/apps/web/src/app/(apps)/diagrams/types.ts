@@ -32,7 +32,62 @@ export type ShapeType =
   | 'network-router'
   // Containers
   | 'swimlane'
-  | 'group';
+  | 'group'
+  // Phase 4 — Whiteboard
+  | 'sticky-note'
+  // Phase 2 — BPMN
+  | 'bpmn-start-event'
+  | 'bpmn-end-event'
+  | 'bpmn-intermediate-event'
+  | 'bpmn-task'
+  | 'bpmn-gateway-exclusive'
+  | 'bpmn-gateway-parallel'
+  | 'bpmn-gateway-inclusive'
+  | 'bpmn-pool'
+  // Phase 2 — ERD
+  | 'erd-entity'
+  | 'erd-weak-entity'
+  | 'erd-attribute'
+  | 'erd-key-attribute'
+  | 'erd-relationship'
+  | 'erd-identifying-relationship'
+  // Phase 2 — AWS
+  | 'aws-ec2'
+  | 'aws-s3'
+  | 'aws-rds'
+  | 'aws-lambda'
+  | 'aws-api-gateway'
+  | 'aws-sns'
+  | 'aws-sqs'
+  | 'aws-vpc'
+  | 'aws-cloudfront'
+  | 'aws-elb'
+  // Phase 2 — Azure
+  | 'azure-vm'
+  | 'azure-blob'
+  | 'azure-sql'
+  | 'azure-function'
+  | 'azure-apim'
+  // Phase 2 — GCP
+  | 'gcp-compute'
+  | 'gcp-storage'
+  | 'gcp-sql'
+  | 'gcp-function'
+  | 'gcp-pubsub'
+  // Arrows
+  | 'arrow-right'
+  | 'arrow-left'
+  | 'arrow-up'
+  | 'arrow-down'
+  | 'arrow-left-right'
+  | 'arrow-up-down'
+  | 'arrow-bent'
+  | 'arrow-circular'
+  | 'arrow-pentagon'
+  | 'arrow-notched'
+  | 'arrow-quad'
+  // Third-party drawio image shapes
+  | 'drawio-image';
 
 export interface ShapeStyle {
   fill: string;
@@ -48,6 +103,25 @@ export interface ShapeStyle {
   opacity: number;
   cornerRadius?: number;
   shadow?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6 — Data binding
+// ---------------------------------------------------------------------------
+
+export interface DataBinding {
+  /** Field name from the bound dataset whose value populates the shape label */
+  labelField: string;
+  /** Optional field used to drive conditional formatting */
+  statusField?: string;
+}
+
+export interface ConditionalRule {
+  id: string;
+  field: string;
+  operator: 'eq' | 'neq' | 'gt' | 'lt' | 'contains';
+  value: string;
+  style: Partial<ShapeStyle>;
 }
 
 export interface DiagramShape {
@@ -66,6 +140,12 @@ export interface DiagramShape {
   parentId?: string;
   /** Shape-specific data (e.g., swimlane header label, UML fields) */
   data?: Record<string, unknown>;
+  /** Phase 6: live data bound to this shape */
+  boundData?: Record<string, string | number | boolean>;
+  /** Phase 6: how to map data fields to label/style */
+  dataBinding?: DataBinding;
+  /** Phase 6: conditional formatting rules evaluated against boundData */
+  conditionalRules?: ConditionalRule[];
 }
 
 export type ConnectorType = 'straight' | 'orthogonal' | 'curved' | 'elbow';
@@ -102,10 +182,30 @@ export interface DiagramConnector {
   waypoints: ConnectorPoint[];
   label: string;
   labelPosition?: number; // 0-1 along connector
+  /** Offset from the geometric midpoint, set when the user drags the label */
+  labelOffset?: ConnectorPoint;
   style: ConnectorStyle;
   /** Absolute start/end when not connected to a shape */
   startPoint?: ConnectorPoint;
   endPoint?: ConnectorPoint;
+  /** Z-order layer: 0 (default) renders behind shapes, 1 renders in front of shapes */
+  zIndex?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Freehand strokes (whiteboard mode)
+// ---------------------------------------------------------------------------
+
+export type DrawingTool = 'pen' | 'pencil' | 'highlighter';
+
+export interface FreehandStroke {
+  id: string;
+  tool: DrawingTool;
+  /** Flat array of alternating x,y pairs for performance */
+  points: number[];
+  color: string;
+  width: number;
+  opacity: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +217,8 @@ export interface DiagramPage {
   name: string;
   shapes: DiagramShape[];
   connectors: DiagramConnector[];
+  /** Phase 4: whiteboard freehand strokes */
+  strokes?: FreehandStroke[];
   background?: string;
   gridEnabled?: boolean;
   gridSize?: number;
@@ -147,7 +249,10 @@ export interface DiagramDocument {
 // Editor selection state
 // ---------------------------------------------------------------------------
 
-export type SelectionMode = 'select' | 'lasso' | 'pan' | 'shape' | 'connector' | 'text';
+export type SelectionMode =
+  | 'select' | 'lasso' | 'pan' | 'shape' | 'connector' | 'text'
+  // Phase 4 — Whiteboard
+  | 'pen' | 'pencil' | 'highlighter' | 'eraser' | 'presentation';
 
 export interface EditorSelection {
   shapeIds: Set<string>;

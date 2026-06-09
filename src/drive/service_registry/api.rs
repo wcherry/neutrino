@@ -2,8 +2,8 @@ use actix_web::{get, patch, post, web, HttpResponse};
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::shared::ApiError;
 use super::{ServiceInfo, ServiceRegistry};
+use crate::shared::ApiError;
 
 pub struct ServiceRegistryState {
     pub registry: Arc<ServiceRegistry>,
@@ -43,12 +43,22 @@ async fn register_service(
     let body = body.into_inner();
     let name = body.name.clone();
     let info = web::block(move || {
-        state.registry.register(&body.name, &body.endpoint, &body.version, &body.health_check_url)
+        state.registry.register(
+            &body.name,
+            &body.endpoint,
+            &body.version,
+            &body.health_check_url,
+        )
     })
     .await
     .map_err(|_| ApiError::internal("Task error"))??;
-    tracing::info!("Service '{}' registered (v{}, enabled={}, auto_update={})",
-        name, info.version, info.enabled, info.auto_update);
+    tracing::info!(
+        "Service '{}' registered (v{}, enabled={}, auto_update={})",
+        name,
+        info.version,
+        info.enabled,
+        info.auto_update
+    );
     Ok(HttpResponse::Ok().json(info))
 }
 
@@ -88,7 +98,9 @@ async fn update_service_flags(
     let name = path.into_inner();
     let body = body.into_inner();
     let info = web::block(move || {
-        state.registry.update_flags(&name, body.enabled, body.auto_update)
+        state
+            .registry
+            .update_flags(&name, body.enabled, body.auto_update)
     })
     .await
     .map_err(|_| ApiError::internal("Task error"))??;

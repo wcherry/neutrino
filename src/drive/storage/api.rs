@@ -1,6 +1,3 @@
-use crate::shared::{
-    apply_list_query, ApiError, AuthenticatedUser, ListQuery, ListQueryParams, OrderDirection,
-};
 use crate::drive::irm::service::IrmService;
 use crate::drive::jobs::{dto::CreateJobRequest, service::JobsService};
 use crate::drive::permissions::service::PermissionsService;
@@ -14,6 +11,9 @@ use crate::drive::storage::{
     service::StorageService,
 };
 use crate::drive::tags::service::TagsService;
+use crate::shared::{
+    apply_list_query, ApiError, AuthenticatedUser, ListQuery, ListQueryParams, OrderDirection,
+};
 use actix_files::NamedFile;
 use actix_multipart::Multipart;
 use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
@@ -93,7 +93,10 @@ pub async fn upload_file(
             .and_then(|cd| cd.get_filename())
             .is_none()
         {
-            if matches!(field_name.as_str(), "folder_id" | "encrypted_metadata" | "mime_type" | "thumbnail_b64") {
+            if matches!(
+                field_name.as_str(),
+                "folder_id" | "encrypted_metadata" | "mime_type" | "thumbnail_b64"
+            ) {
                 let mut buf = Vec::new();
                 while let Some(chunk) = field.next().await {
                     let data = chunk.map_err(|e| {
@@ -186,20 +189,32 @@ pub async fn upload_file(
                 size,
                 folder_id.as_deref(),
                 encrypted_metadata.as_deref(),
-            ).await
+            )
+            .await
             .inspect_err(|_| {
                 let _ = std::fs::remove_file(&temp_path);
             })?;
 
         // Save client-generated thumbnail if provided.
         if let Some(b64) = thumbnail_b64.take() {
-            tracing::info!("saving thumbnail for file {}, base64 length: {}", response.id, b64.len());
-            match state.storage_service.set_cover_thumbnail(&response.id, b64, "image/jpeg".to_string()) {
+            tracing::info!(
+                "saving thumbnail for file {}, base64 length: {}",
+                response.id,
+                b64.len()
+            );
+            match state.storage_service.set_cover_thumbnail(
+                &response.id,
+                b64,
+                "image/jpeg".to_string(),
+            ) {
                 Ok(_) => tracing::info!("thumbnail saved successfully for file {}", response.id),
                 Err(e) => tracing::warn!("failed to save thumbnail for {}: {:?}", response.id, e),
             }
         } else {
-            tracing::info!("no thumbnail_b64 in upload request for file {}", response.id);
+            tracing::info!(
+                "no thumbnail_b64 in upload request for file {}",
+                response.id
+            );
         }
 
         // Enqueue a thumbnail job for non-image file types that need an external worker
@@ -212,7 +227,11 @@ pub async fn upload_file(
                 timeout_secs: 60,
             };
             if let Err(e) = state.jobs_service.create_job(req) {
-                tracing::warn!("Failed to enqueue thumbnail job for file {}: {:?}", response.id, e);
+                tracing::warn!(
+                    "Failed to enqueue thumbnail job for file {}: {:?}",
+                    response.id,
+                    e
+                );
             }
         }
 
@@ -226,7 +245,11 @@ pub async fn upload_file(
             timeout_secs: 60,
         };
         if let Err(e) = state.jobs_service.create_job(job_req) {
-            tracing::warn!("Failed to enqueue index_content job for file {}: {:?}", response.id, e);
+            tracing::warn!(
+                "Failed to enqueue index_content job for file {}: {:?}",
+                response.id,
+                e
+            );
         }
 
         return Ok(web::Json(response));
@@ -259,7 +282,13 @@ pub async fn create_file_record(
     }
     let file = state
         .storage_service
-        .save_file(&user, &req.id, &name, &req.mime_type, req.folder_id.as_deref())
+        .save_file(
+            &user,
+            &req.id,
+            &name,
+            &req.mime_type,
+            req.folder_id.as_deref(),
+        )
         .await?;
     let response = DocFileMetadataResponse {
         id: file.id,
@@ -268,8 +297,14 @@ pub async fn create_file_record(
         folder_id: file.folder_id,
         deleted_at: file.deleted_at,
         your_role: "owner".to_string(),
-        storage_path: match file.storage_path.len()>1 {true => Some(file.storage_path), _ => None,},    //TODO: Storage path can be None
-        mime_type: match file.mime_type.len()>1 {true => Some(file.mime_type), _ => None,},             //TODO: Mime type can be None
+        storage_path: match file.storage_path.len() > 1 {
+            true => Some(file.storage_path),
+            _ => None,
+        }, //TODO: Storage path can be None
+        mime_type: match file.mime_type.len() > 1 {
+            true => Some(file.mime_type),
+            _ => None,
+        }, //TODO: Mime type can be None
         created_at: file.created_at,
         updated_at: file.updated_at,
         cover_thumbnail: file.cover_thumbnail,
@@ -318,8 +353,14 @@ pub async fn get_file_info(
         folder_id: file.folder_id,
         deleted_at: file.deleted_at,
         your_role: role,
-        storage_path: match file.storage_path.len()>1 {true => Some(file.storage_path), _ => None,},    //TODO: Storage path can be None
-        mime_type: match file.mime_type.len()>1 {true => Some(file.mime_type), _ => None,},             //TODO: Mime type can be None
+        storage_path: match file.storage_path.len() > 1 {
+            true => Some(file.storage_path),
+            _ => None,
+        }, //TODO: Storage path can be None
+        mime_type: match file.mime_type.len() > 1 {
+            true => Some(file.mime_type),
+            _ => None,
+        }, //TODO: Mime type can be None
         created_at: file.created_at,
         updated_at: file.updated_at,
         cover_thumbnail: file.cover_thumbnail,
@@ -417,13 +458,10 @@ pub async fn download_file(
         ));
     }
 
-    let (file_path, mime_type, file_name) = state
-        .storage_service
-        .resolve_file_path_by_id(&file_id)?;
+    let (file_path, mime_type, file_name) =
+        state.storage_service.resolve_file_path_by_id(&file_id)?;
 
-    let content_type: mime::Mime = mime_type
-        .parse()
-        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+    let content_type: mime::Mime = mime_type.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
     let disposition = actix_web::http::header::ContentDisposition {
         disposition: actix_web::http::header::DispositionType::Attachment,
@@ -474,13 +512,9 @@ pub async fn preview_file(
         .get_restrictions("file", &file_id, &role)?
         .restrict_print_copy;
 
-    let (file_path, mime_type, _) = state
-        .storage_service
-        .resolve_file_path_by_id(&file_id)?;
+    let (file_path, mime_type, _) = state.storage_service.resolve_file_path_by_id(&file_id)?;
 
-    let content_type: mime::Mime = mime_type
-        .parse()
-        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+    let content_type: mime::Mime = mime_type.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
     let disposition = actix_web::http::header::ContentDisposition {
         disposition: actix_web::http::header::DispositionType::Inline,
@@ -542,9 +576,7 @@ pub async fn zip_contents(
         .get_effective_role(&user.user_id, "file", &file_id)?
         .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
 
-    let (file_path, _, _) = state
-        .storage_service
-        .resolve_file_path_by_id(&file_id)?;
+    let (file_path, _, _) = state.storage_service.resolve_file_path_by_id(&file_id)?;
 
     let entries = web::block(move || {
         let file = std::fs::File::open(&file_path).map_err(|e| {
@@ -950,13 +982,12 @@ pub async fn download_version(
     req: HttpRequest,
 ) -> Result<HttpResponse, ApiError> {
     let (file_id, version_id) = path.into_inner();
-    let (file_path, mime_type, file_name) = state
-        .storage_service
-        .resolve_version_path(&user.user_id, &file_id, &version_id)?;
+    let (file_path, mime_type, file_name) =
+        state
+            .storage_service
+            .resolve_version_path(&user.user_id, &file_id, &version_id)?;
 
-    let content_type: mime::Mime = mime_type
-        .parse()
-        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+    let content_type: mime::Mime = mime_type.parse().unwrap_or(mime::APPLICATION_OCTET_STREAM);
 
     let disposition = actix_web::http::header::ContentDisposition {
         disposition: actix_web::http::header::DispositionType::Attachment,

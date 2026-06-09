@@ -1,13 +1,17 @@
 use crate::drive::permissions::service::PermissionsService;
-use crate::shared::{ApiError, AuthenticatedUser, ListQuery, ListQueryParams, OrderDirection, apply_list_query};
 use crate::drive::storage::{
     dto::{
         FileMetadataResponse, FileOrderField, FileVersionResponse, ListFilesResponse,
         ListVersionsResponse, QuotaResponse, VersionOrderField,
     },
-    model::{AutosaveFileContent, FileRecord, NewFileRecord, NewFileVersionRecord, UpdateFileContent},
+    model::{
+        AutosaveFileContent, FileRecord, NewFileRecord, NewFileVersionRecord, UpdateFileContent,
+    },
     repository::StorageRepository,
     store::LocalFileStore,
+};
+use crate::shared::{
+    apply_list_query, ApiError, AuthenticatedUser, ListQuery, ListQueryParams, OrderDirection,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -56,11 +60,19 @@ impl StorageService {
         let now = Utc::now().naive_utc();
         let today = now.date();
         let reset_daily = quota.daily_reset_at.date() < today;
-        let current_daily = if reset_daily { 0 } else { quota.daily_upload_bytes };
+        let current_daily = if reset_daily {
+            0
+        } else {
+            quota.daily_upload_bytes
+        };
 
         if let Some(limit) = quota.quota_bytes {
             if quota.used_bytes + size_bytes > limit {
-                return Err(ApiError::new(413, "QUOTA_EXCEEDED", "Storage quota exceeded"));
+                return Err(ApiError::new(
+                    413,
+                    "QUOTA_EXCEEDED",
+                    "Storage quota exceeded",
+                ));
             }
         }
         if let Some(cap) = quota.daily_cap_bytes {
@@ -97,7 +109,11 @@ impl StorageService {
             let _ = std::fs::remove_file(&final_path);
         })?;
 
-        if let Err(e) = self.permissions.grant_ownership(user, "file", &file_id).await {
+        if let Err(e) = self
+            .permissions
+            .grant_ownership(user, "file", &file_id)
+            .await
+        {
             tracing::error!("Failed to grant ownership for file {}: {:?}", file_id, e);
         }
 
@@ -177,7 +193,14 @@ impl StorageService {
         let existing_count = self.repo.count_versions(file_id)?;
         if existing_count == 0 && !file.storage_path.is_empty() {
             let current_path = self.store.resolve(&file.storage_path);
-            self.create_version_snapshot(owner_id, file_id, &current_path, file.size_bytes, 1, false);
+            self.create_version_snapshot(
+                owner_id,
+                file_id,
+                &current_path,
+                file.size_bytes,
+                1,
+                false,
+            );
         }
 
         // Overwrite the main file with new content.
@@ -231,7 +254,10 @@ impl StorageService {
             },
         );
         Ok(ListVersionsResponse {
-            versions: versions.into_iter().map(FileVersionResponse::from).collect(),
+            versions: versions
+                .into_iter()
+                .map(FileVersionResponse::from)
+                .collect(),
             total,
         })
     }
@@ -271,7 +297,11 @@ impl StorageService {
             .ok_or_else(|| ApiError::not_found("Version not found"))?;
 
         let path = self.store.resolve(&version.storage_path);
-        Ok((path, "application/json".to_string(), format!("version-{}.json", version.version_number)))
+        Ok((
+            path,
+            "application/json".to_string(),
+            format!("version-{}.json", version.version_number),
+        ))
     }
 
     pub fn restore_version(
@@ -466,7 +496,11 @@ impl StorageService {
             encrypted_metadata: None,
         };
         let file = self.repo.insert_file(new_file)?;
-        if let Err(e) = self.permissions.grant_ownership(user, "file", file_id).await {
+        if let Err(e) = self
+            .permissions
+            .grant_ownership(user, "file", file_id)
+            .await
+        {
             tracing::error!("Failed to grant ownership for doc {}: {:?}", file_id, e);
         }
         Ok(file)
@@ -483,10 +517,12 @@ impl StorageService {
         let img = image::open(path).ok()?;
         let thumb = img.thumbnail(512, 512);
         let mut buf: Vec<u8> = Vec::new();
-        thumb.write_to(
-            &mut std::io::Cursor::new(&mut buf),
-            image::ImageFormat::Jpeg,
-        ).ok()?;
+        thumb
+            .write_to(
+                &mut std::io::Cursor::new(&mut buf),
+                image::ImageFormat::Jpeg,
+            )
+            .ok()?;
         Some((BASE64.encode(&buf), "image/jpeg".to_string()))
     }
 

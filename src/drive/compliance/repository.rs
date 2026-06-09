@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-use crate::shared::ApiError;
 use crate::drive::compliance::model::{
     FileLegalHold, LegalHold, NewFileLegalHold, NewLegalHold, NewRetentionPolicy, RetentionPolicy,
 };
 use crate::schema::{file_legal_holds, legal_holds, retention_policies};
+use crate::shared::ApiError;
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -93,19 +93,28 @@ impl ComplianceRepository {
         }
         if let Some(d) = description {
             diesel::update(legal_holds::table.filter(legal_holds::id.eq(id)))
-                .set((legal_holds::description.eq(d), legal_holds::updated_at.eq(now)))
+                .set((
+                    legal_holds::description.eq(d),
+                    legal_holds::updated_at.eq(now),
+                ))
                 .execute(&mut conn)
                 .map_err(|_| ApiError::internal("Database error"))?;
         }
         if let Some(c) = custodian_ids {
             diesel::update(legal_holds::table.filter(legal_holds::id.eq(id)))
-                .set((legal_holds::custodian_ids.eq(c), legal_holds::updated_at.eq(now)))
+                .set((
+                    legal_holds::custodian_ids.eq(c),
+                    legal_holds::updated_at.eq(now),
+                ))
                 .execute(&mut conn)
                 .map_err(|_| ApiError::internal("Database error"))?;
         }
         if let Some(a) = is_active {
             diesel::update(legal_holds::table.filter(legal_holds::id.eq(id)))
-                .set((legal_holds::is_active.eq(a), legal_holds::updated_at.eq(now)))
+                .set((
+                    legal_holds::is_active.eq(a),
+                    legal_holds::updated_at.eq(now),
+                ))
                 .execute(&mut conn)
                 .map_err(|_| ApiError::internal("Database error"))?;
         }

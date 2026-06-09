@@ -1,10 +1,10 @@
-use actix_web::{get, post, web, HttpResponse};
-use crate::shared::ApiError;
-use crate::shared::AuthenticatedUser;
 use super::service::DriveAIService;
 use crate::drive::search::service::SearchService;
-use std::sync::Arc;
+use crate::shared::ApiError;
+use crate::shared::AuthenticatedUser;
+use actix_web::{get, post, web, HttpResponse};
 use serde::Deserialize;
+use std::sync::Arc;
 
 pub struct DriveAIApiState {
     pub ai_service: Arc<DriveAIService>,

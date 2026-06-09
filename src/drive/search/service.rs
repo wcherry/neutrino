@@ -2,8 +2,8 @@
 
 use super::dto::*;
 use super::repository::SearchRepository;
-use crate::shared::{ApiError, DbPool};
 use crate::schema::files;
+use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
 
 pub struct SearchService {
@@ -15,11 +15,21 @@ impl SearchService {
         Self { pool }
     }
 
-    pub fn upsert_content_index(&self, file_id: &str, user_id: &str, text: &str) -> Result<(), ApiError> {
+    pub fn upsert_content_index(
+        &self,
+        file_id: &str,
+        user_id: &str,
+        text: &str,
+    ) -> Result<(), ApiError> {
         SearchRepository::upsert_content_index(&self.pool, file_id, user_id, text)
     }
 
-    pub fn index_file_name(&self, file_id: &str, user_id: &str, name: &str) -> Result<(), ApiError> {
+    pub fn index_file_name(
+        &self,
+        file_id: &str,
+        user_id: &str,
+        name: &str,
+    ) -> Result<(), ApiError> {
         SearchRepository::upsert_name_in_fts(&self.pool, file_id, user_id, name)
     }
 

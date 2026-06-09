@@ -2,7 +2,10 @@ use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 
 use super::{
-    dto::{CreateTemplateRequest, ListTemplatesResponse, TemplateResponse, UpdateTemplateRequest, UseTemplateResponse},
+    dto::{
+        CreateTemplateRequest, ListTemplatesResponse, TemplateResponse, UpdateTemplateRequest,
+        UseTemplateResponse,
+    },
     service::TemplatesService,
 };
 use crate::shared::{ApiError, AuthenticatedUser};
@@ -98,7 +101,9 @@ pub async fn update_template(
     body: web::Json<UpdateTemplateRequest>,
 ) -> Result<web::Json<TemplateResponse>, ApiError> {
     let id = path.into_inner();
-    let template = state.templates_service.update_template(&id, body.into_inner())?;
+    let template = state
+        .templates_service
+        .update_template(&id, body.into_inner())?;
     Ok(web::Json(template))
 }
 
@@ -149,7 +154,10 @@ pub async fn use_template(
         .get("title")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    let response = state.templates_service.use_template(&id, &user, title).await?;
+    let response = state
+        .templates_service
+        .use_template(&id, &user, title)
+        .await?;
     Ok(HttpResponse::Created().json(response))
 }
 

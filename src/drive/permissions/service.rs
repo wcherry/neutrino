@@ -1,15 +1,15 @@
-use crate::drive::{permissions::{
+use crate::auth::service::AuthService;
+use crate::drive::encryption::repository::EncryptionRepository;
+use crate::drive::permissions::{
     dto::{
         GrantPermissionRequest, ListPermissionsResponse, PermissionResponse, Role,
         TransferOwnershipRequest, UpdatePermissionRequest,
     },
     model::NewPermissionRecord,
     repository::PermissionsRepository,
-}};
-use crate::shared::{ApiError, AuthenticatedUser, fetch_auth_profile};
-use crate::auth::service::AuthService;
-use crate::drive::encryption::repository::EncryptionRepository;
+};
 use crate::drive::workspace::service::WorkspaceService;
+use crate::shared::{fetch_auth_profile, ApiError, AuthenticatedUser};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -27,7 +27,12 @@ impl PermissionsService {
         encryption: Arc<EncryptionRepository>,
         auth_service: Arc<AuthService>,
     ) -> Self {
-        PermissionsService { repo, workspace, encryption, auth_service }
+        PermissionsService {
+            repo,
+            workspace,
+            encryption,
+            auth_service,
+        }
     }
 
     /// Auto-grants Owner role when a resource is created. Called internally by
@@ -101,7 +106,11 @@ impl PermissionsService {
         self.workspace.check_domain_for_sharing(&req.user_email)?;
         tracing::info!(
             "Sharing notification: granting {} role on {} {} to {} ({})",
-            req.role.as_str(), resource_type, resource_id, req.user_email, req.user_id
+            req.role.as_str(),
+            resource_type,
+            resource_id,
+            req.user_email,
+            req.user_id
         );
         let id = Uuid::new_v4().to_string();
         let record = NewPermissionRecord {
@@ -275,7 +284,10 @@ impl PermissionsService {
         resource_type: &str,
         resource_id: &str,
     ) -> Result<Option<String>, ApiError> {
-        if let Some(perm) = self.repo.find_permission(resource_type, resource_id, user_id)? {
+        if let Some(perm) = self
+            .repo
+            .find_permission(resource_type, resource_id, user_id)?
+        {
             return Ok(Some(perm.role));
         }
         match resource_type {

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { ColorPickerPopover } from '@neutrino/ui';
 import type { DiagramPage, EditorSelection, DiagramShape, DiagramConnector } from '../types';
 import styles from './PropertiesPanel.module.css';
 
@@ -75,7 +76,7 @@ function ShapeProperties({
   return (
     <div className={styles.section}>
       <div className={styles.sectionTitle}>Geometry</div>
-      <div className={styles.row}>
+      <div className={styles.geoRow}>
         <label>X</label>
         <input
           type="number"
@@ -91,7 +92,7 @@ function ShapeProperties({
           className={styles.numInput}
         />
       </div>
-      <div className={styles.row}>
+      <div className={styles.geoRow}>
         <label>W</label>
         <input
           type="number"
@@ -113,34 +114,30 @@ function ShapeProperties({
           type="number"
           value={rotation ?? 0}
           onChange={(e) => onUpdate({ rotation: Number(e.target.value) })}
-          className={styles.numInput}
+          className={styles.numInputSingle}
         />
-        °
+        <label>°</label>
       </div>
 
       <div className={styles.sectionTitle}>Style</div>
       <div className={styles.row}>
         <label>Fill</label>
-        <input
-          type="color"
-          value={style.fill}
-          onChange={(e) =>
-            onUpdate({ style: { ...style, fill: e.target.value } })
-          }
-          className={styles.colorInput}
+        <ColorPickerPopover showAlpha
+          color={style.fill}
+          onChange={(hex) => onUpdate({ style: { ...style, fill: hex } })}
+          title="Fill color"
         />
       </div>
       <div className={styles.row}>
         <label>Stroke</label>
-        <input
-          type="color"
-          value={style.stroke}
-          onChange={(e) =>
-            onUpdate({ style: { ...style, stroke: e.target.value } })
-          }
-          className={styles.colorInput}
+        <ColorPickerPopover showAlpha
+          color={style.stroke}
+          onChange={(hex) => onUpdate({ style: { ...style, stroke: hex } })}
+          title="Stroke color"
         />
-        <label>Width</label>
+      </div>
+      <div className={styles.row}>
+        <label>Stroke Width</label>
         <input
           type="number"
           min={0.5}
@@ -150,18 +147,15 @@ function ShapeProperties({
           onChange={(e) =>
             onUpdate({ style: { ...style, strokeWidth: Number(e.target.value) } })
           }
-          className={styles.numInput}
+          className={styles.numInputSingle}
         />
       </div>
       <div className={styles.row}>
         <label>Text color</label>
-        <input
-          type="color"
-          value={style.textColor}
-          onChange={(e) =>
-            onUpdate({ style: { ...style, textColor: e.target.value } })
-          }
-          className={styles.colorInput}
+        <ColorPickerPopover showAlpha
+          color={style.textColor}
+          onChange={(hex) => onUpdate({ style: { ...style, textColor: hex } })}
+          title="Text color"
         />
       </div>
       <div className={styles.row}>
@@ -174,23 +168,8 @@ function ShapeProperties({
           onChange={(e) =>
             onUpdate({ style: { ...style, fontSize: Number(e.target.value) } })
           }
-          className={styles.numInput}
+          className={styles.numInputSingle}
         />
-      </div>
-      <div className={styles.row}>
-        <label>Opacity</label>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={style.opacity}
-          onChange={(e) =>
-            onUpdate({ style: { ...style, opacity: Number(e.target.value) } })
-          }
-          className={styles.rangeInput}
-        />
-        <span>{Math.round(style.opacity * 100)}%</span>
       </div>
     </div>
   );
@@ -237,13 +216,10 @@ function ConnectorProperties({
       <div className={styles.sectionTitle}>Style</div>
       <div className={styles.row}>
         <label>Color</label>
-        <input
-          type="color"
-          value={style.stroke}
-          onChange={(e) =>
-            onUpdate({ style: { ...style, stroke: e.target.value } })
-          }
-          className={styles.colorInput}
+        <ColorPickerPopover showAlpha
+          color={style.stroke}
+          onChange={(hex) => onUpdate({ style: { ...style, stroke: hex } })}
+          title="Connector color"
         />
         <label>Width</label>
         <input
@@ -257,6 +233,22 @@ function ConnectorProperties({
           }
           className={styles.numInput}
         />
+      </div>
+      <div className={styles.row}>
+        <label>Start arrow</label>
+        <select
+          value={style.startArrow}
+          onChange={(e) =>
+            onUpdate({ style: { ...style, startArrow: e.target.value as DiagramConnector['style']['startArrow'] } })
+          }
+          className={styles.select}
+        >
+          <option value="none">None</option>
+          <option value="filled">Filled</option>
+          <option value="open">Open</option>
+          <option value="diamond">Diamond</option>
+          <option value="circle">Circle</option>
+        </select>
       </div>
       <div className={styles.row}>
         <label>End arrow</label>
@@ -298,24 +290,18 @@ function MultiShapeProperties({
       </div>
       <div className={styles.row}>
         <label>Fill</label>
-        <input
-          type="color"
-          value={firstStyle.fill}
-          onChange={(e) =>
-            onUpdate({ style: { ...firstStyle, fill: e.target.value } })
-          }
-          className={styles.colorInput}
+        <ColorPickerPopover showAlpha
+          color={firstStyle.fill}
+          onChange={(hex) => onUpdate({ style: { ...firstStyle, fill: hex } })}
+          title="Fill color"
         />
       </div>
       <div className={styles.row}>
         <label>Stroke</label>
-        <input
-          type="color"
-          value={firstStyle.stroke}
-          onChange={(e) =>
-            onUpdate({ style: { ...firstStyle, stroke: e.target.value } })
-          }
-          className={styles.colorInput}
+        <ColorPickerPopover showAlpha
+          color={firstStyle.stroke}
+          onChange={(hex) => onUpdate({ style: { ...firstStyle, stroke: hex } })}
+          title="Stroke color"
         />
       </div>
     </div>

@@ -29,12 +29,50 @@
   border-bottom: 1px solid var(--color-border, #f1f5f9);
 }
 
+.categoryHeaderRow {
+  display: flex;
+  align-items: stretch;
+}
+
+.gripHandle {
+  display: flex;
+  align-items: center;
+  padding: 0 2px 0 8px;
+  color: var(--color-text-secondary, #94a3b8);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.1s;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.gripHandle:active {
+  cursor: grabbing;
+}
+
+.category:hover .gripHandle {
+  opacity: 1;
+}
+
+.dragging {
+  opacity: 0.4;
+}
+
+.dropBefore {
+  border-top: 2px solid var(--color-primary, #2563eb);
+}
+
+.dropAfter {
+  border-bottom: 2px solid var(--color-primary, #2563eb);
+}
+
 .categoryHeader {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  padding: 7px 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 12px 7px 2px;
   background: none;
   border: none;
   cursor: pointer;
@@ -88,4 +126,103 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary, #64748b);
+  flex: 1;
+}
+
+.gearBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary, #94a3b8);
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gearBtn:hover {
+  background: var(--color-bg-hover, #f1f5f9);
+  color: var(--color-text, #1e293b);
+}
+
+.dropZone {
+  margin: 4px 8px 8px;
+  border: 1.5px dashed var(--color-border, #cbd5e1);
+  border-radius: 6px;
+  padding: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-text-secondary, #94a3b8);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dropZoneActive {
+  border-color: var(--color-primary, #2563eb);
+  background: rgba(37, 99, 235, 0.05);
+  color: var(--color-primary, #2563eb);
+}
+
+.shapeItemWithRemove {
+  position: relative;
+}
+
+.removeShapeBtn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 1px 2px;
+  font-size: 9px;
+  color: var(--color-text-secondary, #94a3b8);
+  opacity: 0;
+  transition: opacity 0.1s;
+  line-height: 1;
+}
+
+.shapeItemWithRemove:hover .removeShapeBtn {
+  opacity: 1;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.tpSpinner {
+  margin-left: auto;
+  color: var(--color-text-secondary, #94a3b8);
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+.tpError {
+  margin-left: auto;
+  color: #ef4444;
+  flex-shrink: 0;
+}
+
+.tpErrorMsg {
+  margin: 0 12px 8px;
+  font-size: 10px;
+  color: #ef4444;
+  line-height: 1.4;
 }

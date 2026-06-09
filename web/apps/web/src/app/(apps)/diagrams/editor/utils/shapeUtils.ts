@@ -157,6 +157,24 @@ export function getConnectorEndpoints(
   };
 }
 
+/**
+ * Returns the two cubic Bézier control points for a curved connector.
+ * When the connector has stored control points in waypoints[0..1] those are used;
+ * otherwise a default symmetric arc is computed.
+ */
+export function getCurvedControlPoints(
+  connector: DiagramConnector,
+  start: ConnectorPoint,
+  end: ConnectorPoint,
+): [ConnectorPoint, ConnectorPoint] {
+  if (connector.waypoints.length >= 2) {
+    return [connector.waypoints[0], connector.waypoints[1]];
+  }
+  const cpX = (start.x + end.x) / 2;
+  const cpY = (start.y + end.y) / 2 - 50;
+  return [{ x: cpX, y: cpY }, { x: cpX, y: cpY }];
+}
+
 /** Build an SVG path string for a connector. */
 export function buildConnectorPath(
   connector: DiagramConnector,
@@ -174,18 +192,38 @@ export function buildConnectorPath(
   }
 
   if (type === 'curved') {
-    const cpX = (start.x + end.x) / 2;
-    const cpY = (start.y + end.y) / 2 - 50;
-    return `M ${start.x} ${start.y} Q ${cpX} ${cpY} ${end.x} ${end.y}`;
+    const [cp1, cp2] = getCurvedControlPoints(connector, start, end);
+    return `M ${start.x} ${start.y} C ${cp1.x} ${cp1.y} ${cp2.x} ${cp2.y} ${end.x} ${end.y}`;
   }
 
   if (type === 'orthogonal' || type === 'elbow') {
+    if (waypoints.length > 0) {
+      const pts = [start, ...waypoints, end];
+      return pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    }
     // Simple L-shaped orthogonal routing
     const mx = (start.x + end.x) / 2;
     return `M ${start.x} ${start.y} L ${mx} ${start.y} L ${mx} ${end.y} L ${end.x} ${end.y}`;
   }
 
   return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+}
+
+/**
+ * Returns the full ordered list of points for an elbow connector, including
+ * start, all waypoints, and end. Falls back to the default L-shape midpoints
+ * when no waypoints have been set.
+ */
+export function getElbowPoints(
+  connector: DiagramConnector,
+  start: ConnectorPoint,
+  end: ConnectorPoint,
+): ConnectorPoint[] {
+  if (connector.waypoints.length > 0) {
+    return [start, ...connector.waypoints, end];
+  }
+  const mx = (start.x + end.x) / 2;
+  return [start, { x: mx, y: start.y }, { x: mx, y: end.y }, end];
 }
 
 // ---------------------------------------------------------------------------
@@ -276,7 +314,7 @@ export function defaultConnectorStyle(): import('../../types').ConnectorStyle {
   return {
     stroke: '#374151',
     strokeWidth: 1.5,
-    startArrow: 'none',
+    startArrow: 'open',
     endArrow: 'filled',
     fontSize: 12,
     fontFamily: 'Inter',

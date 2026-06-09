@@ -1,7 +1,7 @@
+use crate::schema::diagram_yjs_state;
+use crate::shared::DbPool;
 use chrono::Utc;
 use diesel::prelude::*;
-use crate::shared::DbPool;
-use crate::schema::diagram_yjs_state;
 
 #[derive(Queryable, Insertable, AsChangeset)]
 #[diesel(table_name = diagram_yjs_state)]

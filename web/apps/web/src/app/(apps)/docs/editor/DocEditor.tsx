@@ -7,6 +7,8 @@ import { useNspell } from '@/hooks/useNspell';
 import { useAiSettings } from '@/hooks/useAiSettings';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
+import { DiagramEmbedExtension } from '@/lib/extensions/DiagramEmbedExtension';
+import { InsertDiagramDialog as InsertDiagramDocDialog } from './InsertDiagramDialog';
 import { FootnoteExtension, getFootnoteItems, FootnoteRegistry } from '@/lib/extensions/FootnoteExtension';
 import { CrossRefExtension } from '@/lib/extensions/CrossRefExtension';
 import { TableOfContentsExtension } from '@/lib/extensions/TableOfContentsExtension';
@@ -40,7 +42,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, FileText, Minimize2,
 } from 'lucide-react';
-import { Spinner } from '@neutrino/ui';
+import { Spinner, useToast } from '@neutrino/ui';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
@@ -602,6 +605,7 @@ export function DocEditor() {
 
   const { dekRef, dekResolved } =
     useEncryptedDocumentContent({ id: docId, filename: 'doc.json' });
+  const toast = useToast();
 
   const [title, setTitle] = useState('');
   const [pageSetup, setPageSetup] = useState<PageSetup>({
@@ -679,6 +683,9 @@ export function DocEditor() {
   // ── Distraction-free / focus mode ──────────────────────────────────────────
   const [distractionFree, setDistractionFree] = useState(false);
 
+  // ── Diagram embed ──────────────────────────────────────────────────────────
+  const [showInsertDiagram, setShowInsertDiagram] = useState(false);
+
   const importInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -731,16 +738,21 @@ export function DocEditor() {
   const isLoading = metaLoading || contentLoading;
 
   const contentMutation = useMutation({
-    mutationFn: ({ content, metadata }: { content: string; metadata?: { title?: string; pageSetup?: PageSetup } }) =>
-      dekRef.current
-        ? docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata)
-        : docsApi.autosaveContent(docId, content, 'doc.json', metadata),
+    mutationFn: async ({ content, metadata }: { content: string; metadata?: { title?: string; pageSetup?: PageSetup } }) => {
+      if (!dekRef.current) throw new Error('no-dek');
+      return docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata);
+    },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
       setSaveStatus('saved');
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
     },
-    onError: () => setSaveStatus('unsaved'),
+    onError: (err) => {
+      setSaveStatus('unsaved');
+      if (err instanceof Error && err.message === 'no-dek') {
+        toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      }
+    },
   });
 
   const versionMutation = useMutation({
@@ -835,6 +847,7 @@ export function DocEditor() {
       Placeholder.configure({ placeholder: 'Start typing…' }),
       CharacterCount,
       SheetEmbedExtension,
+      DiagramEmbedExtension,
       // Layout & structure extensions — only loaded when feature flag is on
       ...(flags.docsLayoutStructure ? [
         FootnoteExtension,
@@ -992,12 +1005,12 @@ export function DocEditor() {
       }
       const content = pendingContent.current;
       pendingContent.current = null;
-      const metadata = { title: titleRef.current, pageSetup: pageSetupRef.current };
-      if (dekRef.current) {
-        docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata);
-      } else {
-        docsApi.autosaveContent(docId, content, 'doc.json', metadata);
+      if (!dekRef.current) {
+        console.warn('[neutrino] Autosave skipped on flush: encryption key unavailable');
+        return;
       }
+      const metadata = { title: titleRef.current, pageSetup: pageSetupRef.current };
+      docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata);
     };
     const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -1704,6 +1717,7 @@ export function DocEditor() {
       {!distractionFree && (<Toolbar
         editor={editor}
         onInsertImage={handleInsertImage}
+        onInsertDiagram={() => setShowInsertDiagram(true)}
         {...(flags.docsAdvancedFormatting ? {
           onInsertLocalImage: handleInsertLocalImage,
           onOpenStylesPalette: () => setShowStylesPalette(true),
@@ -1979,6 +1993,19 @@ export function DocEditor() {
             canInsert={aiOperation !== 'grammar-fix' || grammarAiCanInsertRef.current}
           />
         </div>
+      )}
+
+      {showInsertDiagram && (
+        <InsertDiagramDocDialog
+          onInsert={(diagramId, title: string) => {
+            editor?.chain().focus().insertContent({
+              type: 'diagramEmbed',
+              attrs: { diagramId, pageIndex: '0', title },
+            }).run();
+            setShowInsertDiagram(false);
+          }}
+          onClose={() => setShowInsertDiagram(false)}
+        />
       )}
     </div>
   );

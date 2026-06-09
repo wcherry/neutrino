@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   MousePointer2,
   Hand,
@@ -19,9 +19,26 @@ import {
   ChevronDown,
   ArrowUpToLine,
   ArrowDownToLine,
+  // Phase 4 — Whiteboard
+  Pen,
+  Highlighter,
+  Eraser,
+  Presentation,
+  // Phase 5 — Layout
+  Network,
+  // Phase 6 — Data
+  Database,
+  // Phase 7 — IO
+  Upload,
+  Download,
+  // Phase 8 — Developer
+  Code2,
+  // Phase 10 — AI
+  Sparkles,
 } from 'lucide-react';
 import type { EditorSelection, SelectionMode } from '../types';
 import type { AlignDirection } from './utils/shapeUtils';
+import type { LayoutAlgorithm } from './layout/layoutEngine';
 import styles from './DiagramToolbar.module.css';
 
 interface DiagramToolbarProps {
@@ -40,6 +57,16 @@ interface DiagramToolbarProps {
   isSaving: boolean;
   onToggleComments: () => void;
   showComments: boolean;
+  onToggleData: () => void;
+  showData: boolean;
+  onToggleDeveloper: () => void;
+  showDeveloper: boolean;
+  onToggleAi: () => void;
+  showAi: boolean;
+  onExport: () => void;
+  onImport: () => void;
+  onRunLayout: (alg: LayoutAlgorithm) => void;
+  onPresentation: () => void;
   selection: EditorSelection;
   onAlign: (dir: AlignDirection) => void;
   onDistribute: (axis: 'horizontal' | 'vertical') => void;
@@ -48,6 +75,9 @@ interface DiagramToolbarProps {
   onBringToFront: () => void;
   onSendToBack: () => void;
   presenceBar: React.ReactNode;
+  /** Active pen/highlighter color */
+  drawColor: string;
+  onDrawColorChange: (color: string) => void;
 }
 
 export function DiagramToolbar({
@@ -56,13 +86,24 @@ export function DiagramToolbar({
   canUndo, canRedo, onUndo, onRedo,
   onSave, isSaving,
   onToggleComments, showComments,
+  onToggleData, showData,
+  onToggleDeveloper, showDeveloper,
+  onToggleAi, showAi,
+  onExport, onImport,
+  onRunLayout,
+  onPresentation,
   selection,
   onAlign, onDistribute,
   onBringForward, onSendBackward, onBringToFront, onSendToBack,
   presenceBar,
+  drawColor,
+  onDrawColorChange,
 }: DiagramToolbarProps) {
-  const hasSelection = selection.shapeIds.size > 0;
+  const hasSelection = selection.shapeIds.size > 0 || selection.connectorIds.size > 0;
   const hasMultiSelection = selection.shapeIds.size >= 2;
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
+
+  const isDrawing = mode === 'pen' || mode === 'pencil' || mode === 'highlighter' || mode === 'eraser';
 
   return (
     <div className={styles.toolbar}>
@@ -89,6 +130,41 @@ export function DiagramToolbar({
         >
           <Minus size={16} style={{ transform: 'rotate(-45deg)' }} />
         </button>
+
+        <div className={styles.divider} />
+
+        {/* Phase 4 — Whiteboard tools */}
+        <button
+          className={`${styles.toolBtn} ${mode === 'pen' ? styles.active : ''}`}
+          onClick={() => onModeChange('pen')}
+          title="Pen"
+        >
+          <Pen size={15} />
+        </button>
+        <button
+          className={`${styles.toolBtn} ${mode === 'highlighter' ? styles.active : ''}`}
+          onClick={() => onModeChange('highlighter')}
+          title="Highlighter"
+        >
+          <Highlighter size={15} />
+        </button>
+        <button
+          className={`${styles.toolBtn} ${mode === 'eraser' ? styles.active : ''}`}
+          onClick={() => onModeChange('eraser')}
+          title="Eraser"
+        >
+          <Eraser size={15} />
+        </button>
+
+        {isDrawing && (
+          <input
+            type="color"
+            value={drawColor}
+            onChange={(e) => onDrawColorChange(e.target.value)}
+            title="Drawing color"
+            className={styles.colorPicker}
+          />
+        )}
 
         <div className={styles.divider} />
 
@@ -154,10 +230,66 @@ export function DiagramToolbar({
           </>
         )}
 
+        {/* Phase 5 — Layout */}
+        <div className={styles.layoutMenu}>
+          <button
+            className={`${styles.toolBtn} ${showLayoutMenu ? styles.active : ''}`}
+            onClick={() => setShowLayoutMenu((v) => !v)}
+            title="Auto layout"
+          >
+            <Network size={15} />
+          </button>
+          {showLayoutMenu && (
+            <div className={styles.dropdown}>
+              {([
+                ['hierarchical', 'Hierarchical (top-down)'],
+                ['flow',         'Flow (left-to-right)'],
+                ['force',        'Force-directed'],
+                ['grid',         'Grid'],
+              ] as [LayoutAlgorithm, string][]).map(([alg, label]) => (
+                <button
+                  key={alg}
+                  className={styles.dropdownItem}
+                  onClick={() => { onRunLayout(alg); setShowLayoutMenu(false); }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Presence */}
         {presenceBar}
 
         <div className={styles.divider} />
+
+        {/* Phase 6 — Data panel */}
+        <button
+          className={`${styles.toolBtn} ${showData ? styles.active : ''}`}
+          onClick={onToggleData}
+          title="Data panel"
+        >
+          <Database size={15} />
+        </button>
+
+        {/* Phase 8 — Developer panel */}
+        <button
+          className={`${styles.toolBtn} ${showDeveloper ? styles.active : ''}`}
+          onClick={onToggleDeveloper}
+          title="Developer panel"
+        >
+          <Code2 size={15} />
+        </button>
+
+        {/* Phase 10 — AI panel */}
+        <button
+          className={`${styles.toolBtn} ${showAi ? styles.active : ''}`}
+          onClick={onToggleAi}
+          title="AI Diagrams"
+        >
+          <Sparkles size={15} />
+        </button>
 
         <button
           className={`${styles.toolBtn} ${showComments ? styles.active : ''}`}
@@ -165,6 +297,23 @@ export function DiagramToolbar({
           title="Comments"
         >
           <MessageSquare size={16} />
+        </button>
+
+        {/* Phase 4 — Presentation mode */}
+        <button
+          className={styles.toolBtn}
+          onClick={onPresentation}
+          title="Presentation mode"
+        >
+          <Presentation size={15} />
+        </button>
+
+        {/* Phase 7 — Import / Export */}
+        <button className={styles.toolBtn} onClick={onImport} title="Import diagram">
+          <Upload size={15} />
+        </button>
+        <button className={styles.toolBtn} onClick={onExport} title="Export diagram">
+          <Download size={15} />
         </button>
 
         <button
