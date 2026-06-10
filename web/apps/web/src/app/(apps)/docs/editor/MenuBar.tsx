@@ -111,6 +111,10 @@ export interface HamburgerMenuProps {
   onToggleComments: () => void;
   distractionFree?: boolean;
   onToggleFocus?: () => void;
+  showRulers: boolean;
+  onToggleRulers: () => void;
+  singlePageMode: boolean;
+  onToggleSinglePage: () => void;
   // Layout & structure feature callbacks (only used when docsLayoutStructure flag is on)
   onInsertFootnote?: () => void;
   onInsertCrossRef?: () => void;
@@ -147,6 +151,10 @@ export function HamburgerMenu({
   onToggleComments,
   distractionFree,
   onToggleFocus,
+  showRulers,
+  onToggleRulers,
+  singlePageMode,
+  onToggleSinglePage,
   onInsertFootnote,
   onInsertCrossRef,
   onHeaderFooter,
@@ -324,6 +332,9 @@ export function HamburgerMenu({
         ...(flags.docsCompare ? [
           { kind: 'action' as const, label: 'Compare versions…', action: () => onToggleHistory() },
         ] : []),
+        { kind: 'separator' as const },
+        { kind: 'action' as const, label: showRulers ? 'Rulers ✓' : 'Rulers', action: () => onToggleRulers() },
+        { kind: 'action' as const, label: singlePageMode ? 'Single page ✓' : 'Single page', action: () => onToggleSinglePage() },
         ...(flags.docsDistractionFree ? [
           { kind: 'separator' as const },
           { kind: 'action' as const, label: distractionFree ? 'Focus mode ✓' : 'Focus mode', shortcut: 'Ctrl+Shift+F', action: () => onToggleFocus?.() },

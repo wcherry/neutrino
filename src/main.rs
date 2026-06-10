@@ -19,6 +19,7 @@ mod calendar;
 mod config;
 mod diagrams;
 mod docs;
+mod drawing;
 mod drive;
 mod notes;
 mod photos;
@@ -678,6 +679,25 @@ async fn main() -> std::io::Result<()> {
         ai_service: sheets_ai_service,
     });
 
+    // ── Drawing service ───────────────────────────────────────────────────────
+
+    use drawing::drawing::repository::DrawingRepository;
+    use drawing::drawing::service::DrawingService;
+
+    let drive_client_for_drawing = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
+    let drawing_repo = Arc::new(DrawingRepository::new(pool.clone()));
+    let drawing_service = Arc::new(DrawingService::new(
+        drawing_repo,
+        drive_client_for_drawing,
+    ));
+    let drawing_state = web::Data::new(drawing::drawing::api::DrawingApiState {
+        drawing_service,
+    });
+
     // ── Slides service ────────────────────────────────────────────────────────
 
     use slides::slides::repository::SlidesRepository;
@@ -802,6 +822,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(photos::persons::api::PersonsApiDoc::openapi());
         doc.merge(photos::photos::api::PhotosApiDoc::openapi());
         doc.merge(photos::suggestions::api::SuggestionsApiDoc::openapi());
+        doc.merge(drawing::drawing::api::DrawingApiDoc::openapi());
         doc.merge(sheets::named_ranges::api::NamedRangesApiDoc::openapi());
         doc.merge(sheets::sheets::api::SheetsApiDoc::openapi());
         doc.merge(sheets::ai::api::SheetsAIApiDoc::openapi());
@@ -869,6 +890,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(photos_persons_state.clone())
             .app_data(photos_suggestions_state.clone())
             .app_data(photos_learning_state.clone())
+            // Drawing
+            .app_data(drawing_state.clone())
             // Sheets
             .app_data(sheets_state.clone())
             .app_data(sheets_named_ranges_state.clone())
@@ -925,6 +948,8 @@ async fn main() -> std::io::Result<()> {
                     .configure(photos::persons::api::configure_persons)
                     .configure(photos::suggestions::api::configure_suggestions)
                     .configure(photos::learning::api::configure_learning)
+                    // Drawing
+                    .configure(drawing::drawing::api::configure)
                     // Sheets
                     .configure(sheets::sheets::api::configure)
                     .configure(sheets::named_ranges::api::configure)

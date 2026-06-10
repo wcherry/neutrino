@@ -39,6 +39,23 @@
   font-weight: 600;
 }
 
+.closeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-muted, #aaa);
+  cursor: pointer;
+  padding: 0;
+}
+
+.closeBtn:hover {
+  color: var(--color-text, #333);
+}
+
 /* ── Swatch grid (8×10 = 80 colors) ──────────────────────────────────── */
 .swatchGrid {
   display: grid;

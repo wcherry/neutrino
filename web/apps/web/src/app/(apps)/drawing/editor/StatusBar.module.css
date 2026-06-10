@@ -1,0 +1,40 @@
+.bar {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  background: var(--color-surface, #fff);
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.zoomArea {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.fitBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--color-text-secondary, #64748b);
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+
+.fitBtn:hover {
+  background: var(--color-bg-hover, #f1f5f9);
+  color: var(--color-text, #1e293b);
+}

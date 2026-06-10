@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Bell, CalendarPlus, FileText, FolderPlus, GitBranch, NotebookPen, Plus, Presentation, Table2, Upload } from 'lucide-react';
+import { Bell, CalendarPlus, FileText, FolderPlus, GitBranch, NotebookPen, Plus, Presentation, Table2, Upload, Paintbrush } from 'lucide-react';
 import { useToast } from '@neutrino/ui';
-import { docsApi, sheetsApi, slidesApi, notesApi, diagramsApi } from '@/lib/api';
+import { docsApi, sheetsApi, slidesApi, notesApi, diagramsApi, drawingApi } from '@/lib/api';
 import styles from './NewItemFAB.module.css';
 
 const ACTIONS = [
@@ -13,6 +13,7 @@ const ACTIONS = [
   { id: 'slide',    label: 'Presentation', icon: Presentation, color: 'var(--color-rose, #e11d48)',      driveOnly: false },
   { id: 'note',     label: 'Note',         icon: NotebookPen,  color: 'var(--color-amber, #d97706)',     driveOnly: false },
   { id: 'diagram',  label: 'Diagram',      icon: GitBranch,    color: 'var(--color-cyan, #0891b2)',      driveOnly: false },
+  { id: 'drawing',  label: 'Drawing',      icon: Paintbrush,    color: 'var(--color-cyan, #dcec82)',      driveOnly: false },
   { id: 'event',    label: 'Event',        icon: CalendarPlus, color: 'var(--color-primary)',            driveOnly: false },
   { id: 'reminder', label: 'Reminder',     icon: Bell,         color: 'var(--color-purple, #7c3aed)',   driveOnly: false },
   { id: 'folder',   label: 'New folder',   icon: FolderPlus,   color: 'var(--color-amber, #d97706)',    driveOnly: true  },
@@ -67,6 +68,11 @@ export function NewItemFAB() {
         case 'diagram': {
           const diagram = await diagramsApi.createDiagram({ title: 'Untitled diagram' });
           router.push(`/diagrams/editor?id=${diagram.id}`);
+          break;
+        }
+        case 'drawing': {
+          const drawing = await drawingApi.createDrawing({ title: 'Untitled drawing' });
+          router.push(`/drawing/editor?id=${drawing.id}`);
           break;
         }
         case 'event':

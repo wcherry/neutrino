@@ -40,9 +40,9 @@ import CharacterCount from '@tiptap/extension-character-count';
 import Highlight from '@tiptap/extension-highlight';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, FileText, Minimize2,
+  ArrowLeft, ChevronLeft, ChevronRight, FileText, Minimize2,
 } from 'lucide-react';
-import { Spinner, useToast } from '@neutrino/ui';
+import { Spinner, useToast, ZoomSlider } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
@@ -88,6 +88,7 @@ import { TrackChangesBar } from './TrackChangesBar';
 // Feature gap #6 — Version compare
 import { DocComparePanel } from './DocComparePanel';
 import type { FileVersionItem } from '@neutrino/api-drive';
+import { HorizontalRuler, VerticalRuler } from './Ruler';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
 // Dimensions in inches; rendered at 96 dpi for screen display.
@@ -113,41 +114,8 @@ function pageDimensions(ps: PageSetup): { widthPx: number; heightPx: number } {
     : { widthPx: wPx, heightPx: hPx };
 }
 
-// ── Page-break overlay ────────────────────────────────────────────────────
-// Renders horizontal lines inside the page div at every content-height interval.
-
-interface PageBreakOverlayProps {
-  marginTop: number;
-  contentHeightPx: number;
-  pageRef: React.RefObject<HTMLDivElement>;
-}
-
-function PageBreakOverlay({ marginTop, contentHeightPx, pageRef }: PageBreakOverlayProps) {
-  const [pageHeight, setPageHeight] = useState(0);
-
-  useEffect(() => {
-    const el = pageRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(() => setPageHeight(el.scrollHeight));
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [pageRef]);
-
-  if (contentHeightPx <= 0) return null;
-
-  const count = Math.floor((pageHeight - marginTop) / contentHeightPx);
-  return (
-    <>
-      {Array.from({ length: Math.max(0, count) }, (_, i) => (
-        <div
-          key={i}
-          className={styles.pageBreakLine}
-          style={{ top: marginTop + (i + 1) * contentHeightPx }}
-        />
-      ))}
-    </>
-  );
-}
+// 0.5 in gap between pages (rendered via backgroundImage on the page div, behind text)
+const PAGE_GAP_PX = 48;
 
 // ── Print ──────────────────────────────────────────────────────────────────
 
@@ -475,6 +443,16 @@ interface PageSetupModalProps {
 
 function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
   const [ps, setPs] = useState<PageSetup>(pageSetup);
+  // Margin inputs are in inches (3 decimal places); stored as pt in PageSetup.
+  const [topIn, setTopIn]       = useState((pageSetup.marginTop    / 72).toFixed(3));
+  const [bottomIn, setBottomIn] = useState((pageSetup.marginBottom / 72).toFixed(3));
+  const [leftIn, setLeftIn]     = useState((pageSetup.marginLeft   / 72).toFixed(3));
+  const [rightIn, setRightIn]   = useState((pageSetup.marginRight  / 72).toFixed(3));
+
+  function inchToPt(s: string): number {
+    const n = parseFloat(s);
+    return isNaN(n) || n < 0 ? 0 : n * 72;
+  }
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -505,31 +483,40 @@ function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
         </div>
 
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Top margin (pt)</label>
-          <input className={styles.formInput} type="number" value={ps.marginTop}
-            onChange={e => setPs(p => ({ ...p, marginTop: Number(e.target.value) }))} />
+          <label className={styles.formLabel}>Top margin (in)</label>
+          <input className={styles.formInput} type="number" step="0.001" min="0"
+            value={topIn} onChange={e => setTopIn(e.target.value)} />
         </div>
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Bottom margin (pt)</label>
-          <input className={styles.formInput} type="number" value={ps.marginBottom}
-            onChange={e => setPs(p => ({ ...p, marginBottom: Number(e.target.value) }))} />
+          <label className={styles.formLabel}>Bottom margin (in)</label>
+          <input className={styles.formInput} type="number" step="0.001" min="0"
+            value={bottomIn} onChange={e => setBottomIn(e.target.value)} />
         </div>
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Left margin (pt)</label>
-          <input className={styles.formInput} type="number" value={ps.marginLeft}
-            onChange={e => setPs(p => ({ ...p, marginLeft: Number(e.target.value) }))} />
+          <label className={styles.formLabel}>Left margin (in)</label>
+          <input className={styles.formInput} type="number" step="0.001" min="0"
+            value={leftIn} onChange={e => setLeftIn(e.target.value)} />
         </div>
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Right margin (pt)</label>
-          <input className={styles.formInput} type="number" value={ps.marginRight}
-            onChange={e => setPs(p => ({ ...p, marginRight: Number(e.target.value) }))} />
+          <label className={styles.formLabel}>Right margin (in)</label>
+          <input className={styles.formInput} type="number" step="0.001" min="0"
+            value={rightIn} onChange={e => setRightIn(e.target.value)} />
         </div>
 
         <div className={styles.modalActions}>
           <button className={styles.exportBtn} onClick={onClose}>Cancel</button>
           <button className={styles.exportBtn}
             style={{ background: '#1a73e8', color: 'white', border: 'none' }}
-            onClick={() => { onSave(ps); onClose(); }}>
+            onClick={() => {
+              onSave({
+                ...ps,
+                marginTop:    inchToPt(topIn),
+                marginBottom: inchToPt(bottomIn),
+                marginLeft:   inchToPt(leftIn),
+                marginRight:  inchToPt(rightIn),
+              });
+              onClose();
+            }}>
             Apply
           </button>
         </div>
@@ -685,6 +672,15 @@ export function DocEditor() {
 
   // ── Diagram embed ──────────────────────────────────────────────────────────
   const [showInsertDiagram, setShowInsertDiagram] = useState(false);
+
+  // ── Rulers, zoom & single page mode ───────────────────────────────────────
+  const [showRulers, setShowRulers] = useState(true);
+  const [singlePageMode, setSinglePageMode] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageScrollHeight, setPageScrollHeight] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
+  const sideRulerColRef = useRef<HTMLDivElement>(null);
 
   const importInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -1604,6 +1600,61 @@ export function DocEditor() {
     ...(flags.docsLayoutStructure && bgColor ? { backgroundColor: bgColor } : {}),
   };
 
+  const totalPages = Math.max(1, Math.ceil(pageScrollHeight / heightPx));
+
+  // Gradient that renders 0.5-in gray gaps between pages as backgroundImage on
+  // the page div, so text always renders on top and is never obscured.
+  const pageGapBackground = useMemo(() => {
+    if (totalPages <= 1) return undefined;
+    const gapColor = 'var(--color-bg-secondary, #f1f3f4)';
+    const stops: string[] = [];
+    for (let i = 0; i < totalPages - 1; i++) {
+      const g0 = (i + 1) * heightPx - PAGE_GAP_PX / 2;
+      const g1 = (i + 1) * heightPx + PAGE_GAP_PX / 2;
+      stops.push(
+        `transparent ${g0}px`,
+        `${gapColor} ${g0}px`,
+        `${gapColor} ${g1}px`,
+        `transparent ${g1}px`,
+      );
+    }
+    return `linear-gradient(to bottom, transparent 0px, ${stops.join(', ')}, transparent 100%)`;
+  }, [totalPages, heightPx]);
+
+  // Track page div scroll height for total page count
+  useEffect(() => {
+    const el = pageRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => setPageScrollHeight(el.scrollHeight));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Snap scroll position when single page mode, current page, or zoom changes
+  useEffect(() => {
+    if (!singlePageMode || !editorScrollRef.current) return;
+    editorScrollRef.current.scrollTop = (currentPage - 1) * heightPx * zoomLevel / 100;
+  }, [singlePageMode, currentPage, heightPx, zoomLevel]);
+
+  const handleEditorScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (sideRulerColRef.current) {
+      sideRulerColRef.current.scrollTop = e.currentTarget.scrollTop;
+    }
+  }, []);
+
+  const handleZoomFitPage = useCallback(() => {
+    if (!editorScrollRef.current) return;
+    const avail = editorScrollRef.current.clientHeight - 64;
+    setZoomLevel(Math.max(10, Math.min(200, Math.floor(avail / heightPx * 100))));
+  }, [heightPx]);
+
+  const handleZoomFitWidth = useCallback(() => {
+    if (!editorScrollRef.current) return;
+    const rulerW = showRulers && !distractionFree ? 20 : 0;
+    const avail = editorScrollRef.current.clientWidth - 48 - rulerW;
+    setZoomLevel(Math.max(10, Math.min(200, Math.floor(avail / widthPx * 100))));
+  }, [widthPx, showRulers, distractionFree]);
+
   if (isLoading || !docId) {
     return <Spinner size="lg" overlay />;
   }
@@ -1630,6 +1681,10 @@ export function DocEditor() {
           onToggleComments={() => setShowComments(v => !v)}
           distractionFree={distractionFree}
           onToggleFocus={() => setDistractionFree(v => !v)}
+          showRulers={showRulers}
+          onToggleRulers={() => setShowRulers(v => !v)}
+          singlePageMode={singlePageMode}
+          onToggleSinglePage={() => { setSinglePageMode(v => !v); setCurrentPage(1); }}
           {...(flags.docsLayoutStructure ? {
             onInsertFootnote: handleInsertFootnote,
             onInsertCrossRef: handleInsertCrossRef,
@@ -1751,58 +1806,126 @@ export function DocEditor() {
       {/* ── Main area ── */}
       <div className={styles.mainArea}>
         {!distractionFree && showOutline && <DocOutline editor={editor} />}
-        <div className={styles.editorScroll} onContextMenu={handleContextMenu}>
-          <div
-            ref={pageRef}
-            className={styles.page}
-            style={pageStyle}
-            {...(flags.docsLayoutStructure && docTheme !== 'default'
-              ? { 'data-doc-theme': docTheme }
-              : {})}
-          >
-            <PageBreakOverlay
-              marginTop={pageSetup.marginTop}
-              contentHeightPx={contentHeightPx}
-              pageRef={pageRef}
-            />
-            {/* ── Header ── */}
-            {flags.docsLayoutStructure && headerText && (
-              <div className={styles.pageHeader}>
-                {showPageNumbers ? headerText.replace('{{page}}', '1') : headerText}
+
+        {/* Editor area: rulers + scroll */}
+        <div className={styles.editorArea}>
+          {/* ── Top ruler row ── */}
+          {showRulers && !distractionFree && (
+            <div className={styles.rulerRow}>
+              <div className={styles.rulerCorner} />
+              <div className={styles.topRulerOuter}>
+                <HorizontalRuler
+                  pageWidthPx={widthPx}
+                  marginLeftPx={pageSetup.marginLeft}
+                  marginRightPx={pageSetup.marginRight}
+                />
               </div>
-            )}
-            {/* ── Watermark ── */}
-            {flags.docsLayoutStructure && watermarkText && (
-              <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
-            )}
-            <div className={styles.editorContent} onClick={flags.docsLayoutStructure ? handleCrossRefClick : undefined}>
-              <EditorContent editor={editor} />
             </div>
-            {/* ── Footer ── */}
-            {flags.docsLayoutStructure && footerText && (
-              <div className={styles.pageFooter}>
-                {showPageNumbers ? footerText.replace('{{page}}', '1') : footerText}
+          )}
+
+          {/* ── Content row: side ruler + editor scroll ── */}
+          <div className={styles.editorWithRuler}>
+            {showRulers && !distractionFree && (
+              <div ref={sideRulerColRef} className={styles.sideRulerCol}>
+                {/* 32px spacer matches editorScroll paddingTop so ruler y=0 aligns with page top */}
+                <div style={{ height: 32, flexShrink: 0 }} />
+                <VerticalRuler
+                  pageHeightPx={heightPx}
+                  marginTopPx={pageSetup.marginTop}
+                  marginBottomPx={pageSetup.marginBottom}
+                  totalPages={totalPages}
+                />
               </div>
             )}
-            {/* ── Footnote list ── */}
-            {flags.docsLayoutStructure && editor && (() => {
-              // editorVersion is read to trigger re-renders on document changes
-              void editorVersion;
-              const notes = getFootnoteItems(editor);
-              if (notes.length === 0) return null;
-              return (
-                <div className={styles.footnoteList}>
-                  <div className={styles.footnoteDivider} />
-                  {notes.map(n => (
-                    <div key={n.id} id={`footnote-${n.id}`} className={styles.footnoteItem}>
-                      <sup>{n.number}</sup> {n.text || '(empty footnote)'}
-                    </div>
-                  ))}
+            <div
+              ref={editorScrollRef}
+              className={`${styles.editorScroll}${singlePageMode ? ` ${styles.singlePageScroll}` : ''}`}
+              style={singlePageMode ? { height: heightPx * zoomLevel / 100 + 64 } : undefined}
+              onContextMenu={handleContextMenu}
+              onScroll={handleEditorScroll}
+            >
+              <div
+                className={styles.pageZoomWrap}
+                style={{
+                  width: widthPx * zoomLevel / 100,
+                  height: (pageScrollHeight || heightPx) * zoomLevel / 100,
+                }}
+              >
+              <div
+                ref={pageRef}
+                className={styles.page}
+                style={{
+                  ...pageStyle,
+                  margin: 0,
+                  ...(pageGapBackground ? { backgroundImage: pageGapBackground } : {}),
+                  ...(zoomLevel !== 100 ? { transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top left' } : {}),
+                }}
+                {...(flags.docsLayoutStructure && docTheme !== 'default'
+                  ? { 'data-doc-theme': docTheme }
+                  : {})}
+              >
+                {/* ── Header ── */}
+                {flags.docsLayoutStructure && headerText && (
+                  <div className={styles.pageHeader}>
+                    {showPageNumbers ? headerText.replace('{{page}}', '1') : headerText}
+                  </div>
+                )}
+                {/* ── Watermark ── */}
+                {flags.docsLayoutStructure && watermarkText && (
+                  <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
+                )}
+                <div className={styles.editorContent} onClick={flags.docsLayoutStructure ? handleCrossRefClick : undefined}>
+                  <EditorContent editor={editor} />
                 </div>
-              );
-            })()}
+                {/* ── Footer ── */}
+                {flags.docsLayoutStructure && footerText && (
+                  <div className={styles.pageFooter}>
+                    {showPageNumbers ? footerText.replace('{{page}}', '1') : footerText}
+                  </div>
+                )}
+                {/* ── Footnote list ── */}
+                {flags.docsLayoutStructure && editor && (() => {
+                  void editorVersion;
+                  const notes = getFootnoteItems(editor);
+                  if (notes.length === 0) return null;
+                  return (
+                    <div className={styles.footnoteList}>
+                      <div className={styles.footnoteDivider} />
+                      {notes.map(n => (
+                        <div key={n.id} id={`footnote-${n.id}`} className={styles.footnoteItem}>
+                          <sup>{n.number}</sup> {n.text || '(empty footnote)'}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+              </div>{/* end pageZoomWrap */}
+            </div>
           </div>
+
+          {/* ── Single page navigation ── */}
+          {singlePageMode && !distractionFree && (
+            <div className={styles.pageNav}>
+              <button
+                className={styles.pageNavBtn}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span>Page {currentPage} of {totalPages}</span>
+              <button
+                className={styles.pageNavBtn}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
         </div>
+
         {!distractionFree && showHistory && (
           <VersionHistoryPanel
             fileId={docId}
@@ -1816,7 +1939,6 @@ export function DocEditor() {
         )}
         {!distractionFree && flags.docsCompare && compareVersion && editor && (
           (() => {
-            // Compare the selected older version against the current doc state
             const currentVersionPlaceholder: FileVersionItem = {
               id: '__current__',
               fileId: docId,
@@ -1856,6 +1978,11 @@ export function DocEditor() {
               ⚠ Approaching 1M character limit ({charCount.toLocaleString()} / 1,020,000)
             </span>
           )}
+          <div className={styles.zoomControls}>
+            <button className={styles.zoomBtn} onClick={handleZoomFitPage} title="Zoom to fit entire page">Fit page</button>
+            <button className={styles.zoomBtn} onClick={handleZoomFitWidth} title="Zoom to fit page width">Fit width</button>
+            <ZoomSlider value={zoomLevel} onChange={setZoomLevel} min={10} max={200} step={10} />
+          </div>
         </div>
       )}
 

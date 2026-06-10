@@ -312,35 +312,6 @@
   position: relative;
 }
 
-/* ── Page-break line ─────────────────────────────────────────────────────── */
-.pageBreakLine {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: #c8cdd3;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.pageBreakLine::before,
-.pageBreakLine::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 6px;
-}
-
-.pageBreakLine::before {
-  bottom: 0;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.04), transparent);
-}
-
-.pageBreakLine::after {
-  top: 1px;
-  background: linear-gradient(to top, rgba(0,0,0,0.04), transparent);
-}
 
 /* ── TipTap editor ────────────────────────────────────────────────────────── */
 .editorContent {
@@ -996,6 +967,130 @@
     bottom: 44px;
     width: calc(100vw - 16px);
   }
+}
+
+/* ── Editor area (rulers + scroll) ─────────────────────────────────────── */
+.editorArea {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rulerRow {
+  display: flex;
+  flex-shrink: 0;
+  background: var(--color-bg-secondary, #f1f3f4);
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  overflow: hidden;
+  z-index: 6;
+}
+
+.rulerCorner {
+  width: 28px;
+  height: 20px;
+  flex-shrink: 0;
+  background: #e8eaed;
+  border-right: 1px solid #c8cdd3;
+}
+
+.topRulerOuter {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  padding: 0 24px;
+}
+
+.editorWithRuler {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  min-height: 0;
+}
+
+.sideRulerCol {
+  width: 28px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--color-bg-secondary, #f1f3f4);
+  border-right: 1px solid var(--color-border, #e0e0e0);
+}
+
+/* ── Zoom wrapper ────────────────────────────────────────────────────────── */
+.pageZoomWrap {
+  margin: 0 auto;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* ── Single page mode ────────────────────────────────────────────────────── */
+.singlePageScroll {
+  overflow: hidden !important;
+  flex: none !important;
+}
+
+.pageNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 7px 16px;
+  background: var(--color-bg, #ffffff);
+  border-top: 1px solid var(--color-border, #e0e0e0);
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--color-text-muted, #5f6368);
+}
+
+.pageNavBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 4px;
+  background: var(--color-bg, #ffffff);
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text, #202124);
+  transition: background 0.15s;
+}
+
+.pageNavBtn:hover:not(:disabled) {
+  background: var(--color-surface-hover, #f1f3f4);
+}
+
+.pageNavBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Zoom controls (status bar) ─────────────────────────────────────────── */
+.zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.zoomBtn {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 4px;
+  background: var(--color-bg, #ffffff);
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--color-text-muted, #5f6368);
+  transition: background 0.1s;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.zoomBtn:hover {
+  background: var(--color-surface-hover, #f1f3f4);
+  color: var(--color-text, #202124);
 }
 
 /* ── Distraction-free / focus mode ─────────────────────────────────────── */

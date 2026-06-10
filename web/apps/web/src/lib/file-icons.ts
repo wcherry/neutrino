@@ -8,6 +8,8 @@ import {
   FileSpreadsheet,
   FileText,
   FileVideo,
+  GitBranch,
+  Paintbrush,
   Presentation,
   Sheet,
 } from 'lucide-react';
@@ -15,12 +17,16 @@ import {
 const DOC_MIME = 'application/x-neutrino-doc';
 const SHEET_MIME = 'application/x-neutrino-sheet';
 const SLIDES_MIME = 'application/x-neutrino-slide';
+const DIAGRAM_MIME = 'application/x-neutrino-diagram';
+const DRAWING_MIME = 'application/x-neutrino-drawing';
 
 export function getFileIcon(mimeType: string) {
   // Neutrino app types
   if (mimeType === DOC_MIME) return FileText;
   if (mimeType === SHEET_MIME) return Sheet;
   if (mimeType === SLIDES_MIME) return Presentation;
+  if (mimeType === DIAGRAM_MIME) return GitBranch;
+  if (mimeType === DRAWING_MIME) return Paintbrush;
 
   // Media
   if (mimeType.startsWith('image/')) return FileImage;
@@ -92,6 +98,8 @@ export function getIconColor(mimeType: string): string {
   if (mimeType === DOC_MIME) return 'var(--color-blue, #2563eb)';
   if (mimeType === SHEET_MIME) return 'var(--color-green, #16a34a)';
   if (mimeType === SLIDES_MIME) return 'var(--color-orange, #ea580c)';
+  if (mimeType === DIAGRAM_MIME) return 'var(--color-cyan, #0891b2)';
+  if (mimeType === DRAWING_MIME) return 'var(--color-lime, #65a30d)';
 
   // Media
   if (mimeType.startsWith('image/')) return 'var(--color-violet, #7c3aed)';

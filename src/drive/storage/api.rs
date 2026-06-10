@@ -476,9 +476,16 @@ pub async fn download_file(
             ApiError::internal("Failed to serve file")
         })?
         .set_content_type(content_type)
-        .set_content_disposition(disposition);
+        .set_content_disposition(disposition)
+        .use_etag(false)
+        .use_last_modified(false);
 
-    Ok(named_file.into_response(&req))
+    let mut response = named_file.into_response(&req);
+    response.headers_mut().insert(
+        actix_web::http::header::CACHE_CONTROL,
+        actix_web::http::header::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
 }
 
 #[utoipa::path(
@@ -527,9 +534,15 @@ pub async fn preview_file(
             ApiError::internal("Failed to serve file")
         })?
         .set_content_type(content_type)
-        .set_content_disposition(disposition);
+        .set_content_disposition(disposition)
+        .use_etag(false)
+        .use_last_modified(false);
 
     let mut response = named_file.into_response(&req);
+    response.headers_mut().insert(
+        actix_web::http::header::CACHE_CONTROL,
+        actix_web::http::header::HeaderValue::from_static("no-store"),
+    );
     if restrict_print_copy {
         let headers = response.headers_mut();
         headers.insert(
@@ -1002,9 +1015,16 @@ pub async fn download_version(
             ApiError::internal("Failed to serve version content")
         })?
         .set_content_type(content_type)
-        .set_content_disposition(disposition);
+        .set_content_disposition(disposition)
+        .use_etag(false)
+        .use_last_modified(false);
 
-    Ok(named_file.into_response(&req))
+    let mut response = named_file.into_response(&req);
+    response.headers_mut().insert(
+        actix_web::http::header::CACHE_CONTROL,
+        actix_web::http::header::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
 }
 
 #[utoipa::path(

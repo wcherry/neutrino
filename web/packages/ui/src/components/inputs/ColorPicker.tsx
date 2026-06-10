@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { X } from 'lucide-react';
 import styles from './ColorPicker.module.css';
 
 // ── Color math ────────────────────────────────────────────────────────
@@ -137,9 +138,10 @@ export interface ColorPickerProps {
     value: string;   // #rrggbb, or #rrggbbaa when showAlpha=true
     onChange: (hex: string) => void;
     showAlpha?: boolean;
+    onClose?: () => void;
 }
 
-export function ColorPicker({ value, onChange, showAlpha }: ColorPickerProps) {
+export function ColorPicker({ value, onChange, showAlpha, onClose }: ColorPickerProps) {
     const lv = value.toLowerCase();
     const is8 = !!showAlpha && /^#[0-9a-fA-F]{8}$/.test(lv);
     const is6 = /^#[0-9a-fA-F]{6}$/.test(lv);
@@ -235,6 +237,11 @@ export function ColorPicker({ value, onChange, showAlpha }: ColorPickerProps) {
                         {t === 'swatches' ? 'Grid' : t === 'wheel' ? 'Wheel' : 'Values'}
                     </button>
                 ))}
+                {onClose && (
+                    <button className={styles.closeBtn} onClick={onClose} title="Close" type="button">
+                        <X size={12} />
+                    </button>
+                )}
             </div>
 
             {/* ── Grid tab ── */}

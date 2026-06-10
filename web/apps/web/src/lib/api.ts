@@ -10,7 +10,6 @@
  */
 
 export * from '@neutrino/api-core';
-export * from '@neutrino/api-drawing';
 export * from '@neutrino/api-drive';
 export * from '@neutrino/api-docs';
 export * from '@neutrino/api-sheets';
@@ -20,3 +19,5 @@ export * from '@neutrino/api-notes';
 export * from '@neutrino/api-calendar';
 export * from '@neutrino/auth';
 export * from '@neutrino/api-admin';
+export * from '@neutrino/api-diagrams';
+export * from '@neutrino/api-drawing';

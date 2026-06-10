@@ -1,0 +1,421 @@
+/* ── Background picker ───────────────────────────────────────────────────── */
+
+.bgPickerWrap {
+  position: relative;
+}
+
+.bgPickerTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+
+.bgPickerTrigger:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border);
+}
+
+.bgPickerSwatch {
+  display: block;
+  width: 20px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.bgPickerTriggerCompact {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1.5px solid #d1d5db;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.bgPickerPopover {
+  position: fixed;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  width: 280px;
+}
+
+.bgPickerTabStrip {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.bgPickerTab {
+  flex: 1;
+  padding: var(--space-2) 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-weight: var(--font-weight-medium);
+  transition: color var(--duration-fast), border-color var(--duration-fast);
+}
+
+.bgPickerTab:hover {
+  color: var(--color-text);
+}
+
+.bgPickerTabActive {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.bgPickerBody {
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.bgUrlInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.bgUrlInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+.bgImagePreview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+/* ── Gradient editor ─────────────────────────────────────────────────────── */
+
+.gradientEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gradSectionLabel {
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.gradPresetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.gradPresetSwatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+.gradPresetSwatch:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px var(--color-accent-subtle, #ede9fe);
+}
+
+.gradPresetSwatchActive {
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+
+.gradUserHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gradUserSwatchWrap {
+  position: relative;
+}
+
+.gradUserRemove {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--color-danger, #dc2626);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+  z-index: 1;
+}
+
+.gradUserSwatchWrap:hover .gradUserRemove {
+  opacity: 1;
+}
+
+.gradSmallBtn {
+  font-size: 10px;
+  padding: 2px 7px;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+  white-space: nowrap;
+}
+
+.gradSmallBtn:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.gradSmallBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.gradEmptyNote {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin: 0;
+  font-style: italic;
+}
+
+.gradDivider {
+  height: 1px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.gradTypeRow {
+  display: flex;
+  gap: 4px;
+}
+
+.gradTypeBtn {
+  flex: 1;
+  padding: 4px 0;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+}
+
+.gradTypeBtn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.gradTypeBtnActive {
+  background: var(--color-accent-subtle, #ede9fe);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.gradDirWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gradDirGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 22px);
+  grid-template-rows: repeat(3, 22px);
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.gradDirBtn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+}
+
+.gradDirBtn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.gradDirBtnActive {
+  background: var(--color-accent-subtle, #ede9fe);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.gradDirCenter {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-border);
+}
+
+.gradAngleSide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+
+.gradAngleInput {
+  width: 52px;
+  padding: 3px 4px;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: center;
+}
+
+.gradAngleDeg {
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.gradStopsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gradStopRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.gradStopSwatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: block;
+  transition: box-shadow var(--duration-fast);
+}
+
+.gradStopSwatch:hover {
+  box-shadow: 0 0 0 2px var(--color-accent-subtle, #ede9fe);
+}
+
+.gradStopSlider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  outline: none;
+  cursor: pointer;
+}
+
+.gradStopSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  cursor: pointer;
+  border: 1.5px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.gradStopPct {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  min-width: 28px;
+  text-align: right;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.gradStopRemove {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+
+.gradStopRemove:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  color: var(--color-danger, #dc2626);
+}
+
+.gradStopRemove:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.gradPreviewBar {
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  width: 100%;
+  flex-shrink: 0;
+}

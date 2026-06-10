@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, Reply, Check, Trash2 } from 'lucide-react';
-import { diagramsApi, type DiagramComment } from '@neutrino/api-drawing';
+import { diagramsApi, type DiagramComment } from '@neutrino/api-diagrams';
 import styles from './CommentsPanel.module.css';
 
 interface CommentsPanelProps {

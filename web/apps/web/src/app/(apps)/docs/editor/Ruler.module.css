@@ -1,0 +1,23 @@
+.hRuler {
+  height: 20px;
+  background: #ffffff;
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+.hMarginZone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #e8eaed;
+  pointer-events: none;
+}
+
+.vRulerOuter {
+  background: #f1f3f4;
+  user-select: none;
+  cursor: default;
+}

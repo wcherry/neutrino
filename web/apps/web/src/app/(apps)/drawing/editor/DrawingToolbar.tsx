@@ -10,9 +10,6 @@ import {
   ArrowRight,
   Type,
   Eraser,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
   type LucideIcon,
 } from 'lucide-react';
 import type { ToolType } from './types';
@@ -20,10 +17,6 @@ import type { ToolType } from './types';
 interface DrawingToolbarProps {
   tool: ToolType;
   onToolChange: (t: ToolType) => void;
-  scale: number;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onZoomReset: () => void;
 }
 
 const TOOLS: { id: ToolType; icon: LucideIcon; label: string }[] = [
@@ -36,14 +29,7 @@ const TOOLS: { id: ToolType; icon: LucideIcon; label: string }[] = [
   { id: 'text',      icon: Type,          label: 'Text' },
 ];
 
-export function DrawingToolbar({
-  tool,
-  onToolChange,
-  scale,
-  onZoomIn,
-  onZoomOut,
-  onZoomReset,
-}: DrawingToolbarProps) {
+export function DrawingToolbar({ tool, onToolChange }: DrawingToolbarProps) {
   const btnStyle = (active: boolean): React.CSSProperties => ({
     width: 36,
     height: 36,
@@ -78,13 +64,6 @@ export function DrawingToolbar({
     overflowY: 'auto',
   };
 
-  const zoomLabelStyle: React.CSSProperties = {
-    fontSize: 10,
-    color: '#6b7280',
-    marginTop: 4,
-    textAlign: 'center',
-  };
-
   return (
     <div style={sidebarStyle}>
       {TOOLS.map(({ id, icon: Icon, label }) => (
@@ -110,21 +89,6 @@ export function DrawingToolbar({
         aria-pressed={tool === 'eraser'}
       >
         <Eraser size={16} />
-      </button>
-
-      <div style={{ flex: 1 }} />
-
-      <div style={dividerStyle} />
-
-      <button title="Zoom in" style={btnStyle(false)} onClick={onZoomIn} aria-label="Zoom in">
-        <ZoomIn size={14} />
-      </button>
-      <div style={zoomLabelStyle}>{Math.round(scale * 100)}%</div>
-      <button title="Zoom out" style={btnStyle(false)} onClick={onZoomOut} aria-label="Zoom out">
-        <ZoomOut size={14} />
-      </button>
-      <button title="Fit to screen" style={btnStyle(false)} onClick={onZoomReset} aria-label="Fit to screen">
-        <Maximize2 size={14} />
       </button>
     </div>
   );

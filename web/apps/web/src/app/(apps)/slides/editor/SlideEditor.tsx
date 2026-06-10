@@ -104,7 +104,7 @@ import {
 } from './slideEditorConstants';
 import { slideBackgroundStyle, dbThemeToTheme, getVideoEmbedInfo } from './slideEditorHelpers';
 import { exportAsPptx } from './pptxExport';
-import BackgroundPicker from './BackgroundPicker';
+import FillPicker from './FillPicker';
 import SlideCanvas from './SlideCanvas';
 import SlideThumbnail from './SlideThumbnail';
 import PresenterView from './PresenterView';
@@ -1706,7 +1706,7 @@ export function SlideEditor() {
 
         {/* Background */}
         <ToolbarDivider />
-        <BackgroundPicker
+        <FillPicker
           background={currentSlide.background}
           onChange={(bg) => updateCurrentSlide((s) => ({ ...s, background: bg }))}
           theme={presentation.theme}

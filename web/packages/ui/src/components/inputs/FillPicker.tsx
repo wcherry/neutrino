@@ -1,11 +1,32 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import type { SlideBackground, Theme } from './slideEditorTypes';
-import { PRESET_GRADIENTS } from './slideEditorConstants';
-import { bgPreviewStyle } from './slideEditorHelpers';
-import { ColorPicker, ColorPickerPopover } from '@neutrino/ui';
-import styles from './page.module.css';
+import { ColorPicker } from './ColorPicker';
+import { ColorPickerPopover } from './ColorPickerPopover';
+import styles from './FillPicker.module.css';
+
+// ── Public types ──────────────────────────────────────────────────────────────
+
+export type Background =
+  | { type: 'color'; value: string }
+  | { type: 'gradient'; value: string }
+  | { type: 'image'; value: string; objectFit?: 'cover' | 'contain' | 'fill' };
+
+export interface BackgroundTheme {
+  primaryColor: string;
+  backgroundColor: string;
+  accentColor: string;
+}
+
+export interface FillPickerProps {
+  background: Background;
+  onChange: (bg: Background) => void;
+  theme?: BackgroundTheme;
+  /** localStorage key for user-saved gradient presets (default: 'neutrino:bg:gradientPresets') */
+  presetsKey?: string;
+  /** Label shown on the trigger button (default: 'BG') */
+  triggerLabel?: string;
+}
 
 // ── Gradient model ────────────────────────────────────────────────────────────
 
@@ -79,7 +100,7 @@ function buildGradient({ type, angle, stops }: GradientConfig): string {
 
 // ── Theme-derived presets ─────────────────────────────────────────────────────
 
-function makeThemePresets(theme: Theme): string[] {
+function makeThemePresets(theme: BackgroundTheme): string[] {
   const { primaryColor: p, backgroundColor: b, accentColor: a } = theme;
   return [
     `linear-gradient(135deg, ${p} 0%, ${b} 100%)`,
@@ -99,16 +120,44 @@ const COMPASS = [
   { angle: 225, label: '↙' }, { angle: 180, label: '↓' }, { angle: 135, label: '↘' },
 ];
 
-// ── User presets (localStorage) ───────────────────────────────────────────────
+// ── Preset gradients ──────────────────────────────────────────────────────────
 
-const USER_PRESETS_KEY = 'neutrino:slides:gradientPresets';
+const PRESET_GRADIENTS = [
+  'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
+  'linear-gradient(160deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
+  'linear-gradient(135deg, #0d0221 0%, #0d3b2e 50%, #064e3b 100%)',
+  'linear-gradient(135deg, #1a0000 0%, #4a1010 50%, #7c2020 100%)',
+  'linear-gradient(135deg, #2d1b2e 0%, #4a1942 50%, #3d0f26 100%)',
+  'linear-gradient(135deg, #1a2f20 0%, #2d4a35 50%, #1f3d28 100%)',
+  'linear-gradient(135deg, #1a0a00 0%, #7c2d12 45%, #c2410c 100%)',
+  'linear-gradient(160deg, #0a1628 0%, #0f2744 50%, #1e3a5f 100%)',
+  'linear-gradient(135deg, #050010 0%, #1a0533 45%, #0d001f 100%)',
+  'linear-gradient(135deg, #160800 0%, #451a03 50%, #78350f 100%)',
+  'linear-gradient(160deg, #e0f7ff 0%, #bae6fd 50%, #7dd3fc 100%)',
+  'linear-gradient(135deg, #04000f 0%, #180033 35%, #0d0525 65%, #1a0040 100%)',
+  'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+  'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+  'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+  'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+  'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+];
 
-function loadUserPresets(): string[] {
-  try { return JSON.parse(localStorage.getItem(USER_PRESETS_KEY) ?? '[]'); } catch { return []; }
+// ── Preview helper ────────────────────────────────────────────────────────────
+
+function bgPreviewStyle(bg: Background): React.CSSProperties {
+  if (bg.type === 'image') return { backgroundImage: `url(${bg.value})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+  return { background: bg.value };
 }
 
-function persistUserPresets(presets: string[]): void {
-  try { localStorage.setItem(USER_PRESETS_KEY, JSON.stringify(presets)); } catch { /* noop */ }
+// ── User presets (localStorage) ───────────────────────────────────────────────
+
+function loadUserPresets(key: string): string[] {
+  try { return JSON.parse(localStorage.getItem(key) ?? '[]'); } catch { return []; }
+}
+
+function persistUserPresets(key: string, presets: string[]): void {
+  try { localStorage.setItem(key, JSON.stringify(presets)); } catch { /* noop */ }
 }
 
 // ── Default config ────────────────────────────────────────────────────────────
@@ -120,15 +169,15 @@ const DEFAULT_CONFIG: GradientConfig = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function BackgroundPicker({
+export function FillPicker({
   background,
   onChange,
   theme,
-}: {
-  background: SlideBackground;
-  onChange: (bg: SlideBackground) => void;
-  theme?: Theme;
-}) {
+  presetsKey,
+  triggerLabel,
+}: FillPickerProps) {
+  const resolvedPresetsKey = presetsKey ?? 'neutrino:bg:gradientPresets';
+
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'color' | 'gradient' | 'image'>(
     background.type === 'gradient' ? 'gradient' : background.type === 'image' ? 'image' : 'color',
@@ -138,10 +187,27 @@ export default function BackgroundPicker({
     background.type === 'gradient' ? (parseGradient(background.value) ?? DEFAULT_CONFIG) : DEFAULT_CONFIG,
   );
   const [userPresets, setUserPresets] = useState<string[]>([]);
+  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({ visibility: 'hidden' });
   const lastCssRef = useRef(background.type === 'gradient' ? background.value : '');
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setUserPresets(loadUserPresets()); }, []);
+  useEffect(() => { setUserPresets(loadUserPresets(resolvedPresetsKey)); }, [resolvedPresetsKey]);
+
+  useEffect(() => {
+    if (!open) { setPopoverStyle({ visibility: 'hidden' }); return; }
+    if (!wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const popoverWidth = 280;
+    const popoverHeight = 500;
+    const alignRight = rect.left + popoverWidth > vw;
+    const openAbove = rect.bottom + popoverHeight > vh && rect.top > popoverHeight;
+    setPopoverStyle({
+      ...(alignRight ? { right: vw - rect.right, left: 'auto' } : { left: rect.left, right: 'auto' }),
+      ...(openAbove ? { bottom: vh - rect.top + 4, top: 'auto' } : { top: rect.bottom + 4, bottom: 'auto' }),
+    });
+  }, [open]);
 
   useEffect(() => {
     if (background.type !== 'gradient' || background.value === lastCssRef.current) return;
@@ -179,13 +245,13 @@ export default function BackgroundPicker({
     const css = buildGradient(gradConfig);
     const updated = [css, ...userPresets.filter((p) => p !== css)].slice(0, 12);
     setUserPresets(updated);
-    persistUserPresets(updated);
+    persistUserPresets(resolvedPresetsKey, updated);
   }
 
   function removePreset(idx: number) {
     const updated = userPresets.filter((_, i) => i !== idx);
     setUserPresets(updated);
-    persistUserPresets(updated);
+    persistUserPresets(resolvedPresetsKey, updated);
   }
 
   function addStop() {
@@ -215,15 +281,26 @@ export default function BackgroundPicker({
   const themePres = theme ? makeThemePresets(theme) : PRESET_GRADIENTS.slice(0, 6);
   const currentCss = buildGradient(gradConfig);
 
+  const isCompact = triggerLabel === '';
+
   return (
     <div ref={wrapRef} className={styles.bgPickerWrap}>
-      <button className={styles.bgPickerTrigger} onClick={() => setOpen((v) => !v)} title="Slide background">
-        <span className={styles.bgPickerSwatch} style={bgPreviewStyle(background)} />
-        BG
+      <button
+        className={isCompact ? styles.bgPickerTriggerCompact : styles.bgPickerTrigger}
+        style={isCompact ? bgPreviewStyle(background) : undefined}
+        onClick={() => setOpen((v) => !v)}
+        title="Fill"
+      >
+        {!isCompact && (
+          <>
+            <span className={styles.bgPickerSwatch} style={bgPreviewStyle(background)} />
+            {triggerLabel ?? 'BG'}
+          </>
+        )}
       </button>
 
       {open && (
-        <div className={styles.bgPickerPopover}>
+        <div className={styles.bgPickerPopover} style={popoverStyle}>
           <div className={styles.bgPickerTabStrip}>
             {(['color', 'gradient', 'image'] as const).map((t) => (
               <button

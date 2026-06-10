@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToast } from '@neutrino/ui';
-import { diagramsApi } from '@neutrino/api-drawing';
+import { diagramsApi } from '@neutrino/api-diagrams';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { GitBranch, Plus, Trash2, Clock } from 'lucide-react';
 import styles from './page.module.css';

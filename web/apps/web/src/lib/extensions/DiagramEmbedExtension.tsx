@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Node, mergeAttributes } from '@tiptap/react';
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import type { ReactNodeViewProps } from '@tiptap/react';
-import { diagramsApi } from '@neutrino/api-drawing';
+import { diagramsApi } from '@neutrino/api-diagrams';
 import { storageApi } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -81,8 +81,8 @@ function PropertiesDialog({
   useEffect(() => {
     if (!colorPickerOpen) return;
     function handle(e: MouseEvent) {
-      if (swatchRef.current?.contains(e.target as Node)) return;
-      if (pickerRef.current?.contains(e.target as Node)) return;
+      if (swatchRef.current?.contains(e.target as globalThis.Node)) return;
+      if (pickerRef.current?.contains(e.target as globalThis.Node)) return;
       setColorPickerOpen(false);
     }
     document.addEventListener('mousedown', handle);

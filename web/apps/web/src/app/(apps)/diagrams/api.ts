@@ -1,5 +1,5 @@
 // Re-export from the shared API package so app-level imports work.
-export { diagramsApi } from '@neutrino/api-drawing';
+export { diagramsApi } from '@neutrino/api-diagrams';
 export type {
   DiagramResponse,
   DiagramMetaResponse,
@@ -10,4 +10,4 @@ export type {
   CreateCommentRequest,
   UpdateCommentRequest,
   ListCommentsResponse,
-} from '@neutrino/api-drawing';
+} from '@neutrino/api-diagrams';

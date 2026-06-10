@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import type { CellProps, ClipboardCell, ClipboardCFRule, ClipboardData, CFRule, CFRuleSpec } from '../types';
+import type { CellProps, CellStyle, ClipboardCell, ClipboardCFRule, ClipboardData, CFRule, CFRuleSpec } from '../types';
 import { getRangeCells, encodeFormula, decodeFormula } from '../utils';
 import { alphaToNum, numToAlpha } from '../utils';
 import { computeCell, propagateDeps, type SheetRef } from '../formula';
@@ -212,7 +212,7 @@ export function useClipboard({
                                 .filter(c => htmlByPos.has(`${c.row},${c.col}`))
                                 .map(c => {
                                     const hc = htmlByPos.get(`${c.row},${c.col}`)!;
-                                    const merged = { ...(hc.cellStyle ?? {}), ...(c.cellStyle ?? {}) } as typeof c.cellStyle;
+                                    const merged = { ...(hc.cellStyle ?? {}), ...(c.cellStyle ?? {}) } as CellStyle;
                                     return {
                                         ...c,
                                         cellStyle: Object.keys(merged).length > 0 ? merged : undefined,

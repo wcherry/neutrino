@@ -9,7 +9,7 @@ import { slideBackgroundStyle, getVideoEmbedInfo } from './slideEditorHelpers';
 import { SheetEmbedRenderer } from '@neutrino/sheet-embed';
 import type { CellValue } from '@neutrino/sheet-embed';
 import { EmbeddedDiagramView } from '@/app/(apps)/diagrams/editor/EmbeddedDiagramView';
-import { diagramsApi } from '@neutrino/api-drawing';
+import { diagramsApi } from '@neutrino/api-diagrams';
 import type { DiagramDocument, DiagramPage } from '@/app/(apps)/diagrams/types';
 import styles from './page.module.css';
 

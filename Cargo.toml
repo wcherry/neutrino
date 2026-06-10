@@ -1,7 +1,15 @@
+[workspace]
+members = ["xtask"]
+
 [package]
 name = "neutrino"
 version = "0.1.0"
 edition = "2021"
+
+[package.metadata.neutrino]
+web_dir = "web"
+e2e_dir = "e2e"
+docker_image = "neutrino:test"
 
 [dependencies]
 # Web framework

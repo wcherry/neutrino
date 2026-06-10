@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { diagramsApi } from '@neutrino/api-drawing';
+import { diagramsApi } from '@neutrino/api-diagrams';
 import styles from './InsertDiagramDialog.module.css';
 
 interface InsertDiagramDialogProps {

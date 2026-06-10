@@ -1,7 +1,13 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback, useState } from 'react';
-import type { Shape, ToolType, Transform, Point, ResizeHandle } from './types';
+import React, { useRef, useEffect, useCallback, useState, useImperativeHandle, forwardRef } from 'react';
+import type { Shape, Layer, ToolType, Transform, Point, ResizeHandle } from './types';
+
+export interface DrawingCanvasHandle {
+  setTransform: (t: Transform) => void;
+  exportPNG: (options?: { scale?: number; bgColor?: string }) => Promise<Blob>;
+  exportSVG: (options?: { bgColor?: string }) => string;
+}
 
 interface DrawingCanvasProps {
   shapes: Shape[];
@@ -10,11 +16,85 @@ interface DrawingCanvasProps {
   onShapesChange: (shapes: Shape[]) => void;
   onSelectionChange: (ids: string[]) => void;
   onTransformChange?: (t: Transform) => void;
+  showGrid?: boolean;
+  layers?: Layer[];
+  activeLayerId?: string;
 }
 
 const GRID_SIZE = 16;
 const HANDLE_SIZE = 8;
 const ROTATE_OFFSET = 20;
+const EXPORT_PAD = 24;
+
+function shapeToSVGElement(shape: Shape): string {
+  if (shape.hidden) return '';
+  const stroke = shape.stroke || '#000000';
+  const fill = shape.fill || 'transparent';
+  const sw = shape.strokeWidth || 2;
+  const opacity = shape.opacity ?? 1;
+  const effectiveStyle = shape.strokeStyle ?? (shape.strokeDash ? 'dashed' : 'solid');
+  const dash = effectiveStyle === 'dashed' ? `stroke-dasharray="${sw * 4} ${sw * 3}"`
+    : effectiveStyle === 'dotted' ? `stroke-dasharray="${sw} ${sw * 2}"`
+    : effectiveStyle === 'long-dash' ? `stroke-dasharray="${sw * 8} ${sw * 3}"`
+    : '';
+  const rot = shape.rotation ? `transform="rotate(${shape.rotation}, ${shape.x + shape.width / 2}, ${shape.y + shape.height / 2})"` : '';
+
+  switch (shape.type) {
+    case 'rectangle':
+      return `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}" ${dash} ${rot}/>`;
+    case 'ellipse': {
+      const rx = Math.abs(shape.width) / 2;
+      const ry = Math.abs(shape.height) / 2;
+      const cx = shape.x + shape.width / 2;
+      const cy = shape.y + shape.height / 2;
+      return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}" ${dash} ${rot}/>`;
+    }
+    case 'line':
+      return `<line x1="${shape.x}" y1="${shape.y}" x2="${shape.x + shape.width}" y2="${shape.y + shape.height}" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}" ${dash} ${rot}/>`;
+    case 'arrow': {
+      const ex = shape.x + shape.width;
+      const ey = shape.y + shape.height;
+      const angle = Math.atan2(ey - shape.y, ex - shape.x);
+      const headLen = 14;
+      const x1 = ex - headLen * Math.cos(angle - Math.PI / 6);
+      const y1 = ey - headLen * Math.sin(angle - Math.PI / 6);
+      const x2 = ex - headLen * Math.cos(angle + Math.PI / 6);
+      const y2 = ey - headLen * Math.sin(angle + Math.PI / 6);
+      return `<g opacity="${opacity}" ${rot}><line x1="${shape.x}" y1="${shape.y}" x2="${ex}" y2="${ey}" stroke="${stroke}" stroke-width="${sw}" ${dash}/><polygon points="${ex},${ey} ${x1},${y1} ${x2},${y2}" fill="${stroke}"/></g>`;
+    }
+    case 'pen': {
+      if (shape.points.length < 2) return '';
+      const d = shape.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+      return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" ${dash} ${rot}/>`;
+    }
+    case 'text': {
+      const fontSize = Math.abs(shape.height) || 16;
+      const fontFam = shape.fontFamily || 'sans-serif';
+      const lines = (shape.text || '').split('\n');
+      const lineHeight = fontSize * 1.2;
+      const textEls = lines.map((line, i) =>
+        `<tspan x="${shape.x}" dy="${i === 0 ? 0 : lineHeight}">${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</tspan>`
+      ).join('');
+      return `<text x="${shape.x}" y="${shape.y + fontSize}" font-size="${fontSize}" font-family="${fontFam}" fill="${stroke}" opacity="${opacity}" ${rot}>${textEls}</text>`;
+    }
+    default:
+      return '';
+  }
+}
+
+function contentBounds(shapes: Shape[]): { x: number; y: number; w: number; h: number } | null {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of shapes) {
+    if (s.hidden) continue;
+    const { x, y, w, h } = getBounds(s);
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x + w > maxX) maxX = x + w;
+    if (y + h > maxY) maxY = y + h;
+  }
+  if (!isFinite(minX)) return null;
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
 
 function screenToCanvas(sx: number, sy: number, t: Transform): Point {
   return { x: (sx - t.x) / t.scale, y: (sy - t.y) / t.scale };
@@ -38,16 +118,40 @@ function getBounds(shape: Shape): { x: number; y: number; w: number; h: number }
     const h = Math.max(...ys) - y || 1;
     return { x, y, w, h };
   }
+  if (shape.type === 'text') {
+    const fontSize = Math.abs(shape.height) || 16;
+    const lines = (shape.text || '').split('\n');
+    const lineHeight = fontSize * 1.2;
+    const totalH = fontSize + (lines.length - 1) * lineHeight;
+    return { x: shape.x, y: shape.y, w: shape.width || 1, h: totalH };
+  }
   return { x: shape.x, y: shape.y, w: shape.width || 1, h: shape.height || 1 };
 }
 
+function unrotatePoint(px: number, py: number, scx: number, scy: number, angleDeg: number): Point {
+  const rad = (-angleDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    x: scx + (px - scx) * cos - (py - scy) * sin,
+    y: scy + (px - scx) * sin + (py - scy) * cos,
+  };
+}
+
 function hitTest(shape: Shape, cx: number, cy: number): boolean {
-  if (shape.type === 'pen') {
-    return shape.points.some((p) => Math.hypot(p.x - cx, p.y - cy) < 8);
-  }
   const { x, y, w, h } = getBounds(shape);
+  let testX = cx;
+  let testY = cy;
+  if (shape.rotation) {
+    const p = unrotatePoint(cx, cy, x + w / 2, y + h / 2, shape.rotation);
+    testX = p.x;
+    testY = p.y;
+  }
+  if (shape.type === 'pen') {
+    return shape.points.some((p) => Math.hypot(p.x - testX, p.y - testY) < 8);
+  }
   const pad = 4;
-  return cx >= x - pad && cx <= x + w + pad && cy >= y - pad && cy <= y + h + pad;
+  return testX >= x - pad && testX <= x + w + pad && testY >= y - pad && testY <= y + h + pad;
 }
 
 function getHandlePositions(
@@ -80,14 +184,84 @@ function hitTestHandle(
   return Math.abs(hx - cx) <= r && Math.abs(hy - cy) <= r;
 }
 
+function splitGradArgs(s: string): string[] {
+  const out: string[] = []; let depth = 0, cur = '';
+  for (const ch of s) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    else if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+function parseGradStops(parts: string[]): { color: string; position: number }[] {
+  const raw = parts.map((s) => {
+    const p = s.trim().split(/\s+/);
+    if (!/^#[0-9a-fA-F]{3,8}$/.test(p[0])) return null;
+    const pct = p[1]?.match(/^(\d+(?:\.\d+)?)%$/);
+    return { color: p[0], position: pct ? parseFloat(pct[1]) : -1 };
+  }).filter((x): x is { color: string; position: number } => x !== null);
+  return raw.map((s, i) => ({ ...s, position: s.position >= 0 ? s.position : Math.round(i * 100 / Math.max(1, raw.length - 1)) }));
+}
+
+const DIR_ANGLE: Record<string, number> = {
+  'to top': 0, 'to top right': 45, 'to right': 90, 'to bottom right': 135,
+  'to bottom': 180, 'to bottom left': 225, 'to left': 270, 'to top left': 315,
+};
+
+function resolveCanvasFill(
+  ctx: CanvasRenderingContext2D,
+  fill: string,
+  x: number, y: number, w: number, h: number,
+): string | CanvasGradient {
+  const lin = fill.match(/^linear-gradient\((.+)\)$/is);
+  if (lin) {
+    const args = splitGradArgs(lin[1]);
+    let angle = 180, startIdx = 0;
+    const first = args[0]?.trim() ?? '';
+    const deg = first.match(/^(-?\d+(?:\.\d+)?)deg$/i);
+    if (deg) { angle = parseFloat(deg[1]); startIdx = 1; }
+    else if (/^to\s+/i.test(first)) { angle = DIR_ANGLE[first.toLowerCase().trim()] ?? 180; startIdx = 1; }
+    const dx = Math.sin((angle * Math.PI) / 180);
+    const dy = -Math.cos((angle * Math.PI) / 180);
+    const cx = x + w / 2, cy = y + h / 2;
+    const halfLen = (Math.abs(w * dx) + Math.abs(h * dy)) / 2;
+    const grad = ctx.createLinearGradient(cx - dx * halfLen, cy - dy * halfLen, cx + dx * halfLen, cy + dy * halfLen);
+    parseGradStops(args.slice(startIdx)).forEach(({ color, position }) => grad.addColorStop(position / 100, color));
+    return grad;
+  }
+  const rad = fill.match(/^radial-gradient\((.+)\)$/is);
+  if (rad) {
+    const args = splitGradArgs(rad[1]);
+    const startIdx = /^#/.test(args[0]?.trim() ?? '') ? 0 : 1;
+    const cx = x + w / 2, cy = y + h / 2;
+    const r = Math.max(Math.abs(w), Math.abs(h)) / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    parseGradStops(args.slice(startIdx)).forEach(({ color, position }) => grad.addColorStop(position / 100, color));
+    return grad;
+  }
+  return fill || 'transparent';
+}
+
 function renderShape(ctx: CanvasRenderingContext2D, shape: Shape, isSelected: boolean) {
+  if (shape.hidden) return;
   ctx.save();
   ctx.globalAlpha = shape.opacity ?? 1;
   ctx.strokeStyle = shape.stroke || '#000000';
   ctx.lineWidth = shape.strokeWidth || 2;
-  ctx.fillStyle = shape.fill || 'transparent';
-
   const { x, y, w, h } = getBounds(shape);
+  ctx.fillStyle = resolveCanvasFill(ctx, shape.fill || 'transparent', x, y, w, h);
+  const dashStyle = shape.strokeStyle ?? (shape.strokeDash ? 'dashed' : 'solid');
+  const dsw = shape.strokeWidth || 2;
+  switch (dashStyle) {
+    case 'dashed':    ctx.setLineDash([dsw * 4, dsw * 3]); break;
+    case 'dotted':    ctx.setLineDash([dsw, dsw * 2]);      break;
+    case 'long-dash': ctx.setLineDash([dsw * 8, dsw * 3]); break;
+    default:          ctx.setLineDash([]);
+  }
+
   const cx = x + w / 2;
   const cy = y + h / 2;
 
@@ -159,9 +333,20 @@ function renderShape(ctx: CanvasRenderingContext2D, shape: Shape, isSelected: bo
     }
     case 'text': {
       const fontSize = Math.abs(shape.height) || 16;
-      ctx.font = `${fontSize}px sans-serif`;
+      const fontFam = shape.fontFamily || 'sans-serif';
+      ctx.font = `${fontSize}px ${fontFam}`;
       ctx.fillStyle = shape.stroke || '#000000';
-      ctx.fillText(shape.text || '', shape.x, shape.y + fontSize);
+      if (shape.shadowEnabled) {
+        ctx.shadowColor = shape.shadowColor || 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = shape.shadowBlur ?? 4;
+        ctx.shadowOffsetX = shape.shadowOffsetX ?? 2;
+        ctx.shadowOffsetY = shape.shadowOffsetY ?? 2;
+      }
+      const lines = (shape.text || '').split('\n');
+      const lineHeight = fontSize * 1.2;
+      lines.forEach((line, i) => {
+        ctx.fillText(line, shape.x, shape.y + fontSize + i * lineHeight);
+      });
       break;
     }
   }
@@ -175,7 +360,14 @@ function renderShape(ctx: CanvasRenderingContext2D, shape: Shape, isSelected: bo
 
 function renderHandles(ctx: CanvasRenderingContext2D, shape: Shape) {
   const { x, y, w, h } = getBounds(shape);
+  const cx = x + w / 2;
+  const cy = y + h / 2;
   ctx.save();
+  if (shape.rotation) {
+    ctx.translate(cx, cy);
+    ctx.rotate((shape.rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+  }
   ctx.strokeStyle = '#2563eb';
   ctx.fillStyle = '#ffffff';
   ctx.lineWidth = 1.5;
@@ -259,29 +451,67 @@ interface DragState {
   penShapeId?: string;
 }
 
-export function DrawingCanvas({
+export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(function DrawingCanvas({
   shapes,
   tool,
   selectedIds,
   onShapesChange,
   onSelectionChange,
   onTransformChange,
-}: DrawingCanvasProps) {
+  showGrid = true,
+  layers = [],
+  activeLayerId = 'background',
+}: DrawingCanvasProps, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
   const shapesRef = useRef(shapes);
   const toolRef = useRef(tool);
   const selectedIdsRef = useRef(selectedIds);
+  const showGridRef = useRef(showGrid);
+  const layersRef = useRef(layers);
+  const activeLayerIdRef = useRef(activeLayerId);
   const dragRef = useRef<DragState>({ mode: 'none', startX: 0, startY: 0, lastX: 0, lastY: 0 });
   const spaceDownRef = useRef(false);
   const currentShapeRef = useRef<Shape | null>(null);
 
   const [, forceRender] = useState(0);
 
+  const [textEdit, setTextEdit] = useState<{
+    shapeId: string | null;
+    x: number;
+    y: number;
+    fontSize: number;
+    value: string;
+    capturedTransform: Transform;
+  } | null>(null);
+  // Metadata ref set synchronously when a text edit session starts/ends — never stale.
+  // value is updated on every onChange keystroke so commitTextEdit never reads a stale/null DOM ref.
+  const textEditMetaRef = useRef<{
+    shapeId: string | null;
+    x: number;
+    y: number;
+    fontSize: number;
+    capturedTransform: Transform;
+    value: string;
+  } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // True only after the first animation frame after textarea mounts.
+  // Guards onBlur against spurious blur fired by React 18 StrictMode's DOM removal during effect cleanup.
+  const textEditReadyRef = useRef(false);
+
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+  useEffect(() => { layersRef.current = layers; }, [layers]);
+  useEffect(() => { activeLayerIdRef.current = activeLayerId; }, [activeLayerId]);
+  showGridRef.current = showGrid;
+
+  function layerOf(s: Shape) {
+    return layersRef.current.find((l) => l.id === (s.layerId || 'background'));
+  }
+  function shapeEffectivelyHidden(s: Shape) { return s.hidden || (layerOf(s)?.hidden ?? false); }
+  function shapeEffectivelyLocked(s: Shape) { return s.locked || (layerOf(s)?.locked ?? false); }
 
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -292,13 +522,15 @@ export function DrawingCanvas({
     const t = transformRef.current;
 
     ctx.clearRect(0, 0, width, height);
-    renderGrid(ctx, t, width, height);
+    if (showGridRef.current) renderGrid(ctx, t, width, height);
 
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.scale(t.scale, t.scale);
 
     for (const shape of shapesRef.current) {
+      if (shape.id === textEditMetaRef.current?.shapeId) continue;
+      if (shapeEffectivelyHidden(shape)) continue;
       renderShape(ctx, shape, selectedIdsRef.current.includes(shape.id));
     }
     if (currentShapeRef.current) {
@@ -320,7 +552,72 @@ export function DrawingCanvas({
     ctx.restore();
   }, []);
 
-  useEffect(() => { render(); }, [shapes, selectedIds, render]);
+  useImperativeHandle(ref, () => ({
+    setTransform: (t: Transform) => {
+      transformRef.current = t;
+      onTransformChange?.(t);
+      render();
+    },
+    exportPNG: ({ scale = 2, bgColor = '' } = {}): Promise<Blob> => {
+      const visibleShapes = shapesRef.current.filter((s) => !shapeEffectivelyHidden(s));
+      const bounds = contentBounds(visibleShapes);
+      const padX = bounds ? bounds.x - EXPORT_PAD : 0;
+      const padY = bounds ? bounds.y - EXPORT_PAD : 0;
+      const cw = Math.max(1, (bounds ? bounds.w + EXPORT_PAD * 2 : 100)) * scale;
+      const ch = Math.max(1, (bounds ? bounds.h + EXPORT_PAD * 2 : 100)) * scale;
+
+      const offscreen = document.createElement('canvas');
+      offscreen.width = cw;
+      offscreen.height = ch;
+      const ctx = offscreen.getContext('2d')!;
+      if (bgColor) {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, cw, ch);
+      }
+      ctx.scale(scale, scale);
+      ctx.translate(-padX, -padY);
+      for (const shape of visibleShapes) {
+        renderShape(ctx, shape, false);
+      }
+      return new Promise<Blob>((resolve, reject) => {
+        offscreen.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('toBlob failed'));
+        }, 'image/png');
+      });
+    },
+    exportSVG: ({ bgColor = '' } = {}): string => {
+      const visibleShapes = shapesRef.current.filter((s) => !shapeEffectivelyHidden(s));
+      const bounds = contentBounds(visibleShapes);
+      const x = bounds ? bounds.x - EXPORT_PAD : 0;
+      const y = bounds ? bounds.y - EXPORT_PAD : 0;
+      const w = Math.max(1, bounds ? bounds.w + EXPORT_PAD * 2 : 100);
+      const h = Math.max(1, bounds ? bounds.h + EXPORT_PAD * 2 : 100);
+      const bgRect = bgColor ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${bgColor}"/>` : '';
+      const els = visibleShapes.map(shapeToSVGElement).filter(Boolean).join('\n');
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w}" height="${h}">\n${bgRect}\n${els}\n</svg>`;
+    },
+  }), [onTransformChange, render]);
+
+  useEffect(() => { render(); }, [shapes, selectedIds, showGrid, layers, render]);
+  useEffect(() => { render(); }, [textEdit !== null, render]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Focus the textarea and guard onBlur against spurious blur from React 18 StrictMode.
+  // StrictMode removes DOM nodes between effect cleanup/setup; the focused textarea fires blur
+  // when removed. We set textEditReadyRef=true only after a requestAnimationFrame so any blur
+  // that fires before the DOM has stabilised is ignored by onBlur.
+  useEffect(() => {
+    if (textEdit !== null) {
+      textEditReadyRef.current = false;
+      const rafId = requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textEditReadyRef.current = true;
+      });
+      return () => {
+        cancelAnimationFrame(rafId);
+        textEditReadyRef.current = false;
+      };
+    }
+  }, [textEdit !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getCanvasPos = useCallback((e: MouseEvent): Point => {
     const canvas = canvasRef.current!;
@@ -335,8 +632,12 @@ export function DrawingCanvas({
         if (!shape) continue;
         const { x, y, w, h } = getBounds(shape);
         const handles = getHandlePositions(x, y, w, h);
+        // Unrotate the cursor into the shape's local space so handle positions match what's rendered
+        const local = shape.rotation
+          ? unrotatePoint(cp.x, cp.y, x + w / 2, y + h / 2, shape.rotation)
+          : cp;
         for (const [key, hp] of Object.entries(handles) as [ResizeHandle, Point][]) {
-          if (hitTestHandle(hp.x, hp.y, cp.x, cp.y, key === 'rotate')) {
+          if (hitTestHandle(hp.x, hp.y, local.x, local.y, key === 'rotate')) {
             return { shapeId: id, handle: key };
           }
         }
@@ -345,6 +646,60 @@ export function DrawingCanvas({
     },
     [],
   );
+
+  const commitTextEdit = useCallback(() => {
+    const meta = textEditMetaRef.current;
+    if (!meta) return;
+    textEditMetaRef.current = null;
+    const trimmed = (meta.value ?? '').trim();
+    setTextEdit(null);
+    if (meta.shapeId === null) {
+      if (trimmed) {
+        const tmpCtx = document.createElement('canvas').getContext('2d')!;
+        tmpCtx.font = `${meta.fontSize}px sans-serif`;
+        const lines = trimmed.split('\n');
+        const measuredW = Math.max(...lines.map((l) => tmpCtx.measureText(l).width));
+        const newShape: Shape = {
+          id: generateId(),
+          type: 'text',
+          x: meta.x, y: meta.y,
+          width: Math.max(measuredW, 40),
+          height: meta.fontSize,
+          points: [],
+          text: trimmed,
+          fill: 'transparent',
+          stroke: '#000000',
+          strokeWidth: 1,
+          rotation: 0,
+          opacity: 1,
+          layerId: activeLayerIdRef.current,
+        };
+        onShapesChange([...shapesRef.current, newShape]);
+        onSelectionChange([newShape.id]);
+      }
+    } else {
+      if (trimmed) {
+        const orig = shapesRef.current.find((s) => s.id === meta.shapeId);
+        const tmpCtx = document.createElement('canvas').getContext('2d')!;
+        tmpCtx.font = `${orig?.height || meta.fontSize}px sans-serif`;
+        const lines = trimmed.split('\n');
+        const measuredW = Math.max(...lines.map((l) => tmpCtx.measureText(l).width));
+        onShapesChange(
+          shapesRef.current.map((s) =>
+            s.id === meta.shapeId ? { ...s, text: trimmed, width: Math.max(measuredW, 40) } : s
+          )
+        );
+      } else {
+        onShapesChange(shapesRef.current.filter((s) => s.id !== meta.shapeId));
+        onSelectionChange(selectedIdsRef.current.filter((id) => id !== meta.shapeId));
+      }
+    }
+  }, [onShapesChange, onSelectionChange]);
+
+  const cancelTextEdit = useCallback(() => {
+    textEditMetaRef.current = null;
+    setTextEdit(null);
+  }, []);
 
   const onMouseDown = useCallback(
     (e: MouseEvent) => {
@@ -388,7 +743,7 @@ export function DrawingCanvas({
           return;
         }
 
-        const hit = [...shapesRef.current].reverse().find((s) => hitTest(s, cp.x, cp.y));
+        const hit = [...shapesRef.current].reverse().find((s) => !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y));
         if (hit) {
           const newSel = e.shiftKey
             ? selectedIdsRef.current.includes(hit.id)
@@ -418,7 +773,7 @@ export function DrawingCanvas({
       }
 
       if (currentTool === 'eraser') {
-        const hit = [...shapesRef.current].reverse().find((s) => hitTest(s, cp.x, cp.y));
+        const hit = [...shapesRef.current].reverse().find((s) => !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y));
         if (hit) {
           onShapesChange(shapesRef.current.filter((s) => s.id !== hit.id));
           onSelectionChange(selectedIdsRef.current.filter((id) => id !== hit.id));
@@ -443,6 +798,7 @@ export function DrawingCanvas({
           strokeWidth: 2,
           rotation: 0,
           opacity: 1,
+          layerId: activeLayerIdRef.current,
         };
         currentShapeRef.current = newShape;
         dragRef.current = {
@@ -452,24 +808,10 @@ export function DrawingCanvas({
           penShapeId: newShape.id,
         };
       } else if (currentTool === 'text') {
-        const text = window.prompt('Enter text:');
-        if (text) {
-          const newShape: Shape = {
-            id: generateId(),
-            type: 'text',
-            x: snappedX, y: snappedY,
-            width: 100, height: 20,
-            points: [],
-            text,
-            fill: 'transparent',
-            stroke: '#000000',
-            strokeWidth: 1,
-            rotation: 0,
-            opacity: 1,
-          };
-          onShapesChange([...shapesRef.current, newShape]);
-          onSelectionChange([newShape.id]);
-        }
+        // Text tool is handled by the React synthetic onMouseDown on the canvas element.
+        // The native listener just resets drag state and returns.
+        dragRef.current = { mode: 'none', startX: 0, startY: 0, lastX: 0, lastY: 0 };
+        return;
       } else {
         const shapeType = currentTool as Shape['type'];
         const newShape: Shape = {
@@ -484,6 +826,7 @@ export function DrawingCanvas({
           strokeWidth: 2,
           rotation: 0,
           opacity: 1,
+          layerId: activeLayerIdRef.current,
         };
         currentShapeRef.current = newShape;
         dragRef.current = {
@@ -523,7 +866,7 @@ export function DrawingCanvas({
         const cur = currentShapeRef.current;
         if (!cur) {
           if (toolRef.current === 'eraser') {
-            const hit = [...shapesRef.current].reverse().find((s) => hitTest(s, cp.x, cp.y));
+            const hit = [...shapesRef.current].reverse().find((s) => !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y));
             if (hit) {
               onShapesChange(shapesRef.current.filter((s) => s.id !== hit.id));
               onSelectionChange(selectedIdsRef.current.filter((id) => id !== hit.id));
@@ -672,19 +1015,68 @@ export function DrawingCanvas({
     [onShapesChange, onSelectionChange, render],
   );
 
+  const handleTextMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (toolRef.current !== 'text') return;
+    if (e.button !== 0) return;
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const cp = screenToCanvas(e.clientX - rect.left, e.clientY - rect.top, transformRef.current);
+    const snappedX = snapToGrid(cp.x);
+    const snappedY = snapToGrid(cp.y);
+    const hitText = [...shapesRef.current].reverse().find(
+      (s) => s.type === 'text' && !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y)
+    );
+    if (hitText) {
+      const meta = { shapeId: hitText.id, x: hitText.x, y: hitText.y, fontSize: hitText.height || 16, capturedTransform: { ...transformRef.current }, value: hitText.text || '' };
+      textEditMetaRef.current = meta;
+      setTextEdit({ ...meta });
+      onSelectionChange([hitText.id]);
+    } else {
+      const meta = { shapeId: null, x: snappedX, y: snappedY, fontSize: 16, capturedTransform: { ...transformRef.current }, value: '' };
+      textEditMetaRef.current = meta;
+      setTextEdit({ ...meta });
+      onSelectionChange([]);
+    }
+  }, [onSelectionChange]);
+
+  const onDblClick = useCallback((e: MouseEvent) => {
+    if (toolRef.current !== 'select') return;
+    const cp = getCanvasPos(e);
+    const hit = [...shapesRef.current].reverse().find(
+      (s) => s.type === 'text' && !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y)
+    );
+    if (!hit) return;
+    const meta = { shapeId: hit.id, x: hit.x, y: hit.y, fontSize: hit.height || 16, capturedTransform: { ...transformRef.current }, value: hit.text || '' };
+    textEditMetaRef.current = meta;
+    setTextEdit({ ...meta });
+    onSelectionChange([hit.id]);
+  }, [getCanvasPos, onSelectionChange]);
+
   const onWheel = useCallback(
     (e: WheelEvent) => {
       e.preventDefault();
-      const canvas = canvasRef.current!;
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
       const t = transformRef.current;
-      const factor = e.deltaY > 0 ? 0.9 : 1 / 0.9;
-      const newScale = Math.max(0.1, Math.min(10, t.scale * factor));
-      const newX = mx - (mx - t.x) * (newScale / t.scale);
-      const newY = my - (my - t.y) * (newScale / t.scale);
-      transformRef.current = { x: newX, y: newY, scale: newScale };
+
+      if (e.ctrlKey) {
+        // Pinch-to-zoom: browser sets ctrlKey=true for trackpad pinch gestures
+        const canvas = canvasRef.current!;
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY > 0 ? 0.9 : 1 / 0.9;
+        const newScale = Math.max(0.1, Math.min(10, t.scale * factor));
+        const newX = mx - (mx - t.x) * (newScale / t.scale);
+        const newY = my - (my - t.y) * (newScale / t.scale);
+        transformRef.current = { x: newX, y: newY, scale: newScale };
+      } else {
+        // Two-finger scroll: pan the canvas
+        transformRef.current = {
+          ...t,
+          x: t.x - e.deltaX,
+          y: t.y - e.deltaY,
+        };
+      }
+
       onTransformChange?.(transformRef.current);
       forceRender((n) => n + 1);
       render();
@@ -708,7 +1100,8 @@ export function DrawingCanvas({
     observer.observe(container);
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+      const tag = (e.target as HTMLElement).tagName;
+      if (e.code === 'Space' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
         spaceDownRef.current = true;
         e.preventDefault();
       }
@@ -718,6 +1111,7 @@ export function DrawingCanvas({
     };
 
     canvas.addEventListener('mousedown', onMouseDown);
+    canvas.addEventListener('dblclick', onDblClick);
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     canvas.addEventListener('wheel', onWheel, { passive: false });
@@ -727,13 +1121,23 @@ export function DrawingCanvas({
     return () => {
       observer.disconnect();
       canvas.removeEventListener('mousedown', onMouseDown);
+      canvas.removeEventListener('dblclick', onDblClick);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       canvas.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [onMouseDown, onMouseMove, onMouseUp, onWheel, render]);
+  }, [onMouseDown, onDblClick, onMouseMove, onMouseUp, onWheel, render]);
+
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta || !textEdit) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${ta.scrollHeight}px`;
+    ta.style.width = 'auto';
+    ta.style.width = `${Math.max(ta.scrollWidth, 80)}px`;
+  }, [textEdit?.value, textEdit]);
 
   const cursorStyle: React.CSSProperties['cursor'] = (() => {
     if (spaceDownRef.current) return 'grab';
@@ -745,12 +1149,56 @@ export function DrawingCanvas({
     }
   })();
 
+  const tePos = textEdit
+    ? {
+        x: textEdit.x * textEdit.capturedTransform.scale + textEdit.capturedTransform.x,
+        y: textEdit.y * textEdit.capturedTransform.scale + textEdit.capturedTransform.y,
+        fontSize: textEdit.fontSize * textEdit.capturedTransform.scale,
+      }
+    : null;
+
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
       <canvas
         ref={canvasRef}
         style={{ display: 'block', cursor: cursorStyle }}
+        onMouseDown={handleTextMouseDown}
       />
+      {textEdit && tePos && (
+        <textarea
+          ref={textareaRef}
+          value={textEdit.value}
+          onChange={(e) => {
+            if (textEditMetaRef.current) textEditMetaRef.current.value = e.target.value;
+            setTextEdit((prev) => prev ? { ...prev, value: e.target.value } : null);
+          }}
+          onBlur={() => { if (textEditReadyRef.current) commitTextEdit(); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); cancelTextEdit(); }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitTextEdit(); }
+          }}
+          style={{
+            position: 'absolute',
+            left: tePos.x,
+            top: tePos.y,
+            fontSize: tePos.fontSize,
+            fontFamily: 'sans-serif',
+            border: '1.5px dashed #2563eb',
+            borderRadius: 2,
+            outline: 'none',
+            background: 'transparent',
+            color: '#000000',
+            resize: 'none',
+            overflow: 'hidden',
+            minWidth: 80,
+            padding: '0 2px',
+            lineHeight: 1.2,
+            whiteSpace: 'pre',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+            zIndex: 10,
+          }}
+        />
+      )}
     </div>
   );
-}
+});

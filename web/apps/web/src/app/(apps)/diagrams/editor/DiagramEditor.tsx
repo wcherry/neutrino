@@ -12,7 +12,7 @@ import { exportPNGCropped, exportJPEGCropped, exportSVGCropped, triggerDownload 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToast } from '@neutrino/ui';
-import { diagramsApi } from '@neutrino/api-drawing';
+import { diagramsApi } from '@neutrino/api-diagrams';
 import { authApi } from '@neutrino/auth';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { storageApi } from '@/lib/api';
