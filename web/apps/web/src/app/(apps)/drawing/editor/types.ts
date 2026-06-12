@@ -6,11 +6,25 @@ export interface Layer {
   name: string;
   hidden?: boolean;
   locked?: boolean;
+  isBackground?: boolean;
 }
 
 export interface Point {
   x: number;
   y: number;
+}
+
+export interface BezierCurve {
+  p0: Point;
+  p1: Point;
+  p2: Point;
+  p3: Point;
+}
+
+export interface TextCurve {
+  mode: 'single' | 'double';
+  bottom: BezierCurve;
+  top?: BezierCurve;
 }
 
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted' | 'long-dash';
@@ -40,6 +54,8 @@ export interface Shape {
   shadowOffsetY?: number;
   locked?: boolean;
   hidden?: boolean;
+  textCurve?: TextCurve;
+  lineCurve?: BezierCurve;
 }
 
 export interface DrawingContent {

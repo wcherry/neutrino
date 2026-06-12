@@ -66,7 +66,10 @@ export function LayersPanel({
   onReorderLayers,
   onToggleLock,
 }: LayersPanelProps) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(['background']));
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
+    const bgLayer = layers.find(l => l.isBackground);
+    return new Set(bgLayer ? [bgLayer.id] : []);
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -115,14 +118,16 @@ export function LayersPanel({
   // ── Drag handlers ──────────────────────────────────────────────
 
   function handleShapeDragStart(e: React.DragEvent, shape: Shape) {
-    const payload: DragPayload = { kind: 'shape', shapeId: shape.id, fromLayerId: shape.layerId ?? 'background' };
+    const bgLayer = layers.find(l => l.isBackground);
+    const payload: DragPayload = { kind: 'shape', shapeId: shape.id, fromLayerId: shape.layerId ?? bgLayer?.id ?? '' };
     setDragPayload(payload);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', JSON.stringify(payload));
   }
 
   function handleLayerDragStart(e: React.DragEvent, layerId: string) {
-    if (layerId === 'background') { e.preventDefault(); return; }
+    const layer = layers.find(l => l.id === layerId);
+    if (layer?.isBackground) { e.preventDefault(); return; }
     const payload: DragPayload = { kind: 'layer', layerId };
     setDragPayload(payload);
     e.dataTransfer.effectAllowed = 'move';
@@ -148,7 +153,8 @@ export function LayersPanel({
       }
     } else if (dragPayload.kind === 'layer') {
       const fromId = dragPayload.layerId;
-      if (fromId === targetLayerId || targetLayerId === 'background') return;
+      const targetLayer = layers.find(l => l.id === targetLayerId);
+      if (fromId === targetLayerId || targetLayer?.isBackground) return;
       const next = [...layers];
       const fromIdx = next.findIndex((l) => l.id === fromId);
       const toIdx = next.findIndex((l) => l.id === targetLayerId);
@@ -176,7 +182,7 @@ export function LayersPanel({
 
       <div className={styles.list}>
         {layers.map((layer) => {
-          const layerShapes = shapes.filter((s) => (s.layerId ?? 'background') === layer.id);
+          const layerShapes = shapes.filter((s) => s.layerId === layer.id);
           const isActive = layer.id === activeLayerId;
           const isExpanded = expandedIds.has(layer.id);
           const isOver = dragOverLayerId === layer.id && dragPayload?.kind === 'shape' &&
@@ -197,7 +203,7 @@ export function LayersPanel({
                 className={`${styles.layerRow} ${isActive ? styles.layerRowActive : ''} ${isOver ? styles.layerRowDropTarget : ''}`}
                 onClick={() => onSetActiveLayer(layer.id)}
               >
-                {layer.id !== 'background' && (
+                {!layer.isBackground && (
                   <span
                     className={styles.layerGrip}
                     draggable
@@ -207,7 +213,7 @@ export function LayersPanel({
                     <GripVertical size={11} />
                   </span>
                 )}
-                {layer.id === 'background' && <span className={styles.layerGripPlaceholder} />}
+                {layer.isBackground && <span className={styles.layerGripPlaceholder} />}
 
                 <button
                   className={styles.chevronBtn}
@@ -256,7 +262,7 @@ export function LayersPanel({
                 >
                   {layer.hidden ? <EyeOff size={11} /> : <Eye size={11} />}
                 </button>
-                {layer.id !== 'background' && confirmDeleteId !== layer.id && (
+                {!layer.isBackground && confirmDeleteId !== layer.id && (
                   <button
                     className={`${styles.iconBtn} ${styles.deleteBtn}`}
                     onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(layer.id); }}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ColorPicker } from './ColorPicker';
 import { ColorPickerPopover } from './ColorPickerPopover';
 import styles from './FillPicker.module.css';
@@ -18,6 +18,14 @@ export interface BackgroundTheme {
   accentColor: string;
 }
 
+export interface DriveImageItem {
+  id: string;
+  name: string;
+  /** Direct URL to the image (used as the fill value). */
+  url: string;
+  thumbnailUrl?: string;
+}
+
 export interface FillPickerProps {
   background: Background;
   onChange: (bg: Background) => void;
@@ -26,6 +34,8 @@ export interface FillPickerProps {
   presetsKey?: string;
   /** Label shown on the trigger button (default: 'BG') */
   triggerLabel?: string;
+  /** If provided, a Drive source tab appears in the image picker. Called when the Drive tab is first opened. */
+  onFetchDriveImages?: () => Promise<DriveImageItem[]>;
 }
 
 // ── Gradient model ────────────────────────────────────────────────────────────
@@ -175,6 +185,7 @@ export function FillPicker({
   theme,
   presetsKey,
   triggerLabel,
+  onFetchDriveImages,
 }: FillPickerProps) {
   const resolvedPresetsKey = presetsKey ?? 'neutrino:bg:gradientPresets';
 
@@ -182,7 +193,12 @@ export function FillPicker({
   const [tab, setTab] = useState<'color' | 'gradient' | 'image'>(
     background.type === 'gradient' ? 'gradient' : background.type === 'image' ? 'image' : 'color',
   );
+  const [imageSource, setImageSource] = useState<'url' | 'local' | 'drive'>('url');
   const [imageUrl, setImageUrl] = useState(background.type === 'image' ? background.value : '');
+  const [driveFiles, setDriveFiles] = useState<DriveImageItem[]>([]);
+  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [gradConfig, setGradConfig] = useState<GradientConfig>(() =>
     background.type === 'gradient' ? (parseGradient(background.value) ?? DEFAULT_CONFIG) : DEFAULT_CONFIG,
   );
@@ -227,6 +243,20 @@ export function FillPicker({
     return () => document.removeEventListener('mousedown', handle);
   }, []);
 
+  async function openDriveSource() {
+    if (!onFetchDriveImages || driveFiles.length > 0 || driveLoading) return;
+    setDriveLoading(true);
+    setDriveError(null);
+    try {
+      const items = await onFetchDriveImages();
+      setDriveFiles(items);
+    } catch {
+      setDriveError('Failed to load Drive images.');
+    } finally {
+      setDriveLoading(false);
+    }
+  }
+
   function applyConfig(cfg: GradientConfig) {
     const css = buildGradient(cfg);
     lastCssRef.current = css;
@@ -240,6 +270,21 @@ export function FillPicker({
     if (parsed) setGradConfig(parsed);
     onChange({ type: 'gradient', value: css });
   }
+
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl) return;
+      setImageUrl(dataUrl);
+      onChange({ type: 'image', value: dataUrl, objectFit: 'cover' });
+    };
+    reader.readAsDataURL(file);
+    // Reset so the same file can be re-uploaded if needed
+    e.target.value = '';
+  }, [onChange]);
 
   function savePreset() {
     const css = buildGradient(gradConfig);
@@ -318,6 +363,7 @@ export function FillPicker({
               <ColorPicker
                 value={background.type === 'color' ? background.value : '#ffffff'}
                 onChange={(val) => onChange({ type: 'color', value: val })}
+                flat
               />
             )}
 
@@ -465,17 +511,94 @@ export function FillPicker({
 
             {tab === 'image' && (
               <>
-                <input
-                  type="text"
-                  className={styles.bgUrlInput}
-                  placeholder="Image URL…"
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  onBlur={() => {
-                    if (imageUrl.trim()) onChange({ type: 'image', value: imageUrl.trim(), objectFit: 'cover' });
-                    else onChange({ type: 'color', value: '#ffffff' });
-                  }}
-                />
+                {/* ── Source switcher ──────────────────────────────────── */}
+                <div className={styles.imgSourceRow}>
+                  <button
+                    className={`${styles.imgSourceBtn} ${imageSource === 'url' ? styles.imgSourceBtnActive : ''}`}
+                    onClick={() => setImageSource('url')}
+                  >
+                    URL
+                  </button>
+                  <button
+                    className={`${styles.imgSourceBtn} ${imageSource === 'local' ? styles.imgSourceBtnActive : ''}`}
+                    onClick={() => setImageSource('local')}
+                  >
+                    Local
+                  </button>
+                  {onFetchDriveImages && (
+                    <button
+                      className={`${styles.imgSourceBtn} ${imageSource === 'drive' ? styles.imgSourceBtnActive : ''}`}
+                      onClick={() => { setImageSource('drive'); openDriveSource(); }}
+                    >
+                      Drive
+                    </button>
+                  )}
+                </div>
+
+                {/* ── URL source ───────────────────────────────────────── */}
+                {imageSource === 'url' && (
+                  <div className={styles.bgImageRow}>
+                    <input
+                      type="text"
+                      className={styles.bgUrlInput}
+                      placeholder="Image URL…"
+                      value={imageUrl}
+                      onChange={(e) => setImageUrl(e.target.value)}
+                      onBlur={() => {
+                        if (imageUrl.trim()) onChange({ type: 'image', value: imageUrl.trim(), objectFit: 'cover' });
+                        else onChange({ type: 'color', value: '#ffffff' });
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* ── Local source ─────────────────────────────────────── */}
+                {imageSource === 'local' && (
+                  <>
+                    <button
+                      className={styles.bgUploadBtn}
+                      style={{ width: '100%' }}
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Upload image from device"
+                    >
+                      Choose file…
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className={styles.bgFileInput}
+                      onChange={handleFileUpload}
+                    />
+                  </>
+                )}
+
+                {/* ── Drive source ─────────────────────────────────────── */}
+                {imageSource === 'drive' && (
+                  <div className={styles.driveGrid}>
+                    {driveLoading && <span className={styles.driveNote}>Loading…</span>}
+                    {driveError && <span className={styles.driveNote}>{driveError}</span>}
+                    {!driveLoading && !driveError && driveFiles.length === 0 && (
+                      <span className={styles.driveNote}>No images found in Drive.</span>
+                    )}
+                    {driveFiles.map((f) => (
+                      <button
+                        key={f.id}
+                        className={`${styles.driveThumb} ${background.type === 'image' && background.value === f.url ? styles.driveThumbActive : ''}`}
+                        title={f.name}
+                        onClick={() => onChange({ type: 'image', value: f.url, objectFit: 'cover' })}
+                      >
+                        {f.thumbnailUrl ? (
+                          <img src={f.thumbnailUrl} alt={f.name} className={styles.driveThumbImg} />
+                        ) : (
+                          <span className={styles.driveThumbFallback}>🖼</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* ── Preview ──────────────────────────────────────────── */}
                 {background.type === 'image' && background.value && (
                   <div
                     className={styles.bgImagePreview}

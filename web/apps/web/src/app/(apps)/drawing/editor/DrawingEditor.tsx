@@ -7,6 +7,8 @@ import { ArrowLeft } from 'lucide-react';
 import { Spinner } from '@neutrino/ui';
 import { drawingApi } from '@neutrino/api-drawing';
 import { request } from '@neutrino/api-core';
+import { storageApi } from '@neutrino/api-drive';
+import type { DriveImageItem } from '@neutrino/ui';
 import type { Shape, Layer, ToolType, DrawingContent, Transform } from './types';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
 import { DrawingToolbar } from './DrawingToolbar';
@@ -47,12 +49,14 @@ export function DrawingEditor() {
   const router = useRouter();
   const drawingId = searchParams.get('id');
 
+  const bgLayerIdRef = useRef(Math.random().toString(36).slice(2, 10));
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState('Untitled drawing');
   const [shapes, setShapes] = useState<Shape[]>([]);
-  const [layers, setLayers] = useState<Layer[]>([{ id: 'background', name: 'Background' }]);
-  const [activeLayerId, setActiveLayerId] = useState('background');
+  const [layers, setLayers] = useState<Layer[]>([{ id: bgLayerIdRef.current, name: 'Background', isBackground: true }]);
+  const [activeLayerId, setActiveLayerId] = useState(bgLayerIdRef.current);
   const [tool, setTool] = useState<ToolType>('select');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [scale, setScale] = useState(1);
@@ -60,18 +64,52 @@ export function DrawingEditor() {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
+  const [hasClipboard, setHasClipboard] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const transformStateRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
   const shapesRef = useRef(shapes);
   const selectedIdsRef = useRef(selectedIds);
+  const clipboardRef = useRef<Shape[]>([]);
+  const historyRef = useRef<Shape[][]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isUndoRedoRef = useRef(false);
   useEffect(() => { shapesRef.current = shapes; }, [shapes]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+
+  // Debounced history tracking. Ordered before the dirty effect so it reads afterLoadRef = true
+  // (set during load) before the dirty effect resets it to false.
+  useEffect(() => {
+    if (!hasMounted.current || afterLoadRef.current) return;
+    if (isUndoRedoRef.current) { isUndoRedoRef.current = false; return; }
+    const timer = setTimeout(() => {
+      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+      historyRef.current.push([...shapes]);
+      historyIndexRef.current = historyRef.current.length - 1;
+      setCanUndo(historyIndexRef.current > 0);
+      setCanRedo(false);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [shapes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mark dirty on any user-initiated change. The first fire after load is swallowed via afterLoadRef.
+  useEffect(() => {
+    if (!hasMounted.current || afterLoadRef.current) {
+      afterLoadRef.current = false;
+      return;
+    }
+    isDirtyRef.current = true;
+  }, [shapes, layers, title]);
 
   const debouncedShapes = useDebounce(shapes, 1000);
   const saveInProgress = useRef(false);
   const hasMounted = useRef(false);
+  const isDirtyRef = useRef(false);
+  const afterLoadRef = useRef(false);
 
   useEffect(() => {
     if (!drawingId) {
@@ -88,20 +126,43 @@ export function DrawingEditor() {
         if (raw) {
           try {
             const content = JSON.parse(raw) as DrawingContent;
-            setShapes(content.shapes ?? []);
+
+            // Determine background layer from saved content (last layer by convention,
+            // or the one marked isBackground, or the legacy 'background' id).
             if (content.layers && content.layers.length > 0) {
-              const hasBackground = content.layers.some((l) => l.id === 'background');
-              setLayers(hasBackground ? content.layers : [...content.layers, { id: 'background', name: 'Background' }]);
+              const bgLayer = content.layers.find(l => l.isBackground || l.id === 'background')
+                ?? content.layers[content.layers.length - 1];
+              bgLayerIdRef.current = bgLayer.id;
+              const normalizedLayers = content.layers.map(l =>
+                l === bgLayer ? { ...l, isBackground: true as const } : l
+              );
+              setLayers(normalizedLayers);
+              setActiveLayerId(bgLayerIdRef.current);
             }
 
+            // Normalize shapes: migrate legacy undefined/`'background'` layerIds to the actual bg id.
+            const bgId = bgLayerIdRef.current;
+            const loaded = (content.shapes ?? []).map(s => ({
+              ...s,
+              layerId: (!s.layerId || s.layerId === 'background') ? bgId : s.layerId,
+            }));
+            historyRef.current = [[...loaded]];
+            historyIndexRef.current = 0;
+            setShapes(loaded);
           } catch {
+            historyRef.current = [[]];
+            historyIndexRef.current = 0;
             setShapes([]);
           }
+        } else {
+          historyRef.current = [[]];
+          historyIndexRef.current = 0;
         }
       } catch {
         setError('Failed to load drawing');
       } finally {
         setLoading(false);
+        afterLoadRef.current = true;
         hasMounted.current = true;
       }
     }
@@ -109,7 +170,8 @@ export function DrawingEditor() {
   }, [drawingId]);
 
   useEffect(() => {
-    if (!hasMounted.current || !drawingId || saveInProgress.current) return;
+    if (!hasMounted.current || !drawingId || saveInProgress.current || !isDirtyRef.current) return;
+    isDirtyRef.current = false;
     saveInProgress.current = true;
     const content: DrawingContent = { version: 1, shapes: debouncedShapes, layers };
     drawingApi
@@ -144,14 +206,62 @@ export function DrawingEditor() {
           setSelectedIds(copies.map((c) => c.id));
         }
       }
-      // Layer shortcuts
-      if ((e.ctrlKey || e.metaKey) && e.key === ']') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         e.preventDefault();
-        handleBringForward();
+        if (selectedIdsRef.current.length > 0) {
+          clipboardRef.current = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
+          setHasClipboard(true);
+        }
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === '[') {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
         e.preventDefault();
-        handleSendBackward();
+        if (selectedIdsRef.current.length > 0) {
+          clipboardRef.current = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
+          setHasClipboard(true);
+          setShapes((prev) => prev.filter((s) => !selectedIdsRef.current.includes(s.id)));
+          setSelectedIds([]);
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        if (clipboardRef.current.length > 0) {
+          const pastes = clipboardRef.current.map((s) => ({
+            ...s,
+            id: Math.random().toString(36).slice(2, 10),
+            x: s.x + 16,
+            y: s.y + 16,
+            points: s.points.map((p) => ({ x: p.x + 16, y: p.y + 16 })),
+          }));
+          setShapes((prev) => [...prev, ...pastes]);
+          setSelectedIds(pastes.map((p) => p.id));
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        if (historyTimerRef.current !== null) {
+          clearTimeout(historyTimerRef.current);
+          historyTimerRef.current = null;
+          historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+          historyRef.current.push([...shapesRef.current]);
+          historyIndexRef.current = historyRef.current.length - 1;
+        }
+        if (historyIndexRef.current <= 0) return;
+        isUndoRedoRef.current = true;
+        historyIndexRef.current--;
+        setShapes([...historyRef.current[historyIndexRef.current]]);
+        setSelectedIds([]);
+        setCanUndo(historyIndexRef.current > 0);
+        setCanRedo(true);
+      }
+      if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && e.key === 'z') || e.key === 'y')) {
+        e.preventDefault();
+        if (historyIndexRef.current >= historyRef.current.length - 1) return;
+        isUndoRedoRef.current = true;
+        historyIndexRef.current++;
+        setShapes([...historyRef.current[historyIndexRef.current]]);
+        setSelectedIds([]);
+        setCanUndo(true);
+        setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "'") {
         e.preventDefault();
@@ -224,53 +334,58 @@ export function DrawingEditor() {
     setSelectedIds(copies.map((c) => c.id));
   }, []);
 
-  // --- Layer operations ---
-
-  const handleBringForward = useCallback(() => {
-    const ids = selectedIdsRef.current;
-    if (ids.length === 0) return;
-    setShapes((prev) => {
-      const next = [...prev];
-      // Move each selected shape one step forward (toward end of array = top)
-      for (let i = next.length - 2; i >= 0; i--) {
-        if (ids.includes(next[i].id) && !ids.includes(next[i + 1].id)) {
-          [next[i], next[i + 1]] = [next[i + 1], next[i]];
-        }
-      }
-      return next;
-    });
+  const handleCopy = useCallback(() => {
+    if (selectedIdsRef.current.length === 0) return;
+    clipboardRef.current = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
+    setHasClipboard(true);
   }, []);
 
-  const handleSendBackward = useCallback(() => {
-    const ids = selectedIdsRef.current;
-    if (ids.length === 0) return;
-    setShapes((prev) => {
-      const next = [...prev];
-      for (let i = 1; i < next.length; i++) {
-        if (ids.includes(next[i].id) && !ids.includes(next[i - 1].id)) {
-          [next[i - 1], next[i]] = [next[i], next[i - 1]];
-        }
-      }
-      return next;
-    });
+  const handleCut = useCallback(() => {
+    if (selectedIdsRef.current.length === 0) return;
+    clipboardRef.current = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
+    setHasClipboard(true);
+    setShapes((prev) => prev.filter((s) => !selectedIdsRef.current.includes(s.id)));
+    setSelectedIds([]);
   }, []);
 
-  const handleBringToFront = useCallback(() => {
-    const ids = selectedIdsRef.current;
-    if (ids.length === 0) return;
-    setShapes((prev) => [
-      ...prev.filter((s) => !ids.includes(s.id)),
-      ...prev.filter((s) => ids.includes(s.id)),
-    ]);
+  const handlePaste = useCallback(() => {
+    if (clipboardRef.current.length === 0) return;
+    const pastes = clipboardRef.current.map((s) => ({
+      ...s,
+      id: Math.random().toString(36).slice(2, 10),
+      x: s.x + 16,
+      y: s.y + 16,
+      points: s.points.map((p) => ({ x: p.x + 16, y: p.y + 16 })),
+    }));
+    setShapes((prev) => [...prev, ...pastes]);
+    setSelectedIds(pastes.map((p) => p.id));
   }, []);
 
-  const handleSendToBack = useCallback(() => {
-    const ids = selectedIdsRef.current;
-    if (ids.length === 0) return;
-    setShapes((prev) => [
-      ...prev.filter((s) => ids.includes(s.id)),
-      ...prev.filter((s) => !ids.includes(s.id)),
-    ]);
+  const handleUndo = useCallback(() => {
+    if (historyTimerRef.current !== null) {
+      clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = null;
+      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+      historyRef.current.push([...shapesRef.current]);
+      historyIndexRef.current = historyRef.current.length - 1;
+    }
+    if (historyIndexRef.current <= 0) return;
+    isUndoRedoRef.current = true;
+    historyIndexRef.current--;
+    setShapes([...historyRef.current[historyIndexRef.current]]);
+    setSelectedIds([]);
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(true);
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    isUndoRedoRef.current = true;
+    historyIndexRef.current++;
+    setShapes([...historyRef.current[historyIndexRef.current]]);
+    setSelectedIds([]);
+    setCanUndo(true);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
   }, []);
 
   const handleToggleLock = useCallback(() => {
@@ -290,18 +405,18 @@ export function DrawingEditor() {
     const id = Math.random().toString(36).slice(2, 10);
     const newLayer: Layer = { id, name: 'New layer' };
     setLayers((prev) => {
-      const bg = prev.find((l) => l.id === 'background');
-      const rest = prev.filter((l) => l.id !== 'background');
+      const bg = prev.find((l) => l.isBackground);
+      const rest = prev.filter((l) => !l.isBackground);
       return bg ? [newLayer, ...rest, bg] : [newLayer, ...rest];
     });
     setActiveLayerId(id);
   }, []);
 
   const handleDeleteLayer = useCallback((id: string) => {
-    if (id === 'background') return;
-    setShapes((prev) => prev.map((s) => s.layerId === id ? { ...s, layerId: 'background' } : s));
+    if (id === bgLayerIdRef.current) return;
+    setShapes((prev) => prev.map((s) => s.layerId === id ? { ...s, layerId: bgLayerIdRef.current } : s));
     setLayers((prev) => prev.filter((l) => l.id !== id));
-    setActiveLayerId((prev) => (prev === id ? 'background' : prev));
+    setActiveLayerId((prev) => (prev === id ? bgLayerIdRef.current : prev));
   }, []);
 
   const handleRenameLayer = useCallback((id: string, name: string) => {
@@ -328,6 +443,23 @@ export function DrawingEditor() {
 
   const handleStyleChange = useCallback((ids: string[], patch: Partial<Shape>) => {
     setShapes((prev) => prev.map((s) => ids.includes(s.id) ? { ...s, ...patch } : s));
+  }, []);
+
+  // --- Drive image picker ---
+
+  const handleFetchDriveImages = useCallback(async (): Promise<DriveImageItem[]> => {
+    const IMAGE_MIME_PREFIXES = ['image/'];
+    const result = await storageApi.listFiles({ limit: 200, orderBy: 'updatedAt', direction: 'desc' });
+    return result.items
+      .filter((f) => IMAGE_MIME_PREFIXES.some((prefix) => f.mimeType.startsWith(prefix)))
+      .map((f) => ({
+        id: f.id,
+        name: f.name,
+        url: storageApi.getFileDownloadUrl(f.id),
+        thumbnailUrl: f.coverThumbnail
+          ? `data:${f.coverThumbnailMimeType ?? 'image/jpeg'};base64,${f.coverThumbnail}`
+          : undefined,
+      }));
   }, []);
 
   // --- Export ---
@@ -379,17 +511,21 @@ export function DrawingEditor() {
           tool={tool}
           onToolChange={setTool}
           selectedCount={selectedIds.length}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          canUndo={canUndo}
+          canRedo={canRedo}
           onSelectAll={handleSelectAll}
+          onCut={handleCut}
+          onCopy={handleCopy}
+          onPaste={handlePaste}
+          hasClipboard={hasClipboard}
           onDelete={handleDelete}
           onDuplicate={handleDuplicate}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onResetZoom={handleZoomReset}
           onFitToScreen={handleZoomReset}
-          onBringForward={handleBringForward}
-          onSendBackward={handleSendBackward}
-          onBringToFront={handleBringToFront}
-          onSendToBack={handleSendToBack}
           onToggleLock={handleToggleLock}
           onExport={() => setShowExport(true)}
           onVersionHistory={() => setShowVersionHistory(true)}
@@ -444,6 +580,7 @@ export function DrawingEditor() {
           selectedIds={selectedIds}
           onStyleChange={handleStyleChange}
           onToggleLock={handleToggleLock}
+          onFetchDriveImages={handleFetchDriveImages}
         />
         {showVersionHistory && drawingId && (
           <div className={styles.versionHistoryPanel}>

@@ -139,9 +139,11 @@ export interface ColorPickerProps {
     onChange: (hex: string) => void;
     showAlpha?: boolean;
     onClose?: () => void;
+    /** Remove the floating-dialog chrome so the picker integrates inline. */
+    flat?: boolean;
 }
 
-export function ColorPicker({ value, onChange, showAlpha, onClose }: ColorPickerProps) {
+export function ColorPicker({ value, onChange, showAlpha, onClose, flat }: ColorPickerProps) {
     const lv = value.toLowerCase();
     const is8 = !!showAlpha && /^#[0-9a-fA-F]{8}$/.test(lv);
     const is6 = /^#[0-9a-fA-F]{6}$/.test(lv);
@@ -225,7 +227,7 @@ export function ColorPicker({ value, onChange, showAlpha, onClose }: ColorPicker
     const previewBg = showAlpha && alpha < 255 ? alphaPreviewBg(hex, alpha) : hex;
 
     return (
-        <div className={styles.picker}>
+        <div className={`${styles.picker}${flat ? ` ${styles.pickerFlat}` : ''}`}>
             {/* Tab bar */}
             <div className={styles.tabs}>
                 {(['swatches', 'wheel', 'values'] as Tab[]).map(t => (

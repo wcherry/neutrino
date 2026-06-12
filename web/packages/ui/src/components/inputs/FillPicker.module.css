@@ -90,8 +90,15 @@
   overflow-y: auto;
 }
 
+.bgImageRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
 .bgUrlInput {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
   padding: var(--space-1) var(--space-2);
   font-size: var(--font-size-xs);
@@ -99,6 +106,30 @@
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
+}
+
+.bgUploadBtn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text);
+  white-space: nowrap;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+
+.bgUploadBtn:hover {
+  background: var(--color-accent-subtle, #ede9fe);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.bgFileInput {
+  display: none;
 }
 
 .bgUrlInput::placeholder {
@@ -110,6 +141,89 @@
   aspect-ratio: 16 / 9;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
+}
+
+/* ── Image source switcher ───────────────────────────────────────────────── */
+
+.imgSourceRow {
+  display: flex;
+  gap: 3px;
+}
+
+.imgSourceBtn {
+  flex: 1;
+  padding: 4px 0;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+}
+
+.imgSourceBtn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.imgSourceBtnActive {
+  background: var(--color-accent-subtle, #ede9fe);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* ── Drive file grid ─────────────────────────────────────────────────────── */
+
+.driveGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.driveThumb {
+  aspect-ratio: 1;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--color-border);
+  cursor: pointer;
+  overflow: hidden;
+  padding: 0;
+  background: var(--color-surface-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+.driveThumb:hover {
+  border-color: var(--color-accent);
+}
+
+.driveThumbActive {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-subtle, #ede9fe);
+}
+
+.driveThumbImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.driveThumbFallback {
+  font-size: 18px;
+}
+
+.driveNote {
+  grid-column: 1 / -1;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-style: italic;
+  padding: 4px 0;
 }
 
 /* ── Gradient editor ─────────────────────────────────────────────────────── */

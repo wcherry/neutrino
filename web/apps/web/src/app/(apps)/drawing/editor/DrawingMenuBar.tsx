@@ -8,18 +8,22 @@ import type { ToolType } from './types';
 export interface DrawingMenuBarProps {
   tool: ToolType;
   onToolChange: (t: ToolType) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   selectedCount: number;
   onSelectAll: () => void;
+  onCut: () => void;
+  onCopy: () => void;
+  onPaste: () => void;
+  hasClipboard: boolean;
   onDelete: () => void;
   onDuplicate: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
   onFitToScreen: () => void;
-  onBringForward: () => void;
-  onSendBackward: () => void;
-  onBringToFront: () => void;
-  onSendToBack: () => void;
   onToggleLock: () => void;
   onExport: () => void;
   onVersionHistory: () => void;
@@ -31,18 +35,22 @@ export interface DrawingMenuBarProps {
 export function DrawingMenuBar({
   tool,
   onToolChange,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   selectedCount,
   onSelectAll,
+  onCut,
+  onCopy,
+  onPaste,
+  hasClipboard,
   onDelete,
   onDuplicate,
   onZoomIn,
   onZoomOut,
   onResetZoom,
   onFitToScreen,
-  onBringForward,
-  onSendBackward,
-  onBringToFront,
-  onSendToBack,
   onToggleLock,
   onExport,
   onVersionHistory,
@@ -71,15 +79,17 @@ export function DrawingMenuBar({
       kind: 'submenu',
       label: 'Edit',
       items: [
+        { kind: 'action', label: 'Undo',          shortcut: '⌘Z',  disabled: !canUndo,          action: onUndo },
+        { kind: 'action', label: 'Redo',          shortcut: '⌘⇧Z', disabled: !canRedo,          action: onRedo },
+        { kind: 'separator' },
         { kind: 'action', label: 'Select all',    shortcut: '⌘A',  action: onSelectAll },
+        { kind: 'separator' },
+        { kind: 'action', label: 'Cut',           shortcut: '⌘X',  disabled: selectedCount === 0, action: onCut },
+        { kind: 'action', label: 'Copy',          shortcut: '⌘C',  disabled: selectedCount === 0, action: onCopy },
+        { kind: 'action', label: 'Paste',         shortcut: '⌘V',  disabled: !hasClipboard,       action: onPaste },
         { kind: 'separator' },
         { kind: 'action', label: 'Delete',        shortcut: '⌫',   disabled: selectedCount === 0, action: onDelete },
         { kind: 'action', label: 'Duplicate',     shortcut: '⌘D',  disabled: selectedCount === 0, action: onDuplicate },
-        { kind: 'separator' },
-        { kind: 'action', label: 'Bring forward', shortcut: '⌘]',  disabled: selectedCount === 0, action: onBringForward },
-        { kind: 'action', label: 'Send backward', shortcut: '⌘[',  disabled: selectedCount === 0, action: onSendBackward },
-        { kind: 'action', label: 'Bring to front',               disabled: selectedCount === 0, action: onBringToFront },
-        { kind: 'action', label: 'Send to back',                 disabled: selectedCount === 0, action: onSendToBack },
         { kind: 'separator' },
         { kind: 'action', label: 'Lock',                         disabled: selectedCount === 0, action: onToggleLock },
       ],

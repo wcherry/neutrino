@@ -2,8 +2,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Lock, Unlock, ChevronDown } from 'lucide-react';
-import { FillPicker, ColorPickerPopover, type Background } from '@neutrino/ui';
-import type { Shape, StrokeStyle } from './types';
+import { FillPicker, ColorPickerPopover, type Background, type DriveImageItem } from '@neutrino/ui';
+import type { Shape, StrokeStyle, BezierCurve, TextCurve } from './types';
 import styles from './StylePanel.module.css';
 
 interface StylePanelProps {
@@ -11,6 +11,7 @@ interface StylePanelProps {
   selectedIds: string[];
   onStyleChange: (ids: string[], patch: Partial<Shape>) => void;
   onToggleLock: () => void;
+  onFetchDriveImages?: () => Promise<DriveImageItem[]>;
 }
 
 const STROKE_STYLES: { value: StrokeStyle; label: string; dashFn: (sw: number) => number[] }[] = [
@@ -94,12 +95,59 @@ function fillToBackground(fill: string): Background {
   return { type: 'color', value: fill === 'transparent' ? '#ffffff' : fill };
 }
 
-export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock }: StylePanelProps) {
+function makeDefaultLineCurve(shape: Shape): BezierCurve {
+  const x0 = shape.x, y0 = shape.y;
+  const x3 = shape.x + shape.width, y3 = shape.y + shape.height;
+  const dx = x3 - x0, dy = y3 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const perpX = (-dy / len) * len * 0.25;
+  const perpY = (dx / len) * len * 0.25;
+  return {
+    p0: { x: x0, y: y0 },
+    p1: { x: x0 + dx / 3 + perpX, y: y0 + dy / 3 + perpY },
+    p2: { x: x0 + 2 * dx / 3 + perpX, y: y0 + 2 * dy / 3 + perpY },
+    p3: { x: x3, y: y3 },
+  };
+}
+
+function makeDefaultTextCurve(shape: Shape): TextCurve {
+  const fontSize = Math.abs(shape.height) || 16;
+  const x0 = shape.x;
+  const x3 = shape.x + (shape.width || 200);
+  const yBase = shape.y + fontSize;
+  const arcH = fontSize * 1.2;
+  return {
+    mode: 'single',
+    bottom: {
+      p0: { x: x0,                y: yBase },
+      p1: { x: x0 + (x3-x0)/3,   y: yBase - arcH },
+      p2: { x: x0 + 2*(x3-x0)/3, y: yBase - arcH },
+      p3: { x: x3,                y: yBase },
+    },
+  };
+}
+
+function makeDefaultTopCurve(shape: Shape): BezierCurve {
+  const fontSize = Math.abs(shape.height) || 16;
+  const x0 = shape.x;
+  const x3 = shape.x + (shape.width || 200);
+  const yTop = shape.y;
+  const arcH = fontSize * 1.2;
+  return {
+    p0: { x: x0,                y: yTop },
+    p1: { x: x0 + (x3-x0)/3,   y: yTop - arcH },
+    p2: { x: x0 + 2*(x3-x0)/3, y: yTop - arcH },
+    p3: { x: x3,                y: yTop },
+  };
+}
+
+export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock, onFetchDriveImages }: StylePanelProps) {
   const selected = shapes.filter((s) => selectedIds.includes(s.id));
   if (selected.length === 0) return null;
 
   const first = selected[0];
   const allText = selected.every((s) => s.type === 'text');
+  const allLineOrArrow = selected.every((s) => s.type === 'line' || s.type === 'arrow');
   const anyLocked = selected.some((s) => s.locked);
   const showFill = selected.some((s) => s.type !== 'pen' && s.type !== 'line' && s.type !== 'arrow');
 
@@ -129,6 +177,7 @@ export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock }:
                 onChange={(bg) => onStyleChange(selectedIds, { fill: bg.type === 'image' ? `url(${bg.value})` : bg.value })}
                 presetsKey="neutrino:drawing:fillPresets"
                 triggerLabel=""
+                onFetchDriveImages={onFetchDriveImages}
               />
               <button
                 className={styles.clearBtn}
@@ -142,30 +191,30 @@ export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock }:
         )}
 
         <div className={styles.row}>
-          <span className={styles.label}>Stroke</span>
+          <span className={styles.label}>{allText ? 'Outline' : 'Stroke'}</span>
           <ColorPickerPopover
             color={stroke}
             onChange={(hex) => onStyleChange(selectedIds, { stroke: hex })}
-            title="Stroke color"
+            title={allText ? 'Outline color' : 'Stroke color'}
             showAlpha
           >
-            <button
+            <span
               className={styles.colorSwatch}
               style={{ background: stroke }}
-              title="Stroke color"
             />
           </ColorPickerPopover>
         </div>
 
         <div className={styles.row}>
-          <span className={styles.label}>Width</span>
+          <span className={styles.label}>{allText ? 'Outline width' : 'Width'}</span>
           <input
             type="number"
-            min={1}
+            min={allText ? 0 : 1}
             max={32}
             value={strokeWidth}
             onChange={(e) => {
-              const v = Math.max(1, Math.min(32, Number(e.target.value)));
+              const minVal = allText ? 0 : 1;
+              const v = Math.max(minVal, Math.min(32, Number(e.target.value)));
               if (!isNaN(v)) onStyleChange(selectedIds, { strokeWidth: v });
             }}
             className={styles.numberInput}
@@ -183,6 +232,7 @@ export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock }:
       </div>
 
       {allText && (
+        <>
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Text</div>
 
@@ -234,7 +284,7 @@ export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock }:
                   title="Shadow color"
                   showAlpha
                 >
-                  <button className={styles.colorSwatch} style={{ background: shadowColor }} />
+                  <span className={styles.colorSwatch} style={{ background: shadowColor }} />
                 </ColorPickerPopover>
               </div>
               <div className={styles.row}>
@@ -273,6 +323,69 @@ export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock }:
               </div>
             </>
           )}
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Path curve</div>
+
+          <div className={styles.row}>
+            <span className={styles.label}>Enable</span>
+            <input
+              type="checkbox"
+              checked={!!first.textCurve}
+              className={styles.shadowToggle}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  onStyleChange(selectedIds, { textCurve: makeDefaultTextCurve(first) });
+                } else {
+                  onStyleChange(selectedIds, { textCurve: undefined });
+                }
+              }}
+            />
+          </div>
+
+          {first.textCurve && (
+            <div className={styles.row}>
+              <span className={styles.label}>Mode</span>
+              <select
+                className={styles.select}
+                value={first.textCurve.mode}
+                onChange={(e) => {
+                  const mode = e.target.value as 'single' | 'double';
+                  const existing = first.textCurve!;
+                  const top = mode === 'double' && !existing.top
+                    ? makeDefaultTopCurve(first)
+                    : existing.top;
+                  onStyleChange(selectedIds, { textCurve: { ...existing, mode, top } });
+                }}
+              >
+                <option value="single">Single (baseline)</option>
+                <option value="double">Double (stretch)</option>
+              </select>
+            </div>
+          )}
+        </div>
+        </>
+      )}
+
+      {allLineOrArrow && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Bezier curve</div>
+          <div className={styles.row}>
+            <span className={styles.label}>Enable</span>
+            <input
+              type="checkbox"
+              checked={!!first.lineCurve}
+              className={styles.shadowToggle}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  onStyleChange(selectedIds, { lineCurve: makeDefaultLineCurve(first) });
+                } else {
+                  onStyleChange(selectedIds, { lineCurve: undefined });
+                }
+              }}
+            />
+          </div>
         </div>
       )}
 

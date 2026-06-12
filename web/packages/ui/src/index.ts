@@ -52,7 +52,7 @@ export { ColorPickerPopover } from './components/inputs/ColorPickerPopover';
 export type { ColorPickerPopoverProps } from './components/inputs/ColorPickerPopover';
 
 export { FillPicker } from './components/inputs/FillPicker';
-export type { FillPickerProps, Background, BackgroundTheme } from './components/inputs/FillPicker';
+export type { FillPickerProps, Background, BackgroundTheme, DriveImageItem } from './components/inputs/FillPicker';
 
 export { DropZone } from './components/inputs/DropZone';
 export type { DropZoneProps } from './components/inputs/DropZone';

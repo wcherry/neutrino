@@ -104,8 +104,87 @@ function snapToGrid(v: number): number {
   return Math.round(v / GRID_SIZE) * GRID_SIZE;
 }
 
+// ── Bezier helpers ────────────────────────────────────────────────
+function bezPt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+  const mt = 1 - t;
+  return {
+    x: mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x,
+    y: mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y,
+  };
+}
+function bezTan(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
+  const mt = 1 - t;
+  return {
+    x: 3*(mt*mt*(p1.x-p0.x) + 2*mt*t*(p2.x-p1.x) + t*t*(p3.x-p2.x)),
+    y: 3*(mt*mt*(p1.y-p0.y) + 2*mt*t*(p2.y-p1.y) + t*t*(p3.y-p2.y)),
+  };
+}
+function bezLen(p0: Point, p1: Point, p2: Point, p3: Point, steps = 80): number {
+  let len = 0, prev = p0;
+  for (let i = 1; i <= steps; i++) {
+    const cur = bezPt(p0, p1, p2, p3, i / steps);
+    len += Math.hypot(cur.x - prev.x, cur.y - prev.y);
+    prev = cur;
+  }
+  return len;
+}
+function bezTAtLen(p0: Point, p1: Point, p2: Point, p3: Point, target: number, steps = 80): number {
+  let len = 0, prev = p0;
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const cur = bezPt(p0, p1, p2, p3, t);
+    const seg = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+    if (len + seg >= target) return t - (1 / steps) * (1 - (target - len) / Math.max(seg, 0.0001));
+    len += seg;
+    prev = cur;
+  }
+  return 1;
+}
+
+// Exact bounding box of a cubic bezier (finds t where dx/dt=0 and dy/dt=0)
+function bezierBounds(p0: Point, p1: Point, p2: Point, p3: Point) {
+  const ts = [0, 1];
+  for (const axis of ['x', 'y'] as const) {
+    const A = p1[axis] - p0[axis];
+    const B = p2[axis] - p1[axis];
+    const C = p3[axis] - p2[axis];
+    const a = A - 2 * B + C;
+    const b = -2 * A + 2 * B;
+    const c = A;
+    if (Math.abs(a) < 1e-10) {
+      if (Math.abs(b) > 1e-10) { const t = -c / b; if (t > 0 && t < 1) ts.push(t); }
+    } else {
+      const disc = b * b - 4 * a * c;
+      if (disc >= 0) {
+        const sq = Math.sqrt(disc);
+        const t1 = (-b + sq) / (2 * a);
+        const t2 = (-b - sq) / (2 * a);
+        if (t1 > 0 && t1 < 1) ts.push(t1);
+        if (t2 > 0 && t2 < 1) ts.push(t2);
+      }
+    }
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const t of ts) {
+    const pt = bezPt(p0, p1, p2, p3, t);
+    minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y);
+    maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+let _measureCtx: CanvasRenderingContext2D | null = null;
+function measureTextWidth(text: string, fontSize: number, fontFamily: string): number {
+  if (!_measureCtx) {
+    _measureCtx = document.createElement('canvas').getContext('2d')!;
+  }
+  _measureCtx.font = `${fontSize}px ${fontFamily}`;
+  const lines = text.split('\n');
+  return Math.max(...lines.map((l) => _measureCtx!.measureText(l).width), 1);
 }
 
 function getBounds(shape: Shape): { x: number; y: number; w: number; h: number } {
@@ -120,10 +199,35 @@ function getBounds(shape: Shape): { x: number; y: number; w: number; h: number }
   }
   if (shape.type === 'text') {
     const fontSize = Math.abs(shape.height) || 16;
+    if (shape.textCurve) {
+      const { bottom, top, mode } = shape.textCurve;
+      const b = bezierBounds(bottom.p0, bottom.p1, bottom.p2, bottom.p3);
+      let minX = b.minX, minY = b.minY, maxX = b.maxX, maxY = b.maxY;
+      if (mode === 'double' && top) {
+        const tb = bezierBounds(top.p0, top.p1, top.p2, top.p3);
+        minX = Math.min(minX, tb.minX); minY = Math.min(minY, tb.minY);
+        maxX = Math.max(maxX, tb.maxX); maxY = Math.max(maxY, tb.maxY);
+      }
+      // Expand for ascenders above baseline and descenders below
+      return {
+        x: minX,
+        y: minY - fontSize * 0.75,
+        w: maxX - minX,
+        h: (maxY - minY) + fontSize * 0.75 + fontSize * 0.2,
+      };
+    }
+    const fontFamily = shape.fontFamily || 'sans-serif';
     const lines = (shape.text || '').split('\n');
-    const lineHeight = fontSize * 1.2;
-    const totalH = fontSize + (lines.length - 1) * lineHeight;
-    return { x: shape.x, y: shape.y, w: shape.width || 1, h: totalH };
+    const measuredW = measureTextWidth(shape.text || '', fontSize, fontFamily);
+    const topInset = fontSize * 0.25;
+    const h = fontSize * (lines.length * 1.2 - 0.25);
+    return { x: shape.x, y: shape.y + topInset, w: measuredW, h };
+  }
+  if ((shape.type === 'line' || shape.type === 'arrow') && shape.lineCurve) {
+    const c = shape.lineCurve;
+    const b = bezierBounds(c.p0, c.p1, c.p2, c.p3);
+    const pad = (shape.strokeWidth || 2) / 2 + 4;
+    return { x: b.minX - pad, y: b.minY - pad, w: b.maxX - b.minX + pad * 2, h: b.maxY - b.minY + pad * 2 };
   }
   return { x: shape.x, y: shape.y, w: shape.width || 1, h: shape.height || 1 };
 }
@@ -292,30 +396,39 @@ function renderShape(ctx: CanvasRenderingContext2D, shape: Shape, isSelected: bo
     }
     case 'line': {
       ctx.beginPath();
-      ctx.moveTo(shape.x, shape.y);
-      ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
+      if (shape.lineCurve) {
+        const c = shape.lineCurve;
+        ctx.moveTo(c.p0.x, c.p0.y);
+        ctx.bezierCurveTo(c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y);
+      } else {
+        ctx.moveTo(shape.x, shape.y);
+        ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
+      }
       ctx.stroke();
       break;
     }
     case 'arrow': {
-      const ex = shape.x + shape.width;
-      const ey = shape.y + shape.height;
-      const angle = Math.atan2(ey - shape.y, ex - shape.x);
+      let ex: number, ey: number, angle: number;
+      ctx.beginPath();
+      if (shape.lineCurve) {
+        const c = shape.lineCurve;
+        ctx.moveTo(c.p0.x, c.p0.y);
+        ctx.bezierCurveTo(c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y);
+        ex = c.p3.x; ey = c.p3.y;
+        const tan = bezTan(c.p0, c.p1, c.p2, c.p3, 1);
+        angle = Math.atan2(tan.y, tan.x);
+      } else {
+        ex = shape.x + shape.width; ey = shape.y + shape.height;
+        angle = Math.atan2(ey - shape.y, ex - shape.x);
+        ctx.moveTo(shape.x, shape.y);
+        ctx.lineTo(ex, ey);
+      }
+      ctx.stroke();
       const headLen = 14;
       ctx.beginPath();
-      ctx.moveTo(shape.x, shape.y);
-      ctx.lineTo(ex, ey);
-      ctx.stroke();
-      ctx.beginPath();
       ctx.moveTo(ex, ey);
-      ctx.lineTo(
-        ex - headLen * Math.cos(angle - Math.PI / 6),
-        ey - headLen * Math.sin(angle - Math.PI / 6),
-      );
-      ctx.lineTo(
-        ex - headLen * Math.cos(angle + Math.PI / 6),
-        ey - headLen * Math.sin(angle + Math.PI / 6),
-      );
+      ctx.lineTo(ex - headLen * Math.cos(angle - Math.PI / 6), ey - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(ex - headLen * Math.cos(angle + Math.PI / 6), ey - headLen * Math.sin(angle + Math.PI / 6));
       ctx.closePath();
       ctx.fillStyle = shape.stroke || '#000000';
       ctx.fill();
@@ -342,11 +455,46 @@ function renderShape(ctx: CanvasRenderingContext2D, shape: Shape, isSelected: bo
         ctx.shadowOffsetX = shape.shadowOffsetX ?? 2;
         ctx.shadowOffsetY = shape.shadowOffsetY ?? 2;
       }
-      const lines = (shape.text || '').split('\n');
-      const lineHeight = fontSize * 1.2;
-      lines.forEach((line, i) => {
-        ctx.fillText(line, shape.x, shape.y + fontSize + i * lineHeight);
-      });
+      if (shape.textCurve) {
+        const tc = shape.textCurve;
+        const { p0, p1, p2, p3 } = tc.bottom;
+        const text = shape.text || '';
+        const totalLen = bezLen(p0, p1, p2, p3);
+        const totalW = ctx.measureText(text).width;
+        let offset = Math.max(0, (totalLen - totalW) / 2);
+        for (const char of text) {
+          const cw = ctx.measureText(char).width;
+          const t = bezTAtLen(p0, p1, p2, p3, offset + cw / 2);
+          const pos = bezPt(p0, p1, p2, p3, t);
+          const tan = bezTan(p0, p1, p2, p3, t);
+          const ang = Math.atan2(tan.y, tan.x);
+          if (tc.mode === 'double' && tc.top) {
+            // Stretch character vertically between bottom and top curves
+            const tp = { p0: tc.top.p0, p1: tc.top.p1, p2: tc.top.p2, p3: tc.top.p3 };
+            const tPos = bezPt(tp.p0, tp.p1, tp.p2, tp.p3, t);
+            const dist = Math.hypot(tPos.x - pos.x, tPos.y - pos.y);
+            ctx.save();
+            ctx.translate(pos.x, pos.y);
+            ctx.rotate(ang);
+            ctx.scale(1, dist / fontSize);
+            ctx.fillText(char, -cw / 2, 0);
+            ctx.restore();
+          } else {
+            ctx.save();
+            ctx.translate(pos.x, pos.y);
+            ctx.rotate(ang);
+            ctx.fillText(char, -cw / 2, 0);
+            ctx.restore();
+          }
+          offset += cw;
+        }
+      } else {
+        const lines = (shape.text || '').split('\n');
+        const lineHeight = fontSize * 1.2;
+        lines.forEach((line, i) => {
+          ctx.fillText(line, shape.x, shape.y + fontSize + i * lineHeight);
+        });
+      }
       break;
     }
   }
@@ -403,6 +551,44 @@ function renderHandles(ctx: CanvasRenderingContext2D, shape: Shape) {
   ctx.stroke();
 
   ctx.restore();
+
+  // Bezier curve control handles (drawn outside the rotation transform)
+  if (shape.lineCurve) {
+    renderCurveHandles(ctx, [shape.lineCurve]);
+  }
+  if (shape.textCurve) {
+    const curves = [shape.textCurve.bottom];
+    if (shape.textCurve.mode === 'double' && shape.textCurve.top) curves.push(shape.textCurve.top);
+    renderCurveHandles(ctx, curves);
+  }
+}
+
+const CURVE_HANDLE_R = 5;
+
+function renderCurveHandles(ctx: CanvasRenderingContext2D, curves: { p0: Point; p1: Point; p2: Point; p3: Point }[]) {
+  ctx.save();
+  ctx.strokeStyle = '#2563eb';
+  ctx.fillStyle = '#ffffff';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 2]);
+  for (const c of curves) {
+    // Guide lines: p0→p1 and p3→p2
+    ctx.beginPath(); ctx.moveTo(c.p0.x, c.p0.y); ctx.lineTo(c.p1.x, c.p1.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(c.p3.x, c.p3.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  for (const c of curves) {
+    for (const pt of [c.p1, c.p2]) {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, CURVE_HANDLE_R, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 function renderGrid(ctx: CanvasRenderingContext2D, transform: Transform, width: number, height: number) {
@@ -434,7 +620,13 @@ function renderGrid(ctx: CanvasRenderingContext2D, transform: Transform, width: 
   ctx.restore();
 }
 
-type DragMode = 'none' | 'drawing' | 'moving' | 'resizing' | 'rotating' | 'box-select' | 'panning';
+type DragMode = 'none' | 'drawing' | 'moving' | 'resizing' | 'rotating' | 'box-select' | 'panning' | 'curve-control';
+
+// which bezier control point is being dragged
+type CurvePointId =
+  | { kind: 'line'; point: 'p1' | 'p2' }
+  | { kind: 'text-bottom'; point: 'p1' | 'p2' }
+  | { kind: 'text-top'; point: 'p1' | 'p2' };
 
 interface DragState {
   mode: DragMode;
@@ -449,6 +641,7 @@ interface DragState {
   boxW?: number;
   boxH?: number;
   penShapeId?: string;
+  curvePoint?: CurvePointId;
 }
 
 export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(function DrawingCanvas({
@@ -508,7 +701,8 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
   showGridRef.current = showGrid;
 
   function layerOf(s: Shape) {
-    return layersRef.current.find((l) => l.id === (s.layerId || 'background'));
+    return layersRef.current.find((l) => l.id === s.layerId)
+      ?? layersRef.current.find((l) => l.isBackground);
   }
   function shapeEffectivelyHidden(s: Shape) { return s.hidden || (layerOf(s)?.hidden ?? false); }
   function shapeEffectivelyLocked(s: Shape) { return s.locked || (layerOf(s)?.locked ?? false); }
@@ -625,6 +819,32 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
     return screenToCanvas(e.clientX - rect.left, e.clientY - rect.top, transformRef.current);
   }, []);
 
+  const findHitCurvePoint = useCallback((cp: Point): { shapeId: string; curvePoint: CurvePointId } | null => {
+    for (const id of selectedIdsRef.current) {
+      const shape = shapesRef.current.find((s) => s.id === id);
+      if (!shape) continue;
+      const candidates: { pt: Point; cpId: CurvePointId }[] = [];
+      if (shape.lineCurve) {
+        candidates.push({ pt: shape.lineCurve.p1, cpId: { kind: 'line', point: 'p1' } });
+        candidates.push({ pt: shape.lineCurve.p2, cpId: { kind: 'line', point: 'p2' } });
+      }
+      if (shape.textCurve) {
+        candidates.push({ pt: shape.textCurve.bottom.p1, cpId: { kind: 'text-bottom', point: 'p1' } });
+        candidates.push({ pt: shape.textCurve.bottom.p2, cpId: { kind: 'text-bottom', point: 'p2' } });
+        if (shape.textCurve.top) {
+          candidates.push({ pt: shape.textCurve.top.p1, cpId: { kind: 'text-top', point: 'p1' } });
+          candidates.push({ pt: shape.textCurve.top.p2, cpId: { kind: 'text-top', point: 'p2' } });
+        }
+      }
+      for (const { pt, cpId } of candidates) {
+        if (Math.hypot(pt.x - cp.x, pt.y - cp.y) <= CURVE_HANDLE_R + 3) {
+          return { shapeId: id, curvePoint: cpId };
+        }
+      }
+    }
+    return null;
+  }, []);
+
   const findHitHandle = useCallback(
     (cp: Point): { shapeId: string; handle: ResizeHandle } | null => {
       for (const id of selectedIdsRef.current) {
@@ -720,6 +940,19 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       const currentTool = toolRef.current;
 
       if (currentTool === 'select') {
+        // Check curve control points first (they sit on top of the shape)
+        const hitCurve = findHitCurvePoint(cp);
+        if (hitCurve) {
+          dragRef.current = {
+            mode: 'curve-control',
+            startX: cp.x, startY: cp.y,
+            lastX: cp.x, lastY: cp.y,
+            curvePoint: hitCurve.curvePoint,
+            initialShapes: shapesRef.current.map((s) => ({ ...s, points: [...s.points] })),
+          };
+          return;
+        }
+
         const hitHandle = findHitHandle(cp);
         if (hitHandle) {
           const initialShapes = shapesRef.current.map((s) => ({ ...s, points: [...s.points] }));
@@ -837,7 +1070,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       }
       render();
     },
-    [getCanvasPos, findHitHandle, onSelectionChange, onShapesChange, render],
+    [getCanvasPos, findHitCurvePoint, findHitHandle, onSelectionChange, onShapesChange, render],
   );
 
   const onMouseMove = useCallback(
@@ -926,16 +1159,22 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
         const dx = cp.x - drag.startX;
         const dy = cp.y - drag.startY;
         let { x, y, width: w, height: h } = orig;
+        const snapH = orig.type === 'text'
+          ? (v: number) => Math.max(1, Math.round(v))
+          : snapToGrid;
 
         switch (drag.handle) {
-          case 'se': w = snapToGrid(orig.width + dx); h = snapToGrid(orig.height + dy); break;
-          case 'sw': x = snapToGrid(orig.x + dx); w = snapToGrid(orig.width - dx); h = snapToGrid(orig.height + dy); break;
-          case 'ne': w = snapToGrid(orig.width + dx); y = snapToGrid(orig.y + dy); h = snapToGrid(orig.height - dy); break;
-          case 'nw': x = snapToGrid(orig.x + dx); y = snapToGrid(orig.y + dy); w = snapToGrid(orig.width - dx); h = snapToGrid(orig.height - dy); break;
+          case 'se': w = snapToGrid(orig.width + dx); h = snapH(orig.height + dy); break;
+          case 'sw': x = snapToGrid(orig.x + dx); w = snapToGrid(orig.width - dx); h = snapH(orig.height + dy); break;
+          case 'ne': w = snapToGrid(orig.width + dx); y = snapToGrid(orig.y + dy); h = snapH(orig.height - dy); break;
+          case 'nw': x = snapToGrid(orig.x + dx); y = snapToGrid(orig.y + dy); w = snapToGrid(orig.width - dx); h = snapH(orig.height - dy); break;
           case 'e':  w = snapToGrid(orig.width + dx); break;
           case 'w':  x = snapToGrid(orig.x + dx); w = snapToGrid(orig.width - dx); break;
-          case 's':  h = snapToGrid(orig.height + dy); break;
-          case 'n':  y = snapToGrid(orig.y + dy); h = snapToGrid(orig.height - dy); break;
+          case 's':  h = snapH(orig.height + dy); break;
+          case 'n':  y = snapToGrid(orig.y + dy); h = snapH(orig.height - dy); break;
+        }
+        if (orig.type === 'text') {
+          w = measureTextWidth(orig.text || '', h, orig.fontFamily || 'sans-serif');
         }
         onShapesChange(
           shapesRef.current.map((s) =>
@@ -957,6 +1196,33 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
         onShapesChange(
           shapesRef.current.map((s) => (s.id === targetId ? { ...s, rotation: angle } : s)),
         );
+        return;
+      }
+
+      if (drag.mode === 'curve-control' && drag.curvePoint && drag.initialShapes) {
+        const targetId = selectedIdsRef.current[0];
+        if (!targetId) return;
+        const orig = drag.initialShapes.find((s) => s.id === targetId);
+        if (!orig) return;
+        const dx = cp.x - drag.startX;
+        const dy = cp.y - drag.startY;
+        const { kind, point } = drag.curvePoint;
+        onShapesChange(shapesRef.current.map((s) => {
+          if (s.id !== targetId) return s;
+          if (kind === 'line' && s.lineCurve && orig.lineCurve) {
+            return { ...s, lineCurve: { ...s.lineCurve, [point]: { x: orig.lineCurve[point].x + dx, y: orig.lineCurve[point].y + dy } } };
+          }
+          if ((kind === 'text-bottom' || kind === 'text-top') && s.textCurve && orig.textCurve) {
+            const tc = { ...s.textCurve };
+            if (kind === 'text-bottom') {
+              tc.bottom = { ...tc.bottom, [point]: { x: orig.textCurve.bottom[point].x + dx, y: orig.textCurve.bottom[point].y + dy } };
+            } else if (kind === 'text-top' && tc.top && orig.textCurve.top) {
+              tc.top = { ...tc.top, [point]: { x: orig.textCurve.top[point].x + dx, y: orig.textCurve.top[point].y + dy } };
+            }
+            return { ...s, textCurve: tc };
+          }
+          return s;
+        }));
         return;
       }
 
@@ -1152,7 +1418,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
   const tePos = textEdit
     ? {
         x: textEdit.x * textEdit.capturedTransform.scale + textEdit.capturedTransform.x,
-        y: textEdit.y * textEdit.capturedTransform.scale + textEdit.capturedTransform.y,
+        y: (textEdit.y + textEdit.fontSize * 0.25) * textEdit.capturedTransform.scale + textEdit.capturedTransform.y,
         fontSize: textEdit.fontSize * textEdit.capturedTransform.scale,
       }
     : null;

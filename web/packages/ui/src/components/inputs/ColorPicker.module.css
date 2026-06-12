@@ -9,6 +9,14 @@
   user-select: none;
 }
 
+.pickerFlat {
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 /* ── Tabs ─────────────────────────────────────────────────────────────── */
 .tabs {
   display: flex;
