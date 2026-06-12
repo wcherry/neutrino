@@ -621,7 +621,7 @@ export function DocEditor() {
   const [showThemeModal, setShowThemeModal] = useState(false);
   // Track editor state version to force footnote list re-render on each transaction
   const [editorVersion, setEditorVersion] = useState(0);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; wordFrom?: number; wordTo?: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; wordFrom?: number; wordTo?: number; isOnImage?: boolean } | null>(null);
   const [spellWord, setSpellWord] = useState<string | undefined>(undefined);
   const [spellWordRange, setSpellWordRange] = useState<{ from: number; to: number } | null>(null);
   const [spellSuggestions, setSpellSuggestions] = useState<string[] | undefined>(undefined);
@@ -1366,7 +1366,22 @@ export function DocEditor() {
       }
     }
 
-    setContextMenu({ x: e.clientX, y: e.clientY });
+    // Detect if the right-click landed on an image node.
+    let isOnImage = false;
+    if (flags.docsAdvancedFormatting && editor) {
+      const coordPos = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
+      if (coordPos) {
+        const nodeAt = editor.state.doc.nodeAt(coordPos.pos);
+        if (nodeAt?.type.name === 'image') {
+          isOnImage = true;
+        } else if (coordPos.pos > 0) {
+          const nodeBefore = editor.state.doc.nodeAt(coordPos.pos - 1);
+          isOnImage = nodeBefore?.type.name === 'image';
+        }
+      }
+    }
+
+    setContextMenu({ x: e.clientX, y: e.clientY, isOnImage });
   };
 
   // When nspell finishes loading while the context menu is open (spellWord is
@@ -2021,6 +2036,15 @@ export function DocEditor() {
             onApplyGrammarFix: handleApplyGrammarFix,
             onAiGrammarFix: handleAiGrammarFix,
           } : {})}
+          isImageActive={!!(flags.docsAdvancedFormatting && contextMenu?.isOnImage)}
+          onImageProperties={() => {
+            setContextMenu(null);
+            setSpellWord(undefined);
+            setSpellWordRange(null);
+            setSpellSuggestions(undefined);
+            setGrammarIssue(null);
+            setShowImageProps(true);
+          }}
         />
       )}
 
@@ -2070,11 +2094,15 @@ export function DocEditor() {
         <ImagePropertiesModal
           editor={editor}
           initialAttrs={{
-            src:       editor.getAttributes('image').src as string | undefined,
-            width:     editor.getAttributes('image').width as string | null | undefined,
-            alignment: editor.getAttributes('image').alignment as string | undefined,
-            alt:       editor.getAttributes('image').alt as string | undefined,
-            caption:   editor.getAttributes('image').caption as string | undefined,
+            src:         editor.getAttributes('image').src as string | undefined,
+            width:       editor.getAttributes('image').width as string | null | undefined,
+            alignment:   editor.getAttributes('image').alignment as string | undefined,
+            alt:         editor.getAttributes('image').alt as string | undefined,
+            title:       editor.getAttributes('image').title as string | undefined,
+            caption:     editor.getAttributes('image').caption as string | undefined,
+            border:      editor.getAttributes('image').border as string | null | undefined,
+            shadow:      editor.getAttributes('image').shadow as string | undefined,
+            imageFilter: editor.getAttributes('image').imageFilter as string | null | undefined,
           }}
           onClose={() => setShowImageProps(false)}
         />

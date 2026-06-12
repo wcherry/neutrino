@@ -95,6 +95,9 @@ export type {
 export { Panel } from './components/containers/Panel';
 export type { PanelProps, PanelColor, PanelPadding } from './components/containers/Panel';
 
+export { PanelContainer } from './components/containers/PanelContainer';
+export type { PanelContainerProps, PanelLocation, PanelTab } from './components/containers/PanelContainer';
+
 export { Modal, ModalHeader, ModalBody, ModalFooter } from './components/containers/Modal';
 export type {
   ModalProps,

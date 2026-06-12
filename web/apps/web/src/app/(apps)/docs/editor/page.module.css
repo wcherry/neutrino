@@ -532,6 +532,47 @@
   margin-top: 20px;
 }
 
+.imagePropsPanelBody {
+  padding: 12px 16px;
+}
+
+.imagePropsSection {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted, #5f6368);
+  margin: 18px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+}
+
+.imagePropsSection:first-of-type {
+  margin-top: 0;
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.formSlider {
+  flex: 1;
+  height: 4px;
+  cursor: pointer;
+  accent-color: #1a73e8;
+}
+
+.sliderValue {
+  font-size: 12px;
+  color: var(--color-text-muted, #5f6368);
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 /* ── Import input ─────────────────────────────────────────────────────────── */
 .hiddenInput {
   display: none;

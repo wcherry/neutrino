@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { type Editor } from '@tiptap/react';
 import {
   Bold, Italic, Underline, Strikethrough, Link,
-  Eraser, MessageSquare, CheckSquare, AlignLeft, Sparkles,
+  Eraser, MessageSquare, CheckSquare, AlignLeft, Sparkles, ImageIcon,
 } from 'lucide-react';
 import styles from './EditorContextMenu.module.css';
 
@@ -38,6 +38,10 @@ interface Props {
   grammarRange?: { from: number; to: number };
   /** Called when the user asks AI to fix the grammar issue. */
   onAiGrammarFix?: () => void;
+  /** Whether the right-click target is an image node (advanced formatting enabled). */
+  isImageActive?: boolean;
+  /** Called when the user chooses "Image properties" from the context menu. */
+  onImageProperties?: () => void;
 }
 
 type Item =
@@ -60,6 +64,8 @@ export function EditorContextMenu({
   onApplyGrammarFix,
   grammarRange,
   onAiGrammarFix,
+  isImageActive,
+  onImageProperties,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -99,6 +105,15 @@ export function EditorContextMenu({
   const visibleSuggestions = spellSuggestions?.slice(0, MAX_SUGGESTIONS) ?? [];
 
   const items: Item[] = [
+    ...(isImageActive && onImageProperties ? [
+      {
+        kind: 'action' as const,
+        icon: <ImageIcon size={14} />,
+        label: 'Image properties…',
+        action: () => run(onImageProperties),
+      },
+      { kind: 'separator' as const },
+    ] : []),
     {
       kind: 'action',
       icon: <MessageSquare size={14} />,
