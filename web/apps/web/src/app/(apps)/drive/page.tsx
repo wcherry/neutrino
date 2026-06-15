@@ -140,6 +140,9 @@ export default function DrivePage() {
   const [folderPath, setFolderPath] = useState<Array<{ id: string; name: string }>>([]);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMovePending, setBulkMovePending] = useState(false);
 
   useEffect(() => {
     if (renaming && renameInputRef.current) {
@@ -158,6 +161,15 @@ export default function DrivePage() {
       window.removeEventListener('drive:upload', onUpload);
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setSelectedIds(new Set());
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedIds.size]);
 
   const { data: starredData } = useQuery({
     queryKey: ['starred'],
@@ -339,6 +351,67 @@ export default function DrivePage() {
       if (file) handleStar(file);
     }
   }, [fileMap, folderMap, updateFolderMutation, toast, handleStar]);
+
+  const handleItemSelect = useCallback((item: GridItem) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.add(item.id);
+      return next;
+    });
+  }, []);
+
+  async function handleBulkMove(targetFolderId: string | null) {
+    setBulkMovePending(true);
+    const ids = Array.from(selectedIds);
+    try {
+      await Promise.all(
+        ids.map((id) => {
+          if (fileMap.has(id)) return filesystemApi.updateFile(id, { folderId: targetFolderId });
+          if (folderMap.has(id)) return filesystemApi.updateFolder(id, { parentId: targetFolderId ?? undefined });
+          return Promise.resolve();
+        })
+      );
+      queryClient.invalidateQueries({ queryKey: ['contents'] });
+      queryClient.invalidateQueries({ queryKey: ['starred'] });
+      toast.success(`${ids.length} ${ids.length === 1 ? 'item' : 'items'} moved`);
+      setSelectedIds(new Set());
+      setBulkMoveOpen(false);
+    } catch {
+      toast.error('Failed to move some items');
+    } finally {
+      setBulkMovePending(false);
+    }
+  }
+
+  async function handleBulkDownload() {
+    const ids = Array.from(selectedIds).filter((id) => fileMap.has(id));
+    for (const id of ids) {
+      const file = fileMap.get(id)!;
+      await handleDownload(file);
+    }
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds);
+    const count = ids.length;
+    try {
+      await Promise.all(
+        ids.map((id) => {
+          if (fileMap.has(id)) return storageApi.deleteFile(id);
+          if (folderMap.has(id)) return filesystemApi.deleteFolder(id);
+          return Promise.resolve();
+        })
+      );
+      queryClient.invalidateQueries({ queryKey: ['contents'] });
+      queryClient.invalidateQueries({ queryKey: ['starred'] });
+      toast.success(`${count} ${count === 1 ? 'item' : 'items'} deleted`);
+      setSelectedIds(new Set());
+    } catch {
+      toast.error('Failed to delete some items');
+    }
+  }
 
   async function handleDownload(file: FileItem) {
     try {
@@ -582,6 +655,8 @@ export default function DrivePage() {
           onItemClick={handleGridItemClick}
           onItemMenuOpen={handleGridItemMenuOpen}
           onToggleStar={handleToggleStar}
+          selectedIds={selectedIds}
+          onItemSelect={handleItemSelect}
           onDragEnter={handleAreaDragEnter}
           onDragOver={handleAreaDragOver}
           onDragLeave={handleAreaDragLeave}
@@ -711,6 +786,28 @@ export default function DrivePage() {
       )}
 
       {infoFile && <FileInfoPanel file={infoFile} onClose={() => setInfoFile(null)} />}
+
+      {bulkMoveOpen && (
+        <MoveFolderDialog
+          itemName={`${selectedIds.size} ${selectedIds.size === 1 ? 'item' : 'items'}`}
+          currentFolderId={currentFolderId}
+          onMove={handleBulkMove}
+          onClose={() => setBulkMoveOpen(false)}
+          isPending={bulkMovePending}
+        />
+      )}
+
+      {selectedIds.size > 0 && (
+        <div className={styles['bulk-toolbar']}>
+          <span className={styles['bulk-count']}>{selectedIds.size} selected</span>
+          <div className={styles['bulk-actions']}>
+            <Button variant="secondary" size="sm" onClick={() => setBulkMoveOpen(true)}>Move to</Button>
+            <Button variant="secondary" size="sm" onClick={handleBulkDownload}>Download</Button>
+            <Button variant="secondary" size="sm" onClick={handleBulkDelete}>Delete</Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Cancel</Button>
+          </div>
+        </div>
+      )}
 
       {newFolderDialogOpen && (
         <div className={styles['rename-overlay']} onClick={() => setNewFolderDialogOpen(false)}>

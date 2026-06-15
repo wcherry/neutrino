@@ -375,6 +375,21 @@
   border-radius: var(--radius-sm);
 }
 
+/* ── Bulk selection ── */
+.card--selected {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  background-color: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.list-row--selected {
+  background-color: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.list-row--selected:hover {
+  background-color: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
 /* Sortable column header buttons */
 .list-col-btn {
   display: inline-flex;

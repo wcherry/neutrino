@@ -114,6 +114,10 @@ export interface FileGridProps {
   onDragLeave?: React.DragEventHandler<HTMLDivElement>;
   onDrop?: React.DragEventHandler<HTMLDivElement>;
   isDraggingOver?: boolean;
+  /** IDs of currently selected items for bulk mode */
+  selectedIds?: Set<string>;
+  /** Called when the user Cmd/Ctrl+clicks an item to toggle its selection */
+  onItemSelect?: (item: GridItem) => void;
 }
 
 export function FileGrid({
@@ -136,6 +140,8 @@ export function FileGrid({
   onDragLeave,
   onDrop,
   isDraggingOver,
+  selectedIds,
+  onItemSelect,
 }: FileGridProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
   const [filter, setFilter] = useState<FilterType>('all');
@@ -235,16 +241,21 @@ export function FileGrid({
             const thumbSrc = item.coverThumbnail && item.coverThumbnailMimeType
               ? `data:${item.coverThumbnailMimeType};base64,${item.coverThumbnail}`
               : null;
+            const isSelected = selectedIds?.has(item.id) ?? false;
             return (
             <Card
               key={item.id}
               hoverable
               padding="none"
-              className={styles['card-large']}
+              className={[styles['card-large'], isSelected ? styles['card--selected'] : ''].filter(Boolean).join(' ')}
               role="listitem"
               tabIndex={0}
               aria-label={item.name}
-              onClick={() => onItemClick(item)}
+              aria-selected={isSelected}
+              onClick={(e) => {
+                if ((e.metaKey || e.ctrlKey) && onItemSelect) { e.stopPropagation(); onItemSelect(item); }
+                else onItemClick(item);
+              }}
               onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
             >
               <div className={styles['preview-large']} style={{ color: item.iconColor }}>
@@ -291,16 +302,21 @@ export function FileGrid({
             const thumbSrc = item.coverThumbnail && item.coverThumbnailMimeType
               ? `data:${item.coverThumbnailMimeType};base64,${item.coverThumbnail}`
               : null;
+            const isSelected = selectedIds?.has(item.id) ?? false;
             return (
             <Card
               key={item.id}
               hoverable
               padding="none"
-              className={styles['card-small']}
+              className={[styles['card-small'], isSelected ? styles['card--selected'] : ''].filter(Boolean).join(' ')}
               role="listitem"
               tabIndex={0}
               aria-label={item.name}
-              onClick={() => onItemClick(item)}
+              aria-selected={isSelected}
+              onClick={(e) => {
+                if ((e.metaKey || e.ctrlKey) && onItemSelect) { e.stopPropagation(); onItemSelect(item); }
+                else onItemClick(item);
+              }}
               onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
             >
               <div className={styles['preview-small']} style={{ color: item.iconColor }}>
@@ -377,15 +393,20 @@ export function FileGrid({
               const thumbSrc = item.coverThumbnail && item.coverThumbnailMimeType
                 ? `data:${item.coverThumbnailMimeType};base64,${item.coverThumbnail}`
                 : null;
+              const isSelected = selectedIds?.has(item.id) ?? false;
               return (
               <div
                 key={item.id}
-                className={styles['list-row']}
+                className={[styles['list-row'], isSelected ? styles['list-row--selected'] : ''].filter(Boolean).join(' ')}
                 style={{ gridTemplateColumns: listCols }}
                 role="listitem"
                 tabIndex={0}
                 aria-label={item.name}
-                onClick={() => onItemClick(item)}
+                aria-selected={isSelected}
+                onClick={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && onItemSelect) { e.stopPropagation(); onItemSelect(item); }
+                  else onItemClick(item);
+                }}
                 onKeyDown={(e) => handleItemKeyDown(e, () => onItemClick(item))}
               >
                 <div className={styles['list-name']}>
