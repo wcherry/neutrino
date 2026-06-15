@@ -9,6 +9,7 @@ export {
   encryptMetadata,
   decryptMetadata,
   toBase64url,
+  toBase64,
   type KeyPair,
 } from './crypto';
 
@@ -18,5 +19,6 @@ export {
   clearKeyPair,
   hasKeyPair,
   fromBase64url,
+  fromBase64,
   type StoredKeyPair,
 } from './keystore';

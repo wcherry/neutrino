@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, RefreshCw, ShieldCheck, ShieldX, Upload } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
 import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest } from '@/lib/api';
-import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, toBase64url, fromBase64url } from '@neutrino/e2e-crypto';
+import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, toBase64url, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { clearSearchIndex, getOrCreateSearchKey, IndexEngine, type SearchableDocument } from '@neutrino/search';
@@ -280,8 +280,9 @@ const qc = useQueryClient();
     const kp = loadKeyPair(user.id);
     if (!kp) return;
     const exported = JSON.stringify({
-      publicKey: toBase64url(kp.publicKey),
-      secretKey: toBase64url(kp.secretKey),
+      public_key: toBase64(kp.publicKey),
+      private_key: toBase64(kp.secretKey),
+      key_version: '1',
     });
     setExportedKeyJson(exported);
     setShowExportKey(true);
@@ -301,17 +302,17 @@ const qc = useQueryClient();
     if (!user) return;
     setImportKeyError('');
     try {
-      const parsed = JSON.parse(importKeyValue.trim()) as { publicKey?: string; secretKey?: string };
-      if (typeof parsed.publicKey !== 'string' || typeof parsed.secretKey !== 'string') {
+      const parsed = JSON.parse(importKeyValue.trim()) as { public_key?: string; private_key?: string; key_version?: string };
+      if (typeof parsed.public_key !== 'string' || typeof parsed.private_key !== 'string') {
         throw new Error('Invalid format — paste the full exported key JSON');
       }
-      const publicKey = fromBase64url(parsed.publicKey);
-      const secretKey = fromBase64url(parsed.secretKey);
+      const publicKey = fromBase64(parsed.public_key);
+      const secretKey = fromBase64(parsed.private_key);
       if (publicKey.length !== 32 || secretKey.length !== 32) {
         throw new Error('Key has wrong length — make sure you pasted the complete key');
       }
       saveKeyPair(user.id, publicKey, secretKey);
-      await authApi.setPublicKey({ publicKey: parsed.publicKey });
+      await authApi.setPublicKey({ publicKey: toBase64url(publicKey) });
       setKeyStatus('set');
       setImportKeyValue('');
       setImportKeySaved(true);

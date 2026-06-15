@@ -38,6 +38,15 @@ export function fromBase64url(s: string): Uint8Array {
   return bytes;
 }
 
+export function fromBase64(s: string): Uint8Array {
+  const binary = atob(s.replace(/\s/g, ''));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 function storageKey(userId: string): string {
   return `${STORAGE_PREFIX}${userId}`;
 }
