@@ -1,5 +1,4 @@
 pub mod access_requests;
-pub mod private_store;
 pub mod activity;
 pub mod admin;
 pub mod ai;
@@ -13,6 +12,7 @@ pub mod jobs;
 pub mod notifications;
 pub mod permissions;
 pub mod priority;
+pub mod private_store;
 pub mod search;
 pub mod security;
 pub mod service_registry;

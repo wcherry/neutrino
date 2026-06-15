@@ -22,6 +22,7 @@ mod docs;
 mod drawing;
 mod drive;
 mod notes;
+mod oauth;
 mod photos;
 mod schema;
 mod shared;
@@ -136,9 +137,24 @@ async fn main() -> std::io::Result<()> {
     use auth::service::AuthService;
 
     let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
-    let auth_service = Arc::new(AuthService::new(auth_repo, token_service.clone()));
+    let auth_service = Arc::new(AuthService::new(auth_repo.clone(), token_service.clone()));
     let auth_state = web::Data::new(auth::api::AuthApiState {
         auth_service: auth_service.clone(),
+    });
+
+    // ── OAuth service ─────────────────────────────────────────────────────────
+
+    use oauth::repository::OauthRepository;
+    use oauth::service::OauthService;
+
+    let oauth_repo = Arc::new(OauthRepository::new(pool.clone()));
+    let oauth_service = Arc::new(OauthService::new(
+        oauth_repo,
+        auth_repo.clone(),
+        token_service.clone(),
+    ));
+    let oauth_state = web::Data::new(oauth::api::OauthApiState {
+        oauth_service: oauth_service.clone(),
     });
 
     // ── Calendar service ─────────────────────────────────────────────────────
@@ -690,13 +706,8 @@ async fn main() -> std::io::Result<()> {
         drive_fs_repo.clone(),
     ));
     let drawing_repo = Arc::new(DrawingRepository::new(pool.clone()));
-    let drawing_service = Arc::new(DrawingService::new(
-        drawing_repo,
-        drive_client_for_drawing,
-    ));
-    let drawing_state = web::Data::new(drawing::drawing::api::DrawingApiState {
-        drawing_service,
-    });
+    let drawing_service = Arc::new(DrawingService::new(drawing_repo, drive_client_for_drawing));
+    let drawing_state = web::Data::new(drawing::drawing::api::DrawingApiState { drawing_service });
 
     // ── Slides service ────────────────────────────────────────────────────────
 
@@ -754,10 +765,7 @@ async fn main() -> std::io::Result<()> {
             .unwrap_or_else(|e| panic!("Failed to init private store: {}", e)),
     );
     let private_lib_repo = Arc::new(PrivateLibraryRepository::new(pool.clone()));
-    let private_lib_service = Arc::new(PrivateLibraryService::new(
-        private_lib_repo,
-        private_store,
-    ));
+    let private_lib_service = Arc::new(PrivateLibraryService::new(private_lib_repo, private_store));
     let private_lib_state =
         web::Data::new(diagrams::private_library::api::PrivateLibraryApiState {
             service: private_lib_service,
@@ -831,6 +839,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(diagrams::diagrams::api::DiagramsApiDoc::openapi());
         doc.merge(diagrams::collab::api::DiagramsCollabApiDoc::openapi());
         doc.merge(diagrams::private_library::api::PrivateLibraryApiDoc::openapi());
+        doc.merge(oauth::api::OauthApiDoc::openapi());
         doc
     };
 
@@ -844,6 +853,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(token_service_data.clone())
             // Auth
             .app_data(auth_state.clone())
+            // OAuth
+            .app_data(oauth_state.clone())
             // Calendar
             .app_data(cal_events_state.clone())
             .app_data(cal_reminders_state.clone())
@@ -919,6 +930,7 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api/v1")
                     .configure(auth::api::configure)
+                    .configure(oauth::api::configure)
                     .configure(drive::feature_flags::api::configure_public)
                     .configure(calendar::configure)
                     .configure(docs::configure)

@@ -870,10 +870,39 @@ diesel::table! {
     }
 }
 
+// ── OAuth ─────────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    oauth_clients (id) {
+        id -> Text,
+        name -> Text,
+        redirect_uris -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    oauth_authorization_codes (code) {
+        code -> Text,
+        client_id -> Text,
+        user_id -> Text,
+        redirect_uri -> Text,
+        scope -> Nullable<Text>,
+        code_challenge -> Text,
+        code_challenge_method -> Text,
+        expires_at -> Timestamp,
+        created_at -> Timestamp,
+    }
+}
+
 // ── Joinable relationships ────────────────────────────────────────────────────
 
 // Auth
 diesel::joinable!(refresh_tokens -> users (user_id));
+
+// OAuth
+diesel::joinable!(oauth_authorization_codes -> oauth_clients (client_id));
+diesel::joinable!(oauth_authorization_codes -> users (user_id));
 diesel::joinable!(totp_backup_codes -> users (user_id));
 diesel::joinable!(user_profiles -> users (user_id));
 
@@ -972,6 +1001,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     tags,
     file_tags,
     file_key_refs,
+    // OAuth
+    oauth_clients,
+    oauth_authorization_codes,
     // Admin
     feature_flags,
 );
