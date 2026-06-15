@@ -45,9 +45,15 @@ fn config_from_metadata() -> Config {
     let neutrino = &pkg.metadata["neutrino"];
     let root = metadata.workspace_root.as_std_path();
 
-    let web = neutrino["web_dir"].as_str().expect("[package.metadata.neutrino] web_dir missing");
-    let e2e = neutrino["e2e_dir"].as_str().expect("[package.metadata.neutrino] e2e_dir missing");
-    let image = neutrino["docker_image"].as_str().expect("[package.metadata.neutrino] docker_image missing");
+    let web = neutrino["web_dir"]
+        .as_str()
+        .expect("[package.metadata.neutrino] web_dir missing");
+    let e2e = neutrino["e2e_dir"]
+        .as_str()
+        .expect("[package.metadata.neutrino] e2e_dir missing");
+    let image = neutrino["docker_image"]
+        .as_str()
+        .expect("[package.metadata.neutrino] docker_image missing");
 
     Config {
         web_dir: root.join(web),

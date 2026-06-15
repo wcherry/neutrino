@@ -1,10 +1,13 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::drawing::drawing::{
-    dto::{CreateDrawingRequest, DrawingMetaResponse, DrawingResponse, ListDrawingsResponse, SaveDrawingRequest},
+    dto::{
+        CreateDrawingRequest, DrawingMetaResponse, DrawingResponse, ListDrawingsResponse,
+        SaveDrawingRequest,
+    },
     model::{NewDrawingRecord, UpdateDrawingRecord},
     repository::DrawingRepository,
 };
 use crate::shared::drive_client::DriveClient;
+use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -29,7 +32,10 @@ impl DrawingService {
         DrawingService { repo, drive }
     }
 
-    pub async fn list_drawings(&self, user: &AuthenticatedUser) -> Result<ListDrawingsResponse, ApiError> {
+    pub async fn list_drawings(
+        &self,
+        user: &AuthenticatedUser,
+    ) -> Result<ListDrawingsResponse, ApiError> {
         let items = self.drive.list_files(user, MIME_TYPE).await?;
         let drawings = items
             .into_iter()
@@ -125,7 +131,9 @@ impl DrawingService {
         let new_title = if let Some(t) = title {
             let trimmed = t.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(user, drawing_id, &trimmed).await?;
+                self.drive
+                    .update_file_name(user, drawing_id, &trimmed)
+                    .await?;
                 trimmed
             } else {
                 file.name.clone()
@@ -168,7 +176,9 @@ impl DrawingService {
         let new_title = if let Some(ref title) = req.title {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(user, drawing_id, &trimmed).await?;
+                self.drive
+                    .update_file_name(user, drawing_id, &trimmed)
+                    .await?;
                 trimmed
             } else {
                 file.name.clone()

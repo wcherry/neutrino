@@ -1,4 +1,6 @@
-use crate::diagrams::private_library::model::{NewThirdPartyLibraryRecord, ThirdPartyLibraryRecord};
+use crate::diagrams::private_library::model::{
+    NewThirdPartyLibraryRecord, ThirdPartyLibraryRecord,
+};
 use crate::schema::diagram_third_party_libraries;
 use crate::shared::ApiError;
 use diesel::prelude::*;

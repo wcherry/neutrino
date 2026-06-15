@@ -1,8 +1,11 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::drawing::drawing::{
-    dto::{CreateDrawingRequest, DrawingMetaResponse, DrawingResponse, ListDrawingsResponse, SaveDrawingRequest},
+    dto::{
+        CreateDrawingRequest, DrawingMetaResponse, DrawingResponse, ListDrawingsResponse,
+        SaveDrawingRequest,
+    },
     service::DrawingService,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_multipart::Multipart;
 use actix_web::{get, patch, post, put, web, HttpResponse};
 use futures_util::StreamExt;
@@ -48,7 +51,10 @@ pub async fn create_drawing(
     user: AuthenticatedUser,
     body: web::Json<CreateDrawingRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let drawing = state.drawing_service.create_drawing(&user, body.into_inner()).await?;
+    let drawing = state
+        .drawing_service
+        .create_drawing(&user, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(drawing))
 }
 
@@ -73,7 +79,10 @@ pub async fn get_drawing(
     path: web::Path<String>,
 ) -> Result<web::Json<DrawingResponse>, ApiError> {
     let drawing_id = path.into_inner();
-    let drawing = state.drawing_service.get_drawing(&user, &drawing_id).await?;
+    let drawing = state
+        .drawing_service
+        .get_drawing(&user, &drawing_id)
+        .await?;
     Ok(web::Json(drawing))
 }
 

@@ -1,6 +1,6 @@
-use crate::shared::ApiError;
 use crate::drawing::drawing::model::{DrawingRecord, NewDrawingRecord, UpdateDrawingRecord};
 use crate::schema::drawings;
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
