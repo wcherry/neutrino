@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import type { Editor } from '@tiptap/react';
-import { PanelContainer } from '@neutrino/ui';
+import { PanelContainer, Button, type PanelTab } from '@neutrino/ui';
 import styles from './page.module.css';
 
 export interface ImageAttrs {
@@ -55,6 +55,19 @@ function buildFilter(brightness: number, contrast: number, saturate: number): st
   return parts.join(' ');
 }
 
+function TabBody({ children }: { children: React.ReactNode }) {
+  return <div style={{ padding: '12px 16px' }}>{children}</div>;
+}
+
+function TabFooter({ onApply, onClose }: { onApply: () => void; onClose: () => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+      <Button variant="primary" size="sm" onClick={onApply}>Apply</Button>
+    </div>
+  );
+}
+
 export function ImagePropertiesModal({ editor, initialAttrs, onClose }: Props) {
   const [width, setWidth]         = useState(initialAttrs.width ?? '');
   const [alignment, setAlignment] = useState(initialAttrs.alignment ?? 'none');
@@ -88,163 +101,164 @@ export function ImagePropertiesModal({ editor, initialAttrs, onClose }: Props) {
     onClose();
   };
 
-  const footer = (
-    <div className={styles.modalActions}>
-      <button className={styles.exportBtn} onClick={onClose}>
-        Cancel
-      </button>
-      <button
-        className={styles.exportBtn}
-        style={{ background: '#1a73e8', color: 'white', border: 'none' }}
-        onClick={handleApply}
-      >
-        Apply
-      </button>
-    </div>
-  );
+  const sharedFooter = <TabFooter onApply={handleApply} onClose={onClose} />;
+
+  const tabs: PanelTab[] = [
+    {
+      id: 'layout',
+      title: 'Layout',
+      footer: sharedFooter,
+      content: (
+        <TabBody>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Width</label>
+            <input
+              className={styles.formInput}
+              value={width}
+              placeholder="e.g. 300px, 50%, auto"
+              onChange={(e) => setWidth(e.target.value)}
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Alignment</label>
+            <select
+              className={styles.formSelect}
+              value={alignment}
+              onChange={(e) => setAlignment(e.target.value)}
+            >
+              {ALIGNMENT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        </TabBody>
+      ),
+    },
+    {
+      id: 'appearance',
+      title: 'Appearance',
+      footer: sharedFooter,
+      content: (
+        <TabBody>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Border</label>
+            <input
+              className={styles.formInput}
+              value={border}
+              placeholder="e.g. 2px solid #333"
+              onChange={(e) => setBorder(e.target.value)}
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Shadow</label>
+            <select
+              className={styles.formSelect}
+              value={shadow}
+              onChange={(e) => setShadow(e.target.value)}
+            >
+              {SHADOW_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        </TabBody>
+      ),
+    },
+    {
+      id: 'tint',
+      title: 'Tint',
+      footer: sharedFooter,
+      content: (
+        <TabBody>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Brightness</label>
+            <div className={styles.sliderRow}>
+              <input
+                type="range"
+                className={styles.formSlider}
+                min={50} max={150}
+                value={brightness}
+                onChange={(e) => setBrightness(Number(e.target.value))}
+              />
+              <span className={styles.sliderValue}>{brightness}%</span>
+            </div>
+          </div>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Contrast</label>
+            <div className={styles.sliderRow}>
+              <input
+                type="range"
+                className={styles.formSlider}
+                min={50} max={150}
+                value={contrast}
+                onChange={(e) => setContrast(Number(e.target.value))}
+              />
+              <span className={styles.sliderValue}>{contrast}%</span>
+            </div>
+          </div>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Saturation</label>
+            <div className={styles.sliderRow}>
+              <input
+                type="range"
+                className={styles.formSlider}
+                min={0} max={200}
+                value={saturate}
+                onChange={(e) => setSaturate(Number(e.target.value))}
+              />
+              <span className={styles.sliderValue}>{saturate}%</span>
+            </div>
+          </div>
+        </TabBody>
+      ),
+    },
+    {
+      id: 'metadata',
+      title: 'Metadata',
+      footer: sharedFooter,
+      content: (
+        <TabBody>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Alt text</label>
+            <input
+              className={styles.formInput}
+              value={alt}
+              placeholder="Describe the image for accessibility"
+              onChange={(e) => setAlt(e.target.value)}
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Title</label>
+            <input
+              className={styles.formInput}
+              value={title}
+              placeholder="Tooltip shown on hover"
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div className={styles.formRow}>
+            <label className={styles.formLabel}>Caption</label>
+            <input
+              className={styles.formInput}
+              value={caption}
+              placeholder="Optional caption text"
+              onChange={(e) => setCaption(e.target.value)}
+            />
+          </div>
+        </TabBody>
+      ),
+    },
+  ];
 
   return (
     <div style={{ position: 'fixed', top: 80, right: 24, zIndex: 1000 }}>
-    <PanelContainer
-      title="Image Properties"
-      defaultLocation="float"
-      onClose={onClose}
-      footer={footer}
-      width={320}
-      height={480}
-    >
-      <div className={styles.imagePropsPanelBody}>
-        {/* ── Size & layout ── */}
-        <div className={styles.imagePropsSection}>Size &amp; Layout</div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Width</label>
-          <input
-            className={styles.formInput}
-            value={width}
-            placeholder="e.g. 300px, 50%, auto"
-            onChange={(e) => setWidth(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Alignment</label>
-          <select
-            className={styles.formSelect}
-            value={alignment}
-            onChange={(e) => setAlignment(e.target.value)}
-          >
-            {ALIGNMENT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* ── Appearance ── */}
-        <div className={styles.imagePropsSection}>Appearance</div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Border</label>
-          <input
-            className={styles.formInput}
-            value={border}
-            placeholder="e.g. 2px solid #333"
-            onChange={(e) => setBorder(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Shadow</label>
-          <select
-            className={styles.formSelect}
-            value={shadow}
-            onChange={(e) => setShadow(e.target.value)}
-          >
-            {SHADOW_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* ── Tint & white balance ── */}
-        <div className={styles.imagePropsSection}>Tint &amp; White Balance</div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Brightness</label>
-          <div className={styles.sliderRow}>
-            <input
-              type="range"
-              className={styles.formSlider}
-              min={50} max={150}
-              value={brightness}
-              onChange={(e) => setBrightness(Number(e.target.value))}
-            />
-            <span className={styles.sliderValue}>{brightness}%</span>
-          </div>
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Contrast</label>
-          <div className={styles.sliderRow}>
-            <input
-              type="range"
-              className={styles.formSlider}
-              min={50} max={150}
-              value={contrast}
-              onChange={(e) => setContrast(Number(e.target.value))}
-            />
-            <span className={styles.sliderValue}>{contrast}%</span>
-          </div>
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Saturation</label>
-          <div className={styles.sliderRow}>
-            <input
-              type="range"
-              className={styles.formSlider}
-              min={0} max={200}
-              value={saturate}
-              onChange={(e) => setSaturate(Number(e.target.value))}
-            />
-            <span className={styles.sliderValue}>{saturate}%</span>
-          </div>
-        </div>
-
-        {/* ── Metadata ── */}
-        <div className={styles.imagePropsSection}>Metadata</div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Alt text</label>
-          <input
-            className={styles.formInput}
-            value={alt}
-            placeholder="Describe the image for accessibility"
-            onChange={(e) => setAlt(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Title</label>
-          <input
-            className={styles.formInput}
-            value={title}
-            placeholder="Tooltip shown on hover"
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.formRow}>
-          <label className={styles.formLabel}>Caption</label>
-          <input
-            className={styles.formInput}
-            value={caption}
-            placeholder="Optional caption text"
-            onChange={(e) => setCaption(e.target.value)}
-          />
-        </div>
-      </div>
-    </PanelContainer>
+      <PanelContainer
+        tabs={tabs}
+        defaultLocation="float"
+        onClose={onClose}
+        width={320}
+        height={400}
+      />
     </div>
   );
 }
