@@ -146,6 +146,7 @@ export const sheetsApi = {
     return request<SheetMetaResponse>(`/api/v1/sheets/${sheetId}/autosave`, { method: 'PUT', body: formData });
   },
 
+
   async retrieveText(sheetId: string): Promise<string> {
     const sheet = await request<SheetResponse>(`/api/v1/sheets/${sheetId}`);
     const raw = await request<string>(sheet.contentUrl, {}, { responseType: 'text' }).catch(() => '');

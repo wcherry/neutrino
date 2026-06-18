@@ -31,6 +31,7 @@ export default function SearchPage() {
 
   if (flagsLoaded && !flags.search) notFound();
 
+
   useEffect(() => {
     if (!user?.id) return;
     const kp = loadKeyPair(user.id);

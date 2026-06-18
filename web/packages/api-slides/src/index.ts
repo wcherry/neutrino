@@ -150,6 +150,7 @@ export const slidesApi = {
     return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave`, { method: 'PUT', body: formData });
   },
 
+
   async retrieveText(slideId: string): Promise<string> {
     const slide = await request<SlideResponse>(`/api/v1/slides/${slideId}`);
     const raw = await request<string>(slide.contentUrl, {}, { responseType: 'text' }).catch(() => '');

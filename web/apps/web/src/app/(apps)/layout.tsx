@@ -211,6 +211,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             : { usedBytes: 0, totalBytes: DEFAULT_QUOTA_BYTES },
         });
         ensureE2EKeys(user.id).catch(() => {});
+        if (featureFlags.search) {
+          const kp = loadKeyPair(user.id);
+          if (kp) {
+            engineRef.current = new IndexEngine();
+            searchKeyRef.current = getOrCreateSearchKey(user.id);
+          }
+        }
       } catch {
         // Not authenticated or refresh failed — redirect to sign-in.
         router.replace('/sign-in');
@@ -228,6 +235,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       searchKeyRef.current = getOrCreateSearchKey(auth.user.id);
     }
   }, [auth, flags.search]);
+
 
   const handleSearch = useCallback(async (query: string) => {
     const engine = engineRef.current;
