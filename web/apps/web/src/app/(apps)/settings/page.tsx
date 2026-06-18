@@ -3,10 +3,11 @@
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, RefreshCw, ShieldCheck, ShieldX, Upload } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, QrCode, RefreshCw, ShieldCheck, ShieldX, Upload } from 'lucide-react';
+import QRCode from 'react-qr-code';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
 import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest } from '@/lib/api';
-import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, toBase64url, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
+import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, encryptKeysWithPin, toBase64url, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { clearSearchIndex, getOrCreateSearchKey, IndexEngine, type SearchableDocument } from '@neutrino/search';
@@ -243,6 +244,9 @@ const qc = useQueryClient();
   const [importKeySaved, setImportKeySaved] = useState(false);
   const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrPayload, setQrPayload] = useState('');
+  const [qrPin, setQrPin] = useState('');
 
   // ── Advanced state ─────────────────────────────────────────────────────────
   const [searchSyncDisabled, setSearchSyncDisabled] = useState<boolean>(false);
@@ -286,6 +290,20 @@ const qc = useQueryClient();
     });
     setExportedKeyJson(exported);
     setShowExportKey(true);
+  }
+
+  async function handleShowQrCode() {
+    if (!user) return;
+    await initSodium();
+    const kp = loadKeyPair(user.id);
+    if (!kp) return;
+    const pinBytes = new Uint8Array(6);
+    crypto.getRandomValues(pinBytes);
+    const pin = Array.from(pinBytes).map(b => b % 10).join('');
+    const encrypted = await encryptKeysWithPin(kp.publicKey, kp.secretKey, pin);
+    setQrPin(pin);
+    setQrPayload(JSON.stringify(encrypted));
+    setShowQrModal(true);
   }
 
   async function handleCopyExportedKey() {
@@ -987,6 +1005,9 @@ const qc = useQueryClient();
                 <button type="button" className={styles.outlineBtn} onClick={handleExportKey}>
                   Export key
                 </button>
+                <button type="button" className={styles.outlineBtn} onClick={handleShowQrCode}>
+                  <QrCode size={14} /> Link to mobile
+                </button>
                 <button type="button" className={styles.outlineBtn} onClick={() => setShowRegenerateDialog(true)}>
                   Regenerate key
                 </button>
@@ -1123,6 +1144,28 @@ const qc = useQueryClient();
           onConnect={(req) => connectApple.mutate(req)}
           isPending={connectApple.isPending}
         />
+      )}
+
+      {/* ── QR key-transfer modal ───────────────────────────────────────── */}
+      {showQrModal && (
+        <div className={styles.overlay} onClick={() => setShowQrModal(false)}>
+          <div className={`${styles.dialog} ${styles.qrDialog}`} onClick={(e) => e.stopPropagation()}>
+            <h2 className={styles.dialogTitle}>Link to mobile device</h2>
+            <p className={styles.dialogBody}>
+              Scan this QR code in the mobile app, then enter the PIN when prompted. The code is single-use and valid for this session only.
+            </p>
+            <div className={styles.qrCodeWrap}>
+              <QRCode value={qrPayload} size={200} level="M" />
+            </div>
+            <p className={styles.qrPinLabel}>PIN</p>
+            <p className={styles.qrPin}>{qrPin}</p>
+            <div className={styles.dialogActions}>
+              <button type="button" className={styles.dialogCancelBtn} onClick={() => setShowQrModal(false)}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Regenerate key confirmation dialog ──────────────────────────── */}

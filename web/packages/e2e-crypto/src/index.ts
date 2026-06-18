@@ -8,9 +8,12 @@ export {
   decryptFileKey,
   encryptMetadata,
   decryptMetadata,
+  encryptKeysWithPin,
+  decryptKeysWithPin,
   toBase64url,
   toBase64,
   type KeyPair,
+  type PinEncryptedKeys,
 } from './crypto';
 
 export {

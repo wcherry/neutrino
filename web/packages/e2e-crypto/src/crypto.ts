@@ -149,6 +149,93 @@ export function decryptFileKey(
   return dek;
 }
 
+// ── PIN-protected key export (for QR code transfer) ──────────────────────────
+
+export interface PinEncryptedKeys {
+  v: 1;
+  alg: 'pbkdf2-sha256+xsalsa20';
+  /** base64url-encoded 16-byte PBKDF2 salt */
+  salt: string;
+  /** base64url-encoded 24-byte secretbox nonce */
+  nonce: string;
+  /** base64url-encoded secretbox ciphertext containing keypair JSON */
+  ct: string;
+  /** PBKDF2 iteration count — mobile must use the same value */
+  iter: number;
+}
+
+const PBKDF2_ITERATIONS = 600_000;
+
+async function deriveKeyFromPin(pin: string, salt: Uint8Array, iter: number): Promise<Uint8Array> {
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(pin),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter },
+    keyMaterial,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+/**
+ * Encrypt a keypair with a PIN using PBKDF2-SHA256 + XSalsa20-Poly1305.
+ * Intended for QR-code-based device pairing. Requires a secure context (HTTPS/localhost).
+ */
+export async function encryptKeysWithPin(
+  publicKey: Uint8Array,
+  secretKey: Uint8Array,
+  pin: string,
+): Promise<PinEncryptedKeys> {
+  ensureReady();
+  const salt = sodium.randombytes_buf(16);
+  const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
+  const derivedKey = await deriveKeyFromPin(pin, salt, PBKDF2_ITERATIONS);
+  const plaintext = sodium.from_string(JSON.stringify({
+    pk: toBase64url(publicKey),
+    sk: toBase64url(secretKey),
+  }));
+  const ct = sodium.crypto_secretbox_easy(plaintext, nonce, derivedKey);
+  return {
+    v: 1,
+    alg: 'pbkdf2-sha256+xsalsa20',
+    salt: toBase64url(salt),
+    nonce: toBase64url(nonce),
+    ct: toBase64url(ct),
+    iter: PBKDF2_ITERATIONS,
+  };
+}
+
+/**
+ * Decrypt a keypair previously encrypted with `encryptKeysWithPin`.
+ * Throws if the PIN is wrong or the payload is malformed.
+ */
+export async function decryptKeysWithPin(
+  payload: PinEncryptedKeys,
+  pin: string,
+): Promise<{ publicKey: Uint8Array; secretKey: Uint8Array }> {
+  ensureReady();
+  if (payload.v !== 1 || payload.alg !== 'pbkdf2-sha256+xsalsa20') {
+    throw new Error('Unsupported key format');
+  }
+  const derivedKey = await deriveKeyFromPin(pin, fromBase64url(payload.salt), payload.iter);
+  const plaintext = sodium.crypto_secretbox_open_easy(
+    fromBase64url(payload.ct),
+    fromBase64url(payload.nonce),
+    derivedKey,
+  );
+  if (!plaintext) throw new Error('Wrong PIN or corrupted payload');
+  const parsed = JSON.parse(sodium.to_string(plaintext)) as { pk: string; sk: string };
+  return {
+    publicKey: fromBase64url(parsed.pk),
+    secretKey: fromBase64url(parsed.sk),
+  };
+}
+
 // ── Metadata encryption ───────────────────────────────────────────────────────
 
 /**

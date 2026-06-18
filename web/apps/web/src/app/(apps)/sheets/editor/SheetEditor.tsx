@@ -8,8 +8,8 @@ import { ArrowLeft } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
 import { sheetsApi, filesystemApi, driveAutosaveContent } from '@/lib/api';
-import type { CellProps } from './types';
-import { rangeAddress, numToAlpha, alphaToNum, navigateCell, type ArrowNavigationKey } from './utils';
+import type { CellProps, ClipboardCFRule, CFRule } from './types';
+import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, type ArrowNavigationKey } from './utils';
 import { MAX_ROWS, MAX_COLS } from './constants';
 import { useHistory } from './hooks/useHistory';
 import { useClipboard } from './hooks/useClipboard';
@@ -167,6 +167,15 @@ export function SheetEditor() {
     const queryClient = useQueryClient();
     const suppressNextFormulaFocusModeRef = useRef(false);
 
+    // ── Format Painter state ─────────────────────────────────────────────────
+    const [formatPainterSource, setFormatPainterSource] = useState<{
+        anchor: string;
+        active: string | undefined;
+    } | null>(null);
+    const formatPainterSourceRef = useRef<{ anchor: string; active: string | undefined } | null>(null);
+    const applyFormatPaintRef = useRef<(destAnchor: string, destActive: string | undefined) => void>(() => {});
+    const didApplyPaintRef = useRef(false);
+
     // Sync state → refs so event handlers always see current values.
     // useLayoutEffect for dataRef ensures it's updated synchronously after every
     // commit (before paint), so activateCell's startTransition always reads a
@@ -177,6 +186,7 @@ export function SheetEditor() {
     useEffect(() => { rowHeightsRef.current = rowHeights; }, [rowHeights]);
     useLayoutEffect(() => { selectionAnchorRef.current = selectionAnchor; }, [selectionAnchor]);
     useLayoutEffect(() => { selectionActiveRef.current = selectionActive; }, [selectionActive]);
+    useLayoutEffect(() => { formatPainterSourceRef.current = formatPainterSource; }, [formatPainterSource]);
 
 
     // ── Hooks ────────────────────────────────────────────────────────────────
@@ -804,6 +814,128 @@ export function SheetEditor() {
     // Keep the delete-key ref up-to-date with the latest version of handleClearCells.
     handleClearCellsNavRef.current = handleClearCells;
 
+    // ── Format Painter ───────────────────────────────────────────────────────
+    const applyFormatPaint = useCallback((destAnchor: string, destActive: string | undefined) => {
+        const src = formatPainterSourceRef.current;
+        if (!src) return;
+
+        const srcCells = getRangeCells(src.anchor, src.active ?? src.anchor);
+        const srcCoords = Array.from(srcCells).map(id => parseCellId(id)!).filter(Boolean);
+        const srcMinRow = Math.min(...srcCoords.map(c => c.row));
+        const srcMinCol = Math.min(...srcCoords.map(c => c.col));
+        const srcRows = Math.max(...srcCoords.map(c => c.row)) - srcMinRow + 1;
+        const srcCols = Math.max(...srcCoords.map(c => c.col)) - srcMinCol + 1;
+
+        const isSrcSingle = !src.active || src.anchor === src.active;
+
+        // Determine actual dest range
+        let actualDestActive = destActive;
+        if (!isSrcSingle && (!destActive || destAnchor === destActive)) {
+            // Source is range, dest is single cell — expand dest to source range size
+            const dc = parseCellId(destAnchor);
+            if (dc) {
+                actualDestActive = `${numToAlpha(dc.col + srcCols - 1)}${dc.row + srcRows - 1}`;
+            }
+        }
+
+        const destCells = getRangeCells(destAnchor, actualDestActive ?? destAnchor);
+        const destCoordsArr = Array.from(destCells).map(id => parseCellId(id)!).filter(Boolean);
+        const destMinRow = Math.min(...destCoordsArr.map(c => c.row));
+        const destMinCol = Math.min(...destCoordsArr.map(c => c.col));
+
+        setData(prev => {
+            history.pushToUndo(new Map(prev));
+            const next = new Map(prev);
+
+            for (const destId of destCells) {
+                const dc = parseCellId(destId);
+                if (!dc) continue;
+                let srcStyle: import('./types').CellStyle | undefined;
+                if (isSrcSingle) {
+                    srcStyle = prev.get(src.anchor)?.cellStyle;
+                } else {
+                    const relRow = (dc.row - destMinRow) % srcRows;
+                    const relCol = (dc.col - destMinCol) % srcCols;
+                    const mappedSrcId = `${numToAlpha(srcMinCol + relCol)}${srcMinRow + relRow}`;
+                    srcStyle = prev.get(mappedSrcId)?.cellStyle;
+                }
+                const existing = next.get(destId) ?? { id: destId, edit: false };
+                next.set(destId, { ...existing, cellStyle: srcStyle });
+            }
+
+            return next;
+        });
+        dirtyRef.current = true;
+
+        // Copy CF rules from source range to dest range (only when CF feature flag is on)
+        if (flags.sheetsConditionalFormatting && cf.conditionalFormatsRef.current.length > 0) {
+            const srcMinR = srcMinRow;
+            const srcMaxR = srcMinRow + srcRows - 1;
+            const srcMinC = srcMinCol;
+            const srcMaxC = srcMinCol + srcCols - 1;
+
+            const destAnchorCoords = parseCellId(destAnchor);
+            if (destAnchorCoords) {
+                const pasteRow = destAnchorCoords.row;
+                const pasteCol = destAnchorCoords.col;
+
+                const clippedRules: ClipboardCFRule[] = [];
+                for (const cfRule of cf.conditionalFormatsRef.current) {
+                    const rm = cfRule.range.trim().match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/i);
+                    if (!rm) continue;
+                    const rc1 = alphaToNum(rm[1].toUpperCase()), rr1 = parseInt(rm[2]);
+                    const rc2 = rm[3] ? alphaToNum(rm[3].toUpperCase()) : rc1;
+                    const rr2 = rm[4] ? parseInt(rm[4]) : rr1;
+                    const rMinR = Math.min(rr1, rr2), rMaxR = Math.max(rr1, rr2);
+                    const rMinC = Math.min(rc1, rc2), rMaxC = Math.max(rc1, rc2);
+                    const intMinR = Math.max(rMinR, srcMinR), intMaxR = Math.min(rMaxR, srcMaxR);
+                    const intMinC = Math.max(rMinC, srcMinC), intMaxC = Math.min(rMaxC, srcMaxC);
+                    if (intMinR > intMaxR || intMinC > intMaxC) continue;
+                    clippedRules.push({
+                        relRowMin: intMinR - srcMinR,
+                        relColMin: intMinC - srcMinC,
+                        relRowMax: intMaxR - srcMinR,
+                        relColMax: intMaxC - srcMinC,
+                        rule: cfRule.rule,
+                    });
+                }
+
+                if (clippedRules.length > 0) {
+                    const newRules: CFRule[] = [...cf.conditionalFormatsRef.current];
+                    for (const cr of clippedRules) {
+                        const targetMinRow = pasteRow + cr.relRowMin;
+                        const targetMaxRow = pasteRow + cr.relRowMax;
+                        const targetMinCol = pasteCol + cr.relColMin;
+                        const targetMaxCol = pasteCol + cr.relColMax;
+                        const range = targetMinRow === targetMaxRow && targetMinCol === targetMaxCol
+                            ? `${numToAlpha(targetMinCol)}${targetMinRow}`
+                            : `${numToAlpha(targetMinCol)}${targetMinRow}:${numToAlpha(targetMaxCol)}${targetMaxRow}`;
+                        newRules.push({
+                            id: `cf-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                            range,
+                            rule: cr.rule,
+                        });
+                    }
+                    cf.updateConditionalFormats(newRules);
+                }
+            }
+        }
+
+        setFormatPainterSource(null);
+    }, [flags.sheetsConditionalFormatting, cf, history, dirtyRef, setData]);
+
+    // Keep the applyFormatPaintRef up-to-date so the onMouseUp handler always
+    // calls the latest version without a stale closure.
+    applyFormatPaintRef.current = applyFormatPaint;
+
+    const handleFormatPainterClick = useCallback(() => {
+        if (formatPainterSource) {
+            setFormatPainterSource(null);
+        } else if (selectionAnchor) {
+            setFormatPainterSource({ anchor: selectionAnchor, active: selectionActive });
+        }
+    }, [formatPainterSource, selectionAnchor, selectionActive]);
+
     // ── Header context menu: row operations ──────────────────────────────────
     const handleHeaderInsertRowAbove = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'row') return;
@@ -1208,6 +1340,13 @@ export function SheetEditor() {
         clearHeaderSelection();
         selectionAnchorRef.current = id;
         selectionActiveRef.current = id;
+
+        // If format painter is active, apply format to the clicked cell then deactivate.
+        if (formatPainterSourceRef.current) {
+            didApplyPaintRef.current = true;
+            applyFormatPaintRef.current(id, undefined);
+        }
+
         stableOnCellActivate(id);
         setSelectedChartId(null);
     }, [clearHeaderSelection, stableOnCellActivate]);
@@ -1356,10 +1495,29 @@ export function SheetEditor() {
                 onInsertChart={flags.sheetsCharts ? () => setShowChartDialog(true) : undefined}
                 onFindReplace={() => setFindReplaceMode('replace')}
                 onConditionalFormat={flags.sheetsConditionalFormatting ? () => setShowCFDialog(v => !v) : undefined}
+                isFormatPainterActive={!!formatPainterSource}
+                onFormatPainterClick={handleFormatPainterClick}
             />
 
             <div className={styles.mainArea}>
-                <div className={styles.editorScrollArea}>
+                <div
+                    className={styles.editorScrollArea}
+                    style={formatPainterSource ? { cursor: 'crosshair' } : undefined}
+                    onMouseUp={() => {
+                        if (didApplyPaintRef.current) {
+                            // Already applied in handleCellActivate (single-cell click)
+                            didApplyPaintRef.current = false;
+                            return;
+                        }
+                        if (formatPainterSourceRef.current && selectionAnchorRef.current) {
+                            const anchor = selectionAnchorRef.current;
+                            const active = selectionActiveRef.current;
+                            if (active && active !== anchor) {
+                                applyFormatPaintRef.current(anchor, active);
+                            }
+                        }
+                    }}
+                >
                     <SheetGrid
                         data={data}
                         selectedCells={editing.selectedCells}

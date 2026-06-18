@@ -10,6 +10,7 @@ import {
     BarChart2,
     Search,
     Palette,
+    Paintbrush,
 } from 'lucide-react';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import type { CellStyle } from './types';
@@ -91,9 +92,11 @@ export type StyleToolbarProps = {
     onInsertChart?: () => void;
     onFindReplace?: () => void;
     onConditionalFormat?: () => void;
+    isFormatPainterActive?: boolean;
+    onFormatPainterClick?: () => void;
 };
 
-export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat }: StyleToolbarProps) {
+export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick }: StyleToolbarProps) {
     const flags = useFeatureFlags();
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
@@ -102,13 +105,20 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
 
     return (
         <Toolbar>
-            {/* Undo / Redo */}
+            {/* Undo / Redo / Format Painter */}
             <ToolbarGroup>
                 <ToolbarButton onClick={onUndo} disabled={!canUndo} title="Undo (⌘Z)">
                     <Undo2 size={15} />
                 </ToolbarButton>
                 <ToolbarButton onClick={onRedo} disabled={!canRedo} title="Redo (⌘⇧Z)">
                     <Redo2 size={15} />
+                </ToolbarButton>
+                <ToolbarButton
+                    active={isFormatPainterActive}
+                    onClick={onFormatPainterClick}
+                    title="Format Painter"
+                >
+                    <Paintbrush size={15} />
                 </ToolbarButton>
             </ToolbarGroup>
 
