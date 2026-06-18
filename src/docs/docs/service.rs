@@ -1,9 +1,12 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::docs::docs::{
-    dto::{CreateDocRequest, DocMetaResponse, DocResponse, ExportTextResponse, ListDocsResponse, PageSetup, SaveDocRequest},
+    dto::{
+        CreateDocRequest, DocMetaResponse, DocResponse, ExportTextResponse, ListDocsResponse,
+        PageSetup, SaveDocRequest,
+    },
     model::{NewDocRecord, UpdateDocRecord},
     repository::DocsRepository,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 
 fn content_urls(file_id: &str) -> (String, String) {
     (
@@ -113,6 +116,57 @@ impl DocsService {
         })
     }
 
+    pub async fn autosave(
+        &self,
+        user: &AuthenticatedUser,
+        doc_id: &str,
+        bytes: &[u8],
+        title: Option<&str>,
+        page_setup: Option<&PageSetup>,
+    ) -> Result<DocMetaResponse, ApiError> {
+        let file = self
+            .drive
+            .get_file(user, doc_id, "Document not found")
+            .await?;
+        match file.your_role.as_str() {
+            "owner" | "editor" => {}
+            _ => return Err(ApiError::new(403, "FORBIDDEN", "Edit access required")),
+        }
+        if file.deleted_at.is_some() {
+            return Err(ApiError::not_found("Document is in trash"));
+        }
+
+        self.drive.upload_content_bytes(doc_id, bytes)?;
+
+        let new_title = if let Some(t) = title {
+            let trimmed = t.trim().to_string();
+            if !trimmed.is_empty() {
+                self.drive.update_file_name(user, doc_id, &trimmed).await?;
+                trimmed
+            } else {
+                file.name.clone()
+            }
+        } else {
+            file.name.clone()
+        };
+
+        let page_setup_json = page_setup.and_then(|ps| serde_json::to_string(ps).ok());
+        let now = Utc::now().naive_utc();
+        let changes = UpdateDocRecord {
+            page_setup: page_setup_json,
+            updated_at: now,
+        };
+        self.repo.update_doc(doc_id, changes)?;
+
+        Ok(DocMetaResponse {
+            id: file.id,
+            title: new_title,
+            folder_id: file.folder_id,
+            created_at: file.created_at.and_utc().to_rfc3339(),
+            updated_at: now.and_utc().to_rfc3339(),
+        })
+    }
+
     pub async fn save_doc(
         &self,
         user: &AuthenticatedUser,
@@ -166,7 +220,7 @@ impl DocsService {
 
     pub async fn write_content(
         &self,
-        user: &AuthenticatedUser,
+        _user: &AuthenticatedUser,
         doc_id: &str,
         content: &str,
     ) -> Result<(), ApiError> {
@@ -300,7 +354,11 @@ mod tests {
     fn extract_text_empty_doc_has_no_visible_content() {
         let result = extract_text_from_tiptap_json(r#"{"type":"doc","content":[]}"#);
         let non_ws: String = result.chars().filter(|c| !c.is_whitespace()).collect();
-        assert!(non_ws.is_empty(), "Expected no visible text, got: {:?}", result);
+        assert!(
+            non_ws.is_empty(),
+            "Expected no visible text, got: {:?}",
+            result
+        );
     }
 
     // ── default_page_setup ────────────────────────────────────────────────────
@@ -319,6 +377,10 @@ mod tests {
     #[test]
     fn default_page_setup_constant_is_valid_json() {
         let result: Result<PageSetup, _> = serde_json::from_str(DEFAULT_PAGE_SETUP);
-        assert!(result.is_ok(), "DEFAULT_PAGE_SETUP should be valid JSON: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "DEFAULT_PAGE_SETUP should be valid JSON: {:?}",
+            result.err()
+        );
     }
 }

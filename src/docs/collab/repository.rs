@@ -1,6 +1,6 @@
+use crate::shared::DbPool;
 use chrono::Utc;
 use diesel::prelude::*;
-use crate::shared::DbPool;
 
 use crate::schema::doc_yjs_state;
 

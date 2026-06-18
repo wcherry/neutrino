@@ -1,10 +1,10 @@
+use crate::shared::get_env_or_secret;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
-use crate::shared::get_env_or_secret;
 
-use crate::shared::ApiError;
 use super::provider::AiProvider;
+use crate::shared::ApiError;
 
 /// Gemini model to use. The flash model has a free tier at no cost.
 const GEMINI_MODEL: &str = "gemini-2.0-flash";
@@ -25,6 +25,7 @@ impl GeminiClient {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_env() -> Option<Self> {
         get_env_or_secret("GEMINI_API_KEY").ok().map(Self::new)
     }
@@ -32,9 +33,9 @@ impl GeminiClient {
     /// Returns a free-tier client using an empty key if no env var is set.
     /// The Gemini flash model allows unauthenticated/no-key usage within
     /// generous free-tier rate limits.
+    #[allow(dead_code)]
     pub fn free_tier() -> Self {
-        let key = get_env_or_secret("GEMINI_API_KEY")
-            .unwrap_or_default();
+        let key = get_env_or_secret("GEMINI_API_KEY").unwrap_or_default();
         Self::new(key)
     }
 }

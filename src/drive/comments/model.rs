@@ -1,6 +1,6 @@
+use crate::schema::{comment_replies, comments};
 use diesel::prelude::*;
 use serde::Serialize;
-use crate::schema::{comments, comment_replies};
 
 #[derive(Debug, Queryable, Selectable, Serialize, Clone)]
 #[diesel(table_name = comments)]

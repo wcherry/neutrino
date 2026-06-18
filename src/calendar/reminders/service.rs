@@ -1,4 +1,3 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::calendar::reminders::{
     dto::{
         CreateReminderRequest, ListRemindersQuery, ListRemindersResponse, ReminderResponse,
@@ -7,6 +6,7 @@ use crate::calendar::reminders::{
     model::{NewReminderRecord, UpdateReminderRecord},
     repository::RemindersRepository,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::{NaiveDateTime, Utc};
 use std::sync::Arc;
 use uuid::Uuid;

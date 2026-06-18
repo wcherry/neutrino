@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { X } from 'lucide-react';
 import styles from './ColorPicker.module.css';
 
 // ── Color math ────────────────────────────────────────────────────────
@@ -137,9 +138,12 @@ export interface ColorPickerProps {
     value: string;   // #rrggbb, or #rrggbbaa when showAlpha=true
     onChange: (hex: string) => void;
     showAlpha?: boolean;
+    onClose?: () => void;
+    /** Remove the floating-dialog chrome so the picker integrates inline. */
+    flat?: boolean;
 }
 
-export function ColorPicker({ value, onChange, showAlpha }: ColorPickerProps) {
+export function ColorPicker({ value, onChange, showAlpha, onClose, flat }: ColorPickerProps) {
     const lv = value.toLowerCase();
     const is8 = !!showAlpha && /^#[0-9a-fA-F]{8}$/.test(lv);
     const is6 = /^#[0-9a-fA-F]{6}$/.test(lv);
@@ -223,7 +227,7 @@ export function ColorPicker({ value, onChange, showAlpha }: ColorPickerProps) {
     const previewBg = showAlpha && alpha < 255 ? alphaPreviewBg(hex, alpha) : hex;
 
     return (
-        <div className={styles.picker}>
+        <div className={`${styles.picker}${flat ? ` ${styles.pickerFlat}` : ''}`}>
             {/* Tab bar */}
             <div className={styles.tabs}>
                 {(['swatches', 'wheel', 'values'] as Tab[]).map(t => (
@@ -235,6 +239,11 @@ export function ColorPicker({ value, onChange, showAlpha }: ColorPickerProps) {
                         {t === 'swatches' ? 'Grid' : t === 'wheel' ? 'Wheel' : 'Values'}
                     </button>
                 ))}
+                {onClose && (
+                    <button className={styles.closeBtn} onClick={onClose} title="Close" type="button">
+                        <X size={12} />
+                    </button>
+                )}
             </div>
 
             {/* ── Grid tab ── */}

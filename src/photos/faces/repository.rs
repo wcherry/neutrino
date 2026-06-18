@@ -1,9 +1,9 @@
 use crate::photos::faces::model::{FaceRecord, NewFaceRecord};
 use crate::schema::faces;
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::SqliteConnection;
-use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 

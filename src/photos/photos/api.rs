@@ -7,9 +7,9 @@ use crate::photos::photos::{
     },
     service::PhotosService,
 };
-use actix_web::{delete, get, patch, post, put, web, HttpResponse};
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::ApiError;
+use actix_web::{delete, get, patch, post, put, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
 
@@ -191,10 +191,7 @@ pub async fn restore_photo(
     path: web::Path<String>,
 ) -> Result<web::Json<PhotoResponse>, ApiError> {
     let photo_id = path.into_inner();
-    let photo = state
-        .photos_service
-        .restore_photo(&user, &photo_id)
-        .await?;
+    let photo = state.photos_service.restore_photo(&user, &photo_id).await?;
     Ok(web::Json(photo))
 }
 
@@ -429,9 +426,7 @@ pub async fn setup_locked_folder(
     user: AuthenticatedUser,
     body: web::Json<SetupLockedFolderRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    state
-        .photos_service
-        .setup_locked_folder(&user, &body.pin)?;
+    state.photos_service.setup_locked_folder(&user, &body.pin)?;
     Ok(HttpResponse::NoContent().finish())
 }
 

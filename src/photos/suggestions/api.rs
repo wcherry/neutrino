@@ -2,9 +2,9 @@ use crate::photos::suggestions::{
     dto::{ListSuggestionsResponse, SuggestionResponse},
     service::SuggestionsService,
 };
-use actix_web::{get, post, web, HttpResponse};
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::ApiError;
+use actix_web::{get, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
 

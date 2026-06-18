@@ -1,7 +1,7 @@
+use crate::shared::{get_env_or_secret, ApiError};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
-use crate::shared::{get_env_or_secret, ApiError};
 
 use super::provider::AiProvider;
 
@@ -21,6 +21,7 @@ impl ClaudeClient {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_env() -> Option<Self> {
         get_env_or_secret("ANTHROPIC_API_KEY").ok().map(Self::new)
     }

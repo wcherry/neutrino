@@ -1,4 +1,3 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::calendar::events::{
     attendees::AttendeesRepository,
     dto::{
@@ -7,6 +6,7 @@ use crate::calendar::events::{
     model::{NewEventRecord, UpdateEventRecord},
     repository::EventsRepository,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::{NaiveDateTime, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -18,7 +18,10 @@ pub struct EventsService {
 
 impl EventsService {
     pub fn new(repo: Arc<EventsRepository>, attendees_repo: Arc<AttendeesRepository>) -> Self {
-        EventsService { repo, attendees_repo }
+        EventsService {
+            repo,
+            attendees_repo,
+        }
     }
 
     pub fn list_events(
@@ -74,7 +77,10 @@ impl EventsService {
         event_id: &str,
     ) -> Result<EventResponse, ApiError> {
         let record = self.repo.find_by_id(event_id, &user.user_id)?;
-        let attendees = self.attendees_repo.find_by_event(event_id).unwrap_or_default();
+        let attendees = self
+            .attendees_repo
+            .find_by_event(event_id)
+            .unwrap_or_default();
         Ok(event_to_response(record, attendees))
     }
 
@@ -99,15 +105,14 @@ impl EventsService {
         if let Some(emails) = req.attendees {
             self.attendees_repo.replace_for_event(event_id, &emails)?;
         }
-        let attendees = self.attendees_repo.find_by_event(event_id).unwrap_or_default();
+        let attendees = self
+            .attendees_repo
+            .find_by_event(event_id)
+            .unwrap_or_default();
         Ok(event_to_response(updated, attendees))
     }
 
-    pub fn delete_event(
-        &self,
-        user: &AuthenticatedUser,
-        event_id: &str,
-    ) -> Result<(), ApiError> {
+    pub fn delete_event(&self, user: &AuthenticatedUser, event_id: &str) -> Result<(), ApiError> {
         self.repo.delete(event_id, &user.user_id)
         // attendees are cascade-deleted by the DB constraint
     }
@@ -120,7 +125,10 @@ fn parse_dt(s: &str) -> Result<NaiveDateTime, ApiError> {
         .map_err(|_| ApiError::bad_request(&format!("Invalid datetime: {}", s)))
 }
 
-fn event_to_response(r: crate::calendar::events::model::EventRecord, attendees: Vec<String>) -> EventResponse {
+fn event_to_response(
+    r: crate::calendar::events::model::EventRecord,
+    attendees: Vec<String>,
+) -> EventResponse {
     EventResponse {
         id: r.id,
         title: r.title,

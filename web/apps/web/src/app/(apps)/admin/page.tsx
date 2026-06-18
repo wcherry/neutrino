@@ -7,7 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Spinner, Toggle, ProgressBar, useToast } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { adminApi } from '@neutrino/api-admin';
-import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser } from '@neutrino/api-admin';
+import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag } from '@neutrino/api-admin';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -430,17 +430,89 @@ function UsersTab() {
   );
 }
 
+function FeatureFlagsTab() {
+  const qc = useQueryClient();
+  const { error: toastError, success: toastSuccess } = useToast();
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['admin-feature-flags'],
+    queryFn: () => adminApi.listFeatureFlags(),
+  });
+
+  const toggleFlag = useMutation({
+    mutationFn: ({ key, enabled }: { key: string; enabled: boolean }) =>
+      adminApi.updateFeatureFlag(key, { enabled }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-feature-flags'] });
+      toastSuccess('Feature flag updated.');
+    },
+    onError: () => {
+      toastError('Failed to update feature flag. Please try again.');
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className={styles.loading}>
+        <Spinner size="md" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={styles.error}>
+        Failed to load feature flags.
+      </div>
+    );
+  }
+
+  const flags: FeatureFlag[] = data ?? [];
+
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.sectionTitle}>Feature Flags</h2>
+      <div className={styles.serviceList}>
+        {flags.map((flag) => (
+          <div key={flag.key} className={styles.serviceRow}>
+            <div className={styles.serviceInfo}>
+              <span className={styles.serviceName}>{flag.key}</span>
+              {flag.description && (
+                <span className={styles.serviceMeta}>{flag.description}</span>
+              )}
+            </div>
+            <div className={styles.serviceControls}>
+              <span className={styles.serviceLabel}>
+                {flag.enabled ? 'Enabled' : 'Disabled'}
+              </span>
+              <Toggle
+                checked={flag.enabled}
+                disabled={toggleFlag.isPending}
+                aria-label={`Toggle ${flag.key}`}
+                onChange={() => {
+                  toggleFlag.mutate({ key: flag.key, enabled: !flag.enabled });
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = 'processes' | 'disk' | 'services' | 'users';
+type Tab = 'processes' | 'disk' | 'services' | 'users' | 'flags';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'processes', label: 'Processes' },
   { id: 'disk', label: 'Disk Space' },
   { id: 'services', label: 'Services' },
   { id: 'users', label: 'Users' },
+  { id: 'flags', label: 'Feature Flags' },
 ];
 
 export default function AdminPage() {
@@ -497,6 +569,7 @@ export default function AdminPage() {
         {activeTab === 'disk' && <DiskTab />}
         {activeTab === 'services' && <ServicesTab />}
         {activeTab === 'users' && <UsersTab />}
+        {activeTab === 'flags' && <FeatureFlagsTab />}
       </div>
     </div>
   );

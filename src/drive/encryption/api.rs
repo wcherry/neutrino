@@ -1,5 +1,5 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::drive::encryption::service::EncryptionService;
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, post, put, web, HttpResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -96,9 +96,10 @@ pub async fn set_file_key(
         return Err(ApiError::bad_request("encrypted_file_key cannot be empty"));
     }
 
-    let key_ref = state
-        .encryption_service
-        .set_file_key(&user.user_id, &file_id, &req.encrypted_file_key)?;
+    let key_ref =
+        state
+            .encryption_service
+            .set_file_key(&user.user_id, &file_id, &req.encrypted_file_key)?;
 
     Ok(web::Json(FileKeyResponse {
         file_id: key_ref.file_id,
@@ -132,12 +133,17 @@ pub async fn share_file_key(
     let req = body.into_inner();
 
     if req.encrypted_file_key.is_empty() || req.recipient_id.is_empty() {
-        return Err(ApiError::bad_request("recipient_id and encrypted_file_key are required"));
+        return Err(ApiError::bad_request(
+            "recipient_id and encrypted_file_key are required",
+        ));
     }
 
-    let key_ref = state
-        .encryption_service
-        .share_file_key(&user.user_id, &file_id, &req.recipient_id, &req.encrypted_file_key)?;
+    let key_ref = state.encryption_service.share_file_key(
+        &user.user_id,
+        &file_id,
+        &req.recipient_id,
+        &req.encrypted_file_key,
+    )?;
 
     Ok(web::Json(FileKeyResponse {
         file_id: key_ref.file_id,

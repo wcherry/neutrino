@@ -64,22 +64,22 @@ pub async fn get_sheet_embed(
 
     // Attempt to extract a bearer token but don't require it — the named
     // range GUID is the capability token for public embeds.
-    let user_opt: Option<AuthenticatedUser> =
-        req.headers()
-            .get("Authorization")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.strip_prefix("Bearer "))
-            .and_then(|raw_token| {
-                token_service
-                    .validate_access_token(raw_token)
-                    .ok()
-                    .map(|claims| AuthenticatedUser {
-                        user_id: claims.sub,
-                        email: claims.email,
-                        token: raw_token.to_string(),
-                        is_admin: claims.is_admin,
-                    })
-            });
+    let user_opt: Option<AuthenticatedUser> = req
+        .headers()
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .and_then(|raw_token| {
+            token_service
+                .validate_access_token(raw_token)
+                .ok()
+                .map(|claims| AuthenticatedUser {
+                    user_id: claims.sub,
+                    email: claims.email,
+                    token: raw_token.to_string(),
+                    is_admin: claims.is_admin,
+                })
+        });
 
     let result = state
         .service

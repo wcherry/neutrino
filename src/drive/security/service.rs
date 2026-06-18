@@ -1,9 +1,11 @@
-use crate::shared::ApiError;
+#![allow(dead_code)]
+
 use crate::drive::security::{
     dto::*,
     model::{NewRansomwareEvent, NewSiemConfig},
     repository::SecurityRepository,
 };
+use crate::shared::ApiError;
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -16,7 +18,10 @@ pub struct SecurityService {
 }
 
 impl SecurityService {
-    pub fn new(repo: Arc<SecurityRepository>, pool: Pool<ConnectionManager<SqliteConnection>>) -> Self {
+    pub fn new(
+        repo: Arc<SecurityRepository>,
+        pool: Pool<ConnectionManager<SqliteConnection>>,
+    ) -> Self {
         SecurityService { repo, pool }
     }
 
@@ -29,11 +34,7 @@ impl SecurityService {
         })
     }
 
-    pub fn resolve_ransomware_event(
-        &self,
-        id: &str,
-        user_id: &str,
-    ) -> Result<(), ApiError> {
+    pub fn resolve_ransomware_event(&self, id: &str, user_id: &str) -> Result<(), ApiError> {
         self.repo.resolve_ransomware_event(id, user_id)
     }
 
@@ -48,12 +49,22 @@ impl SecurityService {
     ) -> Result<Option<String>, ApiError> {
         // Detect known ransomware extension patterns
         let suspicious_extensions = [
-            ".encrypted", ".locked", ".crypto", ".locky", ".zepto",
-            ".cerber", ".wncry", ".wnry", ".wcry", ".wncryt",
+            ".encrypted",
+            ".locked",
+            ".crypto",
+            ".locky",
+            ".zepto",
+            ".cerber",
+            ".wncry",
+            ".wnry",
+            ".wcry",
+            ".wncryt",
         ];
 
         let name_lower = file_name.to_lowercase();
-        let is_suspicious = suspicious_extensions.iter().any(|ext| name_lower.ends_with(ext))
+        let is_suspicious = suspicious_extensions
+            .iter()
+            .any(|ext| name_lower.ends_with(ext))
             || name_lower.contains("readme_decrypt")
             || name_lower.contains("how_to_decrypt")
             || name_lower.contains("recover_files");
@@ -108,7 +119,10 @@ impl SecurityService {
     /// Export recent audit events to SIEM endpoints (stub: logs to tracing).
     pub fn export_to_siem(&self) -> Result<usize, ApiError> {
         use crate::schema::file_activity_log;
-        let mut conn = self.pool.get().map_err(|_| ApiError::internal("DB error"))?;
+        let mut conn = self
+            .pool
+            .get()
+            .map_err(|_| ApiError::internal("DB error"))?;
 
         let configs = self.repo.list_siem_configs()?;
         let active_configs: Vec<_> = configs.iter().filter(|c| c.is_active == 1).collect();

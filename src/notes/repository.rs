@@ -1,6 +1,6 @@
-use crate::shared::ApiError;
 use crate::notes::model::{NewNoteLinkRecord, NewNoteRecord, NoteRecord, UpdateNoteRecord};
 use crate::schema::{note_links, notes};
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -81,14 +81,12 @@ impl NotesRepository {
     /// Deletes existing links first, then inserts new ones.
     pub fn replace_links(&self, source_id: &str, target_ids: &[String]) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
-        diesel::delete(
-            note_links::table.filter(note_links::source_note_id.eq(source_id)),
-        )
-        .execute(&mut conn)
-        .map_err(|e| {
-            tracing::error!("DB delete note_links error: {:?}", e);
-            ApiError::internal("Database error")
-        })?;
+        diesel::delete(note_links::table.filter(note_links::source_note_id.eq(source_id)))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB delete note_links error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
 
         for target_id in target_ids {
             let new_link = NewNoteLinkRecord {

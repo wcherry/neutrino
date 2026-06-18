@@ -1,6 +1,6 @@
 //! Google Calendar OAuth2 and API client.
-use crate::shared::ApiError;
 use crate::config::OAuthConfig;
+use crate::shared::ApiError;
 use chrono::{NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -12,10 +12,9 @@ const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const SCOPES: &str = "https://www.googleapis.com/auth/calendar";
 
 pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError> {
-    let client_id = cfg
-        .google_client_id
-        .as_deref()
-        .ok_or_else(|| ApiError::bad_request("Google OAuth not configured (GOOGLE_CLIENT_ID missing)"))?;
+    let client_id = cfg.google_client_id.as_deref().ok_or_else(|| {
+        ApiError::bad_request("Google OAuth not configured (GOOGLE_CLIENT_ID missing)")
+    })?;
 
     let mut url = Url::parse(AUTH_URL).unwrap();
     url.query_pairs_mut()
@@ -28,11 +27,12 @@ pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError
         .append_pair("state", state);
 
     tracing::info!("GOOGLE CAL API: {}", &url.to_string());
-    
+
     Ok(url.to_string())
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: Option<String>,
@@ -79,15 +79,10 @@ pub async fn exchange_code(
         redirect_uri: &cfg.google_redirect_uri,
     };
 
-    let resp = http
-        .post(TOKEN_URL)
-        .form(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("Google token exchange error: {:?}", e);
-            ApiError::internal("Failed to exchange Google OAuth code")
-        })?;
+    let resp = http.post(TOKEN_URL).form(&body).send().await.map_err(|e| {
+        tracing::error!("Google token exchange error: {:?}", e);
+        ApiError::internal("Failed to exchange Google OAuth code")
+    })?;
 
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
@@ -122,15 +117,10 @@ pub async fn refresh_token(
         grant_type: "refresh_token",
     };
 
-    let resp = http
-        .post(TOKEN_URL)
-        .form(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("Google token refresh error: {:?}", e);
-            ApiError::internal("Failed to refresh Google token")
-        })?;
+    let resp = http.post(TOKEN_URL).form(&body).send().await.map_err(|e| {
+        tracing::error!("Google token refresh error: {:?}", e);
+        ApiError::internal("Failed to refresh Google token")
+    })?;
 
     resp.json::<TokenResponse>().await.map_err(|e| {
         tracing::error!("Google token refresh parse error: {:?}", e);
@@ -175,6 +165,7 @@ pub struct GoogleDateTime {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct GoogleEvent {
     pub id: String,
     pub status: Option<String>,
@@ -197,6 +188,7 @@ struct EventListResponse {
 
 /// Fetch all events from Google Calendar, using incremental sync when a cursor exists.
 /// Returns (events, next_sync_token).
+#[allow(unused_assignments)]
 pub async fn fetch_events(
     http: &reqwest::Client,
     access_token: &str,
@@ -274,10 +266,7 @@ pub async fn fetch_events(
 }
 
 /// Fetch the authenticated user's profile email.
-pub async fn fetch_user_email(
-    http: &reqwest::Client,
-    access_token: &str,
-) -> Option<String> {
+pub async fn fetch_user_email(http: &reqwest::Client, access_token: &str) -> Option<String> {
     #[derive(Deserialize)]
     struct Profile {
         email: Option<String>,

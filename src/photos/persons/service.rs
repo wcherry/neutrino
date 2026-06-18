@@ -1,15 +1,15 @@
 use crate::photos::persons::{
     dto::{
-        ClusterEntry, FaceEmbeddingEntry, FaceEmbeddingsResponse, ListPersonsResponse,
-        MergePersonsRequest, PersonFaceThumbnail, PersonRelationship, PersonRelationshipsResponse,
-        PersonResponse, PersonTimelineResponse, ReassignFaceRequest, RenamePersonRequest,
-        SaveClustersRequest, TimelineGroup, UsersWithFacesResponse,
+        FaceEmbeddingEntry, FaceEmbeddingsResponse, ListPersonsResponse, MergePersonsRequest,
+        PersonFaceThumbnail, PersonRelationship, PersonRelationshipsResponse, PersonResponse,
+        PersonTimelineResponse, ReassignFaceRequest, RenamePersonRequest, SaveClustersRequest,
+        TimelineGroup, UsersWithFacesResponse,
     },
     repository::PersonsRepository,
 };
 use crate::photos::suggestions::repository::SuggestionsRepository;
-use chrono::Datelike;
 use crate::shared::ApiError;
+use chrono::Datelike;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -25,7 +25,10 @@ pub struct PersonsService {
 
 impl PersonsService {
     pub fn new(repo: Arc<PersonsRepository>, suggestions_repo: Arc<SuggestionsRepository>) -> Self {
-        PersonsService { repo, suggestions_repo }
+        PersonsService {
+            repo,
+            suggestions_repo,
+        }
     }
 
     fn person_response_from_record(
@@ -61,11 +64,14 @@ impl PersonsService {
         let mut faces_by_person: HashMap<String, Vec<PersonFaceThumbnail>> = HashMap::new();
         for face in all_faces {
             if let Some(pid) = &face.person_id {
-                faces_by_person.entry(pid.clone()).or_default().push(PersonFaceThumbnail {
-                    id: face.id,
-                    thumbnail: face.thumbnail,
-                    thumbnail_mime_type: face.thumbnail_mime_type,
-                });
+                faces_by_person
+                    .entry(pid.clone())
+                    .or_default()
+                    .push(PersonFaceThumbnail {
+                        id: face.id,
+                        thumbnail: face.thumbnail,
+                        thumbnail_mime_type: face.thumbnail_mime_type,
+                    });
             }
         }
 
@@ -91,12 +97,19 @@ impl PersonsService {
             return Err(ApiError::new(400, "INVALID_NAME", "Name must not be empty"));
         }
         let now = chrono::Utc::now().naive_utc();
-        let record = self.repo.update_person_name(person_id, user_id, &name, now)?;
-        let faces = self.repo.list_faces_for_person(person_id)?.into_iter().map(|f| PersonFaceThumbnail {
-            id: f.id,
-            thumbnail: f.thumbnail,
-            thumbnail_mime_type: f.thumbnail_mime_type,
-        }).collect();
+        let record = self
+            .repo
+            .update_person_name(person_id, user_id, &name, now)?;
+        let faces = self
+            .repo
+            .list_faces_for_person(person_id)?
+            .into_iter()
+            .map(|f| PersonFaceThumbnail {
+                id: f.id,
+                thumbnail: f.thumbnail,
+                thumbnail_mime_type: f.thumbnail_mime_type,
+            })
+            .collect();
         Ok(self.person_response_from_record(record, faces))
     }
 
@@ -108,15 +121,26 @@ impl PersonsService {
         req: MergePersonsRequest,
     ) -> Result<PersonResponse, ApiError> {
         if req.source_id == target_id {
-            return Err(ApiError::new(400, "INVALID_MERGE", "Cannot merge a person with themselves"));
+            return Err(ApiError::new(
+                400,
+                "INVALID_MERGE",
+                "Cannot merge a person with themselves",
+            ));
         }
         let now = chrono::Utc::now().naive_utc();
-        let record = self.repo.merge_persons(&req.source_id, target_id, user_id, now)?;
-        let faces = self.repo.list_faces_for_person(target_id)?.into_iter().map(|f| PersonFaceThumbnail {
-            id: f.id,
-            thumbnail: f.thumbnail,
-            thumbnail_mime_type: f.thumbnail_mime_type,
-        }).collect();
+        let record = self
+            .repo
+            .merge_persons(&req.source_id, target_id, user_id, now)?;
+        let faces = self
+            .repo
+            .list_faces_for_person(target_id)?
+            .into_iter()
+            .map(|f| PersonFaceThumbnail {
+                id: f.id,
+                thumbnail: f.thumbnail,
+                thumbnail_mime_type: f.thumbnail_mime_type,
+            })
+            .collect();
         Ok(self.person_response_from_record(record, faces))
     }
 
@@ -132,7 +156,8 @@ impl PersonsService {
             return Ok(());
         }
         let now = chrono::Utc::now().naive_utc();
-        self.repo.reassign_face(face_id, person_id, &req.target_person_id, user_id, now)
+        self.repo
+            .reassign_face(face_id, person_id, &req.target_person_id, user_id, now)
     }
 
     /// Remove a face from a person (unassigns it). Deletes the person if now empty.
@@ -143,7 +168,8 @@ impl PersonsService {
         user_id: &str,
     ) -> Result<(), ApiError> {
         let now = chrono::Utc::now().naive_utc();
-        self.repo.remove_face_from_person(face_id, person_id, user_id, now)
+        self.repo
+            .remove_face_from_person(face_id, person_id, user_id, now)
     }
 
     /// Returns all user_ids that have at least one face embedding (called by the worker to trigger cluster-all).
@@ -234,7 +260,14 @@ impl PersonsService {
             .collect();
 
         // ── 3. Resolve each cluster: assign person_id + optional name ────────
-        type ClusterRow = (String, Vec<String>, Option<String>, Option<String>, Option<String>, Option<String>);
+        type ClusterRow = (
+            String,
+            Vec<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        );
         let mut resolved: Vec<ClusterRow> = Vec::with_capacity(req.clusters.len());
         // person_id of named persons that have been "claimed" by a cluster (so each named
         // person is assigned to at most one cluster).
@@ -250,7 +283,9 @@ impl PersonsService {
                 std::collections::HashMap::new(); // person_id → (count, person_id, name)
             for fid in &cluster.face_ids {
                 if let Some((pid, name)) = face_to_named.get(fid) {
-                    let e = votes.entry(pid.clone()).or_insert((0, pid.clone(), name.clone()));
+                    let e = votes
+                        .entry(pid.clone())
+                        .or_insert((0, pid.clone(), name.clone()));
                     e.0 += 1;
                 }
             }
@@ -287,7 +322,9 @@ impl PersonsService {
             {
                 let dim = cluster_embs[0].len();
                 let cluster_avg: Vec<f32> = (0..dim)
-                    .map(|i| cluster_embs.iter().map(|e| e[i]).sum::<f32>() / cluster_embs.len() as f32)
+                    .map(|i| {
+                        cluster_embs.iter().map(|e| e[i]).sum::<f32>() / cluster_embs.len() as f32
+                    })
                     .collect();
 
                 person_avg_embeddings
@@ -343,9 +380,9 @@ impl PersonsService {
         // ── 5. Persist suggestions ────────────────────────────────────────────
         for (face_id, person_id, confidence) in pending_suggestions {
             let id = Uuid::new_v4().to_string();
-            let _ = self.suggestions_repo.insert_if_not_rejected(
-                &id, &face_id, &person_id, confidence, now,
-            );
+            let _ = self
+                .suggestions_repo
+                .insert_if_not_rejected(&id, &face_id, &person_id, confidence, now);
         }
 
         Ok(())
@@ -385,8 +422,7 @@ impl PersonsService {
             return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
         }
         let face_records = self.repo.list_faces_for_person(person_id)?;
-        let mut photo_ids: Vec<String> =
-            face_records.into_iter().map(|f| f.photo_id).collect();
+        let mut photo_ids: Vec<String> = face_records.into_iter().map(|f| f.photo_id).collect();
         photo_ids.sort();
         photo_ids.dedup();
         Ok(photo_ids)
@@ -423,7 +459,8 @@ impl PersonsService {
 
         // Group by year-month.
         use std::collections::BTreeMap;
-        let mut groups: BTreeMap<String, Vec<crate::photos::photos::dto::PhotoResponse>> = BTreeMap::new();
+        let mut groups: BTreeMap<String, Vec<crate::photos::photos::dto::PhotoResponse>> =
+            BTreeMap::new();
         for photo in sorted {
             let date = date_map
                 .get(&photo.id)
@@ -437,19 +474,24 @@ impl PersonsService {
             .into_iter()
             .map(|(month, photos)| {
                 // Build human-readable label from the month key "YYYY-MM".
-                let label = if let Ok(d) = chrono::NaiveDate::parse_from_str(
-                    &format!("{}-01", month),
-                    "%Y-%m-%d",
-                ) {
+                let label = if let Ok(d) =
+                    chrono::NaiveDate::parse_from_str(&format!("{}-01", month), "%Y-%m-%d")
+                {
                     format!("{} {}", month_name(d.month()), d.year())
                 } else {
                     month.clone()
                 };
-                TimelineGroup { label, month, photos }
+                TimelineGroup {
+                    label,
+                    month,
+                    photos,
+                }
             })
             .collect();
 
-        Ok(PersonTimelineResponse { groups: timeline_groups })
+        Ok(PersonTimelineResponse {
+            groups: timeline_groups,
+        })
     }
 
     /// Compute co-occurrence relationships: persons who frequently appear together.
@@ -482,13 +524,17 @@ impl PersonsService {
         }
 
         if cooccurrence.is_empty() {
-            return Ok(PersonRelationshipsResponse { relationships: vec![] });
+            return Ok(PersonRelationshipsResponse {
+                relationships: vec![],
+            });
         }
 
         // Load all persons for this user to get names and thumbnails.
         let all_persons = self.repo.list_persons_for_user(user_id)?;
-        let person_map: std::collections::HashMap<String, crate::photos::persons::model::PersonRecord> =
-            all_persons.into_iter().map(|p| (p.id.clone(), p)).collect();
+        let person_map: std::collections::HashMap<
+            String,
+            crate::photos::persons::model::PersonRecord,
+        > = all_persons.into_iter().map(|p| (p.id.clone(), p)).collect();
 
         let mut relationships: Vec<PersonRelationship> = cooccurrence
             .into_iter()
@@ -500,11 +546,13 @@ impl PersonsService {
                     person_a_id: a_id,
                     person_a_name: a.and_then(|p| p.name.clone()),
                     person_a_thumbnail: a.and_then(|p| p.cover_thumbnail.clone()),
-                    person_a_thumbnail_mime_type: a.and_then(|p| p.cover_thumbnail_mime_type.clone()),
+                    person_a_thumbnail_mime_type: a
+                        .and_then(|p| p.cover_thumbnail_mime_type.clone()),
                     person_b_id: b_id,
                     person_b_name: b.and_then(|p| p.name.clone()),
                     person_b_thumbnail: b.and_then(|p| p.cover_thumbnail.clone()),
-                    person_b_thumbnail_mime_type: b.and_then(|p| p.cover_thumbnail_mime_type.clone()),
+                    person_b_thumbnail_mime_type: b
+                        .and_then(|p| p.cover_thumbnail_mime_type.clone()),
                     photo_count: count,
                 }
             })

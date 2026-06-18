@@ -45,6 +45,8 @@ const nextConfig: NextConfig = {
     '@neutrino/api-sheets',
     '@neutrino/api-slides',
     '@neutrino/api-photos',
+    '@neutrino/api-diagrams',
+    '@neutrino/api-drawing',
     '@neutrino/hooks',
     '@neutrino/utils',
     '@neutrino/e2e-crypto',

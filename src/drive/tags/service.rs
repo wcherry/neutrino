@@ -1,4 +1,3 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::tags::{
     dto::{
@@ -7,6 +6,7 @@ use crate::drive::tags::{
     },
     repository::TagsRepository,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -32,19 +32,17 @@ impl TagsService {
             return Err(ApiError::bad_request("Tag name cannot be empty"));
         }
         let id = Uuid::new_v4().to_string();
-        let tag = self.repo.insert_tag(crate::drive::tags::model::NewTagRecord {
-            id: &id,
-            user_id: &user.user_id,
-            name: &name,
-        })?;
+        let tag = self
+            .repo
+            .insert_tag(crate::drive::tags::model::NewTagRecord {
+                id: &id,
+                user_id: &user.user_id,
+                name: &name,
+            })?;
         Ok(TagResponse::from(tag))
     }
 
-    pub fn get_tag(
-        &self,
-        user: &AuthenticatedUser,
-        tag_id: &str,
-    ) -> Result<TagResponse, ApiError> {
+    pub fn get_tag(&self, user: &AuthenticatedUser, tag_id: &str) -> Result<TagResponse, ApiError> {
         let tag = self
             .repo
             .find_tag(tag_id, &user.user_id)?
@@ -161,7 +159,10 @@ impl TagsService {
         let file_records = self.repo.get_files_for_tag(tag_id, &user.user_id)?;
         let total = file_records.len();
         Ok(ListTaggedFilesResponse {
-            files: file_records.into_iter().map(TaggedFileResponse::from).collect(),
+            files: file_records
+                .into_iter()
+                .map(TaggedFileResponse::from)
+                .collect(),
             total,
         })
     }
@@ -178,11 +179,7 @@ impl TagsService {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    fn require_file_access(
-        &self,
-        user: &AuthenticatedUser,
-        file_id: &str,
-    ) -> Result<(), ApiError> {
+    fn require_file_access(&self, user: &AuthenticatedUser, file_id: &str) -> Result<(), ApiError> {
         self.permissions
             .get_effective_role(&user.user_id, "file", file_id)?
             .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;

@@ -1,24 +1,20 @@
 //! Microsoft Graph / Outlook Calendar OAuth2 and API client.
-use crate::shared::ApiError;
 use crate::config::OAuthConfig;
+use crate::shared::ApiError;
 use chrono::{NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 // ── OAuth2 ────────────────────────────────────────────────────────────────────
 
-const AUTH_URL: &str =
-    "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
-const TOKEN_URL: &str =
-    "https://login.microsoftonline.com/common/oauth2/v2.0/token";
-const SCOPES: &str =
-    "offline_access Calendars.ReadWrite User.Read";
+const AUTH_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
+const TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+const SCOPES: &str = "offline_access Calendars.ReadWrite User.Read";
 
 pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError> {
-    let client_id = cfg
-        .outlook_client_id
-        .as_deref()
-        .ok_or_else(|| ApiError::bad_request("Outlook OAuth not configured (OUTLOOK_CLIENT_ID missing)"))?;
+    let client_id = cfg.outlook_client_id.as_deref().ok_or_else(|| {
+        ApiError::bad_request("Outlook OAuth not configured (OUTLOOK_CLIENT_ID missing)")
+    })?;
 
     let mut url = Url::parse(AUTH_URL).unwrap();
     url.query_pairs_mut()
@@ -33,6 +29,7 @@ pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: Option<String>,
@@ -82,15 +79,10 @@ pub async fn exchange_code(
         scope: SCOPES,
     };
 
-    let resp = http
-        .post(TOKEN_URL)
-        .form(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("Outlook token exchange error: {:?}", e);
-            ApiError::internal("Failed to exchange Outlook OAuth code")
-        })?;
+    let resp = http.post(TOKEN_URL).form(&body).send().await.map_err(|e| {
+        tracing::error!("Outlook token exchange error: {:?}", e);
+        ApiError::internal("Failed to exchange Outlook OAuth code")
+    })?;
 
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
@@ -126,15 +118,10 @@ pub async fn refresh_token(
         scope: SCOPES,
     };
 
-    let resp = http
-        .post(TOKEN_URL)
-        .form(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("Outlook token refresh error: {:?}", e);
-            ApiError::internal("Failed to refresh Outlook token")
-        })?;
+    let resp = http.post(TOKEN_URL).form(&body).send().await.map_err(|e| {
+        tracing::error!("Outlook token refresh error: {:?}", e);
+        ApiError::internal("Failed to refresh Outlook token")
+    })?;
 
     resp.json::<TokenResponse>().await.map_err(|e| {
         tracing::error!("Outlook token refresh parse error: {:?}", e);
@@ -158,8 +145,9 @@ pub async fn ensure_valid_token(
         return Ok((access_token.to_string(), expires_at, None));
     }
 
-    let refresh = refresh_tok
-        .ok_or_else(|| ApiError::internal("Outlook token expired and no refresh token available"))?;
+    let refresh = refresh_tok.ok_or_else(|| {
+        ApiError::internal("Outlook token expired and no refresh token available")
+    })?;
 
     let tok = refresh_token(cfg, http, refresh).await?;
     let new_expiry = tok
@@ -172,6 +160,7 @@ pub async fn ensure_valid_token(
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct OutlookDateTimeValue {
     pub date_time: String,
     pub time_zone: Option<String>,
@@ -208,6 +197,7 @@ struct DeltaResponse {
 
 /// Fetch events from Microsoft Graph using delta query for incremental sync.
 /// Returns (events, next_delta_link).
+#[allow(unused_assignments)]
 pub async fn fetch_events(
     http: &reqwest::Client,
     access_token: &str,
@@ -247,7 +237,9 @@ pub async fn fetch_events(
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
             tracing::error!("Outlook events fetch failed: {}", text);
-            return Err(ApiError::internal("Failed to fetch Outlook Calendar events"));
+            return Err(ApiError::internal(
+                "Failed to fetch Outlook Calendar events",
+            ));
         }
 
         let body: DeltaResponse = resp.json().await.map_err(|e| {
@@ -268,10 +260,7 @@ pub async fn fetch_events(
 }
 
 /// Fetch the authenticated user's email from Microsoft Graph.
-pub async fn fetch_user_email(
-    http: &reqwest::Client,
-    access_token: &str,
-) -> Option<String> {
+pub async fn fetch_user_email(http: &reqwest::Client, access_token: &str) -> Option<String> {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct Me {

@@ -1,6 +1,6 @@
-use actix_web::{get, web, HttpResponse};
-use crate::shared::{ApiError, AuthenticatedUser};
 use super::service::PriorityService;
+use crate::shared::{ApiError, AuthenticatedUser};
+use actix_web::{get, web, HttpResponse};
 use std::sync::Arc;
 
 pub struct PriorityApiState {

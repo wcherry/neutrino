@@ -4,6 +4,7 @@ use diesel::prelude::*;
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::calendar_connections)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[allow(dead_code)]
 pub struct ConnectionRecord {
     pub id: String,
     pub user_id: String,

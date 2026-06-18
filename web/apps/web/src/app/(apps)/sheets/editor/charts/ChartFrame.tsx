@@ -1,10 +1,13 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { CellProps } from '../types';
-import type { ChartDef } from './chartTypes';
+import type { ChartDef, ChartAnnotation } from './chartTypes';
 import { ChartRenderer } from './ChartRenderer';
+import { ChartAnnotationLayer } from './ChartAnnotationLayer';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './charts.module.css';
+import animStyles from './chartAnimation.module.css';
 
 const RESIZE_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const;
 type ResizeHandle = typeof RESIZE_HANDLES[number];
@@ -17,6 +20,8 @@ interface ChartFrameProps {
     onUpdate: (patch: Partial<ChartDef>) => void;
     onDelete: () => void;
     containerRef: React.RefObject<HTMLDivElement | null>;
+    /** Forwarded ref to the frame element — used by Phase 5 export utilities. */
+    frameRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export function ChartFrame({
@@ -27,7 +32,12 @@ export function ChartFrame({
     onUpdate,
     onDelete,
     containerRef,
+    frameRef,
 }: ChartFrameProps) {
+    const flags = useFeatureFlags();
+    const internalRef = useRef<HTMLDivElement | null>(null);
+    const resolvedFrameRef = frameRef ?? internalRef;
+
     const dragState = useRef<{
         startMouseX: number;
         startMouseY: number;
@@ -44,6 +54,12 @@ export function ChartFrame({
         startW: number;
         startH: number;
     } | null>(null);
+
+    // Track frame pixel dimensions for annotation positioning
+    const [frameDims, setFrameDims] = useState({ w: def.w, h: def.h });
+    useEffect(() => {
+        setFrameDims({ w: def.w, h: def.h });
+    }, [def.w, def.h]);
 
     // Keyboard Delete handler when selected
     useEffect(() => {
@@ -132,6 +148,37 @@ export function ChartFrame({
         window.addEventListener('mouseup', onUp);
     }
 
+    // ── Phase 5: Annotation handlers ─────────────────────────────────────────
+
+    function handleAnnotationUpdate(annId: string, patch: Partial<ChartAnnotation>) {
+        if (!flags.sheetsChartsPhase5) return;
+        const annotations = (def.annotations ?? []).map(a =>
+            a.id === annId ? { ...a, ...patch } : a,
+        );
+        onUpdate({ annotations });
+    }
+
+    function handleAnnotationDelete(annId: string) {
+        if (!flags.sheetsChartsPhase5) return;
+        const annotations = (def.annotations ?? []).filter(a => a.id !== annId);
+        onUpdate({ annotations });
+    }
+
+    // ── Phase 5: Animation class resolution ───────────────────────────────────
+
+    const animCssStyle: Record<string, string> = {};
+    let animClassName = '';
+
+    if (flags.sheetsChartsPhase5 && def.animation && def.animation.mode !== 'none') {
+        const { mode, durationMs = 600, delayMs = 150 } = def.animation;
+        animCssStyle['--anim-duration'] = `${durationMs}ms`;
+        animCssStyle['--anim-delay'] = `${delayMs}ms`;
+
+        if (mode === 'reveal-series') animClassName = animStyles.revealSeries;
+        else if (mode === 'highlight-points') animClassName = animStyles.highlightPoints;
+        else if (mode === 'presentation-transition') animClassName = animStyles.presentationTransition;
+    }
+
     const frameStyle: React.CSSProperties = {
         left: def.x,
         top: def.y,
@@ -141,13 +188,30 @@ export function ChartFrame({
 
     return (
         <div
+            ref={resolvedFrameRef as React.RefObject<HTMLDivElement>}
             className={`${styles.chartFrame} ${isSelected ? styles.chartFrameSelected : ''}`}
             style={frameStyle}
+            data-chart-id={def.id}
             onMouseDown={handleBodyMouseDown}
         >
-            <div className={styles.chartContent}>
+            <div
+                className={`${styles.chartContent} ${animClassName}`}
+                style={animCssStyle}
+            >
                 <ChartRenderer def={def} data={data} />
             </div>
+
+            {/* Phase 5: Annotation overlay */}
+            {flags.sheetsChartsPhase5 && (
+                <ChartAnnotationLayer
+                    annotations={def.annotations ?? []}
+                    frameW={frameDims.w}
+                    frameH={frameDims.h}
+                    isChartSelected={isSelected}
+                    onUpdate={handleAnnotationUpdate}
+                    onDelete={handleAnnotationDelete}
+                />
+            )}
 
             {isSelected && RESIZE_HANDLES.map(handle => (
                 <div

@@ -107,7 +107,7 @@ export function ColorPickerPopover({ color, onChange, disabled, title, children,
             </div>
             {open && createPortal(
                 <div ref={popoverRef} data-color-picker-portal="" style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}>
-                    <ColorPicker value={color} onChange={(hex) => { onChange(hex); }} showAlpha={showAlpha} />
+                    <ColorPicker value={color} onChange={(hex) => { onChange(hex); }} showAlpha={showAlpha} onClose={() => setOpen(false)} />
                 </div>,
                 document.body
             )}

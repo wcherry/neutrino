@@ -4,11 +4,15 @@ import { useState } from 'react';
 import {
     Undo2, Redo2,
     AlignLeft, AlignCenter, AlignRight,
+    AlignVerticalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
     Calendar,
     TableCellsMerge, TableCellsSplit,
     BarChart2,
+    Search,
+    Palette,
+    Paintbrush,
 } from 'lucide-react';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import type { CellStyle } from './types';
 import { ColorPickerPopover, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
 import { FONT_FAMILIES } from '@/constants/editor';
@@ -86,9 +90,14 @@ export type StyleToolbarProps = {
     onMergeCells: () => void;
     isMerged: boolean;
     onInsertChart?: () => void;
+    onFindReplace?: () => void;
+    onConditionalFormat?: () => void;
+    isFormatPainterActive?: boolean;
+    onFormatPainterClick?: () => void;
 };
 
-export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart }: StyleToolbarProps) {
+export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick }: StyleToolbarProps) {
+    const flags = useFeatureFlags();
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
     const isStrikethrough = cellStyle?.textDecoration === 'line-through';
@@ -96,13 +105,20 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
 
     return (
         <Toolbar>
-            {/* Undo / Redo */}
+            {/* Undo / Redo / Format Painter */}
             <ToolbarGroup>
                 <ToolbarButton onClick={onUndo} disabled={!canUndo} title="Undo (⌘Z)">
                     <Undo2 size={15} />
                 </ToolbarButton>
                 <ToolbarButton onClick={onRedo} disabled={!canRedo} title="Redo (⌘⇧Z)">
                     <Redo2 size={15} />
+                </ToolbarButton>
+                <ToolbarButton
+                    active={isFormatPainterActive}
+                    onClick={onFormatPainterClick}
+                    title="Format Painter"
+                >
+                    <Paintbrush size={15} />
                 </ToolbarButton>
             </ToolbarGroup>
 
@@ -192,7 +208,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
 
             <ToolbarDivider />
 
-            {/* Alignment */}
+            {/* Horizontal alignment */}
             <ToolbarGroup>
                 <ToolbarButton
                     active={cellStyle?.textAlign === 'left'}
@@ -212,6 +228,28 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                     disabled={disabled}
                     title="Align Right"
                 ><AlignRight size={15} /></ToolbarButton>
+            </ToolbarGroup>
+
+            {/* Vertical alignment */}
+            <ToolbarGroup>
+                <ToolbarButton
+                    active={cellStyle?.verticalAlign === 'top'}
+                    onClick={() => onStyleChange({ verticalAlign: 'top' })}
+                    disabled={disabled}
+                    title="Align Top"
+                ><AlignVerticalJustifyStart size={15} /></ToolbarButton>
+                <ToolbarButton
+                    active={!cellStyle?.verticalAlign || cellStyle.verticalAlign === 'middle'}
+                    onClick={() => onStyleChange({ verticalAlign: 'middle' })}
+                    disabled={disabled}
+                    title="Align Middle"
+                ><AlignVerticalJustifyCenter size={15} /></ToolbarButton>
+                <ToolbarButton
+                    active={cellStyle?.verticalAlign === 'bottom'}
+                    onClick={() => onStyleChange({ verticalAlign: 'bottom' })}
+                    disabled={disabled}
+                    title="Align Bottom"
+                ><AlignVerticalJustifyEnd size={15} /></ToolbarButton>
             </ToolbarGroup>
 
             <ToolbarDivider />
@@ -317,7 +355,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                 ><DecimalIncIcon /></ToolbarButton>
             </ToolbarGroup>
 
-            {featureFlags.sheetsCharts && onInsertChart && (
+            {flags.sheetsCharts && onInsertChart && (
                 <>
                     <ToolbarDivider />
                     <ToolbarButton
@@ -325,6 +363,30 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                         title="Insert Chart"
                     >
                         <BarChart2 size={15} />
+                    </ToolbarButton>
+                </>
+            )}
+
+            {onFindReplace && (
+                <>
+                    <ToolbarDivider />
+                    <ToolbarButton
+                        onClick={onFindReplace}
+                        title="Find and Replace (Ctrl+H)"
+                    >
+                        <Search size={15} />
+                    </ToolbarButton>
+                </>
+            )}
+
+            {onConditionalFormat && (
+                <>
+                    <ToolbarDivider />
+                    <ToolbarButton
+                        onClick={onConditionalFormat}
+                        title="Conditional formatting"
+                    >
+                        <Palette size={15} />
                     </ToolbarButton>
                 </>
             )}

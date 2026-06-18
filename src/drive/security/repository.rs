@@ -1,6 +1,10 @@
-use crate::shared::ApiError;
+#![allow(dead_code)]
+
+use crate::drive::security::model::{
+    NewRansomwareEvent, NewSiemConfig, RansomwareEvent, SiemConfig,
+};
 use crate::schema::{ransomware_events, siem_configs};
-use crate::drive::security::model::{NewRansomwareEvent, NewSiemConfig, RansomwareEvent, SiemConfig};
+use crate::shared::ApiError;
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -25,7 +29,10 @@ impl SecurityRepository {
         })
     }
 
-    pub fn create_ransomware_event(&self, event: NewRansomwareEvent) -> Result<RansomwareEvent, ApiError> {
+    pub fn create_ransomware_event(
+        &self,
+        event: NewRansomwareEvent,
+    ) -> Result<RansomwareEvent, ApiError> {
         let mut conn = self.get_conn()?;
         diesel::insert_into(ransomware_events::table)
             .values(&event)

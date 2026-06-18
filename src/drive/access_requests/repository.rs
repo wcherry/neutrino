@@ -24,10 +24,7 @@ impl AccessRequestsRepository {
         })
     }
 
-    pub fn create(
-        &self,
-        record: &NewAccessRequestRecord,
-    ) -> Result<AccessRequestRecord, ApiError> {
+    pub fn create(&self, record: &NewAccessRequestRecord) -> Result<AccessRequestRecord, ApiError> {
         let mut conn = self.get_conn()?;
         diesel::insert_into(access_requests::table)
             .values(record)
@@ -98,11 +95,7 @@ impl AccessRequestsRepository {
             })
     }
 
-    pub fn update_status(
-        &self,
-        id: &str,
-        status: &str,
-    ) -> Result<usize, ApiError> {
+    pub fn update_status(&self, id: &str, status: &str) -> Result<usize, ApiError> {
         let mut conn = self.get_conn()?;
         diesel::update(access_requests::table.filter(access_requests::id.eq(id)))
             .set((

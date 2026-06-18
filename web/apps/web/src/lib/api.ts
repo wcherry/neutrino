@@ -19,3 +19,5 @@ export * from '@neutrino/api-notes';
 export * from '@neutrino/api-calendar';
 export * from '@neutrino/auth';
 export * from '@neutrino/api-admin';
+export * from '@neutrino/api-diagrams';
+export * from '@neutrino/api-drawing';

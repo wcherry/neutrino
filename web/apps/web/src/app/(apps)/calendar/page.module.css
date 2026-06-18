@@ -124,8 +124,10 @@
 
 .calendarArea {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar {
@@ -145,6 +147,7 @@
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 8px;
   overflow: hidden;
+  flex: 1;
 }
 
 .weekHeader {
@@ -168,6 +171,7 @@
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   border-bottom: 1px solid var(--color-border, #e5e7eb);
+  flex: 1;
 }
 
 .monthWeek:last-child {

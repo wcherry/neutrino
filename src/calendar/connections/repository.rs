@@ -1,8 +1,8 @@
-use crate::shared::ApiError;
 use crate::calendar::connections::model::{
     ConnectionRecord, NewConnectionRecord, UpdateConnectionTokens, UpdateSyncCursor,
 };
 use crate::schema::calendar_connections;
+use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -88,6 +88,7 @@ impl ConnectionsRepository {
             })
     }
 
+    #[allow(dead_code)]
     pub fn find_by_user_provider(
         &self,
         user_id: &str,

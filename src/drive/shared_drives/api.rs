@@ -1,10 +1,7 @@
+use crate::drive::shared_drives::{dto::*, service::SharedDrivesService};
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
-use crate::shared::{ApiError, AuthenticatedUser};
-use crate::drive::shared_drives::{
-    dto::*,
-    service::SharedDrivesService,
-};
 
 pub struct SharedDrivesApiState {
     pub service: Arc<SharedDrivesService>,
@@ -158,7 +155,9 @@ pub async fn add_member(
     body: web::Json<AddMemberRequest>,
 ) -> Result<web::Json<SharedDriveMemberResponse>, ApiError> {
     let drive_id = path.into_inner();
-    let result = state.service.add_member(&user, &drive_id, body.into_inner())?;
+    let result = state
+        .service
+        .add_member(&user, &drive_id, body.into_inner())?;
     Ok(web::Json(result))
 }
 
@@ -185,7 +184,9 @@ pub async fn update_member_role(
     body: web::Json<UpdateMemberRoleRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let (drive_id, target_user_id) = path.into_inner();
-    state.service.update_member_role(&user, &drive_id, &target_user_id, body.into_inner())?;
+    state
+        .service
+        .update_member_role(&user, &drive_id, &target_user_id, body.into_inner())?;
     Ok(HttpResponse::NoContent().finish())
 }
 
@@ -210,7 +211,9 @@ pub async fn remove_member(
     path: web::Path<(String, String)>,
 ) -> Result<HttpResponse, ApiError> {
     let (drive_id, target_user_id) = path.into_inner();
-    state.service.remove_member(&user, &drive_id, &target_user_id)?;
+    state
+        .service
+        .remove_member(&user, &drive_id, &target_user_id)?;
     Ok(HttpResponse::NoContent().finish())
 }
 

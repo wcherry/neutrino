@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::drive::activity::{
     dto::{ActivityEntryResponse, ActivityListResponse},
     model::NewActivityEntry,
@@ -14,8 +16,14 @@ pub struct ActivityService {
 }
 
 impl ActivityService {
-    pub fn new(repo: Arc<ActivityRepository>, permissions_service: Arc<PermissionsService>) -> Self {
-        ActivityService { repo, permissions_service }
+    pub fn new(
+        repo: Arc<ActivityRepository>,
+        permissions_service: Arc<PermissionsService>,
+    ) -> Self {
+        ActivityService {
+            repo,
+            permissions_service,
+        }
     }
 
     pub fn log(
@@ -26,7 +34,9 @@ impl ActivityService {
         action: &str,
         detail: Option<serde_json::Value>,
     ) -> Result<(), ApiError> {
-        self.log_with_context(file_id, user_id, user_name, action, detail, None, None, None)
+        self.log_with_context(
+            file_id, user_id, user_name, action, detail, None, None, None,
+        )
     }
 
     pub fn log_with_context(
@@ -66,7 +76,9 @@ impl ActivityService {
         page: Option<i64>,
         page_size: Option<i64>,
     ) -> Result<ActivityListResponse, ApiError> {
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         if role.is_none() {
             return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
         }

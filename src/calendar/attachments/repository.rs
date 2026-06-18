@@ -1,8 +1,8 @@
 use crate::calendar::attachments::model::{AttachmentRecord, NewAttachmentRecord};
-use crate::shared::{ApiError, DbPool};
 use crate::schema::event_attachments;
+use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager};
+use diesel::r2d2::ConnectionManager;
 
 pub struct AttachmentsRepository {
     pool: DbPool,

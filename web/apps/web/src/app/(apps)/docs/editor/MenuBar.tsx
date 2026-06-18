@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import type { Editor } from '@tiptap/react';
 import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { applyTextCase } from '@/lib/textCase';
 import styles from './MenuBar.module.css';
 
 // ── Help modal ────────────────────────────────────────────────────────────
@@ -100,6 +102,35 @@ export interface HamburgerMenuProps {
   onExport: (format: 'docx' | 'pdf' | 'html' | 'txt') => void;
   onPageSetup: () => void;
   onPrint: () => void;
+  // View panel toggles
+  showOutline: boolean;
+  onToggleOutline: () => void;
+  showHistory: boolean;
+  onToggleHistory: () => void;
+  showComments: boolean;
+  onToggleComments: () => void;
+  distractionFree?: boolean;
+  onToggleFocus?: () => void;
+  showRulers: boolean;
+  onToggleRulers: () => void;
+  singlePageMode: boolean;
+  onToggleSinglePage: () => void;
+  // Layout & structure feature callbacks (only used when docsLayoutStructure flag is on)
+  onInsertFootnote?: () => void;
+  onInsertCrossRef?: () => void;
+  onHeaderFooter?: () => void;
+  onWatermark?: () => void;
+  onTheme?: () => void;
+  // Advanced formatting feature callbacks (only used when docsAdvancedFormatting flag is on)
+  onStylesPalette?: () => void;
+  onInsertLocalImage?: () => void;
+  // Editing tools feature callbacks (only used when docsEditingTools flag is on)
+  onOpenFindReplace?: () => void;
+  grammarEnabled?: boolean;
+  onToggleGrammar?: () => void;
+  onAiSuggestions?: () => void;
+  onAiSummarize?: () => void;
+  onAiChangeTone?: () => void;
 }
 
 export function HamburgerMenu({
@@ -112,7 +143,33 @@ export function HamburgerMenu({
   onExport,
   onPageSetup,
   onPrint,
+  showOutline,
+  onToggleOutline,
+  showHistory,
+  onToggleHistory,
+  showComments,
+  onToggleComments,
+  distractionFree,
+  onToggleFocus,
+  showRulers,
+  onToggleRulers,
+  singlePageMode,
+  onToggleSinglePage,
+  onInsertFootnote,
+  onInsertCrossRef,
+  onHeaderFooter,
+  onWatermark,
+  onTheme,
+  onStylesPalette,
+  onInsertLocalImage,
+  onOpenFindReplace,
+  grammarEnabled,
+  onToggleGrammar,
+  onAiSuggestions,
+  onAiSummarize,
+  onAiChangeTone,
 }: HamburgerMenuProps) {
+  const flags = useFeatureFlags();
   const router = useRouter();
   const [showHelp, setShowHelp] = useState(false);
 
@@ -166,6 +223,11 @@ export function HamburgerMenu({
         { kind: 'action', label: 'Paste',      shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
         { kind: 'separator' },
         { kind: 'action', label: 'Select all', shortcut: 'Ctrl+A', action: () => editor?.chain().focus().selectAll().run() },
+        ...(flags.docsEditingTools ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Find and replace…', shortcut: 'Ctrl+F', action: () => onOpenFindReplace?.() },
+          { kind: 'action' as const, label: grammarEnabled ? 'Grammar check ✓' : 'Grammar check', action: () => onToggleGrammar?.() },
+        ] : []),
       ],
     },
     {
@@ -198,6 +260,33 @@ export function HamburgerMenu({
             { kind: 'action', label: 'Double (2.0)',       action: () => {} },
           ],
         },
+        ...(flags.docsLayoutStructure ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Header & footer…',  action: () => onHeaderFooter?.() },
+          { kind: 'action' as const, label: 'Watermark…',         action: () => onWatermark?.() },
+          { kind: 'action' as const, label: 'Document theme…',    action: () => onTheme?.() },
+        ] : []),
+        ...(flags.docsAdvancedFormatting ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Paragraph styles…', action: () => onStylesPalette?.() },
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Superscript', shortcut: 'Ctrl+.', action: () => editor?.chain().focus().toggleMark('superscript').run() },
+          { kind: 'action' as const, label: 'Subscript',   shortcut: 'Ctrl+,', action: () => editor?.chain().focus().toggleMark('subscript').run() },
+          { kind: 'separator' as const },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { kind: 'action' as const, label: 'Indent',              action: () => (editor?.chain().focus() as any)?.indent?.()?.run?.() },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          { kind: 'action' as const, label: 'Outdent',             action: () => (editor?.chain().focus() as any)?.outdent?.()?.run?.() },
+          { kind: 'separator' as const },
+          {
+            kind: 'submenu' as const, label: 'Text case', items: [
+              { kind: 'action' as const, label: 'UPPERCASE',     action: () => editor && applyTextCase(editor, 'uppercase') },
+              { kind: 'action' as const, label: 'lowercase',     action: () => editor && applyTextCase(editor, 'lowercase') },
+              { kind: 'action' as const, label: 'Title Case',    action: () => editor && applyTextCase(editor, 'title') },
+              { kind: 'action' as const, label: 'Sentence case', action: () => editor && applyTextCase(editor, 'sentence') },
+            ],
+          },
+        ] : []),
       ],
     },
     {
@@ -205,12 +294,51 @@ export function HamburgerMenu({
       label: 'Insert',
       items: [
         { kind: 'action', label: 'Link…',           shortcut: 'Ctrl+K', action: () => { const url = window.prompt('Enter URL:', 'https://'); if (url) editor?.chain().focus().setLink({ href: url }).run(); } },
-        { kind: 'action', label: 'Image…',                              action: () => { const url = window.prompt('Enter image URL:'); if (url) editor?.chain().focus().setImage({ src: url }).run(); } },
+        flags.docsAdvancedFormatting
+          ? { kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() }
+          : { kind: 'action' as const, label: 'Image…',           action: () => { const url = window.prompt('Enter image URL:'); if (url) editor?.chain().focus().setImage({ src: url }).run(); } },
         { kind: 'separator' },
         { kind: 'action', label: 'Table',                               action: () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
         { kind: 'action', label: 'Horizontal rule',                     action: () => editor?.chain().focus().setHorizontalRule().run() },
         { kind: 'action', label: 'Code block',                          action: () => editor?.chain().focus().toggleCodeBlock().run() },
         { kind: 'action', label: 'Blockquote',                          action: () => editor?.chain().focus().toggleBlockquote().run() },
+        ...(flags.docsLayoutStructure ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: 'Table of contents',  action: () => editor?.chain().focus().insertContent({ type: 'tableOfContents' }).run() },
+          { kind: 'action' as const, label: 'Footnote',           action: () => onInsertFootnote?.() },
+          { kind: 'action' as const, label: 'Cross-reference…',  action: () => onInsertCrossRef?.() },
+          { kind: 'action' as const, label: 'Section break',      action: () => editor?.chain().focus().insertContent({ type: 'sectionBreak' }).run() },
+          { kind: 'action' as const, label: '2-column layout',    action: () => editor?.chain().focus().insertContent({ type: 'columnLayout', attrs: { columns: 2 }, content: [{ type: 'paragraph' }] }).run() },
+          { kind: 'action' as const, label: '3-column layout',    action: () => editor?.chain().focus().insertContent({ type: 'columnLayout', attrs: { columns: 3 }, content: [{ type: 'paragraph' }] }).run() },
+        ] : []),
+      ],
+    },
+    ...(flags.docsEditingTools ? [{
+      kind: 'submenu' as const,
+      label: 'AI Writing',
+      items: [
+        { kind: 'action' as const, label: 'Suggestions',  action: () => onAiSuggestions?.() },
+        { kind: 'action' as const, label: 'Summarize',    action: () => onAiSummarize?.() },
+        { kind: 'action' as const, label: 'Change tone…', action: () => onAiChangeTone?.() },
+      ],
+    }] : []),
+    {
+      kind: 'submenu',
+      label: 'View',
+      items: [
+        { kind: 'action', label: showOutline ? 'Outline ✓'          : 'Outline',          action: () => onToggleOutline() },
+        { kind: 'action', label: showHistory ? 'Version history ✓'  : 'Version history',  action: () => onToggleHistory() },
+        { kind: 'action', label: showComments ? 'Comments ✓'        : 'Comments',         action: () => onToggleComments() },
+        ...(flags.docsCompare ? [
+          { kind: 'action' as const, label: 'Compare versions…', action: () => onToggleHistory() },
+        ] : []),
+        { kind: 'separator' as const },
+        { kind: 'action' as const, label: showRulers ? 'Rulers ✓' : 'Rulers', action: () => onToggleRulers() },
+        { kind: 'action' as const, label: singlePageMode ? 'Single page ✓' : 'Single page', action: () => onToggleSinglePage() },
+        ...(flags.docsDistractionFree ? [
+          { kind: 'separator' as const },
+          { kind: 'action' as const, label: distractionFree ? 'Focus mode ✓' : 'Focus mode', shortcut: 'Ctrl+Shift+F', action: () => onToggleFocus?.() },
+        ] : []),
       ],
     },
     {

@@ -31,6 +31,18 @@ async function createSheetViaFAB(page: Page): Promise<void> {
   await page.getByRole('menuitem', { name: 'Spreadsheet' }).click();
   await expect(page).toHaveURL(/\/sheets\/editor\/?\?id=/, { timeout: 15_000 });
   await expect(page.getByRole('button', { name: 'Sheets' })).toBeVisible({ timeout: 10_000 });
+  // Wait for the sheet title to load from the API before interacting with it,
+  // so the title contentEditable reflects the server state and won't be reset
+  // by the load() completing mid-edit.
+  await expect(page.getByTestId('worksheet.name')).toContainText('Untitled spreadsheet', {
+    timeout: 10_000,
+  });
+}
+
+async function getSheetId(page: Page): Promise<string> {
+  const match = page.url().match(/[?&]id=([^&]+)/);
+  if (!match) throw new Error(`Could not extract sheet ID from URL: ${page.url()}`);
+  return match[1];
 }
 
 test.describe('Spreadsheets lifecycle', () => {
@@ -77,5 +89,44 @@ test.describe('Spreadsheets lifecycle', () => {
     await expect(page.getByRole('listitem', { name: 'Q1 Budget' })).toBeVisible({
       timeout: 10_000,
     });
+  });
+
+  // ── Add sheet tab → back → reopen ───────────────────────────────────────────
+
+  test('a newly added sheet tab is still present after clicking back and reopening', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(60_000);
+
+    await registerAndLogin(request, page);
+    await createSheetViaFAB(page);
+
+    const sheetId = await getSheetId(page);
+
+    // Add a second sheet tab
+    await page.getByRole('button', { name: '+' }).click();
+    await expect(page.getByText('Sheet 2', { exact: true })).toBeVisible({ timeout: 5_000 });
+
+    // The back button calls `await persist.save()` before navigating; wait for
+    // the autosave PUT so we know the save completed before we reopen.
+    const saveRequest = page.waitForRequest(
+      (r) =>
+        r.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
+        r.method() === 'PUT',
+      { timeout: 10_000 },
+    );
+
+    await page.getByRole('button', { name: 'Sheets' }).click();
+    await saveRequest;
+    await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
+
+    // Reopen the same spreadsheet
+    await page.goto(`/sheets/editor?id=${sheetId}`);
+    await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 20_000 });
+
+    // Both tabs must survive the round-trip
+    await expect(page.getByText('Sheet 1', { exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('Sheet 2', { exact: true })).toBeVisible({ timeout: 5_000 });
   });
 });

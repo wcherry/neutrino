@@ -1,6 +1,6 @@
+use crate::schema::{shared_drive_members, shared_drives};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use crate::schema::{shared_drives, shared_drive_members};
 
 #[derive(Debug, Queryable, Selectable, Clone)]
 #[diesel(table_name = shared_drives)]

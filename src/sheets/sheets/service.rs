@@ -1,6 +1,8 @@
 use crate::shared::{ApiError, AuthenticatedUser};
 use crate::sheets::sheets::{
-    dto::{CreateSheetRequest, ListSheetsResponse, SaveSheetRequest, SheetMetaResponse, SheetResponse},
+    dto::{
+        CreateSheetRequest, ListSheetsResponse, SaveSheetRequest, SheetMetaResponse, SheetResponse,
+    },
     model::{NewSheetRecord, UpdateSheetRecord},
     repository::SheetsRepository,
 };
@@ -31,7 +33,11 @@ mod tests {
     #[test]
     fn empty_sheet_content_is_valid_json() {
         let result = serde_json::from_str::<serde_json::Value>(EMPTY_SHEET_CONTENT);
-        assert!(result.is_ok(), "EMPTY_SHEET_CONTENT should be valid JSON: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "EMPTY_SHEET_CONTENT should be valid JSON: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -46,7 +52,10 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(EMPTY_SHEET_CONTENT).unwrap();
         let sheet = &parsed[0];
         assert!(sheet["name"].is_string(), "Sheet should have a name");
-        assert!(sheet["celldata"].is_array(), "Sheet should have celldata array");
+        assert!(
+            sheet["celldata"].is_array(),
+            "Sheet should have celldata array"
+        );
     }
 }
 use crate::shared::drive_client::DriveClient;
@@ -68,7 +77,10 @@ impl SheetsService {
         SheetsService { repo, drive }
     }
 
-    pub async fn list_sheets(&self, user: &AuthenticatedUser) -> Result<ListSheetsResponse, ApiError> {
+    pub async fn list_sheets(
+        &self,
+        user: &AuthenticatedUser,
+    ) -> Result<ListSheetsResponse, ApiError> {
         let items = self.drive.list_files(user, MIME_TYPE).await?;
         let sheets = items
             .into_iter()
@@ -140,6 +152,54 @@ impl SheetsService {
         })
     }
 
+    pub async fn autosave(
+        &self,
+        user: &AuthenticatedUser,
+        sheet_id: &str,
+        bytes: &[u8],
+        title: Option<&str>,
+    ) -> Result<SheetMetaResponse, ApiError> {
+        let file = self
+            .drive
+            .get_file(user, sheet_id, "Spreadsheet not found")
+            .await?;
+        match file.your_role.as_str() {
+            "owner" | "editor" => {}
+            _ => return Err(ApiError::new(403, "FORBIDDEN", "Edit access required")),
+        }
+        if file.deleted_at.is_some() {
+            return Err(ApiError::not_found("Spreadsheet is in trash"));
+        }
+
+        self.drive.upload_content_bytes(sheet_id, bytes)?;
+
+        let new_title = if let Some(t) = title {
+            let trimmed = t.trim().to_string();
+            if !trimmed.is_empty() {
+                self.drive
+                    .update_file_name(user, sheet_id, &trimmed)
+                    .await?;
+                trimmed
+            } else {
+                file.name.clone()
+            }
+        } else {
+            file.name.clone()
+        };
+
+        let now = Utc::now().naive_utc();
+        let changes = UpdateSheetRecord { updated_at: now };
+        self.repo.update_sheet(sheet_id, changes)?;
+
+        Ok(SheetMetaResponse {
+            id: file.id,
+            title: new_title,
+            folder_id: file.folder_id,
+            created_at: file.created_at.and_utc().to_rfc3339(),
+            updated_at: now.and_utc().to_rfc3339(),
+        })
+    }
+
     pub async fn save_sheet(
         &self,
         user: &AuthenticatedUser,
@@ -161,7 +221,9 @@ impl SheetsService {
         let new_title = if let Some(ref title) = req.title {
             let trimmed = title.trim().to_string();
             if !trimmed.is_empty() {
-                self.drive.update_file_name(user, sheet_id, &trimmed).await?;
+                self.drive
+                    .update_file_name(user, sheet_id, &trimmed)
+                    .await?;
                 trimmed
             } else {
                 file.name.clone()

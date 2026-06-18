@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -89,7 +91,6 @@ impl ShareLinkResponse {
             updated_at: emstring.clone(),
         }
     }
-    
 }
 
 impl From<ShareLinkRecord> for ShareLinkResponse {

@@ -361,6 +361,16 @@ diesel::table! {
     }
 }
 
+// ── Drawing ──────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    drawings (file_id) {
+        file_id -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
 // ── Slides ───────────────────────────────────────────────────────────────────
 
 diesel::table! {
@@ -387,6 +397,49 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         is_system -> Bool,
+    }
+}
+
+// ── Diagrams ─────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    diagrams (file_id) {
+        file_id -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    diagram_yjs_state (file_id) {
+        file_id -> Text,
+        state -> Binary,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    diagram_comments (id) {
+        id -> Text,
+        file_id -> Text,
+        user_id -> Text,
+        content -> Text,
+        parent_id -> Nullable<Text>,
+        shape_id -> Nullable<Text>,
+        resolved -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    diagram_third_party_libraries (id) {
+        id -> Text,
+        name -> Text,
+        url -> Text,
+        private_path -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -706,35 +759,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    dlp_rules (id) {
-        id -> Text,
-        name -> Text,
-        description -> Nullable<Text>,
-        pattern -> Text,
-        pattern_type -> Text,
-        action -> Text,
-        severity -> Text,
-        is_active -> Integer,
-        created_by -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    dlp_violations (id) {
-        id -> Text,
-        file_id -> Text,
-        rule_id -> Text,
-        matched_at -> Timestamp,
-        notified_at -> Nullable<Timestamp>,
-        action_taken -> Nullable<Text>,
-        dismissed_at -> Nullable<Timestamp>,
-        dismissed_by -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
     legal_holds (id) {
         id -> Text,
         name -> Text,
@@ -835,10 +859,50 @@ diesel::table! {
     }
 }
 
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    feature_flags (key) {
+        key -> Text,
+        enabled -> Integer,
+        description -> Nullable<Text>,
+        updated_at -> Text,
+    }
+}
+
+// ── OAuth ─────────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    oauth_clients (id) {
+        id -> Text,
+        name -> Text,
+        redirect_uris -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    oauth_authorization_codes (code) {
+        code -> Text,
+        client_id -> Text,
+        user_id -> Text,
+        redirect_uri -> Text,
+        scope -> Nullable<Text>,
+        code_challenge -> Text,
+        code_challenge_method -> Text,
+        expires_at -> Timestamp,
+        created_at -> Timestamp,
+    }
+}
+
 // ── Joinable relationships ────────────────────────────────────────────────────
 
 // Auth
 diesel::joinable!(refresh_tokens -> users (user_id));
+
+// OAuth
+diesel::joinable!(oauth_authorization_codes -> oauth_clients (client_id));
+diesel::joinable!(oauth_authorization_codes -> users (user_id));
 diesel::joinable!(totp_backup_codes -> users (user_id));
 diesel::joinable!(user_profiles -> users (user_id));
 
@@ -858,7 +922,6 @@ diesel::joinable!(files -> folders (folder_id));
 diesel::joinable!(shortcuts -> files (target_file_id));
 diesel::joinable!(file_versions -> files (file_id));
 diesel::joinable!(shared_drive_members -> shared_drives (shared_drive_id));
-diesel::joinable!(dlp_violations -> dlp_rules (rule_id));
 diesel::joinable!(file_legal_holds -> legal_holds (hold_id));
 diesel::joinable!(file_tags -> files (file_id));
 diesel::joinable!(file_tags -> tags (tag_id));
@@ -898,6 +961,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     training_signals,
     user_recognition_thresholds,
     persons,
+    // Drawing
+    drawings,
     // Sheets
     sheets,
     named_ranges,
@@ -928,8 +993,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     file_classifications,
     shared_drives,
     shared_drive_members,
-    dlp_rules,
-    dlp_violations,
     legal_holds,
     retention_policies,
     file_legal_holds,
@@ -938,4 +1001,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     tags,
     file_tags,
     file_key_refs,
+    // OAuth
+    oauth_clients,
+    oauth_authorization_codes,
+    // Admin
+    feature_flags,
 );

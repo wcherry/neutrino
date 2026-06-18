@@ -17,6 +17,7 @@ import {
 } from '@neutrino/ui';
 import {
   Calendar,
+  GitBranch,
   HardDrive,
   Users,
   Star,
@@ -31,10 +32,24 @@ import {
   Bell,
 } from 'lucide-react';
 import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
-import { IndexEngine, getOrCreateSearchKey, type SearchableDocType } from '@neutrino/search';
+import { IndexEngine, type SearchableDocType } from '@neutrino/search';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { NewItemFAB } from './NewItemFAB';
+
+const SEARCH_KEY_STORAGE = 'search_key_v1';
+const SEARCH_KEY_BYTES = 32;
+
+function getOrCreateSearchKey(userId: string): Uint8Array {
+  const storageKey = `${SEARCH_KEY_STORAGE}_${userId}`;
+  const stored = localStorage.getItem(storageKey);
+  if (stored) {
+    return Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
+  }
+  const key = crypto.getRandomValues(new Uint8Array(SEARCH_KEY_BYTES));
+  localStorage.setItem(storageKey, btoa(String.fromCharCode(...key)));
+  return key;
+}
 
 function docTypeUrl(type: SearchableDocType, docId: string): string {
   switch (type) {
@@ -78,6 +93,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     items: [
       { id: 'my-drive', label: 'My Drive', icon: HardDrive, href: '/drive' },
       { id: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes' },
+      { id: 'diagrams', label: 'Diagrams', icon: GitBranch, href: '/diagrams' },
       { id: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar' },
       { id: 'shared', label: 'Shared with me', icon: Share2, href: '/drive/shared' },
       { id: 'recent', label: 'Recent', icon: Clock, href: '/drive/recent' },
@@ -128,6 +144,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const flags = useFeatureFlags();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
   const engineRef = useRef<IndexEngine | null>(null);
@@ -210,6 +227,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     init();
   }, [router]);
 
+  useEffect(() => {
+    if (auth.status !== 'ready' || !flags.search) return;
+    const kp = loadKeyPair(auth.user.id);
+    if (kp) {
+      engineRef.current = new IndexEngine();
+      searchKeyRef.current = getOrCreateSearchKey(auth.user.id);
+    }
+  }, [auth, flags.search]);
+
+
   const handleSearch = useCallback(async (query: string) => {
     const engine = engineRef.current;
     const searchKey = searchKeyRef.current;
@@ -262,18 +289,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       user={{ name: auth.user.name, email: auth.user.email, avatarSrc: profileDetails?.avatar ?? undefined }}
       onSearch={handleSearch}
       searchPlaceholder="Search in Drive..."
-      searchResults={featureFlags.search ? searchResults : undefined}
-      onResultClick={featureFlags.search ? handleResultClick : undefined}
+      searchResults={flags.search ? searchResults : undefined}
+      onResultClick={flags.search ? handleResultClick : undefined}
       onSettings={() => router.push('/settings')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}
-    />
+    >
+      <NewItemFAB />
+    </Topbar>
   );
 
   return (
     <AppShell sidebar={sidebar} topbar={topbar}>
       {children}
-      <NewItemFAB />
     </AppShell>
   );
 }

@@ -1,7 +1,7 @@
-use crate::shared::ApiError;
-use crate::schema::{file_tags, files, tags};
 use crate::drive::storage::model::FileRecord;
 use crate::drive::tags::model::{NewFileTag, NewTagRecord, TagRecord};
+use crate::schema::{file_tags, files, tags};
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use std::collections::HashMap;
@@ -221,6 +221,7 @@ impl TagsRepository {
 
     /// Get tag names for multiple files in a single query.
     /// Returns a map of file_id → sorted tag names.
+    #[allow(dead_code)]
     pub fn get_tag_names_for_files(
         &self,
         file_ids: &[String],
@@ -281,8 +282,7 @@ impl TagsRepository {
 
     fn get_conn(
         &self,
-    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError>
-    {
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {
         self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")

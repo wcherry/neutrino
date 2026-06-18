@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::drive::activity::model::{ActivityEntry, NewActivityEntry};
 use crate::schema::file_activity_log;
 use crate::shared::ApiError;
@@ -117,13 +119,10 @@ impl ActivityRepository {
             count_query = count_query.filter(file_activity_log::action.eq(ac.to_string()));
         }
 
-        let total: i64 = count_query
-            .count()
-            .get_result(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB count all activity error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
+        let total: i64 = count_query.count().get_result(&mut conn).map_err(|e| {
+            tracing::error!("DB count all activity error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
 
         Ok((items, total))
     }

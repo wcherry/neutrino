@@ -4,8 +4,22 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useNspell } from '@/hooks/useNspell';
+import { useAiSettings } from '@/hooks/useAiSettings';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
+import { DiagramEmbedExtension } from '@/lib/extensions/DiagramEmbedExtension';
+import { InsertDiagramDialog as InsertDiagramDocDialog } from './InsertDiagramDialog';
+import { FootnoteExtension, getFootnoteItems, FootnoteRegistry } from '@/lib/extensions/FootnoteExtension';
+import { CrossRefExtension } from '@/lib/extensions/CrossRefExtension';
+import { TableOfContentsExtension } from '@/lib/extensions/TableOfContentsExtension';
+import { SectionBreakExtension } from '@/lib/extensions/SectionBreakExtension';
+import { ColumnLayoutExtension } from '@/lib/extensions/ColumnLayoutExtension';
+// Advanced formatting extensions — only loaded when docsAdvancedFormatting flag is on
+import { Superscript, Subscript } from '@/lib/extensions/SubSuperExtension';
+import { IndentExtension } from '@/lib/extensions/IndentExtension';
+import { ListStyleExtension } from '@/lib/extensions/ListStyleExtension';
+import { AdvancedTableCell } from '@/lib/extensions/AdvancedTableCellExtension';
+import { AdvancedImage } from '@/lib/extensions/AdvancedImageExtension';
 import { useSheetPasteInterceptor, PasteChoiceDialog, type SheetEmbedAttrsShape, type CellValue } from '@neutrino/sheet-embed';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -26,14 +40,23 @@ import CharacterCount from '@tiptap/extension-character-count';
 import Highlight from '@tiptap/extension-highlight';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, FileText, History, MessageSquare,
+  ArrowLeft, ChevronLeft, ChevronRight, FileText, Minimize2,
 } from 'lucide-react';
-import { Spinner } from '@neutrino/ui';
-import { docsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
+import { Spinner, useToast, ZoomSlider } from '@neutrino/ui';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
+import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
 import { DocOutline } from './DocOutline';
+import { HeaderFooterModal } from './HeaderFooterModal';
+import { WatermarkModal } from './WatermarkModal';
+import { ThemeModal, type DocTheme } from './ThemeModal';
+// Advanced formatting modals
+import { ParagraphStylesModal } from './ParagraphStylesModal';
+import { ImagePropertiesModal } from './ImagePropertiesModal';
+import { TableCellModal } from './TableCellModal';
 // Heavy side panels — loaded on demand so they stay out of the initial editor bundle
 import dynamic from 'next/dynamic';
 const VersionHistoryPanel = dynamic(
@@ -45,7 +68,27 @@ const CommentsPanel = dynamic(
   { ssr: false }
 );
 import { EditorContextMenu } from './EditorContextMenu';
+// Editing tools — find/replace, grammar check, AI writing (feature gap #3)
+import { FindReplaceExtension } from '@/lib/extensions/FindReplaceExtension';
+import { GrammarCheckExtension, getGrammarIssueAt } from '@/lib/extensions/GrammarCheckExtension';
+import { SpellCheckExtension } from '@/lib/extensions/SpellCheckExtension';
+import { FindReplaceBar } from './FindReplaceBar';
+import { AiPanel, type AiOperation } from './AiPanel';
+import { ChangeToneDialog, type ToneValues } from './ChangeToneDialog';
+import { SaveAsDialog, type SaveAsOptions } from '@/components/SaveAsDialog';
+import { Sparkles } from 'lucide-react';
 import styles from './page.module.css';
+// Feature gap #4 — Real-time presence / cursor awareness
+import { usePresence } from '@/hooks/usePresence';
+import { PresenceBar } from './PresenceBar';
+import { RemoteCursorsExtension } from '@/lib/extensions/RemoteCursorsExtension';
+// Feature gap #5 — Track changes / suggesting mode
+import { TrackChangesExtension, isSuggestingMode } from '@/lib/extensions/TrackChangesExtension';
+import { TrackChangesBar } from './TrackChangesBar';
+// Feature gap #6 — Version compare
+import { DocComparePanel } from './DocComparePanel';
+import type { FileVersionItem } from '@neutrino/api-drive';
+import { HorizontalRuler, VerticalRuler } from './Ruler';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
 // Dimensions in inches; rendered at 96 dpi for screen display.
@@ -71,41 +114,8 @@ function pageDimensions(ps: PageSetup): { widthPx: number; heightPx: number } {
     : { widthPx: wPx, heightPx: hPx };
 }
 
-// ── Page-break overlay ────────────────────────────────────────────────────
-// Renders horizontal lines inside the page div at every content-height interval.
-
-interface PageBreakOverlayProps {
-  marginTop: number;
-  contentHeightPx: number;
-  pageRef: React.RefObject<HTMLDivElement>;
-}
-
-function PageBreakOverlay({ marginTop, contentHeightPx, pageRef }: PageBreakOverlayProps) {
-  const [pageHeight, setPageHeight] = useState(0);
-
-  useEffect(() => {
-    const el = pageRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(() => setPageHeight(el.scrollHeight));
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [pageRef]);
-
-  if (contentHeightPx <= 0) return null;
-
-  const count = Math.floor((pageHeight - marginTop) / contentHeightPx);
-  return (
-    <>
-      {Array.from({ length: Math.max(0, count) }, (_, i) => (
-        <div
-          key={i}
-          className={styles.pageBreakLine}
-          style={{ top: marginTop + (i + 1) * contentHeightPx }}
-        />
-      ))}
-    </>
-  );
-}
+// 0.5 in gap between pages (rendered via backgroundImage on the page div, behind text)
+const PAGE_GAP_PX = 48;
 
 // ── Print ──────────────────────────────────────────────────────────────────
 
@@ -155,34 +165,272 @@ hr { border: none; border-top: 1px solid #ccc; margin: 12pt 0; }
 
 // ── DOCX / PDF export helpers ──────────────────────────────────────────────
 
-async function exportAsDocx(title: string, html: string) {
-  const { Document, Packer, Paragraph, TextRun } = await import('docx');
-  const { saveAs } = await import('file-saver');
-
-  const lines = html.replace(/<[^>]+>/g, '\n').split('\n').filter(l => l.trim());
-  const paras = lines.map(l => new Paragraph({ children: [new TextRun(l.trim())] }));
-
-  const doc = new Document({ sections: [{ children: paras }] });
-  const blob = await Packer.toBlob(doc);
-  saveAs(blob, `${title}.docx`);
+function downloadBlob(blob: Blob, filename: string) {
+  console.log('[downloadBlob] starting download', { filename, blobSize: blob.size, blobType: blob.type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Delay revoke so the browser has time to start the download
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+  console.log('[downloadBlob] click dispatched');
 }
 
-function exportAsHtml(title: string, html: string) {
+// Strip block-level inline margin/padding/line-height so pdfmake's own
+// default styles control spacing (inline values from the editor or pasted
+// content can otherwise produce enormous inter-paragraph gaps).
+function cleanBlockMargins(html: string): string {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  div.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, pre').forEach(el => {
+    const e = el as HTMLElement;
+    ['margin-top', 'margin-bottom', 'padding-top', 'padding-bottom', 'line-height']
+      .forEach(p => e.style.removeProperty(p));
+  });
+  return div.innerHTML;
+}
+
+// html-to-pdfmake emits { font: 'Inherit' } for elements with font-family: inherit;
+// strip those so pdfmake falls back to the defaultStyle font.
+function stripInheritFont(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripInheritFont);
+  if (node && typeof node === 'object') {
+    const obj = node as Record<string, unknown>;
+    if (obj.font === 'Inherit') delete obj.font;
+    for (const key of Object.keys(obj)) obj[key] = stripInheritFont(obj[key]);
+  }
+  return node;
+}
+
+async function buildPdfBlob(
+  html: string,
+  ps: PageSetup,
+  opts?: Pick<SaveAsOptions, 'password' | 'allowPrinting' | 'allowCopying' | 'allowModifying'>,
+): Promise<Blob> {
+  console.log('[buildPdfBlob] start — html length:', html.length, 'pageSetup:', ps);
+  const pdfMake = (await import('pdfmake/build/pdfmake')).default;
+  const pdfFonts = (await import('pdfmake/build/vfs_fonts')).default;
+  const { default: htmlToPdfmake } = await import('html-to-pdfmake');
+  console.log('[buildPdfBlob] imports loaded');
+
+  // pdfmake type stubs predate the vfs/fonts API shape — cast to reach runtime props.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pm = pdfMake as any;
+  pm.vfs = pdfFonts;
+  pm.fonts = {
+    Roboto: {
+      normal: 'Roboto-Regular.ttf',
+      bold: 'Roboto-Medium.ttf',
+      italics: 'Roboto-Italic.ttf',
+      bolditalics: 'Roboto-MediumItalic.ttf',
+    },
+  };
+
+  const pageSizeMap: Record<string, string | [number, number]> = {
+    letter: 'LETTER', a4: 'A4', legal: 'LEGAL',
+    a3: 'A3', a5: 'A5', tabloid: 'TABLOID', executive: [522, 756],
+  };
+
+  const rawContent = htmlToPdfmake(cleanBlockMargins(html), { window });
+  const content = stripInheritFont(rawContent) as Parameters<typeof pdfMake.createPdf>[0]['content'];
+
+  type DocDef = Parameters<typeof pdfMake.createPdf>[0];
+  const docDef: DocDef = {
+    content,
+    defaultStyle: { font: 'Roboto' },
+    pageSize: pageSizeMap[ps.pageSize] ?? 'LETTER',
+    pageOrientation: ps.orientation as 'portrait' | 'landscape',
+    pageMargins: [ps.marginLeft, ps.marginTop, ps.marginRight, ps.marginBottom],
+  };
+
+  if (opts?.password) {
+    (docDef as Record<string, unknown>).userPassword = opts.password;
+    (docDef as Record<string, unknown>).permissions = {
+      printing: opts.allowPrinting ? 'highResolution' : false,
+      copying: opts.allowCopying,
+      modifying: opts.allowModifying,
+      annotating: true,
+      fillingForms: true,
+      contentAccessibility: true,
+      documentAssembly: false,
+    };
+  }
+
+  // pdfmake 0.3.x changed getBlob() from callback-based (0.2.x) to Promise-based.
+  // The type stubs still declare the old callback signature, so cast through any.
+  console.log('[buildPdfBlob] calling pdfMake.createPdf');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const blob: Blob = await (pdfMake as any).createPdf(docDef).getBlob();
+  console.log('[buildPdfBlob] getBlob resolved', { size: blob?.size });
+  if (!blob) throw new Error('pdfmake returned no data.');
+  return blob;
+}
+
+async function buildDocxBlob(html: string): Promise<Blob> {
+  const {
+    Document, Packer, Paragraph, TextRun, ExternalHyperlink,
+    HeadingLevel, AlignmentType, LevelFormat,
+  } = await import('docx');
+
+  type DocxChild = InstanceType<typeof Paragraph>;
+  type RunChild = InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink>;
+
+  // Parse inline nodes into TextRun / ExternalHyperlink children
+  function parseInlineNodes(el: Element, inherited: {
+    bold?: boolean; italics?: boolean; underline?: boolean; strike?: boolean;
+    color?: string; size?: number;
+  } = {}): RunChild[] {
+    const runs: RunChild[] = [];
+    for (const node of Array.from(el.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent ?? '';
+        if (text) {
+          runs.push(new TextRun({
+            text,
+            bold: inherited.bold,
+            italics: inherited.italics,
+            underline: inherited.underline ? {} : undefined,
+            strike: inherited.strike,
+            color: inherited.color,
+            size: inherited.size,
+          }));
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const child = node as Element;
+        const tag = child.tagName.toLowerCase();
+        const style = (child as HTMLElement).style;
+
+        const next = { ...inherited };
+        if (tag === 'strong' || tag === 'b') next.bold = true;
+        if (tag === 'em' || tag === 'i') next.italics = true;
+        if (tag === 'u') next.underline = true;
+        if (tag === 's' || tag === 'del' || tag === 'strike') next.strike = true;
+        if (tag === 'br') { runs.push(new TextRun({ text: '', break: 1 })); continue; }
+        if (style?.fontWeight === 'bold' || style?.fontWeight === '700') next.bold = true;
+        if (style?.fontStyle === 'italic') next.italics = true;
+        if (style?.textDecoration?.includes('underline')) next.underline = true;
+        if (style?.color) next.color = style.color.replace('#', '');
+        if (style?.fontSize) {
+          const pt = parseFloat(style.fontSize);
+          if (!isNaN(pt)) next.size = Math.round(pt * 2); // half-points
+        }
+
+        if (tag === 'a') {
+          const href = child.getAttribute('href') ?? '';
+          const innerRuns = parseInlineNodes(child, { ...next, color: '1155CC', underline: true });
+          if (href && innerRuns.length) {
+            runs.push(new ExternalHyperlink({ link: href, children: innerRuns as InstanceType<typeof TextRun>[] }));
+          } else {
+            runs.push(...innerRuns);
+          }
+        } else {
+          runs.push(...parseInlineNodes(child, next));
+        }
+      }
+    }
+    return runs;
+  }
+
+  // Convert a block element to one or more Paragraph instances
+  function parseBlock(el: Element, numbering?: {
+    reference: string; level: number;
+  }): DocxChild[] {
+    const tag = el.tagName.toLowerCase();
+    const style = (el as HTMLElement).style;
+
+    const headingMap: Record<string, typeof HeadingLevel[keyof typeof HeadingLevel]> = {
+      h1: HeadingLevel.HEADING_1, h2: HeadingLevel.HEADING_2,
+      h3: HeadingLevel.HEADING_3, h4: HeadingLevel.HEADING_4,
+      h5: HeadingLevel.HEADING_5, h6: HeadingLevel.HEADING_6,
+    };
+
+    const alignMap: Record<string, typeof AlignmentType[keyof typeof AlignmentType]> = {
+      left: AlignmentType.LEFT, center: AlignmentType.CENTER,
+      right: AlignmentType.RIGHT, justify: AlignmentType.BOTH,
+    };
+
+    // Lists — recurse into li items
+    if (tag === 'ul' || tag === 'ol') {
+      const refId = tag === 'ol' ? 'ol-numbering' : 'ul-numbering';
+      const paras: DocxChild[] = [];
+      for (const child of Array.from(el.children)) {
+        if (child.tagName.toLowerCase() === 'li') {
+          paras.push(...parseBlock(child, { reference: refId, level: 0 }));
+        }
+      }
+      return paras;
+    }
+
+    // Blockquote — indent
+    if (tag === 'blockquote') {
+      const paras: DocxChild[] = [];
+      for (const child of Array.from(el.children)) {
+        const inner = parseBlock(child);
+        inner.forEach(p => paras.push(p));
+      }
+      if (paras.length === 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const P = Paragraph as any;
+        paras.push(new P({ children: parseInlineNodes(el), indent: { left: 720 } }));
+      }
+      return paras;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const inlineChildren = parseInlineNodes(el) as any[];
+    const alignment = alignMap[style?.textAlign ?? ''];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const P = Paragraph as any;
+    return [new P({
+      children: inlineChildren,
+      ...(headingMap[tag] ? { heading: headingMap[tag] } : {}),
+      ...(alignment ? { alignment } : {}),
+      ...(numbering ? { numbering } : {}),
+    })];
+  }
+
+  const container = document.createElement('div');
+  container.innerHTML = html;
+
+  const children: DocxChild[] = [];
+  for (const node of Array.from(container.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = (node.textContent ?? '').trim();
+      if (text) children.push(new Paragraph({ children: [new TextRun(text)] }));
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      children.push(...parseBlock(node as Element));
+    }
+  }
+
+  const doc = new Document({
+    numbering: {
+      config: [
+        {
+          reference: 'ul-numbering',
+          levels: [{ level: 0, format: LevelFormat.BULLET, text: '•', alignment: AlignmentType.LEFT,
+            style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
+        },
+        {
+          reference: 'ol-numbering',
+          levels: [{ level: 0, format: LevelFormat.DECIMAL, text: '%1.', alignment: AlignmentType.LEFT,
+            style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
+        },
+      ],
+    },
+    sections: [{ children }],
+  });
+
+  return Packer.toBlob(doc);
+}
+
+function buildHtmlBlob(title: string, html: string): Blob {
   const full = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title></head><body>${html}</body></html>`;
-  const blob = new Blob([full], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `${title}.html`; a.click();
-  URL.revokeObjectURL(url);
-}
-
-async function exportAsTxt(title: string, docId: string) {
-  const result = await docsApi.exportText(docId);
-  const blob = new Blob([result.text], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `${title}.txt`; a.click();
-  URL.revokeObjectURL(url);
+  return new Blob([full], { type: 'text/html' });
 }
 
 // ── Page setup modal ────────────────────────────────────────────────────────
@@ -195,6 +443,16 @@ interface PageSetupModalProps {
 
 function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
   const [ps, setPs] = useState<PageSetup>(pageSetup);
+  // Margin inputs are in inches (3 decimal places); stored as pt in PageSetup.
+  const [topIn, setTopIn]       = useState((pageSetup.marginTop    / 72).toFixed(3));
+  const [bottomIn, setBottomIn] = useState((pageSetup.marginBottom / 72).toFixed(3));
+  const [leftIn, setLeftIn]     = useState((pageSetup.marginLeft   / 72).toFixed(3));
+  const [rightIn, setRightIn]   = useState((pageSetup.marginRight  / 72).toFixed(3));
+
+  function inchToPt(s: string): number {
+    const n = parseFloat(s);
+    return isNaN(n) || n < 0 ? 0 : n * 72;
+  }
 
   return (
     <div className={styles.modalOverlay} onClick={onClose}>
@@ -225,37 +483,72 @@ function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
         </div>
 
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Top margin (pt)</label>
-          <input className={styles.formInput} type="number" value={ps.marginTop}
-            onChange={e => setPs(p => ({ ...p, marginTop: Number(e.target.value) }))} />
+          <label className={styles.formLabel}>Top margin (in)</label>
+          <input className={styles.formInput} type="number" step="0.001" min="0"
+            value={topIn} onChange={e => setTopIn(e.target.value)} />
         </div>
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Bottom margin (pt)</label>
-          <input className={styles.formInput} type="number" value={ps.marginBottom}
-            onChange={e => setPs(p => ({ ...p, marginBottom: Number(e.target.value) }))} />
+          <label className={styles.formLabel}>Bottom margin (in)</label>
+          <input className={styles.formInput} type="number" step="0.001" min="0"
+            value={bottomIn} onChange={e => setBottomIn(e.target.value)} />
         </div>
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Left margin (pt)</label>
-          <input className={styles.formInput} type="number" value={ps.marginLeft}
-            onChange={e => setPs(p => ({ ...p, marginLeft: Number(e.target.value) }))} />
+          <label className={styles.formLabel}>Left margin (in)</label>
+          <input className={styles.formInput} type="number" step="0.001" min="0"
+            value={leftIn} onChange={e => setLeftIn(e.target.value)} />
         </div>
         <div className={styles.formRow}>
-          <label className={styles.formLabel}>Right margin (pt)</label>
-          <input className={styles.formInput} type="number" value={ps.marginRight}
-            onChange={e => setPs(p => ({ ...p, marginRight: Number(e.target.value) }))} />
+          <label className={styles.formLabel}>Right margin (in)</label>
+          <input className={styles.formInput} type="number" step="0.001" min="0"
+            value={rightIn} onChange={e => setRightIn(e.target.value)} />
         </div>
 
         <div className={styles.modalActions}>
           <button className={styles.exportBtn} onClick={onClose}>Cancel</button>
           <button className={styles.exportBtn}
             style={{ background: '#1a73e8', color: 'white', border: 'none' }}
-            onClick={() => { onSave(ps); onClose(); }}>
+            onClick={() => {
+              onSave({
+                ...ps,
+                marginTop:    inchToPt(topIn),
+                marginBottom: inchToPt(bottomIn),
+                marginLeft:   inchToPt(leftIn),
+                marginRight:  inchToPt(rightIn),
+              });
+              onClose();
+            }}>
             Apply
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+// ── Content serialisation helpers ────────────────────────────────────────────
+// When the layout feature flag is on, content is stored as a wrapper object
+// { doc: TiptapJSON, _meta: LayoutMeta } so metadata survives save/load.
+// When the flag is off (or the document was created without the flag), we fall
+// back to plain Tiptap JSON for backward compatibility.
+
+interface LayoutMeta {
+  headerText: string;
+  footerText: string;
+  showPageNumbers: boolean;
+  watermarkText: string;
+  bgColor: string;
+  docTheme: DocTheme;
+}
+
+function serializeContent(
+  docJson: object,
+  meta: LayoutMeta,
+  layoutStructure: boolean,
+): string {
+  if (layoutStructure) {
+    return JSON.stringify({ doc: docJson, _meta: meta });
+  }
+  return JSON.stringify(docJson);
 }
 
 // ── Custom paragraph with line-height / paragraph-spacing support ────────────
@@ -290,13 +583,16 @@ const AUTO_SAVE_DELAY_MS = 2000;
 export function DocEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const flags = useFeatureFlags();
   const docId = searchParams.get('id') ?? '';
   const queryClient = useQueryClient();
   const { spellCheck } = useSpellCheck();
   const nspell = useNspell();
+  const { getProviderOptions } = useAiSettings();
 
   const { dekRef, dekResolved } =
     useEncryptedDocumentContent({ id: docId, filename: 'doc.json' });
+  const toast = useToast();
 
   const [title, setTitle] = useState('');
   const [pageSetup, setPageSetup] = useState<PageSetup>({
@@ -305,20 +601,107 @@ export function DocEditor() {
   });
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [showPageSetup, setShowPageSetup] = useState(false);
+  const [showSaveAs, setShowSaveAs] = useState(false);
+  const [saveAsFormat, setSaveAsFormat] = useState('pdf');
+  const pendingExportHtmlRef = useRef('');
   const [showOutline, setShowOutline] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [commentInitialText, setCommentInitialText] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; wordFrom?: number; wordTo?: number } | null>(null);
+
+  // ── Layout & structure state (gated by flags.docsLayoutStructure) ──
+  const [headerText, setHeaderText] = useState('');
+  const [footerText, setFooterText] = useState('');
+  const [showPageNumbers, setShowPageNumbers] = useState(false);
+  const [watermarkText, setWatermarkText] = useState('');
+  const [bgColor, setBgColor] = useState('');
+  const [docTheme, setDocTheme] = useState<DocTheme>('default');
+  const [showHeaderFooterModal, setShowHeaderFooterModal] = useState(false);
+  const [showWatermarkModal, setShowWatermarkModal] = useState(false);
+  const [showThemeModal, setShowThemeModal] = useState(false);
+  // Track editor state version to force footnote list re-render on each transaction
+  const [editorVersion, setEditorVersion] = useState(0);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; wordFrom?: number; wordTo?: number; isOnImage?: boolean } | null>(null);
   const [spellWord, setSpellWord] = useState<string | undefined>(undefined);
   const [spellWordRange, setSpellWordRange] = useState<{ from: number; to: number } | null>(null);
   const [spellSuggestions, setSpellSuggestions] = useState<string[] | undefined>(undefined);
+  // ── Advanced formatting state (gated by flags.docsAdvancedFormatting) ──
+  const [showStylesPalette, setShowStylesPalette] = useState(false);
+  const [showImageProps, setShowImageProps] = useState(false);
+  const [showTableCellModal, setShowTableCellModal] = useState(false);
+  const localImageInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Editing tools state (gated by flags.docsEditingTools) ──
+  const [showFindReplace, setShowFindReplace] = useState(false);
+  const [grammarEnabled, setGrammarEnabled] = useState(false);
+  const [grammarIssue, setGrammarIssue] = useState<{
+    message: string; suggestion?: string; category?: string; from: number; to: number;
+  } | null>(null);
+  // AI writing panel state
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiOperation, setAiOperation] = useState<AiOperation>('suggestions');
+  const [aiResult, setAiResult] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [showChangeTone, setShowChangeTone] = useState(false);
+  const aiInsertTextRef = useRef('');
+  // Whether the current grammar-fix AI result has an auto-applicable replacement.
+  // Advisory-only results (passive voice, long sentences) set this to false.
+  const grammarAiCanInsertRef = useRef(true);
+  // Stores the document range of the grammar issue being fixed by AI so
+  // handleAiInsert knows exactly where to replace when the user accepts.
+  const grammarAiRangeRef = useRef<{ from: number; to: number } | null>(null);
+
+  // ── Presence state (gated by flags.docsPresence) ──
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  // Read the JWT from localStorage (stored by the auth module as 'neutrino.access_token')
+  useEffect(() => {
+    if (!flags.docsPresence) return;
+    const stored = localStorage.getItem('neutrino.access_token');
+    setAuthToken(stored);
+  }, [flags.docsPresence]);
+
+  // ── Track changes state (gated by flags.docsTrackChanges) ──
+  const [suggestingMode, setSuggestingMode] = useState(false);
+
+  // ── Compare state (gated by flags.docsCompare) ──
+  const [compareVersion, setCompareVersion] = useState<FileVersionItem | null>(null);
+
+  // ── Distraction-free / focus mode ──────────────────────────────────────────
+  const [distractionFree, setDistractionFree] = useState(false);
+
+  // ── Diagram embed ──────────────────────────────────────────────────────────
+  const [showInsertDiagram, setShowInsertDiagram] = useState(false);
+
+  // ── Rulers, zoom & single page mode ───────────────────────────────────────
+  const [showRulers, setShowRulers] = useState(true);
+  const [singlePageMode, setSinglePageMode] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageScrollHeight, setPageScrollHeight] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(100);
+  const editorScrollRef = useRef<HTMLDivElement>(null);
+  const sideRulerColRef = useRef<HTMLDivElement>(null);
+
   const importInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingContent = useRef<string | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
   const initialSaveDoneRef = useRef(false);
+  // Stable ref to latest layout metadata — read inside the useEditor onUpdate
+  // closure so we always serialise the most recent values without needing to
+  // re-create the editor.
+  const layoutMetaRef = useRef<LayoutMeta>({
+    headerText: '', footerText: '', showPageNumbers: false,
+    watermarkText: '', bgColor: '', docTheme: 'default',
+  });
+  // Stable refs for title and pageSetup so the onUpdate closure can include
+  // current metadata in each autosave without re-creating the editor.
+  const titleRef = useRef<string>('');
+  const pageSetupRef = useRef<PageSetup>({
+    marginTop: 72, marginBottom: 72, marginLeft: 72, marginRight: 72,
+    orientation: 'portrait', pageSize: 'letter',
+  });
 
   const { data: doc, isLoading: metaLoading } = useQuery({
     queryKey: ['doc', docId],
@@ -328,7 +711,9 @@ export function DocEditor() {
   });
 
   const { data: docContent, isLoading: contentLoading } = useQuery({
-    queryKey: ['doc-content', docId, dekResolved],
+    // Include contentUrl in the key so the queryFn closure is always consistent
+    // with the key and the query re-fires if the URL changes (e.g. after restore).
+    queryKey: ['doc-content', docId, dekResolved, doc?.contentUrl ?? ''],
     queryFn: async () => {
       if (!doc?.contentUrl) return null;
       if (dekRef.current) {
@@ -341,24 +726,29 @@ export function DocEditor() {
     },
     enabled: !!doc?.contentUrl && dekResolved,
     staleTime: 0,
-    retry: 0,
+    // Omit retry:0 — use the global retry policy so transient failures
+    // (e.g. a race on first load or a brief network hiccup) are retried,
+    // matching the try/catch fallback in sheets' usePersistence.load().
   });
 
   const isLoading = metaLoading || contentLoading;
 
   const contentMutation = useMutation({
-    mutationFn: (content: string) =>
-      // dekRef is provided by useEncryptedDocumentContent; no need to resolve
-      // the DEK here — the hook already did that.
-      dekRef.current
-        ? driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current)
-        : driveAutosaveContent(docId, content, 'doc.json'),
+    mutationFn: async ({ content, metadata }: { content: string; metadata?: { title?: string; pageSetup?: PageSetup } }) => {
+      if (!dekRef.current) throw new Error('no-dek');
+      return docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata);
+    },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
       setSaveStatus('saved');
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
     },
-    onError: () => setSaveStatus('unsaved'),
+    onError: (err) => {
+      setSaveStatus('unsaved');
+      if (err instanceof Error && err.message === 'no-dek') {
+        toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      }
+    },
   });
 
   const versionMutation = useMutation({
@@ -384,8 +774,8 @@ export function DocEditor() {
   });
 
   const triggerSave = useCallback(
-    (content: string) => {
-      contentMutation.mutate(content);
+    (content: string, metadata?: { title?: string; pageSetup?: PageSetup }) => {
+      contentMutation.mutate({ content, metadata });
     },
     [contentMutation]
   );
@@ -428,6 +818,7 @@ export function DocEditor() {
   });
 
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({ paragraph: false }),
       LineParagraph,
@@ -439,30 +830,94 @@ export function DocEditor() {
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Table.configure({ resizable: true }),
       TableRow,
-      TableCell,
+      // When advanced formatting is on, use the extended TableCell with extra attrs;
+      // otherwise fall back to the standard TableCell for backward compatibility.
+      flags.docsAdvancedFormatting ? AdvancedTableCell : TableCell,
       TableHeader,
-      Image.configure({ inline: true, allowBase64: true }),
+      // When advanced formatting is on, use the extended Image node (adds width,
+      // alignment, caption attrs); otherwise use the standard Image extension.
+      flags.docsAdvancedFormatting
+        ? AdvancedImage.configure({ inline: true, allowBase64: true })
+        : Image.configure({ inline: true, allowBase64: true }),
       Link.configure({ openOnClick: false }),
       Placeholder.configure({ placeholder: 'Start typing…' }),
       CharacterCount,
       SheetEmbedExtension,
+      DiagramEmbedExtension,
+      // Layout & structure extensions — only loaded when feature flag is on
+      ...(flags.docsLayoutStructure ? [
+        FootnoteExtension,
+        CrossRefExtension,
+        TableOfContentsExtension,
+        SectionBreakExtension,
+        ColumnLayoutExtension,
+      ] : []),
+      // Advanced formatting extensions — only loaded when feature flag is on
+      ...(flags.docsAdvancedFormatting ? [
+        Superscript,
+        Subscript,
+        IndentExtension,
+        ListStyleExtension,
+      ] : []),
+      // Client-side spell checking via nspell (replaces browser spellcheck attribute)
+      SpellCheckExtension,
+      // Editing tools — find/replace and grammar check (feature gap #3)
+      ...(flags.docsEditingTools ? [
+        FindReplaceExtension,
+        GrammarCheckExtension,
+      ] : []),
+      // Presence / remote cursors (feature gap #4)
+      ...(flags.docsPresence ? [RemoteCursorsExtension] : []),
+      // Track changes / suggesting mode (feature gap #5)
+      ...(flags.docsTrackChanges ? [TrackChangesExtension] : []),
     ],
     editorProps: {
-      attributes: { class: 'ProseMirror', spellcheck: 'true' },  // initial value; updated via effect below
+      attributes: { class: 'ProseMirror', spellcheck: 'false' },
     },
     onUpdate: ({ editor }) => {
-      const content = JSON.stringify(editor.getJSON());
+      // Bump editorVersion so layout-dependent components (e.g. footnote list) re-render
+      if (flags.docsLayoutStructure) {
+        setEditorVersion(v => v + 1);
+      }
+      // Use the stable ref so we always get fresh metadata values without
+      // needing to re-create the editor when metadata changes.
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
-        triggerSave(content);
+        triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current });
       }, AUTO_SAVE_DELAY_MS);
     },
   });
 
   // Keep editorRef in sync so the stable onEmbed callback can access the editor.
   (editorRef as React.MutableRefObject<typeof editor>).current = editor;
+
+  // ── Presence / cursor awareness (feature gap #4) ───────────────────────────
+  const { remoteUsers, isConnected } = usePresence({
+    docId,
+    userName: doc?.title ?? 'Anonymous',
+    authToken,
+    editor,
+    enabled: flags.docsPresence && !!docId,
+  });
+
+  // Push remote cursor positions into the RemoteCursorsExtension plugin
+  useEffect(() => {
+    if (!flags.docsPresence || !editor) return;
+    editor.commands.updateRemoteCursors(remoteUsers);
+  }, [flags.docsPresence, editor, remoteUsers]);
+
+  // ── Track changes — keep React state in sync with plugin state ────────────
+  useEffect(() => {
+    if (!flags.docsTrackChanges || !editor) return;
+    const update = () => {
+      setSuggestingMode(isSuggestingMode(editor.state));
+    };
+    editor.on('transaction', update);
+    return () => { editor.off('transaction', update); };
+  }, [flags.docsTrackChanges, editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -476,14 +931,21 @@ export function DocEditor() {
     return () => dom.removeEventListener('paste', listener);
   }, [editor, handleSheetPaste]);
 
-  // Imperatively keep the ProseMirror contentEditable element's spellcheck
-  // attribute in sync with the user's preference. Tiptap reads editorProps
-  // only at construction time, so we update the DOM node directly.
+  // Sync spell-check state into the SpellCheckExtension plugin. This runs
+  // whenever the user preference or the nspell handle changes (nspell loads lazily).
   useEffect(() => {
     if (!editor) return;
-    const dom = editor.view.dom as HTMLElement;
-    dom.setAttribute('spellcheck', spellCheck ? 'true' : 'false');
-  }, [editor, spellCheck]);
+    editor.commands.updateSpellCheck({ enabled: spellCheck, nspell });
+  }, [editor, spellCheck, nspell]);
+
+  // Keep layoutMetaRef in sync with state so the stable onUpdate closure has
+  // fresh values without re-creating the editor.
+  useEffect(() => {
+    layoutMetaRef.current = { headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme };
+  }, [headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
+
+  useEffect(() => { titleRef.current = title; }, [title]);
+  useEffect(() => { pageSetupRef.current = pageSetup; }, [pageSetup]);
 
   useEffect(() => {
     if (!doc || !editor) return;
@@ -497,8 +959,19 @@ export function DocEditor() {
     // window.focus after a prompt dialog) must not clobber in-progress work.
     if (pendingContent.current !== null) return;
     try {
-      const json = JSON.parse(docContent);
-      editor.commands.setContent(json, false);
+      const parsed = JSON.parse(docContent);
+      // Detect wrapper format { doc, _meta } written when the layout flag was on
+      if (flags.docsLayoutStructure && parsed._meta) {
+        editor.commands.setContent(parsed.doc, false);
+        setHeaderText(parsed._meta.headerText ?? '');
+        setFooterText(parsed._meta.footerText ?? '');
+        setShowPageNumbers(parsed._meta.showPageNumbers ?? false);
+        setWatermarkText(parsed._meta.watermarkText ?? '');
+        setBgColor(parsed._meta.bgColor ?? '');
+        setDocTheme(parsed._meta.docTheme ?? 'default');
+      } else {
+        editor.commands.setContent(parsed, false);
+      }
     } catch {
       editor.commands.setContent(docContent, false);
     }
@@ -514,7 +987,7 @@ export function DocEditor() {
     if (docContent !== null && docContent !== undefined) return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(editor.getJSON());
-    driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
+    docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dekResolved, editor, doc, contentLoading, docContent, docId]);
@@ -528,11 +1001,12 @@ export function DocEditor() {
       }
       const content = pendingContent.current;
       pendingContent.current = null;
-      if (dekRef.current) {
-        driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current);
-      } else {
-        driveAutosaveContent(docId, content, 'doc.json');
+      if (!dekRef.current) {
+        console.warn('[neutrino] Autosave skipped on flush: encryption key unavailable');
+        return;
       }
+      const metadata = { title: titleRef.current, pageSetup: pageSetupRef.current };
+      docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata);
     };
     const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -546,13 +1020,6 @@ export function DocEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep ProseMirror's spellcheck attribute in sync with user preference.
-  // Tiptap only reads editorProps at construction, so we update the DOM directly.
-  useEffect(() => {
-    if (!editor) return;
-    (editor.view.dom as HTMLElement).setAttribute('spellcheck', spellCheck ? 'true' : 'false');
-  }, [editor, spellCheck]);
-
   // When nspell finishes loading while the context menu is open, compute suggestions.
   useEffect(() => {
     if (!nspell || !spellWord || spellSuggestions !== undefined) return;
@@ -561,7 +1028,13 @@ export function DocEditor() {
 
   const handleTitleBlur = () => {
     if (!title.trim() || title === doc?.title) return;
-    metaMutation.mutate({ title });
+    // Save title together with current content in one combined call.
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+      triggerSave(content, { title, pageSetup });
+    } else {
+      metaMutation.mutate({ title });
+    }
   };
 
   const handleBack = useCallback(async () => {
@@ -570,7 +1043,7 @@ export function DocEditor() {
       autoSaveTimer.current = null;
     }
     if (pendingContent.current !== null) {
-      await contentMutation.mutateAsync(pendingContent.current);
+      await contentMutation.mutateAsync({ content: pendingContent.current, metadata: { title: titleRef.current, pageSetup: pageSetupRef.current } });
       pendingContent.current = null;
     }
     queryClient.invalidateQueries({ queryKey: ['docs'] });
@@ -580,12 +1053,37 @@ export function DocEditor() {
   const handleManualSave = useCallback(() => {
     if (!editor) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    const content = JSON.stringify(editor.getJSON());
+    const content = serializeContent(editor.getJSON(), {
+      headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme,
+    }, flags.docsLayoutStructure);
     versionMutation.mutate(content);
-  }, [editor, versionMutation]);
+  }, [editor, versionMutation, headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
+
+  // Sync grammar-enabled state into the GrammarCheckExtension plugin
+  useEffect(() => {
+    if (!flags.docsEditingTools || !editor) return;
+    editor.commands.setGrammarEnabled(grammarEnabled);
+  }, [grammarEnabled, editor]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && distractionFree) {
+        setDistractionFree(false);
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f' && flags.docsDistractionFree) {
+        e.preventDefault();
+        setDistractionFree(v => !v);
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && flags.docsEditingTools) {
+        e.preventDefault();
+        setShowFindReplace(true);
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         handleManualSave();
@@ -620,7 +1118,7 @@ export function DocEditor() {
     // "delete to end of line" before our stopPropagation can take effect.
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [handleManualSave, editor]);
+  }, [handleManualSave, editor, distractionFree, setDistractionFree, flags.docsDistractionFree]);
 
   const handleNewDoc = useCallback(async () => {
     const newDoc = await docsApi.createDoc({ title: 'Untitled document' });
@@ -637,7 +1135,13 @@ export function DocEditor() {
 
   const handlePageSetupSave = (ps: PageSetup) => {
     setPageSetup(ps);
-    metaMutation.mutate({ pageSetup: ps });
+    // Save page setup together with current content in one combined call.
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+      triggerSave(content, { title, pageSetup: ps });
+    } else {
+      metaMutation.mutate({ pageSetup: ps });
+    }
   };
 
   const handleInsertImage = () => {
@@ -647,12 +1151,122 @@ export function DocEditor() {
     }
   };
 
+  // ── Advanced formatting handlers ───────────────────────────────────────────
+
+  const handleInsertLocalImage = useCallback(() => {
+    localImageInputRef.current?.click();
+  }, []);
+
+  const handleLocalImageFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !editor) return;
+      // Read as data URL for inline base64 storage.
+      // TODO: Replace with a backend file upload API for large images to avoid
+      //       bloating the document JSON. For now, base64 inline is used since
+      //       the editor already supports allowBase64: true on the image extension.
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const src = ev.target?.result as string;
+        if (src) {
+          editor.chain().focus().setImage({ src }).run();
+        }
+      };
+      reader.readAsDataURL(file);
+      // Reset the input so the same file can be uploaded again if needed.
+      e.target.value = '';
+    },
+    [editor],
+  );
+
   const handleInsertLink = () => {
     const url = window.prompt('Enter URL:');
     if (url && editor) {
       editor.chain().focus().setLink({ href: url }).run();
     }
   };
+
+  // ── Layout & structure handlers ────────────────────────────────────────────
+
+  const handleInsertFootnote = useCallback(() => {
+    if (!editor) return;
+    // Generate a unique ID for this footnote
+    const id = `fn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // TODO: Replace with inline editor for richer UX
+    const text = window.prompt('Enter footnote text:');
+    if (text === null) return; // cancelled
+    FootnoteRegistry.set(id, text ?? '');
+    editor.chain().focus().insertContent({ type: 'footnote', attrs: { id } }).run();
+  }, [editor]);
+
+  const handleInsertCrossRef = useCallback(() => {
+    if (!editor) return;
+    const headingText = window.prompt('Enter the heading text to link to:');
+    if (!headingText) return;
+    // Find the heading node and apply the cross-ref mark to the current selection
+    editor.chain().focus().setMark('crossRef', { headingText }).run();
+  }, [editor]);
+
+  // Click handler for cross-reference links — scrolls to the referenced heading
+  const handleCrossRefClick = useCallback((e: React.MouseEvent) => {
+    if (!editor) return;
+    const target = (e.target as HTMLElement).closest('[data-cross-ref]') as HTMLElement | null;
+    if (!target) return;
+    e.preventDefault();
+    const headingText = target.getAttribute('data-cross-ref');
+    if (!headingText) return;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'heading' && node.textContent === headingText) {
+        const domNode = editor.view.nodeDOM(pos);
+        if (domNode instanceof HTMLElement) {
+          domNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        return false;
+      }
+    });
+  }, [editor]);
+
+  const handleHeaderFooterSave = useCallback((h: string, f: string, spn: boolean) => {
+    setHeaderText(h);
+    setFooterText(f);
+    setShowPageNumbers(spn);
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), {
+        ...layoutMetaRef.current, headerText: h, footerText: f, showPageNumbers: spn,
+      }, flags.docsLayoutStructure);
+      pendingContent.current = content;
+      setSaveStatus('unsaved');
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
+    }
+  }, [editor, triggerSave]);
+
+  const handleWatermarkSave = useCallback((wt: string, bg: string) => {
+    setWatermarkText(wt);
+    setBgColor(bg);
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), {
+        ...layoutMetaRef.current, watermarkText: wt, bgColor: bg,
+      }, flags.docsLayoutStructure);
+      pendingContent.current = content;
+      setSaveStatus('unsaved');
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
+    }
+  }, [editor, triggerSave]);
+
+  const handleThemeSave = useCallback((theme: DocTheme) => {
+    setDocTheme(theme);
+    if (editor) {
+      const content = serializeContent(editor.getJSON(), {
+        ...layoutMetaRef.current, docTheme: theme,
+      }, flags.docsLayoutStructure);
+      pendingContent.current = content;
+      setSaveStatus('unsaved');
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
+    }
+  }, [editor, triggerSave]);
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -661,6 +1275,7 @@ export function DocEditor() {
     setSpellWord(undefined);
     setSpellWordRange(null);
     setSpellSuggestions(undefined);
+    setGrammarIssue(null);
 
     if (
       spellCheck &&
@@ -733,7 +1348,40 @@ export function DocEditor() {
       }
     }
 
-    setContextMenu({ x: e.clientX, y: e.clientY });
+    // Detect grammar issue at cursor position when grammar check is enabled
+    if (flags.docsEditingTools && grammarEnabled && editor) {
+      const view = editor.view;
+      const pos = view.posAtCoords({ left: e.clientX, top: e.clientY });
+      if (pos) {
+        const issue = getGrammarIssueAt(editor.state.doc, pos.pos);
+        if (issue) {
+          setGrammarIssue({
+            message: issue.message,
+            suggestion: issue.suggestion,
+            category: issue.category,
+            from: issue.from,
+            to: issue.to,
+          });
+        }
+      }
+    }
+
+    // Detect if the right-click landed on an image node.
+    let isOnImage = false;
+    if (flags.docsAdvancedFormatting && editor) {
+      const coordPos = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
+      if (coordPos) {
+        const nodeAt = editor.state.doc.nodeAt(coordPos.pos);
+        if (nodeAt?.type.name === 'image') {
+          isOnImage = true;
+        } else if (coordPos.pos > 0) {
+          const nodeBefore = editor.state.doc.nodeAt(coordPos.pos - 1);
+          isOnImage = nodeBefore?.type.name === 'image';
+        }
+      }
+    }
+
+    setContextMenu({ x: e.clientX, y: e.clientY, isOnImage });
   };
 
   // When nspell finishes loading while the context menu is open (spellWord is
@@ -762,6 +1410,141 @@ export function DocEditor() {
     setShowComments(true);
   };
 
+  // ── AI writing handlers ────────────────────────────────────────────────────
+
+  const runAiOperation = useCallback(async (
+    op: AiOperation,
+    toneValues?: ToneValues,
+    grammarContext?: { message: string; issueText: string; suggestion?: string; category?: string },
+  ) => {
+    if (!editor) return;
+    setAiOperation(op);
+    setShowAiPanel(true);
+    setAiLoading(true);
+    setAiError(null);
+    setAiResult('');
+
+    const { from, to, empty } = editor.state.selection;
+    const selectedText = empty ? '' : editor.state.doc.textBetween(from, to, ' ');
+    const fullText = editor.state.doc.textContent;
+
+    try {
+      let result = '';
+      let customInsertText: string | null = null;
+
+      if (op === 'grammar-fix' && grammarContext) {
+        const { message, issueText, suggestion, category } = grammarContext;
+        const { provider, apiKey } = getProviderOptions();
+
+        try {
+          const res = await fetch('/api/ai/complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider,
+              apiKey,
+              systemPrompt:
+                'You are a precise grammar editor. When given a grammar issue and the problematic text, return ONLY the corrected version of that text. No explanation. No quotation marks. No extra words. Just the corrected text itself.',
+              userMessage: `Grammar issue: ${message}\nText to fix: "${issueText}"`,
+            }),
+          });
+          const data = await res.json() as { text?: string; error?: string };
+          if (data.error) throw new Error(data.error);
+          const aiFixed = data.text?.trim() ?? '';
+          if (!aiFixed) throw new Error('Empty response from AI');
+
+          result = `Issue: ${message}\n\nOriginal: "${issueText}"\nAI fix: "${aiFixed}"`;
+          customInsertText = aiFixed;
+          grammarAiCanInsertRef.current = true;
+        } catch (aiErr) {
+          // AI call failed — fall back to rule-based hint so the user still gets something.
+          const errMsg = aiErr instanceof Error ? aiErr.message : 'AI unavailable';
+          if (suggestion) {
+            result = `Issue: ${message}\n\nOriginal: "${issueText}"\nRule-based fix: "${suggestion}"\n\n(AI error: ${errMsg})`;
+            customInsertText = suggestion;
+            grammarAiCanInsertRef.current = true;
+          } else if (category === 'readability') {
+            result = `Issue: ${message}\n\nThis sentence is too long to rewrite automatically. Consider:\n• Breaking at a conjunction (and, but, or, so)\n• Splitting into two complete sentences\n• Removing parenthetical clauses\n\n(AI error: ${errMsg})`;
+            customInsertText = '';
+            grammarAiCanInsertRef.current = false;
+          } else {
+            result = `Issue: ${message}\n\n"${issueText}"\n\nAI error: ${errMsg}. Please review and correct manually.`;
+            customInsertText = '';
+            grammarAiCanInsertRef.current = false;
+          }
+        }
+
+      } else {
+        // Simulated responses for non-grammar-fix operations.
+        await new Promise<void>(r => setTimeout(r, 800));
+
+        if (op === 'suggestions') {
+          const context = selectedText || fullText.slice(-200);
+          result = context
+            ? `Here is a suggested continuation:\n\n"${context.trim()}… and this idea can be expanded further by considering the broader implications and exploring related perspectives that enrich the original thought."`
+            : 'Start writing to get AI suggestions.';
+        } else if (op === 'summarize') {
+          const text = selectedText || fullText;
+          const wordCount = text.trim().split(/\s+/).length;
+          result = text.trim()
+            ? `Summary (${wordCount} words → ~${Math.max(1, Math.round(wordCount * 0.15))} words):\n\nThis document covers key topics with relevant details. The main ideas are presented clearly and the content addresses the core subject matter effectively.`
+            : 'No text to summarize.';
+        } else if (op === 'change-tone' && toneValues) {
+          const text = selectedText || fullText.slice(0, 300);
+          const formalLabel = toneValues.formal > 66 ? 'formal' : toneValues.formal < 33 ? 'informal' : 'neutral';
+          const moodLabel = toneValues.cheerful > 66 ? 'cheerful' : toneValues.cheerful < 33 ? 'reserved' : 'balanced';
+          const lengthLabel = toneValues.verbose > 66 ? 'expanded' : toneValues.verbose < 33 ? 'condensed' : 'similar length';
+          result = `Rewritten text (${formalLabel}, ${moodLabel}, ${lengthLabel}):\n\n${text.trim() || '(No text selected)'}`;
+        }
+      }
+
+      aiInsertTextRef.current = customInsertText !== null
+        ? customInsertText
+        : result.split('\n\n').slice(1).join('\n\n') || result;
+      setAiResult(result);
+    } catch {
+      setAiError('AI writing is unavailable. Please try again.');
+    } finally {
+      setAiLoading(false);
+    }
+  }, [editor, getProviderOptions]);
+
+  const handleAiInsert = useCallback(() => {
+    if (!editor || !aiInsertTextRef.current) return;
+    const text = aiInsertTextRef.current;
+    const { from, to, empty } = editor.state.selection;
+    if (aiOperation === 'grammar-fix') {
+      const range = grammarAiRangeRef.current;
+      if (range) {
+        editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).insertContent(text).run();
+        grammarAiRangeRef.current = null;
+      }
+    } else if (aiOperation === 'change-tone' && !empty) {
+      editor.chain().focus().setTextSelection({ from, to }).insertContent(text).run();
+    } else if (aiOperation === 'summarize' && !empty) {
+      editor.chain().focus().setTextSelection({ from, to }).insertContent(text).run();
+    } else {
+      editor.chain().focus().insertContentAt(editor.state.selection.to, ' ' + text).run();
+    }
+    setShowAiPanel(false);
+  }, [editor, aiOperation]);
+
+  const handleApplyGrammarFix = useCallback((from: number, to: number, replacement: string) => {
+    editor?.chain().focus().setTextSelection({ from, to }).insertContent(replacement).run();
+  }, [editor]);
+
+  const handleAiGrammarFix = useCallback(() => {
+    if (!editor || !grammarIssue) return;
+    const issueText = editor.state.doc.textBetween(grammarIssue.from, grammarIssue.to);
+    grammarAiRangeRef.current = { from: grammarIssue.from, to: grammarIssue.to };
+    runAiOperation('grammar-fix', undefined, {
+      message: grammarIssue.message,
+      issueText,
+      suggestion: grammarIssue.suggestion,
+      category: grammarIssue.category,
+    });
+  }, [editor, grammarIssue, runAiOperation]);
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !editor) return;
@@ -776,18 +1559,45 @@ export function DocEditor() {
     printDoc(title, editor.getHTML(), pageSetup);
   }, [editor, title, pageSetup]);
 
-  const handleExport = async (format: string) => {
+  const handleExport = (format: string) => {
     if (!editor) return;
-    const html = editor.getHTML();
-    if (format === 'pdf') {
-      printDoc(title, html, pageSetup);
-    } else if (format === 'html') {
-      exportAsHtml(title, html);
-    } else if (format === 'txt') {
-      await exportAsTxt(title, docId);
-    } else if (format === 'docx') {
-      await exportAsDocx(title, html);
+    pendingExportHtmlRef.current = editor.getHTML();
+    setSaveAsFormat(format);
+    setShowSaveAs(true);
+  };
+
+  const handleSaveAs = async (opts: SaveAsOptions) => {
+    console.log('[handleSaveAs] called', { opts, saveAsFormat });
+    const html = pendingExportHtmlRef.current;
+    console.log('[handleSaveAs] html length:', html.length);
+    const ext: Record<string, string> = { pdf: '.pdf', docx: '.docx', html: '.html', txt: '.txt' };
+    const filename = opts.filename.includes('.') ? opts.filename : opts.filename + (ext[saveAsFormat] ?? '');
+    let blob: Blob;
+
+    if (saveAsFormat === 'pdf') {
+      console.log('[handleSaveAs] building PDF blob');
+      blob = await buildPdfBlob(html, pageSetup, opts);
+      console.log('[handleSaveAs] PDF blob built, size:', blob.size);
+    } else if (saveAsFormat === 'docx') {
+      blob = await buildDocxBlob(html);
+    } else if (saveAsFormat === 'html') {
+      blob = buildHtmlBlob(title, html);
+    } else {
+      const result = await docsApi.exportText(docId);
+      blob = new Blob([result.text], { type: 'text/plain' });
     }
+
+    if (opts.location === 'drive') {
+      console.log('[handleSaveAs] uploading to Drive, folderId:', opts.folderId);
+      const file = new File([blob], filename, { type: blob.type });
+      await storageApi.uploadFile(file, undefined, opts.folderId);
+      console.log('[handleSaveAs] Drive upload complete');
+    } else {
+      console.log('[handleSaveAs] downloading locally');
+      downloadBlob(blob, filename);
+    }
+    console.log('[handleSaveAs] closing dialog');
+    setShowSaveAs(false);
   };
 
   const wordCount = editor ? editor.storage.characterCount.words() : 0;
@@ -802,16 +1612,72 @@ export function DocEditor() {
     paddingBottom: pageSetup.marginBottom,
     paddingLeft: pageSetup.marginLeft,
     paddingRight: pageSetup.marginRight,
+    ...(flags.docsLayoutStructure && bgColor ? { backgroundColor: bgColor } : {}),
   };
+
+  const totalPages = Math.max(1, Math.ceil(pageScrollHeight / heightPx));
+
+  // Gradient that renders 0.5-in gray gaps between pages as backgroundImage on
+  // the page div, so text always renders on top and is never obscured.
+  const pageGapBackground = useMemo(() => {
+    if (totalPages <= 1) return undefined;
+    const gapColor = 'var(--color-bg-secondary, #f1f3f4)';
+    const stops: string[] = [];
+    for (let i = 0; i < totalPages - 1; i++) {
+      const g0 = (i + 1) * heightPx - PAGE_GAP_PX / 2;
+      const g1 = (i + 1) * heightPx + PAGE_GAP_PX / 2;
+      stops.push(
+        `transparent ${g0}px`,
+        `${gapColor} ${g0}px`,
+        `${gapColor} ${g1}px`,
+        `transparent ${g1}px`,
+      );
+    }
+    return `linear-gradient(to bottom, transparent 0px, ${stops.join(', ')}, transparent 100%)`;
+  }, [totalPages, heightPx]);
+
+  // Track page div scroll height for total page count
+  useEffect(() => {
+    const el = pageRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => setPageScrollHeight(el.scrollHeight));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Snap scroll position when single page mode, current page, or zoom changes
+  useEffect(() => {
+    if (!singlePageMode || !editorScrollRef.current) return;
+    editorScrollRef.current.scrollTop = (currentPage - 1) * heightPx * zoomLevel / 100;
+  }, [singlePageMode, currentPage, heightPx, zoomLevel]);
+
+  const handleEditorScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (sideRulerColRef.current) {
+      sideRulerColRef.current.scrollTop = e.currentTarget.scrollTop;
+    }
+  }, []);
+
+  const handleZoomFitPage = useCallback(() => {
+    if (!editorScrollRef.current) return;
+    const avail = editorScrollRef.current.clientHeight - 64;
+    setZoomLevel(Math.max(10, Math.min(200, Math.floor(avail / heightPx * 100))));
+  }, [heightPx]);
+
+  const handleZoomFitWidth = useCallback(() => {
+    if (!editorScrollRef.current) return;
+    const rulerW = showRulers && !distractionFree ? 20 : 0;
+    const avail = editorScrollRef.current.clientWidth - 48 - rulerW;
+    setZoomLevel(Math.max(10, Math.min(200, Math.floor(avail / widthPx * 100))));
+  }, [widthPx, showRulers, distractionFree]);
 
   if (isLoading || !docId) {
     return <Spinner size="lg" overlay />;
   }
 
   return (
-    <div className={styles.shell}>
+    <div className={distractionFree ? `${styles.shell} ${styles.distractionFreeShell}` : styles.shell}>
       {/* ── Top bar ── */}
-      <div className={styles.topbar}>
+      {!distractionFree && (<div className={styles.topbar}>
         <HamburgerMenu
           editor={editor}
           titleInputRef={titleInputRef}
@@ -822,6 +1688,37 @@ export function DocEditor() {
           onExport={handleExport}
           onPageSetup={() => setShowPageSetup(true)}
           onPrint={handlePrint}
+          showOutline={showOutline}
+          onToggleOutline={() => setShowOutline(v => !v)}
+          showHistory={showHistory}
+          onToggleHistory={() => setShowHistory(v => !v)}
+          showComments={showComments}
+          onToggleComments={() => setShowComments(v => !v)}
+          distractionFree={distractionFree}
+          onToggleFocus={() => setDistractionFree(v => !v)}
+          showRulers={showRulers}
+          onToggleRulers={() => setShowRulers(v => !v)}
+          singlePageMode={singlePageMode}
+          onToggleSinglePage={() => { setSinglePageMode(v => !v); setCurrentPage(1); }}
+          {...(flags.docsLayoutStructure ? {
+            onInsertFootnote: handleInsertFootnote,
+            onInsertCrossRef: handleInsertCrossRef,
+            onHeaderFooter: () => setShowHeaderFooterModal(true),
+            onWatermark: () => setShowWatermarkModal(true),
+            onTheme: () => setShowThemeModal(true),
+          } : {})}
+          {...(flags.docsAdvancedFormatting ? {
+            onStylesPalette: () => setShowStylesPalette(true),
+            onInsertLocalImage: handleInsertLocalImage,
+          } : {})}
+          {...(flags.docsEditingTools ? {
+            onOpenFindReplace: () => setShowFindReplace(true),
+            grammarEnabled,
+            onToggleGrammar: () => setGrammarEnabled(v => !v),
+            onAiSuggestions: () => runAiOperation('suggestions'),
+            onAiSummarize: () => runAiOperation('summarize'),
+            onAiChangeTone: () => setShowChangeTone(true),
+          } : {})}
         />
 
         <button className={styles.backBtn} onClick={handleBack}>
@@ -839,6 +1736,7 @@ export function DocEditor() {
           value={title}
           onChange={e => setTitle(e.target.value)}
           onBlur={handleTitleBlur}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
           placeholder="Untitled document"
           spellCheck={false}
         />
@@ -866,63 +1764,217 @@ export function DocEditor() {
             onChange={handleImport}
           />
 
-          <button
-            className={styles.exportBtn}
-            onClick={() => setShowOutline(v => !v)}
-            title="Toggle outline"
-            style={{ opacity: showOutline ? 1 : 0.5 }}
-          >
-            ≡ Outline
-          </button>
+          {/* Local image upload input — only needed when advanced formatting flag is on */}
+          {flags.docsAdvancedFormatting && (
+            <input
+              ref={localImageInputRef}
+              type="file"
+              accept="image/*"
+              className={styles.hiddenInput}
+              onChange={handleLocalImageFileChange}
+            />
+          )}
 
-          <button
-            className={styles.exportBtn}
-            onClick={() => setShowHistory(v => !v)}
-            title="Version history"
-            style={{ opacity: showHistory ? 1 : 0.5 }}
-          >
-            <History size={14} /> History
-          </button>
-
-          <button
-            className={styles.exportBtn}
-            onClick={() => setShowComments(v => !v)}
-            title="Comments"
-            style={{ opacity: showComments ? 1 : 0.5 }}
-          >
-            <MessageSquare size={14} /> Comments
-          </button>
         </div>
-      </div>
+
+        {/* Presence bar (docsPresence flag) */}
+        {flags.docsPresence && (
+          <PresenceBar users={remoteUsers} connected={isConnected} />
+        )}
+      </div>)}
 
       {/* ── Toolbar ── */}
-      <Toolbar editor={editor} onInsertImage={handleInsertImage} />
+      {!distractionFree && (<Toolbar
+        editor={editor}
+        onInsertImage={handleInsertImage}
+        onInsertDiagram={() => setShowInsertDiagram(true)}
+        {...(flags.docsAdvancedFormatting ? {
+          onInsertLocalImage: handleInsertLocalImage,
+          onOpenStylesPalette: () => setShowStylesPalette(true),
+          onOpenImageProps: () => setShowImageProps(true),
+          onOpenTableCellModal: () => setShowTableCellModal(true),
+        } : {})}
+        {...(flags.docsEditingTools ? {
+          grammarEnabled,
+          onToggleGrammar: () => setGrammarEnabled(v => !v),
+          onAiSuggestions: () => runAiOperation('suggestions'),
+          onAiSummarize: () => runAiOperation('summarize'),
+          onAiChangeTone: () => setShowChangeTone(true),
+          onOpenFindReplace: () => setShowFindReplace(true),
+        } : {})}
+      />)}
+
+      {/* ── Find & replace bar (editing tools flag) ── */}
+      {!distractionFree && flags.docsEditingTools && showFindReplace && editor && (
+        <FindReplaceBar editor={editor} onClose={() => setShowFindReplace(false)} />
+      )}
+
+      {/* ── Track changes bar (docsTrackChanges flag) ── */}
+      {!distractionFree && flags.docsTrackChanges && editor && (
+        <TrackChangesBar
+          editor={editor}
+          suggestingMode={suggestingMode}
+          onToggle={() => editor.commands.toggleSuggestingMode()}
+        />
+      )}
 
       {/* ── Main area ── */}
       <div className={styles.mainArea}>
-        {showOutline && <DocOutline editor={editor} />}
-        <div className={styles.editorScroll} onContextMenu={handleContextMenu}>
-          <div ref={pageRef} className={styles.page} style={pageStyle}>
-            <PageBreakOverlay
-              marginTop={pageSetup.marginTop}
-              contentHeightPx={contentHeightPx}
-              pageRef={pageRef}
-            />
-            <div className={styles.editorContent}>
-              <EditorContent editor={editor} />
+        {!distractionFree && showOutline && <DocOutline editor={editor} />}
+
+        {/* Editor area: rulers + scroll */}
+        <div className={styles.editorArea}>
+          {/* ── Top ruler row ── */}
+          {showRulers && !distractionFree && (
+            <div className={styles.rulerRow}>
+              <div className={styles.rulerCorner} />
+              <div className={styles.topRulerOuter}>
+                <HorizontalRuler
+                  pageWidthPx={widthPx}
+                  marginLeftPx={pageSetup.marginLeft}
+                  marginRightPx={pageSetup.marginRight}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Content row: side ruler + editor scroll ── */}
+          <div className={styles.editorWithRuler}>
+            {showRulers && !distractionFree && (
+              <div ref={sideRulerColRef} className={styles.sideRulerCol}>
+                {/* 32px spacer matches editorScroll paddingTop so ruler y=0 aligns with page top */}
+                <div style={{ height: 32, flexShrink: 0 }} />
+                <VerticalRuler
+                  pageHeightPx={heightPx}
+                  marginTopPx={pageSetup.marginTop}
+                  marginBottomPx={pageSetup.marginBottom}
+                  totalPages={totalPages}
+                />
+              </div>
+            )}
+            <div
+              ref={editorScrollRef}
+              className={`${styles.editorScroll}${singlePageMode ? ` ${styles.singlePageScroll}` : ''}`}
+              style={singlePageMode ? { height: heightPx * zoomLevel / 100 + 64 } : undefined}
+              onContextMenu={handleContextMenu}
+              onScroll={handleEditorScroll}
+            >
+              <div
+                className={styles.pageZoomWrap}
+                style={{
+                  width: widthPx * zoomLevel / 100,
+                  height: (pageScrollHeight || heightPx) * zoomLevel / 100,
+                }}
+              >
+              <div
+                ref={pageRef}
+                className={styles.page}
+                style={{
+                  ...pageStyle,
+                  margin: 0,
+                  ...(pageGapBackground ? { backgroundImage: pageGapBackground } : {}),
+                  ...(zoomLevel !== 100 ? { transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top left' } : {}),
+                }}
+                {...(flags.docsLayoutStructure && docTheme !== 'default'
+                  ? { 'data-doc-theme': docTheme }
+                  : {})}
+              >
+                {/* ── Header ── */}
+                {flags.docsLayoutStructure && headerText && (
+                  <div className={styles.pageHeader}>
+                    {showPageNumbers ? headerText.replace('{{page}}', '1') : headerText}
+                  </div>
+                )}
+                {/* ── Watermark ── */}
+                {flags.docsLayoutStructure && watermarkText && (
+                  <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
+                )}
+                <div className={styles.editorContent} onClick={flags.docsLayoutStructure ? handleCrossRefClick : undefined}>
+                  <EditorContent editor={editor} />
+                </div>
+                {/* ── Footer ── */}
+                {flags.docsLayoutStructure && footerText && (
+                  <div className={styles.pageFooter}>
+                    {showPageNumbers ? footerText.replace('{{page}}', '1') : footerText}
+                  </div>
+                )}
+                {/* ── Footnote list ── */}
+                {flags.docsLayoutStructure && editor && (() => {
+                  void editorVersion;
+                  const notes = getFootnoteItems(editor);
+                  if (notes.length === 0) return null;
+                  return (
+                    <div className={styles.footnoteList}>
+                      <div className={styles.footnoteDivider} />
+                      {notes.map(n => (
+                        <div key={n.id} id={`footnote-${n.id}`} className={styles.footnoteItem}>
+                          <sup>{n.number}</sup> {n.text || '(empty footnote)'}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+              </div>{/* end pageZoomWrap */}
             </div>
           </div>
+
+          {/* ── Single page navigation ── */}
+          {singlePageMode && !distractionFree && (
+            <div className={styles.pageNav}>
+              <button
+                className={styles.pageNavBtn}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+              >
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <span>Page {currentPage} of {totalPages}</span>
+              <button
+                className={styles.pageNavBtn}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
         </div>
-        {showHistory && (
+
+        {!distractionFree && showHistory && (
           <VersionHistoryPanel
             fileId={docId}
             onRestore={() => {
               queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
             }}
             onClose={() => setShowHistory(false)}
+            compareEnabled={flags.docsCompare}
+            onCompare={(v) => setCompareVersion(v)}
           />
         )}
-        {showComments && (
+        {!distractionFree && flags.docsCompare && compareVersion && editor && (
+          (() => {
+            const currentVersionPlaceholder: FileVersionItem = {
+              id: '__current__',
+              fileId: docId,
+              versionNumber: 999,
+              sizeBytes: 0,
+              label: 'Current',
+              createdAt: new Date().toISOString(),
+            };
+            const currentContent = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+            return (
+              <DocComparePanel
+                fileId={docId}
+                baseVersion={compareVersion}
+                compareVersion={currentVersionPlaceholder}
+                currentContent={currentContent}
+                onClose={() => setCompareVersion(null)}
+              />
+            );
+          })()
+        )}
+        {!distractionFree && showComments && (
           <CommentsPanel
             fileId={docId}
             onClose={() => { setShowComments(false); setCommentInitialText(''); }}
@@ -932,15 +1984,28 @@ export function DocEditor() {
       </div>
 
       {/* ── Status bar ── */}
-      <div className={styles.statusBar}>
-        <span>{wordCount.toLocaleString()} words</span>
-        <span>{charCount.toLocaleString()} characters</span>
-        {charCount > 1_020_000 && (
-          <span style={{ color: '#d93025' }}>
-            ⚠ Approaching 1M character limit ({charCount.toLocaleString()} / 1,020,000)
-          </span>
-        )}
-      </div>
+      {!distractionFree && (
+        <div className={styles.statusBar}>
+          <span>{wordCount.toLocaleString()} words</span>
+          <span>{charCount.toLocaleString()} characters</span>
+          {charCount > 1_020_000 && (
+            <span style={{ color: '#d93025' }}>
+              ⚠ Approaching 1M character limit ({charCount.toLocaleString()} / 1,020,000)
+            </span>
+          )}
+          <div className={styles.zoomControls}>
+            <button className={styles.zoomBtn} onClick={handleZoomFitPage} title="Zoom to fit entire page">Fit page</button>
+            <button className={styles.zoomBtn} onClick={handleZoomFitWidth} title="Zoom to fit page width">Fit width</button>
+            <ZoomSlider value={zoomLevel} onChange={setZoomLevel} min={10} max={200} step={10} />
+          </div>
+        </div>
+      )}
+
+      {distractionFree && (
+        <button className={styles.dfmExitBtn} onClick={() => setDistractionFree(false)}>
+          <Minimize2 size={14} /> Exit focus
+        </button>
+      )}
 
       {showPageSetup && (
         <PageSetupModal pageSetup={pageSetup} onSave={handlePageSetupSave} onClose={() => setShowPageSetup(false)} />
@@ -957,12 +2022,29 @@ export function DocEditor() {
             setSpellWord(undefined);
             setSpellWordRange(null);
             setSpellSuggestions(undefined);
+            setGrammarIssue(null);
           }}
           onAddComment={handleAddComment}
           onInsertLink={handleInsertLink}
           spellWord={spellWord}
           spellSuggestions={spellSuggestions}
           onApplySuggestion={handleApplySuggestion}
+          {...(flags.docsEditingTools && grammarIssue ? {
+            grammarMessage: grammarIssue.message,
+            grammarSuggestion: grammarIssue.suggestion,
+            grammarRange: { from: grammarIssue.from, to: grammarIssue.to },
+            onApplyGrammarFix: handleApplyGrammarFix,
+            onAiGrammarFix: handleAiGrammarFix,
+          } : {})}
+          isImageActive={!!(flags.docsAdvancedFormatting && contextMenu?.isOnImage)}
+          onImageProperties={() => {
+            setContextMenu(null);
+            setSpellWord(undefined);
+            setSpellWordRange(null);
+            setSpellSuggestions(undefined);
+            setGrammarIssue(null);
+            setShowImageProps(true);
+          }}
         />
       )}
 
@@ -972,6 +2054,112 @@ export function DocEditor() {
           onPasteAsTable={sheetPasteDialogState.onPasteAsTable}
           onPasteAsEmbed={sheetPasteDialogState.onPasteAsEmbed}
           onClose={sheetPasteDialogState.onClose}
+        />
+      )}
+
+      {/* ── Layout & structure modals ── */}
+      {flags.docsLayoutStructure && showHeaderFooterModal && (
+        <HeaderFooterModal
+          headerText={headerText}
+          footerText={footerText}
+          showPageNumbers={showPageNumbers}
+          onSave={handleHeaderFooterSave}
+          onClose={() => setShowHeaderFooterModal(false)}
+        />
+      )}
+      {flags.docsLayoutStructure && showWatermarkModal && (
+        <WatermarkModal
+          watermarkText={watermarkText}
+          bgColor={bgColor}
+          onSave={handleWatermarkSave}
+          onClose={() => setShowWatermarkModal(false)}
+        />
+      )}
+      {flags.docsLayoutStructure && showThemeModal && (
+        <ThemeModal
+          currentTheme={docTheme}
+          onSave={handleThemeSave}
+          onClose={() => setShowThemeModal(false)}
+        />
+      )}
+
+      {/* ── Advanced formatting modals ── */}
+      {flags.docsAdvancedFormatting && showStylesPalette && editor && (
+        <ParagraphStylesModal
+          editor={editor}
+          onClose={() => setShowStylesPalette(false)}
+        />
+      )}
+      {flags.docsAdvancedFormatting && showImageProps && editor && (
+        <ImagePropertiesModal
+          editor={editor}
+          initialAttrs={{
+            src:         editor.getAttributes('image').src as string | undefined,
+            width:       editor.getAttributes('image').width as string | null | undefined,
+            alignment:   editor.getAttributes('image').alignment as string | undefined,
+            alt:         editor.getAttributes('image').alt as string | undefined,
+            title:       editor.getAttributes('image').title as string | undefined,
+            caption:     editor.getAttributes('image').caption as string | undefined,
+            border:      editor.getAttributes('image').border as string | null | undefined,
+            shadow:      editor.getAttributes('image').shadow as string | undefined,
+            imageFilter: editor.getAttributes('image').imageFilter as string | null | undefined,
+          }}
+          onClose={() => setShowImageProps(false)}
+        />
+      )}
+      {flags.docsAdvancedFormatting && showTableCellModal && editor && (
+        <TableCellModal
+          editor={editor}
+          onClose={() => setShowTableCellModal(false)}
+        />
+      )}
+
+      {/* ── Editing tools modals (feature gap #3) ── */}
+      {showSaveAs && (
+        <SaveAsDialog
+          defaultFilename={`${title || 'Untitled document'}.${saveAsFormat}`}
+          format={saveAsFormat}
+          onSave={handleSaveAs}
+          onClose={() => setShowSaveAs(false)}
+        />
+      )}
+
+      {flags.docsEditingTools && showChangeTone && (
+        <ChangeToneDialog
+          hasSelection={editor ? !editor.state.selection.empty : false}
+          onApply={(values) => {
+            setShowChangeTone(false);
+            runAiOperation('change-tone', values);
+          }}
+          onClose={() => setShowChangeTone(false)}
+        />
+      )}
+
+      {flags.docsEditingTools && showAiPanel && (
+        <div className={styles.aiPanelOverlay}>
+          <AiPanel
+            operation={aiOperation}
+            result={aiResult}
+            isLoading={aiLoading}
+            error={aiError}
+            hasSelection={editor ? !editor.state.selection.empty : false}
+            onInsert={handleAiInsert}
+            onClose={() => setShowAiPanel(false)}
+            canInsert={aiOperation !== 'grammar-fix' || grammarAiCanInsertRef.current}
+          />
+        </div>
+      )}
+
+      {showInsertDiagram && (
+        <InsertDiagramDocDialog
+          onInsert={(diagramId, title: string) => {
+            editor?.chain().focus().insertContent({
+              type: 'diagramEmbed',
+              attrs: { diagramId, pageIndex: '0', title },
+            }).run();
+            setShowInsertDiagram(false);
+          }}
+          onClose={() => setShowInsertDiagram(false)}
         />
       )}
     </div>

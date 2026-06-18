@@ -3,10 +3,10 @@ use crate::photos::photos::model::{
     PhotoRecord, UpdatePhotoRecord,
 };
 use crate::schema::{locked_folder_settings, photo_edits, photos};
+use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
-use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
@@ -152,6 +152,7 @@ impl PhotosRepository {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn delete_expired_trash(&self, before: NaiveDateTime) -> Result<usize, ApiError> {
         let mut conn = self.get_conn()?;
         diesel::delete(
@@ -203,7 +204,11 @@ impl PhotosRepository {
     }
 
     /// List photos that have GPS coordinates (latitude/longitude) in their metadata JSON.
-    pub fn list_photos_with_gps(&self, user_id: &str, limit: i64) -> Result<Vec<PhotoRecord>, ApiError> {
+    pub fn list_photos_with_gps(
+        &self,
+        user_id: &str,
+        limit: i64,
+    ) -> Result<Vec<PhotoRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         photos::table
             .filter(photos::user_id.eq(user_id))
@@ -252,12 +257,10 @@ impl PhotosRepository {
             .filter(photos::deleted_at.is_null())
             .filter(photos::is_archived.eq(false))
             .filter(photos::capture_date.is_not_null())
-            .filter(
-                diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                    "strftime('%m', capture_date) = '{}' AND strftime('%d', capture_date) = '{}'",
-                    month_str, day_str
-                ))
-            )
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
+                "strftime('%m', capture_date) = '{}' AND strftime('%d', capture_date) = '{}'",
+                month_str, day_str
+            )))
             .order(photos::capture_date.desc())
             .select(PhotoRecord::as_select())
             .load(&mut conn)
@@ -268,19 +271,22 @@ impl PhotosRepository {
     }
 
     /// List photos from a given year (for year-in-review).
-    pub fn list_photos_by_year(&self, user_id: &str, year: i32, limit: i64) -> Result<Vec<PhotoRecord>, ApiError> {
+    pub fn list_photos_by_year(
+        &self,
+        user_id: &str,
+        year: i32,
+        limit: i64,
+    ) -> Result<Vec<PhotoRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         let year_str = format!("{}", year);
         photos::table
             .filter(photos::user_id.eq(user_id))
             .filter(photos::deleted_at.is_null())
             .filter(photos::capture_date.is_not_null())
-            .filter(
-                diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
-                    "strftime('%Y', capture_date) = '{}'",
-                    year_str
-                ))
-            )
+            .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(&format!(
+                "strftime('%Y', capture_date) = '{}'",
+                year_str
+            )))
             .order(photos::is_starred.desc())
             .then_order_by(photos::created_at.desc())
             .limit(limit)
@@ -379,7 +385,10 @@ impl PhotosRepository {
 
     // ---- Locked Folder Settings ----
 
-    pub fn get_locked_folder_settings(&self, user_id: &str) -> Result<Option<LockedFolderSettings>, ApiError> {
+    pub fn get_locked_folder_settings(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<LockedFolderSettings>, ApiError> {
         let mut conn = self.get_conn()?;
         locked_folder_settings::table
             .filter(locked_folder_settings::user_id.eq(user_id))
@@ -392,7 +401,10 @@ impl PhotosRepository {
             })
     }
 
-    pub fn upsert_locked_folder_settings(&self, settings: NewLockedFolderSettings) -> Result<LockedFolderSettings, ApiError> {
+    pub fn upsert_locked_folder_settings(
+        &self,
+        settings: NewLockedFolderSettings,
+    ) -> Result<LockedFolderSettings, ApiError> {
         let mut conn = self.get_conn()?;
         let user_id = settings.user_id.clone();
         diesel::insert_into(locked_folder_settings::table)

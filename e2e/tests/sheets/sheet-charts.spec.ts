@@ -48,12 +48,23 @@ async function openInsertChartDialog(page: Page): Promise<void> {
 /** Insert a chart with default settings and wait for it to appear on the sheet. */
 async function insertDefaultChart(page: Page): Promise<void> {
   await openInsertChartDialog(page);
-  await page.getByRole('button', { name: 'Insert Chart' }).click();
+  await page.getByTestId('insert-chart-submit').click();
   // A chart frame is rendered inside the chart layer
   await expect(page.locator('[class*="chartFrame"]').first()).toBeVisible({ timeout: 8_000 });
 }
 
 test.describe('Sheets charts', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/v1/feature-flags', async route => {
+      const response = await route.fetch();
+      const flags = await response.json();
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ ...flags, sheetsCharts: true }),
+      });
+    });
+  });
+
   // ── Insert Chart dialog ──────────────────────────────────────────────────────
 
   test('clicking Insert Chart toolbar button opens the creation dialog', async ({ page, request }) => {
@@ -106,7 +117,7 @@ test.describe('Sheets charts', () => {
     await insertDefaultChart(page);
 
     // The dialog must close after insert
-    await expect(page.getByRole('button', { name: 'Insert Chart' })).not.toBeVisible({ timeout: 3_000 });
+    await expect(page.getByTestId('insert-chart-submit')).not.toBeVisible({ timeout: 3_000 });
     // Exactly one chart frame is present
     await expect(page.locator('[class*="chartFrame"]')).toHaveCount(1);
   });
@@ -234,7 +245,7 @@ test.describe('Sheets charts', () => {
 
     const rangeInput = page.getByPlaceholder('e.g. A1:D10');
     await rangeInput.fill('A1:B3');
-    await page.getByRole('button', { name: 'Insert Chart' }).click();
+    await page.getByTestId('insert-chart-submit').click();
 
     // Chart frame is on screen
     await expect(page.locator('[class*="chartFrame"]').first()).toBeVisible({ timeout: 8_000 });

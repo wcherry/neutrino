@@ -1,8 +1,10 @@
+#![allow(dead_code)]
+
+use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Key, Nonce,
 };
-use aes_gcm::aead::rand_core::RngCore;
 use std::path::PathBuf;
 
 use crate::drive::storage::store::LocalFileStore;
@@ -24,7 +26,8 @@ impl EncryptedFileStore {
     /// Load the encryption key from `STORAGE_ENCRYPTION_KEY` env var (base64-encoded 32 bytes).
     pub fn load_key() -> Option<[u8; 32]> {
         let encoded = std::env::var("STORAGE_ENCRYPTION_KEY").ok()?;
-        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &encoded).ok()?;
+        let bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &encoded).ok()?;
         if bytes.len() != 32 {
             tracing::warn!("STORAGE_ENCRYPTION_KEY must be exactly 32 bytes (base64-encoded)");
             return None;

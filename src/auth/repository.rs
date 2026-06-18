@@ -1,5 +1,5 @@
-use crate::shared::{ApiError, DbPool};
 use crate::schema::{refresh_tokens, totp_backup_codes, user_profiles, users};
+use crate::shared::{ApiError, DbPool};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
@@ -329,10 +329,7 @@ impl AuthRepository {
         Ok(())
     }
 
-    pub fn create_backup_codes(
-        &self,
-        codes: Vec<NewTotpBackupCode>,
-    ) -> Result<(), ApiError> {
+    pub fn create_backup_codes(&self, codes: Vec<NewTotpBackupCode>) -> Result<(), ApiError> {
         let mut conn = self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")
@@ -340,12 +337,14 @@ impl AuthRepository {
 
         // Delete existing codes first
         if let Some(first) = codes.first() {
-            diesel::delete(totp_backup_codes::table.filter(totp_backup_codes::user_id.eq(first.user_id)))
-                .execute(&mut conn)
-                .map_err(|e| {
-                    tracing::error!("DB delete error: {:?}", e);
-                    ApiError::internal("Database error")
-                })?;
+            diesel::delete(
+                totp_backup_codes::table.filter(totp_backup_codes::user_id.eq(first.user_id)),
+            )
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB delete error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
         }
 
         diesel::insert_into(totp_backup_codes::table)
@@ -359,6 +358,7 @@ impl AuthRepository {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn find_and_use_backup_code(
         &self,
         user_id_val: &str,
@@ -431,11 +431,7 @@ impl AuthRepository {
         Ok(())
     }
 
-    pub fn list_users(
-        &self,
-        page: i64,
-        page_size: i64,
-    ) -> Result<(Vec<User>, i64), ApiError> {
+    pub fn list_users(&self, page: i64, page_size: i64) -> Result<(Vec<User>, i64), ApiError> {
         let mut conn = self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")

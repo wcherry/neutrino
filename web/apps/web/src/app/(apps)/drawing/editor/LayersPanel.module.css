@@ -1,0 +1,302 @@
+.panel {
+  width: 200px;
+  background: #ffffff;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 12px;
+  height: 36px;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.headerLabel {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9ca3af;
+}
+
+.addBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.addBtn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ── Layer block ─────────────────────────────────────────── */
+
+.layerBlock {
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.layerBlockDragOver {
+  background: #eff6ff;
+}
+
+.layerBlockDragging {
+  opacity: 0.45;
+}
+
+.layerRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 4px;
+  cursor: pointer;
+  user-select: none;
+  border-left: 2px solid transparent;
+  min-height: 28px;
+}
+
+.layerRow:hover {
+  background: #f9fafb;
+}
+
+.layerRowActive {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+.layerRowActive:hover {
+  background: #dbeafe;
+}
+
+.layerRowDropTarget {
+  box-shadow: inset 0 0 0 2px #2563eb;
+  background: #eff6ff;
+}
+
+.layerGrip {
+  color: #d1d5db;
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  flex-shrink: 0;
+  padding: 1px;
+}
+
+.layerGrip:active {
+  cursor: grabbing;
+}
+
+.layerGripPlaceholder {
+  width: 13px;
+  flex-shrink: 0;
+}
+
+.chevronBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  padding: 1px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.chevronBtn:hover {
+  color: #374151;
+}
+
+.layerName {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.layerRowActive .layerName {
+  color: #1d4ed8;
+}
+
+.renameInput {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #2563eb;
+  border-radius: 3px;
+  padding: 1px 4px;
+  outline: none;
+  min-width: 0;
+  background: #ffffff;
+  color: #374151;
+}
+
+.layerCount {
+  font-size: 10px;
+  color: #9ca3af;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+/* ── Shape rows ──────────────────────────────────────────── */
+
+.emptyLayer {
+  font-size: 10px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 4px 8px 4px 36px;
+  margin: 0;
+}
+
+.shapeRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 28px;
+  cursor: pointer;
+  user-select: none;
+  border-left: 2px solid transparent;
+}
+
+.shapeRow:hover {
+  background: #f9fafb;
+}
+
+.shapeRowSelected {
+  background: #eff6ff;
+  border-left-color: #93c5fd;
+}
+
+.shapeRowSelected:hover {
+  background: #dbeafe;
+}
+
+.typeIcon {
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.shapeRowSelected .typeIcon {
+  color: #2563eb;
+}
+
+.shapeName {
+  flex: 1;
+  font-size: 11px;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.shapeNameFaded {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* ── Icon buttons (shared) ───────────────────────────────── */
+
+.iconBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #d1d5db;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.layerRow:hover .iconBtn,
+.layerRowActive .iconBtn,
+.shapeRow:hover .iconBtn,
+.shapeRowSelected .iconBtn {
+  opacity: 1;
+}
+
+.iconBtn:hover {
+  color: #374151;
+  background: #e5e7eb;
+}
+
+.deleteBtn:hover {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+/* ── Inline delete confirmation ──────────────────────────── */
+
+.confirmRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px 5px 12px;
+  background: #fef2f2;
+  border-left: 2px solid #dc2626;
+}
+
+.confirmText {
+  flex: 1;
+  font-size: 11px;
+  color: #dc2626;
+  font-weight: 500;
+}
+
+.confirmYes {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid #dc2626;
+  background: #dc2626;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.confirmYes:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.confirmNo {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+  cursor: pointer;
+}
+
+.confirmNo:hover {
+  background: #f3f4f6;
+}

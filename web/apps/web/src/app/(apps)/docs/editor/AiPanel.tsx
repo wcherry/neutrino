@@ -4,7 +4,7 @@ import React from 'react';
 import { Sparkles, X, Copy, Check, CornerDownLeft } from 'lucide-react';
 import styles from './AiPanel.module.css';
 
-export type AiOperation = 'suggestions' | 'summarize' | 'change-tone';
+export type AiOperation = 'suggestions' | 'summarize' | 'change-tone' | 'grammar-fix';
 
 interface AiPanelProps {
   operation: AiOperation;
@@ -14,12 +14,15 @@ interface AiPanelProps {
   hasSelection: boolean;
   onInsert: () => void;
   onClose: () => void;
+  /** When false the "Apply fix" footer is hidden (e.g. advisory-only grammar results). */
+  canInsert?: boolean;
 }
 
 const OPERATION_LABELS: Record<AiOperation, string> = {
   suggestions: 'AI Suggestions',
   summarize: 'AI Summary',
   'change-tone': 'Tone Rewrite',
+  'grammar-fix': 'AI Grammar Fix',
 };
 
 const OPERATION_DESCRIPTIONS: Record<AiOperation, (hasSelection: boolean) => string> = {
@@ -29,12 +32,14 @@ const OPERATION_DESCRIPTIONS: Record<AiOperation, (hasSelection: boolean) => str
     sel ? 'Summary of the selected text' : 'Summary of the document',
   'change-tone': (sel) =>
     sel ? 'Rewritten selected text with adjusted tone' : 'Rewritten document with adjusted tone',
+  'grammar-fix': () => 'AI-suggested fix for the grammar issue at cursor',
 };
 
 const INSERT_LABELS: Record<AiOperation, (hasSelection: boolean) => string> = {
   suggestions: (sel) => (sel ? 'Insert after selection' : 'Insert at cursor'),
   summarize: (sel) => (sel ? 'Replace selection' : 'Insert at end'),
   'change-tone': (sel) => (sel ? 'Replace selection' : 'Replace document'),
+  'grammar-fix': () => 'Apply fix',
 };
 
 export function AiPanel({
@@ -45,6 +50,7 @@ export function AiPanel({
   hasSelection,
   onInsert,
   onClose,
+  canInsert = true,
 }: AiPanelProps) {
   const [copied, setCopied] = React.useState(false);
 
@@ -107,7 +113,7 @@ export function AiPanel({
       </div>
 
       {/* Footer actions */}
-      {!isLoading && !error && result && (
+      {!isLoading && !error && result && canInsert && (
         <div className={styles.footer}>
           <button
             className={styles.copyBtn}

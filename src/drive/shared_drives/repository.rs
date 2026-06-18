@@ -1,6 +1,8 @@
-use crate::shared::ApiError;
+use crate::drive::shared_drives::model::{
+    NewSharedDrive, NewSharedDriveMember, SharedDrive, SharedDriveMember,
+};
 use crate::schema::{shared_drive_members, shared_drives};
-use crate::drive::shared_drives::model::{NewSharedDrive, NewSharedDriveMember, SharedDrive, SharedDriveMember};
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -97,7 +99,10 @@ impl SharedDrivesRepository {
         }
         if let Some(desc) = description {
             diesel::update(shared_drives::table.filter(shared_drives::id.eq(id)))
-                .set((shared_drives::description.eq(desc), shared_drives::updated_at.eq(now)))
+                .set((
+                    shared_drives::description.eq(desc),
+                    shared_drives::updated_at.eq(now),
+                ))
                 .execute(&mut conn)
                 .map_err(|e| {
                     tracing::error!("DB update error: {:?}", e);

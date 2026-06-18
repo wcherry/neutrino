@@ -1,11 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { CellProps, SheetFile } from '../types';
+import { flushSync } from 'react-dom';
+import type { CellProps, SheetFile, CFRule } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
-import { sheetsApi, driveReadContent, driveAutosaveContent, driveCreateVersion, driveAutosaveEncryptedContent, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
+import { sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
+import { useToast } from '@neutrino/ui';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { computeCell, type SheetRef } from '../formula';
 
 /**
@@ -71,6 +74,9 @@ export function usePersistence({
     sheetsChartsRef,
     flushActiveCharts,
     setCharts,
+    sheetsConditionalFormatsRef,
+    flushActiveConditionalFormats,
+    setConditionalFormats,
 }: {
     sheetId: string;
     dirtyRef: React.MutableRefObject<boolean>;
@@ -90,9 +96,14 @@ export function usePersistence({
     sheetsChartsRef?: React.MutableRefObject<ChartDef[][]>;
     flushActiveCharts?: () => void;
     setCharts?: React.Dispatch<React.SetStateAction<ChartDef[]>>;
+    // Optional conditional formatting persistence — omit if feature is disabled
+    sheetsConditionalFormatsRef?: React.MutableRefObject<CFRule[][]>;
+    flushActiveConditionalFormats?: () => void;
+    setConditionalFormats?: React.Dispatch<React.SetStateAction<CFRule[]>>;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
+    const toast = useToast();
     const [title, setTitle] = useState('Untitled');
     // loadCount increments every time load() completes successfully.
     // The autosave useEffect depends on it so it restarts (with cleanup) on each reload.
@@ -105,6 +116,7 @@ export function usePersistence({
     const serialize = (): string => {
         flushActiveSheet();
         flushActiveCharts?.();
+        flushActiveConditionalFormats?.();
         const fileSheets = sheetsDataRef.current.map((sheetData, i) => {
             const cells: SheetFile['sheets'][0]['cells'] = {};
             for (const [id, cell] of sheetData) {
@@ -121,6 +133,7 @@ export function usePersistence({
                 : undefined;
             const color = sheetColorsRef.current[i] ?? undefined;
             const sheetCharts = sheetsChartsRef?.current[i];
+            const sheetCF = sheetsConditionalFormatsRef?.current[i];
             return {
                 name: sheetNamesRef.current[i] ?? `Sheet ${i + 1}`,
                 color,
@@ -128,6 +141,7 @@ export function usePersistence({
                 colWidths: colWidthsObj,
                 rowHeights: rowHeightsObj,
                 charts: sheetCharts && sheetCharts.length > 0 ? sheetCharts : undefined,
+                conditionalFormats: sheetCF && sheetCF.length > 0 ? sheetCF : undefined,
             };
         });
         return JSON.stringify({ sheets: fileSheets } as SheetFile);
@@ -135,11 +149,12 @@ export function usePersistence({
 
     const save = async () => {
         if (!sheetRef.current) return;
-        if (dekRef.current) {
-            await driveAutosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current);
-        } else {
-            await driveAutosaveContent(sheetId, serialize(), 'sheet.json');
+        if (!dekRef.current) {
+            toast.warning(ENCRYPTION_WARNING_MESSAGE);
+            return;
         }
+        const metadata = { title };
+        await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
     };
     saveRef.current = save;
 
@@ -155,7 +170,13 @@ export function usePersistence({
     const timedSave = async () => {
         if (!dirtyRef.current) return;
         dirtyRef.current = false;
-        await save();
+        // Flush any pending React startTransition updates (e.g. from cell editing)
+        // so dataRef.current reflects the latest committed state before serialising.
+        // Wrapped in try-catch for the same reason as the unmount flush: flushSync can
+        // throw "flushSync was called from inside a lifecycle method" in React 18
+        // concurrent mode. The drive save must still fire even if the flush is skipped.
+        try { flushSync(() => {}); } catch (_) {}
+        await saveRef.current();
     };
 
     // Single autosave interval, restarted cleanly after every load().
@@ -181,6 +202,12 @@ export function usePersistence({
         const flush = () => {
             if (!dirtyRef.current || !sheetRef.current) return;
             dirtyRef.current = false;
+            // Flush any pending startTransition updates so dataRef.current reflects
+            // the latest committed cell values before serialising (same as timedSave).
+            // Wrapped in try-catch: calling flushSync during React 18 passive-effect
+            // cleanup may throw "flushSync was called from inside a lifecycle method".
+            // The save must still fire even if the flush is skipped.
+            try { flushSync(() => {}); } catch (_) {}
             saveRef.current(); // fire and forget
         };
         const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
@@ -197,17 +224,30 @@ export function usePersistence({
     const load = async () => {
         if (!sheetId) return;
 
+        // Reset dirty so a reload (e.g. version restore) doesn't trigger the
+        // colWidths/rowHeights save-on-change effect with stale unsaved state.
+        dirtyRef.current = false;
+
         // DEK resolution is handled by useEncryptedDocumentContent; dekRef is
         // already populated by the time the editor calls load().
         const sheet = await sheetsApi.getSheet(sheetId);
         sheetRef.current = sheet;
         setTitle(sheet.title);
+        // True only when decryptFile throws, meaning the server still holds the
+        // plaintext default content written at sheet creation time.
+        let serverHasPlaintextContent = false;
         try {
             let raw: string;
             if (dekRef.current) {
                 const blob = await storageApi.downloadFile(sheetId);
                 const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-                const plainBytes = decryptFile(cipherBytes, dekRef.current);
+                let plainBytes: Uint8Array;
+                try {
+                    plainBytes = decryptFile(cipherBytes, dekRef.current);
+                } catch {
+                    serverHasPlaintextContent = true;
+                    throw new Error('plaintext content detected');
+                }
                 raw = new TextDecoder().decode(plainBytes);
             } else {
                 raw = await driveReadContent(sheet.contentUrl);
@@ -232,18 +272,40 @@ export function usePersistence({
                     return m;
                 });
                 const colors = rawSheets.map(s => s.color ?? null);
-                sheetsDataRef.current = allData;
-                sheetsColWidthsRef.current = allColWidths;
-                sheetsRowHeightsRef.current = allRowHeights;
-                setSheetNames(names);
-                setSheetColors(colors);
+                // Preserve any sheets the user added while the content download
+                // was still in progress — load() is async and the user may have
+                // pushed new entries to the refs before we get here.
+                const extraData = sheetsDataRef.current.slice(allData.length);
+                const extraColWidths = sheetsColWidthsRef.current.slice(allData.length);
+                const extraRowHeights = sheetsRowHeightsRef.current.slice(allData.length);
+                sheetsDataRef.current = [...allData, ...extraData];
+                sheetsColWidthsRef.current = [...allColWidths, ...extraColWidths];
+                sheetsRowHeightsRef.current = [...allRowHeights, ...extraRowHeights];
+                const extraNames = extraData.map((_, i) => `Sheet ${allData.length + i + 1}`);
+                const extraColors = extraData.map(() => null as string | null);
+                setSheetNames([...names, ...extraNames]);
+                setSheetColors([...colors, ...extraColors]);
                 setData(allData[0]);
                 setColWidths(allColWidths[0]);
                 setRowHeights(allRowHeights[0]);
-                // Restore charts if the hook is wired up
+                // Restore charts if the hook is wired up; preserve any charts
+                // the user placed on sheets they added during the download.
                 if (sheetsChartsRef && setCharts) {
-                    sheetsChartsRef.current = rawSheets.map(s => s.charts ?? []);
+                    const extraCharts = sheetsChartsRef.current.slice(allData.length);
+                    sheetsChartsRef.current = [
+                        ...rawSheets.map(s => s.charts ?? []),
+                        ...extraCharts,
+                    ];
                     setCharts(sheetsChartsRef.current[0] ?? []);
+                }
+                // Restore conditional formats if the hook is wired up.
+                if (sheetsConditionalFormatsRef && setConditionalFormats) {
+                    const extraCF = sheetsConditionalFormatsRef.current.slice(allData.length);
+                    sheetsConditionalFormatsRef.current = [
+                        ...rawSheets.map(s => s.conditionalFormats ?? []),
+                        ...extraCF,
+                    ];
+                    setConditionalFormats(sheetsConditionalFormatsRef.current[0] ?? []);
                 }
             }
         } catch {
@@ -252,10 +314,11 @@ export function usePersistence({
         // Signal the autosave useEffect to (re-)start the interval with a fresh closure.
         setLoadCount(c => c + 1);
 
-        // Immediately save encrypted content to overwrite the server's plaintext initial
-        // content (written by POST /api/v1/sheets on creation).  Without this, the server
-        // would hold plaintext bytes until the first user edit triggers the 3-second timer.
-        if (dekRef.current) {
+        // Overwrite the server's plaintext initial content with encrypted bytes.
+        // Only needed for brand-new encrypted sheets whose content was written as
+        // plaintext by POST /api/v1/sheets on creation; for existing encrypted sheets
+        // decryptFile succeeds and serverHasPlaintextContent stays false.
+        if (serverHasPlaintextContent && dekRef.current) {
             save();
         }
     };
@@ -264,8 +327,14 @@ export function usePersistence({
         const newTitle = (event.currentTarget as HTMLElement).innerHTML;
         setTitle(newTitle);
         if (sheetRef.current && newTitle !== sheetRef.current.title) {
-            await sheetsApi.saveSheet(sheetRef.current.id, { title: newTitle });
             sheetRef.current.title = newTitle;
+            if (!dekRef.current) {
+                toast.warning(ENCRYPTION_WARNING_MESSAGE);
+                return;
+            }
+            // Save title together with current content in one combined call.
+            const metadata = { title: newTitle };
+            await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
         }
     };
 

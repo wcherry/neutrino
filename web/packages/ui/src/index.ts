@@ -51,6 +51,9 @@ export type { ColorPickerProps } from './components/inputs/ColorPicker';
 export { ColorPickerPopover } from './components/inputs/ColorPickerPopover';
 export type { ColorPickerPopoverProps } from './components/inputs/ColorPickerPopover';
 
+export { FillPicker } from './components/inputs/FillPicker';
+export type { FillPickerProps, Background, BackgroundTheme, DriveImageItem } from './components/inputs/FillPicker';
+
 export { DropZone } from './components/inputs/DropZone';
 export type { DropZoneProps } from './components/inputs/DropZone';
 
@@ -91,6 +94,9 @@ export type {
 
 export { Panel } from './components/containers/Panel';
 export type { PanelProps, PanelColor, PanelPadding } from './components/containers/Panel';
+
+export { PanelContainer } from './components/containers/PanelContainer';
+export type { PanelContainerProps, PanelLocation, PanelTab } from './components/containers/PanelContainer';
 
 export { Modal, ModalHeader, ModalBody, ModalFooter } from './components/containers/Modal';
 export type {
@@ -170,6 +176,9 @@ export type { CommentsPanelProps, CommentItem, CommentReplyItem } from './compon
 
 export { VersionHistoryPanel } from './components/panels/VersionHistoryPanel';
 export type { VersionHistoryPanelProps, VersionItem } from './components/panels/VersionHistoryPanel';
+
+export { SaveAsDialog } from './components/panels/SaveAsDialog';
+export type { SaveAsDialogProps, SaveAsOptions, SaveAsDriveFolder, SaveAsBreadcrumb } from './components/panels/SaveAsDialog';
 
 // Shell components have moved to @neutrino/layout
 

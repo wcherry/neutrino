@@ -1,15 +1,18 @@
+use crate::drive::activity::service::ActivityService;
 use crate::drive::comments::{
-    dto::{CommentListResponse, CommentResponse, CommentReplyResponse, CreateCommentRequest, CreateReplyRequest, UpdateCommentRequest},
+    dto::{
+        CommentListResponse, CommentReplyResponse, CommentResponse, CreateCommentRequest,
+        CreateReplyRequest, UpdateCommentRequest,
+    },
     model::{NewComment, NewCommentReply},
     repository::CommentsRepository,
 };
 use crate::drive::notifications::service::NotificationService;
-use crate::drive::activity::service::ActivityService;
 use crate::drive::permissions::service::PermissionsService;
 use crate::shared::{ApiError, AuthenticatedUser};
+use regex::Regex;
 use std::sync::Arc;
 use uuid::Uuid;
-use regex::Regex;
 
 pub struct CommentsService {
     repo: Arc<CommentsRepository>,
@@ -39,16 +42,25 @@ impl CommentsService {
         file_id: &str,
         req: CreateCommentRequest,
     ) -> Result<CommentResponse, ApiError> {
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         match role.as_deref() {
             None => return Err(ApiError::new(403, "FORBIDDEN", "Access denied")),
-            Some("viewer") => return Err(ApiError::new(403, "FORBIDDEN", "Viewers cannot comment")),
+            Some("viewer") => {
+                return Err(ApiError::new(403, "FORBIDDEN", "Viewers cannot comment"))
+            }
             _ => {}
         }
 
         let now = chrono::Local::now().naive_local();
         let id = Uuid::new_v4().to_string();
-        let user_name = user.email.split('@').next().unwrap_or(&user.email).to_string();
+        let user_name = user
+            .email
+            .split('@')
+            .next()
+            .unwrap_or(&user.email)
+            .to_string();
 
         let new_comment = NewComment {
             id: id.clone(),
@@ -78,30 +90,36 @@ impl CommentsService {
         let mentions = extract_mentions(&req.body);
         for mention_id in mentions {
             if mention_id != user.user_id {
-                let _ = self.notification_service.notify(
-                    vec![mention_id],
-                    "mention",
-                    serde_json::json!({
-                        "fileId": file_id,
-                        "actorName": user_name,
-                        "commentId": id,
-                    }),
-                ).await;
+                let _ = self
+                    .notification_service
+                    .notify(
+                        vec![mention_id],
+                        "mention",
+                        serde_json::json!({
+                            "fileId": file_id,
+                            "actorName": user_name,
+                            "commentId": id,
+                        }),
+                    )
+                    .await;
             }
         }
 
         // Notify assignee if set
         if let Some(ref assignee_id) = req.assignee_id {
             if assignee_id != &user.user_id {
-                let _ = self.notification_service.notify(
-                    vec![assignee_id.clone()],
-                    "action_item_assigned",
-                    serde_json::json!({
-                        "fileId": file_id,
-                        "actorName": user_name,
-                        "commentId": id,
-                    }),
-                ).await;
+                let _ = self
+                    .notification_service
+                    .notify(
+                        vec![assignee_id.clone()],
+                        "action_item_assigned",
+                        serde_json::json!({
+                            "fileId": file_id,
+                            "actorName": user_name,
+                            "commentId": id,
+                        }),
+                    )
+                    .await;
             }
         }
 
@@ -116,7 +134,9 @@ impl CommentsService {
         status_filter: Option<&str>,
     ) -> Result<CommentListResponse, ApiError> {
         // Check user has at least viewer access
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         if role.is_none() {
             return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
         }
@@ -144,19 +164,27 @@ impl CommentsService {
         comment_id: &str,
         req: UpdateCommentRequest,
     ) -> Result<CommentResponse, ApiError> {
-        let comment = self.repo.find_comment(comment_id)?
+        let comment = self
+            .repo
+            .find_comment(comment_id)?
             .ok_or_else(|| ApiError::not_found("Comment not found"))?;
 
         if comment.file_id != file_id {
             return Err(ApiError::not_found("Comment not found"));
         }
 
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         let is_author = comment.user_id == user.user_id;
         let is_editor_or_owner = matches!(role.as_deref(), Some("owner") | Some("editor"));
 
         if !is_author && !is_editor_or_owner {
-            return Err(ApiError::new(403, "FORBIDDEN", "Cannot update this comment"));
+            return Err(ApiError::new(
+                403,
+                "FORBIDDEN",
+                "Cannot update this comment",
+            ));
         }
 
         let now = chrono::Local::now().naive_local();
@@ -183,19 +211,27 @@ impl CommentsService {
         file_id: &str,
         comment_id: &str,
     ) -> Result<(), ApiError> {
-        let comment = self.repo.find_comment(comment_id)?
+        let comment = self
+            .repo
+            .find_comment(comment_id)?
             .ok_or_else(|| ApiError::not_found("Comment not found"))?;
 
         if comment.file_id != file_id {
             return Err(ApiError::not_found("Comment not found"));
         }
 
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         let is_author = comment.user_id == user.user_id;
         let is_owner = role.as_deref() == Some("owner");
 
         if !is_author && !is_owner {
-            return Err(ApiError::new(403, "FORBIDDEN", "Cannot delete this comment"));
+            return Err(ApiError::new(
+                403,
+                "FORBIDDEN",
+                "Cannot delete this comment",
+            ));
         }
 
         self.repo.delete_comment(comment_id)?;
@@ -209,23 +245,34 @@ impl CommentsService {
         comment_id: &str,
         req: CreateReplyRequest,
     ) -> Result<CommentReplyResponse, ApiError> {
-        let comment = self.repo.find_comment(comment_id)?
+        let comment = self
+            .repo
+            .find_comment(comment_id)?
             .ok_or_else(|| ApiError::not_found("Comment not found"))?;
 
         if comment.file_id != file_id {
             return Err(ApiError::not_found("Comment not found"));
         }
 
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         match role.as_deref() {
             None => return Err(ApiError::new(403, "FORBIDDEN", "Access denied")),
-            Some("viewer") => return Err(ApiError::new(403, "FORBIDDEN", "Viewers cannot comment")),
+            Some("viewer") => {
+                return Err(ApiError::new(403, "FORBIDDEN", "Viewers cannot comment"))
+            }
             _ => {}
         }
 
         let now = chrono::Local::now().naive_local();
         let id = Uuid::new_v4().to_string();
-        let user_name = user.email.split('@').next().unwrap_or(&user.email).to_string();
+        let user_name = user
+            .email
+            .split('@')
+            .next()
+            .unwrap_or(&user.email)
+            .to_string();
 
         let new_reply = NewCommentReply {
             id: id.clone(),
@@ -241,31 +288,37 @@ impl CommentsService {
 
         // Notify original comment author
         if comment.user_id != user.user_id {
-            let _ = self.notification_service.notify(
-                vec![comment.user_id.clone()],
-                "comment_reply",
-                serde_json::json!({
-                    "fileId": file_id,
-                    "actorName": user_name,
-                    "commentId": comment_id,
-                    "replyId": id,
-                }),
-            ).await;
+            let _ = self
+                .notification_service
+                .notify(
+                    vec![comment.user_id.clone()],
+                    "comment_reply",
+                    serde_json::json!({
+                        "fileId": file_id,
+                        "actorName": user_name,
+                        "commentId": comment_id,
+                        "replyId": id,
+                    }),
+                )
+                .await;
         }
 
         // Extract @mentions from reply
         let mentions = extract_mentions(&req.body);
         for mention_id in mentions {
             if mention_id != user.user_id && mention_id != comment.user_id {
-                let _ = self.notification_service.notify(
-                    vec![mention_id],
-                    "mention",
-                    serde_json::json!({
-                        "fileId": file_id,
-                        "actorName": user_name,
-                        "commentId": comment_id,
-                    }),
-                ).await;
+                let _ = self
+                    .notification_service
+                    .notify(
+                        vec![mention_id],
+                        "mention",
+                        serde_json::json!({
+                            "fileId": file_id,
+                            "actorName": user_name,
+                            "commentId": comment_id,
+                        }),
+                    )
+                    .await;
             }
         }
 
@@ -279,21 +332,27 @@ impl CommentsService {
         comment_id: &str,
         reply_id: &str,
     ) -> Result<(), ApiError> {
-        let comment = self.repo.find_comment(comment_id)?
+        let comment = self
+            .repo
+            .find_comment(comment_id)?
             .ok_or_else(|| ApiError::not_found("Comment not found"))?;
 
         if comment.file_id != file_id {
             return Err(ApiError::not_found("Comment not found"));
         }
 
-        let reply = self.repo.find_reply(reply_id)?
+        let reply = self
+            .repo
+            .find_reply(reply_id)?
             .ok_or_else(|| ApiError::not_found("Reply not found"))?;
 
         if reply.comment_id != comment_id {
             return Err(ApiError::not_found("Reply not found"));
         }
 
-        let role = self.permissions_service.get_effective_role(&user.user_id, "file", file_id)?;
+        let role = self
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", file_id)?;
         let is_author = reply.user_id == user.user_id;
         let is_owner = role.as_deref() == Some("owner");
 

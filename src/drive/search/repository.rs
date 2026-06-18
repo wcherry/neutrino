@@ -1,11 +1,18 @@
+#![allow(dead_code)]
+
+use super::model::*;
+use crate::schema::file_content_index;
+use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::*;
-use super::model::*;
-use crate::shared::{ApiError, DbPool};
-use crate::schema::file_content_index;
 
-fn get_conn(pool: &DbPool) -> Result<diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>, ApiError> {
+fn get_conn(
+    pool: &DbPool,
+) -> Result<
+    diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+    ApiError,
+> {
     pool.get().map_err(|e| {
         tracing::error!("DB pool error: {:?}", e);
         ApiError::internal("Database connection unavailable")
@@ -15,7 +22,12 @@ fn get_conn(pool: &DbPool) -> Result<diesel::r2d2::PooledConnection<diesel::r2d2
 pub struct SearchRepository;
 
 impl SearchRepository {
-    pub fn upsert_content_index(pool: &DbPool, file_id: &str, user_id: &str, text: &str) -> Result<(), ApiError> {
+    pub fn upsert_content_index(
+        pool: &DbPool,
+        file_id: &str,
+        user_id: &str,
+        text: &str,
+    ) -> Result<(), ApiError> {
         let conn = &mut get_conn(pool)?;
         let now = chrono::Utc::now().naive_utc();
 
@@ -51,7 +63,12 @@ impl SearchRepository {
         Ok(())
     }
 
-    pub fn upsert_name_in_fts(pool: &DbPool, file_id: &str, user_id: &str, name: &str) -> Result<(), ApiError> {
+    pub fn upsert_name_in_fts(
+        pool: &DbPool,
+        file_id: &str,
+        user_id: &str,
+        name: &str,
+    ) -> Result<(), ApiError> {
         let conn = &mut get_conn(pool)?;
         // Check if content index exists for this file
         let content: Option<ContentIndex> = file_content_index::table
@@ -80,11 +97,9 @@ impl SearchRepository {
     pub fn delete_from_fts(pool: &DbPool, file_id: &str) -> Result<(), ApiError> {
         let conn = &mut get_conn(pool)?;
         let escaped = file_id.replace('\'', "''");
-        sql_query(format!(
-            "DELETE FROM file_fts WHERE file_id = '{escaped}'"
-        ))
-        .execute(conn)
-        .ok();
+        sql_query(format!("DELETE FROM file_fts WHERE file_id = '{escaped}'"))
+            .execute(conn)
+            .ok();
         diesel::delete(file_content_index::table.find(file_id)).execute(conn)?;
         Ok(())
     }

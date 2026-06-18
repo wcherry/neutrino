@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::shared::ApiError;
+use async_trait::async_trait;
 
 /// Abstraction over AI text-completion providers.
 #[async_trait]

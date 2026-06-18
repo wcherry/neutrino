@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
 use actix_web::dev::Payload;
 use actix_web::FromRequest;
+use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use std::future::{ready, Ready};
@@ -49,7 +49,11 @@ impl FromRequest for WorkerAuth {
         if ok {
             ready(Ok(WorkerAuth))
         } else {
-            ready(Err(ApiError::new(401, "UNAUTHORIZED", "Invalid worker secret")))
+            ready(Err(ApiError::new(
+                401,
+                "UNAUTHORIZED",
+                "Invalid worker secret",
+            )))
         }
     }
 }
@@ -164,9 +168,7 @@ async fn get_file_content(
         .jobs_service
         .get_file_content(&path.into_inner())
         .await?;
-    Ok(HttpResponse::Ok()
-        .content_type(mime_type)
-        .body(bytes))
+    Ok(HttpResponse::Ok().content_type(mime_type).body(bytes))
 }
 
 /// Worker registers itself and provides a callback URL for job dispatch.
@@ -186,9 +188,7 @@ async fn register_worker(
     _auth: WorkerAuth,
     body: web::Json<RegisterWorkerRequest>,
 ) -> Result<web::Json<RegisterWorkerResponse>, ApiError> {
-    let worker_id = state
-        .jobs_service
-        .register_worker(&body.callback_url)?;
+    let worker_id = state.jobs_service.register_worker(&body.callback_url)?;
     Ok(web::Json(RegisterWorkerResponse { worker_id }))
 }
 
@@ -209,9 +209,7 @@ async fn deregister_worker(
     _auth: WorkerAuth,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    state
-        .jobs_service
-        .deregister_worker(&path.into_inner())?;
+    state.jobs_service.deregister_worker(&path.into_inner())?;
     Ok(HttpResponse::NoContent().finish())
 }
 

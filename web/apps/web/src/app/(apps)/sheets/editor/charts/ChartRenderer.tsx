@@ -30,7 +30,7 @@ import {
     buildTreemapData,
 } from './chartUtils';
 import { getTheme } from './chartThemes';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 
 interface ChartRendererProps {
     def: ChartDef;
@@ -162,11 +162,12 @@ function SunburstChart({ labels, values, colors, showLabels, axisTextColor }: Su
 // ── ChartRenderer ─────────────────────────────────────────────────────────────
 
 export function ChartRenderer({ def, data, width, height }: ChartRendererProps) {
+    const flags = useFeatureFlags();
     const { labels, datasets } = extractChartData(def, data);
     const legendProps = getLegendProps(def.legendPosition);
 
     // Resolve theme (Phase 2 feature-flagged)
-    const theme = featureFlags.sheetsChartsPhase2 ? getTheme(def.theme) : null;
+    const theme = flags.sheetsChartsPhase2 ? getTheme(def.theme) : null;
     const palette = theme ? theme.colors : CHART_COLORS;
     const bgColor = def.backgroundColor || (theme?.backgroundColor ?? '#ffffff');
     const plotColor = def.plotAreaColor || (theme?.plotAreaColor ?? 'transparent');
@@ -205,14 +206,14 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
     const yLabel = def.yAxisTitle ? <Label value={def.yAxisTitle} angle={-90} position="insideLeft" style={{ fontSize: 11, fill: axisTextColor }} /> : null;
 
     // Phase 2: axis config
-    const yDomain = featureFlags.sheetsChartsPhase2 ? getYAxisDomain(def.yAxis) : (['auto', 'auto'] as [string, string]);
-    const yTickFormatter = featureFlags.sheetsChartsPhase2 ? makeTickFormatter(def.yAxis) : undefined;
-    const xTickFormatter = featureFlags.sheetsChartsPhase2 ? makeTickFormatter(def.xAxis) : undefined;
-    const yScaleType = featureFlags.sheetsChartsPhase2 && def.yAxis?.logScale ? 'log' as const : 'linear' as const;
-    const yReversed = featureFlags.sheetsChartsPhase2 && (def.yAxis?.reversed ?? false);
+    const yDomain = flags.sheetsChartsPhase2 ? getYAxisDomain(def.yAxis) : (['auto', 'auto'] as [string, string]);
+    const yTickFormatter = flags.sheetsChartsPhase2 ? makeTickFormatter(def.yAxis) : undefined;
+    const xTickFormatter = flags.sheetsChartsPhase2 ? makeTickFormatter(def.xAxis) : undefined;
+    const yScaleType = flags.sheetsChartsPhase2 && def.yAxis?.logScale ? 'log' as const : 'linear' as const;
+    const yReversed = flags.sheetsChartsPhase2 && (def.yAxis?.reversed ?? false);
 
     // Phase 2: data label config
-    const dlCfg = featureFlags.sheetsChartsPhase2 ? def.dataLabel : undefined;
+    const dlCfg = flags.sheetsChartsPhase2 ? def.dataLabel : undefined;
     const showDL = dlCfg ? dlCfg.show : def.showDataLabels;
     const dlPosition = getLabelPosition(dlCfg);
     const dlStyle: React.CSSProperties = {
@@ -221,7 +222,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
     };
 
     // Filter invisible series (Phase 2)
-    const visibleDatasets = featureFlags.sheetsChartsPhase2
+    const visibleDatasets = flags.sheetsChartsPhase2
         ? datasets.filter(ds => {
             const serDef = def.series.find(s => s.name === ds.name);
             return serDef?.visible !== false;
@@ -231,7 +232,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
     const getSeriesDef = (name: string) => def.series.find(s => s.name === name);
 
     // Shared YAxis props for Phase 2 axis config
-    const yAxisBaseProps = featureFlags.sheetsChartsPhase2 ? {
+    const yAxisBaseProps = flags.sheetsChartsPhase2 ? {
         domain: yDomain,
         tickFormatter: yTickFormatter,
         scale: yScaleType,
@@ -300,9 +301,9 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     {legendProps && <Legend {...legendProps} />}
                     {visibleDatasets.map((ds, i) => {
                         const sd = getSeriesDef(ds.name);
-                        const strokeWidth = featureFlags.sheetsChartsPhase2 ? (sd?.lineThickness ?? 2) : 2;
-                        const markerSize = featureFlags.sheetsChartsPhase2 ? (sd?.markerSize ?? 3) : 3;
-                        const showMarker = !featureFlags.sheetsChartsPhase2 || (sd?.markerStyle ?? 'circle') !== 'none';
+                        const strokeWidth = flags.sheetsChartsPhase2 ? (sd?.lineThickness ?? 2) : 2;
+                        const markerSize = flags.sheetsChartsPhase2 ? (sd?.markerSize ?? 3) : 3;
+                        const showMarker = !flags.sheetsChartsPhase2 || (sd?.markerStyle ?? 'circle') !== 'none';
                         return (
                             <Line key={ds.name} type="monotone" dataKey={ds.name}
                                 stroke={ds.color ?? palette[i % palette.length]}
@@ -332,7 +333,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     {visibleDatasets.map((ds, i) => {
                         const color = ds.color ?? palette[i % palette.length];
                         const sd = getSeriesDef(ds.name);
-                        const strokeWidth = featureFlags.sheetsChartsPhase2 ? (sd?.lineThickness ?? 2) : 2;
+                        const strokeWidth = flags.sheetsChartsPhase2 ? (sd?.lineThickness ?? 2) : 2;
                         return (
                             <Area key={ds.name} type="monotone" dataKey={ds.name}
                                 stroke={color} fill={color} fillOpacity={0.3} strokeWidth={strokeWidth}>
@@ -362,8 +363,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                         cx="50%" cy="50%"
                         outerRadius="75%"
                         innerRadius={innerRadius}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        label={showDL ? (props: any) => `${props.name} ${(((props.percent as number) ?? 0) * 100).toFixed(0)}%` : undefined}
+                        label={showDL ? (props: { name?: string; percent?: number }) => `${props.name ?? ''} ${(((props.percent as number) ?? 0) * 100).toFixed(0)}%` : undefined}
                         labelLine={showDL}
                     >
                         {pieData.map((entry, i) => (
@@ -413,7 +413,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
 
     // ── Combo chart ───────────────────────────────────────────────────────────
     if (def.type === 'combo') {
-        const hasSecondaryAxis = featureFlags.sheetsChartsPhase2 &&
+        const hasSecondaryAxis = flags.sheetsChartsPhase2 &&
             visibleDatasets.some(ds => getSeriesDef(ds.name)?.yAxisId === 'right');
         return wrap(
             <ResponsiveContainer width="100%" height="100%">
@@ -434,8 +434,8 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                         const color = ds.color ?? palette[i % palette.length];
                         const seriesDef = def.series.find(s => s.name === ds.name);
                         const seriesType = seriesDef?.chartType ?? (i === 0 ? 'column' : 'line');
-                        const yAxisId = featureFlags.sheetsChartsPhase2 ? (seriesDef?.yAxisId ?? 'left') : 'left';
-                        const strokeWidth = featureFlags.sheetsChartsPhase2 ? (seriesDef?.lineThickness ?? 2) : 2;
+                        const yAxisId = flags.sheetsChartsPhase2 ? (seriesDef?.yAxisId ?? 'left') : 'left';
+                        const strokeWidth = flags.sheetsChartsPhase2 ? (seriesDef?.lineThickness ?? 2) : 2;
                         if (seriesType === 'line' || seriesType === 'area') {
                             return (
                                 <Line key={ds.name} type="monotone" dataKey={ds.name}
@@ -459,7 +459,7 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
     // Phase 2 chart types — only rendered when sheetsChartsPhase2 flag is on
     // ═══════════════════════════════════════════════════════════════════════════
 
-    if (!featureFlags.sheetsChartsPhase2) {
+    if (!flags.sheetsChartsPhase2) {
         return wrap(<NoData message="Phase 2 charts require the sheetsChartsPhase2 feature flag" />);
     }
 
@@ -520,16 +520,14 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: axisTextColor }}>{xLabel}</XAxis>
                     <YAxis tick={{ fontSize: 11, fill: axisTextColor }} domain={[0, 100]}
                         tickFormatter={(v: number) => `${v}%`}>{yLabel}</YAxis>
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
+                    <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
                     {legendProps && <Legend {...legendProps} />}
                     {normalizedDatasets.map((ds, i) => (
                         <Bar key={ds.name} dataKey={ds.name} stackId="stack"
                             fill={ds.color ?? palette[i % palette.length]}>
                             {showDL && (
                                 <LabelList dataKey={ds.name} position="center" style={dlStyle}
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    formatter={(v: any) => `${Number(v).toFixed(0)}%`} />
+                                    formatter={(v) => `${Number(v).toFixed(0)}%`} />
                             )}
                         </Bar>
                     ))}
@@ -549,16 +547,14 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     <XAxis type="number" tick={{ fontSize: 11, fill: axisTextColor }}
                         domain={[0, 100]} tickFormatter={(v: number) => `${v}%`}>{xLabel}</XAxis>
                     <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: axisTextColor }} width={80}>{yLabel}</YAxis>
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    <Tooltip formatter={(v: any) => `${Number(v).toFixed(1)}%`} />
+                    <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
                     {legendProps && <Legend {...legendProps} />}
                     {normalizedDatasets.map((ds, i) => (
                         <Bar key={ds.name} dataKey={ds.name} stackId="stack"
                             fill={ds.color ?? palette[i % palette.length]}>
                             {showDL && (
                                 <LabelList dataKey={ds.name} position="center" style={dlStyle}
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    formatter={(v: any) => `${Number(v).toFixed(0)}%`} />
+                                    formatter={(v) => `${Number(v).toFixed(0)}%`} />
                             )}
                         </Bar>
                     ))}
@@ -719,11 +715,10 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: axisTextColor }}>{xLabel}</XAxis>
                     <YAxis tick={{ fontSize: 11, fill: axisTextColor }} domain={[minV, maxV]}>{yLabel}</YAxis>
                     <Tooltip
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        formatter={(value: any, name: any, props: any) => {
+                        formatter={(value, name, props) => {
                             if (name === 'invisible') return null;
-                            const pl = props?.payload ?? {};
-                            const actualValue = pl.isTotal ? pl.value : (pl.positive ? pl.value : -pl.value);
+                            const pl = (props?.payload ?? {}) as { isTotal?: boolean; positive?: boolean; value?: number };
+                            const actualValue = pl.isTotal ? pl.value : (pl.positive ? pl.value : -(pl.value ?? 0));
                             return [actualValue, 'Value'];
                         }}
                     />
@@ -731,11 +726,10 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
                     <Bar dataKey="invisible" stackId="w" fill="transparent" stroke="none" legendType="none" />
                     <Bar dataKey="value" stackId="w"
                         fill={palette[0]}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        shape={(props: any) => {
-                            const { x, y, width, height, payload } = props;
-                            const color = payload.isTotal ? palette[3] : (payload.positive ? palette[0] : '#ef4444');
-                            return <rect x={x} y={y} width={width} height={height} fill={color} />;
+                        shape={(props: { x?: number; y?: number; width?: number; height?: number; payload?: { isTotal?: boolean; positive?: boolean } }) => {
+                            const { x = 0, y = 0, width: w = 0, height: h = 0, payload } = props;
+                            const color = payload?.isTotal ? palette[3] : (payload?.positive ? palette[0] : '#ef4444');
+                            return <rect x={x} y={y} width={w} height={h} fill={color} />;
                         }}
                     >
                         {showDL && <LabelList dataKey="value" position="top" style={dlStyle} />}
@@ -754,9 +748,8 @@ export function ChartRenderer({ def, data, width, height }: ChartRendererProps) 
             fill: node.color ?? palette[i % palette.length],
         }));
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        function TreemapCell(props: any) {
-            const { x, y, width, height, name, value, fill: cellFill } = props;
+        function TreemapCell(props: { x?: number; y?: number; width?: number; height?: number; name?: string; value?: number; fill?: string }) {
+            const { x = 0, y = 0, width, height, name, value, fill: cellFill } = props;
             if (!width || !height || width < 10 || height < 10) return null;
             return (
                 <g>

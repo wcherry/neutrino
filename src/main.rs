@@ -1,6 +1,10 @@
-use actix_web::{get, web, App, HttpResponse, HttpServer, Responder, middleware::Logger, middleware::NormalizePath};
+use crate::shared::{init_logging, DbPool};
 use actix_cors::Cors;
 use actix_files;
+use actix_web::{
+    get, middleware::Logger, middleware::NormalizePath, middleware::TrailingSlash, web, App,
+    HttpResponse, HttpServer, Responder,
+};
 use diesel::r2d2::{ConnectionManager, CustomizeConnection, Error as R2D2Error, Pool};
 use diesel::{RunQueryDsl, SqliteConnection};
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -9,19 +13,21 @@ use std::sync::Arc;
 use tracing::{error, info};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-use crate::shared::{DbPool, init_logging};
 
 mod auth;
 mod calendar;
 mod config;
+mod diagrams;
 mod docs;
+mod drawing;
 mod drive;
 mod notes;
+mod oauth;
 mod photos;
 mod schema;
+mod shared;
 mod sheets;
 mod slides;
-mod shared;
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
@@ -131,8 +137,25 @@ async fn main() -> std::io::Result<()> {
     use auth::service::AuthService;
 
     let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
-    let auth_service = Arc::new(AuthService::new(auth_repo, token_service.clone()));
-    let auth_state = web::Data::new(auth::api::AuthApiState { auth_service: auth_service.clone() });
+    let auth_service = Arc::new(AuthService::new(auth_repo.clone(), token_service.clone()));
+    let auth_state = web::Data::new(auth::api::AuthApiState {
+        auth_service: auth_service.clone(),
+    });
+
+    // ── OAuth service ─────────────────────────────────────────────────────────
+
+    use oauth::repository::OauthRepository;
+    use oauth::service::OauthService;
+
+    let oauth_repo = Arc::new(OauthRepository::new(pool.clone()));
+    let oauth_service = Arc::new(OauthService::new(
+        oauth_repo,
+        auth_repo.clone(),
+        token_service.clone(),
+    ));
+    let oauth_state = web::Data::new(oauth::api::OauthApiState {
+        oauth_service: oauth_service.clone(),
+    });
 
     // ── Calendar service ─────────────────────────────────────────────────────
 
@@ -152,7 +175,10 @@ async fn main() -> std::io::Result<()> {
 
     let cal_attendees_repo = Arc::new(AttendeesRepository::new(pool.clone()));
     let cal_events_repo = Arc::new(EventsRepository::new(pool.clone()));
-    let cal_events_service = Arc::new(EventsService::new(cal_events_repo.clone(), cal_attendees_repo));
+    let cal_events_service = Arc::new(EventsService::new(
+        cal_events_repo.clone(),
+        cal_attendees_repo,
+    ));
     let cal_events_state = web::Data::new(calendar::events::api::EventsApiState {
         events_service: cal_events_service,
     });
@@ -203,10 +229,9 @@ async fn main() -> std::io::Result<()> {
     use drive::comments::service::CommentsService;
     use drive::compliance::repository::ComplianceRepository;
     use drive::compliance::service::ComplianceService;
-    use drive::dlp::repository::DlpRepository;
-    use drive::dlp::service::DlpService;
     use drive::encryption::repository::EncryptionRepository;
     use drive::encryption::service::EncryptionService;
+    use drive::feature_flags::repository::FeatureFlagsRepository;
     use drive::filesystem::repository::FilesystemRepository;
     use drive::filesystem::service::FilesystemService;
     use drive::irm::repository::IrmRepository;
@@ -264,7 +289,10 @@ async fn main() -> std::io::Result<()> {
     });
 
     let drive_irm_repo = Arc::new(IrmRepository::new(pool.clone()));
-    let drive_irm_service = Arc::new(IrmService::new(drive_irm_repo, drive_permissions_service.clone()));
+    let drive_irm_service = Arc::new(IrmService::new(
+        drive_irm_repo,
+        drive_permissions_service.clone(),
+    ));
     let drive_irm_state = web::Data::new(drive::irm::api::IrmApiState {
         irm_service: drive_irm_service.clone(),
     });
@@ -287,7 +315,10 @@ async fn main() -> std::io::Result<()> {
     ));
 
     let drive_tags_repo = Arc::new(TagsRepository::new(pool.clone()));
-    let drive_tags_service = Arc::new(TagsService::new(drive_tags_repo, drive_permissions_service.clone()));
+    let drive_tags_service = Arc::new(TagsService::new(
+        drive_tags_repo,
+        drive_permissions_service.clone(),
+    ));
     let drive_tags_state = web::Data::new(drive::tags::api::TagsApiState {
         tags_service: drive_tags_service.clone(),
     });
@@ -331,9 +362,10 @@ async fn main() -> std::io::Result<()> {
         drive_permissions_repo,
         drive_permissions_service.clone(),
     ));
-    let drive_access_requests_state = web::Data::new(drive::access_requests::api::AccessRequestsApiState {
-        service: drive_access_requests_service,
-    });
+    let drive_access_requests_state =
+        web::Data::new(drive::access_requests::api::AccessRequestsApiState {
+            service: drive_access_requests_service,
+        });
 
     let smtp_config = if let (Ok(host), Ok(port_str), Ok(user_s), Ok(pass), Ok(from)) = (
         std::env::var("SMTP_HOST"),
@@ -358,9 +390,10 @@ async fn main() -> std::io::Result<()> {
         drive_notifications_repo,
         smtp_config,
     ));
-    let drive_notifications_state = web::Data::new(drive::notifications::api::NotificationsApiState {
-        notification_service: drive_notification_service.clone(),
-    });
+    let drive_notifications_state =
+        web::Data::new(drive::notifications::api::NotificationsApiState {
+            notification_service: drive_notification_service.clone(),
+        });
 
     let drive_activity_repo = Arc::new(ActivityRepository::new(pool.clone()));
     let drive_activity_service = Arc::new(ActivityService::new(
@@ -416,18 +449,14 @@ async fn main() -> std::io::Result<()> {
 
     let drive_shared_drives_repo = Arc::new(SharedDrivesRepository::new(pool.clone()));
     let drive_shared_drives_service = Arc::new(SharedDrivesService::new(drive_shared_drives_repo));
-    let drive_shared_drives_state = web::Data::new(drive::shared_drives::api::SharedDrivesApiState {
-        service: drive_shared_drives_service,
-    });
-
-    let drive_dlp_repo = Arc::new(DlpRepository::new(pool.clone()));
-    let drive_dlp_service = Arc::new(DlpService::new(drive_dlp_repo, pool.clone()));
-    let drive_dlp_state = web::Data::new(drive::dlp::api::DlpApiState {
-        service: drive_dlp_service,
-    });
+    let drive_shared_drives_state =
+        web::Data::new(drive::shared_drives::api::SharedDrivesApiState {
+            service: drive_shared_drives_service,
+        });
 
     let drive_compliance_repo = Arc::new(ComplianceRepository::new(pool.clone()));
-    let drive_compliance_service = Arc::new(ComplianceService::new(drive_compliance_repo, pool.clone()));
+    let drive_compliance_service =
+        Arc::new(ComplianceService::new(drive_compliance_repo, pool.clone()));
     let drive_compliance_state = web::Data::new(drive::compliance::api::ComplianceApiState {
         service: drive_compliance_service,
     });
@@ -448,14 +477,20 @@ async fn main() -> std::io::Result<()> {
 
     let drive_service_registry_repo = Arc::new(ServiceRegistrationRepository::new(pool.clone()));
     let drive_service_registry = ServiceRegistry::new(drive_service_registry_repo);
-    let drive_service_registry_state = web::Data::new(drive::service_registry::api::ServiceRegistryState {
-        registry: drive_service_registry.clone(),
-    });
+    let drive_service_registry_state =
+        web::Data::new(drive::service_registry::api::ServiceRegistryState {
+            registry: drive_service_registry.clone(),
+        });
 
     let drive_admin_svc = Arc::new(AdminDashboardService::new(config.storage_path.clone()));
     let drive_admin_state = web::Data::new(drive::admin::api::AdminDashboardState {
         service: drive_admin_svc,
         service_registry: drive_service_registry,
+    });
+
+    let drive_feature_flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
+    let drive_feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
+        repo: drive_feature_flags_repo,
     });
 
     // Drive background jobs processor
@@ -497,12 +532,13 @@ async fn main() -> std::io::Result<()> {
 
     let templates_repo = Arc::new(TemplatesRepository::new(pool.clone()));
     let templates_service = Arc::new(TemplatesService::new(templates_repo, docs_service));
-    templates_service.seed_system_templates().unwrap_or_else(|e| {
-        error!("Failed to seed system templates: {}", e);
-    });
-    let templates_state = web::Data::new(docs::templates::api::TemplatesApiState {
-        templates_service,
-    });
+    templates_service
+        .seed_system_templates()
+        .unwrap_or_else(|e| {
+            error!("Failed to seed system templates: {}", e);
+        });
+    let templates_state =
+        web::Data::new(docs::templates::api::TemplatesApiState { templates_service });
 
     let docs_collab_repo = web::Data::new(Arc::new(CollabRepository::new(pool.clone())));
     let docs_collab_state = web::Data::new(Arc::new(CollabState::new()));
@@ -638,9 +674,7 @@ async fn main() -> std::io::Result<()> {
         sheets_repo.clone(),
         drive_client_for_sheets.clone(),
     ));
-    let sheets_state = web::Data::new(sheets::sheets::api::SheetsApiState {
-        sheets_service,
-    });
+    let sheets_state = web::Data::new(sheets::sheets::api::SheetsApiState { sheets_service });
 
     let sheets_named_ranges_repo = Arc::new(NamedRangesRepository::new(pool.clone()));
     let sheets_named_ranges_service = Arc::new(NamedRangesService::new(
@@ -648,15 +682,32 @@ async fn main() -> std::io::Result<()> {
         sheets_repo,
         drive_client_for_sheets,
     ));
-    let sheets_named_ranges_state = web::Data::new(sheets::named_ranges::api::NamedRangesApiState {
-        service: sheets_named_ranges_service,
-    });
+    let sheets_named_ranges_state =
+        web::Data::new(sheets::named_ranges::api::NamedRangesApiState {
+            service: sheets_named_ranges_service,
+        });
 
     let sheets_claude_client = sheets::ai::claude_client::ClaudeClient::from_env();
-    let sheets_ai_service = Arc::new(sheets::ai::service::SheetsAIService::new(sheets_claude_client));
+    let sheets_ai_service = Arc::new(sheets::ai::service::SheetsAIService::new(
+        sheets_claude_client,
+    ));
     let sheets_ai_state = web::Data::new(sheets::ai::api::SheetsAIApiState {
         ai_service: sheets_ai_service,
     });
+
+    // ── Drawing service ───────────────────────────────────────────────────────
+
+    use drawing::drawing::repository::DrawingRepository;
+    use drawing::drawing::service::DrawingService;
+
+    let drive_client_for_drawing = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
+    let drawing_repo = Arc::new(DrawingRepository::new(pool.clone()));
+    let drawing_service = Arc::new(DrawingService::new(drawing_repo, drive_client_for_drawing));
+    let drawing_state = web::Data::new(drawing::drawing::api::DrawingApiState { drawing_service });
 
     // ── Slides service ────────────────────────────────────────────────────────
 
@@ -669,16 +720,56 @@ async fn main() -> std::io::Result<()> {
         drive_fs_repo.clone(),
     ));
     let slides_slides_repo = Arc::new(SlidesRepository::new(pool.clone()));
-    let slides_service = Arc::new(SlidesService::new(slides_slides_repo, drive_client_for_slides));
-    let slides_state = web::Data::new(slides::slides::api::SlidesApiState {
-        slides_service,
-    });
+    let slides_service = Arc::new(SlidesService::new(
+        slides_slides_repo,
+        drive_client_for_slides,
+    ));
+    let slides_state = web::Data::new(slides::slides::api::SlidesApiState { slides_service });
 
     let slides_claude_client = slides::ai::claude_client::ClaudeClient::from_env();
-    let slides_ai_service = Arc::new(slides::ai::service::SlidesAIService::new(slides_claude_client));
+    let slides_ai_service = Arc::new(slides::ai::service::SlidesAIService::new(
+        slides_claude_client,
+    ));
     let slides_ai_state = web::Data::new(slides::ai::api::SlidesAIApiState {
         ai_service: slides_ai_service,
     });
+
+    // ── Diagrams service ──────────────────────────────────────────────────────
+
+    use diagrams::collab::repository::DiagramCollabRepository;
+    use diagrams::collab::state::DiagramCollabState;
+    use diagrams::diagrams::repository::DiagramsRepository;
+    use diagrams::diagrams::service::DiagramsService;
+
+    let drive_client_for_diagrams = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
+    let diagrams_repo = Arc::new(DiagramsRepository::new(pool.clone()));
+    let diagrams_service = Arc::new(DiagramsService::new(
+        diagrams_repo,
+        drive_client_for_diagrams,
+    ));
+    let diagrams_state =
+        web::Data::new(diagrams::diagrams::api::DiagramsApiState { diagrams_service });
+    let diagrams_collab_repo = web::Data::new(Arc::new(DiagramCollabRepository::new(pool.clone())));
+    let diagrams_collab_state = web::Data::new(Arc::new(DiagramCollabState::new()));
+
+    use diagrams::private_library::repository::PrivateLibraryRepository;
+    use diagrams::private_library::service::PrivateLibraryService;
+    use drive::private_store::PrivateStore;
+
+    let private_store = Arc::new(
+        PrivateStore::new(std::path::Path::new(&config.storage_path))
+            .unwrap_or_else(|e| panic!("Failed to init private store: {}", e)),
+    );
+    let private_lib_repo = Arc::new(PrivateLibraryRepository::new(pool.clone()));
+    let private_lib_service = Arc::new(PrivateLibraryService::new(private_lib_repo, private_store));
+    let private_lib_state =
+        web::Data::new(diagrams::private_library::api::PrivateLibraryApiState {
+            service: private_lib_service,
+        });
 
     // ── HTTP server ───────────────────────────────────────────────────────────
 
@@ -694,10 +785,7 @@ async fn main() -> std::io::Result<()> {
     // ── Combined OpenAPI spec ─────────────────────────────────────────────────
 
     #[derive(OpenApi)]
-    #[openapi(
-        info(title = "Neutrino API", version = "0.1.0"),
-        tags()
-    )]
+    #[openapi(info(title = "Neutrino API", version = "0.1.0"), tags())]
     struct NeutrinoApiDoc;
 
     let openapi = {
@@ -715,10 +803,10 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::access_requests::api::AccessRequestsApiDoc::openapi());
         doc.merge(drive::activity::api::ActivityApiDoc::openapi());
         doc.merge(drive::admin::api::AdminApiDoc::openapi());
+        doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
         doc.merge(drive::ai::api::DriveAIApiDoc::openapi());
         doc.merge(drive::comments::api::CommentsApiDoc::openapi());
         doc.merge(drive::compliance::api::ComplianceApiDoc::openapi());
-        doc.merge(drive::dlp::api::DlpApiDoc::openapi());
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
         doc.merge(drive::filesystem::api::FilesystemApiDoc::openapi());
         doc.merge(drive::irm::api::IrmApiDoc::openapi());
@@ -742,11 +830,16 @@ async fn main() -> std::io::Result<()> {
         doc.merge(photos::persons::api::PersonsApiDoc::openapi());
         doc.merge(photos::photos::api::PhotosApiDoc::openapi());
         doc.merge(photos::suggestions::api::SuggestionsApiDoc::openapi());
+        doc.merge(drawing::drawing::api::DrawingApiDoc::openapi());
         doc.merge(sheets::named_ranges::api::NamedRangesApiDoc::openapi());
         doc.merge(sheets::sheets::api::SheetsApiDoc::openapi());
         doc.merge(sheets::ai::api::SheetsAIApiDoc::openapi());
         doc.merge(slides::slides::api::SlidesApiDoc::openapi());
         doc.merge(slides::ai::api::SlidesAIApiDoc::openapi());
+        doc.merge(diagrams::diagrams::api::DiagramsApiDoc::openapi());
+        doc.merge(diagrams::collab::api::DiagramsCollabApiDoc::openapi());
+        doc.merge(diagrams::private_library::api::PrivateLibraryApiDoc::openapi());
+        doc.merge(oauth::api::OauthApiDoc::openapi());
         doc
     };
 
@@ -760,6 +853,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(token_service_data.clone())
             // Auth
             .app_data(auth_state.clone())
+            // OAuth
+            .app_data(oauth_state.clone())
             // Calendar
             .app_data(cal_events_state.clone())
             .app_data(cal_reminders_state.clone())
@@ -790,13 +885,13 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_priority_state.clone())
             .app_data(drive_ai_state.clone())
             .app_data(drive_shared_drives_state.clone())
-            .app_data(drive_dlp_state.clone())
             .app_data(drive_compliance_state.clone())
             .app_data(drive_security_state.clone())
             .app_data(drive_tags_state.clone())
             .app_data(drive_encryption_state.clone())
             .app_data(drive_service_registry_state.clone())
             .app_data(drive_admin_state.clone())
+            .app_data(drive_feature_flags_state.clone())
             // Notes
             .app_data(notes_state.clone())
             // Photos
@@ -806,6 +901,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(photos_persons_state.clone())
             .app_data(photos_suggestions_state.clone())
             .app_data(photos_learning_state.clone())
+            // Drawing
+            .app_data(drawing_state.clone())
             // Sheets
             .app_data(sheets_state.clone())
             .app_data(sheets_named_ranges_state.clone())
@@ -813,14 +910,18 @@ async fn main() -> std::io::Result<()> {
             // Slides
             .app_data(slides_state.clone())
             .app_data(slides_ai_state.clone())
+            // Diagrams
+            .app_data(diagrams_state.clone())
+            .app_data(diagrams_collab_repo.clone())
+            .app_data(diagrams_collab_state.clone())
+            .app_data(private_lib_state.clone())
             // Middleware
-            .wrap(NormalizePath::trim())
+            .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
             .wrap(Logger::default())
             .wrap(Cors::permissive())
             // Swagger UI
             .service(
-                SwaggerUi::new("/swagger-ui/{_:.*}")
-                    .url("/api-docs/openapi.json", openapi.clone()),
+                SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", openapi.clone()),
             )
             // Health
             .service(health)
@@ -829,6 +930,8 @@ async fn main() -> std::io::Result<()> {
             .service(
                 web::scope("/api/v1")
                     .configure(auth::api::configure)
+                    .configure(oauth::api::configure)
+                    .configure(drive::feature_flags::api::configure_public)
                     .configure(calendar::configure)
                     .configure(docs::configure)
                     .configure(drive::configure)
@@ -839,15 +942,14 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::scope("/admin")
                             .configure(drive::workspace::api::configure)
-                            .configure(drive::dlp::api::configure)
                             .configure(drive::compliance::api::configure)
                             .configure(drive::security::api::configure)
-                            .configure(drive::admin::api::configure),
+                            .configure(drive::admin::api::configure)
+                            .configure(drive::feature_flags::api::configure_admin),
                     )
                     // Internal routes
                     .service(
-                        web::scope("/internal")
-                            .configure(drive::service_registry::api::configure),
+                        web::scope("/internal").configure(drive::service_registry::api::configure),
                     )
                     // Notes
                     .configure(notes::api::configure)
@@ -858,13 +960,17 @@ async fn main() -> std::io::Result<()> {
                     .configure(photos::persons::api::configure_persons)
                     .configure(photos::suggestions::api::configure_suggestions)
                     .configure(photos::learning::api::configure_learning)
+                    // Drawing
+                    .configure(drawing::drawing::api::configure)
                     // Sheets
                     .configure(sheets::sheets::api::configure)
                     .configure(sheets::named_ranges::api::configure)
                     .configure(sheets::ai::api::configure)
                     // Slides
                     .configure(slides::slides::api::configure)
-                    .configure(slides::ai::api::configure),
+                    .configure(slides::ai::api::configure)
+                    // Diagrams
+                    .configure(diagrams::configure),
             )
             // Static web app — registered last so API routes take priority.
             // Falls back to index.html for client-side navigation.

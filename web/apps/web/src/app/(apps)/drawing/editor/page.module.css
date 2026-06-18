@@ -1,0 +1,73 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f9fafb;
+  overflow: hidden;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 52px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.backBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 4px;
+}
+
+.backBtn:hover {
+  color: var(--color-primary);
+}
+
+.titleInput {
+  flex: 1;
+  border: none;
+  background: none;
+  font-size: 16px;
+  font-weight: 500;
+  outline: none;
+  color: #111827;
+}
+
+.titleInput:focus {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+
+.editorBody {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.canvasArea {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #f9fafb;
+}
+
+.versionHistoryPanel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 280px;
+  z-index: 100;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+}

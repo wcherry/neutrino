@@ -1,0 +1,16 @@
+{
+  "name": "@neutrino/api-diagrams",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@neutrino/api-core": "workspace:*",
+    "@neutrino/e2e-crypto": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
+use crate::schema::{ransomware_events, siem_configs};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use crate::schema::{ransomware_events, siem_configs};
 
 #[derive(Debug, Queryable, Selectable, Clone)]
 #[diesel(table_name = ransomware_events)]

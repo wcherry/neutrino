@@ -135,9 +135,7 @@ impl JobsService {
         for job in &timed_out {
             let repo = self.repo.clone();
             let id = job.id.clone();
-            if let Err(e) =
-                tokio::task::spawn_blocking(move || repo.reset_to_ready(&id)).await
-            {
+            if let Err(e) = tokio::task::spawn_blocking(move || repo.reset_to_ready(&id)).await {
                 tracing::error!("Panic resetting job {}: {:?}", job.id, e);
             } else {
                 tracing::info!("Reset timed-out job {} to R", job.id);
@@ -188,24 +186,18 @@ impl JobsService {
             let repo = self.repo.clone();
             let job_id = job.id.clone();
             let worker_id = worker.id.clone();
-            let claimed = tokio::task::spawn_blocking(move || {
-                repo.try_claim_job(&job_id, &worker_id)
-            })
-            .await
-            .unwrap_or(Ok(false))
-            .unwrap_or(false);
+            let claimed =
+                tokio::task::spawn_blocking(move || repo.try_claim_job(&job_id, &worker_id))
+                    .await
+                    .unwrap_or(Ok(false))
+                    .unwrap_or(false);
 
             if !claimed {
                 return; // Another dispatch already claimed this job.
             }
 
             let dto = self.to_response(job);
-            let dispatch_result = self
-                .http
-                .post(&worker.callback_url)
-                .json(&dto)
-                .send()
-                .await;
+            let dispatch_result = self.http.post(&worker.callback_url).json(&dto).send().await;
 
             match dispatch_result {
                 Ok(resp) if resp.status().is_success() => {
@@ -220,20 +212,28 @@ impl JobsService {
                         if failures >= MAX_WORKER_FAILURES {
                             tracing::error!(
                                 "Worker {} returned {} {} times — deregistering",
-                                worker.id, status, MAX_WORKER_FAILURES
+                                worker.id,
+                                status,
+                                MAX_WORKER_FAILURES
                             );
                             self.force_deregister_worker(&worker.id).await;
                         } else {
                             tracing::warn!(
                                 "Worker {} returned {} for job {} (failure {}/{})",
-                                worker.id, status, job.id, failures, MAX_WORKER_FAILURES
+                                worker.id,
+                                status,
+                                job.id,
+                                failures,
+                                MAX_WORKER_FAILURES
                             );
                         }
                     } else {
                         // 4xx means the worker rejected it — don't count as worker failure.
                         tracing::warn!(
                             "Worker {} returned {} for job {} — not retrying",
-                            worker.id, status, job.id
+                            worker.id,
+                            status,
+                            job.id
                         );
                         return;
                     }
@@ -243,13 +243,19 @@ impl JobsService {
                     if failures >= MAX_WORKER_FAILURES {
                         tracing::error!(
                             "Worker {} unreachable {} times: {} — deregistering",
-                            worker.id, MAX_WORKER_FAILURES, e
+                            worker.id,
+                            MAX_WORKER_FAILURES,
+                            e
                         );
                         self.force_deregister_worker(&worker.id).await;
                     } else {
                         tracing::warn!(
                             "Failed to reach worker {} for job {} (failure {}/{}): {}",
-                            worker.id, job.id, failures, MAX_WORKER_FAILURES, e
+                            worker.id,
+                            job.id,
+                            failures,
+                            MAX_WORKER_FAILURES,
+                            e
                         );
                     }
                 }

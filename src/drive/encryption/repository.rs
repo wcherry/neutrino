@@ -1,6 +1,8 @@
-use crate::shared::ApiError;
+#![allow(dead_code)]
+
 use crate::drive::encryption::model::{FileKeyRef, NewFileKeyRef};
 use crate::schema::file_key_refs;
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -15,7 +17,9 @@ impl EncryptionRepository {
         EncryptionRepository { pool }
     }
 
-    fn get_conn(&self) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {
+    fn get_conn(
+        &self,
+    ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {
         self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")
@@ -50,7 +54,11 @@ impl EncryptionRepository {
     }
 
     /// Fetch the encrypted file key for a specific (file, user) pair.
-    pub fn get_file_key(&self, file_id: &str, user_id: &str) -> Result<Option<FileKeyRef>, ApiError> {
+    pub fn get_file_key(
+        &self,
+        file_id: &str,
+        user_id: &str,
+    ) -> Result<Option<FileKeyRef>, ApiError> {
         let mut conn = self.get_conn()?;
 
         file_key_refs::table

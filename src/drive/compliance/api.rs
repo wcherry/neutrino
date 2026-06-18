@@ -1,10 +1,7 @@
+use crate::drive::compliance::{dto::*, service::ComplianceService};
+use crate::shared::{AdminUser, ApiError};
 use actix_web::{delete, get, post, put, web, HttpResponse};
 use std::sync::Arc;
-use crate::shared::{AdminUser, ApiError};
-use crate::drive::compliance::{
-    dto::*,
-    service::ComplianceService,
-};
 
 pub struct ComplianceApiState {
     pub service: Arc<ComplianceService>,
@@ -46,7 +43,9 @@ pub async fn create_hold(
     admin: AdminUser,
     body: web::Json<CreateLegalHoldRequest>,
 ) -> Result<web::Json<LegalHoldResponse>, ApiError> {
-    let result = state.service.create_hold(&admin.user_id, body.into_inner())?;
+    let result = state
+        .service
+        .create_hold(&admin.user_id, body.into_inner())?;
     Ok(web::Json(result))
 }
 
@@ -90,7 +89,9 @@ pub async fn update_hold(
     path: web::Path<String>,
     body: web::Json<UpdateLegalHoldRequest>,
 ) -> Result<web::Json<LegalHoldResponse>, ApiError> {
-    let result = state.service.update_hold(&path.into_inner(), body.into_inner())?;
+    let result = state
+        .service
+        .update_hold(&path.into_inner(), body.into_inner())?;
     Ok(web::Json(result))
 }
 

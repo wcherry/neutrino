@@ -6,6 +6,8 @@ import type {
   AdminUser,
   AdminUserListResponse,
   UpdateAdminUserRequest,
+  FeatureFlag,
+  UpdateFeatureFlagRequest,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -94,6 +96,25 @@ export const adminApi = {
   async deleteUser(userId: string): Promise<void> {
     return request<void>(`/api/v1/admin/users/${encodeURIComponent(userId)}`, {
       method: 'DELETE',
+    });
+  },
+
+  /**
+   * List all feature flags with metadata.
+   * GET /api/v1/admin/feature-flags
+   */
+  async listFeatureFlags(): Promise<FeatureFlag[]> {
+    return request<FeatureFlag[]>('/api/v1/admin/feature-flags');
+  },
+
+  /**
+   * Enable or disable a feature flag.
+   * PATCH /api/v1/admin/feature-flags/{key}
+   */
+  async updateFeatureFlag(key: string, updates: UpdateFeatureFlagRequest): Promise<FeatureFlag> {
+    return request<FeatureFlag>(`/api/v1/admin/feature-flags/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
     });
   },
 };

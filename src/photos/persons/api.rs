@@ -7,9 +7,9 @@ use crate::photos::persons::{
     service::PersonsService,
 };
 use crate::photos::photos::{dto::ListPhotosResponse, service::PhotosService};
-use actix_web::{delete, get, patch, post, web, HttpResponse};
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::ApiError;
+use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
 
@@ -60,9 +60,10 @@ pub async fn rename_person(
     body: web::Json<RenamePersonRequest>,
 ) -> Result<web::Json<PersonResponse>, ApiError> {
     let person_id = path.into_inner();
-    let result = state
-        .persons_service
-        .rename_person(&person_id, &user.user_id, body.into_inner())?;
+    let result =
+        state
+            .persons_service
+            .rename_person(&person_id, &user.user_id, body.into_inner())?;
     Ok(web::Json(result))
 }
 
@@ -88,9 +89,10 @@ pub async fn merge_persons(
     body: web::Json<MergePersonsRequest>,
 ) -> Result<web::Json<PersonResponse>, ApiError> {
     let target_id = path.into_inner();
-    let result = state
-        .persons_service
-        .merge_persons(&target_id, &user.user_id, body.into_inner())?;
+    let result =
+        state
+            .persons_service
+            .merge_persons(&target_id, &user.user_id, body.into_inner())?;
     Ok(web::Json(result))
 }
 
@@ -213,9 +215,10 @@ pub async fn get_person_timeline(
         .photos_service
         .list_photos_by_ids(&user, &photo_ids)
         .await?;
-    let result = state
-        .persons_service
-        .build_timeline(&person_id, &user.user_id, photos_resp.photos)?;
+    let result =
+        state
+            .persons_service
+            .build_timeline(&person_id, &user.user_id, photos_resp.photos)?;
     Ok(web::Json(result))
 }
 
@@ -261,16 +264,16 @@ pub async fn create_person_smart_album(
     let person = state
         .persons_service
         .get_person_for_user(&person_id, &user.user_id)?;
-    let person_name = person
-        .name
-        .as_deref()
-        .unwrap_or("Unknown person");
+    let person_name = person.name.as_deref().unwrap_or("Unknown person");
     let photo_ids = state
         .persons_service
         .get_photo_ids_for_person(&person_id, &user.user_id)?;
-    let album = state
-        .albums_service
-        .upsert_person_smart_album(&user.user_id, &person_id, person_name, &photo_ids)?;
+    let album = state.albums_service.upsert_person_smart_album(
+        &user.user_id,
+        &person_id,
+        person_name,
+        &photo_ids,
+    )?;
     Ok(HttpResponse::Ok().json(album))
 }
 

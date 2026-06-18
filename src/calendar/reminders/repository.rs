@@ -1,6 +1,6 @@
-use crate::shared::ApiError;
 use crate::calendar::reminders::model::{NewReminderRecord, ReminderRecord, UpdateReminderRecord};
 use crate::schema::reminders;
+use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -58,7 +58,11 @@ impl RemindersRepository {
             })
     }
 
-    pub fn find_by_event(&self, user_id: &str, event_id: &str) -> Result<Vec<ReminderRecord>, ApiError> {
+    pub fn find_by_event(
+        &self,
+        user_id: &str,
+        event_id: &str,
+    ) -> Result<Vec<ReminderRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         reminders::table
             .filter(

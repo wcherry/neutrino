@@ -1,0 +1,419 @@
+/* ── SaveAsDialog ─────────────────────────────────────────────────────────── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 900;
+}
+
+.dialog {
+  background: var(--color-bg, #ffffff);
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+}
+
+/* ── Header ── */
+
+.header {
+  position: relative;
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+}
+
+.closeBtn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted, #5f6368);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.closeBtn:hover:not(:disabled) {
+  background: var(--color-bg-hover, #f1f3f4);
+  color: var(--color-text, #202124);
+}
+
+.closeBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.headerTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text, #202124);
+  margin: 0 0 4px;
+}
+
+.headerDesc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted, #5f6368);
+}
+
+/* ── Body ── */
+
+.body {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted, #5f6368);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--color-text, #202124);
+  background: var(--color-bg, #ffffff);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.input:focus {
+  border-color: #1a73e8;
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── Location tabs ── */
+
+.locationTabs {
+  display: flex;
+  gap: 8px;
+}
+
+.locationTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted, #5f6368);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.locationTab:hover {
+  background: var(--color-bg-hover, #f1f3f4);
+}
+
+.locationTab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.locationTabActive {
+  border-color: #1a73e8;
+  color: #1a73e8;
+  background: #e8f0fe;
+}
+
+.locationTabActive:hover {
+  background: #d2e3fc;
+}
+
+/* ── Drive folder browser ── */
+
+.driveBrowser {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.driveBreadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 7px 10px;
+  background: var(--color-bg-subtle, #f8f9fa);
+  border-bottom: 1px solid var(--color-border, #dadce0);
+  font-size: 12px;
+}
+
+.driveBreadcrumbSep {
+  color: var(--color-text-muted, #9aa0a6);
+  flex-shrink: 0;
+}
+
+.driveBreadcrumbCurrent {
+  color: var(--color-text, #202124);
+  font-weight: 500;
+}
+
+.driveBreadcrumbBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: #1a73e8;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.driveBreadcrumbBtn:hover {
+  color: #1557b0;
+}
+
+.driveBreadcrumbBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.driveFolderList {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.driveFolderState {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--color-text-muted, #5f6368);
+  text-align: center;
+}
+
+.driveFolderStateError {
+  color: #d93025;
+}
+
+.driveFolderItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border, #f1f3f4);
+  font-size: 13px;
+  color: var(--color-text, #202124);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.driveFolderItem:last-child {
+  border-bottom: none;
+}
+
+.driveFolderItem:hover:not(:disabled) {
+  background: var(--color-bg-hover, #f1f3f4);
+}
+
+.driveFolderItem:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.driveFolderIcon {
+  flex-shrink: 0;
+}
+
+.driveFolderItemName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.driveFolderItemChevron {
+  color: var(--color-text-muted, #9aa0a6);
+  flex-shrink: 0;
+}
+
+/* ── Security section ── */
+
+.securitySection {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.securityToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: var(--color-text-muted, #5f6368);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.1s;
+}
+
+.securityToggle:hover {
+  color: var(--color-text, #202124);
+}
+
+.securityToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.securityBody {
+  padding: 10px 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Permissions ── */
+
+.permissionsGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.permissionsLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted, #5f6368);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text, #202124);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkboxRow input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: #1a73e8;
+  flex-shrink: 0;
+}
+
+.checkboxRowDisabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.checkboxRowDisabled input[type='checkbox'] {
+  cursor: not-allowed;
+}
+
+.permissionsHint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-text-muted, #5f6368);
+  font-style: italic;
+}
+
+/* ── Error ── */
+
+.errorMsg {
+  margin: 0;
+  font-size: 12px;
+  color: #d93025;
+  padding: 6px 10px;
+  background: #fce8e6;
+  border-radius: 6px;
+}
+
+/* ── Actions ── */
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--color-border, #e0e0e0);
+}
+
+.cancelBtn {
+  padding: 7px 16px;
+  border: 1px solid var(--color-border, #dadce0);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text, #202124);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: var(--color-bg-hover, #f1f3f4);
+}
+
+.cancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.saveBtn {
+  padding: 7px 18px;
+  border: none;
+  border-radius: 6px;
+  background: #1a73e8;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: #1557b0;
+}
+
+.saveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

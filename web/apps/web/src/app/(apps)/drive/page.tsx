@@ -33,7 +33,7 @@ import { ShareDialog } from './ShareDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './page.module.css';
 
 
@@ -100,6 +100,8 @@ function fileToGridItem(file: FileItem): GridItem {
 const DOC_MIME = 'application/x-neutrino-doc';
 const SHEET_MIME = 'application/x-neutrino-sheet';
 const SLIDES_MIME = 'application/x-neutrino-slide';
+const DIAGRAM_MIME = 'application/x-neutrino-diagram';
+const DRAWING_MIME = 'application/x-neutrino-drawing';
 
 interface ContextMenuState {
   file: FileItem;
@@ -112,6 +114,7 @@ export default function DrivePage() {
   const toast = useToast();
   const router = useRouter();
   const currentUser = useUser();
+  const flags = useFeatureFlags();
 
   const [sortBy, setSortBy] = useState<SortField>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -137,6 +140,9 @@ export default function DrivePage() {
   const [folderPath, setFolderPath] = useState<Array<{ id: string; name: string }>>([]);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMovePending, setBulkMovePending] = useState(false);
 
   useEffect(() => {
     if (renaming && renameInputRef.current) {
@@ -155,6 +161,15 @@ export default function DrivePage() {
       window.removeEventListener('drive:upload', onUpload);
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setSelectedIds(new Set());
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedIds.size]);
 
   const { data: starredData } = useQuery({
     queryKey: ['starred'],
@@ -287,6 +302,10 @@ export default function DrivePage() {
       router.push(`/sheets/editor?id=${file.id}`);
     } else if (file.mimeType === SLIDES_MIME) {
       router.push(`/slides/editor?id=${file.id}`);
+    } else if (file.mimeType === DIAGRAM_MIME) {
+      router.push(`/diagrams/editor?id=${file.id}`);
+    } else if (file.mimeType === DRAWING_MIME) {
+      router.push(`/drawing/editor?id=${file.id}`);
     } else {
       setPreviewFile(file);
     }
@@ -332,6 +351,67 @@ export default function DrivePage() {
       if (file) handleStar(file);
     }
   }, [fileMap, folderMap, updateFolderMutation, toast, handleStar]);
+
+  const handleItemSelect = useCallback((item: GridItem) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id);
+      else next.add(item.id);
+      return next;
+    });
+  }, []);
+
+  async function handleBulkMove(targetFolderId: string | null) {
+    setBulkMovePending(true);
+    const ids = Array.from(selectedIds);
+    try {
+      await Promise.all(
+        ids.map((id) => {
+          if (fileMap.has(id)) return filesystemApi.updateFile(id, { folderId: targetFolderId });
+          if (folderMap.has(id)) return filesystemApi.updateFolder(id, { parentId: targetFolderId ?? undefined });
+          return Promise.resolve();
+        })
+      );
+      queryClient.invalidateQueries({ queryKey: ['contents'] });
+      queryClient.invalidateQueries({ queryKey: ['starred'] });
+      toast.success(`${ids.length} ${ids.length === 1 ? 'item' : 'items'} moved`);
+      setSelectedIds(new Set());
+      setBulkMoveOpen(false);
+    } catch {
+      toast.error('Failed to move some items');
+    } finally {
+      setBulkMovePending(false);
+    }
+  }
+
+  async function handleBulkDownload() {
+    const ids = Array.from(selectedIds).filter((id) => fileMap.has(id));
+    for (const id of ids) {
+      const file = fileMap.get(id)!;
+      await handleDownload(file);
+    }
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds);
+    const count = ids.length;
+    try {
+      await Promise.all(
+        ids.map((id) => {
+          if (fileMap.has(id)) return storageApi.deleteFile(id);
+          if (folderMap.has(id)) return filesystemApi.deleteFolder(id);
+          return Promise.resolve();
+        })
+      );
+      queryClient.invalidateQueries({ queryKey: ['contents'] });
+      queryClient.invalidateQueries({ queryKey: ['starred'] });
+      toast.success(`${count} ${count === 1 ? 'item' : 'items'} deleted`);
+      setSelectedIds(new Set());
+    } catch {
+      toast.error('Failed to delete some items');
+    }
+  }
 
   async function handleDownload(file: FileItem) {
     try {
@@ -405,7 +485,7 @@ export default function DrivePage() {
 
   // ── Area-wide drag-and-drop (gated by feature flag) ──────────────────────────
   const handleAreaDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!featureFlags.driveAreaDropTarget) return;
+    if (!flags.driveAreaDropTarget) return;
     // Only react to file drags, not text/link drags.
     if (!Array.from(e.dataTransfer.types).includes('Files')) return;
     dragDepthRef.current += 1;
@@ -416,14 +496,14 @@ export default function DrivePage() {
   }, []);
 
   const handleAreaDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!featureFlags.driveAreaDropTarget) return;
+    if (!flags.driveAreaDropTarget) return;
     if (!Array.from(e.dataTransfer.types).includes('Files')) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
   const handleAreaDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!featureFlags.driveAreaDropTarget) return;
+    if (!flags.driveAreaDropTarget) return;
     dragDepthRef.current -= 1;
     if (dragDepthRef.current === 0) {
       setIsDraggingOver(false);
@@ -431,7 +511,7 @@ export default function DrivePage() {
   }, []);
 
   const handleAreaDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!featureFlags.driveAreaDropTarget) return;
+    if (!flags.driveAreaDropTarget) return;
     e.preventDefault();
     dragDepthRef.current = 0;
     setIsDraggingOver(false);
@@ -495,6 +575,10 @@ export default function DrivePage() {
                       router.push(`/sheets/editor?id=${file.id}`);
                     } else if (file.mimeType === SLIDES_MIME) {
                       router.push(`/slides/editor?id=${file.id}`);
+                    } else if (file.mimeType === DIAGRAM_MIME) {
+                      router.push(`/diagrams/editor?id=${file.id}`);
+                    } else if (file.mimeType === DRAWING_MIME) {
+                      router.push(`/drawing/editor?id=${file.id}`);
                     } else {
                       setPreviewFile(file);
                     }
@@ -571,6 +655,8 @@ export default function DrivePage() {
           onItemClick={handleGridItemClick}
           onItemMenuOpen={handleGridItemMenuOpen}
           onToggleStar={handleToggleStar}
+          selectedIds={selectedIds}
+          onItemSelect={handleItemSelect}
           onDragEnter={handleAreaDragEnter}
           onDragOver={handleAreaDragOver}
           onDragLeave={handleAreaDragLeave}
@@ -612,6 +698,10 @@ export default function DrivePage() {
               return () => { setDocPreview({ id: f.id, kind: 'sheet' }); setContextMenu(null); };
             if (f.mimeType === SLIDES_MIME)
               return () => { setDocPreview({ id: f.id, kind: 'slide' }); setContextMenu(null); };
+            if (f.mimeType === DIAGRAM_MIME)
+              return () => { router.push(`/diagrams/editor?id=${f.id}`); setContextMenu(null); };
+            if (f.mimeType === DRAWING_MIME)
+              return () => { router.push(`/drawing/editor?id=${f.id}`); setContextMenu(null); };
             return () => { setPreviewFile(f); setContextMenu(null); };
           })()}
           onInfo={() => { setInfoFile(contextMenu.file); setContextMenu(null); }}
@@ -696,6 +786,28 @@ export default function DrivePage() {
       )}
 
       {infoFile && <FileInfoPanel file={infoFile} onClose={() => setInfoFile(null)} />}
+
+      {bulkMoveOpen && (
+        <MoveFolderDialog
+          itemName={`${selectedIds.size} ${selectedIds.size === 1 ? 'item' : 'items'}`}
+          currentFolderId={currentFolderId}
+          onMove={handleBulkMove}
+          onClose={() => setBulkMoveOpen(false)}
+          isPending={bulkMovePending}
+        />
+      )}
+
+      {selectedIds.size > 0 && (
+        <div className={styles['bulk-toolbar']}>
+          <span className={styles['bulk-count']}>{selectedIds.size} selected</span>
+          <div className={styles['bulk-actions']}>
+            <Button variant="secondary" size="sm" onClick={() => setBulkMoveOpen(true)}>Move to</Button>
+            <Button variant="secondary" size="sm" onClick={handleBulkDownload}>Download</Button>
+            <Button variant="secondary" size="sm" onClick={handleBulkDelete}>Delete</Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Cancel</Button>
+          </div>
+        </div>
+      )}
 
       {newFolderDialogOpen && (
         <div className={styles['rename-overlay']} onClick={() => setNewFolderDialogOpen(false)}>

@@ -1,3 +1,4 @@
+use crate::shared::drive_client::DriveClient;
 use crate::shared::{ApiError, AuthenticatedUser};
 use crate::sheets::named_ranges::{
     dto::{CreateNamedRangeRequest, NamedRangeResponse, SheetEmbedResponse},
@@ -6,10 +7,10 @@ use crate::sheets::named_ranges::{
 };
 use crate::sheets::sheets::repository::SheetsRepository;
 use chrono::Utc;
-use crate::shared::drive_client::DriveClient;
 use std::sync::Arc;
 use uuid::Uuid;
 
+#[allow(dead_code)]
 pub struct NamedRangesService {
     repo: Arc<NamedRangesRepository>,
     sheets_repo: Arc<SheetsRepository>,
@@ -22,7 +23,11 @@ impl NamedRangesService {
         sheets_repo: Arc<SheetsRepository>,
         drive: Arc<DriveClient>,
     ) -> Self {
-        NamedRangesService { repo, sheets_repo, drive }
+        NamedRangesService {
+            repo,
+            sheets_repo,
+            drive,
+        }
     }
 
     /// Create a named range for the given spreadsheet.
@@ -251,10 +256,7 @@ fn extract_cell_data(
             // Prefer the pre-computed display value; fall back to `raw` only
             // when `value` is absent (old files) and `raw` is not a formula.
             let display = scalar_to_string(cell_val.get("value"))
-                .or_else(|| {
-                    scalar_to_string(cell_val.get("raw"))
-                        .filter(|s| !s.starts_with('='))
-                });
+                .or_else(|| scalar_to_string(cell_val.get("raw")).filter(|s| !s.starts_with('=')));
 
             let row_idx = (r - start_row) as usize;
             let col_idx = (c - start_col) as usize;
@@ -314,8 +316,7 @@ fn extract_cell_data(
             .get("v")
             .and_then(|v| {
                 // Prefer formatted display value (v.m), fall back to raw value (v.v).
-                v.get("m")
-                    .or_else(|| v.get("v"))
+                v.get("m").or_else(|| v.get("v"))
             })
             .map(|v| match v {
                 serde_json::Value::String(s) => s.clone(),

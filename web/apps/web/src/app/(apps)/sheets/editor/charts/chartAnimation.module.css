@@ -1,0 +1,83 @@
+/**
+ * Phase 5: Chart animation CSS.
+ *
+ * Animation classes are applied to the chart content wrapper inside ChartFrame.
+ * CSS custom properties --anim-duration and --anim-delay control timing and
+ * are set inline from ChartDef.animation.durationMs / delayMs.
+ */
+
+/* ── Reveal series ───────────────────────────────────────────────────────────
+ * Each SVG child element (bars, lines, slices) fades and slides in from the
+ * bottom. Recharts renders each series as a separate <g> element, so the
+ * nth-child stagger works naturally.
+ */
+
+@keyframes revealFromBottom {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.revealSeries {
+    /* Applied to the chart content div */
+}
+
+.revealSeries :global(svg > g > g) {
+    animation: revealFromBottom var(--anim-duration, 600ms) ease-out both;
+}
+
+/* Stagger each top-level <g> child inside the SVG */
+.revealSeries :global(svg > g > g:nth-child(1))  { animation-delay: calc(var(--anim-delay, 150ms) * 0); }
+.revealSeries :global(svg > g > g:nth-child(2))  { animation-delay: calc(var(--anim-delay, 150ms) * 1); }
+.revealSeries :global(svg > g > g:nth-child(3))  { animation-delay: calc(var(--anim-delay, 150ms) * 2); }
+.revealSeries :global(svg > g > g:nth-child(4))  { animation-delay: calc(var(--anim-delay, 150ms) * 3); }
+.revealSeries :global(svg > g > g:nth-child(5))  { animation-delay: calc(var(--anim-delay, 150ms) * 4); }
+.revealSeries :global(svg > g > g:nth-child(6))  { animation-delay: calc(var(--anim-delay, 150ms) * 5); }
+.revealSeries :global(svg > g > g:nth-child(7))  { animation-delay: calc(var(--anim-delay, 150ms) * 6); }
+.revealSeries :global(svg > g > g:nth-child(8))  { animation-delay: calc(var(--anim-delay, 150ms) * 7); }
+
+/* ── Highlight data points ────────────────────────────────────────────────────
+ * Data point markers (dots, bar tops) pulse with a glow effect.
+ */
+
+@keyframes highlightPulse {
+    0%, 100% {
+        filter: drop-shadow(0 0 0 transparent);
+        opacity: 1;
+    }
+    50% {
+        filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.7));
+        opacity: 0.85;
+    }
+}
+
+.highlightPoints :global(.recharts-dot),
+.highlightPoints :global(.recharts-active-dot),
+.highlightPoints :global(.recharts-symbol) {
+    animation: highlightPulse var(--anim-duration, 1200ms) ease-in-out infinite;
+}
+
+/* ── Presentation transition ─────────────────────────────────────────────────
+ * The entire chart fades and scales in on mount — a polished entrance effect
+ * for slideshow-style presentations.
+ */
+
+@keyframes presentationIn {
+    from {
+        opacity: 0;
+        transform: scale(0.94);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.presentationTransition {
+    animation: presentationIn var(--anim-duration, 700ms) cubic-bezier(0.22, 1, 0.36, 1) both;
+}

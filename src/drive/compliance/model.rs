@@ -1,6 +1,8 @@
+#![allow(dead_code)]
+
+use crate::schema::{file_legal_holds, legal_holds, retention_policies};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use crate::schema::{file_legal_holds, legal_holds, retention_policies};
 
 #[derive(Debug, Queryable, Selectable, Clone)]
 #[diesel(table_name = legal_holds)]

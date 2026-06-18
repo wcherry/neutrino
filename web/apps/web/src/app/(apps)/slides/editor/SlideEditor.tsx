@@ -49,6 +49,7 @@ import {
   List,
   ListOrdered,
   ArrowUpDown,
+  Network,
 } from 'lucide-react';
 import {
   Button,
@@ -58,18 +59,21 @@ import {
   ToolbarButton,
   ToolbarSelect,
   ColorPickerPopover,
+  useToast,
 } from '@neutrino/ui';
-import { slidesApi, driveReadContent, driveWriteContent, driveWriteEncryptedContent, storageApi } from '@/lib/api';
+import { slidesApi, driveReadContent, storageApi } from '@/lib/api';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme } from '@neutrino/api-slides';
 import { FONT_FAMILY_NAMES as FONT_FAMILIES } from '@/constants/editor';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
-import featureFlags from '@/lib/featureFlags';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-embed';
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
 import { InsertSheetDialog } from './InsertSheetDialog';
 import { InsertImageDialog } from './InsertImageDialog';
+import { InsertDiagramDialog } from './InsertDiagramDialog';
 
 // ── Domain modules ────────────────────────────────────────────────────────────
 import type {
@@ -80,6 +84,7 @@ import type {
   LineElement,
   VideoElement,
   ImageElement,
+  DiagramElement,
   SlideElement,
   SlideBackground,
   Slide,
@@ -99,7 +104,7 @@ import {
 } from './slideEditorConstants';
 import { slideBackgroundStyle, dbThemeToTheme, getVideoEmbedInfo } from './slideEditorHelpers';
 import { exportAsPptx } from './pptxExport';
-import BackgroundPicker from './BackgroundPicker';
+import FillPicker from './FillPicker';
 import SlideCanvas from './SlideCanvas';
 import SlideThumbnail from './SlideThumbnail';
 import PresenterView from './PresenterView';
@@ -111,7 +116,7 @@ import styles from './page.module.css';
 const FONT_SIZES = ['8', '10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '60', '72', '96'];
 
 // ── Re-exports ────────────────────────────────────────────────────────────────
-export type { TextStyle, ElementAnimation, TextElement, ShapeElement, VideoElement, ImageElement, SheetEmbedElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
+export type { TextStyle, ElementAnimation, TextElement, ShapeElement, VideoElement, ImageElement, SheetEmbedElement, DiagramElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
 // importFromPptx is intentionally NOT re-exported here so that pptxImport (and
 // its jszip dependency) stays out of the initial bundle. Callers that need it
 // should use: const { importFromPptx } = await import('./pptxImport')
@@ -305,11 +310,13 @@ export function SlideEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const flags = useFeatureFlags();
   const slideId = searchParams.get('id') ?? '';
   const { spellCheck } = useSpellCheck();
 
   const { dekRef, dekResolved } =
     useEncryptedDocumentContent({ id: slideId, filename: 'slide.json' });
+  const toast = useToast();
 
   const [title, setTitle] = useState('');
   const [presentation, setPresentation] = useState<SlidePresentation>(makeDefaultPresentation);
@@ -333,6 +340,7 @@ export function SlideEditor() {
   const [videoUrlInput, setVideoUrlInput] = useState('');
   const [sheetDialogOpen, setSheetDialogOpen] = useState(false);
   const [imageDialogOpen, setImageDialogOpen] = useState(false);
+  const [diagramDialogOpen, setDiagramDialogOpen] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef('');
@@ -391,7 +399,7 @@ export function SlideEditor() {
     }
   }, [slideContent]);
 
-  // After DEK resolves and the content query settles, do a one-time encrypted save
+  // After DEK resolves and the content query settles, do a one-time encrypted autosave
   // when no valid content was loaded (new file or failed decryption of server plaintext).
   // This overwrites the server's plaintext initial content so bytes are always ciphertext.
   useEffect(() => {
@@ -399,30 +407,29 @@ export function SlideEditor() {
     if (initialSaveDoneRef.current || lastSavedRef.current !== '') return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(presentation);
-    driveWriteEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
+    slidesApi.autosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // presentation intentionally omitted: we capture the default once, not on every change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dekResolved, slideData, contentLoading, slideContent]);
 
   const contentMutation = useMutation({
-    mutationFn: (content: string) =>
-      dekRef.current
-        ? driveWriteEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current)
-        : driveWriteContent(slideData!.contentWriteUrl, content, 'slide.json'),
+    mutationFn: async ({ content, metadata }: { content: string; metadata?: { title?: string } }) => {
+      if (!dekRef.current) throw new Error('no-dek');
+      return slidesApi.autosaveEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current, metadata);
+    },
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: (_, content) => {
+    onSuccess: (_, { content }) => {
       setSaveStatus('saved');
       lastSavedRef.current = content;
       queryClient.invalidateQueries({ queryKey: ['slides'] });
     },
-    onError: () => setSaveStatus('error'),
-  });
-
-  const metaMutation = useMutation({
-    mutationFn: (newTitle: string) =>
-      slidesApi.saveSlide(slideId, { title: newTitle }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['slides'] }),
+    onError: (err) => {
+      setSaveStatus('error');
+      if (err instanceof Error && err.message === 'no-dek') {
+        toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      }
+    },
   });
 
   const scheduleAutoSave = useCallback((pres: SlidePresentation) => {
@@ -430,9 +437,9 @@ export function SlideEditor() {
     setSaveStatus('unsaved');
     saveTimerRef.current = setTimeout(() => {
       const content = JSON.stringify(pres);
-      contentMutation.mutate(content);
+      contentMutation.mutate({ content, metadata: { title } });
     }, 2000);
-  }, [contentMutation]);
+  }, [contentMutation, title]);
 
   function updatePresentation(updater: (p: SlidePresentation) => SlidePresentation) {
     setPresentation((prev) => {
@@ -449,7 +456,7 @@ export function SlideEditor() {
     }
     const content = JSON.stringify(presentation);
     if (content !== lastSavedRef.current) {
-      await contentMutation.mutateAsync(content);
+      await contentMutation.mutateAsync({ content, metadata: { title } });
     }
     queryClient.invalidateQueries({ queryKey: ['slides'] });
     router.push('/drive');
@@ -458,7 +465,9 @@ export function SlideEditor() {
   function handleTitleBlur() {
     const trimmed = title.trim();
     if (!trimmed) return;
-    metaMutation.mutate(trimmed);
+    // Save title together with current content in one combined call.
+    const content = JSON.stringify(presentation);
+    contentMutation.mutate({ content, metadata: { title: trimmed } });
   }
 
   // Close dropdowns on outside click
@@ -763,6 +772,20 @@ export function SlideEditor() {
     setSelectedElementId(el.id);
   }
 
+  // ── Diagram embed operations ──────────────────────────────────────────────
+
+  function addDiagram(diagramId: string) {
+    const el: DiagramElement = {
+      id: uid(),
+      type: 'diagram',
+      x: 10, y: 10, w: 80, h: 60,
+      diagramId,
+      pageIndex: 0,
+    };
+    updateCurrentSlide((s) => ({ ...s, elements: [...s.elements, el] }));
+    setSelectedElementId(el.id);
+  }
+
   // ── Sheet embed operations ────────────────────────────────────────────────
 
   function addSheetEmbed(attrs: SheetEmbedAttrsShape) {
@@ -832,7 +855,7 @@ export function SlideEditor() {
   });
 
   useEffect(() => {
-    if (!featureFlags.sheetLiveEmbed) return;
+    if (!flags.sheetLiveEmbed) return;
     const listener = (e: ClipboardEvent) => {
       handleSheetPaste(e).then((consumed) => {
         if (consumed) e.preventDefault();
@@ -1222,7 +1245,7 @@ export function SlideEditor() {
                 color={(selectedElement as TextElement).style.color ?? '#202124'}
                 onChange={(hex) => updateTextStyle(selectedElement.id, { color: hex })}
                 title="Text color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
@@ -1233,7 +1256,7 @@ export function SlideEditor() {
                 color={(selectedElement as TextElement).style.backgroundColor ?? '#fef08a'}
                 onChange={(hex) => updateTextStyle(selectedElement.id, { backgroundColor: hex })}
                 title="Text background color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9632;</span>
@@ -1258,7 +1281,7 @@ export function SlideEditor() {
                   color={(selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)'}
                   onChange={(hex) => updateTextStyle(selectedElement.id, { shadowColor: hex })}
                   title="Shadow color"
-                  showAlpha={featureFlags.colorPickerAlpha}
+                  showAlpha={flags.colorPickerAlpha}
                 >
                   <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                     <span style={{ fontSize: 11, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>A</span>
@@ -1385,7 +1408,7 @@ export function SlideEditor() {
               color={(selectedElement as ImageElement).tintColor ?? '#ff0000'}
               onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, tintColor: hex } as ImageElement))}
               title="Tint color"
-              showAlpha={featureFlags.colorPickerAlpha}
+              showAlpha={flags.colorPickerAlpha}
             >
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                 <span style={{ fontSize: 11 }}>Tint</span>
@@ -1465,7 +1488,7 @@ export function SlideEditor() {
                 color={(selectedElement as ShapeElement).fill}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, fill: hex } as ShapeElement))}
                 title="Fill color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9632;</span>
@@ -1476,7 +1499,7 @@ export function SlideEditor() {
                 color={(selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as ShapeElement))}
                 title="Outline color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9633;</span>
@@ -1530,7 +1553,7 @@ export function SlideEditor() {
                 color={(selectedElement as LineElement).stroke}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as LineElement))}
                 title="Line color"
-                showAlpha={featureFlags.colorPickerAlpha}
+                showAlpha={flags.colorPickerAlpha}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9633;</span>
@@ -1683,7 +1706,7 @@ export function SlideEditor() {
 
         {/* Background */}
         <ToolbarDivider />
-        <BackgroundPicker
+        <FillPicker
           background={currentSlide.background}
           onChange={(bg) => updateCurrentSlide((s) => ({ ...s, background: bg }))}
           theme={presentation.theme}
@@ -1953,10 +1976,16 @@ export function SlideEditor() {
                         <Video size={15} />
                         <span>Video</span>
                       </button>
-                      {featureFlags.sheetLiveEmbed && (
+                      {flags.sheetLiveEmbed && (
                         <button className={styles.insertBtn} onClick={() => setSheetDialogOpen(true)}>
                           <Table2 size={15} />
                           <span>Sheet</span>
+                        </button>
+                      )}
+                      {flags.diagramsApp && (
+                        <button className={styles.insertBtn} onClick={() => setDiagramDialogOpen(true)}>
+                          <Network size={15} />
+                          <span>Diagram</span>
                         </button>
                       )}
                     </div>
@@ -2032,7 +2061,7 @@ export function SlideEditor() {
         />
       </div>
 
-      {featureFlags.sheetLiveEmbed && sheetPasteDialogState && (
+      {flags.sheetLiveEmbed && sheetPasteDialogState && (
         <PasteChoiceDialog
           previewData={sheetPasteDialogState.previewData}
           onPasteAsTable={sheetPasteDialogState.onPasteAsTable}
@@ -2093,6 +2122,13 @@ export function SlideEditor() {
             </div>
           </div>
         </div>
+      )}
+
+      {diagramDialogOpen && (
+        <InsertDiagramDialog
+          onInsert={(diagramId) => { addDiagram(diagramId); setDiagramDialogOpen(false); }}
+          onClose={() => setDiagramDialogOpen(false)}
+        />
       )}
     </div>
   );

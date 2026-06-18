@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::drive::notifications::model::{NewNotification, Notification};
 use crate::schema::notifications;
 use crate::shared::ApiError;

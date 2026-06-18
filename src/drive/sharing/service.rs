@@ -1,12 +1,12 @@
+use crate::drive::permissions::service::PermissionsService;
 use crate::drive::sharing::{
     dto::{
-        GuestSessionResponse, ResolvedShareLinkResponse, ShareLinkResponse,
-        UpdateShareLinkRequest, UpsertShareLinkRequest,
+        GuestSessionResponse, ResolvedShareLinkResponse, ShareLinkResponse, UpdateShareLinkRequest,
+        UpsertShareLinkRequest,
     },
     model::{NewShareLinkRecord, UpdateShareLinkRecord},
     repository::SharingRepository,
 };
-use crate::drive::permissions::service::PermissionsService;
 use crate::drive::workspace::service::WorkspaceService;
 use crate::shared::{ApiError, TokenService};
 use chrono::{NaiveDateTime, Utc};
@@ -29,7 +29,12 @@ impl SharingService {
         workspace: Arc<WorkspaceService>,
         token_service: Arc<TokenService>,
     ) -> Self {
-        SharingService { repo, permissions, workspace, token_service }
+        SharingService {
+            repo,
+            permissions,
+            workspace,
+            token_service,
+        }
     }
 
     pub fn get_share_link(
@@ -55,11 +60,7 @@ impl SharingService {
         // Check workspace policy: block external link sharing if configured
         self.workspace.check_link_sharing_allowed()?;
 
-        let expires_at = req
-            .expires_at
-            .as_deref()
-            .map(parse_datetime)
-            .transpose()?;
+        let expires_at = req.expires_at.as_deref().map(parse_datetime).transpose()?;
 
         let id = Uuid::new_v4().to_string();
         let token = Uuid::new_v4().simple().to_string();
@@ -238,8 +239,6 @@ fn parse_datetime(s: &str) -> Result<NaiveDateTime, ApiError> {
     NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
         .map_err(|_| {
-            ApiError::bad_request(
-                "Invalid datetime format. Use ISO 8601, e.g. 2026-12-31T23:59:59",
-            )
+            ApiError::bad_request("Invalid datetime format. Use ISO 8601, e.g. 2026-12-31T23:59:59")
         })
 }

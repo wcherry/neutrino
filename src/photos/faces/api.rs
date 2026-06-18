@@ -2,9 +2,9 @@ use crate::photos::faces::{
     dto::{FaceResponse, ListFacesResponse, SaveFaceRequest},
     service::FacesService,
 };
-use actix_web::{get, post, web, HttpResponse};
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::ApiError;
+use actix_web::{get, post, web, HttpResponse};
 use std::sync::Arc;
 use tracing::debug;
 use utoipa::OpenApi;

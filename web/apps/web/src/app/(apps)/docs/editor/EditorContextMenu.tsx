@@ -4,7 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { type Editor } from '@tiptap/react';
 import {
   Bold, Italic, Underline, Strikethrough, Link,
-  Eraser, MessageSquare, CheckSquare, AlignLeft,
+  Eraser, MessageSquare, CheckSquare, AlignLeft, Sparkles, ImageIcon,
 } from 'lucide-react';
 import styles from './EditorContextMenu.module.css';
 
@@ -28,6 +28,20 @@ interface Props {
   spellSuggestions?: string[];
   /** Called with the chosen replacement word when a suggestion is clicked. */
   onApplySuggestion?: (word: string) => void;
+  /** Grammar issue message at cursor position, when grammar check is active. */
+  grammarMessage?: string;
+  /** Replacement text for the grammar issue, if available. */
+  grammarSuggestion?: string;
+  /** Called with the replacement text when the grammar fix is applied. */
+  onApplyGrammarFix?: (from: number, to: number, replacement: string) => void;
+  /** Document position range of the grammar issue. */
+  grammarRange?: { from: number; to: number };
+  /** Called when the user asks AI to fix the grammar issue. */
+  onAiGrammarFix?: () => void;
+  /** Whether the right-click target is an image node (advanced formatting enabled). */
+  isImageActive?: boolean;
+  /** Called when the user chooses "Image properties" from the context menu. */
+  onImageProperties?: () => void;
 }
 
 type Item =
@@ -45,6 +59,13 @@ export function EditorContextMenu({
   spellWord,
   spellSuggestions,
   onApplySuggestion,
+  grammarMessage,
+  grammarSuggestion,
+  onApplyGrammarFix,
+  grammarRange,
+  onAiGrammarFix,
+  isImageActive,
+  onImageProperties,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -84,6 +105,15 @@ export function EditorContextMenu({
   const visibleSuggestions = spellSuggestions?.slice(0, MAX_SUGGESTIONS) ?? [];
 
   const items: Item[] = [
+    ...(isImageActive && onImageProperties ? [
+      {
+        kind: 'action' as const,
+        icon: <ImageIcon size={14} />,
+        label: 'Image properties…',
+        action: () => run(onImageProperties),
+      },
+      { kind: 'separator' as const },
+    ] : []),
     {
       kind: 'action',
       icon: <MessageSquare size={14} />,
@@ -172,6 +202,43 @@ export function EditorContextMenu({
       aria-label="Editor options"
       onContextMenu={e => e.preventDefault()}
     >
+      {/* ── Grammar suggestion (top of menu, when grammar check is active) ── */}
+      {grammarMessage && (
+        <>
+          <div className={styles.checking} style={{ color: '#1e8e3e', fontStyle: 'normal', fontWeight: 500 }}>
+            {grammarMessage}
+          </div>
+          {grammarSuggestion && grammarRange && onApplyGrammarFix && (
+            <button
+              type="button"
+              role="menuitem"
+              className={[styles.item, styles.suggestion].join(' ')}
+              onClick={() => {
+                onApplyGrammarFix(grammarRange.from, grammarRange.to, grammarSuggestion);
+                onClose();
+              }}
+            >
+              <span className={styles.itemLabel}>Fix: &quot;{grammarSuggestion}&quot;</span>
+            </button>
+          )}
+          {onAiGrammarFix && (
+            <button
+              type="button"
+              role="menuitem"
+              className={[styles.item, styles.aiItem].join(' ')}
+              onClick={() => {
+                onAiGrammarFix();
+                onClose();
+              }}
+            >
+              <span className={styles.itemIcon}><Sparkles size={14} /></span>
+              <span className={styles.itemLabel}>Fix with AI</span>
+            </button>
+          )}
+          <div className={styles.separator} role="separator" />
+        </>
+      )}
+
       {/* ── Spell-check suggestions (top of menu) ── */}
       {showSpellSection && (
         <>

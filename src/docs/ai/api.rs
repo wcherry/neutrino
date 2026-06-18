@@ -60,6 +60,7 @@ pub struct HelpMeWriteRequest {
 
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct SummarizeRequest {
     /// Full document content (plain text or TipTap JSON-derived text).
     pub content: String,
@@ -187,7 +188,11 @@ pub async fn translate(
     let body = body.into_inner();
     let translated = state
         .ai_service
-        .translate(&body.content, &body.target_lang, body.provider_fields.into())
+        .translate(
+            &body.content,
+            &body.target_lang,
+            body.provider_fields.into(),
+        )
         .await?;
     Ok(web::Json(TranslateResponse { translated }))
 }

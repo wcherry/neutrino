@@ -1,9 +1,14 @@
-use crate::shared::{ApiError, DbPool};
 use super::claude_client::ClaudeClient;
+use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
 use serde::Serialize;
 
-fn get_conn(pool: &DbPool) -> Result<diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>, ApiError> {
+fn get_conn(
+    pool: &DbPool,
+) -> Result<
+    diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<SqliteConnection>>,
+    ApiError,
+> {
     pool.get().map_err(|e| {
         tracing::error!("DB pool error: {:?}", e);
         ApiError::internal("Database connection unavailable")
@@ -62,13 +67,15 @@ impl DriveAIService {
 
     fn require_claude(&self) -> Result<&ClaudeClient, ApiError> {
         self.claude.as_ref().ok_or_else(|| {
-            ApiError::bad_request(
-                "AI features require ANTHROPIC_API_KEY to be configured",
-            )
+            ApiError::bad_request("AI features require ANTHROPIC_API_KEY to be configured")
         })
     }
 
-    pub async fn get_file_summary(&self, file_id: &str, user_id: &str) -> Result<FileSummary, ApiError> {
+    pub async fn get_file_summary(
+        &self,
+        file_id: &str,
+        user_id: &str,
+    ) -> Result<FileSummary, ApiError> {
         let claude = self.require_claude()?;
         let conn = &mut get_conn(&self.pool)?;
 

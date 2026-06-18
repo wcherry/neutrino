@@ -1,10 +1,10 @@
-use crate::shared::{ApiError, AuthenticatedUser};
 use crate::calendar::events::{
     dto::{
         CreateEventRequest, EventResponse, ListEventsQuery, ListEventsResponse, UpdateEventRequest,
     },
     service::EventsService,
 };
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, post, put, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
@@ -32,7 +32,9 @@ pub async fn list_events(
     user: AuthenticatedUser,
     query: web::Query<ListEventsQuery>,
 ) -> Result<web::Json<ListEventsResponse>, ApiError> {
-    let result = state.events_service.list_events(&user, query.into_inner())?;
+    let result = state
+        .events_service
+        .list_events(&user, query.into_inner())?;
     Ok(web::Json(result))
 }
 
@@ -53,7 +55,9 @@ pub async fn create_event(
     user: AuthenticatedUser,
     body: web::Json<CreateEventRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let event = state.events_service.create_event(&user, body.into_inner())?;
+    let event = state
+        .events_service
+        .create_event(&user, body.into_inner())?;
     Ok(HttpResponse::Created().json(event))
 }
 
@@ -120,7 +124,9 @@ pub async fn delete_event(
     user: AuthenticatedUser,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    state.events_service.delete_event(&user, &path.into_inner())?;
+    state
+        .events_service
+        .delete_event(&user, &path.into_inner())?;
     Ok(HttpResponse::NoContent().finish())
 }
 

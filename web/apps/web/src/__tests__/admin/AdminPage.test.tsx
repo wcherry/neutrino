@@ -37,8 +37,9 @@ vi.mock('@neutrino/api-admin', () => ({
   },
 }));
 
-vi.mock('@/lib/featureFlags', () => ({
-  default: { adminDashboard: true },
+vi.mock('@/providers/FeatureFlagsProvider', () => ({
+  useFeatureFlags: () => ({ adminDashboard: true }),
+  useFeatureFlagsLoaded: () => true,
 }));
 
 // Mock the UI package to avoid CSS module loading issues in jsdom

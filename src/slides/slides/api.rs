@@ -1,12 +1,14 @@
 use crate::shared::{ApiError, AuthenticatedUser};
 use crate::slides::slides::{
     dto::{
-        CreateSlideRequest, ListSlidesResponse, SaveSlideRequest, SlideMetaResponse, SlideResponse,
-        CreateThemeRequest, UpdateThemeRequest, ThemeResponse, ListThemesResponse,
+        CreateSlideRequest, CreateThemeRequest, ListSlidesResponse, ListThemesResponse,
+        SaveSlideRequest, SlideMetaResponse, SlideResponse, ThemeResponse, UpdateThemeRequest,
     },
     service::SlidesService,
 };
-use actix_web::{delete, get, patch, post, web, HttpResponse};
+use actix_multipart::Multipart;
+use actix_web::{delete, get, patch, post, put, web, HttpResponse};
+use futures_util::StreamExt;
 use std::sync::Arc;
 use utoipa::OpenApi;
 
@@ -49,7 +51,10 @@ pub async fn create_slide(
     user: AuthenticatedUser,
     body: web::Json<CreateSlideRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let slide = state.slides_service.create_slide(&user, body.into_inner()).await?;
+    let slide = state
+        .slides_service
+        .create_slide(&user, body.into_inner())
+        .await?;
     Ok(HttpResponse::Created().json(slide))
 }
 
@@ -145,7 +150,9 @@ pub async fn create_theme(
     user: AuthenticatedUser,
     body: web::Json<CreateThemeRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let theme = state.slides_service.create_theme(&user, body.into_inner())?;
+    let theme = state
+        .slides_service
+        .create_theme(&user, body.into_inner())?;
     Ok(HttpResponse::Created().json(theme))
 }
 
@@ -169,7 +176,9 @@ pub async fn update_theme(
     body: web::Json<UpdateThemeRequest>,
 ) -> Result<web::Json<ThemeResponse>, ApiError> {
     let theme_id = path.into_inner();
-    let theme = state.slides_service.update_theme(&user, &theme_id, body.into_inner())?;
+    let theme = state
+        .slides_service
+        .update_theme(&user, &theme_id, body.into_inner())?;
     Ok(web::Json(theme))
 }
 
@@ -195,6 +204,67 @@ pub async fn delete_theme(
     Ok(HttpResponse::NoContent().finish())
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1/slides/{id}/autosave",
+    params(("id" = String, Path, description = "Presentation ID")),
+    responses(
+        (status = 200, description = "Presentation autosaved", body = SlideMetaResponse),
+        (status = 403, description = "Edit access required"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "slides"
+)]
+#[put("/slides/{id}/autosave")]
+pub async fn autosave_slide(
+    state: web::Data<SlidesApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    mut payload: Multipart,
+) -> Result<web::Json<SlideMetaResponse>, ApiError> {
+    let slide_id = path.into_inner();
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut title: Option<String> = None;
+
+    while let Some(field) = payload.next().await {
+        let mut field = field.map_err(|_| ApiError::bad_request("Invalid multipart data"))?;
+        let content_disposition = field.content_disposition().cloned();
+        let field_name = content_disposition
+            .as_ref()
+            .and_then(|cd| cd.get_name())
+            .unwrap_or("")
+            .to_string();
+        let has_filename = content_disposition
+            .as_ref()
+            .and_then(|cd| cd.get_filename())
+            .is_some();
+
+        let mut bytes = Vec::new();
+        while let Some(chunk) = field.next().await {
+            let data = chunk.map_err(|_| ApiError::bad_request("Upload interrupted"))?;
+            bytes.extend_from_slice(&data);
+        }
+
+        if has_filename || field_name == "file" {
+            file_bytes = Some(bytes);
+        } else if field_name == "metadata" {
+            if let Ok(s) = String::from_utf8(bytes) {
+                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&s) {
+                    title = meta.get("title").and_then(|v| v.as_str()).map(String::from);
+                }
+            }
+        }
+    }
+
+    let bytes = file_bytes.ok_or_else(|| ApiError::bad_request("No file provided"))?;
+    let meta = state
+        .slides_service
+        .autosave(&user, &slide_id, &bytes, title.as_deref())
+        .await?;
+    Ok(web::Json(meta))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     // Literal-segment routes (/slides/themes) must come before /slides/{id}.
     cfg.service(list_themes)
@@ -204,12 +274,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(list_slides)
         .service(create_slide)
         .service(get_slide)
-        .service(save_slide);
+        .service(save_slide)
+        .service(autosave_slide);
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_slides, create_slide, get_slide, save_slide,
+    paths(list_slides, create_slide, get_slide, save_slide, autosave_slide,
           list_themes, create_theme, update_theme, delete_theme),
     components(schemas(
         CreateSlideRequest,

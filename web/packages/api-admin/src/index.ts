@@ -9,4 +9,6 @@ export type {
   AdminUser,
   AdminUserListResponse,
   UpdateAdminUserRequest,
+  FeatureFlag,
+  UpdateFeatureFlagRequest,
 } from './types';

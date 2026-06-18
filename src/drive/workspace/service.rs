@@ -37,6 +37,7 @@ impl WorkspaceService {
     }
 
     /// Get the raw record for enforcement checks. Returns a default (all-false) record if none set.
+    #[allow(dead_code)]
     pub fn get_raw(&self) -> Result<WorkspaceSettingsRecord, ApiError> {
         self.repo.get_or_create()
     }
@@ -52,10 +53,7 @@ impl WorkspaceService {
             Some(d) => d.clone(),
             None => return Ok(()), // No domain configured — allow all
         };
-        let email_domain = user_email
-            .split('@')
-            .nth(1)
-            .unwrap_or("");
+        let email_domain = user_email.split('@').nth(1).unwrap_or("");
         if !email_domain.eq_ignore_ascii_case(&allowed_domain) {
             return Err(ApiError::new(
                 403,

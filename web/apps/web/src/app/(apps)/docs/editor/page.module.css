@@ -35,7 +35,7 @@
 }
 
 .backBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .docIcon {
@@ -65,11 +65,11 @@
 }
 
 .titleInput:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover);
 }
 
 .titleInput:focus {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover);
 }
 
 .topbarActions {
@@ -101,7 +101,7 @@
 }
 
 .exportBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .exportMenu {
@@ -133,7 +133,7 @@
 }
 
 .exportMenuItem:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 /* ── Main area ────────────────────────────────────────────────────────────── */
@@ -207,7 +207,7 @@
 }
 
 .outlineCollapseTab:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
   color: var(--color-text, #202124);
 }
 
@@ -228,7 +228,7 @@
 }
 
 .outlineExpandBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
   color: var(--color-text, #202124);
 }
 
@@ -253,7 +253,7 @@
 }
 
 .outlineIconBtn:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .outlineIconBadge {
@@ -282,7 +282,7 @@
 }
 
 .outlineItem:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-surface-hover, #f1f3f4);
 }
 
 .outlineItem.active {
@@ -312,35 +312,6 @@
   position: relative;
 }
 
-/* ── Page-break line ─────────────────────────────────────────────────────── */
-.pageBreakLine {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: #c8cdd3;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.pageBreakLine::before,
-.pageBreakLine::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 6px;
-}
-
-.pageBreakLine::before {
-  bottom: 0;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.04), transparent);
-}
-
-.pageBreakLine::after {
-  top: 1px;
-  background: linear-gradient(to top, rgba(0,0,0,0.04), transparent);
-}
 
 /* ── TipTap editor ────────────────────────────────────────────────────────── */
 .editorContent {
@@ -428,6 +399,42 @@
   height: auto;
   border-radius: 4px;
   margin: 8px 0;
+}
+
+/* ── Image alignment (advanced formatting flag) ───────────────────────────── */
+/* Applied via data-alignment attribute set by AdvancedImageExtension */
+
+.editorContent :global(img[data-alignment="left"]) {
+  display: block;
+  margin-right: auto;
+}
+
+.editorContent :global(img[data-alignment="center"]) {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.editorContent :global(img[data-alignment="right"]) {
+  display: block;
+  margin-left: auto;
+}
+
+.editorContent :global(img[data-alignment="float-left"]) {
+  float: left;
+  margin: 4px 12px 4px 0;
+}
+
+.editorContent :global(img[data-alignment="float-right"]) {
+  float: right;
+  margin: 4px 0 4px 12px;
+}
+
+/* Clearfix after floated images so subsequent block content isn't pulled up */
+.editorContent :global(.ProseMirror)::after {
+  content: '';
+  display: table;
+  clear: both;
 }
 
 .editorContent :global(hr) {
@@ -525,6 +532,43 @@
   margin-top: 20px;
 }
 
+.imagePropsSection {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted, #5f6368);
+  margin: 18px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+}
+
+.imagePropsSection:first-of-type {
+  margin-top: 0;
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.formSlider {
+  flex: 1;
+  height: 4px;
+  cursor: pointer;
+  accent-color: #1a73e8;
+}
+
+.sliderValue {
+  font-size: 12px;
+  color: var(--color-text-muted, #5f6368);
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 /* ── Import input ─────────────────────────────────────────────────────────── */
 .hiddenInput {
   display: none;
@@ -586,6 +630,258 @@
   margin: 4px 0;
 }
 
+/* ── Header / footer zones ───────────────────────────────────────────────── */
+.pageHeader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 72px;
+  font-size: 9pt;
+  color: #5f6368;
+  border-bottom: 1px dashed #e0e0e0;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 4;
+  white-space: pre;
+  overflow: hidden;
+}
+
+.pageFooter {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 72px;
+  font-size: 9pt;
+  color: #5f6368;
+  border-top: 1px dashed #e0e0e0;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 4;
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* ── Watermark ────────────────────────────────────────────────────────────── */
+.watermark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 72pt;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.06);
+  transform: rotate(-45deg);
+  pointer-events: none;
+  z-index: 3;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* ── Footnotes ────────────────────────────────────────────────────────────── */
+.footnoteList {
+  margin-top: 24px;
+  padding-top: 8px;
+}
+
+.footnoteDivider {
+  width: 33%;
+  height: 1px;
+  background: #c8cdd3;
+  margin-bottom: 8px;
+}
+
+.footnoteItem {
+  font-size: 9pt;
+  color: #5f6368;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+/* ── Column layout node ──────────────────────────────────────────────────── */
+.editorContent :global(.column-layout) {
+  column-gap: 24px;
+  margin: 12px 0;
+}
+
+.editorContent :global(.column-layout[data-columns="2"]) {
+  column-count: 2;
+}
+
+.editorContent :global(.column-layout[data-columns="3"]) {
+  column-count: 3;
+}
+
+/* ── Section break node ──────────────────────────────────────────────────── */
+.editorContent :global(.section-break) {
+  display: block;
+  height: 0;
+  border: none;
+  border-top: 2px dashed #c8cdd3;
+  margin: 16px 0;
+}
+
+/* ── TOC node ─────────────────────────────────────────────────────────────── */
+.editorContent :global(.toc-node) {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin: 16px 0;
+  background: #fafafa;
+}
+
+.editorContent :global(.toc-node-title) {
+  font-size: 11pt;
+  font-weight: 700;
+  color: #202124;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.editorContent :global(.toc-entry) {
+  display: block;
+  padding: 3px 0;
+  font-size: 10pt;
+  color: #1a73e8;
+  cursor: pointer;
+  text-decoration: none;
+  background: none;
+  border: none;
+  text-align: left;
+  width: 100%;
+}
+
+.editorContent :global(.toc-entry:hover) {
+  text-decoration: underline;
+}
+
+.editorContent :global(.toc-h2) { padding-left: 16px; }
+.editorContent :global(.toc-h3) { padding-left: 32px; }
+.editorContent :global(.toc-h4) { padding-left: 48px; }
+
+.editorContent :global(.toc-empty) {
+  font-size: 10pt;
+  color: #9aa0a6;
+  font-style: italic;
+}
+
+/* ── Footnote inline marker ──────────────────────────────────────────────── */
+.editorContent :global(.footnote-marker) {
+  font-size: 8pt;
+  color: #1a73e8;
+  cursor: pointer;
+  vertical-align: super;
+  line-height: 0;
+}
+
+.editorContent :global(.footnote-marker:hover) {
+  text-decoration: underline;
+}
+
+/* ── Cross-reference mark ────────────────────────────────────────────────── */
+.editorContent :global(.cross-ref) {
+  color: #1a73e8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.editorContent :global(.cross-ref:hover) {
+  color: #1558b0;
+}
+
+/* ── Document themes ─────────────────────────────────────────────────────────
+   Applied via data-doc-theme attribute on the .page element.
+─────────────────────────────────────────────────────────────────────────── */
+
+/* Corporate theme */
+.page[data-doc-theme="corporate"] :global(h1),
+.page[data-doc-theme="corporate"] :global(h2),
+.page[data-doc-theme="corporate"] :global(h3) {
+  color: #003366;
+}
+
+.page[data-doc-theme="corporate"] :global(a) {
+  color: #003366;
+}
+
+/* Academic theme */
+.page[data-doc-theme="academic"] {
+  font-family: Georgia, serif;
+}
+
+.page[data-doc-theme="academic"] :global(h1),
+.page[data-doc-theme="academic"] :global(h2),
+.page[data-doc-theme="academic"] :global(h3) {
+  font-family: Georgia, serif;
+  color: #2c2c2c;
+}
+
+/* Minimal theme */
+.page[data-doc-theme="minimal"] :global(h1) {
+  font-size: 18pt;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.page[data-doc-theme="minimal"] :global(h2) {
+  font-size: 14pt;
+  font-weight: 400;
+}
+
+.page[data-doc-theme="minimal"] :global(h3) {
+  font-size: 11pt;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Find & replace highlight decorations (editing tools feature gap #3) ───── */
+.editorContent :global(.find-replace-match) {
+  background-color: rgba(255, 213, 0, 0.45);
+  border-radius: 2px;
+}
+
+.editorContent :global(.find-replace-current) {
+  background-color: rgba(255, 152, 0, 0.65);
+  border-radius: 2px;
+  outline: 1px solid rgba(255, 120, 0, 0.6);
+}
+
+/* ── Grammar issue underline decorations ─────────────────────────────────── */
+.editorContent :global(.grammar-issue) {
+  text-decoration: underline wavy #1e8e3e;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* ── Spell-error underline decorations (client-side nspell, not browser) ──── */
+.editorContent :global(.spell-error) {
+  text-decoration: underline wavy #e53935;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+/* ── AI writing result panel overlay ────────────────────────────────────── */
+.aiPanelOverlay {
+  position: fixed;
+  bottom: 48px;
+  right: 24px;
+  z-index: 100;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.18));
+}
+
 /* ── Print ────────────────────────────────────────────────────────────────── */
 @media print {
   .shell { height: auto; }
@@ -598,4 +894,267 @@
     padding: 0;
     min-height: auto;
   }
+}
+
+/* ── Track changes marks ───────────────────────────────────────────────────── */
+/* Applied via TrackedInsertionMark and TrackedDeletionMark Tiptap extensions */
+.editorContent :global(ins[data-tracked="insertion"]) {
+  background-color: rgba(67, 160, 71, 0.18);
+  color: #2e7d32;
+  text-decoration: none;
+  border-bottom: 2px solid #43a047;
+}
+
+.editorContent :global(del[data-tracked="deletion"]) {
+  background-color: rgba(229, 57, 53, 0.12);
+  color: #c62828;
+  text-decoration: line-through;
+  text-decoration-color: #e53935;
+}
+
+/* ── Mobile / responsive editing (docsMobileEditor flag) ───────────────────── */
+@media (max-width: 768px) {
+  /* Top bar: compress layout for small screens */
+  .topbar {
+    padding: 0 8px;
+    gap: 6px;
+    height: 48px;
+    flex-wrap: nowrap;
+  }
+
+  /* Save status text is too wide on mobile — hide it */
+  .saveStatus {
+    display: none;
+  }
+
+  /* Title shrinks to use available space */
+  .titleInput {
+    font-size: 15px;
+    min-width: 0;
+  }
+
+  /* Top-bar action buttons: smaller + hide text labels */
+  .topbarActions {
+    gap: 4px;
+  }
+
+  .exportBtn {
+    padding: 6px 8px;
+    font-size: 12px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* Hide outline panel on mobile — it can be toggled via a button */
+  .outlinePanel,
+  .outlinePanelCollapsed {
+    display: none;
+  }
+
+  /* Toolbar: allow horizontal scrolling so all buttons are accessible */
+  /* The RickTextToolbar from @neutrino/ui renders a div — we target the
+     wrapping container via the shell's immediate flex child. */
+  .shell > *:nth-child(2) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .shell > *:nth-child(2)::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Toolbar buttons: larger tap targets for touch */
+  .shell :global(.toolbar-button),
+  .shell :global([role="toolbar"] button) {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  /* Editor scroll area: minimal padding */
+  .editorScroll {
+    padding: 8px;
+  }
+
+  /* Page: full viewport width, no paper shadow */
+  .page {
+    width: 100% !important;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 12px !important;
+    min-height: calc(100vh - 48px - 40px);
+  }
+
+  /* Status bar: simplify */
+  .statusBar {
+    padding: 2px 12px;
+    font-size: 11px;
+    gap: 10px;
+  }
+
+  /* Modals: full-width on small screens */
+  .modal {
+    min-width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+    padding: 16px;
+  }
+
+  /* AI panel overlay: full-width at bottom */
+  .aiPanelOverlay {
+    right: 8px;
+    bottom: 44px;
+    width: calc(100vw - 16px);
+  }
+}
+
+/* ── Editor area (rulers + scroll) ─────────────────────────────────────── */
+.editorArea {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rulerRow {
+  display: flex;
+  flex-shrink: 0;
+  background: var(--color-bg-secondary, #f1f3f4);
+  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  overflow: hidden;
+  z-index: 6;
+}
+
+.rulerCorner {
+  width: 28px;
+  height: 20px;
+  flex-shrink: 0;
+  background: #e8eaed;
+  border-right: 1px solid #c8cdd3;
+}
+
+.topRulerOuter {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  padding: 0 24px;
+}
+
+.editorWithRuler {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  min-height: 0;
+}
+
+.sideRulerCol {
+  width: 28px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--color-bg-secondary, #f1f3f4);
+  border-right: 1px solid var(--color-border, #e0e0e0);
+}
+
+/* ── Zoom wrapper ────────────────────────────────────────────────────────── */
+.pageZoomWrap {
+  margin: 0 auto;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* ── Single page mode ────────────────────────────────────────────────────── */
+.singlePageScroll {
+  overflow: hidden !important;
+  flex: none !important;
+}
+
+.pageNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 7px 16px;
+  background: var(--color-bg, #ffffff);
+  border-top: 1px solid var(--color-border, #e0e0e0);
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--color-text-muted, #5f6368);
+}
+
+.pageNavBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 4px;
+  background: var(--color-bg, #ffffff);
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text, #202124);
+  transition: background 0.15s;
+}
+
+.pageNavBtn:hover:not(:disabled) {
+  background: var(--color-surface-hover, #f1f3f4);
+}
+
+.pageNavBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Zoom controls (status bar) ─────────────────────────────────────────── */
+.zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.zoomBtn {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border, #e0e0e0);
+  border-radius: 4px;
+  background: var(--color-bg, #ffffff);
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--color-text-muted, #5f6368);
+  transition: background 0.1s;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.zoomBtn:hover {
+  background: var(--color-surface-hover, #f1f3f4);
+  color: var(--color-text, #202124);
+}
+
+/* ── Distraction-free / focus mode ─────────────────────────────────────── */
+.distractionFreeShell {
+  background: #1c1c1e;
+}
+
+.dfmExitBtn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  backdrop-filter: blur(8px);
+}
+
+.dfmExitBtn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
 }

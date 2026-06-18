@@ -1,6 +1,8 @@
-use crate::shared::ApiError;
+#![allow(dead_code)]
+
 use crate::docs::permissions::model::{NewPermissionRecord, PermissionRecord};
 use crate::schema::{files, folders, permissions};
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 

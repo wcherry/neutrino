@@ -381,6 +381,38 @@
   color: var(--color-text-primary);
 }
 
+/* ── Bulk selection toolbar ── */
+.bulk-toolbar {
+  position: fixed;
+  bottom: var(--space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 9999px);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  white-space: nowrap;
+}
+
+.bulk-count {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-primary);
+  padding-right: var(--space-3);
+  border-right: 1px solid var(--color-border);
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* Rename dialog */
 .rename-overlay {
   position: fixed;

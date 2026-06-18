@@ -52,7 +52,9 @@ mod tests {
     #[test]
     fn generate_secret_produces_base32_chars() {
         let secret = generate_secret();
-        assert!(secret.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '='));
+        assert!(secret
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '='));
     }
 
     #[test]

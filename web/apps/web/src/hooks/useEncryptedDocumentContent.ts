@@ -34,7 +34,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { useUser } from '@neutrino/auth';
+import { useAuth } from '@neutrino/auth';
 import { initSodium, loadKeyPair, decryptFileKey, generateFileKey, encryptFileKey } from '@neutrino/e2e-crypto';
 import {
   encryptionApi,
@@ -85,14 +85,16 @@ export function useEncryptedDocumentContent({
   id,
   filename,
 }: UseEncryptedDocumentContentOptions): UseEncryptedDocumentContentResult {
-  const currentUser = useUser();
+  const { user: currentUser, isLoading: authLoading } = useAuth();
   const dekRef = useRef<Uint8Array | null>(null);
   const [dekResolved, setDekResolved] = useState(false);
 
   // ── Step 1: Resolve the DEK ───────────────────────────────────────────────
   useEffect(() => {
-    // If there is no document ID or no logged-in user, mark as resolved
-    // immediately so dependent queries are not blocked indefinitely.
+    // Wait for auth to finish loading so we don't mark as resolved early
+    // with a null user — that would let the content query fire without a DEK,
+    // causing encrypted bytes to be rendered as plaintext.
+    if (authLoading) return;
     if (!id || !currentUser?.id) {
       setDekResolved(true);
       return;
@@ -129,25 +131,23 @@ export function useEncryptedDocumentContent({
 
     resolve();
     return () => { cancelled = true; };
-    // currentUser.id is stable for the lifetime of a session; id changes only
-    // when navigating to a different document.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, currentUser?.id]);
+  }, [id, authLoading, currentUser?.id]);
 
   // ── Step 2: Autosave mutation ─────────────────────────────────────────────
   const autosaveMutation = useMutation({
-    mutationFn: (content: string) =>
-      dekRef.current
-        ? driveAutosaveEncryptedContent(id, content, filename, dekRef.current)
-        : driveAutosaveContent(id, content, filename),
+    mutationFn: async (content: string) => {
+      if (!dekRef.current) throw new Error('no-dek');
+      return driveAutosaveEncryptedContent(id, content, filename, dekRef.current);
+    },
   });
 
   // ── Step 3: Create-version mutation ──────────────────────────────────────
   const createVersionMutation = useMutation({
-    mutationFn: (content: string) =>
-      dekRef.current
-        ? driveCreateEncryptedVersion(id, content, filename, dekRef.current)
-        : driveCreateVersion(id, content, filename),
+    mutationFn: async (content: string) => {
+      if (!dekRef.current) throw new Error('no-dek');
+      return driveCreateEncryptedVersion(id, content, filename, dekRef.current);
+    },
   });
 
   return {

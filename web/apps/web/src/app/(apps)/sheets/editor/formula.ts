@@ -281,17 +281,25 @@ type Token =
     | { type: 'LTE' } | { type: 'GTE' };
 
 /**
- * Attempt to read a cell reference (e.g. "C4", "AB12") starting at position i
+ * Attempt to read a cell reference (e.g. "C4", "$AB$12") starting at position i
  * in string s. Returns { cell, end } on success or null if no cell ref found.
  */
 function tryReadCellRef(s: string, i: number): { cell: string; end: number } | null {
-    if (i >= s.length || !/[A-Za-z]/.test(s[i])) return null;
+    if (i >= s.length) return null;
     let j = i;
+    const dollarCol = s[j] === '$';
+    if (dollarCol) j++;
+    if (j >= s.length || !/[A-Za-z]/.test(s[j])) return null;
+    const colStart = j;
     while (j < s.length && /[A-Za-z]/.test(s[j])) j++;
+    const col = s.slice(colStart, j).toUpperCase();
+    const dollarRow = s[j] === '$';
+    if (dollarRow) j++;
     if (j >= s.length || !/\d/.test(s[j])) return null;
     let k = j;
     while (k < s.length && /\d/.test(s[k])) k++;
-    return { cell: s.slice(i, k).toUpperCase(), end: k };
+    const row = s.slice(j, k);
+    return { cell: `${dollarCol ? '$' : ''}${col}${dollarRow ? '$' : ''}${row}`, end: k };
 }
 
 function tokenize(s: string): Token[] {
@@ -496,9 +504,10 @@ class FormulaParser {
         }
         const namespacedIds: string[] = [];
         for (const cellId of cellIds) {
-            const nsId = makeCrossSheetId(sheetName, cellId);
+            const plainCellId = cellId.replace(/\$/g, '');
+            const nsId = makeCrossSheetId(sheetName, plainCellId);
             if (!this.mergedData.has(nsId)) {
-                const cell = sheetData.get(cellId);
+                const cell = sheetData.get(plainCellId);
                 if (cell) {
                     this.mergedData.set(nsId, { ...cell, id: nsId });
                 } else {
@@ -615,7 +624,7 @@ class FormulaParser {
             // A bare SHEET_RANGE outside a function argument context — return the
             // top-left cell value (consistent with how bare ranges work in Excel).
             this.consume();
-            const cells = expandRange(tok.start, tok.end);
+            const cells = expandRange(tok.start.replace(/\$/g, ''), tok.end.replace(/\$/g, ''));
             const nsIds = this.ensureCrossSheetCells(tok.sheet, cells);
             if (!nsIds) return '#REF!';
             const raw = nsIds.length > 0 ? (this.mergedData.get(nsIds[0])?.value ?? '') : '';
@@ -679,7 +688,7 @@ class FormulaParser {
         }
         if (tok?.type === 'SHEET_RANGE') {
             this.consume();
-            const cells = expandRange(tok.start, tok.end);
+            const cells = expandRange(tok.start.replace(/\$/g, ''), tok.end.replace(/\$/g, ''));
             const nsIds = this.ensureCrossSheetCells(tok.sheet, cells);
             // Return #REF! placeholder IDs if sheet not found — functions will
             // get empty values from mergedData lookups, which is safe.

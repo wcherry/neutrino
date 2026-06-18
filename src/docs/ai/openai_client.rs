@@ -1,10 +1,10 @@
+use crate::shared::get_env_or_secret;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
-use crate::shared::get_env_or_secret;
 
-use crate::shared::ApiError;
 use super::provider::AiProvider;
+use crate::shared::ApiError;
 
 pub struct OpenAiClient {
     client: Client,
@@ -22,6 +22,7 @@ impl OpenAiClient {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_env() -> Option<Self> {
         get_env_or_secret("OPENAI_API_KEY").ok().map(Self::new)
     }

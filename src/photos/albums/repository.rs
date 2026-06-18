@@ -2,9 +2,9 @@ use crate::photos::albums::model::{
     AlbumPhotoRecord, AlbumRecord, NewAlbumPhotoRecord, NewAlbumRecord, UpdateAlbumRecord,
 };
 use crate::schema::{album_photos, albums};
+use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
-use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
@@ -119,11 +119,7 @@ impl AlbumsRepository {
         Ok(())
     }
 
-    pub fn remove_photo_from_album(
-        &self,
-        album_id: &str,
-        photo_id: &str,
-    ) -> Result<(), ApiError> {
+    pub fn remove_photo_from_album(&self, album_id: &str, photo_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         diesel::delete(
             album_photos::table
@@ -138,6 +134,7 @@ impl AlbumsRepository {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn list_album_photos(&self, album_id: &str) -> Result<Vec<AlbumPhotoRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         album_photos::table
@@ -174,11 +171,7 @@ impl AlbumsRepository {
 
     /// Replace all photos in an album with the given set of photo IDs.
     /// Photos not in the set are removed; new ones are added.
-    pub fn sync_album_photos(
-        &self,
-        album_id: &str,
-        photo_ids: &[String],
-    ) -> Result<(), ApiError> {
+    pub fn sync_album_photos(&self, album_id: &str, photo_ids: &[String]) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         conn.transaction::<(), diesel::result::Error, _>(|conn| {
             // Remove all existing entries.

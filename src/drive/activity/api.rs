@@ -33,7 +33,9 @@ pub async fn list_file_activity(
     let file_id = path.into_inner();
     let page = query.get("page").and_then(|p| p.parse().ok());
     let page_size = query.get("pageSize").and_then(|p| p.parse().ok());
-    let result = state.activity_service.list_file_activity(&user, &file_id, page, page_size)?;
+    let result = state
+        .activity_service
+        .list_file_activity(&user, &file_id, page, page_size)?;
     Ok(HttpResponse::Ok().json(result))
 }
 

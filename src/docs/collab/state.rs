@@ -1,6 +1,8 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+#![allow(dead_code)]
+
 use dashmap::DashMap;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use yrs::Doc;
 

@@ -66,15 +66,26 @@ export function navigateCell(
         if (direction === 'ArrowLeft' && bounds.minCol !== Infinity) col = bounds.minCol;
         if (direction === 'ArrowRight' && bounds.maxCol !== -Infinity) col = bounds.maxCol;
     } else {
+        const currentCell = options.data?.get(currentId);
         if (direction === 'ArrowUp') row -= 1;
-        if (direction === 'ArrowDown') row += 1;
+        if (direction === 'ArrowDown') row += (currentCell?.rowSpan ?? 1);
         if (direction === 'ArrowLeft') col -= 1;
-        if (direction === 'ArrowRight') col += 1;
+        if (direction === 'ArrowRight') col += (currentCell?.colSpan ?? 1);
     }
 
     col = Math.max(1, Math.min(MAX_COLS, col));
     row = Math.max(1, Math.min(MAX_ROWS, row));
-    return `${numToAlpha(col)}${row}`;
+    const nextId = `${numToAlpha(col)}${row}`;
+    const nextCell = options.data?.get(nextId);
+    return nextCell?.mergeAnchor ?? nextId;
+}
+
+// Excel date serial: 1 = Jan 1, 1900. Excel incorrectly treats 1900 as a leap
+// year (serial 60 = non-existent Feb 29, 1900), so serials > 60 are off by one
+// relative to the real calendar — subtract 1 to compensate.
+function excelSerialToDate(serial: number): Date {
+    const adjusted = serial > 60 ? serial - 1 : serial;
+    return new Date(Date.UTC(1900, 0, 1) + (adjusted - 1) * 86400000);
 }
 
 function formatDateWithPattern(d: Date, fmt: string): string {
@@ -82,10 +93,10 @@ function formatDateWithPattern(d: Date, fmt: string): string {
     const monthsShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
     const daysShort = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const y = d.getFullYear();
-    const mo = d.getMonth();
-    const day = d.getDate();
-    const dow = d.getDay();
+    const y = d.getUTCFullYear();
+    const mo = d.getUTCMonth();
+    const day = d.getUTCDate();
+    const dow = d.getUTCDay();
     // Replace quoted literals with placeholders so their content isn't token-matched
     const literals: string[] = [];
     let result = fmt.replace(/"([^"]*)"/g, (_, s) => { literals.push(s); return `\x00${literals.length - 1}\x00`; });
@@ -118,7 +129,9 @@ export function applyCustomFormat(value: string, fmt: string): string {
     if (!value) return value;
     // Date format
     if (isDateFormatStr(fmt)) {
-        const d = new Date(value);
+        const d = /^\d+$/.test(value.trim())
+            ? excelSerialToDate(parseFloat(value))
+            : new Date(value);
         if (isNaN(d.getTime())) return value;
         return formatDateWithPattern(d, fmt);
     }
@@ -129,10 +142,10 @@ export function applyCustomFormat(value: string, fmt: string): string {
     const useGrouping = fmt.includes(',');
     // Percent
     if (fmt.includes('%')) {
-        return (num / 100).toLocaleString('en-US', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+        return num.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals });
     }
-    // Currency — $ outside of quoted strings
-    if (fmt.replace(/"[^"]*"/g, '').includes('$')) {
+    // Currency — $ anywhere in the format string (quoted or unquoted)
+    if (fmt.includes('$')) {
         return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: decimals, maximumFractionDigits: decimals });
     }
     // Plain number
@@ -150,12 +163,14 @@ export function formatCellValue(value: string, style?: CellStyle): string {
         case 'currency':
             return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: decimals, maximumFractionDigits: decimals });
         case 'percent':
-            return (num / 100).toLocaleString('en-US', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+            return num.toLocaleString('en-US', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals });
         case 'number':
             return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
         case 'date': {
-            const d = new Date(value);
-            return isNaN(d.getTime()) ? value : d.toLocaleDateString('en-US');
+            const d = /^\d+$/.test(value.trim())
+                ? excelSerialToDate(num)
+                : new Date(value);
+            return isNaN(d.getTime()) ? value : d.toLocaleDateString('en-US', { timeZone: 'UTC' });
         }
         default:
             return value;

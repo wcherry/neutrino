@@ -22,6 +22,8 @@ COPY web/packages/api-notes/package.json packages/api-notes/package.json
 COPY web/packages/api-photos/package.json packages/api-photos/package.json
 COPY web/packages/api-sheets/package.json packages/api-sheets/package.json
 COPY web/packages/api-slides/package.json packages/api-slides/package.json
+COPY web/packages/api-diagrams/package.json packages/api-diagrams/package.json
+COPY web/packages/api-drawing/package.json packages/api-drawing/package.json
 COPY web/packages/sheet-embed/package.json packages/sheet-embed/package.json
 COPY web/packages/e2e-crypto/package.json packages/e2e-crypto/package.json
 COPY web/packages/auth/package.json packages/auth/package.json
@@ -30,7 +32,7 @@ COPY web/packages/layout/package.json packages/layout/package.json
 COPY web/packages/tokens/package.json packages/tokens/package.json
 COPY web/packages/ui/package.json packages/ui/package.json
 COPY web/packages/utils/package.json packages/utils/package.json
-
+COPY web/packages/search/package.json packages/search/package.json
 RUN pnpm install --prod=false
 
 # Copy the rest of the web source and build
@@ -47,7 +49,9 @@ WORKDIR /app
 COPY Cargo.toml ./
 COPY Cargo.lock* ./
 
-RUN mkdir src && echo "fn main(){}" > src/main.rs
+RUN mkdir src && echo "fn main(){}" > src/main.rs && \
+    mkdir -p xtask/src && echo "fn main(){}" > xtask/src/main.rs
+COPY xtask/Cargo.toml xtask/Cargo.toml
 
 RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
 ARG GITHUB_TOKEN
@@ -65,8 +69,9 @@ RUN cargo build --release
 RUN rm -rf src
 
 COPY src src
+COPY xtask/src xtask/src
 COPY migrations migrations
-RUN touch src/main.rs && cargo build --release
+RUN touch src/main.rs xtask/src/main.rs && cargo build --release
 
 # ── Runtime Stage ─────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

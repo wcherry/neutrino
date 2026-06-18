@@ -39,7 +39,7 @@ packages/
 
 **State management** — TanStack Query (`@tanstack/react-query`) for all server state. Zustand is available but used sparingly. Local UI state uses `useState`/`useReducer`.
 
-**Feature flags** — all flags live in `apps/web/src/lib/featureFlags.ts` as a plain object reading `process.env.NEXT_PUBLIC_FEATURE_*` env vars (all default to `false`). Each new flag gets a comment block documenting its purpose and env var name.
+**Feature flags** — flags are stored in the database and served by `GET /api/v1/feature-flags`. The `FeatureFlags` type in `apps/web/src/lib/featureFlags.ts` lists all known flags for TypeScript type-safety; `FeatureFlagsProvider` fetches the live values on mount. Toggle flags at runtime via the admin panel (`/admin`) or `PATCH /api/v1/admin/feature-flags/{key}`. To add a new flag: add it to the `FeatureFlags` type, add an `INSERT` in a new migration under `migrations/`, and register it via the admin API or directly in the DB.
 
 **User preferences** — persisted in `localStorage` and read back on mount with a `storage` event listener for cross-tab sync. The pattern is used for theme (`neutrino.theme`), calendar week start (`neutrino:calendar:weekStart`), and similar settings. Preferences are not stored in the backend unless they are part of `UpdateProfileRequest` (handled by `authApi.updateProfileDetails`).
 
