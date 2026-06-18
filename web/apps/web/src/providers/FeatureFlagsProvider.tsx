@@ -1,7 +1,28 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { type FeatureFlags } from '@/lib/featureFlags';
+
+export type FeatureFlags = {
+  settingsPage: boolean;
+  slidesVideoEmbeds: boolean;
+  sheetLiveEmbed: boolean;
+  driveAreaDropTarget: boolean;
+  colorPickerAlpha: boolean;
+  search: boolean;
+  sheetsCharts: boolean;
+  sheetsChartsPhase2: boolean;
+  sheetsChartsPhase5: boolean;
+  docsLayoutStructure: boolean;
+  docsAdvancedFormatting: boolean;
+  docsEditingTools: boolean;
+  docsPresence: boolean;
+  docsTrackChanges: boolean;
+  docsCompare: boolean;
+  docsMobileEditor: boolean;
+  sheetsConditionalFormatting: boolean;
+  docsDistractionFree: boolean;
+  diagramsApp: boolean;
+};
 
 type FeatureFlagsContextValue = {
   flags: FeatureFlags;
