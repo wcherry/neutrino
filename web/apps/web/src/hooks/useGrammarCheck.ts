@@ -87,16 +87,11 @@ const ruleArticleBeforeConsonant: Rule = (text) => {
  */
 const ruleRepeatedPunctuation: Rule = (text) => {
   const issues: GrammarIssue[] = [];
-  // Match 2+ identical punct chars; negative lookahead/behind prevents matching "..."
-  const re = /([!?,;:])(\1+)|\.\.(?!\.)/g;
+  // Match 2+ identical punct chars.
+  // For dots: flag ".." only when it is not part of "..." (no dot before or after).
+  const re = /([!?,;:])(\1+)|(?<!\.)\.\.(?!\.)/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
-    // Exclude proper ellipsis (exactly three dots matched by the second branch)
-    if (m[0] === '..') {
-      // Only flag ".." that is NOT part of "..."
-      const after = text[m.index + 2];
-      if (after === '.') continue; // part of "..."
-    }
     issues.push({
       offset: m.index,
       length: m[0].length,

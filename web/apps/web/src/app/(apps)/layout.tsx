@@ -31,24 +31,10 @@ import {
   Bell,
 } from 'lucide-react';
 import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
-import { IndexEngine, type SearchableDocType } from '@neutrino/search';
+import { IndexEngine, getOrCreateSearchKey, type SearchableDocType } from '@neutrino/search';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
 import featureFlags from '@/lib/featureFlags';
 import { NewItemFAB } from './NewItemFAB';
-
-const SEARCH_KEY_STORAGE = 'search_key_v1';
-const SEARCH_KEY_BYTES = 32;
-
-function getOrCreateSearchKey(userId: string): Uint8Array {
-  const storageKey = `${SEARCH_KEY_STORAGE}_${userId}`;
-  const stored = localStorage.getItem(storageKey);
-  if (stored) {
-    return Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
-  }
-  const key = crypto.getRandomValues(new Uint8Array(SEARCH_KEY_BYTES));
-  localStorage.setItem(storageKey, btoa(String.fromCharCode(...key)));
-  return key;
-}
 
 function docTypeUrl(type: SearchableDocType, docId: string): string {
   switch (type) {
