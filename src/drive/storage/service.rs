@@ -8,7 +8,7 @@ use crate::drive::storage::{
         AutosaveFileContent, FileRecord, NewFileRecord, NewFileVersionRecord, UpdateFileContent,
     },
     repository::StorageRepository,
-    store::LocalFileStore,
+    store::{LocalFileStore, ServeResolveError},
 };
 use crate::shared::{
     apply_list_query, ApiError, AuthenticatedUser, ListQuery, ListQueryParams, OrderDirection,
@@ -22,6 +22,13 @@ use uuid::Uuid;
 
 #[allow(dead_code)]
 const MAX_VERSIONS: i64 = 100;
+
+/// Map a path-resolution failure to a client error instead of handing a
+/// directory (or the storage root) to the file streamer, which crashes the
+/// actix response stream with `IsADirectory (Os code 21)`.
+fn no_content_error(_err: ServeResolveError) -> ApiError {
+    ApiError::new(409, "NO_CONTENT", "File has no uploaded content")
+}
 
 pub struct StorageService {
     repo: Arc<StorageRepository>,
@@ -296,7 +303,10 @@ impl StorageService {
             .find_version(version_id, file_id, user_id)?
             .ok_or_else(|| ApiError::not_found("Version not found"))?;
 
-        let path = self.store.resolve(&version.storage_path);
+        let path = self
+            .store
+            .resolve_for_serving(&version.storage_path)
+            .map_err(no_content_error)?;
         Ok((
             path,
             "application/json".to_string(),
@@ -440,11 +450,11 @@ impl StorageService {
             .repo
             .find_file(file_id, user_id)?
             .ok_or_else(|| ApiError::not_found("File not found"))?;
-        Ok((
-            self.store.resolve(&file.storage_path),
-            file.mime_type,
-            file.name,
-        ))
+        let path = self
+            .store
+            .resolve_for_serving(&file.storage_path)
+            .map_err(no_content_error)?;
+        Ok((path, file.mime_type, file.name))
     }
 
     /// Resolve a file path without an authenticated user (public share link).
@@ -456,11 +466,11 @@ impl StorageService {
             .repo
             .find_file_by_id(file_id)?
             .ok_or_else(|| ApiError::not_found("File not found"))?;
-        Ok((
-            self.store.resolve(&file.storage_path),
-            file.mime_type,
-            file.name,
-        ))
+        let path = self
+            .store
+            .resolve_for_serving(&file.storage_path)
+            .map_err(no_content_error)?;
+        Ok((path, file.mime_type, file.name))
     }
 
     pub fn get_quota(&self, user_id: &str) -> Result<QuotaResponse, ApiError> {
