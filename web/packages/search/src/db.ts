@@ -15,6 +15,7 @@ export interface DocEntry {
   documentId: string;
   type: SearchableDocType;
   titleHashes: string[];
+  contentHashes: string[];
   updatedAt: number;
 }
 
@@ -87,6 +88,26 @@ export function deleteDocumentTokens(docId: string, db: IDBDatabase): Promise<vo
       }
     };
     tx.objectStore('docs').delete(docId);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export function deleteTokenEntries(
+  docId: string,
+  removals: { hash: string; field: 'title' | 'content' }[],
+  db: IDBDatabase,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (removals.length === 0) {
+      resolve();
+      return;
+    }
+    const tx = db.transaction('tokens', 'readwrite');
+    const store = tx.objectStore('tokens');
+    for (const { hash, field } of removals) {
+      store.delete([hash, docId, field]);
+    }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

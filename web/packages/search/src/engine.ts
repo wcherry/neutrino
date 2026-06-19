@@ -5,6 +5,7 @@ import {
   putTokenEntries,
   putDocEntry,
   deleteDocumentTokens,
+  deleteTokenEntries,
   lookupPostings,
   getDocEntries,
   type TokenEntry,
@@ -57,10 +58,11 @@ export class IndexEngine {
     ];
 
     const titleHashes = titleTokens.map((t) => t.hash);
+    const contentHashes = contentTokens.map((t) => t.hash);
 
     await Promise.all([
       putTokenEntries(entries, db),
-      putDocEntry({ documentId: doc.id, type: doc.type, titleHashes, updatedAt: doc.updatedAt }, db),
+      putDocEntry({ documentId: doc.id, type: doc.type, titleHashes, contentHashes, updatedAt: doc.updatedAt }, db),
     ]);
 
     const elapsed = (performance.now() - t0).toFixed(1);
@@ -76,6 +78,69 @@ export class IndexEngine {
   async removeDocument(docId: string): Promise<void> {
     const db = await this.getDb();
     await deleteDocumentTokens(docId, db);
+  }
+
+  async updateDocument(doc: SearchableDocument, searchKey: Uint8Array): Promise<void> {
+    const db = await this.getDb();
+    const existing = (await getDocEntries([doc.id], db)).get(doc.id);
+
+    if (!existing) {
+      return this.indexDocument(doc, searchKey);
+    }
+
+    const t0 = performance.now();
+    const [titleTokens, contentTokens] = await Promise.all([
+      tokenizeWithPositions(doc.title, searchKey),
+      tokenizeWithPositions(doc.content, searchKey),
+    ]);
+
+    const newTitleHashes = new Set(titleTokens.map((t) => t.hash));
+    const newContentHashes = new Set(contentTokens.map((t) => t.hash));
+    const oldTitleHashes = new Set(existing.titleHashes);
+    const oldContentHashes = new Set(existing.contentHashes ?? []);
+
+    const removals: { hash: string; field: 'title' | 'content' }[] = [];
+    for (const h of oldTitleHashes) {
+      if (!newTitleHashes.has(h)) removals.push({ hash: h, field: 'title' });
+    }
+    for (const h of oldContentHashes) {
+      if (!newContentHashes.has(h)) removals.push({ hash: h, field: 'content' });
+    }
+
+    const entries: TokenEntry[] = [
+      ...titleTokens.map((t) => ({
+        tokenHash: t.hash,
+        documentId: doc.id,
+        field: 'title' as const,
+        frequency: t.positions.length,
+        positions: positionsToBytes(t.positions),
+      })),
+      ...contentTokens.map((t) => ({
+        tokenHash: t.hash,
+        documentId: doc.id,
+        field: 'content' as const,
+        frequency: t.positions.length,
+        positions: positionsToBytes(t.positions),
+      })),
+    ];
+
+    const elapsed = (performance.now() - t0).toFixed(1);
+    console.debug(
+      `[search] updated ${doc.type} "${doc.id}" — ` +
+      `removed: ${removals.length}, upserted: ${entries.length}, ${elapsed}ms`,
+    );
+
+    await Promise.all([
+      deleteTokenEntries(doc.id, removals, db),
+      putTokenEntries(entries, db),
+      putDocEntry({
+        documentId: doc.id,
+        type: doc.type,
+        titleHashes: [...newTitleHashes],
+        contentHashes: [...newContentHashes],
+        updatedAt: doc.updatedAt,
+      }, db),
+    ]);
   }
 
   async query(terms: string[], searchKey: Uint8Array): Promise<SearchResult[]> {

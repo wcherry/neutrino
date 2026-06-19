@@ -253,11 +253,6 @@ const qc = useQueryClient();
   const [rebuildingIndex, setRebuildingIndex] = useState(false);
   const [rebuildProgress, setRebuildProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // ── Advanced state ─────────────────────────────────────────────────────────
-  const [searchSyncDisabled, setSearchSyncDisabled] = useState<boolean>(false);
-  const [rebuildingIndex, setRebuildingIndex] = useState(false);
-  const [rebuildProgress, setRebuildProgress] = useState<{ done: number; total: number } | null>(null);
-
   // ── Calendar state ─────────────────────────────────────────────────────────
   const { success: toastSuccess, error: toastError } = useToast();
   const [weekStart, setWeekStart] = useState<number>(0);

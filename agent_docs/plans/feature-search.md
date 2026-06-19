@@ -1,5 +1,7 @@
 # Overview
 
+Read the architecture requirements in @/agents_docs/search.md
+
 The fastest successful architecture is:
 
 Local encrypted indexing
