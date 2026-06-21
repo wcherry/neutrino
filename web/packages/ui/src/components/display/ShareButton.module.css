@@ -1,0 +1,69 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+/* Overlapping avatar stack */
+.avatarStack {
+  display: flex;
+  align-items: center;
+}
+
+.avatarRing {
+  border: 2px solid var(--color-bg);
+  border-radius: 50%;
+  margin-left: -0.5rem; /* overlap */
+  flex-shrink: 0;
+}
+
+.avatarStack .avatarRing:first-child {
+  margin-left: 0;
+}
+
+/* Writer election ring — marks the user who holds the write lock */
+.writerRing {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+/* Overflow count bubble — matches sm Avatar size (2rem) */
+.overflow {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background-color: var(--color-neutral-200);
+  color: var(--color-text-secondary);
+  font-size: 0.625rem;
+  font-weight: var(--font-semibold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+/* Share icon button */
+.shareBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: none;
+  background-color: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+
+.shareBtn:hover {
+  opacity: 0.88;
+}
+
+.shareBtn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

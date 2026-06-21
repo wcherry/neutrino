@@ -24,7 +24,6 @@ import {
     exportChartAsPdf,
     copyChartToClipboard,
 } from './chartExport';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './charts.module.css';
 
 interface ChartEditorPanelProps {
@@ -73,7 +72,6 @@ const LEGEND_POSITIONS: { pos: LegendPosition; label: string }[] = [
 const LINE_CHART_TYPES: ChartType[] = ['line', 'area', 'scatter', 'combo'];
 
 export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: ChartEditorPanelProps) {
-    const flags = useFeatureFlags();
     const [localRange, setLocalRange] = useState(def.dataRange);
 
     function applyRange() {
@@ -111,9 +109,7 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
         onUpdate({ series: def.series.map(s => s.name === seriesName ? { ...s, [key]: value } : s) });
     }
 
-    const allChartTypes = flags.sheetsChartsPhase2
-        ? [...P1_CHART_TYPES, ...P2_CHART_TYPES]
-        : P1_CHART_TYPES;
+    const allChartTypes = [...P1_CHART_TYPES, ...P2_CHART_TYPES];
 
     const currentDataLabel: DataLabelConfig = def.dataLabel ?? {
         show: def.showDataLabels,
@@ -275,7 +271,7 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
                 </div>
 
                 {/* Phase 2: Themes */}
-                {flags.sheetsChartsPhase2 && (
+                {(
                     <div className={styles.editorSection}>
                         <div className={styles.editorSectionTitle}>Theme</div>
                         <div className={styles.themeGrid}>
@@ -302,7 +298,7 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
                 )}
 
                 {/* Phase 2: Y Axis controls */}
-                {flags.sheetsChartsPhase2 && (
+                {(
                     <div className={styles.editorSection}>
                         <div className={styles.editorSectionTitle}>Y Axis</div>
                         <div className={styles.twoColRow}>
@@ -389,7 +385,7 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
                 )}
 
                 {/* Phase 2: Series controls */}
-                {flags.sheetsChartsPhase2 && def.series.length > 0 && (
+                {def.series.length > 0 && (
                     <div className={styles.editorSection}>
                         <div className={styles.editorSectionTitle}>Series</div>
                         {def.series.map(s => (
@@ -442,7 +438,7 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
                 )}
 
                 {/* Phase 2: Data Labels config */}
-                {flags.sheetsChartsPhase2 && (
+                {(
                     <div className={styles.editorSection}>
                         <div className={styles.editorSectionTitle}>Data Labels</div>
                         <label className={styles.checkboxRow}>
@@ -513,19 +509,13 @@ export function ChartEditorPanel({ def, data, onUpdate, onDelete, onClose }: Cha
                 )}
 
                 {/* Phase 5: Annotations */}
-                {flags.sheetsChartsPhase5 && (
-                    <Phase5AnnotationsSection def={def} onUpdate={onUpdate} />
-                )}
+                <Phase5AnnotationsSection def={def} onUpdate={onUpdate} />
 
                 {/* Phase 5: Export */}
-                {flags.sheetsChartsPhase5 && (
-                    <Phase5ExportSection def={def} />
-                )}
+                <Phase5ExportSection def={def} />
 
                 {/* Phase 5: Animation */}
-                {flags.sheetsChartsPhase5 && (
-                    <Phase5AnimationSection def={def} onUpdate={onUpdate} />
-                )}
+                <Phase5AnimationSection def={def} onUpdate={onUpdate} />
 
                 {/* Delete */}
                 <button className={styles.deleteBtn} onClick={onDelete}>

@@ -20,6 +20,8 @@ export {
   encryptionApi,
   uploadEncryptedFile,
   downloadAndDecryptFile,
+  notificationsApi,
+  getNotificationsWsUrl,
 } from './client';
 
 export type {
@@ -69,4 +71,6 @@ export type {
   FileKeyResponse,
   SetFileKeyRequest,
   ShareFileKeyRequest,
+  NotificationItem,
+  NotificationListResponse,
 } from './types';

@@ -153,6 +153,9 @@ export type { DropdownProps, DropdownPlacement } from './components/navigation/D
 export { FileGrid } from './components/display/FileGrid';
 export type { FileGridProps, GridItem, ViewMode, SortField, SortDir, FilterType } from './components/display/FileGrid';
 
+export { ShareButton } from './components/display/ShareButton';
+export type { ShareButtonProps, ShareUser } from './components/display/ShareButton';
+
 // Editor
 export {
   Toolbar,
@@ -179,6 +182,9 @@ export type { VersionHistoryPanelProps, VersionItem } from './components/panels/
 
 export { SaveAsDialog } from './components/panels/SaveAsDialog';
 export type { SaveAsDialogProps, SaveAsOptions, SaveAsDriveFolder, SaveAsBreadcrumb } from './components/panels/SaveAsDialog';
+
+export { ShareDialog } from './components/panels/ShareDialog';
+export type { ShareDialogProps, SharePermission, ShareLinkData, SharePermissionRole, ShareUserSuggestion } from './components/panels/ShareDialog';
 
 // Shell components have moved to @neutrino/layout
 

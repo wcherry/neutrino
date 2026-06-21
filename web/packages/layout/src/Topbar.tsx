@@ -23,6 +23,16 @@ export interface TopbarAction {
   badge?: boolean;
 }
 
+export interface TopbarNotification {
+  id: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  isRead: boolean;
+  createdAt: string;
+  /** Optional navigation URL — when set the notification item links to it. */
+  href?: string;
+}
+
 export interface TopbarSearchResult {
   id: string;
   title: string;
@@ -38,11 +48,45 @@ export interface TopbarProps {
   searchResults?: TopbarSearchResult[];
   onResultClick?: (result: TopbarSearchResult) => void;
   actions?: TopbarAction[];
+  notifications?: TopbarNotification[];
+  unreadNotificationCount?: number;
+  onNotificationRead?: (id: string) => void;
+  onMarkAllNotificationsRead?: () => void;
   onSettings?: () => void;
   onSignOut?: () => void;
   onProfileClick?: () => void;
   className?: string;
   children?: React.ReactNode;
+}
+
+function notificationLabel(n: TopbarNotification): string {
+  const payload = n.payload as Record<string, string>;
+  const type = payload.resourceType === 'folder' ? 'folder' : 'file';
+  const name = payload.resourceName;
+
+  if (n.eventType === 'file_access_revoked' || n.eventType === 'folder_access_revoked') {
+    if (name) {
+      return `Your access to the ${type} "${name}" has been revoked`;
+    }
+    return `Your access to a ${type} has been revoked`;
+  }
+
+  const role = payload.role ?? 'access';
+  if (name) {
+    return `You were granted ${role} access to the ${type} "${name}"`;
+  }
+  return `You were granted ${role} access to a ${type}`;
+}
+
+function formatRelativeTime(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 export function Topbar({
@@ -52,6 +96,10 @@ export function Topbar({
   searchResults,
   onResultClick,
   actions = [],
+  notifications = [],
+  unreadNotificationCount = 0,
+  onNotificationRead,
+  onMarkAllNotificationsRead,
   onSettings,
   onSignOut,
   onProfileClick,
@@ -60,7 +108,9 @@ export function Topbar({
 }: TopbarProps) {
   const [searchValue, setSearchValue] = useState('');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [searchDropdownOpen, setSearchDropdownOpen] = useState(false);
+  const notificationPanelRef = useRef<HTMLDivElement>(null);
   const { toggleSidebar } = useShell();
   const userMenuRef = useRef<HTMLDivElement>(null);
   const searchWrapperRef = useRef<HTMLDivElement>(null);
@@ -85,6 +135,24 @@ export function Topbar({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [userMenuOpen]);
+
+  useEffect(() => {
+    if (!notificationPanelOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notificationPanelRef.current && !notificationPanelRef.current.contains(e.target as Node)) {
+        setNotificationPanelOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNotificationPanelOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [notificationPanelOpen]);
 
   useEffect(() => {
     if (!searchDropdownOpen) return;
@@ -208,13 +276,88 @@ export function Topbar({
         ))}
 
         {/* Notifications */}
-        <button
-          type="button"
-          className={styles['icon-btn']}
-          aria-label="Notifications"
-        >
-          <Bell size={18} />
-        </button>
+        <div className={styles['user-menu-wrapper']} ref={notificationPanelRef}>
+          <button
+            type="button"
+            className={styles['icon-btn']}
+            aria-label="Notifications"
+            aria-expanded={notificationPanelOpen}
+            aria-haspopup="true"
+            onClick={() => setNotificationPanelOpen((v) => !v)}
+          >
+            <Bell size={18} />
+            {unreadNotificationCount > 0 && (
+              <span className={styles['notification-badge']} aria-label={`${unreadNotificationCount} unread notifications`} />
+            )}
+          </button>
+
+          <AnimatePresence>
+            {notificationPanelOpen && (
+              <motion.div
+                className={styles['notification-panel']}
+                role="dialog"
+                aria-label="Notifications"
+                {...slideUp}
+              >
+                <div className={styles['notification-header']}>
+                  <span className={styles['notification-title']}>Notifications</span>
+                  {unreadNotificationCount > 0 && (
+                    <button
+                      type="button"
+                      className={styles['notification-mark-all']}
+                      onClick={() => { onMarkAllNotificationsRead?.(); }}
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+                {notifications.length === 0 ? (
+                  <p className={styles['notification-empty']}>No notifications yet</p>
+                ) : (
+                  <ul className={styles['notification-list']} role="list">
+                    {notifications.map((n) => (
+                      <li key={n.id} className={styles['notification-item']} data-unread={!n.isRead}>
+                        {n.href ? (
+                          <div className={styles['notification-item-btn']}>
+                            <span className={styles['notification-item-text']}>
+                              {notificationLabel(n)}
+                            </span>
+                            <div className={styles['notification-item-footer']}>
+                              <span className={styles['notification-item-time']}>
+                                {formatRelativeTime(n.createdAt)}
+                              </span>
+                              <a
+                                href={n.href}
+                                className={styles['notification-open-link']}
+                                onClick={() => { if (!n.isRead) onNotificationRead?.(n.id); }}
+                              >
+                                Open
+                              </a>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className={styles['notification-item-btn']}
+                            onClick={() => { if (!n.isRead) onNotificationRead?.(n.id); }}
+                          >
+                            <span className={styles['notification-item-text']}>
+                              {notificationLabel(n)}
+                            </span>
+                            <span className={styles['notification-item-time']}>
+                              {formatRelativeTime(n.createdAt)}
+                            </span>
+                          </button>
+                        )}
+                        {!n.isRead && <span className={styles['notification-dot']} aria-hidden="true" />}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
         {/* User menu */}
         {user && (

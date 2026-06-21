@@ -199,12 +199,19 @@ impl DriveClient {
 
     pub async fn update_file_name(
         &self,
-        user: &AuthenticatedUser,
+        _user: &AuthenticatedUser,
         file_id: &str,
         name: &str,
     ) -> Result<(), ApiError> {
+        // The file's user_id in the DB is always the owner's, not the current
+        // user's. For shared files the caller has already verified edit permission,
+        // so we must look up the owner id to satisfy the repository's filter.
+        let file = self
+            .storage
+            .find_file_any_user(file_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
         self.fs_repo
-            .update_file(file_id, &user.user_id, Some(name), None, None)?;
+            .update_file(file_id, &file.user_id, Some(name), None, None)?;
         Ok(())
     }
 

@@ -133,6 +133,11 @@ pub async fn me(
 // ── User Lookup ───────────────────────────────────────────────────────────────
 
 #[derive(Deserialize, utoipa::ToSchema)]
+pub struct SearchUsersQuery {
+    pub q: String,
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
 pub struct LookupByEmailQuery {
     pub email: String,
 }
@@ -160,6 +165,32 @@ pub async fn lookup_user_by_email(
         Some(u) => Ok(web::Json(u)),
         None => Err(ApiError::not_found("User not found")),
     }
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/users/search",
+    params(
+        ("q" = String, Query, description = "Search query (matches email or name)"),
+    ),
+    responses(
+        (status = 200, description = "Matching users", body = Vec<UserLookupResponse>),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "auth"
+)]
+#[get("/users/search")]
+pub async fn search_users(
+    state: web::Data<AuthApiState>,
+    _user: AuthenticatedUser,
+    query: web::Query<SearchUsersQuery>,
+) -> Result<web::Json<Vec<UserLookupResponse>>, ApiError> {
+    let q = query.q.trim();
+    if q.is_empty() {
+        return Ok(web::Json(vec![]));
+    }
+    let results = state.auth_service.search_users(q)?;
+    Ok(web::Json(results))
 }
 
 #[utoipa::path(
@@ -585,6 +616,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .service(get_profile_details)
             .service(update_profile_details)
             .service(lookup_user_by_email)
+            .service(search_users)
             .service(get_user_by_id)
             .service(get_user_public_profile)
             .service(two_factor_status)

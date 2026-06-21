@@ -39,6 +39,7 @@ import { ChartLayer } from './charts/ChartLayer';
 import { ChartCreationDialog } from './charts/ChartCreationDialog';
 import { ChartEditorPanel } from './charts/ChartEditorPanel';
 import styles from './page.module.css';
+import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 
 type SheetKeyboardMode = 'movement' | 'formula';
 
@@ -119,6 +120,7 @@ export function SheetEditor() {
     const router = useRouter();
     const flags = useFeatureFlags();
     const sheetId = searchParams.get('id') ?? '';
+    useAccessRevocation(sheetId);
     // ── Core state & refs ────────────────────────────────────────────────────
     const [currentCell, setCurrentCell] = useState<CellProps | undefined>();
     const [selectionAnchor, setSelectionAnchor] = useState<string | undefined>(undefined);

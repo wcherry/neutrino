@@ -65,6 +65,14 @@ export interface UseEncryptedDocumentContentResult {
    * so the query never runs before the DEK is ready.
    */
   dekResolved: boolean;
+  /**
+   * `true` when the DEK was freshly generated (no prior key on the server),
+   * meaning the server still holds plaintext content that needs encrypting.
+   * `false` when the DEK was retrieved from an existing key ref — in that case
+   * a decryption failure means the ciphertext is corrupt, not plaintext, and
+   * the caller should NOT overwrite server content.
+   */
+  isNewEncryption: boolean;
   /** Write an autosave revision (no version-history entry). */
   autosave: (content: string) => void;
   /** Create a named version snapshot in version history. */
@@ -88,6 +96,7 @@ export function useEncryptedDocumentContent({
   const { user: currentUser, isLoading: authLoading } = useAuth();
   const dekRef = useRef<Uint8Array | null>(null);
   const [dekResolved, setDekResolved] = useState(false);
+  const [isNewEncryption, setIsNewEncryption] = useState(false);
 
   // ── Step 1: Resolve the DEK ───────────────────────────────────────────────
   useEffect(() => {
@@ -120,6 +129,7 @@ export function useEncryptedDocumentContent({
             const encryptedFileKey = encryptFileKey(newDek, kp.publicKey);
             await encryptionApi.setFileKey(id, { encryptedFileKey });
             dekRef.current = newDek;
+            setIsNewEncryption(true);
           }
         }
       } catch {
@@ -153,6 +163,7 @@ export function useEncryptedDocumentContent({
   return {
     dekRef,
     dekResolved,
+    isNewEncryption,
     autosave: autosaveMutation.mutate,
     createVersion: createVersionMutation.mutate,
     isAutosaving: autosaveMutation.isPending,

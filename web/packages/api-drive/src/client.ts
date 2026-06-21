@@ -42,6 +42,7 @@ import type {
   FileKeyResponse,
   SetFileKeyRequest,
   ShareFileKeyRequest,
+  NotificationListResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -230,6 +231,22 @@ export const filesystemApi = {
     return request<void>('/api/v1/drive/trash', { method: 'DELETE' });
   },
 
+  async restoreFile(fileId: string): Promise<void> {
+    return request<void>(`/api/v1/drive/trash/files/${fileId}/restore`, { method: 'POST' });
+  },
+
+  async deleteFilePermanently(fileId: string): Promise<void> {
+    return request<void>(`/api/v1/drive/trash/files/${fileId}`, { method: 'DELETE' });
+  },
+
+  async restoreFolder(folderId: string): Promise<void> {
+    return request<void>(`/api/v1/drive/trash/folders/${folderId}/restore`, { method: 'POST' });
+  },
+
+  async deleteFolderPermanently(folderId: string): Promise<void> {
+    return request<void>(`/api/v1/drive/trash/folders/${folderId}`, { method: 'DELETE' });
+  },
+
   async createShortcut(body: ShortcutCreateRequest): Promise<Shortcut> {
     return request<Shortcut>('/api/v1/drive/shortcuts', {
       method: 'POST',
@@ -363,6 +380,11 @@ export const usersApi = {
       if (e instanceof ApiClientError && e.statusCode === 404) return null;
       throw e;
     }
+  },
+
+  async searchUsers(query: string): Promise<UserLookup[]> {
+    if (!query.trim()) return [];
+    return request<UserLookup[]>(`/api/v1/auth/users/search?q=${encodeURIComponent(query.trim())}`);
   },
 };
 
@@ -700,3 +722,34 @@ export const commentsApi = {
     );
   },
 };
+
+// ---------------------------------------------------------------------------
+// Notifications API
+// ---------------------------------------------------------------------------
+
+export const notificationsApi = {
+  async list(page?: number, pageSize?: number): Promise<NotificationListResponse> {
+    const qs = new URLSearchParams();
+    if (page !== undefined) qs.set('page', String(page));
+    if (pageSize !== undefined) qs.set('pageSize', String(pageSize));
+    const query = qs.toString() ? `?${qs}` : '';
+    return request<NotificationListResponse>(`/api/v1/drive/notifications${query}`);
+  },
+
+  async markRead(id: string): Promise<void> {
+    return request<void>(`/api/v1/drive/notifications/${id}/read`, { method: 'POST' });
+  },
+
+  async markAllRead(): Promise<void> {
+    return request<void>('/api/v1/drive/notifications/read-all', { method: 'POST' });
+  },
+};
+
+export function getNotificationsWsUrl(): string {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : '';
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? '';
+  const base = apiUrl
+    ? apiUrl.replace(/^http/, 'ws')
+    : `${typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws'}://${typeof window !== 'undefined' ? window.location.host : ''}`;
+  return `${base}/api/v1/drive/notifications/ws?token=${token ?? ''}`;
+}

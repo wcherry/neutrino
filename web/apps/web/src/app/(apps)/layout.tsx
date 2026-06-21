@@ -10,7 +10,9 @@ import {
   type NavSection,
   type StorageQuota,
   type TopbarSearchResult,
+  type TopbarNotification,
 } from '@neutrino/layout';
+import type { NotificationItem } from '@neutrino/api-drive';
 import {
   Spinner,
   useToast,
@@ -34,8 +36,8 @@ import {
 import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
 import { IndexEngine, type SearchableDocType } from '@neutrino/search';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { NewItemFAB } from './NewItemFAB';
+import { useNotifications } from '@/hooks/useNotifications';
 
 const SEARCH_KEY_STORAGE = 'search_key_v1';
 const SEARCH_KEY_BYTES = 32;
@@ -85,6 +87,24 @@ function docTypeIcon(type: SearchableDocType): React.ReactNode {
     case 'reminder': return <Bell size={16} />;
     default: return <FileText size={16} />;
   }
+}
+
+function notificationHref(n: NotificationItem): string | undefined {
+  const payload = n.payload as Record<string, string>;
+  const { resourceType, resourceId, mimeType } = payload;
+  if (!resourceId) return undefined;
+  if (resourceType === 'folder') return `/drive`;
+  // Map file mimeType to the right editor
+  if (mimeType?.includes('document')) return `/docs/editor?id=${resourceId}`;
+  if (mimeType?.includes('sheet') || mimeType?.includes('spreadsheet')) return `/sheets/editor?id=${resourceId}`;
+  if (mimeType?.includes('slide') || mimeType?.includes('presentation')) return `/slides/editor?id=${resourceId}`;
+  if (mimeType?.includes('diagram')) return `/diagrams/editor?id=${resourceId}`;
+  if (mimeType?.includes('drawing')) return `/drawing/editor?id=${resourceId}`;
+  return `/drive`;
+}
+
+function toTopbarNotifications(items: NotificationItem[]): TopbarNotification[] {
+  return items.map((n) => ({ ...n, href: notificationHref(n) }));
 }
 
 const BASE_NAV_SECTIONS: NavSection[] = [
@@ -144,7 +164,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const flags = useFeatureFlags();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
   const engineRef = useRef<IndexEngine | null>(null);
@@ -166,6 +185,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     queryFn: () => authApi.getProfileDetails(),
     enabled: auth.status === 'ready',
   });
+
+  const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
 
   async function handleUpload(files: FileList) {
     const fileArr = Array.from(files);
@@ -211,12 +232,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             : { usedBytes: 0, totalBytes: DEFAULT_QUOTA_BYTES },
         });
         ensureE2EKeys(user.id).catch(() => {});
-        if (flags.search) {
-          const kp = loadKeyPair(user.id);
-          if (kp) {
-            engineRef.current = new IndexEngine();
-            searchKeyRef.current = getOrCreateSearchKey(user.id);
-          }
+        const kp = loadKeyPair(user.id);
+        if (kp) {
+          engineRef.current = new IndexEngine();
+          searchKeyRef.current = getOrCreateSearchKey(user.id);
         }
       } catch {
         // Not authenticated or refresh failed — redirect to sign-in.
@@ -228,13 +247,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   useEffect(() => {
-    if (auth.status !== 'ready' || !flags.search) return;
+    if (auth.status !== 'ready') return;
     const kp = loadKeyPair(auth.user.id);
     if (kp) {
       engineRef.current = new IndexEngine();
       searchKeyRef.current = getOrCreateSearchKey(auth.user.id);
     }
-  }, [auth, flags.search]);
+  }, [auth]);
 
 
   const handleSearch = useCallback(async (query: string) => {
@@ -289,8 +308,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       user={{ name: auth.user.name, email: auth.user.email, avatarSrc: profileDetails?.avatar ?? undefined }}
       onSearch={handleSearch}
       searchPlaceholder="Search in Drive..."
-      searchResults={flags.search ? searchResults : undefined}
-      onResultClick={flags.search ? handleResultClick : undefined}
+      searchResults={searchResults}
+      onResultClick={handleResultClick}
+      notifications={toTopbarNotifications(notifications)}
+      unreadNotificationCount={unreadCount}
+      onNotificationRead={markRead}
+      onMarkAllNotificationsRead={markAllRead}
       onSettings={() => router.push('/settings')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}

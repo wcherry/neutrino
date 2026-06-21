@@ -1,3 +1,5 @@
+use crate::drive::filesystem::repository::FilesystemRepository;
+use crate::drive::notifications::service::NotificationService;
 use crate::drive::permissions::{
     dto::{
         GrantPermissionRequest, ListPermissionsResponse, PermissionResponse,
@@ -5,6 +7,7 @@ use crate::drive::permissions::{
     },
     service::PermissionsService,
 };
+use crate::drive::storage::repository::StorageRepository;
 use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use serde::Deserialize;
@@ -13,6 +16,9 @@ use utoipa::OpenApi;
 
 pub struct PermissionsApiState {
     pub permissions_service: Arc<PermissionsService>,
+    pub notification_service: Arc<NotificationService>,
+    pub storage_repo: Arc<StorageRepository>,
+    pub fs_repo: Arc<FilesystemRepository>,
 }
 
 // ── Path extractors ───────────────────────────────────────────────────────────
@@ -83,6 +89,30 @@ pub async fn grant_file_permission(
         &file_id,
         body.into_inner(),
     )?;
+    let ns = state.notification_service.clone();
+    let recipient_id = perm.user_id.clone();
+    let shared_by_id = user.user_id.clone();
+    let resource_id = file_id.clone();
+    let role = perm.role.clone();
+    let file_record = state.storage_repo.find_file_by_id(&file_id).ok().flatten();
+    let resource_name = file_record.as_ref().map(|f| f.name.clone()).unwrap_or_default();
+    let mime_type = file_record.as_ref().map(|f| f.mime_type.clone()).unwrap_or_default();
+    tokio::spawn(async move {
+        let _ = ns
+            .notify(
+                vec![recipient_id],
+                "file_shared",
+                serde_json::json!({
+                    "resourceType": "file",
+                    "resourceId": resource_id,
+                    "resourceName": resource_name,
+                    "mimeType": mime_type,
+                    "role": role,
+                    "sharedById": shared_by_id,
+                }),
+            )
+            .await;
+    });
     Ok(HttpResponse::Created().json(perm))
 }
 
@@ -147,6 +177,28 @@ pub async fn revoke_file_permission(
     state
         .permissions_service
         .revoke_permission(&user.user_id, "file", &p.file_id, &p.user_id)?;
+    let ns = state.notification_service.clone();
+    let recipient_id = p.user_id.clone();
+    let revoked_by_id = user.user_id.clone();
+    let resource_id = p.file_id.clone();
+    let file_record = state.storage_repo.find_file_by_id(&p.file_id).ok().flatten();
+    let resource_name = file_record.as_ref().map(|f| f.name.clone()).unwrap_or_default();
+    let mime_type = file_record.as_ref().map(|f| f.mime_type.clone()).unwrap_or_default();
+    tokio::spawn(async move {
+        let _ = ns
+            .notify(
+                vec![recipient_id],
+                "file_access_revoked",
+                serde_json::json!({
+                    "resourceType": "file",
+                    "resourceId": resource_id,
+                    "resourceName": resource_name,
+                    "mimeType": mime_type,
+                    "revokedById": revoked_by_id,
+                }),
+            )
+            .await;
+    });
     Ok(HttpResponse::NoContent().finish())
 }
 
@@ -234,6 +286,33 @@ pub async fn grant_folder_permission(
         &folder_id,
         body.into_inner(),
     )?;
+    let ns = state.notification_service.clone();
+    let recipient_id = perm.user_id.clone();
+    let shared_by_id = user.user_id.clone();
+    let resource_id = folder_id.clone();
+    let role = perm.role.clone();
+    let resource_name = state
+        .fs_repo
+        .find_folder_by_id(&folder_id)
+        .ok()
+        .flatten()
+        .map(|f| f.name)
+        .unwrap_or_default();
+    tokio::spawn(async move {
+        let _ = ns
+            .notify(
+                vec![recipient_id],
+                "folder_shared",
+                serde_json::json!({
+                    "resourceType": "folder",
+                    "resourceId": resource_id,
+                    "resourceName": resource_name,
+                    "role": role,
+                    "sharedById": shared_by_id,
+                }),
+            )
+            .await;
+    });
     Ok(HttpResponse::Created().json(perm))
 }
 
@@ -301,6 +380,31 @@ pub async fn revoke_folder_permission(
         &p.folder_id,
         &p.user_id,
     )?;
+    let ns = state.notification_service.clone();
+    let recipient_id = p.user_id.clone();
+    let revoked_by_id = user.user_id.clone();
+    let resource_id = p.folder_id.clone();
+    let resource_name = state
+        .fs_repo
+        .find_folder_by_id(&p.folder_id)
+        .ok()
+        .flatten()
+        .map(|f| f.name)
+        .unwrap_or_default();
+    tokio::spawn(async move {
+        let _ = ns
+            .notify(
+                vec![recipient_id],
+                "folder_access_revoked",
+                serde_json::json!({
+                    "resourceType": "folder",
+                    "resourceId": resource_id,
+                    "resourceName": resource_name,
+                    "revokedById": revoked_by_id,
+                }),
+            )
+            .await;
+    });
     Ok(HttpResponse::NoContent().finish())
 }
 

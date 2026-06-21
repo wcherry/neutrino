@@ -1,5 +1,6 @@
 'use client';
 
+import './remoteCursors.css';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
@@ -42,10 +43,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, ChevronLeft, ChevronRight, FileText, Minimize2,
 } from 'lucide-react';
-import { Spinner, useToast, ZoomSlider } from '@neutrino/ui';
+import { ShareButton, Spinner, useToast, ZoomSlider } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
-import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type PageSetup } from '@/lib/api';
+import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type PageSetup, type FileItem } from '@/lib/api';
+import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { useUser } from '@neutrino/auth';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
@@ -80,8 +83,9 @@ import { Sparkles } from 'lucide-react';
 import styles from './page.module.css';
 // Feature gap #4 — Real-time presence / cursor awareness
 import { usePresence } from '@/hooks/usePresence';
-import { PresenceBar } from './PresenceBar';
 import { RemoteCursorsExtension } from '@/lib/extensions/RemoteCursorsExtension';
+import Collaboration from '@tiptap/extension-collaboration';
+import * as Y from 'yjs';
 // Feature gap #5 — Track changes / suggesting mode
 import { TrackChangesExtension, isSuggestingMode } from '@/lib/extensions/TrackChangesExtension';
 import { TrackChangesBar } from './TrackChangesBar';
@@ -89,6 +93,7 @@ import { TrackChangesBar } from './TrackChangesBar';
 import { DocComparePanel } from './DocComparePanel';
 import type { FileVersionItem } from '@neutrino/api-drive';
 import { HorizontalRuler, VerticalRuler } from './Ruler';
+import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
 // Dimensions in inches; rendered at 96 dpi for screen display.
@@ -584,7 +589,12 @@ export function DocEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const flags = useFeatureFlags();
+  const currentUser = useUser();
   const docId = searchParams.get('id') ?? '';
+  useAccessRevocation(docId);
+
+  // Stable Y.Doc for this editing session — shared between Collaboration extension and usePresence
+  const [ydoc] = useState(() => new Y.Doc());
   const queryClient = useQueryClient();
   const { spellCheck } = useSpellCheck();
   const nspell = useNspell();
@@ -601,6 +611,7 @@ export function DocEditor() {
   });
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [showPageSetup, setShowPageSetup] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [showSaveAs, setShowSaveAs] = useState(false);
   const [saveAsFormat, setSaveAsFormat] = useState('pdf');
   const pendingExportHtmlRef = useRef('');
@@ -654,12 +665,11 @@ export function DocEditor() {
 
   // ── Presence state (gated by flags.docsPresence) ──
   const [authToken, setAuthToken] = useState<string | null>(null);
-  // Read the JWT from localStorage (stored by the auth module as 'neutrino.access_token')
   useEffect(() => {
-    if (!flags.docsPresence) return;
-    const stored = localStorage.getItem('neutrino.access_token');
+    const stored = localStorage.getItem('access_token');
+    console.log('[presence] authToken from localStorage:', stored ? 'found' : 'missing');
     setAuthToken(stored);
-  }, [flags.docsPresence]);
+  }, []);
 
   // ── Track changes state (gated by flags.docsTrackChanges) ──
   const [suggestingMode, setSuggestingMode] = useState(false);
@@ -710,7 +720,7 @@ export function DocEditor() {
     enabled: !!docId,
   });
 
-  const { data: docContent, isLoading: contentLoading } = useQuery({
+  const { data: docContent, isLoading: contentLoading, isError: contentError } = useQuery({
     // Include contentUrl in the key so the queryFn closure is always consistent
     // with the key and the query re-fires if the URL changes (e.g. after restore).
     queryKey: ['doc-content', docId, dekResolved, doc?.contentUrl ?? ''],
@@ -775,6 +785,7 @@ export function DocEditor() {
 
   const triggerSave = useCallback(
     (content: string, metadata?: { title?: string; pageSetup?: PageSetup }) => {
+      if (!isLocalWriterRef.current) return;
       contentMutation.mutate({ content, metadata });
     },
     [contentMutation]
@@ -820,7 +831,9 @@ export function DocEditor() {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ paragraph: false }),
+      // Collaboration uses Y.Doc for undo/redo, so StarterKit's History must be off
+      StarterKit.configure({ paragraph: false, history: false }),
+      Collaboration.configure({ document: ydoc }),
       LineParagraph,
       Underline,
       TextStyle,
@@ -866,8 +879,7 @@ export function DocEditor() {
         FindReplaceExtension,
         GrammarCheckExtension,
       ] : []),
-      // Presence / remote cursors (feature gap #4)
-      ...(flags.docsPresence ? [RemoteCursorsExtension] : []),
+      RemoteCursorsExtension,
       // Track changes / suggesting mode (feature gap #5)
       ...(flags.docsTrackChanges ? [TrackChangesExtension] : []),
     ],
@@ -894,20 +906,37 @@ export function DocEditor() {
   // Keep editorRef in sync so the stable onEmbed callback can access the editor.
   (editorRef as React.MutableRefObject<typeof editor>).current = editor;
 
-  // ── Presence / cursor awareness (feature gap #4) ───────────────────────────
-  const { remoteUsers, isConnected } = usePresence({
+  // ── Presence / cursor awareness + Yjs doc sync (feature gap #4) ─────────────
+  const { remoteUsers, syncReady, isLocalWriter } = usePresence({
     docId,
-    userName: doc?.title ?? 'Anonymous',
+    userName: currentUser?.name ?? 'Anonymous',
     authToken,
     editor,
-    enabled: flags.docsPresence && !!docId,
+    enabled: !!docId,
+    ydoc,
   });
+
+  // Stable ref so save callbacks always read the latest writer status without
+  // needing to re-create them (avoids stale closure issues with debounce timers).
+  const isLocalWriterRef = useRef(true);
+  isLocalWriterRef.current = isLocalWriter;
+
+  // When we're not the writer, find which remote user holds the write lock so
+  // we can highlight their avatar with a ring.
+  const remoteWriterClientId = !isLocalWriter && remoteUsers.length > 0
+    ? remoteUsers.reduce((min, u) => {
+        const minJoin = min.joinedAt ?? 0;
+        const uJoin = u.joinedAt ?? 0;
+        if (uJoin === minJoin) return u.clientId < min.clientId ? u : min;
+        return uJoin < minJoin ? u : min;
+      }).clientId
+    : null;
 
   // Push remote cursor positions into the RemoteCursorsExtension plugin
   useEffect(() => {
-    if (!flags.docsPresence || !editor) return;
+    if (!editor) return;
     editor.commands.updateRemoteCursors(remoteUsers);
-  }, [flags.docsPresence, editor, remoteUsers]);
+  }, [editor, remoteUsers]);
 
   // ── Track changes — keep React state in sync with plugin state ────────────
   useEffect(() => {
@@ -954,10 +983,20 @@ export function DocEditor() {
   }, [doc, editor]);
 
   useEffect(() => {
-    if (!docContent || !editor) return;
+    if (!docContent || !editor || !syncReady) return;
     // Skip if the user has unsaved edits — a stale refetch (e.g. triggered by
     // window.focus after a prompt dialog) must not clobber in-progress work.
     if (pendingContent.current !== null) return;
+
+    // If the Y.Doc already has content from an active collab session (other
+    // users were already editing), don't overwrite with the (older) REST snapshot.
+    const fragment = ydoc.getXmlFragment('default');
+    if (fragment.length > 0) {
+      console.log('[collab] Y.Doc has content from server — skipping REST content load');
+      return;
+    }
+
+    console.log('[collab] Y.Doc is empty after sync — loading content from REST');
     try {
       const parsed = JSON.parse(docContent);
       // Detect wrapper format { doc, _meta } written when the layout flag was on
@@ -975,26 +1014,31 @@ export function DocEditor() {
     } catch {
       editor.commands.setContent(docContent, false);
     }
-  }, [docContent, editor]);
+  }, [docContent, editor, syncReady, ydoc]);
 
   // After the DEK is resolved and the content query has settled, do a one-time
   // encrypted autosave when no valid content was loaded (new file or failed
   // decryption of server-stored plaintext).  This overwrites the server's
   // plaintext initial content so the stored bytes are always ciphertext.
+  // Guard on contentError: a failed download leaves docContent undefined, which
+  // is indistinguishable from "no content yet" — never write an empty file over
+  // content we simply failed to fetch.
   useEffect(() => {
-    if (!dekRef.current || !editor || !doc || contentLoading) return;
+    if (!dekRef.current || !editor || !doc || contentLoading || contentError) return;
     if (initialSaveDoneRef.current) return;
     if (docContent !== null && docContent !== undefined) return;
+    if (!isLocalWriterRef.current) return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(editor.getJSON());
     docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dekResolved, editor, doc, contentLoading, docContent, docId]);
+  }, [dekResolved, editor, doc, contentLoading, contentError, docContent, docId]);
 
   useEffect(() => {
     const flush = () => {
       if (pendingContent.current === null) return;
+      if (!isLocalWriterRef.current) return;
       if (autoSaveTimer.current) {
         clearTimeout(autoSaveTimer.current);
         autoSaveTimer.current = null;
@@ -1042,7 +1086,7 @@ export function DocEditor() {
       clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = null;
     }
-    if (pendingContent.current !== null) {
+    if (pendingContent.current !== null && isLocalWriterRef.current) {
       await contentMutation.mutateAsync({ content: pendingContent.current, metadata: { title: titleRef.current, pageSetup: pageSetupRef.current } });
       pendingContent.current = null;
     }
@@ -1051,7 +1095,7 @@ export function DocEditor() {
   }, [contentMutation, queryClient, router]);
 
   const handleManualSave = useCallback(() => {
-    if (!editor) return;
+    if (!editor || !isLocalWriterRef.current) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     const content = serializeContent(editor.getJSON(), {
       headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme,
@@ -1749,12 +1793,20 @@ export function DocEditor() {
           <button
             className={styles.exportBtn}
             onClick={handleManualSave}
-            disabled={versionMutation.isPending}
-            title="Save version (Ctrl+S)"
+            disabled={versionMutation.isPending || !isLocalWriter}
+            title={isLocalWriter ? 'Save version (Ctrl+S)' : 'Another collaborator is the active writer'}
             style={{ background: '#1a73e8', color: 'white', border: 'none' }}
           >
             Save
           </button>
+
+          <ShareButton
+            users={remoteUsers.map(u => ({
+              name: u.name,
+              isWriter: u.clientId === remoteWriterClientId,
+            }))}
+            onShare={() => setShowShareDialog(true)}
+          />
 
           <input
             ref={importInputRef}
@@ -1777,10 +1829,6 @@ export function DocEditor() {
 
         </div>
 
-        {/* Presence bar (docsPresence flag) */}
-        {flags.docsPresence && (
-          <PresenceBar users={remoteUsers} connected={isConnected} />
-        )}
       </div>)}
 
       {/* ── Toolbar ── */}
@@ -2148,6 +2196,14 @@ export function DocEditor() {
             canInsert={aiOperation !== 'grammar-fix' || grammarAiCanInsertRef.current}
           />
         </div>
+      )}
+
+      {showShareDialog && doc && (
+        <ShareDialog
+          resource={{ ...doc, name: doc.title } as unknown as FileItem}
+          resourceType="file"
+          onClose={() => setShowShareDialog(false)}
+        />
       )}
 
       {showInsertDiagram && (

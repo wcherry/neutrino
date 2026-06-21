@@ -226,6 +226,15 @@ impl AuthService {
         }))
     }
 
+    pub fn search_users(&self, query: &str) -> Result<Vec<UserLookupResponse>, ApiError> {
+        let users = self.repo.search_users(query, 10)?;
+        Ok(users.into_iter().map(|u| UserLookupResponse {
+            id: u.id,
+            email: u.email,
+            name: u.name,
+        }).collect())
+    }
+
     pub fn get_user_by_id(&self, user_id: &str) -> Result<Option<UserLookupResponse>, ApiError> {
         let user = self.repo.find_user_by_id(user_id)?;
         Ok(user.map(|u| UserLookupResponse {

@@ -15,8 +15,15 @@ import {
 } from 'lucide-react';
 import { sharedWithMeApi, type FileItem, type Folder as FolderItem } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
-import { ShareDialog } from '../ShareDialog';
+import { useRouter } from 'next/navigation';
+import { PreviewModal } from '../PreviewModal';
 import styles from './page.module.css';
+
+const DOC_MIME = 'application/x-neutrino-doc';
+const SHEET_MIME = 'application/x-neutrino-sheet';
+const SLIDES_MIME = 'application/x-neutrino-slide';
+const DIAGRAM_MIME = 'application/x-neutrino-diagram';
+const DRAWING_MIME = 'application/x-neutrino-drawing';
 
 
 function formatFileSize(bytes: number): string {
@@ -35,7 +42,24 @@ function formatDate(iso: string): string {
 }
 
 export default function SharedWithMePage() {
-  const [shareFile, setShareFile] = useState<FileItem | null>(null);
+  const router = useRouter();
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+
+  function openFile(file: FileItem) {
+    if (file.mimeType === DOC_MIME) {
+      router.push(`/docs/editor?id=${file.id}`);
+    } else if (file.mimeType === SHEET_MIME) {
+      router.push(`/sheets/editor?id=${file.id}`);
+    } else if (file.mimeType === SLIDES_MIME) {
+      router.push(`/slides/editor?id=${file.id}`);
+    } else if (file.mimeType === DIAGRAM_MIME) {
+      router.push(`/diagrams/editor?id=${file.id}`);
+    } else if (file.mimeType === DRAWING_MIME) {
+      router.push(`/drawing/editor?id=${file.id}`);
+    } else {
+      setPreviewFile(file);
+    }
+  }
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['shared-with-me'],
@@ -100,7 +124,7 @@ export default function SharedWithMePage() {
                 role="listitem"
                 tabIndex={0}
                 aria-label={file.name}
-                onClick={() => setShareFile(file)}
+                onClick={() => openFile(file)}
               >
                 <div className={styles.preview} style={{ color: getIconColor(file.mimeType) }}>
                   <IconComponent size={40} strokeWidth={1} />
@@ -117,13 +141,7 @@ export default function SharedWithMePage() {
         </div>
       )}
 
-      {shareFile && (
-        <ShareDialog
-          resource={shareFile}
-          resourceType="file"
-          onClose={() => setShareFile(null)}
-        />
-      )}
+      {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
     </div>
   );
 }

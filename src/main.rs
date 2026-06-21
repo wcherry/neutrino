@@ -238,6 +238,7 @@ async fn main() -> std::io::Result<()> {
     use drive::irm::service::IrmService;
     use drive::jobs::repository::JobsRepository;
     use drive::jobs::service::JobsService;
+    use drive::notifications::hub::NotificationHub;
     use drive::notifications::repository::NotificationsRepository;
     use drive::notifications::service::{NotificationService, SmtpConfig};
     use drive::permissions::repository::PermissionsRepository;
@@ -277,6 +278,33 @@ async fn main() -> std::io::Result<()> {
 
     let drive_encryption_repo = Arc::new(EncryptionRepository::new(pool.clone()));
 
+    let notification_hub = Arc::new(NotificationHub::new());
+
+    let smtp_config = if let (Ok(host), Ok(port_str), Ok(user_s), Ok(pass), Ok(from)) = (
+        std::env::var("SMTP_HOST"),
+        std::env::var("SMTP_PORT"),
+        std::env::var("SMTP_USER"),
+        std::env::var("SMTP_PASS"),
+        std::env::var("SMTP_FROM"),
+    ) {
+        port_str.parse::<u16>().ok().map(|port| SmtpConfig {
+            host,
+            port,
+            user: user_s,
+            pass,
+            from,
+        })
+    } else {
+        None
+    };
+
+    let drive_notifications_repo = Arc::new(NotificationsRepository::new(pool.clone()));
+    let drive_notification_service = Arc::new(NotificationService::new(
+        drive_notifications_repo,
+        smtp_config,
+        notification_hub.clone(),
+    ));
+
     let drive_permissions_repo = Arc::new(PermissionsRepository::new(pool.clone()));
     let drive_permissions_service = Arc::new(PermissionsService::new(
         drive_permissions_repo.clone(),
@@ -286,6 +314,9 @@ async fn main() -> std::io::Result<()> {
     ));
     let drive_permissions_state = web::Data::new(drive::permissions::api::PermissionsApiState {
         permissions_service: drive_permissions_service.clone(),
+        notification_service: drive_notification_service.clone(),
+        storage_repo: Arc::new(StorageRepository::new(pool.clone())),
+        fs_repo: Arc::new(FilesystemRepository::new(pool.clone())),
     });
 
     let drive_irm_repo = Arc::new(IrmRepository::new(pool.clone()));
@@ -367,32 +398,11 @@ async fn main() -> std::io::Result<()> {
             service: drive_access_requests_service,
         });
 
-    let smtp_config = if let (Ok(host), Ok(port_str), Ok(user_s), Ok(pass), Ok(from)) = (
-        std::env::var("SMTP_HOST"),
-        std::env::var("SMTP_PORT"),
-        std::env::var("SMTP_USER"),
-        std::env::var("SMTP_PASS"),
-        std::env::var("SMTP_FROM"),
-    ) {
-        port_str.parse::<u16>().ok().map(|port| SmtpConfig {
-            host,
-            port,
-            user: user_s,
-            pass,
-            from,
-        })
-    } else {
-        None
-    };
-
-    let drive_notifications_repo = Arc::new(NotificationsRepository::new(pool.clone()));
-    let drive_notification_service = Arc::new(NotificationService::new(
-        drive_notifications_repo,
-        smtp_config,
-    ));
     let drive_notifications_state =
         web::Data::new(drive::notifications::api::NotificationsApiState {
             notification_service: drive_notification_service.clone(),
+            hub: notification_hub.clone(),
+            token_service: token_service.clone(),
         });
 
     let drive_activity_repo = Arc::new(ActivityRepository::new(pool.clone()));

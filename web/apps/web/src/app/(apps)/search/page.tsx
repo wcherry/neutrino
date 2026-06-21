@@ -5,8 +5,6 @@ import { Heading, Badge, SearchInput } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
 import { IndexEngine, getOrCreateSearchKey, type SearchResult, type SearchableDocType } from '@neutrino/search';
-import { useFeatureFlags, useFeatureFlagsLoaded } from '@/providers/FeatureFlagsProvider';
-import { notFound } from 'next/navigation';
 import styles from './page.module.css';
 
 const DOC_TYPE_LABELS: Record<SearchableDocType, string> = {
@@ -19,17 +17,12 @@ const DOC_TYPE_LABELS: Record<SearchableDocType, string> = {
 };
 
 export default function SearchPage() {
-  const flags = useFeatureFlags();
-  const flagsLoaded = useFeatureFlagsLoaded();
-
   const user = useUser();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const engineRef = useRef<IndexEngine | null>(null);
   const searchKeyRef = useRef<Uint8Array | null>(null);
-
-  if (flagsLoaded && !flags.search) notFound();
 
 
   useEffect(() => {

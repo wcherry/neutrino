@@ -120,7 +120,7 @@ fn parse_message(data: &[u8]) -> Option<ParsedMessage> {
     ),
     tag = "docs-collab"
 )]
-#[get("/docs/{id}/ws")]
+#[get("/{id}/ws")]
 pub async fn collab_ws(
     req: HttpRequest,
     stream: web::Payload,

@@ -2,6 +2,7 @@
 
 use crate::drive::notifications::{
     dto::{NotificationListResponse, NotificationResponse},
+    hub::NotificationHub,
     model::NewNotification,
     repository::NotificationsRepository,
 };
@@ -20,11 +21,20 @@ pub struct SmtpConfig {
 pub struct NotificationService {
     repo: Arc<NotificationsRepository>,
     smtp_config: Option<SmtpConfig>,
+    hub: Arc<NotificationHub>,
 }
 
 impl NotificationService {
-    pub fn new(repo: Arc<NotificationsRepository>, smtp_config: Option<SmtpConfig>) -> Self {
-        NotificationService { repo, smtp_config }
+    pub fn new(
+        repo: Arc<NotificationsRepository>,
+        smtp_config: Option<SmtpConfig>,
+        hub: Arc<NotificationHub>,
+    ) -> Self {
+        NotificationService {
+            repo,
+            smtp_config,
+            hub,
+        }
     }
 
     pub async fn notify(
@@ -47,12 +57,27 @@ impl NotificationService {
                 email_sent: 0,
                 created_at: now,
             };
-            if let Err(e) = self.repo.insert_notification(&new_notif) {
-                tracing::error!(
-                    "Failed to insert notification for {}: {:?}",
-                    recipient_id,
-                    e
-                );
+            match self.repo.insert_notification(&new_notif) {
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to insert notification for {}: {:?}",
+                        recipient_id,
+                        e
+                    );
+                }
+                Ok(()) => {
+                    let resp = NotificationResponse {
+                        id: id.clone(),
+                        recipient_id: recipient_id.clone(),
+                        event_type: event_type.to_string(),
+                        payload: payload.clone(),
+                        is_read: false,
+                        created_at: now.to_string(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&resp) {
+                        self.hub.push(recipient_id, json);
+                    }
+                }
             }
         }
 

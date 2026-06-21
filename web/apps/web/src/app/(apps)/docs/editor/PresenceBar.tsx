@@ -17,6 +17,11 @@ export function PresenceBar({ users, connected }: PresenceBarProps) {
 
   return (
     <div className={styles.bar} aria-label="Active collaborators">
+      {connected && users.length === 0 && (
+        <div className={styles.you} aria-label="You">
+          You
+        </div>
+      )}
       {users.map(u => (
         <div
           key={u.clientId}
@@ -28,11 +33,6 @@ export function PresenceBar({ users, connected }: PresenceBarProps) {
           {u.name.charAt(0).toUpperCase()}
         </div>
       ))}
-      {connected && users.length === 0 && (
-        <span className={styles.alone} title="Only you are editing">
-          ● You
-        </span>
-      )}
     </div>
   );
 }

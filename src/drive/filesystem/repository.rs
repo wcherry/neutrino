@@ -62,6 +62,20 @@ impl FilesystemRepository {
             })
     }
 
+    pub fn find_folder_by_id(&self, folder_id: &str) -> Result<Option<FolderRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        folders::table
+            .filter(folders::id.eq(folder_id))
+            .filter(folders::deleted_at.is_null())
+            .select(FolderRecord::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB find folder by id error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
     pub fn update_folder(
         &self,
         folder_id: &str,

@@ -36,6 +36,7 @@ import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessag
 import type { DiagramDocument, EditorSelection, SelectionMode, FreehandStroke, DiagramShape, DiagramConnector } from '../types';
 import type { LayoutAlgorithm } from './layout/layoutEngine';
 import styles from './DiagramEditor.module.css';
+import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 
 // ---------------------------------------------------------------------------
 // Empty diagram document
@@ -158,8 +159,8 @@ export function DiagramEditor() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const diagramId = searchParams.get('id') ?? '';
+  useAccessRevocation(diagramId);
   const queryClient = useQueryClient();
-  const flags = useFeatureFlags();
 
   const [selection, setSelection] = useState<EditorSelection>({
     shapeIds: new Set(),
@@ -182,7 +183,7 @@ export function DiagramEditor() {
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
 
-  const { dekRef, dekResolved } = useEncryptedDocumentContent({ id: diagramId, filename: 'diagram.json' });
+  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: diagramId, filename: 'diagram.json' });
   const toast = useToast();
 
   // Load auth token for collab WebSocket
@@ -202,7 +203,7 @@ export function DiagramEditor() {
     diagramId,
     userName,
     authToken,
-    enabled: flags.diagramsApp && !!diagramId,
+    enabled: !!diagramId,
   });
 
   // ── Load diagram from server ───────────────────────────────────────────────
@@ -218,8 +219,29 @@ export function DiagramEditor() {
           if (dekRef.current) {
             const blob = await storageApi.downloadFile(diagramId);
             const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-            const plainBytes = decryptFile(cipherBytes, dekRef.current);
-            raw = new TextDecoder().decode(plainBytes);
+            let decryptOk = false;
+            try {
+              const plainBytes = decryptFile(cipherBytes, dekRef.current);
+              raw = new TextDecoder().decode(plainBytes);
+              decryptOk = true;
+            } catch {
+              // Decryption failed. For new files (isNewEncryption) the server
+              // holds plaintext — fall through to the token-based fetch below.
+              // For existing files with a server-side key, fall back to raw
+              // content to avoid showing an empty diagram when the real data exists.
+            }
+            if (!decryptOk) {
+              if (!isNewEncryption) {
+                const token = localStorage.getItem('access_token') ?? '';
+                const res = await fetch(diagram.contentUrl, {
+                  headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!res.ok) return diagram;
+                raw = await res.text();
+              } else {
+                return diagram;
+              }
+            }
           } else {
             // Read token directly from storage — the authToken state may still be
             // null on first render since it's set by an async useEffect.
@@ -230,7 +252,7 @@ export function DiagramEditor() {
             if (!res.ok) return diagram;
             raw = await res.text();
           }
-          const doc = parseDocument(raw);
+          const doc = parseDocument(raw!);
           editor.setDocument(doc);
         } catch {
           // Use empty document on fetch failure
@@ -414,14 +436,6 @@ export function DiagramEditor() {
   }, [editor.document, editor.activePageIndex, editor.removeStrokes]);
 
   // ── Rendering ──────────────────────────────────────────────────────────────
-
-  if (!flags.diagramsApp) {
-    return (
-      <div className={styles.disabled}>
-        <p>Diagramming is not enabled.</p>
-      </div>
-    );
-  }
 
   if (!diagramId) {
     router.replace('/diagrams');

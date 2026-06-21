@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToast } from '@neutrino/ui';
 import { diagramsApi } from '@neutrino/api-diagrams';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { GitBranch, Plus, Trash2, Clock } from 'lucide-react';
 import styles from './page.module.css';
 
@@ -13,13 +12,11 @@ export default function DiagramsPage() {
   const router = useRouter();
   const toast = useToast();
   const qc = useQueryClient();
-  const flags = useFeatureFlags();
   const [creating, setCreating] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['diagrams'],
     queryFn: () => diagramsApi.listDiagrams(),
-    enabled: flags.diagramsApp,
   });
 
   const createMutation = useMutation({
@@ -30,16 +27,6 @@ export default function DiagramsPage() {
     onError: () => toast.error('Failed to create diagram'),
     onSettled: () => setCreating(false),
   });
-
-  if (!flags.diagramsApp) {
-    return (
-      <div className={styles.disabled}>
-        <GitBranch size={48} className={styles.disabledIcon} />
-        <h2>Diagrams coming soon</h2>
-        <p>The diagramming app is not yet enabled for your account.</p>
-      </div>
-    );
-  }
 
   if (isLoading) {
     return (

@@ -12,7 +12,6 @@ import {
     Palette,
     Paintbrush,
 } from 'lucide-react';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import type { CellStyle } from './types';
 import { ColorPickerPopover, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
 import { FONT_FAMILIES } from '@/constants/editor';
@@ -97,7 +96,6 @@ export type StyleToolbarProps = {
 };
 
 export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick }: StyleToolbarProps) {
-    const flags = useFeatureFlags();
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
     const isStrikethrough = cellStyle?.textDecoration === 'line-through';
@@ -355,7 +353,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                 ><DecimalIncIcon /></ToolbarButton>
             </ToolbarGroup>
 
-            {flags.sheetsCharts && onInsertChart && (
+            {onInsertChart && (
                 <>
                     <ToolbarDivider />
                     <ToolbarButton

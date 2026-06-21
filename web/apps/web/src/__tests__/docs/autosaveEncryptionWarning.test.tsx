@@ -113,7 +113,7 @@ vi.mock('@/hooks/useAiSettings', () => ({
 }));
 
 vi.mock('@/hooks/usePresence', () => ({
-  usePresence: () => ({ remoteUsers: [], isConnected: false }),
+  usePresence: () => ({ remoteUsers: [], isConnected: false, syncReady: false, isLocalWriter: true }),
 }));
 
 vi.mock('@neutrino/auth', () => ({

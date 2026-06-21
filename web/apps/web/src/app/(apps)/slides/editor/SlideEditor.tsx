@@ -110,6 +110,7 @@ import SlideThumbnail from './SlideThumbnail';
 import PresenterView from './PresenterView';
 import { LayoutPreview, ThemePreview } from './slideEditorPreviews';
 import styles from './page.module.css';
+import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -312,9 +313,10 @@ export function SlideEditor() {
   const queryClient = useQueryClient();
   const flags = useFeatureFlags();
   const slideId = searchParams.get('id') ?? '';
+  useAccessRevocation(slideId);
   const { spellCheck } = useSpellCheck();
 
-  const { dekRef, dekResolved } =
+  const { dekRef, dekResolved, isNewEncryption } =
     useEncryptedDocumentContent({ id: slideId, filename: 'slide.json' });
   const toast = useToast();
 
@@ -363,8 +365,13 @@ export function SlideEditor() {
       if (dekRef.current) {
         const blob = await storageApi.downloadFile(slideId);
         const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-        const plainBytes = decryptFile(cipherBytes, dekRef.current);
-        return new TextDecoder().decode(plainBytes);
+        try {
+          const plainBytes = decryptFile(cipherBytes, dekRef.current);
+          return new TextDecoder().decode(plainBytes);
+        } catch {
+          if (isNewEncryption) return null;
+          return driveReadContent(slideData.contentUrl);
+        }
       }
       return driveReadContent(slideData.contentUrl);
     },
@@ -400,10 +407,12 @@ export function SlideEditor() {
   }, [slideContent]);
 
   // After DEK resolves and the content query settles, do a one-time encrypted autosave
-  // when no valid content was loaded (new file or failed decryption of server plaintext).
-  // This overwrites the server's plaintext initial content so bytes are always ciphertext.
+  // when this is a new encryption (no prior key on the server) and no content loaded.
+  // Guard on isNewEncryption: never overwrite when the DEK came from the server,
+  // because null/undefined content there means decryption failed on existing data.
   useEffect(() => {
     if (!dekRef.current || !slideData || contentLoading) return;
+    if (!isNewEncryption) return;
     if (initialSaveDoneRef.current || lastSavedRef.current !== '') return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(presentation);
@@ -411,7 +420,7 @@ export function SlideEditor() {
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // presentation intentionally omitted: we capture the default once, not on every change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dekResolved, slideData, contentLoading, slideContent]);
+  }, [dekResolved, isNewEncryption, slideData, contentLoading, slideContent]);
 
   const contentMutation = useMutation({
     mutationFn: async ({ content, metadata }: { content: string; metadata?: { title?: string } }) => {

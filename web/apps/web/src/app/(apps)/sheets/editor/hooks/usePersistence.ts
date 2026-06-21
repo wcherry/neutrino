@@ -102,7 +102,7 @@ export function usePersistence({
     setConditionalFormats?: React.Dispatch<React.SetStateAction<CFRule[]>>;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
-    const { dekRef, dekResolved } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
+    const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
     const toast = useToast();
     const [title, setTitle] = useState('Untitled');
     // loadCount increments every time load() completes successfully.
@@ -233,22 +233,32 @@ export function usePersistence({
         const sheet = await sheetsApi.getSheet(sheetId);
         sheetRef.current = sheet;
         setTitle(sheet.title);
-        // True only when decryptFile throws, meaning the server still holds the
-        // plaintext default content written at sheet creation time.
+        // True only when decryptFile throws on a brand-new file (isNewEncryption),
+        // meaning the server still holds the plaintext default content written at
+        // sheet creation time.  When decryptFile throws for an existing key
+        // (isNewEncryption=false), we fall back to the raw plaintext path so we
+        // never overwrite data we simply cannot decrypt.
         let serverHasPlaintextContent = false;
+        // Set to true only when the try block completes without a download error.
+        // Kept false on network failures so autosave never starts after a failed load.
+        let loadOk = false;
         try {
             let raw: string;
             if (dekRef.current) {
                 const blob = await storageApi.downloadFile(sheetId);
                 const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-                let plainBytes: Uint8Array;
                 try {
-                    plainBytes = decryptFile(cipherBytes, dekRef.current);
+                    const plainBytes = decryptFile(cipherBytes, dekRef.current);
+                    raw = new TextDecoder().decode(plainBytes);
                 } catch {
-                    serverHasPlaintextContent = true;
-                    throw new Error('plaintext content detected');
+                    if (isNewEncryption) {
+                        serverHasPlaintextContent = true;
+                        throw new Error('plaintext content detected');
+                    }
+                    // Existing key but decryption failed — fall back to raw content
+                    // so we never overwrite data we cannot decrypt.
+                    raw = await driveReadContent(sheet.contentUrl);
                 }
-                raw = new TextDecoder().decode(plainBytes);
             } else {
                 raw = await driveReadContent(sheet.contentUrl);
             }
@@ -308,11 +318,18 @@ export function usePersistence({
                     setConditionalFormats(sheetsConditionalFormatsRef.current[0] ?? []);
                 }
             }
+            loadOk = true;
         } catch {
-            // empty sheet, start fresh
+            // empty sheet, start fresh — but do NOT start autosave if this was a
+            // network/download failure; loadOk stays false and autosave is skipped
+            // so we never overwrite existing server content with an empty file.
         }
         // Signal the autosave useEffect to (re-)start the interval with a fresh closure.
-        setLoadCount(c => c + 1);
+        // Guard: only start when content was successfully loaded OR when we know the
+        // server holds plaintext content that needs to be encrypted (new file).
+        if (loadOk || serverHasPlaintextContent) {
+            setLoadCount(c => c + 1);
+        }
 
         // Overwrite the server's plaintext initial content with encrypted bytes.
         // Only needed for brand-new encrypted sheets whose content was written as

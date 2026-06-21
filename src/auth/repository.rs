@@ -148,6 +148,30 @@ impl AuthRepository {
         Ok(result)
     }
 
+    pub fn search_users(&self, query: &str, limit: i64) -> Result<Vec<User>, ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        let pattern = format!("%{}%", query.to_lowercase());
+        let results = users::table
+            .filter(users::deleted_at.is_null())
+            .filter(
+                users::email.like(&pattern)
+                    .or(users::name.like(&pattern))
+            )
+            .select(User::as_select())
+            .limit(limit)
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB query error: {:?}", e);
+                ApiError::internal("Database query error")
+            })?;
+
+        Ok(results)
+    }
+
     pub fn find_user_by_id(&self, user_id: &str) -> Result<Option<User>, ApiError> {
         let mut conn = self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);

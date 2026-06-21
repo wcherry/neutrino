@@ -380,3 +380,22 @@ export interface ShareFileKeyRequest {
   encryptedFileKey: string;
 }
 
+
+// ---------------------------------------------------------------------------
+// Notification types
+// ---------------------------------------------------------------------------
+
+export interface NotificationItem {
+  id: string;
+  recipientId: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface NotificationListResponse {
+  notifications: NotificationItem[];
+  unreadCount: number;
+  total: number;
+}

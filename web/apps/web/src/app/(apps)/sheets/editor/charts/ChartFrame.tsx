@@ -5,7 +5,6 @@ import type { CellProps } from '../types';
 import type { ChartDef, ChartAnnotation } from './chartTypes';
 import { ChartRenderer } from './ChartRenderer';
 import { ChartAnnotationLayer } from './ChartAnnotationLayer';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './charts.module.css';
 import animStyles from './chartAnimation.module.css';
 
@@ -34,7 +33,6 @@ export function ChartFrame({
     containerRef,
     frameRef,
 }: ChartFrameProps) {
-    const flags = useFeatureFlags();
     const internalRef = useRef<HTMLDivElement | null>(null);
     const resolvedFrameRef = frameRef ?? internalRef;
 
@@ -151,7 +149,6 @@ export function ChartFrame({
     // ── Phase 5: Annotation handlers ─────────────────────────────────────────
 
     function handleAnnotationUpdate(annId: string, patch: Partial<ChartAnnotation>) {
-        if (!flags.sheetsChartsPhase5) return;
         const annotations = (def.annotations ?? []).map(a =>
             a.id === annId ? { ...a, ...patch } : a,
         );
@@ -159,7 +156,6 @@ export function ChartFrame({
     }
 
     function handleAnnotationDelete(annId: string) {
-        if (!flags.sheetsChartsPhase5) return;
         const annotations = (def.annotations ?? []).filter(a => a.id !== annId);
         onUpdate({ annotations });
     }
@@ -169,7 +165,7 @@ export function ChartFrame({
     const animCssStyle: Record<string, string> = {};
     let animClassName = '';
 
-    if (flags.sheetsChartsPhase5 && def.animation && def.animation.mode !== 'none') {
+    if (def.animation && def.animation.mode !== 'none') {
         const { mode, durationMs = 600, delayMs = 150 } = def.animation;
         animCssStyle['--anim-duration'] = `${durationMs}ms`;
         animCssStyle['--anim-delay'] = `${delayMs}ms`;
@@ -201,17 +197,16 @@ export function ChartFrame({
                 <ChartRenderer def={def} data={data} />
             </div>
 
-            {/* Phase 5: Annotation overlay */}
-            {flags.sheetsChartsPhase5 && (
-                <ChartAnnotationLayer
-                    annotations={def.annotations ?? []}
-                    frameW={frameDims.w}
-                    frameH={frameDims.h}
-                    isChartSelected={isSelected}
-                    onUpdate={handleAnnotationUpdate}
-                    onDelete={handleAnnotationDelete}
-                />
-            )}
+            {/* Annotation overlay */}
+            <ChartAnnotationLayer
+                annotations={def.annotations ?? []}
+                frameW={frameDims.w}
+                frameH={frameDims.h}
+                isChartSelected={isSelected}
+                onUpdate={handleAnnotationUpdate}
+                onDelete={handleAnnotationDelete}
+            />
+
 
             {isSelected && RESIZE_HANDLES.map(handle => (
                 <div
