@@ -121,7 +121,8 @@ impl StorageService {
             .grant_ownership(user, "file", &file_id)
             .await
         {
-            tracing::error!("Failed to grant ownership for file {}: {:?}", file_id, e);
+            let _ = std::fs::remove_file(&final_path);
+            return Err(e);
         }
 
         if let Err(e) = self.repo.update_quota_after_upload(
@@ -506,13 +507,9 @@ impl StorageService {
             encrypted_metadata: None,
         };
         let file = self.repo.insert_file(new_file)?;
-        if let Err(e) = self
-            .permissions
+        self.permissions
             .grant_ownership(user, "file", file_id)
-            .await
-        {
-            tracing::error!("Failed to grant ownership for doc {}: {:?}", file_id, e);
-        }
+            .await?;
         Ok(file)
     }
 

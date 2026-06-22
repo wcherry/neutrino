@@ -705,6 +705,10 @@ async fn main() -> std::io::Result<()> {
         ai_service: sheets_ai_service,
     });
 
+    let sheets_presence_state = web::Data::new(Arc::new(
+        sheets::presence::state::SheetPresenceState::new(),
+    ));
+
     // ── Drawing service ───────────────────────────────────────────────────────
 
     use drawing::drawing::repository::DrawingRepository;
@@ -844,6 +848,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(sheets::named_ranges::api::NamedRangesApiDoc::openapi());
         doc.merge(sheets::sheets::api::SheetsApiDoc::openapi());
         doc.merge(sheets::ai::api::SheetsAIApiDoc::openapi());
+        doc.merge(sheets::presence::api::SheetsPresenceApiDoc::openapi());
         doc.merge(slides::slides::api::SlidesApiDoc::openapi());
         doc.merge(slides::ai::api::SlidesAIApiDoc::openapi());
         doc.merge(diagrams::diagrams::api::DiagramsApiDoc::openapi());
@@ -917,6 +922,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(sheets_state.clone())
             .app_data(sheets_named_ranges_state.clone())
             .app_data(sheets_ai_state.clone())
+            .app_data(sheets_presence_state.clone())
             // Slides
             .app_data(slides_state.clone())
             .app_data(slides_ai_state.clone())
@@ -976,6 +982,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(sheets::sheets::api::configure)
                     .configure(sheets::named_ranges::api::configure)
                     .configure(sheets::ai::api::configure)
+                    .configure(sheets::presence::api::configure)
                     // Slides
                     .configure(slides::slides::api::configure)
                     .configure(slides::ai::api::configure)

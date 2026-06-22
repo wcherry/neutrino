@@ -8,6 +8,8 @@ import { ArrowLeft } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
 import { sheetsApi, filesystemApi, driveAutosaveContent } from '@/lib/api';
+import { useUser } from '@neutrino/auth';
+import { useSheetPresence } from '@/hooks/useSheetPresence';
 import type { CellProps, ClipboardCFRule, CFRule } from './types';
 import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, type ArrowNavigationKey } from './utils';
 import { MAX_ROWS, MAX_COLS } from './constants';
@@ -33,6 +35,9 @@ import { FormulaBar } from './components/FormulaBar';
 import { HamburgerMenu } from './components/HamburgerMenu';
 import { ExportDialogs } from './components/ExportDialogs';
 import { SheetTabBar } from './components/SheetTabBar';
+import { ShareButton } from '@neutrino/ui';
+import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
+import type { FileItem } from '@/lib/api';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useCharts } from './charts/useCharts';
 import { ChartLayer } from './charts/ChartLayer';
@@ -121,6 +126,20 @@ export function SheetEditor() {
     const flags = useFeatureFlags();
     const sheetId = searchParams.get('id') ?? '';
     useAccessRevocation(sheetId);
+
+    const currentUser = useUser();
+    const [authToken, setAuthToken] = useState<string | null>(null);
+    useEffect(() => {
+        setAuthToken(localStorage.getItem('access_token'));
+    }, []);
+
+    const remoteUsers = useSheetPresence({
+        sheetId,
+        userName: currentUser?.name ?? 'Anonymous',
+        authToken,
+        enabled: !!sheetId,
+    });
+
     // ── Core state & refs ────────────────────────────────────────────────────
     const [currentCell, setCurrentCell] = useState<CellProps | undefined>();
     const [selectionAnchor, setSelectionAnchor] = useState<string | undefined>(undefined);
@@ -156,6 +175,7 @@ export function SheetEditor() {
     const [hamburgerDeleteConfirm, setHamburgerDeleteConfirm] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
     const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null);
+    const [showShareDialog, setShowShareDialog] = useState(false);
 
     // ── Conditional formatting state (feature-flagged) ───────────────────────
     const [showCFDialog, setShowCFDialog] = useState(false);
@@ -1438,6 +1458,9 @@ export function SheetEditor() {
                         onBlur={persist.updateTitle}
                     />
                 </div>
+                <div style={{ marginLeft: 'auto' }}>
+                    <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} />
+                </div>
             </div>
 
             <ExportDialogs
@@ -1713,6 +1736,14 @@ export function SheetEditor() {
                     onReplaceOne={handleFindReplaceOne}
                     onReplaceAll={handleFindReplaceAll}
                     onClose={() => setFindReplaceMode(null)}
+                />
+            )}
+
+            {showShareDialog && persist.sheetRef.current && (
+                <ShareDialog
+                    resource={{ ...persist.sheetRef.current, name: persist.sheetRef.current.title } as unknown as FileItem}
+                    resourceType="file"
+                    onClose={() => setShowShareDialog(false)}
                 />
             )}
 

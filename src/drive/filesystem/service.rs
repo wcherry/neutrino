@@ -57,11 +57,9 @@ impl FilesystemService {
         };
 
         let folder = self.repo.create_folder(record)?;
-
-        if let Err(e) = self.permissions.grant_ownership(user, "folder", &id).await {
-            tracing::error!("Failed to grant ownership for folder {}: {:?}", id, e);
-        }
-
+        self.permissions
+            .grant_ownership(user, "folder", &id)
+            .await?;
         Ok(FolderResponse::from(folder))
     }
 

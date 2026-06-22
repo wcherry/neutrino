@@ -43,9 +43,19 @@ impl PermissionsService {
         resource_type: &str,
         resource_id: &str,
     ) -> Result<(), ApiError> {
-        let profile = fetch_auth_profile(user, &self.auth_service)?;
-        let user_email = profile.email.as_ref();
-        let user_name = profile.name.as_ref();
+        // Profile lookup is best-effort — email/name are display metadata only.
+        // A failure here must not block ownership from being recorded.
+        let (email, name) = match fetch_auth_profile(user, &self.auth_service) {
+            Ok(profile) => (profile.email, profile.name),
+            Err(e) => {
+                tracing::warn!(
+                    "Could not fetch profile for user {} during grant_ownership: {:?}",
+                    user.user_id,
+                    e
+                );
+                (String::new(), String::new())
+            }
+        };
 
         let id = Uuid::new_v4().to_string();
         let record = NewPermissionRecord {
@@ -55,8 +65,8 @@ impl PermissionsService {
             user_id: &user.user_id,
             role: "owner",
             granted_by: &user.user_id,
-            user_email,
-            user_name,
+            user_email: &email,
+            user_name: &name,
         };
         self.repo.upsert_permission(&record)?;
         Ok(())
@@ -100,6 +110,11 @@ impl PermissionsService {
         if req.role == Role::Owner {
             return Err(ApiError::bad_request(
                 "Cannot grant Owner role directly. Use transfer-ownership instead.",
+            ));
+        }
+        if req.user_id == caller_id {
+            return Err(ApiError::bad_request(
+                "Cannot change your own permission role.",
             ));
         }
         // Check workspace domain restriction before granting
