@@ -59,9 +59,14 @@ import {
   ToolbarButton,
   ToolbarSelect,
   ColorPickerPopover,
+  ZoomSlider,
+  ShareButton,
   useToast,
 } from '@neutrino/ui';
-import { slidesApi, driveReadContent, storageApi } from '@/lib/api';
+import { useUser } from '@neutrino/auth';
+import { slidesApi, driveReadContent, storageApi, type FileItem } from '@/lib/api';
+import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
+import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
@@ -315,6 +320,11 @@ export function SlideEditor() {
   const slideId = searchParams.get('id') ?? '';
   useAccessRevocation(slideId);
   const { spellCheck } = useSpellCheck();
+  const currentUser = useUser();
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  useEffect(() => {
+    setAuthToken(localStorage.getItem('access_token'));
+  }, []);
 
   const { dekRef, dekResolved, isNewEncryption } =
     useEncryptedDocumentContent({ id: slideId, filename: 'slide.json' });
@@ -333,9 +343,7 @@ export function SlideEditor() {
   const [rightPanelTab, setRightPanelTab] = useState<'layout' | 'theme' | 'insert'>('layout');
   const [zoom, setZoom] = useState(100);
 
-  const ZOOM_STEPS = [25, 50, 75, 100, 125, 150, 200];
-  function zoomIn()  { setZoom((z) => ZOOM_STEPS.find((s) => s > z) ?? z); }
-  function zoomOut() { setZoom((z) => [...ZOOM_STEPS].reverse().find((s) => s < z) ?? z); }
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
@@ -350,6 +358,26 @@ export function SlideEditor() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const dragSrcIdx = useRef<number | null>(null);
   const initialSaveDoneRef = useRef(false);
+
+  const onRemotePresentationRef = useRef<((p: unknown) => void) | null>(null);
+  onRemotePresentationRef.current = (incoming: unknown) => {
+    try {
+      const parsed = incoming as SlidePresentation;
+      if (!parsed?.slides?.length) return;
+      setPresentation(parsed);
+    } catch {
+      // ignore malformed remote presentation updates
+    }
+  };
+
+  const { remoteUsers, broadcastPresentation } = useSlidePresence({
+    slideId,
+    userName: currentUser?.name ?? 'Anonymous',
+    authToken,
+    enabled: !!slideId,
+    selectedSlideIndex: selectedSlideIdx,
+    onRemotePresentationRef,
+  });
 
   const { isLoading: metaLoading, data: slideData } = useQuery({
     queryKey: ['slide', slideId],
@@ -454,6 +482,7 @@ export function SlideEditor() {
     setPresentation((prev) => {
       const next = updater(prev);
       scheduleAutoSave(next);
+      broadcastPresentation(next);
       return next;
     });
   }
@@ -1113,6 +1142,8 @@ export function SlideEditor() {
             Import
           </Button>
 
+          <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} />
+
           <Button icon={<Play size={16} />} onClick={() => setPresenterMode(true)}>
             Present
           </Button>
@@ -1742,14 +1773,6 @@ export function SlideEditor() {
           <option value="zoom">Zoom</option>
         </ToolbarSelect>
 
-        {/* Zoom — pushed to the right */}
-        <div className={styles.toolbarSpacer} />
-        <ToolbarDivider />
-        <div className={styles.zoomControl}>
-          <ToolbarButton onClick={zoomOut} disabled={zoom <= ZOOM_STEPS[0]} title="Zoom out"><Minus size={12} /></ToolbarButton>
-          <button className={styles.zoomLabel} onClick={() => setZoom(100)} title="Reset zoom">{zoom}%</button>
-          <ToolbarButton onClick={zoomIn} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} title="Zoom in"><Plus size={12} /></ToolbarButton>
-        </div>
       </RichTextToolbar>
 
       {/* Main area */}
@@ -1778,6 +1801,15 @@ export function SlideEditor() {
               >
                 <span className={styles.slideThumbnailNum}>{idx + 1}</span>
                 <SlideThumbnail slide={slide} />
+                {remoteUsers.some(u => u.slideIndex === idx) && (
+                  <div className={styles.slideUserAvatars}>
+                    {remoteUsers.filter(u => u.slideIndex === idx).slice(0, 3).map(u => (
+                      <span key={u.clientId} className={styles.slideUserAvatar} style={{ backgroundColor: u.color }} title={u.name}>
+                        {u.name[0]?.toUpperCase() ?? '?'}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {slide.transition !== 'none' && (
                   <span className={styles.slideTransitionBadge} title={slide.transition}>
                     {slide.transition === 'fade'      && <Layers size={8} />}
@@ -2070,6 +2102,12 @@ export function SlideEditor() {
         />
       </div>
 
+      {/* Status bar */}
+      <div className={styles.statusBar}>
+        <div className={styles.statusBarSpacer} />
+        <ZoomSlider value={zoom} onChange={setZoom} />
+      </div>
+
       {flags.sheetLiveEmbed && sheetPasteDialogState && (
         <PasteChoiceDialog
           previewData={sheetPasteDialogState.previewData}
@@ -2137,6 +2175,14 @@ export function SlideEditor() {
         <InsertDiagramDialog
           onInsert={(diagramId) => { addDiagram(diagramId); setDiagramDialogOpen(false); }}
           onClose={() => setDiagramDialogOpen(false)}
+        />
+      )}
+
+      {showShareDialog && slideData && (
+        <ShareDialog
+          resource={{ ...slideData, name: slideData.title } as unknown as FileItem}
+          resourceType="file"
+          onClose={() => setShowShareDialog(false)}
         />
       )}
     </div>

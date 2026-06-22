@@ -748,6 +748,10 @@ async fn main() -> std::io::Result<()> {
         ai_service: slides_ai_service,
     });
 
+    let slides_presence_state = web::Data::new(Arc::new(
+        slides::presence::state::SlidePresenceState::new(),
+    ));
+
     // ── Diagrams service ──────────────────────────────────────────────────────
 
     use diagrams::collab::repository::DiagramCollabRepository;
@@ -851,6 +855,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(sheets::presence::api::SheetsPresenceApiDoc::openapi());
         doc.merge(slides::slides::api::SlidesApiDoc::openapi());
         doc.merge(slides::ai::api::SlidesAIApiDoc::openapi());
+        doc.merge(slides::presence::api::SlidesPresenceApiDoc::openapi());
         doc.merge(diagrams::diagrams::api::DiagramsApiDoc::openapi());
         doc.merge(diagrams::collab::api::DiagramsCollabApiDoc::openapi());
         doc.merge(diagrams::private_library::api::PrivateLibraryApiDoc::openapi());
@@ -926,6 +931,7 @@ async fn main() -> std::io::Result<()> {
             // Slides
             .app_data(slides_state.clone())
             .app_data(slides_ai_state.clone())
+            .app_data(slides_presence_state.clone())
             // Diagrams
             .app_data(diagrams_state.clone())
             .app_data(diagrams_collab_repo.clone())
@@ -986,6 +992,7 @@ async fn main() -> std::io::Result<()> {
                     // Slides
                     .configure(slides::slides::api::configure)
                     .configure(slides::ai::api::configure)
+                    .configure(slides::presence::api::configure)
                     // Diagrams
                     .configure(diagrams::configure),
             )

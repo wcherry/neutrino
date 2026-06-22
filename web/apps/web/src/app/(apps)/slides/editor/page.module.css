@@ -290,6 +290,31 @@
   color: #fff;
 }
 
+.slideUserAvatars {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  display: flex;
+  gap: 2px;
+  z-index: 2;
+}
+
+.slideUserAvatar {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
 .thumbnailPreview {
   width: 160px;
   height: 90px;
@@ -316,32 +341,18 @@
   padding: var(--space-6);
 }
 
-.toolbarSpacer {
-  flex: 1;
-}
-
-.zoomControl {
+.statusBar {
   display: flex;
   align-items: center;
-  gap: 2px;
+  height: 36px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  padding: 0 8px;
+  flex-shrink: 0;
 }
 
-.zoomLabel {
-  min-width: 40px;
-  padding: var(--space-1) var(--space-1);
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  text-align: center;
-  border-radius: var(--radius-sm);
-  transition: background var(--duration-fast), color var(--duration-fast);
-}
-
-.zoomLabel:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
+.statusBarSpacer {
+  flex: 1;
 }
 
 .stepperValue {
