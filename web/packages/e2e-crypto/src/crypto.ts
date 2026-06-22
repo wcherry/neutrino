@@ -175,7 +175,7 @@ async function deriveKeyFromPin(pin: string, salt: Uint8Array, iter: number): Pr
     ['deriveBits'],
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: iter },
+    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as unknown as ArrayBuffer, iterations: iter },
     keyMaterial,
     256,
   );
