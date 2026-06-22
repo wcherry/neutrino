@@ -36,6 +36,7 @@ import {
   // Phase 10 — AI
   Sparkles,
 } from 'lucide-react';
+import { ShareButton } from '@neutrino/ui';
 import type { EditorSelection, SelectionMode } from '../types';
 import type { AlignDirection } from './utils/shapeUtils';
 import type { LayoutAlgorithm } from './layout/layoutEngine';
@@ -74,7 +75,8 @@ interface DiagramToolbarProps {
   onSendBackward: () => void;
   onBringToFront: () => void;
   onSendToBack: () => void;
-  presenceBar: React.ReactNode;
+  remoteUsers: Array<{ name: string }>;
+  onShare: () => void;
   /** Active pen/highlighter color */
   drawColor: string;
   onDrawColorChange: (color: string) => void;
@@ -95,7 +97,8 @@ export function DiagramToolbar({
   selection,
   onAlign, onDistribute,
   onBringForward, onSendBackward, onBringToFront, onSendToBack,
-  presenceBar,
+  remoteUsers,
+  onShare,
   drawColor,
   onDrawColorChange,
 }: DiagramToolbarProps) {
@@ -259,9 +262,6 @@ export function DiagramToolbar({
           )}
         </div>
 
-        {/* Presence */}
-        {presenceBar}
-
         <div className={styles.divider} />
 
         {/* Phase 6 — Data panel */}
@@ -315,6 +315,8 @@ export function DiagramToolbar({
         <button className={styles.toolBtn} onClick={onExport} title="Export diagram">
           <Download size={15} />
         </button>
+
+        <ShareButton users={remoteUsers} onShare={onShare} />
 
         <button
           className={styles.saveBtn}

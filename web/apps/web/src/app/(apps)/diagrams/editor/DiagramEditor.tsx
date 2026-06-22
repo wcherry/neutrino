@@ -15,7 +15,8 @@ import { Spinner, useToast } from '@neutrino/ui';
 import { diagramsApi } from '@neutrino/api-diagrams';
 import { authApi } from '@neutrino/auth';
 import { decryptFile } from '@neutrino/e2e-crypto';
-import { storageApi } from '@/lib/api';
+import { storageApi, type FileItem } from '@/lib/api';
+import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useDiagramEditor } from './hooks/useDiagramEditor';
@@ -26,7 +27,6 @@ import { ShapePanel } from './ShapePanel';
 import { PropertiesPanel } from './PropertiesPanel';
 import { PagePanel } from './PagePanel';
 import { CommentsPanel } from './collab/CommentsPanel';
-import { PresenceBar } from './collab/PresenceBar';
 import { DataPanel } from './data/DataPanel';
 import { ExportDialog } from './io/ExportDialog';
 import { ImportDialog } from './io/ImportDialog';
@@ -171,6 +171,7 @@ export function DiagramEditor() {
   const [showData, setShowData] = useState(false);
   const [showDeveloper, setShowDeveloper] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [pendingExport, setPendingExport] = useState<{ format: ExportFormat; filename: string; size: RasterSize; showGrid: boolean; bgColor: string } | null>(null);
@@ -204,6 +205,9 @@ export function DiagramEditor() {
     userName,
     authToken,
     enabled: !!diagramId,
+    onRemoteDocument: useCallback((doc: DiagramDocument) => {
+      editor.setDocument(doc);
+    }, [editor]),
   });
 
   // ── Load diagram from server ───────────────────────────────────────────────
@@ -297,6 +301,16 @@ export function DiagramEditor() {
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor.document, diagramId]);
+
+  // Broadcast local edits to connected peers in real time.
+  // Gated on editor.canUndo for the same reason as autosave: canUndo is false
+  // after setDocument() (remote apply or initial load) and true only after
+  // user-driven changes, so this never echoes remote updates back to the server.
+  useEffect(() => {
+    if (!diagramId || !editor.canUndo) return;
+    collab.broadcastDocument(editor.document);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor.document, diagramId]);
 
@@ -518,12 +532,8 @@ export function DiagramEditor() {
         onSendBackward={() => { editor.sendBackward(Array.from(selection.shapeIds)); Array.from(selection.connectorIds).forEach((id) => editor.updateConnector(id, { zIndex: 0 })); }}
         onBringToFront={() => { editor.bringToFront(Array.from(selection.shapeIds)); Array.from(selection.connectorIds).forEach((id) => editor.updateConnector(id, { zIndex: 1 })); }}
         onSendToBack={() => { editor.sendToBack(Array.from(selection.shapeIds)); Array.from(selection.connectorIds).forEach((id) => editor.updateConnector(id, { zIndex: 0 })); }}
-        presenceBar={
-          <PresenceBar
-            users={collab.remoteUsers}
-            connected={collab.isConnected}
-          />
-        }
+        remoteUsers={collab.remoteUsers}
+        onShare={() => setShowShareDialog(true)}
         drawColor={drawColor}
         onDrawColorChange={setDrawColor}
       />
@@ -664,6 +674,14 @@ export function DiagramEditor() {
         onZoomChange={(pct) => editor.setViewport({ zoom: pct / 100 })}
         onFitToScreen={handleFitToScreen}
       />
+
+      {showShareDialog && (
+        <ShareDialog
+          resource={{ id: diagramId, name: title } as unknown as FileItem}
+          resourceType="file"
+          onClose={() => setShowShareDialog(false)}
+        />
+      )}
 
       {showExport && activePage && (
         <ExportDialog

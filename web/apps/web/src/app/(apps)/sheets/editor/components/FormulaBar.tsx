@@ -21,6 +21,7 @@ type Props = {
     onFunctionSelect: (fnName: string) => void;
     /** Formula inputs contain non-natural-language text; spell check is off by default. */
     spellCheck?: boolean;
+    readOnly?: boolean;
 };
 
 export function FormulaBar({
@@ -38,6 +39,7 @@ export function FormulaBar({
     onToggleAllFunctions,
     onFunctionSelect,
     spellCheck = false,
+    readOnly = false,
 }: Props) {
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -79,11 +81,12 @@ export function FormulaBar({
                     className={`${styles.formulaInput}${formulaPickMode ? ` ${styles.formulaInputPickMode}` : ''}`}
                     value={currentCell?.raw ?? ''}
                     spellCheck={spellCheck}
-                    onChange={onTextChange}
-                    onKeyDown={onKeyDown}
-                    onFocus={onFocus}
-                    onMouseDown={onMouseDown}
-                    onBlur={onBlur}
+                    readOnly={readOnly}
+                    onChange={readOnly ? undefined : onTextChange}
+                    onKeyDown={readOnly ? undefined : onKeyDown}
+                    onFocus={readOnly ? undefined : onFocus}
+                    onMouseDown={readOnly ? undefined : onMouseDown}
+                    onBlur={readOnly ? undefined : onBlur}
                     data-testid="formula-bar-input"
                 />
                 {formulaPickMode && (

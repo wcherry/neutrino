@@ -53,6 +53,7 @@ fn encode_empty_sync_step2() -> Vec<u8> {
 enum ParsedMessage {
     SyncStep1,
     Awareness(Vec<u8>),
+    CellUpdate(Vec<u8>),
     Other,
 }
 
@@ -61,11 +62,9 @@ fn parse_message(data: &[u8]) -> ParsedMessage {
         return ParsedMessage::Other;
     };
     match msg_type {
-        0 => {
-            // Sync message — just check it's SyncStep1 so we can reply
-            ParsedMessage::SyncStep1
-        }
+        0 => ParsedMessage::SyncStep1,
         1 => ParsedMessage::Awareness(data[c1..].to_vec()),
+        2 => ParsedMessage::CellUpdate(data[c1..].to_vec()),
         _ => ParsedMessage::Other,
     }
 }
@@ -157,6 +156,12 @@ pub async fn sheet_presence_ws(
                                     let mut msg = Vec::new();
                                     write_varint(&mut msg, 1);
                                     msg.extend_from_slice(&awareness_bytes);
+                                    let _ = room_clone.tx.send(msg);
+                                }
+                                ParsedMessage::CellUpdate(cell_bytes) => {
+                                    let mut msg = Vec::new();
+                                    write_varint(&mut msg, 2);
+                                    msg.extend_from_slice(&cell_bytes);
                                     let _ = room_clone.tx.send(msg);
                                 }
                                 ParsedMessage::Other => {}

@@ -125,6 +125,7 @@ impl SheetsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            your_role: file.your_role,
         })
     }
 
@@ -149,6 +150,7 @@ impl SheetsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            your_role: file.your_role,
         })
     }
 

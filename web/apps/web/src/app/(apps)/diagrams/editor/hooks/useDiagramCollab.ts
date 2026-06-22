@@ -1,9 +1,20 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import * as Y from 'yjs';
+import type { DiagramDocument } from '../../types';
 
 // ---------------------------------------------------------------------------
-// Wire protocol helpers (mirrors docs collab / usePresence.ts)
+// Wire protocol helpers — y-websocket binary protocol
+//
+//  Type 0 — sync:
+//    [varint 0] [varint sub] [varint payload_len] [payload_bytes]
+//      sub=0  SyncStep1  payload = client state vector
+//      sub=1  SyncStep2  payload = full Yjs update
+//      sub=2  Update     payload = incremental Yjs update
+//
+//  Type 1 — awareness (JSON presence messages):
+//    [varint 1] [payload_bytes]
 // ---------------------------------------------------------------------------
 
 function writeVarint(n: number): number[] {
@@ -31,18 +42,41 @@ function readVarint(data: Uint8Array, offset: number): [number, number] {
   return [result, pos];
 }
 
+function readVarBytes(data: Uint8Array, offset: number): [Uint8Array, number] | null {
+  const [len, after] = readVarint(data, offset);
+  const end = after + len;
+  if (end > data.length) return null;
+  return [data.slice(after, end), end];
+}
+
+function encodeSyncStep1(sv: Uint8Array): Uint8Array {
+  const msgType = writeVarint(0);
+  const subType = writeVarint(0);
+  const lenBytes = writeVarint(sv.length);
+  const buf = new Uint8Array(msgType.length + subType.length + lenBytes.length + sv.length);
+  let off = 0;
+  for (const b of [...msgType, ...subType, ...lenBytes]) buf[off++] = b;
+  buf.set(sv, off);
+  return buf;
+}
+
+function encodeUpdate(update: Uint8Array): Uint8Array {
+  const msgType = writeVarint(0);
+  const subType = writeVarint(2);
+  const lenBytes = writeVarint(update.length);
+  const buf = new Uint8Array(msgType.length + subType.length + lenBytes.length + update.length);
+  let off = 0;
+  for (const b of [...msgType, ...subType, ...lenBytes]) buf[off++] = b;
+  buf.set(update, off);
+  return buf;
+}
+
 function encodeAwarenessMessage(payload: Uint8Array): Uint8Array {
   const typeBytes = writeVarint(1);
   const buf = new Uint8Array(typeBytes.length + payload.length);
   buf.set(typeBytes, 0);
   buf.set(payload, typeBytes.length);
   return buf;
-}
-
-function decodeAwarenessPayload(data: Uint8Array): Uint8Array | null {
-  const [msgType, offset] = readVarint(data, 0);
-  if (msgType !== 1) return null;
-  return data.slice(offset);
 }
 
 // ---------------------------------------------------------------------------
@@ -78,12 +112,16 @@ interface UseDiagramCollabOptions {
   userName: string;
   authToken: string | null;
   enabled: boolean;
+  /** Called when a remote client broadcasts a document update. */
+  onRemoteDocument?: (doc: DiagramDocument) => void;
 }
 
 export interface DiagramCollabState {
   remoteUsers: RemoteUser[];
   isConnected: boolean;
   sendCursor: (pos: { x: number; y: number } | null) => void;
+  /** Broadcast the current local diagram document to all connected peers. */
+  broadcastDocument: (doc: DiagramDocument) => void;
 }
 
 export function useDiagramCollab({
@@ -91,6 +129,7 @@ export function useDiagramCollab({
   userName,
   authToken,
   enabled,
+  onRemoteDocument,
 }: UseDiagramCollabOptions): DiagramCollabState {
   const [remoteUsers, setRemoteUsers] = useState<RemoteUser[]>([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -99,6 +138,16 @@ export function useDiagramCollab({
     Math.random().toString(36).slice(2) + Date.now().toString(36),
   );
   const myColor = hashColor(clientIdRef.current);
+
+  // Yjs document — stores the diagram JSON in a Y.Text field named "content"
+  const ydocRef = useRef<Y.Doc>(new Y.Doc());
+
+  // Guards against echoing remote updates back to the server
+  const isApplyingRemoteRef = useRef(false);
+
+  // Stable ref to onRemoteDocument so the WS effect doesn't need it as a dep
+  const onRemoteDocumentRef = useRef(onRemoteDocument);
+  useEffect(() => { onRemoteDocumentRef.current = onRemoteDocument; }, [onRemoteDocument]);
 
   const sendCursor = useCallback(
     (pos: { x: number; y: number } | null) => {
@@ -116,8 +165,24 @@ export function useDiagramCollab({
     [userName, myColor],
   );
 
+  const broadcastDocument = useCallback((doc: DiagramDocument) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // Write the new JSON into the Y.Text — Yjs computes an incremental update
+    const ydoc = ydocRef.current;
+    const ytext = ydoc.getText('content');
+    const json = JSON.stringify(doc);
+    ydoc.transact(() => {
+      ytext.delete(0, ytext.length);
+      ytext.insert(0, json);
+    });
+    // The ydoc 'update' observer (registered in the WS effect) sends the update
+  }, []);
+
   useEffect(() => {
     if (!enabled || !diagramId || !authToken) return;
+
+    const ydoc = ydocRef.current;
 
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const wsUrl = `${protocol}://${window.location.host}/api/v1/diagrams/${diagramId}/ws?token=${encodeURIComponent(authToken)}`;
@@ -127,6 +192,9 @@ export function useDiagramCollab({
 
     ws.onopen = () => {
       setIsConnected(true);
+      // Send SyncStep1 so the server knows what state we have
+      const sv = Y.encodeStateVector(ydoc);
+      ws.send(encodeSyncStep1(sv));
       sendCursor(null);
     };
 
@@ -142,33 +210,73 @@ export function useDiagramCollab({
     ws.onmessage = (event: MessageEvent) => {
       if (!(event.data instanceof ArrayBuffer)) return;
       const data = new Uint8Array(event.data);
-      const payload = decodeAwarenessPayload(data);
-      if (!payload) return;
+      if (data.length === 0) return;
 
-      try {
-        const parsed = JSON.parse(new TextDecoder().decode(payload)) as {
-          clientId: string;
-          user: { name: string; color: string };
-          cursor: { x: number; y: number } | null;
-        };
-        if (parsed.clientId === clientIdRef.current) return;
+      const [msgType, offset] = readVarint(data, 0);
 
-        setRemoteUsers((prev) => {
-          const filtered = prev.filter((u) => u.clientId !== parsed.clientId);
-          const updated: RemoteUser = {
-            clientId: parsed.clientId,
-            name: parsed.user.name,
-            color: parsed.user.color || hashColor(parsed.clientId),
-            cursor: parsed.cursor,
+      if (msgType === 0) {
+        // Yjs sync message
+        const [subType, offset2] = readVarint(data, offset);
+        const parsed = readVarBytes(data, offset2);
+        if (!parsed) return;
+        const [updateBytes] = parsed;
+
+        if (subType === 1 || subType === 2) {
+          // SyncStep2 (full state) or Update (incremental)
+          isApplyingRemoteRef.current = true;
+          try {
+            Y.applyUpdate(ydoc, updateBytes);
+            const json = ydoc.getText('content').toString();
+            if (json) {
+              try {
+                const doc = JSON.parse(json) as DiagramDocument;
+                onRemoteDocumentRef.current?.(doc);
+              } catch {
+                // Ignore malformed JSON
+              }
+            }
+          } finally {
+            isApplyingRemoteRef.current = false;
+          }
+        }
+      } else if (msgType === 1) {
+        // Awareness / presence message
+        const payload = data.slice(offset);
+        try {
+          const parsed = JSON.parse(new TextDecoder().decode(payload)) as {
+            clientId: string;
+            user: { name: string; color: string };
+            cursor: { x: number; y: number } | null;
           };
-          return [...filtered, updated];
-        });
-      } catch {
-        // Ignore malformed messages
+          if (parsed.clientId === clientIdRef.current) return;
+
+          setRemoteUsers((prev) => {
+            const filtered = prev.filter((u) => u.clientId !== parsed.clientId);
+            const updated: RemoteUser = {
+              clientId: parsed.clientId,
+              name: parsed.user.name,
+              color: parsed.user.color || hashColor(parsed.clientId),
+              cursor: parsed.cursor,
+            };
+            return [...filtered, updated];
+          });
+        } catch {
+          // Ignore malformed awareness messages
+        }
       }
     };
 
+    // Observe local Y.Doc changes and send them to the server
+    const onYDocUpdate = (update: Uint8Array) => {
+      if (isApplyingRemoteRef.current) return;
+      const currentWs = wsRef.current;
+      if (!currentWs || currentWs.readyState !== WebSocket.OPEN) return;
+      currentWs.send(encodeUpdate(update));
+    };
+    ydoc.on('update', onYDocUpdate);
+
     return () => {
+      ydoc.off('update', onYDocUpdate);
       ws.close();
       wsRef.current = null;
       setIsConnected(false);
@@ -183,5 +291,5 @@ export function useDiagramCollab({
     };
   }, [sendCursor]);
 
-  return { remoteUsers, isConnected, sendCursor };
+  return { remoteUsers, isConnected, sendCursor, broadcastDocument };
 }

@@ -6,6 +6,22 @@ export interface SheetRemoteUser {
   clientId: string;
   name: string;
   color: string;
+  cellId: string | null;
+}
+
+export interface CellSyncItem {
+  id: string;
+  raw: string;
+  cellStyle?: Record<string, unknown>;
+  colSpan?: number;
+  rowSpan?: number;
+  mergeAnchor?: string;
+}
+
+interface CellUpdatePayload {
+  clientId: string;
+  sheetIndex: number;
+  cells: CellSyncItem[];
 }
 
 const HEARTBEAT_INTERVAL_MS = 10_000;
@@ -15,7 +31,7 @@ const STALE_CHECK_INTERVAL_MS = 5_000;
 interface AwarenessPayload {
   clientId: string;
   user: { name: string; color: string };
-  cursor: null;
+  cursor: { cellId: string } | null;
   disconnecting?: boolean;
   joinedAt?: number;
 }
@@ -65,8 +81,8 @@ function readVarint(data: Uint8Array, offset: number): [number, number] {
   return [result, pos];
 }
 
-function encodeAwarenessMessage(payload: Uint8Array): Uint8Array {
-  const typeBytes = writeVarint(1);
+function encodeMessage(type: number, payload: Uint8Array): Uint8Array {
+  const typeBytes = writeVarint(type);
   const buf = new Uint8Array(typeBytes.length + payload.length);
   buf.set(typeBytes, 0);
   buf.set(payload, typeBytes.length);
@@ -78,12 +94,16 @@ export function useSheetPresence({
   userName,
   authToken,
   enabled,
+  selectedCellId,
+  onRemoteCellsRef,
 }: {
   sheetId: string;
   userName: string;
   authToken: string | null;
   enabled: boolean;
-}): SheetRemoteUser[] {
+  selectedCellId?: string | null;
+  onRemoteCellsRef?: React.MutableRefObject<((sheetIndex: number, cells: CellSyncItem[]) => void) | null>;
+}): { remoteUsers: SheetRemoteUser[]; broadcastCells: (sheetIndex: number, cells: CellSyncItem[]) => void } {
   const [remoteUsers, setRemoteUsers] = useState<SheetRemoteUser[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const clientIdRef = useRef<string>(
@@ -92,20 +112,22 @@ export function useSheetPresence({
   const localJoinedAtRef = useRef<number>(Date.now());
   const lastSeenRef = useRef<Map<string, number>>(new Map());
   const myColor = colorFromName(userName);
+  const selectedCellIdRef = useRef<string | null>(selectedCellId ?? null);
+  useEffect(() => { selectedCellIdRef.current = selectedCellId ?? null; }, [selectedCellId]);
 
   const sendAwareness = useCallback(
-    (cursor: null, disconnecting = false) => {
+    (disconnecting = false) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       const payload: AwarenessPayload = {
         clientId: clientIdRef.current,
         user: { name: userName, color: myColor },
-        cursor,
+        cursor: selectedCellIdRef.current ? { cellId: selectedCellIdRef.current } : null,
         joinedAt: localJoinedAtRef.current,
         ...(disconnecting ? { disconnecting: true } : {}),
       };
       const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
-      ws.send(encodeAwarenessMessage(payloadBytes));
+      ws.send(encodeMessage(1, payloadBytes));
     },
     [userName, myColor]
   );
@@ -122,7 +144,7 @@ export function useSheetPresence({
     wsRef.current = ws;
 
     ws.onopen = () => {
-      sendAwareness(null);
+      sendAwareness();
     };
 
     ws.onclose = () => {
@@ -140,9 +162,22 @@ export function useSheetPresence({
       if (data.length === 0) return;
 
       const [msgType, offset] = readVarint(data, 0);
-      if (msgType !== 1) return; // only awareness messages matter for sheets presence
-
       const payload = data.slice(offset);
+
+      if (msgType === 2) {
+        try {
+          const parsed = JSON.parse(new TextDecoder().decode(payload)) as CellUpdatePayload;
+          if (parsed.clientId === clientIdRef.current) return;
+          console.log('[sheets-sync] recv', { from: parsed.clientId.slice(0, 6), sheetIndex: parsed.sheetIndex, cells: parsed.cells.length, ids: parsed.cells.map(c => c.id) });
+          onRemoteCellsRef?.current?.(parsed.sheetIndex, parsed.cells);
+        } catch {
+          // ignore malformed cell update messages
+        }
+        return;
+      }
+
+      if (msgType !== 1) return;
+
       try {
         const parsed = JSON.parse(new TextDecoder().decode(payload)) as AwarenessPayload;
         if (parsed.clientId === clientIdRef.current) return;
@@ -161,11 +196,12 @@ export function useSheetPresence({
             clientId: parsed.clientId,
             name: parsed.user.name,
             color: parsed.user.color || colorFromName(parsed.user.name),
+            cellId: parsed.cursor?.cellId ?? null,
           }];
         });
 
         if (isNewPeer) {
-          sendAwarenessRef.current(null);
+          sendAwarenessRef.current();
         }
       } catch {
         // ignore malformed awareness messages
@@ -177,11 +213,11 @@ export function useSheetPresence({
         const leavePayload: AwarenessPayload = {
           clientId: clientIdRef.current,
           user: { name: userName, color: colorFromName(userName) },
-          cursor: null,
+          cursor: selectedCellIdRef.current ? { cellId: selectedCellIdRef.current } : null,
           disconnecting: true,
         };
         const bytes = new TextEncoder().encode(JSON.stringify(leavePayload));
-        ws.send(encodeAwarenessMessage(bytes));
+        ws.send(encodeMessage(1, bytes));
       }
       ws.close();
       wsRef.current = null;
@@ -194,9 +230,16 @@ export function useSheetPresence({
   // Heartbeat: re-announce presence every 10s so late joiners see us
   useEffect(() => {
     if (!enabled || !authToken) return;
-    const id = setInterval(() => sendAwarenessRef.current(null), HEARTBEAT_INTERVAL_MS);
+    const id = setInterval(() => sendAwarenessRef.current(), HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(id);
   }, [enabled, authToken]);
+
+  // Broadcast when selected cell changes so peers see cursor movement immediately
+  useEffect(() => {
+    if (!enabled || !authToken) return;
+    sendAwarenessRef.current();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCellId]);
 
   // Stale cleanup: remove peers not heard from in 30s
   useEffect(() => {
@@ -220,10 +263,21 @@ export function useSheetPresence({
 
   // Announce departure on tab close
   useEffect(() => {
-    const handleBeforeUnload = () => sendAwarenessRef.current(null, true);
+    const handleBeforeUnload = () => sendAwarenessRef.current(true);
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
-  return remoteUsers;
+  const broadcastCells = useCallback((sheetIndex: number, cells: CellSyncItem[]) => {
+    const ws = wsRef.current;
+    const wsState = ws ? ['CONNECTING','OPEN','CLOSING','CLOSED'][ws.readyState] : 'NO_WS';
+    console.log('[sheets-sync] send attempt', { sheetIndex, cells: cells.length, ids: cells.map(c => c.id), wsState });
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const cellPayload: CellUpdatePayload = { clientId: clientIdRef.current, sheetIndex, cells };
+    const payloadBytes = new TextEncoder().encode(JSON.stringify(cellPayload));
+    ws.send(encodeMessage(2, payloadBytes));
+    console.log('[sheets-sync] sent', { sheetIndex, cells: cells.length, ids: cells.map(c => c.id) });
+  }, []);
+
+  return { remoteUsers, broadcastCells };
 }

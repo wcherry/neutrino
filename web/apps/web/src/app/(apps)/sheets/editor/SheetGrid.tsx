@@ -46,6 +46,8 @@ export type SheetGridProps = {
     conditionalFormats?: CFRule[];
     // Named CF variable definitions (item 19).
     cfVariables?: CFVariable[];
+    // Remote collaborators' selected cells — rendered as colored overlays.
+    remotePresence?: Array<{ clientId: string; cellId: string; color: string; name: string }>;
 };
 
 // ── Prefix-sum helpers ────────────────────────────────────────────────────────
@@ -177,6 +179,7 @@ export const SheetGrid = React.memo(function SheetGrid({
     formulaPickMode, onFormulaPickMouseDown, onFormulaPickMouseMove, formulaPickCells,
     onCellContextMenu, onColHeaderContextMenu, onRowHeaderContextMenu,
     columnFilters, scrollBodyRef, overlay, formulaRefHighlights, conditionalFormats, cfVariables,
+    remotePresence,
 }: SheetGridProps) {
     const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -488,6 +491,42 @@ export const SheetGrid = React.memo(function SheetGrid({
         );
     }, [formulaPickMode, formulaPickCells, computeRangeBox]);
 
+    // Remote presence overlays — one colored border + name label per connected peer.
+    const remotePresenceOverlays = useMemo(() => {
+        if (!remotePresence || remotePresence.length === 0) return null;
+        return remotePresence.map(({ clientId, cellId, color, name }) => {
+            const box = computeRangeBox(new Set([cellId]));
+            if (!box) return null;
+            return (
+                <div
+                    key={`presence-${clientId}`}
+                    style={{
+                        position: 'absolute', ...box,
+                        border: `2px solid ${color}`,
+                        pointerEvents: 'none', zIndex: 2,
+                    }}
+                >
+                    <div style={{
+                        position: 'absolute',
+                        top: -18,
+                        left: -1,
+                        background: color,
+                        color: '#fff',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: '1px 5px',
+                        borderRadius: '3px 3px 3px 0',
+                        whiteSpace: 'nowrap',
+                        lineHeight: '16px',
+                        userSelect: 'none',
+                    }}>
+                        {name}
+                    </div>
+                </div>
+            );
+        });
+    }, [remotePresence, computeRangeBox]);
+
     // Formula reference overlays — one colored border per unique cell ref/range
     // in the formula being typed. Mirrors the behavior in Excel / Google Sheets.
     const formulaRefOverlays = useMemo(() => {
@@ -616,6 +655,7 @@ export const SheetGrid = React.memo(function SheetGrid({
                     {cutOverlay}
                     {formulaRefOverlays}
                     {formulaPickOverlay}
+                    {remotePresenceOverlays}
                     {overlay}
                 </div>
             </div>

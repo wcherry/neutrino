@@ -11,6 +11,7 @@ type Props = {
     onToggleHistory: () => void;
     setHamburgerDialog: (dialog: string | null) => void;
     setHamburgerDeleteConfirm: (v: boolean) => void;
+    isViewer?: boolean;
 };
 
 export function HamburgerMenu({
@@ -22,12 +23,13 @@ export function HamburgerMenu({
     onToggleHistory,
     setHamburgerDialog,
     setHamburgerDeleteConfirm,
+    isViewer = false,
 }: Props) {
     const openDialog = (dialog: string) => setHamburgerDialog(dialog);
 
     const items: HamburgerMenuItem[] = [
-        { kind: 'action', label: 'New',             action: () => openDialog('new') },
-        { kind: 'action', label: 'Save',            shortcut: 'Ctrl+S', action: () => onSave() },
+        ...(!isViewer ? [{ kind: 'action' as const, label: 'New', action: () => openDialog('new') }] : []),
+        ...(!isViewer ? [{ kind: 'action' as const, label: 'Save', shortcut: 'Ctrl+S', action: () => onSave() }] : []),
         {
             kind: 'submenu', label: 'Export', items: [
                 { kind: 'action', label: 'Comma Separated Values (.csv)', action: () => onOpenCsvExport() },
@@ -35,17 +37,19 @@ export function HamburgerMenu({
                 { kind: 'action', label: 'Web Page (.html)',               action: () => onOpenHtmlExport() },
             ],
         },
-        {
-            kind: 'submenu', label: 'Import', items: [
-                { kind: 'action', label: 'New sheet', action: () => openDialog('import-sheet') },
-                { kind: 'action', label: 'New tab',   action: () => openDialog('import-tab') },
+        ...(!isViewer ? [{
+            kind: 'submenu' as const, label: 'Import', items: [
+                { kind: 'action' as const, label: 'New sheet', action: () => openDialog('import-sheet') },
+                { kind: 'action' as const, label: 'New tab',   action: () => openDialog('import-tab') },
             ],
-        },
+        }] : []),
         { kind: 'action', label: 'Print',            action: () => onOpenPrint() },
-        { kind: 'action', label: 'Duplicate',        action: () => openDialog('duplicate') },
+        ...(!isViewer ? [{ kind: 'action' as const, label: 'Duplicate', action: () => openDialog('duplicate') }] : []),
         { kind: 'action', label: 'Version history',  action: () => onToggleHistory() },
-        { kind: 'separator' },
-        { kind: 'action', label: 'Delete', danger: true, action: () => { setHamburgerDeleteConfirm(true); setHamburgerDialog('delete'); } },
+        ...(!isViewer ? [
+            { kind: 'separator' as const },
+            { kind: 'action' as const, label: 'Delete', danger: true, action: () => { setHamburgerDeleteConfirm(true); setHamburgerDialog('delete'); } },
+        ] : []),
         { kind: 'separator' },
         { kind: 'action', label: 'Share',                    action: () => openDialog('share') },
         { kind: 'action', label: 'Make available offline',   action: () => openDialog('offline') },

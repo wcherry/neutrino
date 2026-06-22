@@ -31,6 +31,8 @@ pub struct SheetResponse {
     pub folder_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// The current user's role on this spreadsheet: "owner", "editor", "commenter", or "viewer".
+    pub your_role: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

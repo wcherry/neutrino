@@ -105,6 +105,7 @@ export function usePersistence({
     const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
     const toast = useToast();
     const [title, setTitle] = useState('Untitled');
+    const [yourRole, setYourRole] = useState<string>('owner');
     // loadCount increments every time load() completes successfully.
     // The autosave useEffect depends on it so it restarts (with cleanup) on each reload.
     const [loadCount, setLoadCount] = useState(0);
@@ -233,6 +234,7 @@ export function usePersistence({
         const sheet = await sheetsApi.getSheet(sheetId);
         sheetRef.current = sheet;
         setTitle(sheet.title);
+        setYourRole(sheet.yourRole ?? 'owner');
         // True only when decryptFile throws on a brand-new file (isNewEncryption),
         // meaning the server still holds the plaintext default content written at
         // sheet creation time.  When decryptFile throws for an existing key
@@ -359,6 +361,7 @@ export function usePersistence({
         sheetRef,
         title,
         setTitle,
+        yourRole,
         load,
         save,
         manualSave,

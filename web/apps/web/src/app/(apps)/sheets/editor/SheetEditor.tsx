@@ -9,7 +9,7 @@ import * as XLSX from 'xlsx';
 import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
 import { sheetsApi, filesystemApi, driveAutosaveContent } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
-import { useSheetPresence } from '@/hooks/useSheetPresence';
+import { useSheetPresence, type CellSyncItem } from '@/hooks/useSheetPresence';
 import type { CellProps, ClipboardCFRule, CFRule } from './types';
 import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, type ArrowNavigationKey } from './utils';
 import { MAX_ROWS, MAX_COLS } from './constants';
@@ -24,6 +24,7 @@ import { ConditionalFormattingDialog } from './ConditionalFormattingDialog';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useNspell } from '@/hooks/useNspell';
 import { computeCell, propagateDeps, type SheetRef } from './formula';
+import type { CellStyle } from './types';
 
 import { StyleToolbar } from './StyleToolbar';
 import { SheetGrid } from './SheetGrid';
@@ -133,17 +134,26 @@ export function SheetEditor() {
         setAuthToken(localStorage.getItem('access_token'));
     }, []);
 
-    const remoteUsers = useSheetPresence({
-        sheetId,
-        userName: currentUser?.name ?? 'Anonymous',
-        authToken,
-        enabled: !!sheetId,
-    });
-
     // ── Core state & refs ────────────────────────────────────────────────────
     const [currentCell, setCurrentCell] = useState<CellProps | undefined>();
     const [selectionAnchor, setSelectionAnchor] = useState<string | undefined>(undefined);
     const [selectionActive, setSelectionActive] = useState<string | undefined>(undefined);
+
+    const onRemoteCellsRef = useRef<((sheetIndex: number, cells: CellSyncItem[]) => void) | null>(null);
+    const isApplyingRemoteRef = useRef(false);
+    const prevDataForBroadcastRef = useRef<Map<string, CellProps> | null>(null);
+    const broadcastCellsRef = useRef<(sheetIndex: number, cells: CellSyncItem[]) => void>(() => {});
+    const isViewerRef = useRef(false);
+
+    const { remoteUsers, broadcastCells } = useSheetPresence({
+        sheetId,
+        userName: currentUser?.name ?? 'Anonymous',
+        authToken,
+        enabled: !!sheetId,
+        selectedCellId: selectionAnchor ?? null,
+        onRemoteCellsRef,
+    });
+    useEffect(() => { broadcastCellsRef.current = broadcastCells; }, [broadcastCells]);
     const [keyboardMode, setKeyboardMode] = useState<SheetKeyboardMode>('movement');
     const [data, setData] = useState<Map<string, CellProps>>(new Map());
     const dataRef = useRef<Map<string, CellProps>>(data);
@@ -256,6 +266,9 @@ export function SheetEditor() {
         setConditionalFormats: flags.sheetsConditionalFormatting ? cf.setConditionalFormats : undefined,
     });
 
+    const isViewer = persist.yourRole === 'viewer';
+    useEffect(() => { isViewerRef.current = isViewer; }, [isViewer]);
+
     // ── Cross-sheet reference helper ─────────────────────────────────────────
     // Builds the SheetRef[] array needed by computeCell / propagateDeps so that
     // formulas like =Beta!C4 can resolve values from other sheets.
@@ -268,6 +281,88 @@ export function SheetEditor() {
             data: sheets.sheetsDataRef.current[i] ?? new Map(),
         }));
     }, [sheets]);
+
+    // Populate after getAllSheets is available — called by useSheetPresence when a
+    // type-2 (cell update) message arrives from a remote peer.
+    onRemoteCellsRef.current = (sheetIndex: number, cells: CellSyncItem[]) => {
+        if (sheetIndex !== sheets.activeSheetIndexRef.current) return;
+        isApplyingRemoteRef.current = true;
+        const allSheets = getAllSheets();
+        setData(prev => {
+            const next = new Map(prev);
+            const changedIds = new Set<string>();
+            for (const item of cells) {
+                changedIds.add(item.id);
+                if (!item.raw) {
+                    next.delete(item.id);
+                } else {
+                    const existing = next.get(item.id) ?? { id: item.id, edit: false };
+                    const { value, deps } = computeCell(item.raw, next, allSheets);
+                    next.set(item.id, {
+                        ...existing,
+                        raw: item.raw,
+                        value,
+                        deps,
+                        edit: false,
+                        cellStyle: item.cellStyle as CellStyle | undefined,
+                        colSpan: item.colSpan,
+                        rowSpan: item.rowSpan,
+                        mergeAnchor: item.mergeAnchor,
+                    });
+                }
+            }
+            for (const id of changedIds) {
+                if (next.has(id)) propagateDeps(id, next, changedIds, allSheets);
+            }
+            return next;
+        });
+    };
+
+    // Broadcast local data changes to remote peers. Runs after every commit that
+    // changes `data`. Remote-applied updates set isApplyingRemoteRef to prevent
+    // echoing changes back.
+    useLayoutEffect(() => {
+        console.log('[sheets-sync] data changed, isRemote=', isApplyingRemoteRef.current, 'prevIsNull=', prevDataForBroadcastRef.current === null, 'dataSize=', data.size);
+        if (isApplyingRemoteRef.current) {
+            isApplyingRemoteRef.current = false;
+            prevDataForBroadcastRef.current = data;
+            return;
+        }
+        const prev = prevDataForBroadcastRef.current;
+        prevDataForBroadcastRef.current = data;
+        if (prev === null) return; // initial mount — capture baseline, don't broadcast
+
+        const changed: CellSyncItem[] = [];
+        for (const [id, cell] of data) {
+            if (cell.edit) continue;
+            const prevCell = prev.get(id);
+            // prevCell.edit means the cell just committed (typing set edit: true on every
+            // keystroke so prev captured the typed raw — raw equality alone won't catch it)
+            if (!prevCell
+                || prevCell.raw !== cell.raw
+                || prevCell.edit
+                || prevCell.colSpan !== cell.colSpan
+                || prevCell.rowSpan !== cell.rowSpan
+                || prevCell.mergeAnchor !== cell.mergeAnchor
+                || JSON.stringify(prevCell.cellStyle) !== JSON.stringify(cell.cellStyle)) {
+                changed.push({
+                    id,
+                    raw: cell.raw ?? '',
+                    cellStyle: cell.cellStyle as Record<string, unknown> | undefined,
+                    colSpan: cell.colSpan,
+                    rowSpan: cell.rowSpan,
+                    mergeAnchor: cell.mergeAnchor,
+                });
+            }
+        }
+        for (const id of prev.keys()) {
+            if (!data.has(id)) changed.push({ id, raw: '' });
+        }
+        if (changed.length > 0) {
+            broadcastCellsRef.current(sheets.activeSheetIndexRef.current, changed);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [data]);
 
     const editing = useCellEditing({
         data, setData, dataRef,
@@ -293,6 +388,7 @@ export function SheetEditor() {
     // the handler fires regardless of which child element has focus.
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
+            if (isViewerRef.current) return;
             if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
             if ((document.activeElement as HTMLElement | null)?.isContentEditable) return;
             if (e.key.toLowerCase() === 'b') {
@@ -416,6 +512,8 @@ export function SheetEditor() {
                 return;
             }
 
+            if (isViewerRef.current) return;
+
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 e.preventDefault();
                 clearHeaderSelectionNavRef.current();
@@ -504,6 +602,7 @@ export function SheetEditor() {
     }, [nspell, spellWord, spellSuggestions]);
 
     const handleCellContextMenu = useCallback((cellId: string, x: number, y: number) => {
+        if (isViewer) return;
         if (!editing.selectedCells.has(cellId)) {
             editing.stableOnCellActivate(cellId);
         }
@@ -1345,14 +1444,16 @@ export function SheetEditor() {
 
     // ── Header context menu handlers ─────────────────────────────────────────
     const handleColHeaderContextMenu = useCallback((colIndex: number, x: number, y: number) => {
+        if (isViewer) return;
         handleColHeaderClick(colIndex);
         setHeaderContextMenu({ type: 'col', index: colIndex, x, y });
-    }, [handleColHeaderClick]);
+    }, [isViewer, handleColHeaderClick]);
 
     const handleRowHeaderContextMenu = useCallback((rowIndex: number, x: number, y: number) => {
+        if (isViewer) return;
         handleRowHeaderClick(rowIndex);
         setHeaderContextMenu({ type: 'row', index: rowIndex, x, y });
-    }, [handleRowHeaderClick]);
+    }, [isViewer, handleRowHeaderClick]);
 
     const closeHeaderContextMenu = useCallback(() => setHeaderContextMenu(null), []);
 
@@ -1412,11 +1513,13 @@ export function SheetEditor() {
 
     // ── Resize handlers ──────────────────────────────────────────────────────
     const handleColResize = (colIndex: number, width: number) => {
+        if (isViewer) return;
         setColWidths(prev => { const next = new Map(prev); next.set(colIndex, width); return next; });
         dirtyRef.current = true;
     };
 
     const handleRowResize = (rowIndex: number, height: number) => {
+        if (isViewer) return;
         setRowHeights(prev => { const next = new Map(prev); next.set(rowIndex, height); return next; });
         dirtyRef.current = true;
     };
@@ -1442,6 +1545,7 @@ export function SheetEditor() {
                     onToggleHistory={() => setShowHistory(v => !v)}
                     setHamburgerDialog={setHamburgerDialog}
                     setHamburgerDeleteConfirm={setHamburgerDeleteConfirm}
+                    isViewer={isViewer}
                 />
                 <button className={styles.backBtn} aria-label="Sheets" onClick={handleBack}>
                     <ArrowLeft size={16} />
@@ -1451,11 +1555,11 @@ export function SheetEditor() {
                         ref={titleInputRef}
                         data-testid="worksheet.name"
                         className={styles.titleInput}
-                        contentEditable={true}
+                        contentEditable={!isViewer}
                         suppressContentEditableWarning={true}
                         spellCheck={spellCheck}
-                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
-                        onBlur={persist.updateTitle}
+                        onKeyDown={isViewer ? undefined : e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+                        onBlur={isViewer ? undefined : persist.updateTitle}
                     />
                 </div>
                 <div style={{ marginLeft: 'auto' }}>
@@ -1505,12 +1609,13 @@ export function SheetEditor() {
                 onToggleAllFunctions={editing.toggleAllFunctions}
                 onFunctionSelect={editing.handleFunctionSelect}
                 spellCheck={false}
+                readOnly={isViewer}
             />
 
             <StyleToolbar
                 cellStyle={editing.selectedCellStyle}
                 onStyleChange={editing.applyStyle}
-                disabled={!selectionAnchor}
+                disabled={!selectionAnchor || isViewer}
                 onUndo={history.undo}
                 onRedo={history.redo}
                 canUndo={history.historyLen.undo > 0}
@@ -1569,6 +1674,7 @@ export function SheetEditor() {
                         scrollBodyRef={scrollBodyRef}
                         conditionalFormats={flags.sheetsConditionalFormatting ? cf.conditionalFormats : undefined}
                         cfVariables={flags.sheetsConditionalFormatting ? cfVariables : undefined}
+                        remotePresence={remoteUsers.filter(u => u.cellId != null).map(u => ({ clientId: u.clientId, cellId: u.cellId!, color: u.color, name: u.name }))}
                         overlay={flags.sheetsCharts ? (
                             <ChartLayer
                                 charts={charts.charts}
@@ -1612,6 +1718,7 @@ export function SheetEditor() {
                 setSheetColors={sheets.setSheetColors}
                 activeSheetIndex={sheets.activeSheetIndex}
                 dirtyRef={dirtyRef}
+                readOnly={isViewer}
                 onSwitchSheet={(idx) => {
                     if (flags.sheetsCharts) {
                         // Flush before switchSheet updates activeSheetIndexRef, so

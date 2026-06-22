@@ -17,6 +17,7 @@ type Props = {
     onDuplicateSheet: (index: number) => void;
     onMoveSheet: (index: number, direction: 'left' | 'right') => void;
     onCommitRename: (index: number, value: string) => void;
+    readOnly?: boolean;
 };
 
 export function SheetTabBar({
@@ -31,6 +32,7 @@ export function SheetTabBar({
     onDuplicateSheet,
     onMoveSheet,
     onCommitRename,
+    readOnly = false,
 }: Props) {
     const [renamingIndex, setRenamingIndex] = useState<number | null>(null);
     const [renameValue, setRenameValue] = useState('');
@@ -66,8 +68,8 @@ export function SheetTabBar({
                             className={`${styles.sheetTab} ${i === activeSheetIndex ? styles.sheetTabActive : ''}`}
                             style={tabColor ? { backgroundColor: tabColor } : undefined}
                             onClick={() => { if (renamingIndex !== i) onSwitchSheet(i); }}
-                            onDoubleClick={() => { setRenamingIndex(i); setRenameValue(name); }}
-                            onContextMenu={e => {
+                            onDoubleClick={readOnly ? undefined : () => { setRenamingIndex(i); setRenameValue(name); }}
+                            onContextMenu={readOnly ? undefined : e => {
                                 e.preventDefault();
                                 setContextMenu({ x: e.clientX, y: e.clientY, index: i, deleteConfirm: false });
                             }}
@@ -90,7 +92,7 @@ export function SheetTabBar({
                         </div>
                     );
                 })}
-                <button className={styles.sheetTabAdd} onClick={onAddSheet} title="Add sheet">+</button>
+                {!readOnly && <button className={styles.sheetTabAdd} onClick={onAddSheet} title="Add sheet">+</button>}
             </div>
 
             {contextMenu && (

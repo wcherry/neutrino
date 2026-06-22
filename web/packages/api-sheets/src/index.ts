@@ -22,6 +22,8 @@ export interface SheetResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /** The current user's role: "owner", "editor", "commenter", or "viewer". */
+  yourRole: string;
 }
 
 export interface SheetMetaResponse {
