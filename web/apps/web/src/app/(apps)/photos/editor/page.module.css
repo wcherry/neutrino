@@ -1,0 +1,420 @@
+/* ── Photos Editor Shell ─────────────────────────────────────────────────────
+   Dark-chrome photo editor (Lightroom / Apple Photos dark mode aesthetic).
+   Surfaces are intentionally hardcoded dark — this editor is always dark
+   regardless of the active app theme, matching how sheets/Cell.tsx hardcodes
+   its grid colours. The accent colour defers to --color-primary so it
+   responds to theme selection.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Root shell ──────────────────────────────────────────────────────────── */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: #0d0d0d;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+
+.topBar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 52px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.backBtn {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: #9ca3af;
+  transition: color 150ms ease;
+}
+
+.backBtn:hover {
+  color: var(--color-primary, #3b82f6);
+}
+
+.backBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 2px;
+}
+
+.titleText {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: #e5e7eb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topBarActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.savingLabel {
+  font-size: 12px;
+  color: #6b7280;
+  align-self: center;
+}
+
+/* ── Editor body (toolbar + canvas + adjustments) ────────────────────────── */
+
+.editorBody {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+/* ── Left toolbar ────────────────────────────────────────────────────────── */
+
+.toolbar {
+  width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: #1a1a1a;
+  border-right: 1px solid #2a2a2a;
+  overflow-y: auto;
+}
+
+.toolBtn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  color: #9ca3af;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.toolBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.toolBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+/* Active tool — tinted highlight using the theme accent */
+.toolBtnActive {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
+  color: var(--color-primary, #3b82f6);
+}
+
+.toolBtnActive:hover {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 28%, transparent);
+  color: var(--color-primary, #3b82f6);
+}
+
+.toolDivider {
+  width: 28px;
+  height: 1px;
+  background: #2a2a2a;
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+
+/* ── Canvas area ─────────────────────────────────────────────────────────── */
+
+.canvasArea {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Drop-zone active state — shown when a file is dragged over the canvas */
+.canvasArea.dropZoneActive {
+  outline: 2px dashed var(--color-primary, #3b82f6);
+  outline-offset: -2px;
+}
+
+.canvasWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+/* The primary image/filter canvas */
+.baseCanvas {
+  display: block;
+}
+
+/* Overlay canvas for crop handles, brush strokes, annotations, etc. */
+.overlayCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: crosshair;
+}
+
+/* Crop bounding-box overlay (pointer-events off; handles are separate elements) */
+.cropOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* ── Adjustments panel (right) ───────────────────────────────────────────── */
+
+.adjustmentsPanel {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  background: #1a1a1a;
+  border-left: 1px solid #2a2a2a;
+  overflow-y: auto;
+}
+
+/* Thin scrollbar to keep the panel from feeling heavy */
+.adjustmentsPanel::-webkit-scrollbar {
+  width: 4px;
+}
+
+.adjustmentsPanel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.adjustmentsPanel::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 9999px;
+}
+
+.panelSection {
+  padding: 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.panelSectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+
+/* ── Slider rows ─────────────────────────────────────────────────────────── */
+
+.sliderRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.sliderRow:last-child {
+  margin-bottom: 0;
+}
+
+.sliderLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.sliderValue {
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--color-primary, #3b82f6);
+  cursor: pointer;
+}
+
+/* ── Rotate / flip controls ──────────────────────────────────────────────── */
+
+.rotateRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rotateBtn {
+  flex: 1;
+  min-width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.rotateBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.rotateBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+/* ── Panel sections (used by AdjustmentsPanel) ───────────────────────────── */
+
+.section {
+  padding: 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+  margin-top: 0;
+}
+
+/* ── Orientation controls ─────────────────────────────────────────────────── */
+
+.orientationGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.orientBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.orientBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.orientBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.orientBtnActive {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
+  color: var(--color-primary, #3b82f6);
+  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+}
+
+.rotationHint {
+  font-size: 11px;
+  color: #6b7280;
+  margin: 4px 0 8px;
+}
+
+.resetBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  width: 100%;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.resetBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+/* ── Loading / error states ──────────────────────────────────────────────── */
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: #0d0d0d;
+}
+
+/* ── Error / empty state ─────────────────────────────────────────────────── */
+
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 16px;
+  color: #6b7280;
+  text-align: center;
+  background: #0d0d0d;
+}
+
+.backLink {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-primary, #3b82f6);
+  font-size: 14px;
+  text-decoration: underline;
+}
+
+/* ── Reduced-motion ──────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .backBtn,
+  .toolBtn,
+  .rotateBtn {
+    transition-duration: 0.01ms !important;
+  }
+}

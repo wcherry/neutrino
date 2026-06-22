@@ -304,6 +304,8 @@ export default function DrivePage() {
       router.push(`/diagrams/editor?id=${file.id}`);
     } else if (file.mimeType === DRAWING_MIME) {
       router.push(`/drawing/editor?id=${file.id}`);
+    } else if (file.mimeType.startsWith('image/')) {
+      router.push(`/photos/editor?fileId=${file.id}`);
     } else {
       setPreviewFile(file);
     }
@@ -573,6 +575,8 @@ export default function DrivePage() {
                       router.push(`/diagrams/editor?id=${file.id}`);
                     } else if (file.mimeType === DRAWING_MIME) {
                       router.push(`/drawing/editor?id=${file.id}`);
+                    } else if (file.mimeType.startsWith('image/')) {
+                      router.push(`/photos/editor?fileId=${file.id}`);
                     } else {
                       setPreviewFile(file);
                     }
