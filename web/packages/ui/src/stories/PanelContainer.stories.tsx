@@ -359,3 +359,31 @@ export const MultiTabMinimizedBottom: Story = {
     </DockWrapper>
   ),
 };
+
+export const SideTabsLeft: Story = {
+  name: 'Side tabs — left strip',
+  render: () => (
+    <DockWrapper location="right">
+      <PanelContainer
+        tabs={SAMPLE_TABS}
+        tabsSide="left"
+        defaultLocation="right"
+        width={300}
+      />
+    </DockWrapper>
+  ),
+};
+
+export const SideTabsRight: Story = {
+  name: 'Side tabs — right strip',
+  render: () => (
+    <DockWrapper location="left">
+      <PanelContainer
+        tabs={SAMPLE_TABS}
+        tabsSide="right"
+        defaultLocation="left"
+        width={300}
+      />
+    </DockWrapper>
+  ),
+};

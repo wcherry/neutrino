@@ -59,6 +59,20 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: text;
+}
+
+.titleInput {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: #e5e7eb;
+  background: #2a2a2a;
+  border: 1px solid var(--color-primary, #3b82f6);
+  border-radius: 4px;
+  padding: 2px 6px;
+  outline: none;
+  min-width: 0;
 }
 
 .topBarActions {
@@ -185,46 +199,67 @@
   pointer-events: none;
 }
 
-/* ── Adjustments panel (right) ───────────────────────────────────────────── */
+/* ── Adjustments panel (right) — PanelContainer dark override ────────────── */
 
-.adjustmentsPanel {
-  width: 280px;
+.panelDark {
   flex-shrink: 0;
+  --color-surface: #1a1a1a;
+  --color-surface-overlay: #1f1f1f;
+  --color-border: #2a2a2a;
+  --color-bg-subtle: #222;
+  --color-text-primary: #e5e7eb;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+  --color-accent: var(--color-primary, #3b82f6);
+}
+
+.panelPlaceholder {
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.5;
+  margin: 0;
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* ── Apply / Revert header buttons ───────────────────────────────────────── */
+
+.applyHeaderBtn {
   display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  background: #1a1a1a;
-  border-left: 1px solid #2a2a2a;
-  overflow-y: auto;
-}
-
-/* Thin scrollbar to keep the panel from feeling heavy */
-.adjustmentsPanel::-webkit-scrollbar {
-  width: 4px;
-}
-
-.adjustmentsPanel::-webkit-scrollbar-track {
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #3a3a3a;
   background: transparent;
-}
-
-.adjustmentsPanel::-webkit-scrollbar-thumb {
-  background: #2a2a2a;
-  border-radius: 9999px;
-}
-
-.panelSection {
-  padding: 16px;
-  border-bottom: 1px solid #2a2a2a;
-}
-
-.panelSectionTitle {
   font-size: 11px;
-  font-weight: 600;
-  color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #9ca3af;
+  white-space: nowrap;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.applyHeaderBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.applyHeaderBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.applyHeaderBtnAccent {
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}
+
+.applyHeaderBtnAccent:hover {
+  opacity: 0.88;
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
 }
 
 /* ── Slider rows ─────────────────────────────────────────────────────────── */
@@ -409,12 +444,439 @@
   text-decoration: underline;
 }
 
+
+/* ── Before/after comparison slider ─────────────────────────────────────── */
+
+.comparisonHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Vertical divider line */
+.comparisonHandle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.88);
+  pointer-events: none;
+}
+
+.comparisonHandleBtn {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(0, 0, 0, 0.18);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.38);
+  cursor: ew-resize;
+  pointer-events: all;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #374151;
+  user-select: none;
+  touch-action: none;
+}
+
+.comparisonHandleBtn:hover {
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.55);
+}
+
+.comparisonLabel {
+  position: absolute;
+  top: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  z-index: 15;
+  user-select: none;
+}
+
+/* ── Filter picker ───────────────────────────────────────────────────────── */
+
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.filterBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 4px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.filterBtn:hover {
+  background: #222;
+  border-color: #3a3a3a;
+}
+
+.filterBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.filterBtnActive {
+  border-color: var(--color-primary, #3b82f6);
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 12%, #111);
+}
+
+/* Colourful gradient swatch — CSS filter applied inline to preview the effect */
+.filterSwatch {
+  width: 48px;
+  height: 32px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ffd93d 33%, #6bcb77 66%, #4d96ff 100%);
+  flex-shrink: 0;
+}
+
+.filterLabel {
+  font-size: 10px;
+  color: #9ca3af;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1;
+}
+
+.filterBtnActive .filterLabel {
+  color: var(--color-primary, #3b82f6);
+}
+
+/* ── Background removal ──────────────────────────────────────────────────── */
+
+.bgRemoveBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  margin-bottom: 10px;
+}
+
+.bgRemoveBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+  border-color: #4a4a4a;
+}
+
+.bgRemoveBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.bgReplaceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bgColorLabel {
+  font-size: 12px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.bgReplaceBtn {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.bgReplaceBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.bgReplaceBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.bgHint {
+  font-size: 10px;
+  color: #4b5563;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.clearAreaBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: #6b7280;
+  padding: var(--space-1) 0;
+  text-decoration: underline;
+  text-align: left;
+}
+
+.clearAreaBtn:hover {
+  color: #d1d5db;
+}
+
+/* ── Zoom slider overlay ─────────────────────────────────────────────────── */
+
+.zoomBar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 20, 0.82);
+  backdrop-filter: blur(8px);
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 6px 12px;
+  z-index: 10;
+  pointer-events: all;
+}
+
+/* ── Clone tool hint overlay ─────────────────────────────────────────────── */
+
+.cloneHint {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.68);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  pointer-events: none;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  z-index: 30;
+}
+
+/* ── Clone stamp tool property controls ──────────────────────────────────── */
+
+.toolPropRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.toolPropRow:last-child {
+  margin-bottom: 0;
+}
+
+.toolPropLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.toolPropValue {
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.shapeSelector {
+  display: flex;
+  gap: 6px;
+}
+
+.shapeBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.shapeBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.shapeBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.shapeBtnActive {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
+  color: var(--color-primary, #3b82f6);
+  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+}
+
+/* ── AI panel ────────────────────────────────────────────────────────────── */
+
+.bgRemoveBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spinIcon {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.aiResultBox {
+  margin-top: 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.aiResultHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+  font-size: 10px;
+  color: #6b7280;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.aiCopyBtn {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  transition: color 150ms ease;
+}
+
+.aiCopyBtn:hover {
+  color: #e5e7eb;
+}
+
+.aiResultText {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  background: #111;
+  color: #9ca3af;
+  font-size: 11px;
+  font-family: monospace;
+  line-height: 1.5;
+  border: none;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.aiResultText:focus {
+  outline: none;
+}
+
+.intelTypeRow {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.intelTypeBtn {
+  flex: 1;
+  padding: 5px 6px;
+  border: 1px solid #2a2a2a;
+  border-radius: 5px;
+  background: #111;
+  color: #9ca3af;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.intelTypeBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.intelTypeBtnActive {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
+  color: var(--color-primary, #3b82f6);
+  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+}
+
 /* ── Reduced-motion ──────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {
   .backBtn,
   .toolBtn,
-  .rotateBtn {
+  .rotateBtn,
+  .filterBtn,
+  .bgRemoveBtn,
+  .bgReplaceBtn {
     transition-duration: 0.01ms !important;
   }
+
+  .spinIcon {
+    animation: none;
+  }
+}
+
+/* ── Smart Erase detected objects ─────────────────────────────────────────── */
+
+.detectedObjectsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 8px;
+}
+
+.detectedObjectChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: rgba(0, 180, 255, 0.15);
+  color: rgba(0, 180, 255, 0.9);
+  border: 1px solid rgba(0, 180, 255, 0.3);
 }

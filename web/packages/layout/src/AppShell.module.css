@@ -29,11 +29,9 @@
 }
 
 .main-inner {
-  padding: var(--space-6);
   height: 100%;
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
 }
 
 /* Desktop collapsed sidebar */

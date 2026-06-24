@@ -542,3 +542,56 @@ export const albumsApi = {
     return request<void>(`/api/v1/albums/${albumId}/items/${photoId}`, { method: 'DELETE' });
   },
 };
+
+// ---------------------------------------------------------------------------
+// Photos AI API
+// ---------------------------------------------------------------------------
+
+export type ScreenshotIntelOutputType = 'table' | 'document' | 'diagram';
+
+export type SmartEraseTarget = 'people' | 'power_lines' | 'cars' | 'clutter';
+
+export interface DetectedObject {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+}
+
+export const photosAiApi = {
+  /** Extract all text from an image via Claude vision. */
+  async ocr(imageBase64: string, mediaType = 'image/png'): Promise<string> {
+    const resp = await request<{ text: string }>('/api/v1/photos/ai/ocr', {
+      method: 'POST',
+      body: JSON.stringify({ imageBase64, mediaType }),
+    });
+    return resp.text;
+  },
+
+  /** Convert a screenshot into a Markdown table, document, or Mermaid diagram. */
+  async screenshotIntel(
+    imageBase64: string,
+    outputType: ScreenshotIntelOutputType,
+    mediaType = 'image/png',
+  ): Promise<string> {
+    const resp = await request<{ result: string }>('/api/v1/photos/ai/screenshot-intel', {
+      method: 'POST',
+      body: JSON.stringify({ imageBase64, mediaType, outputType }),
+    });
+    return resp.result;
+  },
+
+  /** Detect objects in an image and return normalized bounding boxes (0.0–1.0). */
+  async detectObjects(
+    imageBase64: string,
+    target: SmartEraseTarget,
+    mediaType = 'image/png',
+  ): Promise<DetectedObject[]> {
+    const resp = await request<{ objects: DetectedObject[] }>('/api/v1/photos/ai/detect-objects', {
+      method: 'POST',
+      body: JSON.stringify({ imageBase64, mediaType, target }),
+    });
+    return resp.objects;
+  },
+};

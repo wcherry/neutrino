@@ -9,6 +9,7 @@ export interface ZoomSliderProps {
   min?: number;
   max?: number;
   step?: number;
+  sliderStep?: number;
   showHandle?: boolean;
   className?: string;
 }
@@ -19,6 +20,7 @@ export function ZoomSlider({
   min = 25,
   max = 200,
   step = 25,
+  sliderStep,
   showHandle = false,
   className = '',
 }: ZoomSliderProps) {
@@ -71,7 +73,7 @@ export function ZoomSlider({
           className={styles.range}
           min={min}
           max={max}
-          step={step}
+          step={sliderStep ?? step}
           value={value}
           onChange={handleSlider}
           aria-label="Zoom level"

@@ -649,6 +649,10 @@ async fn main() -> std::io::Result<()> {
     let photos_learning_state = web::Data::new(photos::learning::api::LearningApiState {
         learning_service: photos_learning_service.clone(),
     });
+    let photos_ai_service = Arc::new(photos::ai::service::PhotosAIService::new());
+    let photos_ai_state = web::Data::new(photos::ai::api::PhotosAIState {
+        ai_service: photos_ai_service,
+    });
 
     // Background learning reprocessing
     let photos_learning_bg = photos_learning_service.clone();
@@ -921,6 +925,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(photos_persons_state.clone())
             .app_data(photos_suggestions_state.clone())
             .app_data(photos_learning_state.clone())
+            .app_data(photos_ai_state.clone())
             // Drawing
             .app_data(drawing_state.clone())
             // Sheets
@@ -982,6 +987,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(photos::persons::api::configure_persons)
                     .configure(photos::suggestions::api::configure_suggestions)
                     .configure(photos::learning::api::configure_learning)
+                    .configure(photos::ai::api::configure)
                     // Drawing
                     .configure(drawing::drawing::api::configure)
                     // Sheets

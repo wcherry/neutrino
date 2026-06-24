@@ -14,6 +14,7 @@ import {
   Blend,
   Grid3x3,
   RectangleHorizontal,
+  Stamp,
 } from 'lucide-react';
 import type { Tool } from './types';
 import styles from './page.module.css';
@@ -30,7 +31,7 @@ interface ToolDef {
 }
 
 const TOOL_GROUPS: (ToolDef | 'divider')[] = [
-  { tool: 'select', icon: <MousePointer2 size={18} />, title: 'Select' },
+  { tool: 'select', icon: <MousePointer2 size={18} />, title: 'Select (Shift+drag to select an area)' },
   { tool: 'crop', icon: <Crop size={18} />, title: 'Crop' },
   'divider',
   { tool: 'pen', icon: <Pen size={18} />, title: 'Pen' },
@@ -44,6 +45,8 @@ const TOOL_GROUPS: (ToolDef | 'divider')[] = [
   { tool: 'blur', icon: <Blend size={18} />, title: 'Blur' },
   { tool: 'pixelate', icon: <Grid3x3 size={18} />, title: 'Pixelate' },
   { tool: 'blackbox', icon: <RectangleHorizontal size={18} />, title: 'Black Box' },
+  'divider',
+  { tool: 'clone', icon: <Stamp size={18} />, title: 'Clone Stamp (Alt+click to set source)' },
 ];
 
 export function PhotoToolbar({ activeTool, onToolChange }: PhotoToolbarProps) {

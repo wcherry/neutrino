@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod albums;
 pub mod faces;
 pub mod learning;
