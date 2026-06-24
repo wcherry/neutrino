@@ -32,6 +32,7 @@ import {
   Table2,
   Presentation,
   Bell,
+  Image,
 } from 'lucide-react';
 import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
 import { IndexEngine, type SearchableDocType } from '@neutrino/search';
@@ -113,6 +114,7 @@ const BASE_NAV_SECTIONS: NavSection[] = [
     items: [
       { id: 'my-drive', label: 'My Drive', icon: HardDrive, href: '/drive' },
       { id: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes' },
+      { id: 'photos', label: 'Photos', icon: Image, href: '/photos' },
       { id: 'diagrams', label: 'Diagrams', icon: GitBranch, href: '/diagrams' },
       { id: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar' },
       { id: 'shared', label: 'Shared with me', icon: Share2, href: '/drive/shared' },

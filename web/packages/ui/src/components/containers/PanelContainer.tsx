@@ -35,6 +35,8 @@ export interface PanelContainerProps {
   activeTabId?: string;
   defaultActiveTabId?: string;
   onTabChange?: (tabId: string) => void;
+  /** When set, renders tabs as a vertical strip on the given side instead of a header dropdown */
+  tabsSide?: 'left' | 'right';
   /** Common */
   location?: PanelLocation;
   defaultLocation?: PanelLocation;
@@ -104,6 +106,7 @@ export function PanelContainer({
   activeTabId: activeTabIdProp,
   defaultActiveTabId,
   onTabChange,
+  tabsSide,
   location: locationProp,
   defaultLocation = 'right',
   onLocationChange,
@@ -226,16 +229,85 @@ export function PanelContainer({
   }
 
   // ── Expanded state ─────────────────────────────────────────────────────────
+  const useSideTabs = hasTabs && tabsSide != null;
   const bodyContent = hasTabs ? activeTab!.content : children;
   const footerContent = hasTabs ? (activeTab!.footer ?? null) : footer ?? null;
-  const displayTitle = hasTabs ? activeTab!.title : title;
+  const displayTitle = hasTabs && !useSideTabs ? activeTab!.title : title;
+
+  const headerTabSelector = hasTabs && !useSideTabs ? (
+    <div className={styles.tabSelectorWrapper}>
+      <button
+        ref={tabSelectorRef}
+        type="button"
+        className={styles.tabSelector}
+        onClick={() => setTabMenuOpen((o) => !o)}
+        aria-label={`Active panel: ${activeTab!.title}`}
+        aria-expanded={tabMenuOpen}
+        aria-haspopup="menu"
+      >
+        <span className={styles.tabSelectorTitle}>{activeTab!.title}</span>
+        <ChevronDown size={10} className={styles.locationChevron} />
+      </button>
+      {tabMenuOpen && (
+        <div ref={tabMenuRef} className={styles.tabMenu} role="menu">
+          {tabs!.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="menuitem"
+              className={[
+                styles.tabMenuItem,
+                tab.id === activeTabId ? styles.tabMenuItemActive : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={() => handleTabChange(tab.id)}
+            >
+              {tab.title}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : (
+    displayTitle && <span className={styles.title}>{displayTitle}</span>
+  );
+
+  const sideTabStrip = useSideTabs ? (
+    <div
+      className={[
+        styles.sideTabStrip,
+        tabsSide === 'left' ? styles.sideTabStripLeft : styles.sideTabStripRight,
+      ].join(' ')}
+      role="tablist"
+      aria-orientation="vertical"
+    >
+      {tabs!.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={tab.id === activeTabId}
+          className={[
+            styles.sideTab,
+            tab.id === activeTabId ? styles.sideTabActive : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          onClick={() => handleTabChange(tab.id)}
+        >
+          <span className={styles.sideTabLabel}>{tab.title}</span>
+        </button>
+      ))}
+    </div>
+  ) : null;
 
   return (
     <div
       className={[styles.container, styles[location], className].filter(Boolean).join(' ')}
       style={style}
       role="complementary"
-      aria-label={displayTitle ?? 'Panel'}
+      aria-label={displayTitle ?? (hasTabs ? activeTab!.title : 'Panel')}
     >
       <div className={styles.header}>
         <div className={styles.headerLeft}>
@@ -287,44 +359,7 @@ export function PanelContainer({
             )}
           </div>
 
-          {hasTabs ? (
-            <div className={styles.tabSelectorWrapper}>
-              <button
-                ref={tabSelectorRef}
-                type="button"
-                className={styles.tabSelector}
-                onClick={() => setTabMenuOpen((o) => !o)}
-                aria-label={`Active panel: ${activeTab!.title}`}
-                aria-expanded={tabMenuOpen}
-                aria-haspopup="menu"
-              >
-                <span className={styles.tabSelectorTitle}>{activeTab!.title}</span>
-                <ChevronDown size={10} className={styles.locationChevron} />
-              </button>
-              {tabMenuOpen && (
-                <div ref={tabMenuRef} className={styles.tabMenu} role="menu">
-                  {tabs!.map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="menuitem"
-                      className={[
-                        styles.tabMenuItem,
-                        tab.id === activeTabId ? styles.tabMenuItemActive : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      onClick={() => handleTabChange(tab.id)}
-                    >
-                      {tab.title}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            displayTitle && <span className={styles.title}>{displayTitle}</span>
-          )}
+          {headerTabSelector}
         </div>
 
         <div className={styles.headerRight}>
@@ -342,9 +377,28 @@ export function PanelContainer({
         </div>
       </div>
 
-      <div className={styles.body}>{bodyContent}</div>
-
-      {footerContent != null && <div className={styles.footer}>{footerContent}</div>}
+      {useSideTabs ? (
+        <div
+          className={[
+            styles.sideTabsLayout,
+            tabsSide === 'right' ? styles.sideTabsLayoutRight : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          {tabsSide === 'left' && sideTabStrip}
+          <div className={styles.sideTabsContent}>
+            <div className={styles.body}>{bodyContent}</div>
+            {footerContent != null && <div className={styles.footer}>{footerContent}</div>}
+          </div>
+          {tabsSide === 'right' && sideTabStrip}
+        </div>
+      ) : (
+        <>
+          <div className={styles.body}>{bodyContent}</div>
+          {footerContent != null && <div className={styles.footer}>{footerContent}</div>}
+        </>
+      )}
     </div>
   );
 }

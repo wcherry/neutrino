@@ -1,0 +1,882 @@
+/* ── Photos Editor Shell ─────────────────────────────────────────────────────
+   Dark-chrome photo editor (Lightroom / Apple Photos dark mode aesthetic).
+   Surfaces are intentionally hardcoded dark — this editor is always dark
+   regardless of the active app theme, matching how sheets/Cell.tsx hardcodes
+   its grid colours. The accent colour defers to --color-primary so it
+   responds to theme selection.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Root shell ──────────────────────────────────────────────────────────── */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: #0d0d0d;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+
+.topBar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  height: 52px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.backBtn {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: #9ca3af;
+  transition: color 150ms ease;
+}
+
+.backBtn:hover {
+  color: var(--color-primary, #3b82f6);
+}
+
+.backBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 2px;
+}
+
+.titleText {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: #e5e7eb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+
+.titleInput {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: #e5e7eb;
+  background: #2a2a2a;
+  border: 1px solid var(--color-primary, #3b82f6);
+  border-radius: 4px;
+  padding: 2px 6px;
+  outline: none;
+  min-width: 0;
+}
+
+.topBarActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.savingLabel {
+  font-size: 12px;
+  color: #6b7280;
+  align-self: center;
+}
+
+/* ── Editor body (toolbar + canvas + adjustments) ────────────────────────── */
+
+.editorBody {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+/* ── Left toolbar ────────────────────────────────────────────────────────── */
+
+.toolbar {
+  width: 48px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  background: #1a1a1a;
+  border-right: 1px solid #2a2a2a;
+  overflow-y: auto;
+}
+
+.toolBtn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  color: #9ca3af;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.toolBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.toolBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+/* Active tool — tinted highlight using the theme accent */
+.toolBtnActive {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
+  color: var(--color-primary, #3b82f6);
+}
+
+.toolBtnActive:hover {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 28%, transparent);
+  color: var(--color-primary, #3b82f6);
+}
+
+.toolDivider {
+  width: 28px;
+  height: 1px;
+  background: #2a2a2a;
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+
+/* ── Canvas area ─────────────────────────────────────────────────────────── */
+
+.canvasArea {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Drop-zone active state — shown when a file is dragged over the canvas */
+.canvasArea.dropZoneActive {
+  outline: 2px dashed var(--color-primary, #3b82f6);
+  outline-offset: -2px;
+}
+
+.canvasWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+/* The primary image/filter canvas */
+.baseCanvas {
+  display: block;
+}
+
+/* Overlay canvas for crop handles, brush strokes, annotations, etc. */
+.overlayCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  cursor: crosshair;
+}
+
+/* Crop bounding-box overlay (pointer-events off; handles are separate elements) */
+.cropOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* ── Adjustments panel (right) — PanelContainer dark override ────────────── */
+
+.panelDark {
+  flex-shrink: 0;
+  --color-surface: #1a1a1a;
+  --color-surface-overlay: #1f1f1f;
+  --color-border: #2a2a2a;
+  --color-bg-subtle: #222;
+  --color-text-primary: #e5e7eb;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+  --color-accent: var(--color-primary, #3b82f6);
+}
+
+.panelPlaceholder {
+  font-size: 12px;
+  color: #4b5563;
+  line-height: 1.5;
+  margin: 0;
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* ── Apply / Revert header buttons ───────────────────────────────────────── */
+
+.applyHeaderBtn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #3a3a3a;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #9ca3af;
+  white-space: nowrap;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.applyHeaderBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.applyHeaderBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.applyHeaderBtnAccent {
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
+  border-color: transparent;
+}
+
+.applyHeaderBtnAccent:hover {
+  opacity: 0.88;
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
+}
+
+/* ── Slider rows ─────────────────────────────────────────────────────────── */
+
+.sliderRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.sliderRow:last-child {
+  margin-bottom: 0;
+}
+
+.sliderLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.sliderValue {
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--color-primary, #3b82f6);
+  cursor: pointer;
+}
+
+/* ── Rotate / flip controls ──────────────────────────────────────────────── */
+
+.rotateRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rotateBtn {
+  flex: 1;
+  min-width: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.rotateBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.rotateBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+/* ── Panel sections (used by AdjustmentsPanel) ───────────────────────────── */
+
+.section {
+  padding: 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+  margin-top: 0;
+}
+
+/* ── Orientation controls ─────────────────────────────────────────────────── */
+
+.orientationGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.orientBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.orientBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.orientBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.orientBtnActive {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
+  color: var(--color-primary, #3b82f6);
+  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+}
+
+.rotationHint {
+  font-size: 11px;
+  color: #6b7280;
+  margin: 4px 0 8px;
+}
+
+.resetBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  width: 100%;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.resetBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+/* ── Loading / error states ──────────────────────────────────────────────── */
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: #0d0d0d;
+}
+
+/* ── Error / empty state ─────────────────────────────────────────────────── */
+
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 16px;
+  color: #6b7280;
+  text-align: center;
+  background: #0d0d0d;
+}
+
+.backLink {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-primary, #3b82f6);
+  font-size: 14px;
+  text-decoration: underline;
+}
+
+
+/* ── Before/after comparison slider ─────────────────────────────────────── */
+
+.comparisonHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Vertical divider line */
+.comparisonHandle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.88);
+  pointer-events: none;
+}
+
+.comparisonHandleBtn {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid rgba(0, 0, 0, 0.18);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.38);
+  cursor: ew-resize;
+  pointer-events: all;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #374151;
+  user-select: none;
+  touch-action: none;
+}
+
+.comparisonHandleBtn:hover {
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.55);
+}
+
+.comparisonLabel {
+  position: absolute;
+  top: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.1em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  z-index: 15;
+  user-select: none;
+}
+
+/* ── Filter picker ───────────────────────────────────────────────────────── */
+
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.filterBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 4px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+.filterBtn:hover {
+  background: #222;
+  border-color: #3a3a3a;
+}
+
+.filterBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.filterBtnActive {
+  border-color: var(--color-primary, #3b82f6);
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 12%, #111);
+}
+
+/* Colourful gradient swatch — CSS filter applied inline to preview the effect */
+.filterSwatch {
+  width: 48px;
+  height: 32px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ffd93d 33%, #6bcb77 66%, #4d96ff 100%);
+  flex-shrink: 0;
+}
+
+.filterLabel {
+  font-size: 10px;
+  color: #9ca3af;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1;
+}
+
+.filterBtnActive .filterLabel {
+  color: var(--color-primary, #3b82f6);
+}
+
+/* ── Background removal ──────────────────────────────────────────────────── */
+
+.bgRemoveBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+  margin-bottom: 10px;
+}
+
+.bgRemoveBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+  border-color: #4a4a4a;
+}
+
+.bgRemoveBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.bgReplaceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bgColorLabel {
+  font-size: 12px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.bgReplaceBtn {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.bgReplaceBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.bgReplaceBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.bgHint {
+  font-size: 10px;
+  color: #4b5563;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.clearAreaBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: #6b7280;
+  padding: var(--space-1) 0;
+  text-decoration: underline;
+  text-align: left;
+}
+
+.clearAreaBtn:hover {
+  color: #d1d5db;
+}
+
+/* ── Zoom slider overlay ─────────────────────────────────────────────────── */
+
+.zoomBar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20, 20, 20, 0.82);
+  backdrop-filter: blur(8px);
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 6px 12px;
+  z-index: 10;
+  pointer-events: all;
+}
+
+/* ── Clone tool hint overlay ─────────────────────────────────────────────── */
+
+.cloneHint {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.68);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  pointer-events: none;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  z-index: 30;
+}
+
+/* ── Clone stamp tool property controls ──────────────────────────────────── */
+
+.toolPropRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.toolPropRow:last-child {
+  margin-bottom: 0;
+}
+
+.toolPropLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.toolPropValue {
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.shapeSelector {
+  display: flex;
+  gap: 6px;
+}
+
+.shapeBtn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  background: #111;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.shapeBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.shapeBtn:focus-visible {
+  outline: 2px solid var(--color-primary, #3b82f6);
+  outline-offset: 1px;
+}
+
+.shapeBtnActive {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
+  color: var(--color-primary, #3b82f6);
+  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+}
+
+/* ── AI panel ────────────────────────────────────────────────────────────── */
+
+.bgRemoveBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spinIcon {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.aiResultBox {
+  margin-top: 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.aiResultHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+  font-size: 10px;
+  color: #6b7280;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.aiCopyBtn {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  transition: color 150ms ease;
+}
+
+.aiCopyBtn:hover {
+  color: #e5e7eb;
+}
+
+.aiResultText {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  background: #111;
+  color: #9ca3af;
+  font-size: 11px;
+  font-family: monospace;
+  line-height: 1.5;
+  border: none;
+  resize: vertical;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+.aiResultText:focus {
+  outline: none;
+}
+
+.intelTypeRow {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.intelTypeBtn {
+  flex: 1;
+  padding: 5px 6px;
+  border: 1px solid #2a2a2a;
+  border-radius: 5px;
+  background: #111;
+  color: #9ca3af;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.intelTypeBtn:hover {
+  background: #2a2a2a;
+  color: #e5e7eb;
+}
+
+.intelTypeBtnActive {
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 20%, transparent);
+  color: var(--color-primary, #3b82f6);
+  border-color: color-mix(in srgb, var(--color-primary, #3b82f6) 40%, transparent);
+}
+
+/* ── Reduced-motion ──────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .backBtn,
+  .toolBtn,
+  .rotateBtn,
+  .filterBtn,
+  .bgRemoveBtn,
+  .bgReplaceBtn {
+    transition-duration: 0.01ms !important;
+  }
+
+  .spinIcon {
+    animation: none;
+  }
+}
+
+/* ── Smart Erase detected objects ─────────────────────────────────────────── */
+
+.detectedObjectsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 8px;
+}
+
+.detectedObjectChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: rgba(0, 180, 255, 0.15);
+  color: rgba(0, 180, 255, 0.9);
+  border: 1px solid rgba(0, 180, 255, 0.3);
+}

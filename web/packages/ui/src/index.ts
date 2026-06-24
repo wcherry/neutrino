@@ -128,6 +128,9 @@ export type { AccordionProps, AccordionItemProps } from './components/containers
 export { AvatarPickerDialog } from './components/containers/AvatarPickerDialog';
 export type { AvatarPickerDialogProps } from './components/containers/AvatarPickerDialog';
 
+export { AlertDialog } from './components/containers/AlertDialog';
+export type { AlertDialogProps, AlertDialogVariant } from './components/containers/AlertDialog';
+
 // Navigation
 export { Breadcrumbs } from './components/navigation/Breadcrumbs';
 export type { BreadcrumbsProps, BreadcrumbItem } from './components/navigation/Breadcrumbs';
