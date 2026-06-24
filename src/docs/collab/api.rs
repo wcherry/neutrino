@@ -9,54 +9,8 @@ use yrs::{ReadTxn, StateVector, Transact, Update};
 
 use crate::docs::collab::repository::CollabRepository;
 use crate::docs::collab::state::{CollabState, DocRoom};
+use crate::shared::collab_protocol::{read_var_bytes, read_varint, write_var_bytes, write_varint};
 use crate::shared::TokenService;
-
-// --- y-websocket protocol helpers ---
-
-fn write_varint(buf: &mut Vec<u8>, mut n: u64) {
-    loop {
-        let byte = (n & 0x7F) as u8;
-        n >>= 7;
-        if n == 0 {
-            buf.push(byte);
-            break;
-        } else {
-            buf.push(byte | 0x80);
-        }
-    }
-}
-
-fn read_varint(data: &[u8]) -> Option<(u64, usize)> {
-    let mut result = 0u64;
-    let mut shift = 0u32;
-    let mut consumed = 0usize;
-    for &byte in data {
-        consumed += 1;
-        result |= ((byte & 0x7F) as u64) << shift;
-        if byte & 0x80 == 0 {
-            return Some((result, consumed));
-        }
-        shift += 7;
-        if shift >= 64 {
-            return None;
-        }
-    }
-    None
-}
-
-fn write_var_bytes(buf: &mut Vec<u8>, bytes: &[u8]) {
-    write_varint(buf, bytes.len() as u64);
-    buf.extend_from_slice(bytes);
-}
-
-fn read_var_bytes(data: &[u8]) -> Option<(&[u8], usize)> {
-    let (len, header_len) = read_varint(data)?;
-    let end = header_len + len as usize;
-    if end > data.len() {
-        return None;
-    }
-    Some((&data[header_len..end], end))
-}
 
 /// Encode a y-websocket SyncStep2 message (full state sent to new client).
 fn encode_sync_step2(update: &[u8]) -> Vec<u8> {

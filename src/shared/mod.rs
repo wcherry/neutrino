@@ -1,11 +1,13 @@
 pub mod admin_extractor;
 pub mod api_error;
 pub mod auth;
+pub mod collab_protocol;
 pub mod drive_client;
 pub mod errors;
 pub mod helper;
 pub mod logger;
 pub mod pagination;
+pub mod presence_room;
 
 pub use api_error::ApiError;
 pub use helper::get_env_or_secret;

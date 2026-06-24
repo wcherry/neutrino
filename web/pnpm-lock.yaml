@@ -98,6 +98,9 @@ importers:
       '@neutrino/auth':
         specifier: workspace:*
         version: link:../../packages/auth
+      '@neutrino/collab-core':
+        specifier: workspace:*
+        version: link:../../packages/collab-core
       '@neutrino/e2e-crypto':
         specifier: workspace:*
         version: link:../../packages/e2e-crypto
@@ -223,7 +226,7 @@ importers:
         version: 1.12.0
       next:
         specifier: ^15.0.0
-        version: 15.5.14(@babel/core@7.29.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 15.5.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       nspell:
         specifier: ^2.1.5
         version: 2.1.5
@@ -423,6 +426,12 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  packages/collab-core:
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   packages/e2e-crypto:
     dependencies:
       libsodium-wrappers:
@@ -462,7 +471,7 @@ importers:
         version: link:../ui
       next:
         specifier: '>=14.0.0'
-        version: 15.5.14(@babel/core@7.29.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 15.5.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
     devDependencies:
       '@types/react':
         specifier: ^18.3.0
@@ -7392,7 +7401,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  next@15.5.14(@babel/core@7.29.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  next@15.5.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       '@next/env': 15.5.14
       '@swc/helpers': 0.5.15
@@ -7400,7 +7409,7 @@ snapshots:
       postcss: 8.4.31
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      styled-jsx: 5.1.6(@babel/core@7.29.0)(react@18.3.1)
+      styled-jsx: 5.1.6(react@18.3.1)
     optionalDependencies:
       '@next/swc-darwin-arm64': 15.5.14
       '@next/swc-darwin-x64': 15.5.14
@@ -8242,12 +8251,10 @@ snapshots:
 
   strip-json-comments@3.1.1: {}
 
-  styled-jsx@5.1.6(@babel/core@7.29.0)(react@18.3.1):
+  styled-jsx@5.1.6(react@18.3.1):
     dependencies:
       client-only: 0.0.1
       react: 18.3.1
-    optionalDependencies:
-      '@babel/core': 7.29.0
 
   supports-color@7.2.0:
     dependencies:
