@@ -2,6 +2,14 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { MutableRefObject } from 'react';
+import {
+  readVarint,
+  encodeMessage,
+  colorFromName,
+  HEARTBEAT_INTERVAL_MS,
+  STALE_TIMEOUT_MS,
+  STALE_CHECK_INTERVAL_MS,
+} from '@neutrino/collab-core';
 
 export interface SlideRemoteUser {
   clientId: string;
@@ -9,10 +17,6 @@ export interface SlideRemoteUser {
   color: string;
   slideIndex: number | null;
 }
-
-const HEARTBEAT_INTERVAL_MS = 10_000;
-const STALE_TIMEOUT_MS = 30_000;
-const STALE_CHECK_INTERVAL_MS = 5_000;
 
 interface AwarenessPayload {
   clientId: string;
@@ -25,45 +29,6 @@ interface AwarenessPayload {
 interface PresentationUpdatePayload {
   clientId: string;
   presentation: unknown;
-}
-
-const AVATAR_TEXT_COLORS = [
-  '#1e40af',
-  '#166534',
-  '#92400e',
-  '#991b1b',
-  '#4c1d95',
-  '#701a75',
-  '#9a3412',
-  '#065f46',
-];
-
-function colorFromName(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return AVATAR_TEXT_COLORS[Math.abs(hash) % AVATAR_TEXT_COLORS.length];
-}
-
-function writeVarint(n: number): number[] {
-  const bytes: number[] = [];
-  let value = n;
-  do {
-    let byte = value & 0x7f;
-    value >>>= 7;
-    if (value !== 0) byte |= 0x80;
-    bytes.push(byte);
-  } while (value !== 0);
-  return bytes;
-}
-
-function encodeMessage(type: number, payload: Uint8Array): Uint8Array {
-  const typeBytes = writeVarint(type);
-  const buf = new Uint8Array(typeBytes.length + payload.length);
-  buf.set(typeBytes, 0);
-  buf.set(payload, typeBytes.length);
-  return buf;
 }
 
 export function useSlidePresence({
@@ -149,17 +114,7 @@ export function useSlidePresence({
       const data = new Uint8Array(event.data);
       if (data.length === 0) return;
 
-      // Read varint type byte
-      let offset = 0;
-      let msgType = 0;
-      let shift = 0;
-      while (offset < data.length) {
-        const byte = data[offset++];
-        msgType |= (byte & 0x7f) << shift;
-        shift += 7;
-        if ((byte & 0x80) === 0) break;
-      }
-
+      const [msgType, offset] = readVarint(data, 0);
       const payload = data.slice(offset);
 
       if (msgType === 1) {

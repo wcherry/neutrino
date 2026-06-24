@@ -26,6 +26,7 @@
     "@neutrino/api-photos": "workspace:*",
     "@neutrino/api-sheets": "workspace:*",
     "@neutrino/api-slides": "workspace:*",
+    "@neutrino/collab-core": "workspace:*",
     "@neutrino/auth": "workspace:*",
     "@neutrino/e2e-crypto": "workspace:*",
     "@neutrino/hooks": "workspace:*",

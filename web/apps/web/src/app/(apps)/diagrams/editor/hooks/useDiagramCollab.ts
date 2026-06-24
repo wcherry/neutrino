@@ -3,81 +3,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Y from 'yjs';
 import type { DiagramDocument } from '../../types';
-
-// ---------------------------------------------------------------------------
-// Wire protocol helpers — y-websocket binary protocol
-//
-//  Type 0 — sync:
-//    [varint 0] [varint sub] [varint payload_len] [payload_bytes]
-//      sub=0  SyncStep1  payload = client state vector
-//      sub=1  SyncStep2  payload = full Yjs update
-//      sub=2  Update     payload = incremental Yjs update
-//
-//  Type 1 — awareness (JSON presence messages):
-//    [varint 1] [payload_bytes]
-// ---------------------------------------------------------------------------
-
-function writeVarint(n: number): number[] {
-  const bytes: number[] = [];
-  let value = n;
-  do {
-    let byte = value & 0x7f;
-    value >>>= 7;
-    if (value !== 0) byte |= 0x80;
-    bytes.push(byte);
-  } while (value !== 0);
-  return bytes;
-}
-
-function readVarint(data: Uint8Array, offset: number): [number, number] {
-  let result = 0;
-  let shift = 0;
-  let pos = offset;
-  while (pos < data.length) {
-    const byte = data[pos++];
-    result |= (byte & 0x7f) << shift;
-    if ((byte & 0x80) === 0) break;
-    shift += 7;
-  }
-  return [result, pos];
-}
-
-function readVarBytes(data: Uint8Array, offset: number): [Uint8Array, number] | null {
-  const [len, after] = readVarint(data, offset);
-  const end = after + len;
-  if (end > data.length) return null;
-  return [data.slice(after, end), end];
-}
-
-function encodeSyncStep1(sv: Uint8Array): Uint8Array {
-  const msgType = writeVarint(0);
-  const subType = writeVarint(0);
-  const lenBytes = writeVarint(sv.length);
-  const buf = new Uint8Array(msgType.length + subType.length + lenBytes.length + sv.length);
-  let off = 0;
-  for (const b of [...msgType, ...subType, ...lenBytes]) buf[off++] = b;
-  buf.set(sv, off);
-  return buf;
-}
-
-function encodeUpdate(update: Uint8Array): Uint8Array {
-  const msgType = writeVarint(0);
-  const subType = writeVarint(2);
-  const lenBytes = writeVarint(update.length);
-  const buf = new Uint8Array(msgType.length + subType.length + lenBytes.length + update.length);
-  let off = 0;
-  for (const b of [...msgType, ...subType, ...lenBytes]) buf[off++] = b;
-  buf.set(update, off);
-  return buf;
-}
-
-function encodeAwarenessMessage(payload: Uint8Array): Uint8Array {
-  const typeBytes = writeVarint(1);
-  const buf = new Uint8Array(typeBytes.length + payload.length);
-  buf.set(typeBytes, 0);
-  buf.set(payload, typeBytes.length);
-  return buf;
-}
+import {
+  readVarint,
+  readVarBytes,
+  encodeSyncStep1,
+  encodeUpdate,
+  encodeAwarenessMessage,
+} from '@neutrino/collab-core';
 
 // ---------------------------------------------------------------------------
 // Types

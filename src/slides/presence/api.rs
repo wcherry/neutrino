@@ -5,39 +5,9 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tracing::warn;
 
+use crate::shared::collab_protocol::{read_varint, write_varint};
 use crate::shared::TokenService;
 use crate::slides::presence::state::SlidePresenceState;
-
-fn write_varint(buf: &mut Vec<u8>, mut n: u64) {
-    loop {
-        let byte = (n & 0x7F) as u8;
-        n >>= 7;
-        if n == 0 {
-            buf.push(byte);
-            break;
-        } else {
-            buf.push(byte | 0x80);
-        }
-    }
-}
-
-fn read_varint(data: &[u8]) -> Option<(u64, usize)> {
-    let mut result = 0u64;
-    let mut shift = 0u32;
-    let mut consumed = 0usize;
-    for &byte in data {
-        consumed += 1;
-        result |= ((byte & 0x7F) as u64) << shift;
-        if byte & 0x80 == 0 {
-            return Some((result, consumed));
-        }
-        shift += 7;
-        if shift >= 64 {
-            return None;
-        }
-    }
-    None
-}
 
 enum ParsedMessage {
     Awareness(Vec<u8>),
