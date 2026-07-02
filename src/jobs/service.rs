@@ -9,9 +9,9 @@ use std::{
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::drive::jobs::{
-    dto::{CreateJobRequest, JobResponse, UpdateJobStatusRequest},
-    model::{NewWorkerJobRecord, NewWorkerRegistrationRecord, WorkerJobRecord},
+use crate::jobs::{
+    dto::{CreateJobRequest, JobResponse, UpdateJobRequest, UpdateJobStatusRequest},
+    model::{NewWorkerJobRecord, NewWorkerRegistrationRecord, WorkerJobChanges, WorkerJobRecord},
     repository::JobsRepository,
 };
 use crate::shared::ApiError;
@@ -59,6 +59,40 @@ impl JobsService {
         };
         let job = self.repo.insert_job(record)?;
         Ok(self.to_response(&job))
+    }
+
+    pub fn list_jobs(&self) -> Result<Vec<JobResponse>, ApiError> {
+        let jobs = self.repo.list_jobs()?;
+        Ok(jobs.iter().map(|j| self.to_response(j)).collect())
+    }
+
+    pub fn get_job(&self, job_id: &str) -> Result<JobResponse, ApiError> {
+        let job = self.repo.get_job(job_id)?;
+        Ok(self.to_response(&job))
+    }
+
+    pub fn update_job(&self, job_id: &str, req: UpdateJobRequest) -> Result<JobResponse, ApiError> {
+        if let Some(status) = &req.status {
+            if !matches!(status.as_str(), "R" | "I" | "C" | "E") {
+                return Err(ApiError::bad_request("status must be 'R', 'I', 'C' or 'E'"));
+            }
+        }
+        // `payload` is stored as a JSON string; serialize it once and borrow below.
+        let payload_str = req.payload.as_ref().map(|p| p.to_string());
+        let changes = WorkerJobChanges {
+            job_type: req.job_type.as_deref(),
+            payload: payload_str.as_deref(),
+            status: req.status.as_deref(),
+            timeout_secs: req.timeout_secs,
+            error_message: req.error_message.as_ref().map(|m| Some(m.as_str())),
+            updated_at: Utc::now().naive_utc(),
+        };
+        let job = self.repo.update_job(job_id, changes)?;
+        Ok(self.to_response(&job))
+    }
+
+    pub fn delete_job(&self, job_id: &str) -> Result<(), ApiError> {
+        self.repo.delete_job(job_id)
     }
 
     pub fn claim_pending_jobs(

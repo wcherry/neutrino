@@ -8,7 +8,6 @@ pub mod encryption;
 pub mod feature_flags;
 pub mod filesystem;
 pub mod irm;
-pub mod jobs;
 pub mod notifications;
 pub mod permissions;
 pub mod priority;

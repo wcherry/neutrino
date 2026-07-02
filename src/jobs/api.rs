@@ -10,12 +10,12 @@ use std::future::{ready, Ready};
 use crate::drive::jobs::{
     dto::{
         CreateJobRequest, JobResponse, PendingJobsQuery, RegisterWorkerRequest,
-        RegisterWorkerResponse, UpdateJobStatusRequest,
+        RegisterWorkerResponse, UpdateJobRequest, UpdateJobStatusRequest,
     },
     service::JobsService,
 };
 use crate::drive::storage::service::StorageService;
-use crate::shared::ApiError;
+use crate::shared::{ApiError, AuthenticatedUser};
 
 // ── Worker auth ───────────────────────────────────────────────────────────────
 
@@ -86,6 +86,94 @@ async fn create_job(
 ) -> Result<web::Json<JobResponse>, ApiError> {
     let resp = state.jobs_service.create_job(body.into_inner())?;
     Ok(web::Json(resp))
+}
+
+/// List all jobs in the table (newest first).
+#[utoipa::path(
+    get,
+    path = "/api/v1/jobs",
+    responses(
+        (status = 200, description = "List of jobs", body = Vec<JobResponse>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "drive-jobs"
+)]
+#[get("/jobs")]
+async fn list_jobs(
+    state: web::Data<JobsApiState>,
+    _user: AuthenticatedUser,
+) -> Result<web::Json<Vec<JobResponse>>, ApiError> {
+    Ok(web::Json(state.jobs_service.list_jobs()?))
+}
+
+/// Fetch a single job by ID.
+#[utoipa::path(
+    get,
+    path = "/api/v1/jobs/{id}",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 200, description = "The job", body = JobResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Job not found"),
+    ),
+    tag = "drive-jobs"
+)]
+#[get("/jobs/{id}")]
+async fn get_job(
+    state: web::Data<JobsApiState>,
+    _user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<web::Json<JobResponse>, ApiError> {
+    Ok(web::Json(state.jobs_service.get_job(&path.into_inner())?))
+}
+
+/// Update a job's mutable fields (partial update; omitted fields are unchanged).
+#[utoipa::path(
+    put,
+    path = "/api/v1/jobs/{id}",
+    params(("id" = String, Path, description = "Job ID")),
+    request_body = UpdateJobRequest,
+    responses(
+        (status = 200, description = "The updated job", body = JobResponse),
+        (status = 400, description = "Invalid field value"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Job not found"),
+    ),
+    tag = "drive-jobs"
+)]
+#[put("/jobs/{id}")]
+async fn update_job(
+    state: web::Data<JobsApiState>,
+    _user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<UpdateJobRequest>,
+) -> Result<web::Json<JobResponse>, ApiError> {
+    let resp = state
+        .jobs_service
+        .update_job(&path.into_inner(), body.into_inner())?;
+    Ok(web::Json(resp))
+}
+
+/// Delete a job by ID.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/jobs/{id}",
+    params(("id" = String, Path, description = "Job ID")),
+    responses(
+        (status = 204, description = "Job deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Job not found"),
+    ),
+    tag = "drive-jobs"
+)]
+#[delete("/jobs/{id}")]
+async fn delete_job(
+    state: web::Data<JobsApiState>,
+    _user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    state.jobs_service.delete_job(&path.into_inner())?;
+    Ok(HttpResponse::NoContent().finish())
 }
 
 /// Worker pulls up to `limit` pending jobs on startup and claims them immediately.
@@ -248,19 +336,29 @@ async fn put_file_thumbnail(
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
+    // Register static-path routes before the dynamic `/jobs/{id}` routes so the
+    // latter don't shadow paths like `/jobs/pending` or `/jobs/workers`.
     cfg.service(create_job)
+        .service(list_jobs)
         .service(get_pending_jobs)
         .service(update_job_status)
         .service(get_file_content)
         .service(put_file_thumbnail)
         .service(register_worker)
-        .service(deregister_worker);
+        .service(deregister_worker)
+        .service(get_job)
+        .service(update_job)
+        .service(delete_job);
 }
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(
         create_job,
+        list_jobs,
+        get_job,
+        update_job,
+        delete_job,
         get_pending_jobs,
         update_job_status,
         get_file_content,
@@ -271,6 +369,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     components(schemas(
         CreateJobRequest,
         JobResponse,
+        UpdateJobRequest,
         UpdateJobStatusRequest,
         RegisterWorkerRequest,
         RegisterWorkerResponse,

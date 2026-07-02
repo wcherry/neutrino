@@ -37,6 +37,17 @@ pub struct UpdateJobStatusRequest {
     pub error_message: Option<String>,
 }
 
+/// Partial update of a job's mutable fields. Omitted fields are left unchanged.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateJobRequest {
+    pub job_type: Option<String>,
+    pub payload: Option<serde_json::Value>,
+    pub status: Option<String>,
+    pub timeout_secs: Option<i32>,
+    pub error_message: Option<String>,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterWorkerRequest {

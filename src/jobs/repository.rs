@@ -4,8 +4,9 @@ use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::sql_types::Text;
 use diesel::SqliteConnection;
 
-use crate::drive::jobs::model::{
-    NewWorkerJobRecord, NewWorkerRegistrationRecord, WorkerJobRecord, WorkerRegistrationRecord,
+use crate::jobs::model::{
+    NewWorkerJobRecord, NewWorkerRegistrationRecord, WorkerJobChanges, WorkerJobRecord,
+    WorkerRegistrationRecord,
 };
 use crate::schema::{worker_jobs, worker_registrations};
 use crate::shared::ApiError;
@@ -47,6 +48,72 @@ impl JobsRepository {
                 tracing::error!("DB fetch job after insert error: {:?}", e);
                 ApiError::internal("Database error")
             })
+    }
+
+    pub fn list_jobs(&self) -> Result<Vec<WorkerJobRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        worker_jobs::table
+            .order(worker_jobs::created_at.desc())
+            .select(WorkerJobRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list jobs error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    pub fn get_job(&self, job_id: &str) -> Result<WorkerJobRecord, ApiError> {
+        let mut conn = self.get_conn()?;
+        worker_jobs::table
+            .filter(worker_jobs::id.eq(job_id))
+            .select(WorkerJobRecord::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB get job error: {:?}", e);
+                ApiError::internal("Database error")
+            })?
+            .ok_or_else(|| ApiError::not_found("Job not found"))
+    }
+
+    pub fn update_job(
+        &self,
+        job_id: &str,
+        changes: WorkerJobChanges,
+    ) -> Result<WorkerJobRecord, ApiError> {
+        let mut conn = self.get_conn()?;
+        let rows = diesel::update(worker_jobs::table.filter(worker_jobs::id.eq(job_id)))
+            .set(changes)
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update job error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+        if rows == 0 {
+            return Err(ApiError::not_found("Job not found"));
+        }
+        worker_jobs::table
+            .filter(worker_jobs::id.eq(job_id))
+            .select(WorkerJobRecord::as_select())
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB fetch job after update error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    pub fn delete_job(&self, job_id: &str) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        let rows = diesel::delete(worker_jobs::table.filter(worker_jobs::id.eq(job_id)))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB delete job error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+        if rows == 0 {
+            return Err(ApiError::not_found("Job not found"));
+        }
+        Ok(())
     }
 
     pub fn get_ready_jobs(&self, limit: i64) -> Result<Vec<WorkerJobRecord>, ApiError> {

@@ -32,6 +32,19 @@ pub struct NewWorkerJobRecord<'a> {
     pub updated_at: NaiveDateTime,
 }
 
+/// Mutable columns for updating an existing job. `None` fields are left as-is;
+/// `error_message` uses a nested option so it can be set to `NULL` explicitly.
+#[derive(Debug, AsChangeset)]
+#[diesel(table_name = worker_jobs)]
+pub struct WorkerJobChanges<'a> {
+    pub job_type: Option<&'a str>,
+    pub payload: Option<&'a str>,
+    pub status: Option<&'a str>,
+    pub timeout_secs: Option<i32>,
+    pub error_message: Option<Option<&'a str>>,
+    pub updated_at: NaiveDateTime,
+}
+
 #[derive(Debug, Clone, Queryable, Selectable)]
 #[diesel(table_name = worker_registrations)]
 pub struct WorkerRegistrationRecord {

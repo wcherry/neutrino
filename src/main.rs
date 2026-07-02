@@ -21,6 +21,7 @@ mod diagrams;
 mod docs;
 mod drawing;
 mod drive;
+mod jobs;
 mod notes;
 mod oauth;
 mod photos;
@@ -236,8 +237,8 @@ async fn main() -> std::io::Result<()> {
     use drive::filesystem::service::FilesystemService;
     use drive::irm::repository::IrmRepository;
     use drive::irm::service::IrmService;
-    use drive::jobs::repository::JobsRepository;
-    use drive::jobs::service::JobsService;
+    use jobs::repository::JobsRepository;
+    use jobs::service::JobsService;
     use drive::notifications::hub::NotificationHub;
     use drive::notifications::repository::NotificationsRepository;
     use drive::notifications::service::{NotificationService, SmtpConfig};
@@ -334,7 +335,7 @@ async fn main() -> std::io::Result<()> {
         config.storage_path.clone(),
         config.jobs_per_worker,
     ));
-    let drive_worker_secret_data = web::Data::new(drive::jobs::api::WorkerSecretData(
+    let drive_worker_secret_data = web::Data::new(jobs::api::WorkerSecretData(
         config.worker_secret.clone(),
     ));
 
@@ -436,7 +437,7 @@ async fn main() -> std::io::Result<()> {
         suggestions_service: drive_suggestions_service,
     });
 
-    let drive_jobs_state = web::Data::new(drive::jobs::api::JobsApiState {
+    let drive_jobs_state = web::Data::new(jobs::api::JobsApiState {
         jobs_service: drive_jobs_service.clone(),
         storage_service: drive_storage_service.clone(),
     });
@@ -832,7 +833,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
         doc.merge(drive::filesystem::api::FilesystemApiDoc::openapi());
         doc.merge(drive::irm::api::IrmApiDoc::openapi());
-        doc.merge(drive::jobs::api::JobsApiDoc::openapi());
+        doc.merge(jobs::api::JobsApiDoc::openapi());
         doc.merge(drive::notifications::api::NotificationsApiDoc::openapi());
         doc.merge(drive::permissions::api::PermissionsApiDoc::openapi());
         doc.merge(drive::priority::api::PriorityApiDoc::openapi());
@@ -962,9 +963,10 @@ async fn main() -> std::io::Result<()> {
                     .configure(calendar::configure)
                     .configure(docs::configure)
                     .configure(drive::configure)
-                    // Drive public sharing + background jobs
+                    // Drive public sharing
                     .configure(drive::sharing::api::configure_public)
-                    .configure(drive::jobs::api::configure)
+                    // Background jobs
+                    .configure(jobs::api::configure)
                     // Admin routes under /admin
                     .service(
                         web::scope("/admin")

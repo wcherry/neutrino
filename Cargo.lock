@@ -4045,6 +4045,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "worker"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "diesel",
+ "libsqlite3-sys",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

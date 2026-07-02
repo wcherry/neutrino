@@ -1,0 +1,20 @@
+[package]
+name = "worker"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "worker"
+path = "src/main.rs"
+
+[dependencies]
+# Database (shares the main app's SQLite file / jobs table)
+diesel = { version = "2", features = ["sqlite", "r2d2", "chrono"] }
+libsqlite3-sys = { version = "0.27", features = ["bundled"] }
+
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+
+# Logging
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["time", "env-filter"] }
