@@ -359,7 +359,6 @@ async fn main() -> std::io::Result<()> {
         storage_service: drive_storage_service.clone(),
         irm_service: drive_irm_service.clone(),
         permissions_service: drive_permissions_service.clone(),
-        jobs_service: drive_jobs_service.clone(),
         tags_service: drive_tags_service.clone(),
     });
 

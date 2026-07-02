@@ -1,5 +1,4 @@
 use crate::drive::irm::service::IrmService;
-use crate::drive::jobs::{dto::CreateJobRequest, service::JobsService};
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
@@ -27,30 +26,7 @@ pub struct StorageApiState {
     pub storage_service: Arc<StorageService>,
     pub irm_service: Arc<IrmService>,
     pub permissions_service: Arc<PermissionsService>,
-    pub jobs_service: Arc<JobsService>,
     pub tags_service: Arc<TagsService>,
-}
-
-/// MIME types for which the worker can generate a cover thumbnail.
-fn is_thumbnail_supported(mime_type: &str) -> bool {
-    let mime = mime_type.split(';').next().unwrap_or(mime_type).trim();
-    if mime.starts_with("image/") {
-        return true;
-    }
-    matches!(
-        mime,
-        "application/pdf"
-            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            | "application/msword"
-            | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-            | "application/vnd.ms-powerpoint"
-            | "text/csv"
-            | "application/csv"
-            | "text/comma-separated-values"
-            | "application/x-neutrino-doc"
-            | "application/x-neutrino-sheet"
-            | "application/x-neutrino-slide"
-    )
 }
 
 #[utoipa::path(
@@ -214,41 +190,6 @@ pub async fn upload_file(
             tracing::info!(
                 "no thumbnail_b64 in upload request for file {}",
                 response.id
-            );
-        }
-
-        // Enqueue a thumbnail job for non-image file types that need an external worker
-        // (e.g. PDF, Office docs).
-        let mime_base = mime_type.split(';').next().unwrap_or(&mime_type).trim();
-        if is_thumbnail_supported(&mime_type) && !mime_base.starts_with("image/") {
-            let req = CreateJobRequest {
-                job_type: "thumbnail".to_string(),
-                payload: serde_json::json!({ "fileId": response.id }),
-                timeout_secs: 60,
-            };
-            if let Err(e) = state.jobs_service.create_job(req) {
-                tracing::warn!(
-                    "Failed to enqueue thumbnail job for file {}: {:?}",
-                    response.id,
-                    e
-                );
-            }
-        }
-
-        // Enqueue content indexing job (best-effort)
-        let job_req = CreateJobRequest {
-            job_type: "index_content".to_string(),
-            payload: serde_json::json!({
-                "fileId": response.id,
-                "userId": user.user_id,
-            }),
-            timeout_secs: 60,
-        };
-        if let Err(e) = state.jobs_service.create_job(job_req) {
-            tracing::warn!(
-                "Failed to enqueue index_content job for file {}: {:?}",
-                response.id,
-                e
             );
         }
 

@@ -7,7 +7,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use std::future::{ready, Ready};
 
-use crate::drive::jobs::{
+use crate::jobs::{
     dto::{
         CreateJobRequest, JobResponse, PendingJobsQuery, RegisterWorkerRequest,
         RegisterWorkerResponse, UpdateJobRequest, UpdateJobStatusRequest,

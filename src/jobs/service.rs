@@ -208,7 +208,7 @@ impl JobsService {
     async fn dispatch_one_job(
         &self,
         job: &WorkerJobRecord,
-        workers: &[crate::drive::jobs::model::WorkerRegistrationRecord],
+        workers: &[crate::jobs::model::WorkerRegistrationRecord],
     ) {
         let n = workers.len();
         let start = self.dispatch_counter.fetch_add(1, Ordering::Relaxed) % n;
