@@ -158,6 +158,23 @@ impl DiagramsService {
         })
     }
 
+    pub async fn delete_diagram(
+        &self,
+        user: &AuthenticatedUser,
+        diagram_id: &str,
+    ) -> Result<(), ApiError> {
+        let file = self
+            .drive
+            .get_file(user, diagram_id, "Diagram not found")
+            .await?;
+        match file.your_role.as_str() {
+            "owner" | "editor" => {}
+            _ => return Err(ApiError::new(403, "FORBIDDEN", "Delete access required")),
+        }
+        self.drive.delete_file(diagram_id)?;
+        Ok(())
+    }
+
     pub async fn autosave(
         &self,
         user: &AuthenticatedUser,

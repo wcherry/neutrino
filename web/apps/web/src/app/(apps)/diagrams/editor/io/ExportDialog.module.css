@@ -129,6 +129,30 @@
   font-family: var(--font-mono, monospace);
 }
 
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.radioOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text, #1e293b);
+  cursor: pointer;
+  user-select: none;
+}
+
+.radioOption input[type='radio'] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #2563eb);
+  flex-shrink: 0;
+}
+
 .checkboxRow {
   display: flex;
   align-items: center;

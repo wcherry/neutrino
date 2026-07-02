@@ -7,6 +7,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { scaleIn, fadeIn } from '../../motion/variants';
 import styles from './Modal.module.css';
 
+const ModalTitleIdContext = React.createContext<string | undefined>(undefined);
+
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
 export interface ModalProps {
@@ -32,6 +34,7 @@ export function Modal({
 }: ModalProps) {
   const firstFocusableRef = useRef<HTMLElement | null>(null);
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const titleId = React.useId();
 
   useEffect(() => {
     if (!open) return;
@@ -91,22 +94,25 @@ export function Modal({
   return createPortal(
     <AnimatePresence>
       {open && (
-        <motion.div
-          className={styles.backdrop}
-          onClick={closeOnBackdrop ? onClose : undefined}
-          aria-modal="true"
-          role="dialog"
-          {...fadeIn}
-        >
+        <ModalTitleIdContext.Provider value={titleId}>
           <motion.div
-            ref={modalRef}
-            className={[styles.modal, styles[size], className].filter(Boolean).join(' ')}
-            onClick={(e) => e.stopPropagation()}
-            {...scaleIn}
+            className={styles.backdrop}
+            onClick={closeOnBackdrop ? onClose : undefined}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            {...fadeIn}
           >
-            {children}
+            <motion.div
+              ref={modalRef}
+              className={[styles.modal, styles[size], className].filter(Boolean).join(' ')}
+              onClick={(e) => e.stopPropagation()}
+              {...scaleIn}
+            >
+              {children}
+            </motion.div>
           </motion.div>
-        </motion.div>
+        </ModalTitleIdContext.Provider>
       )}
     </AnimatePresence>,
     document.body
@@ -121,9 +127,10 @@ export interface ModalHeaderProps {
 }
 
 export function ModalHeader({ title, onClose, className = '', children }: ModalHeaderProps) {
+  const titleId = React.useContext(ModalTitleIdContext);
   return (
     <div className={[styles.header, className].filter(Boolean).join(' ')}>
-      <h2 className={styles.title}>{children ?? title}</h2>
+      <h2 className={styles.title} id={titleId}>{children ?? title}</h2>
       {onClose && (
         <button
           type="button"

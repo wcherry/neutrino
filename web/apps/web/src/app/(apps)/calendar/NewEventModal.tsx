@@ -95,7 +95,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
       title: title.trim(),
       description: description.trim() || null,
       startTime: allDay ? `${start}T00:00:00Z` : new Date(start).toISOString(),
-      endTime: allDay ? `${end}T00:00:00Z` : new Date(end).toISOString(),
+      endTime: allDay ? `${end}T23:59:59Z` : new Date(end).toISOString(),
       allDay,
       location: location.trim() || null,
       attendees,

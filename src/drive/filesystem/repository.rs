@@ -311,10 +311,10 @@ impl FilesystemRepository {
                 .filter(folders::user_id.eq(user_id))
                 .filter(folders::deleted_at.is_not_null()),
         )
-        .set(TrashFolderRecord {
-            deleted_at: None,
-            updated_at: now,
-        })
+        .set((
+            folders::deleted_at.eq(None::<NaiveDateTime>),
+            folders::updated_at.eq(now),
+        ))
         .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB restore folder error: {:?}", e);

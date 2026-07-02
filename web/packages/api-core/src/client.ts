@@ -52,7 +52,7 @@ const AUTH_LOGIN_PATH = '/api/v1/auth/login';
 const AUTH_REGISTER_PATH = '/api/v1/auth/register';
 const AUTH_REFRESH_PATH = '/api/v1/auth/refresh';
 const LOGIN_REDIRECT_PATH = '/sign-in/';
-const PUBLIC_PATHS = ['/sign-in', '/register', '/sign-in/', '/register/'];
+const PUBLIC_PATHS = ['/sign-in', '/register', '/sign-in/', '/register/', '/share'];
 let refreshInFlight: Promise<{ accessToken: string; refreshToken: string; tokenType: string; expiresIn: number } | null> | null = null;
 
 export function getAuthHeader(): Record<string, string> {

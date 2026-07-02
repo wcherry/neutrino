@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { CellProps, SheetFile, CFRule } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
-import { sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type SheetResponse } from '@/lib/api';
+import { sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent, storageApi, type SheetResponse } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { useToast } from '@neutrino/ui';
@@ -113,6 +113,18 @@ export function usePersistence({
     // Always points to the latest save function so the flush-on-unmount effect
     // (which uses empty deps) can call it without a stale closure.
     const saveRef = useRef<() => Promise<void>>(async () => {});
+    // Every save (initial re-encryption, timer tick, flush-on-unmount) chains onto
+    // this promise so the underlying PUT requests never overlap. Firing two
+    // autosave PUTs back-to-back on the same connection has been observed to
+    // truncate the second request's body in transit (server sees a multipart
+    // "Payload(Incomplete)" 400) — almost certainly a keep-alive/connection-reuse
+    // edge case between the browser and the dev/test proxy. Chaining guarantees
+    // one request's response is fully received before the next one is sent.
+    const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+    const queueSave = () => {
+        saveChainRef.current = saveChainRef.current.then(() => saveRef.current()).catch(() => {});
+        return saveChainRef.current;
+    };
 
     const serialize = (): string => {
         flushActiveSheet();
@@ -154,8 +166,17 @@ export function usePersistence({
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
-        const metadata = { title };
-        await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
+        const content = serialize();
+        // Retry once on failure: the autosave PUT has been observed to occasionally
+        // fail with a transient transport-level error (e.g. a truncated request body)
+        // when it follows closely after another request to the same endpoint. This
+        // save is often the last chance to persist an edit before the user navigates
+        // away, so silently swallowing a transient failure would lose real data.
+        try {
+            await driveAutosaveEncryptedContent(sheetId, content, 'sheet.json', dekRef.current);
+        } catch {
+            await driveAutosaveEncryptedContent(sheetId, content, 'sheet.json', dekRef.current);
+        }
     };
     saveRef.current = save;
 
@@ -177,7 +198,7 @@ export function usePersistence({
         // throw "flushSync was called from inside a lifecycle method" in React 18
         // concurrent mode. The drive save must still fire even if the flush is skipped.
         try { flushSync(() => {}); } catch (_) {}
-        await saveRef.current();
+        await queueSave();
     };
 
     // Single autosave interval, restarted cleanly after every load().
@@ -209,7 +230,7 @@ export function usePersistence({
             // cleanup may throw "flushSync was called from inside a lifecycle method".
             // The save must still fire even if the flush is skipped.
             try { flushSync(() => {}); } catch (_) {}
-            saveRef.current(); // fire and forget
+            queueSave(); // fire and forget — chained so it can't overlap another save
         };
         const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
         document.addEventListener('visibilitychange', onVisibilityChange);
@@ -333,12 +354,15 @@ export function usePersistence({
             setLoadCount(c => c + 1);
         }
 
-        // Overwrite the server's plaintext initial content with encrypted bytes.
-        // Only needed for brand-new encrypted sheets whose content was written as
-        // plaintext by POST /api/v1/sheets on creation; for existing encrypted sheets
-        // decryptFile succeeds and serverHasPlaintextContent stays false.
+        // The server holds plaintext initial content for brand-new encrypted sheets
+        // (written as plaintext by POST /api/v1/sheets on creation); for existing
+        // encrypted sheets decryptFile succeeds and serverHasPlaintextContent stays
+        // false. Routed through queueSave (not called directly) so this request can
+        // never overlap a save triggered moments later by a fast edit-then-navigate —
+        // two autosave PUTs in flight at once have been observed to truncate the
+        // second request's body in transit, which would silently drop the user's edit.
         if (serverHasPlaintextContent && dekRef.current) {
-            save();
+            await queueSave();
         }
     };
 
@@ -347,13 +371,7 @@ export function usePersistence({
         setTitle(newTitle);
         if (sheetRef.current && newTitle !== sheetRef.current.title) {
             sheetRef.current.title = newTitle;
-            if (!dekRef.current) {
-                toast.warning(ENCRYPTION_WARNING_MESSAGE);
-                return;
-            }
-            // Save title together with current content in one combined call.
-            const metadata = { title: newTitle };
-            await sheetsApi.autosaveEncryptedContent(sheetId, serialize(), 'sheet.json', dekRef.current, metadata);
+            await sheetsApi.saveSheet(sheetId, { title: newTitle });
         }
     };
 

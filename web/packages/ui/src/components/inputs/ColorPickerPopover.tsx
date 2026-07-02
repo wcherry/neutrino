@@ -8,13 +8,14 @@ import { ToolbarButton } from '../display/Toolbar';
 export interface ColorPickerPopoverProps {
     color: string;
     onChange: (hex: string) => void;
+    onOpen?: () => void;
     disabled?: boolean;
     title?: string;
     children?: React.ReactNode;
     showAlpha?: boolean;
 }
 
-export function ColorPickerPopover({ color, onChange, disabled, title, children, showAlpha }: ColorPickerPopoverProps) {
+export function ColorPickerPopover({ color, onChange, onOpen, disabled, title, children, showAlpha }: ColorPickerPopoverProps) {
     const [open, setOpen] = useState(false);
     const [pos, setPos] = useState({ top: 0, left: 0 });
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -84,6 +85,7 @@ export function ColorPickerPopover({ color, onChange, disabled, title, children,
 
     function handleOpen() {
         if (disabled) return;
+        if (!open) onOpen?.();
         const rect = wrapperRef.current?.getBoundingClientRect();
         if (rect) setPos({ top: rect.bottom + 6, left: rect.left });
         setOpen(o => !o);
@@ -92,7 +94,7 @@ export function ColorPickerPopover({ color, onChange, disabled, title, children,
     return (
         <>
             <div ref={wrapperRef} style={{ display: 'inline-flex' }}>
-                <ToolbarButton onClick={handleOpen} disabled={disabled} title={title} type="button">
+                <ToolbarButton onClick={handleOpen} onMouseDown={(e) => e.preventDefault()} disabled={disabled} title={title} type="button">
                     {children ?? (
                         <span style={{
                             display: 'inline-block',
@@ -106,7 +108,7 @@ export function ColorPickerPopover({ color, onChange, disabled, title, children,
                 </ToolbarButton>
             </div>
             {open && createPortal(
-                <div ref={popoverRef} data-color-picker-portal="" style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}>
+                <div ref={popoverRef} data-color-picker-portal="" onMouseDown={(e) => e.preventDefault()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}>
                     <ColorPicker value={color} onChange={(hex) => { onChange(hex); }} showAlpha={showAlpha} onClose={() => setOpen(false)} />
                 </div>,
                 document.body

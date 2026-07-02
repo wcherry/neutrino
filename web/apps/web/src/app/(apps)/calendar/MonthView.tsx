@@ -53,15 +53,16 @@ export default function MonthView({
                 </span>
                 <div className={styles.dayEvents}>
                   {dayEvents.slice(0, 3).map((ev) => (
-                    <div
+                    <button
                       key={ev.id}
+                      type="button"
                       className={styles.eventChip}
                       onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
                       title={ev.title}
                     >
                       {!ev.allDay && <span style={{ opacity: 0.7, marginRight: 3 }}>{fmtTime(ev.startTime)}</span>}
                       {ev.title}
-                    </div>
+                    </button>
                   ))}
                   {dayEvents.length > 3 && (
                     <div className={styles.moreEvents}>+{dayEvents.length - 3} more</div>

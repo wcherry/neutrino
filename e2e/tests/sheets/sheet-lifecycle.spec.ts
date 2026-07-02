@@ -67,10 +67,11 @@ test.describe('Spreadsheets lifecycle', () => {
     await registerAndLogin(request, page);
     await createSheetViaFAB(page);
 
-    // Change the spreadsheet name via the contentEditable title
+    // Change the spreadsheet name via the contentEditable title.
+    // Triple-click selects all text reliably across platforms (Ctrl+A on macOS
+    // moves the cursor to the line start instead of selecting all).
     const titleInput = page.getByTestId('worksheet.name');
-    await titleInput.click();
-    await page.keyboard.press('Control+A');
+    await titleInput.click({ clickCount: 3 });
     await page.keyboard.type('Q1 Budget');
 
     // Set up the response listener before triggering the blur, then blur to save
@@ -105,7 +106,7 @@ test.describe('Spreadsheets lifecycle', () => {
     const sheetId = await getSheetId(page);
 
     // Add a second sheet tab
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.getByText('Sheet 2', { exact: true })).toBeVisible({ timeout: 5_000 });
 
     // The back button calls `await persist.save()` before navigating; wait for

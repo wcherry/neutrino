@@ -1,7 +1,7 @@
 use actix_web::{get, web, HttpRequest, HttpResponse};
 use actix_ws::AggregatedMessage;
 use futures_util::StreamExt;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::{error, warn};
 use yrs::updates::decoder::Decode;
@@ -27,6 +27,8 @@ fn encode_update(update: &[u8]) -> Vec<u8> {
     write_var_bytes(&mut buf, update);
     buf
 }
+
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 enum ParsedMessage {
     SyncStep1(Vec<u8>),
@@ -113,6 +115,7 @@ pub async fn diagram_collab_ws(
     }
 
     room.session_count.fetch_add(1, Ordering::SeqCst);
+    let session_id = NEXT_SESSION_ID.fetch_add(1, Ordering::SeqCst);
 
     let (response, mut session, msg_stream) = actix_ws::handle(&req, stream)?;
 
@@ -177,13 +180,13 @@ pub async fn diagram_collab_ws(
                                             }
                                         }
                                     }
-                                    let _ = room_clone.tx.send(encode_update(&update_bytes));
+                                    let _ = room_clone.tx.send((session_id, encode_update(&update_bytes)));
                                 }
                                 Some(ParsedMessage::Awareness(awareness_bytes)) => {
                                     let mut msg = Vec::new();
                                     write_varint(&mut msg, 1);
                                     msg.extend_from_slice(&awareness_bytes);
-                                    let _ = room_clone.tx.send(msg);
+                                    let _ = room_clone.tx.send((session_id, msg));
                                 }
                                 None => {
                                     warn!("Unknown WS message format for diagram {}", file_id_clone);
@@ -199,8 +202,13 @@ pub async fn diagram_collab_ws(
                         _ => {}
                     }
                 }
-                Ok(broadcast) = rx.recv() => {
-                    if session.binary(broadcast).await.is_err() {
+                Ok((origin_session_id, broadcast)) = rx.recv() => {
+                    // Skip messages this same session produced — the server
+                    // broadcasts to every subscriber in the room, including the
+                    // sender, so without this the sender would see its own
+                    // edits echoed back as if a remote peer had made them.
+                    if origin_session_id != session_id
+                        && session.binary(broadcast).await.is_err() {
                         break;
                     }
                 }

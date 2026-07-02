@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { diagramsApi } from '@neutrino/api-diagrams';
 import styles from './InsertDiagramDialog.module.css';
@@ -12,6 +12,14 @@ interface InsertDiagramDialogProps {
 
 export function InsertDiagramDialog({ onInsert, onClose }: InsertDiagramDialogProps) {
   const [selected, setSelected] = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['diagrams'],

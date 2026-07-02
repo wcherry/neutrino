@@ -45,7 +45,7 @@ import {
 } from 'lucide-react';
 import { ShareButton, Spinner, useToast, ZoomSlider } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
-import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, storageApi, type PageSetup, type FileItem } from '@/lib/api';
+import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent, storageApi, type PageSetup, type FileItem } from '@/lib/api';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
@@ -600,7 +600,7 @@ export function DocEditor() {
   const nspell = useNspell();
   const { getProviderOptions } = useAiSettings();
 
-  const { dekRef, dekResolved } =
+  const { dekRef, dekResolved, isNewEncryption } =
     useEncryptedDocumentContent({ id: docId, filename: 'doc.json' });
   const toast = useToast();
 
@@ -744,9 +744,9 @@ export function DocEditor() {
   const isLoading = metaLoading || contentLoading;
 
   const contentMutation = useMutation({
-    mutationFn: async ({ content, metadata }: { content: string; metadata?: { title?: string; pageSetup?: PageSetup } }) => {
+    mutationFn: async (content: string) => {
       if (!dekRef.current) throw new Error('no-dek');
-      return docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata);
+      return driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current);
     },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
@@ -786,9 +786,10 @@ export function DocEditor() {
   const triggerSave = useCallback(
     (content: string, metadata?: { title?: string; pageSetup?: PageSetup }) => {
       if (!isLocalWriterRef.current) return;
-      contentMutation.mutate({ content, metadata });
+      contentMutation.mutate(content);
+      if (metadata) metaMutation.mutate(metadata);
     },
-    [contentMutation]
+    [contentMutation, metaMutation]
   );
 
   // Sheet-embed paste interceptor — only active when the feature flag is on.
@@ -1023,17 +1024,21 @@ export function DocEditor() {
   // Guard on contentError: a failed download leaves docContent undefined, which
   // is indistinguishable from "no content yet" — never write an empty file over
   // content we simply failed to fetch.
+  // Exception: when isNewEncryption is true and contentError is true, decryptFile
+  // threw on the server's plaintext initial content (expected for brand-new files).
+  // In that case we must still do the initial encrypted save.
   useEffect(() => {
-    if (!dekRef.current || !editor || !doc || contentLoading || contentError) return;
+    if (!dekRef.current || !editor || !doc || contentLoading) return;
+    if (contentError && !isNewEncryption) return;
     if (initialSaveDoneRef.current) return;
     if (docContent !== null && docContent !== undefined) return;
     if (!isLocalWriterRef.current) return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(editor.getJSON());
-    docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
+    driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dekResolved, editor, doc, contentLoading, contentError, docContent, docId]);
+  }, [dekResolved, editor, doc, contentLoading, contentError, isNewEncryption, docContent, docId]);
 
   useEffect(() => {
     const flush = () => {
@@ -1049,8 +1054,8 @@ export function DocEditor() {
         console.warn('[neutrino] Autosave skipped on flush: encryption key unavailable');
         return;
       }
-      const metadata = { title: titleRef.current, pageSetup: pageSetupRef.current };
-      docsApi.autosaveEncryptedContent(docId, content, 'doc.json', dekRef.current, metadata);
+      driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current);
+      docsApi.saveDoc(docId, { title: titleRef.current, pageSetup: pageSetupRef.current });
     };
     const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -1087,12 +1092,15 @@ export function DocEditor() {
       autoSaveTimer.current = null;
     }
     if (pendingContent.current !== null && isLocalWriterRef.current) {
-      await contentMutation.mutateAsync({ content: pendingContent.current, metadata: { title: titleRef.current, pageSetup: pageSetupRef.current } });
+      await Promise.all([
+        contentMutation.mutateAsync(pendingContent.current),
+        metaMutation.mutateAsync({ title: titleRef.current, pageSetup: pageSetupRef.current }),
+      ]);
       pendingContent.current = null;
     }
     queryClient.invalidateQueries({ queryKey: ['docs'] });
     router.push('/drive');
-  }, [contentMutation, queryClient, router]);
+  }, [contentMutation, metaMutation, queryClient, router]);
 
   const handleManualSave = useCallback(() => {
     if (!editor || !isLocalWriterRef.current) return;
@@ -1627,8 +1635,8 @@ export function DocEditor() {
     } else if (saveAsFormat === 'html') {
       blob = buildHtmlBlob(title, html);
     } else {
-      const result = await docsApi.exportText(docId);
-      blob = new Blob([result.text], { type: 'text/plain' });
+      const text = editor?.getText({ blockSeparator: '\n\n' }) ?? '';
+      blob = new Blob([text], { type: 'text/plain' });
     }
 
     if (opts.location === 'drive') {

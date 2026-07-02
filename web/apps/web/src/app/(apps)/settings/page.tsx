@@ -1201,8 +1201,8 @@ const qc = useQueryClient();
       {/* ── Delete account confirmation dialog ──────────────────────────── */}
       {showDeleteDialog && (
         <div className={styles.overlay} onClick={() => setShowDeleteDialog(false)}>
-          <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-            <h2 className={styles.dialogTitle}>Delete your account?</h2>
+          <div className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="delete-account-title" onClick={(e) => e.stopPropagation()}>
+            <h2 id="delete-account-title" className={styles.dialogTitle}>Delete your account?</h2>
             <p className={styles.dialogBody}>
               This will permanently delete your account, all your files, and all associated data.
               This action cannot be undone.

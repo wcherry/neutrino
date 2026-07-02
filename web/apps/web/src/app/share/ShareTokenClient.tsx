@@ -77,7 +77,7 @@ export default function ShareTokenClient() {
     const title = status === 410 ? 'This link has expired' : 'Share link not found';
     const description = status === 410
       ? 'Ask the owner to generate a new share link.'
-      : 'The link may be invalid or has been disabled.';
+      : 'The link may have expired or been removed.';
     return (
       <div className={styles.page}>
         <EmptyState title={title} description={description} />
@@ -90,7 +90,7 @@ export default function ShareTokenClient() {
       <div className={styles.page}>
         <EmptyState
           title="Share link not found"
-          description="The link may be invalid or has been disabled."
+          description="The link may have expired or been removed."
         />
       </div>
     );

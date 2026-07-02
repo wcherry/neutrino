@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { DiagramDocument, DiagramPage, Viewport } from '../../types';
 import { exportSVG, exportPNG, exportJPEG, exportPNGCropped, exportJPEGCropped, exportSVGCropped, exportJSON, exportMermaid, triggerDownload } from './exportUtils';
 import styles from './ExportDialog.module.css';
@@ -96,6 +96,14 @@ export function ExportDialog({ document, activePage, canvasContainer, title, onC
   const isImageFormat = isRaster || format === 'svg';
   const mermaidPreview = format === 'mermaid' ? exportMermaid(activePage) : '';
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   async function handleExport() {
     if (selectArea && isImageFormat) {
       onExportWithRegion?.(format, filename, size, showGrid, bgColor);
@@ -158,32 +166,40 @@ export function ExportDialog({ document, activePage, canvasContainer, title, onC
         <h2 className={styles.title}>Export Diagram</h2>
 
         <div className={styles.field}>
-          <label className={styles.label} htmlFor="export-format">Format</label>
-          <select
-            id="export-format"
-            className={styles.select}
-            value={format}
-            onChange={(e) => setFormat(e.target.value as ExportFormat)}
-          >
+          <span className={styles.label}>Format</span>
+          <div className={styles.radioGroup}>
             {FORMATS.map((f) => (
-              <option key={f.id} value={f.id}>{f.label}</option>
+              <label key={f.id} className={styles.radioOption}>
+                <input
+                  type="radio"
+                  name="export-format"
+                  value={f.id}
+                  checked={format === f.id}
+                  onChange={() => setFormat(f.id)}
+                />
+                {f.label}
+              </label>
             ))}
-          </select>
+          </div>
         </div>
 
         {isRaster && (
           <div className={styles.field}>
-            <label className={styles.label} htmlFor="export-size">Size</label>
-            <select
-              id="export-size"
-              className={styles.select}
-              value={size}
-              onChange={(e) => setSize(e.target.value as RasterSize)}
-            >
+            <span className={styles.label}>Size</span>
+            <div className={styles.radioGroup}>
               {SIZES.map((s) => (
-                <option key={s.id} value={s.id}>{s.label}</option>
+                <label key={s.id} className={styles.radioOption}>
+                  <input
+                    type="radio"
+                    name="export-size"
+                    value={s.id}
+                    checked={size === s.id}
+                    onChange={() => setSize(s.id)}
+                  />
+                  {s.label}
+                </label>
               ))}
-            </select>
+            </div>
           </div>
         )}
 

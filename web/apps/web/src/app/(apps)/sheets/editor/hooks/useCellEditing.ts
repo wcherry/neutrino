@@ -63,6 +63,8 @@ export function useCellEditing({
     pushPatchToUndo,
     snapshotBeforeEditRef,
     getAllSheets,
+    eagerDataRef,
+    formulaInputRef: formulaInputRefProp,
 }: {
     data: Map<string, CellProps>;
     setData: React.Dispatch<React.SetStateAction<Map<string, CellProps>>>;
@@ -80,11 +82,26 @@ export function useCellEditing({
     snapshotBeforeEditRef: React.MutableRefObject<Map<string, CellProps> | null>;
     /** Returns the current list of all sheets for cross-sheet formula resolution. */
     getAllSheets?: () => SheetRef[];
+    /**
+     * Optional ref that holds the most-recently eagerly committed data map.
+     * Set in the eager block so flush-on-unmount serialization can use it even
+     * after useLayoutEffect overwrites dataRef with the pre-transition React state.
+     * Cleared when the corresponding startTransition commits (so normal timed saves
+     * fall back to the up-to-date dataRef instead).
+     */
+    eagerDataRef?: React.MutableRefObject<Map<string, CellProps> | null>;
+    /** Optional ref for the formula bar input. When provided, the hook uses it
+     *  instead of creating its own so callers (e.g. SheetEditor) can access the
+     *  same ref before useCellEditing is called, avoiding a forward reference. */
+    formulaInputRef?: React.RefObject<HTMLInputElement>;
 }) {
     const [, startTransition] = useTransition();
     const [showFunctions, setShowFunctions] = useState(false);
     const [showAllFunctions, setShowAllFunctions] = useState(false);
-    const formulaInputRef = useRef<HTMLInputElement>(null);
+    const ownFormulaInputRef = useRef<HTMLInputElement>(null);
+    // Use the caller-provided ref when available so the caller can access it
+    // without a forward reference (see SheetEditor's flushActiveSheetForPersist).
+    const formulaInputRef = formulaInputRefProp ?? ownFormulaInputRef;
     // Stable indirection so child event handlers don't re-register on every render.
     const activateCellRef = useRef<(id: string) => void>(() => {});
     // Synchronous ref so applyStyle sees the current anchor even before React
@@ -109,6 +126,23 @@ export function useCellEditing({
     // set of cell IDs that changed during this commit (the edited cell + its
     // transitive dependents) and build a compact before/after patch.
     const activateCell = (id: string) => {
+        // Guard against re-activating the same cell. Enter moves to the next cell
+        // and a subsequent click on that same cell would commit currentCell (itself)
+        // with an empty raw value before any text is typed, corrupting the data state.
+        if (currentCell?.id === id) {
+            setSelectionAnchor(id);
+            setSelectionActive(id);
+            selectionAnchorLatestRef.current = id;
+            // Refresh the formula bar if data changed while this cell was selected
+            // (e.g. paste wrote a new formula into the currently-selected cell).
+            // Only refresh when the formula bar is not actively focused (user typing).
+            const latestRaw = dataRef.current.get(id)?.raw ?? '';
+            if (latestRaw !== (currentCell.raw ?? '') && document.activeElement !== formulaInputRef.current) {
+                setCurrentCell(prev => prev ? { ...prev, raw: latestRaw } : prev);
+            }
+            return;
+        }
+
         const existing = dataRef.current.get(id) ?? { id, value: '', raw: '', edit: false } as CellProps;
         const activated = { ...existing, edit: true };
         setCurrentCell(activated);
@@ -124,16 +158,49 @@ export function useCellEditing({
         // unmount save reads dataRef.current directly, so this ensures the latest edit is
         // always captured even if the transition never commits to React state.
         if (currentCell) {
-            const rawToCommit = currentCell.raw ?? '';
+            // Prefer the formula bar's DOM value over currentCell.raw (React state).
+            // React may not have committed the setCurrentCell update from handleTextChange
+            // yet when activateCell is called (e.g. Enter pressed immediately after fill
+            // in an E2E test), leaving currentCell.raw stale. The DOM input always holds
+            // the actual typed content regardless of React render timing.
+            const rawToCommit = formulaInputRef.current?.value ?? currentCell.raw ?? '';
             const eagerMap = new Map(dataRef.current);
             const prevCell = eagerMap.get(currentCell.id) ?? { id: currentCell.id, value: '', raw: '', edit: false };
-            // Only flush currentCell.raw if the data map still shows the cell as actively
-            // edited. If edit is false, an external write (e.g. paste) already stored the
-            // correct raw value in the map — overwriting it here would erase pasted content.
-            if (prevCell.edit) {
-                eagerMap.set(currentCell.id, { ...prevCell, raw: rawToCommit, edit: false });
-                dataRef.current = eagerMap;
+            // Commit if the cell is actively edited in the data map, OR if the cell isn't
+            // in the data map at all (isFallback). The fallback occurs when startTransition
+            // updates haven't committed yet and useLayoutEffect already overwrote dataRef
+            // with the empty pre-transition state (e.g. typing in a new sheet then
+            // immediately navigating away via the sidebar). When edit is false AND the cell
+            // exists in the map, an external write (e.g. paste) stored the correct raw
+            // value — don't overwrite it.
+            const isFallback = !dataRef.current.has(currentCell.id);
+            // During rapid entry (fill + Enter in an E2E test) the cell may already exist
+            // in dataRef as edit=false: useLayoutEffect can overwrite dataRef from committed
+            // `data` before the low-priority handleTextChange transition lands, clearing the
+            // eager edit flag. In that case the typed content lives only in the focused
+            // formula bar's DOM value. Treat a focused formula bar whose value differs from
+            // the stored raw as pending user input and commit it — a paste never has the
+            // formula bar focused, so this can't clobber pasted content.
+            const hasPendingTypedInput =
+                document.activeElement === formulaInputRef.current &&
+                rawToCommit !== (prevCell.raw ?? '');
+            if (prevCell.edit || isFallback || hasPendingTypedInput) {
+                // Also compute value so subsequent formula evaluations in the same
+                // turn (e.g. =SUM(B2:B6) entered after plain values) see the correct
+                // .value field via dataRef.current rather than empty strings.
+                const { value: eagerValue } = computeCell(rawToCommit, eagerMap, getAllSheets?.());
+                eagerMap.set(currentCell.id, { ...prevCell, raw: rawToCommit, value: eagerValue, edit: false });
             }
+            // Eagerly mark the newly activated cell as editing so the next activateCell's
+            // eager block sees edit=true even before the startTransition commits to React
+            // state. Without this, rapid cell navigation (e.g. E2E tests) skips the eager
+            // commit because the activation transition hasn't flushed yet.
+            const newEntry = eagerMap.get(id) ?? { id, value: '', raw: '', edit: false };
+            eagerMap.set(id, { ...newEntry, edit: true });
+            dataRef.current = eagerMap;
+            // Store in eagerDataRef so flush-on-unmount can use it even after
+            // useLayoutEffect overwrites dataRef with the pre-transition React state.
+            if (eagerDataRef) eagerDataRef.current = eagerMap;
         }
 
         startTransition(() => {
@@ -143,12 +210,14 @@ export function useCellEditing({
 
             if (currentCell) {
                 const latestCell = next.get(currentCell.id) ?? currentCell;
-                // When edit is true the user is actively typing; prefer currentCell.raw because
-                // the handleTextChange startTransition may not have reached dataRef.current yet.
-                // When edit is false an external write (e.g. paste) already stored the correct
-                // raw in the map — trust that instead of the stale currentCell.raw.
+                // When edit is true the user is actively typing; prefer the formula bar's
+                // DOM value (formulaInputRef) over currentCell.raw (React state), since
+                // currentCell.raw may be stale if the handleTextChange re-render hasn't
+                // committed yet (e.g. Enter pressed immediately after fill in an E2E test).
+                // When edit is false an external write (e.g. paste) already stored the
+                // correct raw in the map — trust that instead.
                 const rawToCommit = latestCell.edit
-                    ? (currentCell.raw ?? latestCell.raw ?? '')
+                    ? (formulaInputRef.current?.value ?? currentCell.raw ?? latestCell.raw ?? '')
                     : (latestCell.raw ?? '');
                 const { value, deps: newDeps } = computeCell(rawToCommit, next, allSheets);
                 const oldDeps = latestCell.deps ?? [];
@@ -214,6 +283,20 @@ export function useCellEditing({
             setData(prevData => {
                 const result = new Map(prevData);
                 for (const [k, v] of prevCellChanges) result.set(k, v);
+
+                // Re-evaluate any formula on the committed cell using result (= prevData +
+                // dep-graph changes). prevCellChanges may carry a stale computed value when
+                // dataRef.current lags behind prevData (concurrent transitions still in flight),
+                // causing range formulas like =SUM(B2:B6) to see empty cells and return 0.
+                if (currentCell) {
+                    const committedCell = result.get(currentCell.id);
+                    if (committedCell?.raw?.startsWith('=')) {
+                        const { value: correctValue } = computeCell(committedCell.raw, result, allSheets);
+                        result.set(currentCell.id, { ...committedCell, value: correctValue });
+                        propagateDeps(currentCell.id, result, new Set([currentCell.id]), allSheets);
+                    }
+                }
+
                 const latestForId = result.get(id) ?? existing;
                 result.set(id, { ...latestForId, raw: existing.raw, edit: true });
                 return result;
@@ -268,11 +351,19 @@ export function useCellEditing({
         setShowFunctions(query.length > 0 && functionsList(query).length > 0);
         setFormulaPickMode(isFormulaPickActive(newRaw));
         if (currentCell) {
-            // Patch only the one cell being edited — avoids O(n) Map clone.
             const existing = dataRef.current.get(currentCell.id) ?? { id: currentCell.id, value: '', raw: '', edit: true };
+            const patched = { ...existing, raw: newRaw, edit: true };
+            // Synchronously reflect the typed value in dataRef *before* the deferred
+            // transition. A subsequent Enter (activateCell) may fire its eager commit
+            // before this low-priority transition lands; without this, dataRef would
+            // still show the cell as edit=false / empty and the eager block would skip
+            // it, dropping the just-typed value (flaky in rapid fill+Enter E2E entry).
+            // Reading dataRef.current here guarantees edit=true + latest raw regardless
+            // of React render timing or formula-bar focus/remount.
+            dataRef.current = applyPatch(dataRef.current, { [currentCell.id]: patched });
             startTransition(() => {
                 setData(prev => applyPatch(prev, {
-                    [currentCell.id]: { ...existing, raw: newRaw, edit: true },
+                    [currentCell.id]: patched,
                 }));
             });
         }

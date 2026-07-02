@@ -46,7 +46,7 @@ async function openNewSheet(page: Page): Promise<void> {
 /** Add a new sheet tab and rename it. */
 async function addAndRenameSheet(page: Page, newName: string): Promise<void> {
   const tabCount = await page.locator('.sheetTab, [data-tab]').count();
-  await page.getByRole('button', { name: '+' }).click();
+  await page.getByRole('button', { name: '+', exact: true }).click();
   // Wait for the new tab to appear (Sheet 2, Sheet 3, etc.)
   await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
   // Rename the newly active tab by double-clicking it
@@ -91,7 +91,7 @@ test.describe('Cross-sheet cell references', () => {
     await openNewSheet(page);
 
     // Add a second sheet tab and rename it to "Beta"
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
 
     // Rename the new tab to "Beta" via double-click
@@ -124,7 +124,7 @@ test.describe('Cross-sheet cell references', () => {
     await openNewSheet(page);
 
     // Add second tab, rename to "Beta"
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
     const renameInput = page.locator('main input').last();
@@ -157,7 +157,7 @@ test.describe('Cross-sheet cell references', () => {
     await openNewSheet(page);
 
     // Add second tab
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
     const renameInput = page.locator('main input').last();
@@ -186,7 +186,7 @@ test.describe('Cross-sheet cell references', () => {
     await openNewSheet(page);
 
     // Add second tab, rename to "Beta"
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
     const renameInput = page.locator('main input').last();
@@ -227,7 +227,7 @@ test.describe('Cross-sheet cell references', () => {
     await openNewSheet(page);
 
     // Add second tab, rename to "Beta"
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
     const renameInput = page.locator('main input').last();
@@ -269,7 +269,7 @@ test.describe('Cross-sheet cell references', () => {
     await openNewSheet(page);
 
     // Add second tab, rename to "Beta"
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
     const renameInput = page.locator('main input').last();

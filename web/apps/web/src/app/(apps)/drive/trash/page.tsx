@@ -128,9 +128,9 @@ export default function TrashPage() {
         </Button>
       </div>
 
-      <ul className={styles.list}>
+      <ul className={styles.list} role="list">
         {folders.map((folder: TrashFolderItem) => (
-          <li key={folder.id} className={styles.item}>
+          <li key={folder.id} className={styles.item} aria-label={folder.name}>
             <div className={styles.itemIcon} style={{ color: 'var(--color-amber, #d97706)' }}>
               <Folder size={20} strokeWidth={1.5} />
             </div>
@@ -162,7 +162,7 @@ export default function TrashPage() {
           const IconComponent = getFileIcon(file.mimeType);
           const iconColor = getIconColor(file.mimeType);
           return (
-            <li key={file.id} className={styles.item}>
+            <li key={file.id} className={styles.item} aria-label={file.name}>
               <div className={styles.itemIcon} style={{ color: iconColor }}>
                 <IconComponent size={20} strokeWidth={1.5} />
               </div>

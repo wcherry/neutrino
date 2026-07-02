@@ -155,6 +155,23 @@ impl DrawingService {
         })
     }
 
+    pub async fn delete_drawing(
+        &self,
+        user: &AuthenticatedUser,
+        drawing_id: &str,
+    ) -> Result<(), ApiError> {
+        let file = self
+            .drive
+            .get_file(user, drawing_id, "Drawing not found")
+            .await?;
+        match file.your_role.as_str() {
+            "owner" | "editor" => {}
+            _ => return Err(ApiError::new(403, "FORBIDDEN", "Delete access required")),
+        }
+        self.drive.delete_file(drawing_id)?;
+        Ok(())
+    }
+
     pub async fn save_drawing(
         &self,
         user: &AuthenticatedUser,

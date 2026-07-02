@@ -136,8 +136,9 @@ export function SaveAsDialog({
         <div className={styles.body}>
           {/* Filename */}
           <div className={styles.field}>
-            <label className={styles.label}>Filename</label>
+            <label className={styles.label} htmlFor="save-as-filename">Filename</label>
             <input
+              id="save-as-filename"
               className={styles.input}
               value={filename}
               onChange={e => setFilename(e.target.value)}
@@ -255,8 +256,9 @@ export function SaveAsDialog({
               {showSecurity && (
                 <div className={styles.securityBody}>
                   <div className={styles.field}>
-                    <label className={styles.label}>Open password</label>
+                    <label className={styles.label} htmlFor="save-as-open-password">Open password</label>
                     <input
+                      id="save-as-open-password"
                       className={styles.input}
                       type="password"
                       placeholder="No password"
@@ -269,8 +271,9 @@ export function SaveAsDialog({
 
                   {password && (
                     <div className={styles.field}>
-                      <label className={styles.label}>Confirm password</label>
+                      <label className={styles.label} htmlFor="save-as-confirm-password">Confirm password</label>
                       <input
+                        id="save-as-confirm-password"
                         className={styles.input}
                         type="password"
                         value={confirmPassword}

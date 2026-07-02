@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Camera, Check, Globe, Loader2 } from 'lucide-react';
@@ -67,8 +67,13 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
 
-  // Populate form when data arrives
+  // Populate the form once, on initial load. Re-running on every `details`
+  // refetch would clobber in-progress user edits — e.g. the on-mount theme
+  // sync invalidates ['profile-details'], and its refetch landing mid-edit
+  // would reset a field the user just typed into (flaky save/reload tests).
+  const populatedRef = useRef(false);
   useEffect(() => {
+    if (populatedRef.current) return;
     if (!details && !user) return;
     setName(user?.name ?? '');
     if (details) {
@@ -84,6 +89,7 @@ export default function ProfilePage() {
       setEmailGeneral(details.emailPreferences?.general ?? true);
       setEmailUpdates(details.emailPreferences?.updates ?? true);
       setEmailCritical(details.emailPreferences?.critical ?? true);
+      populatedRef.current = true;
     }
   }, [details, user]);
 

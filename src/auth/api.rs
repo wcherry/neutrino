@@ -126,6 +126,19 @@ pub async fn me(
     state: web::Data<AuthApiState>,
     user: AuthenticatedUser,
 ) -> Result<web::Json<UserProfileResponse>, ApiError> {
+    // Guest sessions (issued when opening a share link without an account) have a
+    // synthetic `guest:<token>` subject and no backing user row. Return a minimal
+    // profile so the app shell renders instead of 401-redirecting them to sign-in.
+    if user.user_id.starts_with("guest:") {
+        return Ok(web::Json(UserProfileResponse {
+            id: user.user_id.clone(),
+            email: user.email.clone(),
+            name: "Guest".to_string(),
+            created_at: chrono::Utc::now().naive_utc(),
+            role: "guest".to_string(),
+            totp_enabled: false,
+        }));
+    }
     let profile = state.auth_service.get_profile(&user.user_id)?;
     Ok(web::Json(profile))
 }

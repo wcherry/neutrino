@@ -126,20 +126,24 @@ test.describe('Docs PDF export', () => {
     const editor = page.locator('.ProseMirror');
     await editor.click();
 
+    const boldBtn = page.getByTitle('Bold (Ctrl+B)');
+    const italicBtn = page.getByTitle('Italic (Ctrl+I)');
+    const underlineBtn = page.getByTitle('Underline (Ctrl+U)');
+
     // Bold text
-    await page.keyboard.press('Control+b');
+    await boldBtn.click();
     await editor.pressSequentially('Bold text ');
-    await page.keyboard.press('Control+b');
+    await boldBtn.click();
 
     // Italic text
-    await page.keyboard.press('Control+i');
+    await italicBtn.click();
     await editor.pressSequentially('italic text ');
-    await page.keyboard.press('Control+i');
+    await italicBtn.click();
 
     // Underlined text
-    await page.keyboard.press('Control+u');
+    await underlineBtn.click();
     await editor.pressSequentially('underlined text');
-    await page.keyboard.press('Control+u');
+    await underlineBtn.click();
 
     // Verify all marks are applied before exporting
     await expect(editor.locator('strong')).toBeVisible({ timeout: 3_000 });
@@ -166,7 +170,7 @@ test.describe('Docs PDF export', () => {
     await editor.pressSequentially('This text will have colors applied.');
 
     // Select all text then apply a color via the text-color toolbar button
-    await page.keyboard.press('Control+a');
+    await page.keyboard.press('ControlOrMeta+a');
 
     // Open the text-color picker
     const colorBtn = page.getByTitle('Text color');
@@ -251,7 +255,7 @@ test.describe('Docs PDF export', () => {
 
     const editor = page.locator('.ProseMirror');
     await editor.click();
-    await editor.pressSequentially('Content for security options test.');
+    await editor.pressSequentially('Content for PDF export dialog test.');
 
     await openExportMenu(page, 'PDF (.pdf)');
 

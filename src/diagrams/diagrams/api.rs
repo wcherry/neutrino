@@ -140,18 +140,9 @@ pub async fn delete_diagram(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let diagram_id = path.into_inner();
-    // Verify access before deleting — get_diagram checks the drive file
-    let _ = state
-        .diagrams_service
-        .get_diagram(&user, &diagram_id)
-        .await?;
-    // Drive files are soft-deleted by moving to trash. We delegate to the drive API
-    // by patching updated_at so the file remains in place while the client
-    // can call the drive delete endpoint directly. Full drive integration
-    // removes it from the listing via mime_type filter + deleted_at check.
     state
         .diagrams_service
-        .save_diagram(&user, &diagram_id, SaveDiagramRequest { title: None })
+        .delete_diagram(&user, &diagram_id)
         .await?;
     Ok(HttpResponse::NoContent().finish())
 }

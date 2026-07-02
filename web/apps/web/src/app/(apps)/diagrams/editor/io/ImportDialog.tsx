@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import type { DiagramDocument, DiagramShape, DiagramConnector } from '../../types';
 import { importJSON, importDrawioXML, importMermaid } from './importUtils';
 import styles from './ImportDialog.module.css';
@@ -19,6 +19,14 @@ export function ImportDialog({ onImportDocument, onImportShapes, onClose }: Impo
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   async function handleFile(file: File) {
     setError(null);

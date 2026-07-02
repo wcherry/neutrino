@@ -6,9 +6,15 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use yrs::Doc;
 
+/// Broadcast payload tagged with the id of the session that produced it, so
+/// each session can skip re-delivering a message to its own connection (which
+/// would otherwise echo every local edit back to its author as if it were a
+/// remote change).
+pub type RoomBroadcast = (u64, Vec<u8>);
+
 pub struct DiagramRoom {
     pub doc: Arc<Doc>,
-    pub tx: broadcast::Sender<Vec<u8>>,
+    pub tx: broadcast::Sender<RoomBroadcast>,
     pub session_count: AtomicUsize,
     pub file_id: String,
 }

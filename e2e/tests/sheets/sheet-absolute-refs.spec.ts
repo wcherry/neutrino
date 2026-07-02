@@ -272,7 +272,7 @@ test.describe('Absolute cell references', () => {
     await openNewSheet(page);
 
     // Add a second sheet tab and rename it to "Beta"
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByTitle('Add sheet').click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
     const renameInput = page.locator('main input').last();

@@ -215,6 +215,15 @@ impl DriveClient {
         Ok(())
     }
 
+    pub fn delete_file(&self, file_id: &str) -> Result<(), ApiError> {
+        let file = self
+            .storage
+            .find_file_any_user(file_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
+        self.fs_repo.trash_file(file_id, &file.user_id)?;
+        Ok(())
+    }
+
     /// Autosave raw bytes as the file's current content without creating a version snapshot.
     /// Used by per-app autosave endpoints that receive multipart binary data.
     pub fn upload_content_bytes(&self, file_id: &str, bytes: &[u8]) -> Result<(), ApiError> {

@@ -44,7 +44,7 @@ test.describe('Spreadsheet sheet tabs', () => {
     await setCell(page, 'A1', originalValue);
     await expect(page.locator('[data-type="cell"][id="A1"] span')).toHaveText(originalValue);
 
-    await page.getByRole('button', { name: '+' }).click();
+    await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.getByText('Sheet 2', { exact: true })).toBeVisible();
 
     await page.getByText('Sheet 2', { exact: true }).dblclick();

@@ -157,6 +157,11 @@ export function SheetEditor() {
     const [keyboardMode, setKeyboardMode] = useState<SheetKeyboardMode>('movement');
     const [data, setData] = useState<Map<string, CellProps>>(new Map());
     const dataRef = useRef<Map<string, CellProps>>(data);
+    // Tracks the most-recently eagerly committed data (from activateCell's eager block).
+    // useLayoutEffect overwrites dataRef with the pre-transition React state after
+    // urgent updates; this ref is immune to that and lets flushActiveSheet use the
+    // correct data during flush-on-unmount (SPA navigation immediately after editing).
+    const eagerDataRef = useRef<Map<string, CellProps> | null>(null);
     const [colWidths, setColWidths] = useState<Map<number, number>>(new Map());
     const colWidthsRef = useRef<Map<number, number>>(new Map());
     const [rowHeights, setRowHeights] = useState<Map<number, number>>(new Map());
@@ -168,6 +173,16 @@ export function SheetEditor() {
 
     // Marks unsaved changes; read by the timed-save interval and size-change effect.
     const dirtyRef = useRef(false);
+
+    // Always holds the latest currentCell so flush-on-unmount / timer saves can
+    // read it from outside the React render cycle (refs are not affected by stale
+    // closures the way state is).
+    const currentCellRef = useRef<CellProps | undefined>(undefined);
+
+    // Declared here (before flushActiveSheetForPersist and useCellEditing) so
+    // flushActiveSheetForPersist can reference it without a forward reference to
+    // `editing`. Passed into useCellEditing so both share the same ref object.
+    const formulaInputRef = useRef<HTMLInputElement>(null);
 
     // Ref to the scrollable body container inside SheetGrid, used to scroll
     // newly selected cells into view after arrow-key navigation.
@@ -208,12 +223,21 @@ export function SheetEditor() {
     const applyFormatPaintRef = useRef<(destAnchor: string, destActive: string | undefined) => void>(() => {});
     const didApplyPaintRef = useRef(false);
 
+    // Keep currentCellRef always current. Assigned in render (not in a useEffect)
+    // so timer callbacks and unmount cleanup always see the latest committed value
+    // without waiting for a subsequent effect flush.
+    currentCellRef.current = currentCell;
+
     // Sync state → refs so event handlers always see current values.
     // useLayoutEffect for dataRef ensures it's updated synchronously after every
     // commit (before paint), so activateCell's startTransition always reads a
     // current map — preventing stale data from overwriting in-flight state like
     // colSpan/rowSpan set by a preceding mergeCells call.
-    useLayoutEffect(() => { dataRef.current = data; }, [data]);
+    useLayoutEffect(() => {
+        dataRef.current = data;
+        // dataRef is now current; any pending eager data is superseded.
+        eagerDataRef.current = null;
+    }, [data]);
     useEffect(() => { colWidthsRef.current = colWidths; }, [colWidths]);
     useEffect(() => { rowHeightsRef.current = rowHeights; }, [rowHeights]);
     useLayoutEffect(() => { selectionAnchorRef.current = selectionAnchor; }, [selectionAnchor]);
@@ -246,6 +270,34 @@ export function SheetEditor() {
         activeSheetIndexRef: sheets.activeSheetIndexRef,
     });
 
+    // Wrapped flushActiveSheet for usePersistence: ensures in-flight edits are
+    // captured before serialization, whether they reached the eager-commit stage
+    // (activateCell ran) or are still only in the formula bar DOM (user typed but
+    // hasn't pressed Enter yet, so startTransition hasn't committed to dataRef).
+    const flushActiveSheetForPersist = useCallback(() => {
+        if (eagerDataRef.current !== null) {
+            // activateCell already eagerly committed the cell — use that snapshot.
+            dataRef.current = eagerDataRef.current;
+        } else {
+            // startTransition from handleTextChange may not have committed yet
+            // (e.g. the 3-second timer fired between fill() and Enter). Read the
+            // formula bar DOM directly as the ground truth for the cell being typed.
+            const formulaInput = formulaInputRef.current;
+            const cc = currentCellRef.current;
+            if (formulaInput && cc?.edit && cc.id) {
+                const raw = formulaInput.value;
+                const eagerMap = new Map(dataRef.current);
+                const prevCell = eagerMap.get(cc.id) ?? { id: cc.id, value: '', raw: '', edit: false };
+                eagerMap.set(cc.id, { ...prevCell, raw, edit: false });
+                dataRef.current = eagerMap;
+            }
+        }
+        sheets.flushActiveSheet();
+    // dataRef, eagerDataRef, formulaInputRef, and currentCellRef are all stable
+    // ref objects — safe to use without listing as deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sheets]);
+
     const persist = usePersistence({
         sheetId, dirtyRef,
         sheetsDataRef: sheets.sheetsDataRef,
@@ -254,7 +306,7 @@ export function SheetEditor() {
         activeSheetIndexRef: sheets.activeSheetIndexRef,
         sheetNamesRef: sheets.sheetNamesRef,
         sheetColorsRef: sheets.sheetColorsRef,
-        flushActiveSheet: sheets.flushActiveSheet,
+        flushActiveSheet: flushActiveSheetForPersist,
         setData, setColWidths, setRowHeights,
         setSheetNames: sheets.setSheetNames,
         setSheetColors: sheets.setSheetColors,
@@ -374,6 +426,8 @@ export function SheetEditor() {
         pushPatchToUndo: history.pushPatchToUndo,
         snapshotBeforeEditRef: history.snapshotBeforeEditRef,
         getAllSheets,
+        eagerDataRef,
+        formulaInputRef,
     });
 
     // Stable refs for document-level keyboard handler; updated every render so
@@ -657,8 +711,11 @@ export function SheetEditor() {
 
     // ── Sort helpers ─────────────────────────────────────────────────────────
     function compareValues(a: string, b: string, asc: boolean): number {
-        if (a === '' && b !== '') return asc ? 1 : -1;
-        if (b === '' && a !== '') return asc ? -1 : 1;
+        // Blank cells always sort to the end, regardless of sort direction — this
+        // matters because activateCell adds a phantom blank entry for the cursor's
+        // next row/column, which must never be reordered ahead of real data.
+        if (a === '' && b !== '') return 1;
+        if (b === '' && a !== '') return -1;
         const an = parseFloat(a);
         const bn = parseFloat(b);
         const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : a.localeCompare(b, undefined, { sensitivity: 'base' });

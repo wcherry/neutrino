@@ -46,7 +46,7 @@ export function PagePanel({
 
   return (
     <div className={styles.panel}>
-      <div className={styles.tabs}>
+      <div className={styles.pageList}>
       {pages.map((page, i) => (
         <div
           key={page.id}

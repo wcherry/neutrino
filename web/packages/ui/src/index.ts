@@ -189,6 +189,10 @@ export type { SaveAsDialogProps, SaveAsOptions, SaveAsDriveFolder, SaveAsBreadcr
 export { ShareDialog } from './components/panels/ShareDialog';
 export type { ShareDialogProps, SharePermission, ShareLinkData, SharePermissionRole, ShareUserSuggestion } from './components/panels/ShareDialog';
 
+// Collaboration
+export { PresenceBar } from './components/collab/PresenceBar';
+export type { PresenceBarProps, PresenceBarUser } from './components/collab/PresenceBar';
+
 // Shell components have moved to @neutrino/layout
 
 // Icons

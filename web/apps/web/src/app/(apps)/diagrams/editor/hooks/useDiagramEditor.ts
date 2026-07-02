@@ -192,9 +192,9 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
 
   const updateDocument = useCallback(
     (updater: (prev: DiagramDocument) => DiagramDocument) => {
-      push(updater(document));
+      push(updater);
     },
-    [document, push],
+    [push],
   );
 
   const updatePage = useCallback(

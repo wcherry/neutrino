@@ -16,7 +16,7 @@ interface ShapePanelProps {
 type DragOver = { key: string; position: 'before' | 'after' } | null;
 
 export function ShapePanel({ onAddShape }: ShapePanelProps) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['Basic', 'Flowchart']));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(['builtin:Basic', 'builtin:Flowchart']));
   const [configOpen, setConfigOpen] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [dragKey, setDragKey] = useState<string | null>(null);

@@ -64,7 +64,7 @@ import {
   useToast,
 } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
-import { slidesApi, driveReadContent, storageApi, type FileItem } from '@/lib/api';
+import { slidesApi, driveReadContent, driveAutosaveEncryptedContent, storageApi, type FileItem } from '@/lib/api';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -353,6 +353,7 @@ export function SlideEditor() {
   const [diagramDialogOpen, setDiagramDialogOpen] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef('');
   const exportRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -444,16 +445,16 @@ export function SlideEditor() {
     if (initialSaveDoneRef.current || lastSavedRef.current !== '') return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(presentation);
-    slidesApi.autosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
+    driveAutosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // presentation intentionally omitted: we capture the default once, not on every change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dekResolved, isNewEncryption, slideData, contentLoading, slideContent]);
 
   const contentMutation = useMutation({
-    mutationFn: async ({ content, metadata }: { content: string; metadata?: { title?: string } }) => {
+    mutationFn: async ({ content }: { content: string }) => {
       if (!dekRef.current) throw new Error('no-dek');
-      return slidesApi.autosaveEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current, metadata);
+      return driveAutosaveEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current);
     },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: (_, { content }) => {
@@ -469,14 +470,19 @@ export function SlideEditor() {
     },
   });
 
+  const titleMutation = useMutation({
+    mutationFn: ({ title: t }: { title: string }) => slidesApi.saveSlide(slideData!.id, { title: t }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['slides'] }),
+  });
+
   const scheduleAutoSave = useCallback((pres: SlidePresentation) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaveStatus('unsaved');
     saveTimerRef.current = setTimeout(() => {
       const content = JSON.stringify(pres);
-      contentMutation.mutate({ content, metadata: { title } });
+      contentMutation.mutate({ content });
     }, 2000);
-  }, [contentMutation, title]);
+  }, [contentMutation]);
 
   function updatePresentation(updater: (p: SlidePresentation) => SlidePresentation) {
     setPresentation((prev) => {
@@ -494,18 +500,35 @@ export function SlideEditor() {
     }
     const content = JSON.stringify(presentation);
     if (content !== lastSavedRef.current) {
-      await contentMutation.mutateAsync({ content, metadata: { title } });
+      await contentMutation.mutateAsync({ content });
     }
     queryClient.invalidateQueries({ queryKey: ['slides'] });
     router.push('/drive');
   }
 
+  function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setTitle(val);
+    if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    titleSaveTimerRef.current = setTimeout(() => {
+      const trimmed = val.trim();
+      if (!trimmed) return;
+      titleMutation.mutate({ title: trimmed });
+      const content = JSON.stringify(presentation);
+      contentMutation.mutate({ content });
+    }, 2000);
+  }
+
   function handleTitleBlur() {
     const trimmed = title.trim();
     if (!trimmed) return;
-    // Save title together with current content in one combined call.
+    if (titleSaveTimerRef.current) {
+      clearTimeout(titleSaveTimerRef.current);
+      titleSaveTimerRef.current = null;
+    }
+    titleMutation.mutate({ title: trimmed });
     const content = JSON.stringify(presentation);
-    contentMutation.mutate({ content, metadata: { title: trimmed } });
+    contentMutation.mutate({ content });
   }
 
   // Close dropdowns on outside click
@@ -518,7 +541,10 @@ export function SlideEditor() {
   }, []);
 
   useEffect(() => {
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -1092,7 +1118,7 @@ export function SlideEditor() {
           <input
             className={styles.titleInput}
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={handleTitleChange}
             onBlur={handleTitleBlur}
             onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
             placeholder="Untitled presentation"

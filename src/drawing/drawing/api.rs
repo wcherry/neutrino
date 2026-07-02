@@ -7,7 +7,7 @@ use crate::drawing::drawing::{
 };
 use crate::shared::{ApiError, AuthenticatedUser};
 use actix_multipart::Multipart;
-use actix_web::{get, patch, post, put, web, HttpResponse};
+use actix_web::{delete, get, patch, post, put, web, HttpResponse};
 use futures_util::StreamExt;
 use std::sync::Arc;
 use utoipa::OpenApi;
@@ -117,6 +117,34 @@ pub async fn save_drawing(
 }
 
 #[utoipa::path(
+    delete,
+    path = "/api/v1/drawing/{id}",
+    params(
+        ("id" = String, Path, description = "Drawing ID")
+    ),
+    responses(
+        (status = 204, description = "Drawing deleted"),
+        (status = 403, description = "Access denied"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drawing"
+)]
+#[delete("/drawing/{id}")]
+pub async fn delete_drawing(
+    state: web::Data<DrawingApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let drawing_id = path.into_inner();
+    state
+        .drawing_service
+        .delete_drawing(&user, &drawing_id)
+        .await?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
+#[utoipa::path(
     put,
     path = "/api/v1/drawing/{id}/autosave",
     params(("id" = String, Path, description = "Drawing ID")),
@@ -182,12 +210,16 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(create_drawing)
         .service(get_drawing)
         .service(save_drawing)
+        .service(delete_drawing)
         .service(autosave_drawing);
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_drawings, create_drawing, get_drawing, save_drawing, autosave_drawing),
+    paths(
+        list_drawings, create_drawing, get_drawing, save_drawing, delete_drawing,
+        autosave_drawing
+    ),
     components(schemas(
         CreateDrawingRequest,
         SaveDrawingRequest,

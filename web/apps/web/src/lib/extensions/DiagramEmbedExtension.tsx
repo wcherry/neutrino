@@ -355,7 +355,7 @@ function DiagramEmbedNodeView({ node, deleteNode, updateAttributes }: ReactNodeV
   }
 
   return (
-    <NodeViewWrapper data-type="diagram-embed">
+    <NodeViewWrapper data-type="diagram-embed" data-diagram-embed="">
       <div
         style={{ margin: '8px 0', position: 'relative', display: 'inline-block' }}
         onContextMenu={handleContextMenu}

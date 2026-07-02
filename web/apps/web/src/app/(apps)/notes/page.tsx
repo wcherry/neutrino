@@ -219,7 +219,7 @@ export default function NotesPage() {
             title="No notes yet"
             description="Create a new note to get started."
             action={
-              <Button onClick={() => createNote.mutate()} disabled={createNote.isPending}>
+              <Button onClick={() => createNote.mutate()} disabled={createNote.isPending} icon={<FilePlus size={16} />}>
                 New Note
               </Button>
             }

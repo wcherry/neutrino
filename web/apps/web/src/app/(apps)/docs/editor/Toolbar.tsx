@@ -292,6 +292,7 @@ export function Toolbar({
   onInsertDiagram,
 }: ToolbarProps) {
   const flags = useFeatureFlags();
+  const colorSelRef = useRef<{ from: number; to: number } | null>(null);
   if (!editor) return null;
 
   const currentHeading = HEADINGS.find(h =>
@@ -411,7 +412,18 @@ export function Toolbar({
       <ToolbarGroup>
         <ColorPickerPopover
           color={editor.getAttributes('textStyle').color ?? '#202124'}
-          onChange={(hex) => editor.chain().focus().setColor(hex).run()}
+          onOpen={() => {
+            const { from, to } = editor.state.selection;
+            colorSelRef.current = { from, to };
+          }}
+          onChange={(hex) => {
+            const sel = colorSelRef.current;
+            if (sel && sel.from !== sel.to) {
+              editor.chain().focus().setTextSelection(sel).setColor(hex).run();
+            } else {
+              editor.chain().focus().setColor(hex).run();
+            }
+          }}
           title="Text color"
         >
           <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>

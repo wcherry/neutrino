@@ -33,6 +33,7 @@ COPY web/packages/tokens/package.json packages/tokens/package.json
 COPY web/packages/ui/package.json packages/ui/package.json
 COPY web/packages/utils/package.json packages/utils/package.json
 COPY web/packages/search/package.json packages/search/package.json
+COPY web/packages/collab-core/package.json packages/collab-core/package.json
 RUN pnpm install --prod=false
 
 # Copy the rest of the web source and build
