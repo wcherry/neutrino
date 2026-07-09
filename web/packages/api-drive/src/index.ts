@@ -28,6 +28,7 @@ export type {
   FileItem,
   FileListQuery,
   DriveView,
+  DriveFileType,
   QuotaInfo,
   FileVersionItem,
   ListVersionsResponse,

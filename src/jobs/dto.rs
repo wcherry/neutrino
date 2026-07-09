@@ -12,6 +12,15 @@ pub struct CreateJobRequest {
     pub payload: serde_json::Value,
     #[serde(default = "default_timeout")]
     pub timeout_secs: i32,
+    /// Optional plaintext file attached to the job, base64-encoded. When present
+    /// it is encrypted with a one-time key and stashed in the user's temp
+    /// storage; the key and path are recorded in the stored payload.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Owner of the attached file — required when `file` is set, so the encrypted
+    /// blob can be written into that user's storage.
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

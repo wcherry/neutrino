@@ -781,6 +781,43 @@ impl FilesystemRepository {
             })
     }
 
+    /// List every non-deleted file for the user whose MIME type matches any of
+    /// the given `LIKE` patterns, across the whole drive.
+    pub fn list_files_by_mime(
+        &self,
+        user_id: &str,
+        patterns: &[&'static str],
+    ) -> Result<Vec<FileRecord>, ApiError> {
+        use diesel::sql_types::Bool;
+        use diesel::sqlite::Sqlite;
+
+        let mut conn = self.get_conn()?;
+
+        // Build `(mime LIKE p1 OR mime LIKE p2 OR ...)` so it ANDs correctly
+        // with the user/deleted filters rather than binding loosely.
+        let mut mime_match: Box<dyn BoxableExpression<files::table, Sqlite, SqlType = Bool>> =
+            match patterns.first() {
+                Some(first) => Box::new(files::mime_type.like(*first)),
+                // No patterns => match nothing.
+                None => Box::new(diesel::dsl::sql::<Bool>("0")),
+            };
+        for pattern in patterns.iter().skip(1) {
+            mime_match = Box::new(mime_match.or(files::mime_type.like(*pattern)));
+        }
+
+        files::table
+            .filter(files::user_id.eq(user_id))
+            .filter(files::deleted_at.is_null())
+            .filter(mime_match)
+            .select(FileRecord::as_select())
+            .order(files::name.asc())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list files by mime error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
     // ── Starred (Quick Access) ─────────────────────────────────────────────────
 
     pub fn list_starred_files(&self, user_id: &str) -> Result<Vec<FileRecord>, ApiError> {
@@ -820,5 +857,128 @@ impl FilesystemRepository {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")
         })
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::filesystem::dto::DriveFileType;
+    use crate::drive::storage::model::NewFileRecord;
+    use diesel_migrations::MigrationHarness;
+
+    /// A repository backed by a fresh in-memory SQLite database. The pool is
+    /// capped at one connection so the `:memory:` database (which is per
+    /// connection) persists across calls.
+    fn test_repo() -> FilesystemRepository {
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder()
+            .max_size(1)
+            .build(manager)
+            .expect("failed to build test pool");
+        pool.get()
+            .expect("failed to get migration connection")
+            .run_pending_migrations(crate::MIGRATIONS)
+            .expect("failed to run migrations");
+        FilesystemRepository::new(pool)
+    }
+
+    fn insert_file(repo: &FilesystemRepository, id: &str, user_id: &str, name: &str, mime: &str) {
+        let mut conn = repo.get_conn().unwrap();
+        diesel::insert_into(files::table)
+            .values(NewFileRecord {
+                id,
+                user_id,
+                name,
+                size_bytes: 1,
+                mime_type: mime,
+                storage_path: id,
+                folder_id: None,
+                encrypted_metadata: None,
+            })
+            .execute(&mut conn)
+            .expect("failed to insert test file");
+    }
+
+    fn names(files: &[FileRecord]) -> Vec<&str> {
+        files.iter().map(|f| f.name.as_str()).collect()
+    }
+
+    fn seed(repo: &FilesystemRepository, user: &str) {
+        insert_file(repo, "png", user, "a-photo.png", "image/png");
+        insert_file(repo, "jpg", user, "b-photo.jpg", "image/jpeg");
+        insert_file(repo, "mp4", user, "clip.mp4", "video/mp4");
+        insert_file(repo, "mp3", user, "song.mp3", "audio/mpeg");
+        insert_file(repo, "pdf", user, "report.pdf", "application/pdf");
+        insert_file(repo, "txt", user, "notes.txt", "text/plain");
+        insert_file(repo, "bin", user, "blob.bin", "application/octet-stream");
+    }
+
+    #[test]
+    fn photo_matches_only_images_sorted_by_name() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+
+        let files = repo
+            .list_files_by_mime("user-1", DriveFileType::Photo.mime_patterns())
+            .unwrap();
+
+        // Both images, and ordered by name (a-photo before b-photo).
+        assert_eq!(names(&files), vec!["a-photo.png", "b-photo.jpg"]);
+    }
+
+    #[test]
+    fn video_and_audio_match_their_families() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+
+        let videos = repo
+            .list_files_by_mime("user-1", DriveFileType::Video.mime_patterns())
+            .unwrap();
+        assert_eq!(names(&videos), vec!["clip.mp4"]);
+
+        let audio = repo
+            .list_files_by_mime("user-1", DriveFileType::Audio.mime_patterns())
+            .unwrap();
+        assert_eq!(names(&audio), vec!["song.mp3"]);
+    }
+
+    #[test]
+    fn document_matches_multiple_patterns_but_not_binary() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+
+        let docs = repo
+            .list_files_by_mime("user-1", DriveFileType::Document.mime_patterns())
+            .unwrap();
+
+        // pdf + text/plain, but not the generic octet-stream blob.
+        assert_eq!(names(&docs), vec!["notes.txt", "report.pdf"]);
+    }
+
+    #[test]
+    fn excludes_trashed_files() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+        repo.trash_file("png", "user-1").unwrap();
+
+        let files = repo
+            .list_files_by_mime("user-1", DriveFileType::Photo.mime_patterns())
+            .unwrap();
+        assert_eq!(names(&files), vec!["b-photo.jpg"]);
+    }
+
+    #[test]
+    fn scopes_to_the_requesting_user() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+        insert_file(&repo, "other", "user-2", "their-photo.png", "image/png");
+
+        let files = repo
+            .list_files_by_mime("user-1", DriveFileType::Photo.mime_patterns())
+            .unwrap();
+        assert_eq!(names(&files), vec!["a-photo.png", "b-photo.jpg"]);
     }
 }

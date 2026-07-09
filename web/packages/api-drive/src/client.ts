@@ -173,8 +173,8 @@ export const filesystemApi = {
   },
 
   async getRootContents(query: FileListQuery = {}): Promise<FolderContentsResponse> {
-    const { limit = 200, offset = 0, orderBy, direction, view } = query;
-    const qs = buildQuery({ limit, offset, orderBy, direction, view });
+    const { limit = 200, offset = 0, orderBy, direction, view, type } = query;
+    const qs = buildQuery({ limit, offset, orderBy, direction, view, type });
     return request<FolderContentsResponse>(`/api/v1/drive${qs}`);
   },
 

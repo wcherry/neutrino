@@ -19,12 +19,17 @@ export interface FileItem {
 
 export type DriveView = 'recent' | 'starred' | 'trash';
 
+/** Filter drive contents to a single kind of file, matched by MIME type. */
+export type DriveFileType = 'photo' | 'video' | 'audio' | 'document';
+
 export interface FileListQuery {
   limit?: number;
   offset?: number;
   orderBy?: 'name' | 'size' | 'createdAt' | 'updatedAt';
   direction?: 'asc' | 'desc';
   view?: DriveView;
+  /** List only files of this type across the whole drive. */
+  type?: DriveFileType;
 }
 
 export interface QuotaInfo {

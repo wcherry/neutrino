@@ -85,6 +85,34 @@ describe('applyCustomFormat — Excel 1900 leap-year correction', () => {
     });
 });
 
+// ── Fractional serials (date + time of day) ──────────────────────────────────
+
+describe('applyCustomFormat — fractional serials use the date portion', () => {
+    // 46037 = 2026-01-15, 46067 = 2026-02-14 (integer serials work).
+    it('serial 46037 formats as Jan 2026', () => {
+        expect(applyCustomFormat('46037', 'MMM YYYY')).toBe('Jan 2026');
+    });
+
+    it('serial 46067 formats as Feb 2026', () => {
+        expect(applyCustomFormat('46067', 'MMM YYYY')).toBe('Feb 2026');
+    });
+
+    // Regression: 46067.5 (A1+30.5) fell through the integer-only /^\d+$/ guard
+    // to `new Date("46067.5")`, which parsed 46067 as a *year* → "May 46067".
+    // The .5 is a time-of-day component and must be ignored for date display.
+    it('serial 46067.5 still formats as Feb 2026 (not May 46067)', () => {
+        expect(applyCustomFormat('46067.5', 'MMM YYYY')).toBe('Feb 2026');
+    });
+
+    it('serial 46067.5 produces the correct full date', () => {
+        expect(applyCustomFormat('46067.5', 'YYYY-MM-DD')).toBe('2026-02-14');
+    });
+
+    it('serial 45782.75 keeps the date portion (2025-05-05)', () => {
+        expect(applyCustomFormat('45782.75', 'YYYY-MM-DD')).toBe('2025-05-05');
+    });
+});
+
 // ── formatCellValue date number format ────────────────────────────────────────
 
 describe('formatCellValue — numberFormat date is timezone-independent', () => {
@@ -96,5 +124,10 @@ describe('formatCellValue — numberFormat date is timezone-independent', () => 
     it('serial 45783 displays as 5/6/2025', () => {
         const result = formatCellValue('45783', { numberFormat: 'date' });
         expect(result).toBe('5/6/2025');
+    });
+
+    it('fractional serial 46067.5 displays as 2/14/2026 (not May 46067)', () => {
+        const result = formatCellValue('46067.5', { numberFormat: 'date' });
+        expect(result).toBe('2/14/2026');
     });
 });

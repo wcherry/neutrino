@@ -1,4 +1,4 @@
-use crate::photos::faces::model::{FaceRecord, NewFaceRecord};
+use crate::photos::faces::model::{FaceChanges, FaceRecord, NewFaceRecord};
 use crate::schema::faces;
 use crate::shared::ApiError;
 use diesel::prelude::*;
@@ -102,5 +102,59 @@ impl FacesRepository {
                 tracing::error!("DB list faces error: {:?}", e);
                 ApiError::internal("Database error")
             })
+    }
+
+    /// All faces across the user's (non-deleted) photos, newest first.
+    pub fn list_faces_by_user(&self, user_id: &str) -> Result<Vec<FaceRecord>, ApiError> {
+        use crate::schema::photos;
+        let mut conn = self.get_conn()?;
+        faces::table
+            .inner_join(photos::table.on(photos::id.eq(faces::photo_id)))
+            .filter(photos::user_id.eq(user_id))
+            .filter(photos::deleted_at.is_null())
+            .order(faces::created_at.desc())
+            .select(FaceRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list faces by user error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    pub fn update_face(
+        &self,
+        face_id: &str,
+        changes: FaceChanges,
+    ) -> Result<FaceRecord, ApiError> {
+        let mut conn = self.get_conn()?;
+        diesel::update(faces::table.filter(faces::id.eq(face_id)))
+            .set(changes)
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update face error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+        faces::table
+            .filter(faces::id.eq(face_id))
+            .select(FaceRecord::as_select())
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB query after face update error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    pub fn delete_face(&self, face_id: &str) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        let deleted = diesel::delete(faces::table.filter(faces::id.eq(face_id)))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB delete face error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+        if deleted == 0 {
+            return Err(ApiError::not_found("Face not found"));
+        }
+        Ok(())
     }
 }

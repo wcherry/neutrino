@@ -103,6 +103,34 @@ pub enum DriveView {
     Trash,
 }
 
+/// Filter drive contents to a single kind of file, matched by MIME type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum DriveFileType {
+    Photo,
+    Video,
+    Audio,
+    Document,
+}
+
+impl DriveFileType {
+    /// SQL `LIKE` patterns that a file's MIME type must match (any of them).
+    pub fn mime_patterns(&self) -> &'static [&'static str] {
+        match self {
+            DriveFileType::Photo => &["image/%"],
+            DriveFileType::Video => &["video/%"],
+            DriveFileType::Audio => &["audio/%"],
+            DriveFileType::Document => &[
+                "text/%",
+                "application/pdf",
+                "application/msword",
+                "application/vnd.%",
+                "application/rtf",
+            ],
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RootContentsQuery {
@@ -111,6 +139,9 @@ pub struct RootContentsQuery {
     pub order_by: Option<FolderContentsOrderField>,
     pub direction: Option<crate::shared::OrderDirection>,
     pub view: Option<DriveView>,
+    /// List only files of this type (e.g. `photo`) across the whole drive.
+    #[serde(rename = "type")]
+    pub file_type: Option<DriveFileType>,
 }
 
 // ── Folder contents ───────────────────────────────────────────────────────────
@@ -249,4 +280,30 @@ pub struct TrashContentsResponse {
 pub enum TrashOrderField {
     Name,
     TrashedAt,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_query_parses_type_param_as_file_type() {
+        // The query key is `type` (renamed) and the value is camelCase.
+        let q: RootContentsQuery = serde_json::from_str(r#"{"type":"photo"}"#).unwrap();
+        assert_eq!(q.file_type, Some(DriveFileType::Photo));
+    }
+
+    #[test]
+    fn root_query_type_is_optional() {
+        let q: RootContentsQuery = serde_json::from_str("{}").unwrap();
+        assert_eq!(q.file_type, None);
+    }
+
+    #[test]
+    fn document_covers_pdf_and_text_not_images() {
+        let patterns = DriveFileType::Document.mime_patterns();
+        assert!(patterns.contains(&"application/pdf"));
+        assert!(patterns.contains(&"text/%"));
+        assert!(!patterns.contains(&"image/%"));
+    }
 }

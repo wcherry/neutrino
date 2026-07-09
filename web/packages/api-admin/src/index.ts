@@ -11,4 +11,5 @@ export type {
   UpdateAdminUserRequest,
   FeatureFlag,
   UpdateFeatureFlagRequest,
+  JobResponse,
 } from './types';

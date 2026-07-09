@@ -1,7 +1,8 @@
 use crate::drive::filesystem::{
     dto::{
         BulkMoveRequest, BulkResult, BulkTrashRequest, CreateFolderRequest, CreateShortcutRequest,
-        DriveView, FileResponse, FolderContentsOrderField, FolderContentsResponse, FolderResponse,
+        DriveFileType, DriveView, FileResponse, FolderContentsOrderField, FolderContentsResponse,
+        FolderResponse,
         ShortcutResponse, StarredContentsResponse, TrashContentsResponse, TrashOrderField,
         UpdateFileRequest, UpdateFolderRequest,
     },
@@ -335,6 +336,39 @@ impl FilesystemService {
                 })
             }
         }
+    }
+
+    /// List all files of a given type across the whole drive (a flat listing,
+    /// not scoped to a folder). Folders and shortcuts are not typed, so they
+    /// are omitted.
+    pub fn get_typed_contents(
+        &self,
+        user_id: &str,
+        file_type: DriveFileType,
+        query: &ListQueryParams<FolderContentsOrderField>,
+    ) -> Result<FolderContentsResponse, ApiError> {
+        let files = self
+            .repo
+            .list_files_by_mime(user_id, file_type.mime_patterns())?;
+
+        let files = apply_list_query(
+            files,
+            query,
+            FolderContentsOrderField::Name,
+            OrderDirection::Asc,
+            |a, b, order_by| match order_by {
+                FolderContentsOrderField::Name => a.name.cmp(&b.name),
+                FolderContentsOrderField::CreatedAt => a.created_at.cmp(&b.created_at),
+                FolderContentsOrderField::UpdatedAt => a.updated_at.cmp(&b.updated_at),
+            },
+        );
+
+        Ok(FolderContentsResponse {
+            folder: None,
+            folders: vec![],
+            files: files.into_iter().map(FileResponse::from).collect(),
+            shortcuts: vec![],
+        })
     }
 
     // ── Starred (Quick Access) ────────────────────────────────────────────────

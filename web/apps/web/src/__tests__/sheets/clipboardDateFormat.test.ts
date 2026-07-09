@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml } from '../../app/(apps)/sheets/editor/google.transfomer';
+import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, mergeCellStyles } from '../../app/(apps)/sheets/editor/google.transfomer';
 import { formatCellValue } from '../../app/(apps)/sheets/editor/utils';
 
 // ── Compact-table JSON builders ───────────────────────────────────────────────
@@ -528,6 +528,98 @@ describe('parseGoogleSheetsHtml — verticalAlign', () => {
             + '</tr></table>';
         const cells = parseGoogleSheetsHtml(html);
         expect(cells[0].cellStyle?.verticalAlign).toBe('bottom');
+    });
+});
+
+// ── mergeCellStyles — compact-table / HTML enrichment merge ──────────────────
+// Regression: pasting from Google Sheets lost background colours because the
+// compact-table translator emits every style key (undefined when absent), and a
+// naive spread let those undefined values clobber the real colours parsed from
+// the HTML inline CSS.
+
+describe('mergeCellStyles — undefined never clobbers HTML colours', () => {
+    it('keeps the HTML background when the compact-table style has none', () => {
+        // compact-table (base): full object with undefined background (as tanslateStyle emits)
+        const compact = {
+            fontWeight: 'normal', fontStyle: 'normal', textDecoration: 'none',
+            color: undefined, backgroundColor: undefined, textAlign: 'left',
+        } as any;
+        // HTML (override / authority): real background + text colour from inline CSS
+        const html = { backgroundColor: '#000000', color: '#ffffff' } as any;
+
+        const merged = mergeCellStyles(compact, html);
+        expect(merged.backgroundColor).toBe('#000000');
+        expect(merged.color).toBe('#ffffff');
+    });
+
+    it('lets the compact-table fill gaps the HTML style lacks', () => {
+        const compact = { backgroundColor: 'rgb(255,255,0)', numberFormat: 'date', customFormat: 'mmm yyyy' } as any;
+        const html = { fontWeight: 'bold' } as any;
+
+        const merged = mergeCellStyles(compact, html);
+        expect(merged.fontWeight).toBe('bold');       // from HTML
+        expect(merged.backgroundColor).toBe('rgb(255,255,0)'); // gap filled from compact-table
+        expect(merged.customFormat).toBe('mmm yyyy');
+    });
+
+    it('HTML wins on conflicting defined values (DOM is authoritative)', () => {
+        const compact = { backgroundColor: 'rgb(0,0,0)' } as any;   // possibly desynced/wrong
+        const html = { backgroundColor: '#4472c4' } as any;         // correct DOM value
+        expect(mergeCellStyles(compact, html).backgroundColor).toBe('#4472c4');
+    });
+
+    it('drops keys whose value is undefined in both', () => {
+        const merged = mergeCellStyles({ backgroundColor: undefined } as any, {} as any);
+        expect('backgroundColor' in merged).toBe(false);
+    });
+});
+
+// ── Regression: multiple merged month headers all survive via the HTML base ──
+// Screenshot bug: pasting a "Jan/Feb/Mar 2026" header (three date cells each
+// merged across 3 columns) dropped the Feb merge entirely and rendered Mar as
+// "Jan 1900" — the compact-table reader desynced across the merges. Making the
+// DOM-parsed HTML the structural authority keeps every merge, value and format.
+
+describe('parseGoogleSheetsHtml — multiple merged headers each keep span + value', () => {
+    // 45658 = 2025-01-01, 45689 = 2025-02-01, 45717 = 2025-03-01
+    const MONTHS = [
+        { serial: 46023, label: 'Jan 2026' }, // 2026-01-01
+        { serial: 46054, label: 'Feb 2026' }, // 2026-02-01
+        { serial: 46082, label: 'Mar 2026' }, // 2026-03-01
+    ];
+
+    it('parses three colspan-3 date headers at cols 0, 3, 6 with correct values', () => {
+        const headerTds = MONTHS.map(m =>
+            `<td colspan="3" data-sheets-value='{"1":1,"3":${m.serial}}' `
+            + `data-sheets-numberformat='{"1":5,"2":"mmm yyyy","3":1}' `
+            + `style="background-color:#000000;color:#ffffff;">${m.label}</td>`
+        ).join('');
+        const subTds = ['Budget','Actual','Difference','Budget','Actual','Difference','Budget','Actual','Difference']
+            .map(t => `<td style="background-color:#000000;color:#ffffff;font-weight:bold;" data-sheets-value='{"1":2,"2":"${t}"}'>${t}</td>`)
+            .join('');
+        const html = `<google-sheets-html-origin><table data-sheets-root="1">`
+            + `<tr>${headerTds}</tr><tr>${subTds}</tr></table>`;
+
+        const cells = parseGoogleSheetsHtml(html);
+
+        // All three header anchors present at cols 0, 3, 6 — none dropped.
+        MONTHS.forEach((m, i) => {
+            const anchor = cells.find(c => c.row === 0 && c.col === i * 3);
+            expect(anchor, `header ${m.label} at col ${i * 3}`).toBeDefined();
+            expect(anchor?.colSpan).toBe(3);
+            expect(anchor?.cellStyle?.backgroundColor).toBe('#000000');
+            // Value + format survive so the cell renders the month, not "Jan 1900".
+            expect(formatCellValue(anchor!.raw ?? '', anchor!.cellStyle)).toBe(m.label);
+        });
+
+        // No stray cells at the covered header positions (1,2,4,5,7,8).
+        for (const covered of [1, 2, 4, 5, 7, 8]) {
+            expect(cells.find(c => c.row === 0 && c.col === covered)).toBeUndefined();
+        }
+
+        // Sub-header row is intact with backgrounds.
+        expect(cells.filter(c => c.row === 1)).toHaveLength(9);
+        expect(cells.find(c => c.row === 1 && c.col === 3)?.cellStyle?.backgroundColor).toBe('#000000');
     });
 });
 

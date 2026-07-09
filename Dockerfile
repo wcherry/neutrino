@@ -51,8 +51,10 @@ COPY Cargo.toml ./
 COPY Cargo.lock* ./
 
 RUN mkdir src && echo "fn main(){}" > src/main.rs && \
-    mkdir -p xtask/src && echo "fn main(){}" > xtask/src/main.rs
+    mkdir -p xtask/src && echo "fn main(){}" > xtask/src/main.rs && \
+    mkdir -p worker/src && echo "fn main(){}" > worker/src/main.rs
 COPY xtask/Cargo.toml xtask/Cargo.toml
+COPY worker/Cargo.toml worker/Cargo.toml
 
 RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
 ARG GITHUB_TOKEN
@@ -71,8 +73,9 @@ RUN rm -rf src
 
 COPY src src
 COPY xtask/src xtask/src
+COPY worker/src worker/src
 COPY migrations migrations
-RUN touch src/main.rs xtask/src/main.rs && cargo build --release
+RUN touch src/main.rs xtask/src/main.rs worker/src/main.rs && cargo build --release
 
 # ── Runtime Stage ─────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
@@ -89,9 +92,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=rust-builder /app/target/release/neutrino /usr/local/bin/service
+COPY --from=rust-builder /app/target/release/worker /usr/local/bin/worker
 COPY --from=web-builder /app/apps/web/out /app/web
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+# Facial-recognition model for the background worker.
+ARG FACE_MODEL_URL=https://github.com/atomashpolskiy/rustface/raw/master/model/seeta_fd_frontal_v1.0.bin
+RUN mkdir -p /usr/local/models \
+    && curl -fsSL -o /usr/local/models/seeta_fd_frontal_v1.0.bin "$FACE_MODEL_URL" \
+    && chown -R appuser:appuser /usr/local/models
+ENV FACE_MODEL_PATH=/usr/local/models/seeta_fd_frontal_v1.0.bin
 
 ENV WEB_DIR=/app/web
 

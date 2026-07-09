@@ -1,5 +1,5 @@
 import type { CellProps } from './types';
-import { expandRange, parseDeps, alphaToNum, numToAlpha } from './utils';
+import { expandRange, parseDeps, alphaToNum, numToAlpha, dateStringToSerial } from './utils';
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -557,6 +557,19 @@ class FormulaParser {
         return left;
     }
 
+    /**
+     * Convert a cell's stored value into a formula scalar. Date strings
+     * ("01/01/2026") become their Excel serial so they participate in arithmetic
+     * (=A1+1); pure numbers stay numbers; anything else stays a string.
+     * Must run before parseFloat, which would otherwise read "01/01/2026" as 1.
+     */
+    private cellScalar(raw: string): FormulaValue {
+        const serial = dateStringToSerial(raw);
+        if (serial !== null) return serial;
+        const n = parseFloat(raw);
+        return isNaN(n) ? raw : n;
+    }
+
     /** Coerce a value to a number for arithmetic. Empty string (empty cell) → 0. */
     private coerceNum(v: FormulaValue): number {
         if (typeof v === 'number') return v;
@@ -609,16 +622,14 @@ class FormulaParser {
             // Strip $ markers to get the plain cell ID for data lookup
             const cellId = tok.value.replace(/\$/g, '');
             const raw = this.data.get(cellId)?.value ?? '';
-            const n = parseFloat(raw);
-            return isNaN(n) ? raw : n;
+            return this.cellScalar(raw);
         }
         if (tok.type === 'SHEET_CELL') {
             this.consume();
             const nsIds = this.ensureCrossSheetCells(tok.sheet, [tok.cell]);
             if (!nsIds) return '#REF!';
             const raw = this.mergedData.get(nsIds[0])?.value ?? '';
-            const n = parseFloat(raw);
-            return isNaN(n) ? raw : n;
+            return this.cellScalar(raw);
         }
         if (tok.type === 'SHEET_RANGE') {
             // A bare SHEET_RANGE outside a function argument context — return the
@@ -628,8 +639,7 @@ class FormulaParser {
             const nsIds = this.ensureCrossSheetCells(tok.sheet, cells);
             if (!nsIds) return '#REF!';
             const raw = nsIds.length > 0 ? (this.mergedData.get(nsIds[0])?.value ?? '') : '';
-            const n = parseFloat(raw);
-            return isNaN(n) ? raw : n;
+            return this.cellScalar(raw);
         }
         if (tok.type === 'FUNC') {
             this.consume();          // FUNC name

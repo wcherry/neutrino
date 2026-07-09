@@ -33,6 +33,23 @@ pub struct ListFacesResponse {
     pub total: usize,
 }
 
+/// Response to a face-detection request: the enqueued job's id.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectFacesResponse {
+    pub job_id: String,
+}
+
+/// Update a face's mutable fields. Omitted fields are left unchanged.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateFaceRequest {
+    /// Assign (or re-assign) the face to a person.
+    pub person_id: Option<String>,
+    /// Correct the detected bounding box.
+    pub bounding_box: Option<FaceBoundingBox>,
+}
+
 /// Worker-to-service: submit a detected face for a photo.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

@@ -5,7 +5,7 @@ import type { CellProps, CellStyle, ClipboardCell, ClipboardCFRule, ClipboardDat
 import { getRangeCells, encodeFormula, decodeFormula } from '../utils';
 import { alphaToNum, numToAlpha } from '../utils';
 import { computeCell, propagateDeps, type SheetRef } from '../formula';
-import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, fixRealtiveFormulas } from '../google.transfomer';
+import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, fixRealtiveFormulas, mergeCellStyles } from '../google.transfomer';
 import { NEUTRINO_SHEET_SELECTION_MIME, buildSheetSelectionPayload } from '@neutrino/sheet-embed';
 
 export function useClipboard({
@@ -206,21 +206,27 @@ export function useClipboard({
                         if (!gsCells) {
                             gsCells = htmlCells;
                         } else {
-                            const htmlByPos = new Map(htmlCells.map(c => [`${c.row},${c.col}`, c]));
+                            // The compact-table RLE reader can progressively desync across
+                            // merged regions, corrupting the coordinates, values and merge
+                            // spans of cells to the right of a merge. The HTML clipboard is
+                            // DOM-parsed, so its structure (coordinates, spans, values,
+                            // styles) is reliable — make it the authority. We only borrow
+                            // FORMULAS from the compact-table, since HTML carries a cell's
+                            // computed value rather than its "=..." source, plus any number/
+                            // date format string HTML may have omitted (filled via merge).
+                            const compactByPos = new Map(gsCells.map(c => [`${c.row},${c.col}`, c]));
                             const before = gsCells.length;
-                            gsCells = gsCells
-                                .filter(c => htmlByPos.has(`${c.row},${c.col}`))
-                                .map(c => {
-                                    const hc = htmlByPos.get(`${c.row},${c.col}`)!;
-                                    const merged = { ...(hc.cellStyle ?? {}), ...(c.cellStyle ?? {}) } as CellStyle;
-                                    return {
-                                        ...c,
-                                        cellStyle: Object.keys(merged).length > 0 ? merged : undefined,
-                                        ...(hc.colSpan ? { colSpan: hc.colSpan } : {}),
-                                        ...(hc.rowSpan ? { rowSpan: hc.rowSpan } : {}),
-                                    };
-                                });
-                            console.log('[paste] gsCells after filter:', gsCells.length, '(was', before + ')');
+                            gsCells = htmlCells.map(hc => {
+                                const cc = compactByPos.get(`${hc.row},${hc.col}`);
+                                const raw = cc?.raw && cc.raw.startsWith('=') ? cc.raw : hc.raw;
+                                const merged = mergeCellStyles(cc?.cellStyle, hc.cellStyle);
+                                return {
+                                    ...hc,
+                                    raw,
+                                    cellStyle: Object.keys(merged).length > 0 ? (merged as CellStyle) : undefined,
+                                };
+                            });
+                            console.log('[paste] gsCells from HTML base:', gsCells.length, '(compact was', before + ')');
                         }
                     }
                 } catch (e) { console.error('[paste] html error:', e); }

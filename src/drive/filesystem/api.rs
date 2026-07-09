@@ -57,6 +57,7 @@ pub async fn create_folder(
         ("orderBy" = Option<FolderContentsOrderField>, Query, description = "Sort field"),
         ("direction" = Option<String>, Query, description = "asc or desc"),
         ("view" = Option<String>, Query, description = "Filter view: recent | starred | trash"),
+        ("type" = Option<DriveFileType>, Query, description = "List only files of this type across the whole drive: photo | video | audio | document"),
     ),
     responses(
         (status = 200, description = "Root folder contents", body = FolderContentsResponse),
@@ -71,6 +72,20 @@ pub async fn get_root_contents(
     query: web::Query<RootContentsQuery>,
 ) -> Result<web::Json<FolderContentsResponse>, ApiError> {
     info!("get_root_contents");
+
+    if let Some(file_type) = query.file_type {
+        let list_params = ListQueryParams {
+            limit: query.limit,
+            offset: query.offset,
+            order_by: query.order_by,
+            direction: query.direction,
+        };
+        let contents =
+            state
+                .filesystem_service
+                .get_typed_contents(&user.user_id, file_type, &list_params)?;
+        return Ok(web::Json(contents));
+    }
 
     if let Some(view) = query.view {
         let list_params = ListQueryParams {
@@ -676,6 +691,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         crate::drive::filesystem::dto::TrashFolderItem,
         StarredContentsResponse,
         crate::drive::filesystem::dto::DriveView,
+        crate::drive::filesystem::dto::DriveFileType,
     )),
     tags((name = "filesystem", description = "File system organization endpoints")),
     modifiers(&SecurityAddon)

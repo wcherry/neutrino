@@ -1,4 +1,5 @@
 import { request, buildQuery, ApiClientError } from '@neutrino/api-core';
+import { filesystemApi } from '@neutrino/api-drive';
 import type { FileItem } from '@neutrino/api-drive';
 
 // ---------------------------------------------------------------------------
@@ -82,6 +83,10 @@ export interface FaceResponse {
 export interface ListFacesResponse {
   faces: FaceResponse[];
   total: number;
+}
+
+export interface DetectFacesResponse {
+  jobId: string;
 }
 
 export interface PersonFaceThumbnail {
@@ -301,6 +306,30 @@ export function generateThumbnail(file: File, maxSize = 512): Promise<string | n
 // Photos API
 // ---------------------------------------------------------------------------
 
+/**
+ * Adapt a Drive `FileItem` into a `PhotoResponse`. Fields the Drive endpoint
+ * doesn't carry (photo id, archive state, capture date, extracted metadata)
+ * fall back to file-derived or empty values.
+ */
+function fileToPhoto(file: FileItem): PhotoResponse {
+  return {
+    id: file.id,
+    fileId: file.id,
+    fileName: file.name,
+    mimeType: file.mimeType,
+    sizeBytes: file.sizeBytes,
+    contentUrl: `/api/v1/drive/files/${file.id}`,
+    thumbnail: file.coverThumbnail,
+    thumbnailMimeType: file.coverThumbnailMimeType,
+    isStarred: file.isStarred,
+    isArchived: false,
+    captureDate: null,
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
+    metadata: null,
+  };
+}
+
 export const photosApi = {
   async listPhotos(opts?: {
     archivedOnly?: boolean;
@@ -308,6 +337,23 @@ export const photosApi = {
     personIds?: string[];
     excludePersonIds?: string[];
   }): Promise<ListPhotosResponse> {
+    // The unfiltered listing is served by the generic Drive endpoint
+    // (`/api/v1/drive?type=photo`). The photo-specific filters
+    // (archived/starred/person) aren't expressible there, so those keep
+    // hitting the dedicated photos endpoint.
+    const hasFilters =
+      opts?.archivedOnly ||
+      opts?.starredOnly ||
+      opts?.personIds?.length ||
+      opts?.excludePersonIds?.length;
+    if (!hasFilters) {
+      const contents = await filesystemApi.getRootContents({ type: 'photo' });
+      return {
+        photos: contents.files.map(fileToPhoto),
+        total: contents.files.length,
+      };
+    }
+
     const qs = buildQuery({
       archivedOnly: opts?.archivedOnly,
       starredOnly: opts?.starredOnly,
@@ -443,6 +489,13 @@ export const photosApi = {
 export const facesApi = {
   async listFaces(photoId: string): Promise<ListFacesResponse> {
     return request<ListFacesResponse>(`/api/v1/photos/${photoId}/faces`);
+  },
+
+  /** Enqueue a background job to detect faces in a photo. */
+  async detectFaces(photoId: string): Promise<DetectFacesResponse> {
+    return request<DetectFacesResponse>(`/api/v1/photos/${photoId}/faces/detect`, {
+      method: 'POST',
+    });
   },
 };
 

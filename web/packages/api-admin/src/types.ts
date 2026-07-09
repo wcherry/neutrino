@@ -75,3 +75,17 @@ export interface FeatureFlag {
 export interface UpdateFeatureFlagRequest {
   enabled: boolean;
 }
+
+// Mirrors JobResponse in src/jobs/dto.rs (serde rename_all = "camelCase").
+export interface JobResponse {
+  id: string;
+  jobType: string;
+  payload: unknown;
+  status: string;
+  errorMessage: string | null;
+  workerId: string | null;
+  timeoutSecs: number;
+  startedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -176,7 +176,31 @@ function tanslateStyle(data: any[]) : CellStyle {
 
 function toRGB(color: number | undefined) : string | undefined {
     if(!color) return undefined;
-    return `rgb(${(color>>16) & 0xFF},${(color>>8) & 0xFF},${color & 0xFF})`; 
+    return `rgb(${(color>>16) & 0xFF},${(color>>8) & 0xFF},${color & 0xFF})`;
+}
+
+/**
+ * Merges two partial cell styles for the Google Sheets paste pipeline.
+ *
+ * `override` wins on every key it *defines*, but — crucially — an `undefined`
+ * value never clobbers a defined one. This matters because {@link tanslateStyle}
+ * (the compact-table translator) emits every style key, using `undefined` when
+ * the property is absent. A naive spread of the compact-table style over the
+ * HTML style would therefore wipe out the background colours, text colours and
+ * fonts that the (DOM-reliable) HTML parser extracted from inline CSS.
+ *
+ * We treat the HTML clipboard as authoritative and let the compact-table only
+ * fill in gaps, so pass the compact-table style as `base` and the HTML style as
+ * `override`.
+ */
+export function mergeCellStyles(
+    base: Partial<CellStyle> | undefined,
+    override: Partial<CellStyle> | undefined,
+): Partial<CellStyle> {
+    const merged: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(base ?? {})) if (v !== undefined) merged[k] = v;
+    for (const [k, v] of Object.entries(override ?? {})) if (v !== undefined) merged[k] = v;
+    return merged as Partial<CellStyle>;
 }
 
 export function parseGoogleSpreadsheetCompactTableJson(data : any[]) : ClipData[] {

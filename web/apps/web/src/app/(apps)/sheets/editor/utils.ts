@@ -88,6 +88,38 @@ function excelSerialToDate(serial: number): Date {
     return new Date(Date.UTC(1900, 0, 1) + (adjusted - 1) * 86400000);
 }
 
+// Inverse of excelSerialToDate: converts a UTC-midnight Date to an Excel serial.
+// Re-adds the phantom Feb 29, 1900 (serial 60) for dates on/after Mar 1, 1900 so
+// the round-trip matches excelSerialToDate's `serial > 60` correction.
+function dateToExcelSerial(d: Date): number {
+    const days = Math.round((d.getTime() - Date.UTC(1900, 0, 1)) / 86400000);
+    const adjusted = days + 1;
+    return adjusted > 59 ? adjusted + 1 : adjusted;
+}
+
+// Parses a plain date string ("01/01/2026", "2026-01-01") into an Excel serial so
+// date-valued cells participate in arithmetic (e.g. =A1+1). Returns null when the
+// value is not a full calendar date, letting callers fall back to numeric parsing.
+export function dateStringToSerial(value: string): number | null {
+    const s = value.trim();
+    let y: number, mo: number, d: number;
+    const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    const us  = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (iso) {
+        y = +iso[1]; mo = +iso[2]; d = +iso[3];
+    } else if (us) {
+        mo = +us[1]; d = +us[2]; y = +us[3];
+        if (y < 100) y += y < 50 ? 2000 : 1900;
+    } else {
+        return null;
+    }
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const date = new Date(Date.UTC(y, mo - 1, d));
+    // Reject calendar overflow (e.g. 02/30 rolls forward into March).
+    if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
+    return dateToExcelSerial(date);
+}
+
 function formatDateWithPattern(d: Date, fmt: string): string {
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
     const monthsShort = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -129,7 +161,7 @@ export function applyCustomFormat(value: string, fmt: string): string {
     if (!value) return value;
     // Date format
     if (isDateFormatStr(fmt)) {
-        const d = /^\d+$/.test(value.trim())
+        const d = /^\d+(\.\d+)?$/.test(value.trim())
             ? excelSerialToDate(parseFloat(value))
             : new Date(value);
         if (isNaN(d.getTime())) return value;
@@ -167,7 +199,7 @@ export function formatCellValue(value: string, style?: CellStyle): string {
         case 'number':
             return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
         case 'date': {
-            const d = /^\d+$/.test(value.trim())
+            const d = /^\d+(\.\d+)?$/.test(value.trim())
                 ? excelSerialToDate(num)
                 : new Date(value);
             return isNaN(d.getTime()) ? value : d.toLocaleDateString('en-US', { timeZone: 'UTC' });

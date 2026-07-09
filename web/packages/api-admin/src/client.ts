@@ -8,6 +8,7 @@ import type {
   UpdateAdminUserRequest,
   FeatureFlag,
   UpdateFeatureFlagRequest,
+  JobResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -116,5 +117,13 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify(updates),
     });
+  },
+
+  /**
+   * List all worker jobs (newest first).
+   * GET /api/v1/jobs
+   */
+  async listJobs(): Promise<JobResponse[]> {
+    return request<JobResponse[]>('/api/v1/jobs');
   },
 };

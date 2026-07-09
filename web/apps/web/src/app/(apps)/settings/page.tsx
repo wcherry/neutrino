@@ -9,6 +9,7 @@ import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast }
 import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest } from '@/lib/api';
 import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, encryptKeysWithPin, toBase64url, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
+import { usePhotoSettings } from '@/hooks/usePhotoSettings';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { clearSearchIndex, getOrCreateSearchKey, IndexEngine, type SearchableDocument } from '@neutrino/search';
 import { docsApi, notesApi, sheetsApi, slidesApi } from '@/lib/api';
@@ -205,6 +206,9 @@ const qc = useQueryClient();
   const [aiProvider, setAiProvider] = useState<AiSettings['provider']>(aiSettings.provider);
   const [aiApiKey, setAiApiKey] = useState(aiSettings.apiKey);
   const [aiSaved, setAiSaved] = useState(false);
+
+  // ── Photos settings ──────────────────────────────────────────────────────────
+  const { autoFaceDetect, setAutoFaceDetect } = usePhotoSettings();
 
   function handleAiSave() {
     setAiSettings({ provider: aiProvider, apiKey: aiApiKey });
@@ -1105,6 +1109,25 @@ const qc = useQueryClient();
                 <div className={styles.checkDesc}>
                   Stop syncing the encrypted search index to other devices. The local index
                   will still work on this device.
+                </div>
+              </div>
+            </label>
+          </section>
+
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Photos</h2>
+
+            <label className={styles.checkRow}>
+              <input
+                type="checkbox"
+                className={styles.checkbox}
+                checked={autoFaceDetect}
+                onChange={(e) => setAutoFaceDetect(e.target.checked)}
+              />
+              <div className={styles.checkInfo}>
+                <div className={styles.checkLabel}>Detect faces in new photos</div>
+                <div className={styles.checkDesc}>
+                  Automatically scan each newly uploaded photo for faces in the background.
                 </div>
               </div>
             </label>

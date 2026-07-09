@@ -7,7 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Spinner, Toggle, ProgressBar, useToast } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { adminApi } from '@neutrino/api-admin';
-import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag } from '@neutrino/api-admin';
+import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag, JobResponse } from '@neutrino/api-admin';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,25 @@ function statusClass(status: string): string {
   if (s === 'running') return styles.statusRunning;
   if (s === 'sleeping') return styles.statusSleeping;
   return styles.statusOther;
+}
+
+// Job status codes stored in the DB: R (running), I (in progress),
+// C (completed), E (error).
+const JOB_STATUS_LABELS: Record<string, string> = {
+  R: 'Queued',
+  I: 'In progress',
+  C: 'Completed',
+  E: 'Error',
+};
+
+function jobStatusLabel(status: string): string {
+  return JOB_STATUS_LABELS[status] ?? status;
+}
+
+function jobStatusClass(status: string): string {
+  if (status === 'C') return styles.statusRunning;
+  if (status === 'E') return styles.statusOther;
+  return styles.statusSleeping;
 }
 
 // ---------------------------------------------------------------------------
@@ -501,11 +520,86 @@ function FeatureFlagsTab() {
   );
 }
 
+function JobsTab() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['admin-jobs'],
+    queryFn: () => adminApi.listJobs(),
+    refetchInterval: 15_000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className={styles.loading}>
+        <Spinner size="md" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={styles.error}>
+        Failed to load jobs. You may not have admin permissions.
+      </div>
+    );
+  }
+
+  const jobs: JobResponse[] = data ?? [];
+
+  if (jobs.length === 0) {
+    return (
+      <div className={styles.section}>
+        <h2 className={styles.sectionTitle}>Jobs</h2>
+        <div className={styles.empty}>No jobs found.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.sectionTitle}>
+        Jobs <span className={styles.userCount}>({jobs.length})</span>
+      </h2>
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Worker</th>
+              <th>Timeout</th>
+              <th>Created</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {jobs.map((job) => (
+              <tr key={job.id}>
+                <td>{job.id}</td>
+                <td>{job.jobType}</td>
+                <td>
+                  <span className={jobStatusClass(job.status)}>
+                    {jobStatusLabel(job.status)}
+                  </span>
+                </td>
+                <td>{job.workerId ?? '—'}</td>
+                <td>{job.timeoutSecs}s</td>
+                <td>{new Date(job.createdAt).toLocaleString()}</td>
+                <td>{job.errorMessage ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = 'processes' | 'disk' | 'services' | 'users' | 'flags';
+type Tab = 'processes' | 'disk' | 'services' | 'users' | 'flags' | 'jobs';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'processes', label: 'Processes' },
@@ -513,6 +607,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'services', label: 'Services' },
   { id: 'users', label: 'Users' },
   { id: 'flags', label: 'Feature Flags' },
+  { id: 'jobs', label: 'Jobs' },
 ];
 
 export default function AdminPage() {
@@ -570,6 +665,7 @@ export default function AdminPage() {
         {activeTab === 'services' && <ServicesTab />}
         {activeTab === 'users' && <UsersTab />}
         {activeTab === 'flags' && <FeatureFlagsTab />}
+        {activeTab === 'jobs' && <JobsTab />}
       </div>
     </div>
   );

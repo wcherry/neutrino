@@ -4,6 +4,7 @@
 // No meaningful static server shell exists.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Heading, Spinner, Modal, ModalHeader, ModalBody } from '@neutrino/ui';
 import {
@@ -25,20 +26,20 @@ import {
   photosApi,
   albumsApi,
   personsApi,
+  facesApi,
   uploadEncryptedFile,
   type PhotoResponse,
   type AlbumResponse,
   type PersonResponse,
-  type FileItem,
   type MemoryYear,
 } from '@/lib/api';
+import { readAutoFaceDetect } from '@/hooks/usePhotoSettings';
 import { generateThumbnail } from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
 import { initSodium, generateFileKey, encryptFileKey, encryptMetadata, loadKeyPair } from '@neutrino/e2e-crypto';
 import { PhotoInfoPanel } from './PhotoInfoPanel';
 import { PersonPhotosPanel } from './PersonPhotosPanel';
 import { SuggestionsPanel, SuggestionsBadge } from './SuggestionsPanel';
-import { PreviewModal } from '../drive/PreviewModal';
 import styles from './page.module.css';
 
 type FilterTab = 'all' | 'favorites' | 'archive' | 'albums' | 'people' | 'memories';
@@ -219,7 +220,6 @@ export default function PhotosPage() {
   const [showNewAlbum, setShowNewAlbum] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoResponse | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<PersonResponse | null>(null);
-  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -229,20 +229,10 @@ export default function PhotosPage() {
   const [personFilterSearch, setPersonFilterSearch] = useState('');
   const personFilterRef = useRef<HTMLDivElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
   function openPreview(photo: PhotoResponse) {
-    setPreviewFile({
-      id: photo.fileId,
-      name: photo.fileName,
-      sizeBytes: photo.sizeBytes,
-      mimeType: photo.mimeType,
-      folderId: null,
-      isStarred: photo.isStarred,
-      createdAt: photo.createdAt,
-      updatedAt: photo.updatedAt,
-      coverThumbnail: photo.thumbnail,
-      coverThumbnailMimeType: photo.thumbnailMimeType,
-    });
+    router.push(`/photos/editor?fileId=${photo.fileId}`);
   }
 
   const photosQuery = useQuery({
@@ -317,10 +307,16 @@ export default function PhotosPage() {
       );
       return photosApi.registerPhoto({ fileId: fileItem.id });
     },
-    onSuccess: () => {
+    onSuccess: (photo) => {
       queryClient.invalidateQueries({ queryKey: ['photos'] });
       setUploadProgress(null);
       setUploadError(null);
+      // If the user opted in, kick off background face detection for the new photo.
+      if (photo?.id && readAutoFaceDetect()) {
+        facesApi
+          .detectFaces(photo.id)
+          .catch((err) => console.warn('[photos] auto face-detect failed', err));
+      }
     },
     onError: (err) => {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
@@ -735,10 +731,6 @@ export default function PhotosPage() {
 
       {showSuggestions && (
         <SuggestionsPanel onClose={() => setShowSuggestions(false)} />
-      )}
-
-      {previewFile && (
-        <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
       )}
 
       <Modal open={showUploadModal} onClose={() => setShowUploadModal(false)} size="md">

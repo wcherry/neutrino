@@ -612,6 +612,7 @@ async fn main() -> std::io::Result<()> {
     let photos_faces_service = Arc::new(FacesService::new(
         photos_faces_repo.clone(),
         photos_photos_repo.clone(),
+        drive_jobs_service.clone(),
     ));
     let photos_persons_service = Arc::new(PersonsService::new(
         photos_persons_repo.clone(),

@@ -19,6 +19,14 @@ pub struct FaceRecord {
     pub created_at: NaiveDateTime,
 }
 
+/// Mutable columns for updating a face. `None` fields are left unchanged.
+#[derive(Debug, AsChangeset)]
+#[diesel(table_name = crate::schema::faces)]
+pub struct FaceChanges<'a> {
+    pub person_id: Option<&'a str>,
+    pub bounding_box: Option<&'a str>,
+}
+
 #[derive(Debug, Insertable)]
 #[diesel(table_name = crate::schema::faces)]
 pub struct NewFaceRecord<'a> {

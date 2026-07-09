@@ -4,6 +4,11 @@ use std::{
     process::{self, Command},
 };
 
+/// Facial-recognition model used by the background worker.
+const FACE_MODEL_URL: &str =
+    "https://github.com/atomashpolskiy/rustface/raw/master/model/seeta_fd_frontal_v1.0.bin";
+const FACE_MODEL_REL: &str = "models/seeta_fd_frontal_v1.0.bin";
+
 struct Config {
     web_dir: PathBuf,
     e2e_dir: PathBuf,
@@ -15,7 +20,7 @@ fn main() {
     let mut args = env::args().skip(1);
     let task = args.next().unwrap_or_else(|| {
         eprintln!(
-            "Usage: cargo xtask <task> [args...]\n\nTasks:\n  build-web        Build the web app\n  e2e [args...]    Run e2e tests (extra args forwarded to run-tests.sh)\n  docker           Build the Docker image"
+            "Usage: cargo xtask <task> [args...]\n\nTasks:\n  build-web        Build the web app\n  e2e [args...]    Run e2e tests (extra args forwarded to run-tests.sh)\n  docker           Build the Docker image\n  fetch-model      Download the worker's facial-recognition model"
         );
         process::exit(1);
     });
@@ -28,11 +33,32 @@ fn main() {
         "docker" => build_docker(&cfg.workspace_root, &cfg.docker_image),
         "dev" => run_dev(&cfg.web_dir, &cfg.workspace_root),
         "storybook" => run_storybook(&cfg.web_dir),
+        "fetch-model" => ensure_face_model(&cfg.workspace_root),
         _ => {
-            eprintln!("Unknown task: {task}\n\nTasks: build-web, e2e, docker, dev, storybook");
+            eprintln!(
+                "Unknown task: {task}\n\nTasks: build-web, e2e, docker, dev, storybook, fetch-model"
+            );
             process::exit(1);
         }
     }
+}
+
+/// Downloads the worker's facial-recognition model if it isn't already present.
+/// Runs as a prerequisite before anything that launches the worker.
+fn ensure_face_model(root: &Path) {
+    let dest = root.join(FACE_MODEL_REL);
+    if dest.exists() {
+        println!("face model already present at {}", dest.display());
+        return;
+    }
+    let dir = dest.parent().expect("model path has no parent");
+    std::fs::create_dir_all(dir).expect("failed to create models directory");
+    println!("downloading face model to {}", dest.display());
+    run(
+        "curl",
+        &["-fsSL", "-o", dest.to_str().unwrap(), FACE_MODEL_URL],
+        root,
+    );
 }
 
 fn config_from_metadata() -> Config {
@@ -83,11 +109,20 @@ fn run_storybook(web_dir: &Path) {
 }
 
 fn run_dev(web_dir: &Path, root: &Path) {
+    // Prereq: make sure the worker's face model is on disk before starting.
+    ensure_face_model(root);
+
     let mut backend = Command::new("cargo")
         .args(["run"])
         .current_dir(root)
         .spawn()
         .expect("failed to spawn cargo run");
+
+    let mut worker = Command::new("cargo")
+        .args(["run", "-p", "worker"])
+        .current_dir(root)
+        .spawn()
+        .expect("failed to spawn worker");
 
     let mut frontend = Command::new("pnpm")
         .args(["dev"])
@@ -98,10 +133,17 @@ fn run_dev(web_dir: &Path, root: &Path) {
     loop {
         if let Some(status) = frontend.try_wait().expect("failed to wait on pnpm dev") {
             backend.kill().ok();
+            worker.kill().ok();
             process::exit(status.code().unwrap_or(1));
         }
         if let Some(status) = backend.try_wait().expect("failed to wait on cargo run") {
             frontend.kill().ok();
+            worker.kill().ok();
+            process::exit(status.code().unwrap_or(1));
+        }
+        if let Some(status) = worker.try_wait().expect("failed to wait on worker") {
+            frontend.kill().ok();
+            backend.kill().ok();
             process::exit(status.code().unwrap_or(1));
         }
         std::thread::sleep(std::time::Duration::from_millis(250));

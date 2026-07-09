@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -47,7 +48,19 @@ impl JobsService {
     pub fn create_job(&self, req: CreateJobRequest) -> Result<JobResponse, ApiError> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().naive_utc();
-        let payload_str = req.payload.to_string();
+
+        // If a plaintext file is attached, encrypt it into the user's temp storage
+        // and record the one-time key + path in the payload for the worker.
+        let mut payload = req.payload;
+        if let Some(file_b64) = req.file {
+            let user_id = req.user_id.as_deref().ok_or_else(|| {
+                ApiError::bad_request("user_id is required when a file is attached")
+            })?;
+            let (path, key_b64) = self.store_encrypted_attachment(user_id, &file_b64)?;
+            merge_encrypted_file(&mut payload, path, key_b64);
+        }
+
+        let payload_str = payload.to_string();
         let record = NewWorkerJobRecord {
             id: &id,
             job_type: &req.job_type,
@@ -59,6 +72,69 @@ impl JobsService {
         };
         let job = self.repo.insert_job(record)?;
         Ok(self.to_response(&job))
+    }
+
+    /// Encrypts `file_b64` (base64 plaintext) with a fresh one-time AES-256-GCM
+    /// key and writes `nonce || ciphertext` to a temp file in the user's storage.
+    /// Returns the absolute file path and the base64-encoded key.
+    fn store_encrypted_attachment(
+        &self,
+        user_id: &str,
+        file_b64: &str,
+    ) -> Result<(String, String), ApiError> {
+        use aes_gcm::aead::rand_core::RngCore;
+        use aes_gcm::{
+            aead::{Aead, KeyInit, OsRng},
+            Aes256Gcm, Key, Nonce,
+        };
+
+        let plaintext = BASE64
+            .decode(file_b64.trim())
+            .map_err(|_| ApiError::bad_request("attached file must be base64-encoded"))?;
+
+        // One-time key + nonce.
+        let mut key_bytes = [0u8; 32];
+        OsRng.fill_bytes(&mut key_bytes);
+        let mut nonce_bytes = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce_bytes);
+
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
+        let ciphertext = cipher
+            .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_ref())
+            .map_err(|e| {
+                tracing::error!("Attachment encryption error: {:?}", e);
+                ApiError::internal("Failed to encrypt attachment")
+            })?;
+
+        let mut blob = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+        blob.extend_from_slice(&nonce_bytes);
+        blob.extend_from_slice(&ciphertext);
+
+        // Temp folder inside the user's storage.
+        let dir = std::path::Path::new(&self.storage_path)
+            .join(user_id)
+            .join("tmp");
+        std::fs::create_dir_all(&dir).map_err(|e| {
+            tracing::error!("Failed to create temp dir {:?}: {:?}", dir, e);
+            ApiError::internal("Failed to prepare temp storage")
+        })?;
+        let path = dir.join(format!("{}.enc", Uuid::new_v4()));
+        std::fs::write(&path, &blob).map_err(|e| {
+            tracing::error!("Failed to write encrypted attachment {:?}: {:?}", path, e);
+            ApiError::internal("Failed to write attachment")
+        })?;
+
+        // Store an absolute path so the worker (a separate process) can find it.
+        let abs = std::fs::canonicalize(&path).unwrap_or(path);
+        Ok((abs.to_string_lossy().into_owned(), BASE64.encode(key_bytes)))
+    }
+
+    /// Resolves a stored file's absolute path on disk (for handing to the worker).
+    pub fn file_abs_path(&self, file_id: &str) -> Result<String, ApiError> {
+        let (storage_path, _mime) = self.repo.get_file_info(file_id)?;
+        let full = std::path::Path::new(&self.storage_path).join(&storage_path);
+        let abs = std::fs::canonicalize(&full).unwrap_or(full);
+        Ok(abs.to_string_lossy().into_owned())
     }
 
     pub fn list_jobs(&self) -> Result<Vec<JobResponse>, ApiError> {
@@ -346,4 +422,22 @@ impl JobsService {
             updated_at: job.updated_at.and_utc().to_rfc3339(),
         }
     }
+}
+
+/// Records an encrypted attachment's path + one-time key under `_encrypted_file`
+/// in the job payload, preserving any existing payload.
+fn merge_encrypted_file(payload: &mut serde_json::Value, path: String, key_b64: String) {
+    let enc = serde_json::json!({ "path": path, "key": key_b64 });
+    if let serde_json::Value::Object(map) = payload {
+        map.insert("_encrypted_file".to_string(), enc);
+        return;
+    }
+    // Payload wasn't an object; wrap it so we don't lose the original value.
+    let original = std::mem::replace(payload, serde_json::Value::Null);
+    let mut map = serde_json::Map::new();
+    if !original.is_null() {
+        map.insert("payload".to_string(), original);
+    }
+    map.insert("_encrypted_file".to_string(), enc);
+    *payload = serde_json::Value::Object(map);
 }
