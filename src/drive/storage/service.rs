@@ -517,6 +517,19 @@ impl StorageService {
         self.repo.find_file_by_id(file_id)
     }
 
+    /// Flips a file's stored mime type (used by the per-app `promote` flow).
+    /// Resolves the file's owner first, the same "resolve owner, then
+    /// mutate" shape used by `autosave`/`restore_version` above, since the
+    /// repository's update is scoped to the owning `user_id`.
+    pub fn update_mime_type(&self, file_id: &str, mime_type: &str) -> Result<FileRecord, ApiError> {
+        let file = self
+            .repo
+            .find_file_by_id(file_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
+        self.repo
+            .update_file_mime_type(file_id, &file.user_id, mime_type)
+    }
+
     /// Decode an image file, resize it to fit within 512×512, and return base64 JPEG + MIME type.
     /// Returns None if the file cannot be decoded (e.g. unsupported format or encrypted).
     #[allow(dead_code)]
@@ -606,5 +619,110 @@ impl StorageService {
             label,
             is_named,
         })
+    }
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
+//
+// Covers `update_mime_type` (issue #43 — in-place editing of MS Office docs),
+// the service-level wrapper around StorageRepository::update_file_mime_type
+// that resolves the file's owner via `find_file_any_user` first (mirroring
+// how `autosave`/other content-mutating methods on this service resolve
+// ownership before writing). Neither `update_mime_type` nor the repository
+// method it wraps exist yet (TDD red phase) — referencing them here means
+// this file (and the crate) will fail to *compile* until they're implemented,
+// which is the expected/normal shape of Rust TDD red phase for a method that
+// doesn't exist yet. Run with `cargo test --lib drive::storage::service::tests`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::{repository::AuthRepository, service::AuthService};
+    use crate::drive::encryption::repository::EncryptionRepository;
+    use crate::drive::permissions::repository::PermissionsRepository;
+    use crate::drive::workspace::{repository::WorkspaceRepository, service::WorkspaceService};
+    use crate::drive::storage::repository::DbPool;
+    use crate::shared::TokenService;
+    use diesel::r2d2::{ConnectionManager, Pool};
+    use diesel::SqliteConnection;
+    use diesel_migrations::MigrationHarness;
+    use std::path::PathBuf;
+
+    const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const NATIVE_DOC_MIME: &str = "application/x-neutrino-doc";
+
+    fn test_pool() -> DbPool {
+        use crate::MIGRATIONS;
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder().max_size(1).build(manager).expect("test pool");
+        pool.get()
+            .expect("conn")
+            .run_pending_migrations(MIGRATIONS)
+            .expect("migrations");
+        pool
+    }
+
+    /// Builds a real StorageService backed by an in-memory sqlite DB and a
+    /// scratch directory on disk, wired the same way as main.rs (minus HTTP).
+    fn test_storage_service() -> (StorageService, StorageRepository, PathBuf) {
+        let pool = test_pool();
+        let base = std::env::temp_dir().join(format!("neutrino_storage_svc_test_{}", uuid::Uuid::new_v4()));
+        let store = Arc::new(LocalFileStore::new(&base).expect("create store"));
+
+        let workspace_repo = Arc::new(WorkspaceRepository::new(pool.clone()));
+        let workspace_service = Arc::new(WorkspaceService::new(workspace_repo));
+        let encryption_repo = Arc::new(EncryptionRepository::new(pool.clone()));
+        let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
+        let token_service = Arc::new(TokenService::new("test-secret".to_string()));
+        let auth_service = Arc::new(AuthService::new(auth_repo, token_service));
+        let permissions_repo = Arc::new(PermissionsRepository::new(pool.clone()));
+        let permissions_service = Arc::new(PermissionsService::new(
+            permissions_repo,
+            workspace_service,
+            encryption_repo,
+            auth_service,
+        ));
+
+        let repo_for_assertions = StorageRepository::new(pool.clone());
+        let repo = Arc::new(StorageRepository::new(pool));
+        let service = StorageService::new(repo, store, permissions_service);
+        (service, repo_for_assertions, base)
+    }
+
+    fn insert_test_file(repo: &StorageRepository, id: &str, user_id: &str, mime_type: &str) -> FileRecord {
+        repo.insert_file(NewFileRecord {
+            id,
+            user_id,
+            name: "report.docx",
+            size_bytes: 0,
+            mime_type,
+            storage_path: "",
+            folder_id: None,
+            encrypted_metadata: None,
+        })
+        .expect("insert file")
+    }
+
+    #[test]
+    fn update_mime_type_resolves_owner_and_updates_the_file() {
+        let (service, repo, base) = test_storage_service();
+        insert_test_file(&repo, "file-1", "user-1", DOCX_MIME);
+
+        let updated = service
+            .update_mime_type("file-1", NATIVE_DOC_MIME)
+            .expect("update mime type");
+
+        assert_eq!(updated.mime_type, NATIVE_DOC_MIME);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn update_mime_type_on_unknown_file_returns_error() {
+        let (service, _repo, base) = test_storage_service();
+
+        let result = service.update_mime_type("does-not-exist", NATIVE_DOC_MIME);
+
+        assert!(result.is_err());
+        let _ = std::fs::remove_dir_all(base);
     }
 }

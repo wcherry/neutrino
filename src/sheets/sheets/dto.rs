@@ -12,6 +12,14 @@ pub struct CreateSheetRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct PromoteSheetRequest {
+    /// Already-converted native Neutrino sheet JSON content (conversion from
+    /// OOXML happens client-side; the backend never parses office bytes).
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveSheetRequest {
     /// Optional new title (renames the backing file record).
     pub title: Option<String>,

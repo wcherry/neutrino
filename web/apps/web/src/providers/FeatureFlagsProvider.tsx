@@ -22,6 +22,7 @@ export type FeatureFlags = {
   sheetsConditionalFormatting: boolean;
   docsDistractionFree: boolean;
   diagramsApp: boolean;
+  officeInPlaceEditing: boolean;
 };
 
 type FeatureFlagsContextValue = {

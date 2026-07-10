@@ -1,6 +1,6 @@
 import type { SlidePresentation, TextElement, ShapeElement } from './slideEditorTypes';
 
-export async function exportAsPptx(title: string, presentation: SlidePresentation) {
+async function buildPptx(presentation: SlidePresentation) {
   const pptxgen = (await import('pptxgenjs')).default;
   const prs = new pptxgen();
   prs.layout = 'LAYOUT_16x9';
@@ -50,5 +50,22 @@ export async function exportAsPptx(title: string, presentation: SlidePresentatio
     }
   }
 
+  return prs;
+}
+
+export async function exportAsPptx(title: string, presentation: SlidePresentation) {
+  const prs = await buildPptx(presentation);
   await prs.writeFile({ fileName: `${title}.pptx` });
+}
+
+/**
+ * Build raw .pptx bytes without triggering a browser download — used by
+ * office-mode save (issue #43) to write the same file id back to Drive via
+ * the binary-safe transport, and by the manual "Convert to Neutrino Slide"
+ * / autosave paths.
+ */
+export async function exportAsPptxBytes(presentation: SlidePresentation): Promise<Uint8Array> {
+  const prs = await buildPptx(presentation);
+  const result = await prs.write({ outputType: 'uint8array' });
+  return result as Uint8Array;
 }

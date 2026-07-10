@@ -115,6 +115,10 @@ export interface HamburgerMenuProps {
   onToggleRulers: () => void;
   singlePageMode: boolean;
   onToggleSinglePage: () => void;
+  // Office mode (issue #43) — true when this file is a raw .docx being edited
+  // in place rather than a native Neutrino doc.
+  officeMode?: boolean;
+  onConvertToNative?: () => void;
   // Layout & structure feature callbacks (only used when docsLayoutStructure flag is on)
   onInsertFootnote?: () => void;
   onInsertCrossRef?: () => void;
@@ -155,6 +159,8 @@ export function HamburgerMenu({
   onToggleRulers,
   singlePageMode,
   onToggleSinglePage,
+  officeMode,
+  onConvertToNative,
   onInsertFootnote,
   onInsertCrossRef,
   onHeaderFooter,
@@ -197,6 +203,10 @@ export function HamburgerMenu({
         { kind: 'separator' },
         { kind: 'action', label: 'Save',            shortcut: 'Ctrl+S', action: () => onSave() },
         { kind: 'separator' },
+        ...(officeMode ? [
+          { kind: 'action' as const, label: 'Convert to Neutrino Doc', action: () => onConvertToNative?.() },
+          { kind: 'separator' as const },
+        ] : []),
         { kind: 'action', label: 'Import (.docx)',                     action: () => onImport() },
         {
           kind: 'submenu', label: 'Export as…', items: [

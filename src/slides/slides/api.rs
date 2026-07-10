@@ -2,7 +2,8 @@ use crate::shared::{ApiError, AuthenticatedUser};
 use crate::slides::slides::{
     dto::{
         CreateSlideRequest, CreateThemeRequest, ListSlidesResponse, ListThemesResponse,
-        SaveSlideRequest, SlideMetaResponse, SlideResponse, ThemeResponse, UpdateThemeRequest,
+        PromoteSlideRequest, SaveSlideRequest, SlideMetaResponse, SlideResponse, ThemeResponse,
+        UpdateThemeRequest,
     },
     service::SlidesService,
 };
@@ -265,6 +266,38 @@ pub async fn autosave_slide(
     Ok(web::Json(meta))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/slides/{id}/promote",
+    params(
+        ("id" = String, Path, description = "Drive file ID of the raw .pptx file")
+    ),
+    request_body = PromoteSlideRequest,
+    responses(
+        (status = 200, description = "File promoted to a native presentation", body = SlideResponse),
+        (status = 400, description = "File is not a PowerPoint presentation"),
+        (status = 403, description = "Edit access required"),
+        (status = 404, description = "Not found"),
+        (status = 409, description = "File has already been promoted"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "slides"
+)]
+#[post("/slides/{id}/promote")]
+pub async fn promote_slide(
+    state: web::Data<SlidesApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<PromoteSlideRequest>,
+) -> Result<web::Json<SlideResponse>, ApiError> {
+    let slide_id = path.into_inner();
+    let slide = state
+        .slides_service
+        .promote(&user, &slide_id, &body.into_inner().content)
+        .await?;
+    Ok(web::Json(slide))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     // Literal-segment routes (/slides/themes) must come before /slides/{id}.
     cfg.service(list_themes)
@@ -275,16 +308,18 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(create_slide)
         .service(get_slide)
         .service(save_slide)
-        .service(autosave_slide);
+        .service(autosave_slide)
+        .service(promote_slide);
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_slides, create_slide, get_slide, save_slide, autosave_slide,
+    paths(list_slides, create_slide, get_slide, save_slide, autosave_slide, promote_slide,
           list_themes, create_theme, update_theme, delete_theme),
     components(schemas(
         CreateSlideRequest,
         SaveSlideRequest,
+        PromoteSlideRequest,
         SlideResponse,
         SlideMetaResponse,
         ListSlidesResponse,

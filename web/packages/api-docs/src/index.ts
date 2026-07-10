@@ -123,6 +123,18 @@ export const docsApi = {
     return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave`, { method: 'PUT', body: formData });
   },
 
+  /**
+   * Promote a raw Office (.docx) Drive file in-place into a native Neutrino
+   * doc: uploads `content` (the same JSON shape a normal save would produce)
+   * and flips the file's mime type server-side. Same file id afterwards.
+   */
+  async promoteDoc(docId: string, content: string): Promise<DocResponse> {
+    return request<DocResponse>(`/api/v1/docs/${docId}/promote`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  },
+
   async exportText(docId: string): Promise<ExportTextResponse> {
     console.log("Exporting text...");
     return request<ExportTextResponse>(`/api/v1/docs/${docId}/export/text`);

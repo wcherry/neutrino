@@ -68,14 +68,14 @@ RUN echo "machine github.com login x-access-token password ${GITHUB_TOKEN}" > /r
 RUN git config --global credential.helper store
 
 RUN cargo fetch
-RUN cargo build --release
+RUN cargo build --release -p neutrino -p worker
 RUN rm -rf src
 
 COPY src src
 COPY xtask/src xtask/src
 COPY worker/src worker/src
 COPY migrations migrations
-RUN touch src/main.rs xtask/src/main.rs worker/src/main.rs && cargo build --release
+RUN touch src/main.rs xtask/src/main.rs worker/src/main.rs && cargo build --release -p neutrino -p worker
 
 # ── Runtime Stage ─────────────────────────────────────────────────────────────
 FROM debian:bookworm-slim

@@ -10,7 +10,9 @@ import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type Connecti
 import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, encryptKeysWithPin, toBase64url, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
+import { getOfficeFileMode, OFFICE_FILE_MODE_KEY, type OfficeFileMode } from '@/hooks/useOfficeFileMode';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
+import { useFeatureFlags, type FeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { clearSearchIndex, getOrCreateSearchKey, IndexEngine, type SearchableDocument } from '@neutrino/search';
 import { docsApi, notesApi, sheetsApi, slidesApi } from '@/lib/api';
 import {
@@ -42,6 +44,11 @@ const WEEK_START_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: 'Sunday' },
   { value: 1, label: 'Monday' },
   { value: 6, label: 'Saturday' },
+];
+
+const OFFICE_FILE_MODE_OPTIONS: { value: OfficeFileMode; label: string }[] = [
+  { value: 'native-roundtrip', label: 'Keep as Office file' },
+  { value: 'convert-on-open', label: 'Convert on open' },
 ];
 
 function fmtHour(h: number): string {
@@ -76,13 +83,14 @@ const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
 
 const SEARCH_SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
 
-type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'advanced';
+type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'drive' | 'advanced';
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: Tab; label: string; flag?: keyof FeatureFlags }[] = [
   { id: 'ai', label: 'AI Assistant' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'calendar', label: 'Calendar' },
+  { id: 'drive', label: 'Drive', flag: 'officeInPlaceEditing' },
   { id: 'account', label: 'Account' },
   { id: 'advanced', label: 'Advanced' },
 ];
@@ -190,11 +198,13 @@ export default function SettingsPage() {
 
 const qc = useQueryClient();
   const { user } = useAuth();
+  const flags = useFeatureFlags();
+  const visibleTabs = TABS.filter((tab) => !tab.flag || flags[tab.flag]);
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('tab') as Tab | null;
-      if (param && TABS.some((t) => t.id === param)) return param;
+      if (param && visibleTabs.some((t) => t.id === param)) return param;
     }
     return 'ai';
   });
@@ -264,6 +274,9 @@ const qc = useQueryClient();
   const [dayEndHour, setDayEndHourState] = useState<number>(DEFAULT_DAY_END_HOUR);
   const [showAppleModal, setShowAppleModal] = useState(false);
 
+  // ── Drive state ─────────────────────────────────────────────────────────
+  const [officeFileMode, setOfficeFileModeState] = useState<OfficeFileMode>('native-roundtrip');
+
   useEffect(() => {
     if (!user) return;
     setKeyStatus(hasKeyPair(user.id) ? 'set' : 'unset');
@@ -280,6 +293,8 @@ const qc = useQueryClient();
     if (storedEnd !== null) setDayEndHourState(Number(storedEnd));
 
     setSearchSyncDisabled(localStorage.getItem(SEARCH_SYNC_DISABLED_KEY) === 'true');
+
+    setOfficeFileModeState(getOfficeFileMode());
   }, []);
 
   async function handleExportKey() {
@@ -370,6 +385,11 @@ const qc = useQueryClient();
   function handleWeekStartChange(value: number) {
     setWeekStart(value);
     localStorage.setItem(WEEK_START_KEY, String(value));
+  }
+
+  function handleOfficeFileModeChange(value: OfficeFileMode) {
+    setOfficeFileModeState(value);
+    localStorage.setItem(OFFICE_FILE_MODE_KEY, value);
   }
 
   function handleDayStartHourChange(value: number) {
@@ -647,7 +667,7 @@ const qc = useQueryClient();
 
         {/* ── Tab bar ─────────────────────────────────────────────────── */}
         <div className={styles.tabBar}>
-          {TABS.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab.id}
               className={`${styles.tabBtn} ${activeTab === tab.id ? styles.tabBtnActive : ''}`}
@@ -922,6 +942,35 @@ const qc = useQueryClient();
                 })}
               </div>
             )}
+          </section>
+        </div>
+      )}
+
+      {/* ── Drive tab ────────────────────────────────────────────────────── */}
+      {activeTab === 'drive' && (
+        <div className={styles.content}>
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>Office documents</h2>
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <div className={styles.settingName}>Office file editing</div>
+                <div className={styles.settingDesc}>
+                  How Word, Excel, and PowerPoint files behave when opened in Drive
+                </div>
+              </div>
+              <div className={styles.segmented}>
+                {OFFICE_FILE_MODE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`${styles.segmentedBtn} ${officeFileMode === opt.value ? styles.segmentedBtnActive : ''}`}
+                    onClick={() => handleOfficeFileModeChange(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </section>
         </div>
       )}

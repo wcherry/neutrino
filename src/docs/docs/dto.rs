@@ -12,6 +12,14 @@ pub struct CreateDocRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct PromoteDocRequest {
+    /// Already-converted native Neutrino doc JSON content (conversion from
+    /// OOXML happens client-side; the backend never parses office bytes).
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveDocRequest {
     pub page_setup: Option<PageSetup>,
     /// Optional new title for the document (renames the backing file record).
