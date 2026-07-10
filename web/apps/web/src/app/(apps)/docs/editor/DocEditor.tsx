@@ -45,11 +45,17 @@ import {
 } from 'lucide-react';
 import { ShareButton, Spinner, useToast, ZoomSlider } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
-import { docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent, storageApi, type PageSetup, type FileItem } from '@/lib/api';
+import {
+  docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
+  driveAutosaveBytes, driveCreateVersionBytes,
+  storageApi, filesystemApi, ApiClientError, type PageSetup, type FileItem,
+} from '@/lib/api';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { OFFICE_MIME, officeAppForFile } from '@/lib/officeFormats';
+import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
 import { DocOutline } from './DocOutline';
@@ -273,6 +279,16 @@ async function buildPdfBlob(
   console.log('[buildPdfBlob] getBlob resolved', { size: blob?.size });
   if (!blob) throw new Error('pdfmake returned no data.');
   return blob;
+}
+
+/**
+ * Convert raw .docx bytes into HTML via mammoth. Shared by the manual Import
+ * button (handleImport) and office-mode's initial load path (issue #43).
+ */
+export async function docxBytesToHtml(arrayBuffer: ArrayBuffer): Promise<string> {
+  const { convertToHtml } = await import('mammoth');
+  const result = await convertToHtml({ arrayBuffer });
+  return result.value;
 }
 
 async function buildDocxBlob(html: string): Promise<Blob> {
@@ -713,12 +729,42 @@ export function DocEditor() {
     orientation: 'portrait', pageSize: 'letter',
   });
 
-  const { data: doc, isLoading: metaLoading } = useQuery({
+  const { data: doc, isLoading: metaLoading, isError: metaIsError, error: metaError } = useQuery({
     queryKey: ['doc', docId],
     queryFn: () => docsApi.getDoc(docId),
     staleTime: 0,
     enabled: !!docId,
   });
+
+  // ── Office mode (issue #43) ────────────────────────────────────────────────
+  // A raw .docx Drive file has no `docs` row, so docsApi.getDoc 404s. When
+  // that happens (and the flag is on) fall back to the generic Drive file
+  // metadata to distinguish "raw office file, open it in place" from a
+  // genuinely deleted/missing document.
+  const doc404 = flags.officeInPlaceEditing && metaIsError
+    && metaError instanceof ApiClientError && metaError.statusCode === 404;
+
+  const {
+    data: officeFileMeta,
+    isLoading: officeFallbackLoading,
+    isError: officeFallbackIsError,
+  } = useQuery({
+    queryKey: ['doc-office-fallback', docId],
+    queryFn: () => storageApi.getFileMetadata(docId),
+    enabled: doc404,
+    staleTime: 0,
+    retry: false,
+  });
+
+  const officeApp = officeFileMeta ? officeAppForFile(officeFileMeta.mimeType, officeFileMeta.name) : null;
+  const officeMode = doc404 && officeApp === 'docs';
+  // Genuinely missing: the doc row is gone AND either the storage fallback
+  // also 404d, or it resolved to something that isn't a .docx this editor
+  // can open.
+  const docNotFound = doc404 && (officeFallbackIsError || (!!officeFileMeta && officeApp !== 'docs'));
+
+  const officeModeRef = useRef(false);
+  useEffect(() => { officeModeRef.current = officeMode; }, [officeMode]);
 
   const { data: docContent, isLoading: contentLoading, isError: contentError } = useQuery({
     // Include contentUrl in the key so the queryFn closure is always consistent
@@ -741,7 +787,7 @@ export function DocEditor() {
     // matching the try/catch fallback in sheets' usePersistence.load().
   });
 
-  const isLoading = metaLoading || contentLoading;
+  const isLoading = metaLoading || contentLoading || (doc404 && officeFallbackLoading);
 
   const contentMutation = useMutation({
     mutationFn: async (content: string) => {
@@ -782,6 +828,75 @@ export function DocEditor() {
       queryClient.invalidateQueries({ queryKey: ['docs'] });
     },
   });
+
+  // ── Office mode save mutations (issue #43) ──────────────────────────────
+  // Every autosave/version-save tick in office mode re-serializes the current
+  // editor HTML into real DOCX bytes via buildDocxBlob, then writes those
+  // bytes to the SAME Drive file id using the binary-safe *Bytes transport —
+  // never the string-based helpers above, which would corrupt binary content.
+  const officeAutosaveMutation = useMutation({
+    mutationFn: async () => {
+      const ed = editorRef.current;
+      if (!ed) throw new Error('editor-not-ready');
+      const blob = await buildDocxBlob(ed.getHTML());
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const filename = officeFileMeta?.name ?? `${titleRef.current || 'document'}.docx`;
+      // Office-mode files stay real, uncorrupted OOXML at rest (acceptance
+      // criterion 3 — downloading the raw file must open in real Word), so
+      // these never go through the E2EE-encrypted transport even when a DEK
+      // is available for this file id.
+      await driveAutosaveBytes(docId, bytes, filename, OFFICE_MIME.docx);
+    },
+    onMutate: () => setSaveStatus('saving'),
+    onSuccess: () => {
+      setSaveStatus('saved');
+      queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
+    },
+    onError: () => setSaveStatus('unsaved'),
+  });
+
+  const officeVersionMutation = useMutation({
+    mutationFn: async (label?: string) => {
+      const ed = editorRef.current;
+      if (!ed) throw new Error('editor-not-ready');
+      const blob = await buildDocxBlob(ed.getHTML());
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const filename = officeFileMeta?.name ?? `${titleRef.current || 'document'}.docx`;
+      return driveCreateVersionBytes(docId, bytes, filename, OFFICE_MIME.docx, label);
+    },
+    onMutate: () => setSaveStatus('saving'),
+    onSuccess: () => {
+      setSaveStatus('saved');
+      queryClient.invalidateQueries({ queryKey: ['versions', docId] });
+      queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
+    },
+    onError: () => setSaveStatus('unsaved'),
+  });
+
+  // "Convert to Neutrino Doc" — one-shot promote of the raw office file into
+  // a native doc, keeping the same Drive file id. Used by both the manual
+  // menu action and the automatic convert-on-open trigger.
+  const promoteMutation = useMutation({
+    mutationFn: async () => {
+      const ed = editorRef.current;
+      if (!ed) throw new Error('editor-not-ready');
+      const content = serializeContent(ed.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+      return docsApi.promoteDoc(docId, content);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['doc', docId] });
+      queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
+      queryClient.invalidateQueries({ queryKey: ['contents'] });
+      queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
+      toast.success('Converted to a native Neutrino document');
+    },
+    onError: () => toast.error('Failed to convert to a native Neutrino document'),
+  });
+
+  const officeAutosaveRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    officeAutosaveRef.current = () => { officeAutosaveMutation.mutate(); };
+  }, [officeAutosaveMutation]);
 
   const triggerSave = useCallback(
     (content: string, metadata?: { title?: string; pageSetup?: PageSetup }) => {
@@ -899,7 +1014,11 @@ export function DocEditor() {
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
-        triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current });
+        if (officeModeRef.current) {
+          officeAutosaveRef.current();
+        } else {
+          triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current });
+        }
       }, AUTO_SAVE_DELAY_MS);
     },
   });
@@ -913,7 +1032,9 @@ export function DocEditor() {
     userName: currentUser?.name ?? 'Anonymous',
     authToken,
     editor,
-    enabled: !!docId,
+    // Office-mode files have no `docs` row / collab room to sync against —
+    // real-time presence is out of scope for this feature (plan section 4).
+    enabled: !!docId && !officeMode,
     ydoc,
   });
 
@@ -983,6 +1104,59 @@ export function DocEditor() {
     setPageSetup(doc.pageSetup);
   }, [doc, editor]);
 
+  // ── Office mode: title + content load (issue #43) ───────────────────────
+  useEffect(() => {
+    if (officeMode && officeFileMeta) setTitle(officeFileMeta.name);
+  }, [officeMode, officeFileMeta]);
+
+  // Download the raw .docx bytes and convert to HTML. This is intentionally
+  // NOT gated on `editor` being ready — mammoth conversion is independent of
+  // the tiptap instance's lifecycle; only *applying* the result waits on it.
+  const officeContentLoadStartedRef = useRef(false);
+  const [officeHtml, setOfficeHtml] = useState<string | null>(null);
+  useEffect(() => {
+    if (!officeMode || !officeFileMeta || officeContentLoadStartedRef.current) return;
+    officeContentLoadStartedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const blob = await storageApi.downloadFile(docId);
+        if (cancelled) return;
+        const arrayBuffer = await blob.arrayBuffer();
+        if (cancelled) return;
+        const html = await docxBytesToHtml(arrayBuffer);
+        if (cancelled) return;
+        setOfficeHtml(html);
+      } catch {
+        if (!cancelled) toast.error('Failed to open this file for editing');
+      }
+    })();
+    return () => { cancelled = true; };
+  // toast is intentionally omitted — the mocked useToast() in tests (and
+  // potentially real usage) returns a new object identity on every render,
+  // which would otherwise cancel this one-shot load on every unrelated
+  // re-render via the cleanup function above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeMode, officeFileMeta, docId]);
+
+  const officeContentAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!officeMode || !editor || officeHtml === null || officeContentAppliedRef.current) return;
+    officeContentAppliedRef.current = true;
+    editor.commands.setContent(officeHtml, false);
+    // Convert-on-open (global setting) or a one-shot promote request from the
+    // Drive context menu's "Convert to Neutrino Doc" action: silently promote
+    // right after the initial client-side conversion renders. Non-blocking —
+    // the promote mutation's own onSuccess/onError handlers surface a toast
+    // when it settles.
+    if (getOfficeFileMode() === 'convert-on-open' || isOneShotPromoteRequested()) {
+      promoteMutation.mutate();
+    }
+  // promoteMutation is intentionally omitted: it's a stable useMutation
+  // object whose identity is not meaningful for this one-shot effect.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeMode, editor, officeHtml]);
+
   useEffect(() => {
     if (!docContent || !editor || !syncReady) return;
     // Skip if the user has unsaved edits — a stale refetch (e.g. triggered by
@@ -1048,6 +1222,11 @@ export function DocEditor() {
         clearTimeout(autoSaveTimer.current);
         autoSaveTimer.current = null;
       }
+      if (officeModeRef.current) {
+        pendingContent.current = null;
+        officeAutosaveRef.current();
+        return;
+      }
       const content = pendingContent.current;
       pendingContent.current = null;
       if (!dekRef.current) {
@@ -1076,7 +1255,15 @@ export function DocEditor() {
   }, [nspell, spellWord, spellSuggestions]);
 
   const handleTitleBlur = () => {
-    if (!title.trim() || title === doc?.title) return;
+    if (!title.trim()) return;
+    if (officeMode) {
+      // No `docs` row to PATCH — office-mode renames go through the generic
+      // Drive rename call (same one FileContextMenu's rename action uses).
+      if (title === officeFileMeta?.name) return;
+      filesystemApi.updateFile(docId, { name: title }).catch(() => toast.error('Failed to rename file'));
+      return;
+    }
+    if (title === doc?.title) return;
     // Save title together with current content in one combined call.
     if (editor) {
       const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
@@ -1092,24 +1279,37 @@ export function DocEditor() {
       autoSaveTimer.current = null;
     }
     if (pendingContent.current !== null && isLocalWriterRef.current) {
-      await Promise.all([
-        contentMutation.mutateAsync(pendingContent.current),
-        metaMutation.mutateAsync({ title: titleRef.current, pageSetup: pageSetupRef.current }),
-      ]);
+      const content = pendingContent.current;
       pendingContent.current = null;
+      if (officeModeRef.current) {
+        await officeAutosaveMutation.mutateAsync();
+      } else {
+        await Promise.all([
+          contentMutation.mutateAsync(content),
+          metaMutation.mutateAsync({ title: titleRef.current, pageSetup: pageSetupRef.current }),
+        ]);
+      }
     }
     queryClient.invalidateQueries({ queryKey: ['docs'] });
     router.push('/drive');
-  }, [contentMutation, metaMutation, queryClient, router]);
+  }, [contentMutation, metaMutation, officeAutosaveMutation, queryClient, router]);
 
   const handleManualSave = useCallback(() => {
     if (!editor || !isLocalWriterRef.current) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    if (officeMode) {
+      officeVersionMutation.mutate(undefined);
+      return;
+    }
     const content = serializeContent(editor.getJSON(), {
       headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme,
     }, flags.docsLayoutStructure);
     versionMutation.mutate(content);
-  }, [editor, versionMutation, headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
+  }, [editor, versionMutation, officeMode, officeVersionMutation, headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
+
+  const handleConvertToNative = useCallback(() => {
+    promoteMutation.mutate();
+  }, [promoteMutation]);
 
   // Sync grammar-enabled state into the GrammarCheckExtension plugin
   useEffect(() => {
@@ -1600,10 +1800,9 @@ export function DocEditor() {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !editor) return;
-    const { convertToHtml } = await import('mammoth');
     const arrayBuffer = await file.arrayBuffer();
-    const result = await convertToHtml({ arrayBuffer });
-    editor.commands.setContent(result.value, true);
+    const html = await docxBytesToHtml(arrayBuffer);
+    editor.commands.setContent(html, true);
   };
 
   const handlePrint = useCallback(() => {
@@ -1726,6 +1925,20 @@ export function DocEditor() {
     return <Spinner size="lg" overlay />;
   }
 
+  if (docNotFound) {
+    return (
+      <div className={styles.shell} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <div style={{ textAlign: 'center' }}>
+          <p>Document not found</p>
+          <button className={styles.backBtn} onClick={() => router.push('/drive')}>
+            <ArrowLeft size={16} />
+            Back to Drive
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={distractionFree ? `${styles.shell} ${styles.distractionFreeShell}` : styles.shell}>
       {/* ── Top bar ── */}
@@ -1752,6 +1965,8 @@ export function DocEditor() {
           onToggleRulers={() => setShowRulers(v => !v)}
           singlePageMode={singlePageMode}
           onToggleSinglePage={() => { setSinglePageMode(v => !v); setCurrentPage(1); }}
+          officeMode={officeMode}
+          onConvertToNative={handleConvertToNative}
           {...(flags.docsLayoutStructure ? {
             onInsertFootnote: handleInsertFootnote,
             onInsertCrossRef: handleInsertCrossRef,

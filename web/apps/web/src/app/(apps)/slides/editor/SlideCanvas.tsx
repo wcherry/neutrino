@@ -414,6 +414,12 @@ export default function SlideCanvas({
                     onUpdateElement(el.id, (elem) => ({ ...elem, content: e.target.value } as TextElement));
                     onStopEdit();
                   }}
+                  onKeyDown={(e) => {
+                    // Escape is the standard "finish editing a text box" gesture
+                    // (Slides/PowerPoint commit rather than discard) — blur so the
+                    // existing onBlur handler commits the content.
+                    if (e.key === 'Escape') e.currentTarget.blur();
+                  }}
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (

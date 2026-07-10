@@ -39,7 +39,7 @@ type HtmlExportOptions = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildXlsxWorksheet(
+export function buildXlsxWorksheet(
     cells: Map<string, CellProps>,
     selectionIds?: Set<string>,
 ): XLSX.WorkSheet {

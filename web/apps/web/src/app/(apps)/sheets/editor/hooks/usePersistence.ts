@@ -2,14 +2,50 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import * as XLSX from 'xlsx';
 import type { CellProps, SheetFile, CFRule } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
-import { sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent, storageApi, type SheetResponse } from '@/lib/api';
+import {
+    sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
+    driveAutosaveBytes, driveCreateVersionBytes,
+    storageApi, filesystemApi, ApiClientError, type SheetResponse, type FileItem,
+} from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { useToast } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { computeCell, type SheetRef } from '../formula';
+import { numToAlpha } from '../utils';
+import { buildXlsxWorksheet } from './useExport';
+import { officeAppForFile, OFFICE_MIME } from '@/lib/officeFormats';
+import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
+
+/**
+ * Parse raw .xlsx bytes into per-sheet cell maps — office-mode counterpart of
+ * `parseXlsxToSheets` in SheetEditor.tsx (kept separate to avoid a hook ->
+ * top-level-component import).
+ */
+function xlsxBufferToSheets(buffer: ArrayBuffer): { name: string; data: Map<string, CellProps> }[] {
+    const wb = XLSX.read(new Uint8Array(buffer));
+    return wb.SheetNames.map(name => {
+        const ws = wb.Sheets[name];
+        const map = new Map<string, CellProps>();
+        const ref = ws['!ref'];
+        if (ref) {
+            const range = XLSX.utils.decode_range(ref);
+            for (let r = range.s.r; r <= range.e.r; r++) {
+                for (let c = range.s.c; c <= range.e.c; c++) {
+                    const cell = ws[XLSX.utils.encode_cell({ r, c })];
+                    if (!cell || cell.v == null) continue;
+                    const id = `${numToAlpha(c + 1)}${r + 1}`;
+                    const val = cell.w ?? String(cell.v);
+                    if (val !== '') map.set(id, { id, raw: val, value: val, edit: false });
+                }
+            }
+        }
+        return { name, data: map };
+    });
+}
 
 /**
  * First pass: build a CellProps map from saved cell records, carrying over the
@@ -77,6 +113,11 @@ export function usePersistence({
     sheetsConditionalFormatsRef,
     flushActiveConditionalFormats,
     setConditionalFormats,
+    // Office mode (issue #43). Defaults to true so callers that don't pass it
+    // (and this hook's own unit tests, which render it standalone with no
+    // FeatureFlagsProvider) still get the 404-fallback behavior; SheetEditor.tsx
+    // passes the real `flags.officeInPlaceEditing` value explicitly.
+    officeInPlaceEditingEnabled = true,
 }: {
     sheetId: string;
     dirtyRef: React.MutableRefObject<boolean>;
@@ -100,12 +141,18 @@ export function usePersistence({
     sheetsConditionalFormatsRef?: React.MutableRefObject<CFRule[][]>;
     flushActiveConditionalFormats?: () => void;
     setConditionalFormats?: React.Dispatch<React.SetStateAction<CFRule[]>>;
+    officeInPlaceEditingEnabled?: boolean;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
     const toast = useToast();
     const [title, setTitle] = useState('Untitled');
     const [yourRole, setYourRole] = useState<string>('owner');
+    // ── Office mode (issue #43) ──────────────────────────────────────────────
+    // True when this file is a raw .xlsx being edited in place (no `sheets`
+    // row) rather than a native Neutrino sheet.
+    const [officeMode, setOfficeMode] = useState(false);
+    const officeFileMetaRef = useRef<FileItem | null>(null);
     // loadCount increments every time load() completes successfully.
     // The autosave useEffect depends on it so it restarts (with cleanup) on each reload.
     const [loadCount, setLoadCount] = useState(0);
@@ -160,7 +207,37 @@ export function usePersistence({
         return JSON.stringify({ sheets: fileSheets } as SheetFile);
     };
 
+    // Office mode (issue #43): serialize current sheet data into real XLSX
+    // bytes instead of the native JSON shape, for writing back to the SAME
+    // Drive file id via the binary-safe *Bytes transport.
+    const buildXlsxBytes = (): Uint8Array => {
+        flushActiveSheet();
+        flushActiveCharts?.();
+        flushActiveConditionalFormats?.();
+        const wb = XLSX.utils.book_new();
+        sheetNamesRef.current.forEach((name, i) => {
+            XLSX.utils.book_append_sheet(wb, buildXlsxWorksheet(sheetsDataRef.current[i]), name || `Sheet${i + 1}`);
+        });
+        const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+        return new Uint8Array(buf);
+    };
+
     const save = async () => {
+        if (officeMode) {
+            const meta = officeFileMetaRef.current;
+            if (!meta) return;
+            const bytes = buildXlsxBytes();
+            // Office-mode files stay real, uncorrupted OOXML at rest (acceptance
+            // criterion 3 — downloading the raw file must open in real Excel), so
+            // these never go through the E2EE-encrypted transport even when a DEK
+            // is available for this file id.
+            try {
+                await driveAutosaveBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx);
+            } catch {
+                await driveAutosaveBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx);
+            }
+            return;
+        }
         if (!sheetRef.current) return;
         if (!dekRef.current) {
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
@@ -181,11 +258,32 @@ export function usePersistence({
     saveRef.current = save;
 
     const manualSave = async () => {
+        if (officeMode) {
+            const meta = officeFileMetaRef.current;
+            if (!meta) return;
+            const bytes = buildXlsxBytes();
+            await driveCreateVersionBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx);
+            return;
+        }
         if (!sheetRef.current) return;
         if (dekRef.current) {
             await driveCreateEncryptedVersion(sheetId, serialize(), 'sheet.json', dekRef.current);
         } else {
             await driveCreateVersion(sheetId, serialize(), 'sheet.json');
+        }
+    };
+
+    // "Convert to Neutrino Sheet" — one-shot promote of the raw office file
+    // into a native sheet, keeping the same Drive file id.
+    const promote = async () => {
+        try {
+            const content = serialize();
+            await sheetsApi.promoteSheet(sheetId, content);
+            setOfficeMode(false);
+            officeFileMetaRef.current = null;
+            toast.success('Converted to a native Neutrino sheet');
+        } catch {
+            toast.error('Failed to convert to a native Neutrino sheet');
         }
     };
 
@@ -222,7 +320,7 @@ export function usePersistence({
     // saveRef.current always points to the latest save, avoiding stale closure issues.
     useEffect(() => {
         const flush = () => {
-            if (!dirtyRef.current || !sheetRef.current) return;
+            if (!dirtyRef.current || (!sheetRef.current && !officeFileMetaRef.current)) return;
             dirtyRef.current = false;
             // Flush any pending startTransition updates so dataRef.current reflects
             // the latest committed cell values before serialising (same as timedSave).
@@ -252,7 +350,57 @@ export function usePersistence({
 
         // DEK resolution is handled by useEncryptedDocumentContent; dekRef is
         // already populated by the time the editor calls load().
-        const sheet = await sheetsApi.getSheet(sheetId);
+        let sheet: SheetResponse;
+        try {
+            sheet = await sheetsApi.getSheet(sheetId);
+        } catch (err) {
+            const is404 = err instanceof ApiClientError && err.statusCode === 404;
+            if (!is404 || !officeInPlaceEditingEnabled) throw err;
+            // Raw office file — no `sheets` row for this file id. Fall back to
+            // the generic Drive file metadata to distinguish "raw .xlsx, open
+            // it in place" from a genuinely deleted/missing spreadsheet.
+            let meta: FileItem;
+            try {
+                meta = await storageApi.getFileMetadata(sheetId);
+            } catch {
+                // Genuinely missing — leave the sheet in its existing
+                // "not loaded" state; do NOT start autosave.
+                return;
+            }
+            const app = officeAppForFile(meta.mimeType, meta.name);
+            if (app !== 'sheets') return; // not an .xlsx this editor can open
+            officeFileMetaRef.current = meta;
+            setOfficeMode(true);
+            setTitle(meta.name);
+            setYourRole('owner');
+            try {
+                const blob = await storageApi.downloadFile(sheetId);
+                const arrayBuffer = await blob.arrayBuffer();
+                const parsed = xlsxBufferToSheets(arrayBuffer);
+                if (parsed.length > 0) {
+                    const names = parsed.map((s, i) => s.name || `Sheet ${i + 1}`);
+                    sheetsDataRef.current = parsed.map(s => s.data);
+                    sheetsColWidthsRef.current = parsed.map(() => new Map());
+                    sheetsRowHeightsRef.current = parsed.map(() => new Map());
+                    setSheetNames(names);
+                    setSheetColors(parsed.map(() => null));
+                    setData(parsed[0].data);
+                    setColWidths(new Map());
+                    setRowHeights(new Map());
+                }
+                setLoadCount(c => c + 1);
+                // Convert-on-open (global setting) or a one-shot promote request
+                // from the Drive context menu's "Convert to Neutrino Sheet" action:
+                // silently promote right after the initial client-side parse
+                // renders. Non-blocking.
+                if (getOfficeFileMode() === 'convert-on-open' || isOneShotPromoteRequested()) {
+                    void promote();
+                }
+            } catch {
+                toast.error('Failed to open this file for editing');
+            }
+            return;
+        }
         sheetRef.current = sheet;
         setTitle(sheet.title);
         setYourRole(sheet.yourRole ?? 'owner');
@@ -369,6 +517,16 @@ export function usePersistence({
     const updateTitle = async (event: React.FocusEvent<HTMLElement>) => {
         const newTitle = (event.currentTarget as HTMLElement).innerHTML;
         setTitle(newTitle);
+        if (officeMode) {
+            // No `sheets` row to PATCH — office-mode renames go through the
+            // generic Drive rename call (same one FileContextMenu's rename
+            // action uses).
+            if (officeFileMetaRef.current && newTitle !== officeFileMetaRef.current.name) {
+                officeFileMetaRef.current = { ...officeFileMetaRef.current, name: newTitle };
+                await filesystemApi.updateFile(sheetId, { name: newTitle });
+            }
+            return;
+        }
         if (sheetRef.current && newTitle !== sheetRef.current.title) {
             sheetRef.current.title = newTitle;
             await sheetsApi.saveSheet(sheetId, { title: newTitle });
@@ -388,5 +546,9 @@ export function usePersistence({
         activeSheetIndexRef,
         /** True once the E2EE DEK resolution attempt has completed. */
         dekResolved,
+        /** Office mode (issue #43): true when editing a raw .xlsx in place. */
+        officeMode,
+        /** One-shot promote of the raw office file into a native sheet. */
+        promote,
     };
 }

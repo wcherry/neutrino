@@ -1,7 +1,7 @@
 use crate::docs::docs::{
     dto::{
         CreateDocRequest, DocMetaResponse, DocResponse, ExportTextResponse, ListDocsResponse,
-        PageSetup, SaveDocRequest,
+        PageSetup, PromoteDocRequest, SaveDocRequest,
     },
     service::DocsService,
 };
@@ -209,21 +209,55 @@ pub async fn autosave_doc(
     Ok(web::Json(meta))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/docs/{id}/promote",
+    params(
+        ("id" = String, Path, description = "Drive file ID of the raw .docx file")
+    ),
+    request_body = PromoteDocRequest,
+    responses(
+        (status = 200, description = "File promoted to a native document", body = DocResponse),
+        (status = 400, description = "File is not a Word document"),
+        (status = 403, description = "Edit access required"),
+        (status = 404, description = "Not found"),
+        (status = 409, description = "File has already been promoted"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "docs"
+)]
+#[post("/{id}/promote")]
+pub async fn promote_doc(
+    state: web::Data<DocsApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<PromoteDocRequest>,
+) -> Result<web::Json<DocResponse>, ApiError> {
+    let doc_id = path.into_inner();
+    let doc = state
+        .docs_service
+        .promote(&user, &doc_id, &body.into_inner().content)
+        .await?;
+    Ok(web::Json(doc))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_docs)
         .service(create_doc)
         .service(get_doc)
         .service(save_doc)
         .service(export_text)
-        .service(autosave_doc);
+        .service(autosave_doc)
+        .service(promote_doc);
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_docs, create_doc, get_doc, save_doc, export_text, autosave_doc),
+    paths(list_docs, create_doc, get_doc, save_doc, export_text, autosave_doc, promote_doc),
     components(schemas(
         CreateDocRequest,
         SaveDocRequest,
+        PromoteDocRequest,
         DocResponse,
         DocMetaResponse,
         ListDocsResponse,

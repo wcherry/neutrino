@@ -33,6 +33,9 @@ import { ShareDialog } from './ShareDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { routeForFile, officeEditorRoute, DOC_MIME, SHEET_MIME, SLIDES_MIME, DIAGRAM_MIME, DRAWING_MIME } from './routeForFile';
+import { officeAppForFile } from '@/lib/officeFormats';
 import styles from './page.module.css';
 
 
@@ -96,12 +99,6 @@ function fileToGridItem(file: FileItem): GridItem {
   };
 }
 
-const DOC_MIME = 'application/x-neutrino-doc';
-const SHEET_MIME = 'application/x-neutrino-sheet';
-const SLIDES_MIME = 'application/x-neutrino-slide';
-const DIAGRAM_MIME = 'application/x-neutrino-diagram';
-const DRAWING_MIME = 'application/x-neutrino-drawing';
-
 interface ContextMenuState {
   file: FileItem;
   x: number;
@@ -113,6 +110,7 @@ export default function DrivePage() {
   const toast = useToast();
   const router = useRouter();
   const currentUser = useUser();
+  const flags = useFeatureFlags();
 
   const [sortBy, setSortBy] = useState<SortField>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -294,22 +292,11 @@ export default function DrivePage() {
     }
     const file = fileMap.get(item.id);
     if (!file) return;
-    if (file.mimeType === DOC_MIME) {
-      router.push(`/docs/editor?id=${file.id}`);
-    } else if (file.mimeType === SHEET_MIME) {
-      router.push(`/sheets/editor?id=${file.id}`);
-    } else if (file.mimeType === SLIDES_MIME) {
-      router.push(`/slides/editor?id=${file.id}`);
-    } else if (file.mimeType === DIAGRAM_MIME) {
-      router.push(`/diagrams/editor?id=${file.id}`);
-    } else if (file.mimeType === DRAWING_MIME) {
-      router.push(`/drawing/editor?id=${file.id}`);
-    } else if (file.mimeType.startsWith('image/')) {
-      router.push(`/photos/editor?fileId=${file.id}`);
-    } else {
-      setPreviewFile(file);
-    }
-  }, [fileMap, folderMap, openFolder, router]);
+    routeForFile(file, router, {
+      officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
+      onPreviewFallback: () => setPreviewFile(file),
+    });
+  }, [fileMap, folderMap, openFolder, router, flags.officeInPlaceEditing]);
 
   const handleGridItemMenuOpen = useCallback((item: GridItem, e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -565,21 +552,10 @@ export default function DrivePage() {
                   coverThumbnail: file.coverThumbnail,
                   coverThumbnailMimeType: file.coverThumbnailMimeType,
                   onClick: () => {
-                    if (file.mimeType === DOC_MIME) {
-                      router.push(`/docs/editor?id=${file.id}`);
-                    } else if (file.mimeType === SHEET_MIME) {
-                      router.push(`/sheets/editor?id=${file.id}`);
-                    } else if (file.mimeType === SLIDES_MIME) {
-                      router.push(`/slides/editor?id=${file.id}`);
-                    } else if (file.mimeType === DIAGRAM_MIME) {
-                      router.push(`/diagrams/editor?id=${file.id}`);
-                    } else if (file.mimeType === DRAWING_MIME) {
-                      router.push(`/drawing/editor?id=${file.id}`);
-                    } else if (file.mimeType.startsWith('image/')) {
-                      router.push(`/photos/editor?fileId=${file.id}`);
-                    } else {
-                      setPreviewFile(file);
-                    }
+                    routeForFile(file, router, {
+                      officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
+                      onPreviewFallback: () => setPreviewFile(file),
+                    });
                   },
                 }));
                 const starredFolders = starredData.folders.map((folder) => ({
@@ -690,17 +666,24 @@ export default function DrivePage() {
           onClose={() => setContextMenu(null)}
           onPreview={(() => {
             const f = contextMenu.file;
+            // Native docs/sheets/slides keep the lightweight preview-modal
+            // experience (distinct from "open to edit"); everything else
+            // (diagrams/drawings, raw Office files when the office-editing
+            // flag is on, and the generic fallback) is delegated to
+            // routeForFile.
             if (f.mimeType === DOC_MIME)
               return () => { setDocPreview({ id: f.id, kind: 'doc' }); setContextMenu(null); };
             if (f.mimeType === SHEET_MIME)
               return () => { setDocPreview({ id: f.id, kind: 'sheet' }); setContextMenu(null); };
             if (f.mimeType === SLIDES_MIME)
               return () => { setDocPreview({ id: f.id, kind: 'slide' }); setContextMenu(null); };
-            if (f.mimeType === DIAGRAM_MIME)
-              return () => { router.push(`/diagrams/editor?id=${f.id}`); setContextMenu(null); };
-            if (f.mimeType === DRAWING_MIME)
-              return () => { router.push(`/drawing/editor?id=${f.id}`); setContextMenu(null); };
-            return () => { setPreviewFile(f); setContextMenu(null); };
+            return () => {
+              routeForFile(f, router, {
+                officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
+                onPreviewFallback: () => setPreviewFile(f),
+              });
+              setContextMenu(null);
+            };
           })()}
           onInfo={() => { setInfoFile(contextMenu.file); setContextMenu(null); }}
           onShare={() => { setShareFile(contextMenu.file); setContextMenu(null); }}
@@ -710,6 +693,16 @@ export default function DrivePage() {
           onDelete={() => { deleteMutation.mutate(contextMenu.file.id); setContextMenu(null); }}
           onCopyLink={() => { handleCopyLink(contextMenu.file); setContextMenu(null); }}
           onMove={() => { setMoveFile(contextMenu.file); setContextMenu(null); }}
+          onConvert={
+            flags.officeInPlaceEditing && officeAppForFile(contextMenu.file.mimeType, contextMenu.file.name)
+              ? () => {
+                  const f = contextMenu.file;
+                  const app = officeAppForFile(f.mimeType, f.name)!;
+                  router.push(officeEditorRoute(app, f.id, { promote: true }));
+                  setContextMenu(null);
+                }
+              : undefined
+          }
         />
       )}
 

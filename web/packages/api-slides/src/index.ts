@@ -120,6 +120,19 @@ export const slidesApi = {
     });
   },
 
+  /**
+   * Promote a raw Office (.pptx) Drive file in-place into a native Neutrino
+   * slide deck: uploads `content` (the same JSON shape a normal save would
+   * produce) and flips the file's mime type server-side. Same file id
+   * afterwards.
+   */
+  async promoteSlide(slideId: string, content: string): Promise<SlideResponse> {
+    return request<SlideResponse>(`/api/v1/slides/${slideId}/promote`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  },
+
   async autosaveContent(
     slideId: string,
     content: string,

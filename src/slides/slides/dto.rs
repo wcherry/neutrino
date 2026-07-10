@@ -12,6 +12,14 @@ pub struct CreateSlideRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct PromoteSlideRequest {
+    /// Already-converted native Neutrino slide JSON content (conversion from
+    /// OOXML happens client-side; the backend never parses office bytes).
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SaveSlideRequest {
     /// Optional new title (renames the backing file record).
     pub title: Option<String>,

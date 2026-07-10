@@ -5,7 +5,7 @@ use crate::drive::storage::model::{
 };
 use crate::schema::{file_versions, files, user_quotas};
 use crate::shared::{ApiError, ListQuery, OrderDirection};
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -218,6 +218,43 @@ impl StorageRepository {
             .first(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB fetch updated file error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// Flips a file's stored mime type (used by the per-app `promote` flow to
+    /// convert a raw office file into a native Neutrino doc/sheet/slide).
+    /// Scoped to `owner_id` the same way `update_file_content` is, so a
+    /// caller passing the wrong owner id silently updates nothing.
+    pub fn update_file_mime_type(
+        &self,
+        file_id: &str,
+        owner_id: &str,
+        mime_type: &str,
+    ) -> Result<FileRecord, ApiError> {
+        let mut conn = self.get_conn()?;
+
+        diesel::update(
+            files::table
+                .filter(files::id.eq(file_id))
+                .filter(files::user_id.eq(owner_id)),
+        )
+        .set((
+            files::mime_type.eq(mime_type),
+            files::updated_at.eq(Utc::now().naive_utc()),
+        ))
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB update file mime type error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+
+        files::table
+            .filter(files::id.eq(file_id))
+            .select(FileRecord::as_select())
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB fetch mime-type-updated file error: {:?}", e);
                 ApiError::internal("Database error")
             })
     }
@@ -487,5 +524,114 @@ impl StorageRepository {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")
         })
+    }
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
+//
+// Covers `update_file_mime_type` (issue #43 — in-place editing of MS Office
+// docs). This method does not exist yet (TDD red phase): it is the plumbing
+// step that lets the "convert on open" flow flip a raw .docx/.xlsx/.pptx
+// file's stored mimetype to the matching native Neutrino type once a
+// doc/sheet/slide row has been created for it (see the per-app `promote`
+// service methods). These tests reference `update_file_mime_type` directly,
+// so this file (and therefore the crate) will fail to *compile* until the
+// method is implemented — the expected and normal shape of Rust TDD red phase
+// for a method that doesn't exist yet, as opposed to a runtime assertion
+// failure. Run with `cargo test --lib drive::storage::repository::tests`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const NATIVE_DOC_MIME: &str = "application/x-neutrino-doc";
+
+    fn test_pool() -> DbPool {
+        use crate::MIGRATIONS;
+        use diesel::r2d2::{ConnectionManager, Pool};
+        use diesel_migrations::MigrationHarness;
+
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder().max_size(1).build(manager).expect("test pool");
+        pool.get()
+            .expect("conn")
+            .run_pending_migrations(MIGRATIONS)
+            .expect("migrations");
+        pool
+    }
+
+    fn insert_test_file(repo: &StorageRepository, id: &str, user_id: &str, mime_type: &str) -> FileRecord {
+        repo.insert_file(NewFileRecord {
+            id,
+            user_id,
+            name: "report.docx",
+            size_bytes: 0,
+            mime_type,
+            storage_path: "",
+            folder_id: None,
+            encrypted_metadata: None,
+        })
+        .expect("insert file")
+    }
+
+    #[test]
+    fn update_file_mime_type_changes_the_stored_mime_type() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "file-1", "user-1", DOCX_MIME);
+
+        let updated = repo
+            .update_file_mime_type("file-1", "user-1", NATIVE_DOC_MIME)
+            .expect("update mime type");
+
+        assert_eq!(updated.mime_type, NATIVE_DOC_MIME);
+    }
+
+    #[test]
+    fn update_file_mime_type_persists_across_a_fresh_lookup() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "file-2", "user-1", DOCX_MIME);
+
+        repo.update_file_mime_type("file-2", "user-1", NATIVE_DOC_MIME)
+            .expect("update mime type");
+
+        let refetched = repo
+            .find_file_by_id("file-2")
+            .expect("find file")
+            .expect("file exists");
+        assert_eq!(refetched.mime_type, NATIVE_DOC_MIME);
+    }
+
+    #[test]
+    fn update_file_mime_type_does_not_affect_other_files() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "file-3", "user-1", DOCX_MIME);
+        insert_test_file(&repo, "file-4", "user-1", DOCX_MIME);
+
+        repo.update_file_mime_type("file-3", "user-1", NATIVE_DOC_MIME)
+            .expect("update mime type");
+
+        let untouched = repo
+            .find_file_by_id("file-4")
+            .expect("find file")
+            .expect("file exists");
+        assert_eq!(untouched.mime_type, DOCX_MIME);
+    }
+
+    #[test]
+    fn update_file_mime_type_scoped_to_owner_does_not_update_other_users_file() {
+        // Mirrors update_file_content's owner-scoping: the changeset filters
+        // by (file_id, user_id), so calling with the wrong owner id must not
+        // silently mutate a file owned by someone else.
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "file-5", "owner-a", DOCX_MIME);
+
+        let _ = repo.update_file_mime_type("file-5", "owner-b", NATIVE_DOC_MIME);
+
+        let untouched = repo
+            .find_file_by_id("file-5")
+            .expect("find file")
+            .expect("file exists");
+        assert_eq!(untouched.mime_type, DOCX_MIME);
     }
 }

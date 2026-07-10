@@ -149,6 +149,19 @@ export const sheetsApi = {
   },
 
 
+  /**
+   * Promote a raw Office (.xlsx) Drive file in-place into a native Neutrino
+   * sheet: uploads `content` (the same JSON shape a normal save would
+   * produce) and flips the file's mime type server-side. Same file id
+   * afterwards.
+   */
+  async promoteSheet(sheetId: string, content: string): Promise<SheetResponse> {
+    return request<SheetResponse>(`/api/v1/sheets/${sheetId}/promote`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  },
+
   async retrieveText(sheetId: string): Promise<string> {
     const sheet = await request<SheetResponse>(`/api/v1/sheets/${sheetId}`);
     const raw = await request<string>(sheet.contentUrl, {}, { responseType: 'text' }).catch(() => '');

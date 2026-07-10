@@ -475,6 +475,54 @@ export async function driveCreateVersion(fileId: string, content: string, filena
 }
 
 // ---------------------------------------------------------------------------
+// Binary-safe (raw bytes) transport — for arbitrary binary content such as
+// Office OOXML files (.docx/.xlsx/.pptx) that must never be run through
+// TextEncoder/TextDecoder or wrapped in an 'application/json' Blob, both of
+// which corrupt non-UTF8 binary data. Siblings of the string-based helpers
+// above; those are untouched and remain in use everywhere else.
+// ---------------------------------------------------------------------------
+
+function toUint8Array(bytes: Uint8Array | ArrayBuffer): Uint8Array {
+  return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+}
+
+/**
+ * Extract a real ArrayBuffer slice matching a Uint8Array view exactly
+ * (respecting byteOffset/byteLength), typed as plain `ArrayBuffer` so it
+ * satisfies `BlobPart` regardless of the view's backing-buffer generic
+ * (`ArrayBufferLike` vs `ArrayBuffer`).
+ */
+function toBlobPart(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+/** Autosave raw bytes: write file content without creating a version snapshot. */
+export async function driveAutosaveBytes(
+  fileId: string,
+  bytes: Uint8Array | ArrayBuffer,
+  filename: string,
+  mimeType: string,
+): Promise<void> {
+  const formData = new FormData();
+  formData.append('file', new Blob([toBlobPart(toUint8Array(bytes))], { type: mimeType }), filename);
+  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, { method: 'PUT', body: formData });
+}
+
+/** Explicit save of raw bytes: write content and create a new version snapshot. */
+export async function driveCreateVersionBytes(
+  fileId: string,
+  bytes: Uint8Array | ArrayBuffer,
+  filename: string,
+  mimeType: string,
+  label?: string,
+): Promise<FileVersionItem> {
+  const formData = new FormData();
+  formData.append('file', new Blob([toBlobPart(toUint8Array(bytes))], { type: mimeType }), filename);
+  if (label) formData.append('label', label);
+  return request<FileVersionItem>(`/api/v1/drive/files/${fileId}/versions`, { method: 'POST', body: formData });
+}
+
+// ---------------------------------------------------------------------------
 // E2EE Upload helpers
 // ---------------------------------------------------------------------------
 
@@ -605,6 +653,50 @@ export async function driveCreateEncryptedVersion(
   const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
   const plainBytes = new TextEncoder().encode(content);
+  const cipherBytes = encryptFile(plainBytes, dek);
+  const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+  const formData = new FormData();
+  formData.append('file', blob, filename);
+  if (label) formData.append('label', label);
+  return request<FileVersionItem>(`/api/v1/drive/files/${fileId}/versions`, { method: 'POST', body: formData });
+}
+
+/**
+ * Encrypt raw `bytes` with `dek` and write it as an autosave (no version
+ * snapshot). Unlike `driveAutosaveEncryptedContent`, the plaintext is passed
+ * to `encryptFile` exactly as given — no `TextEncoder` re-encoding, which
+ * would corrupt arbitrary binary content (e.g. a zip-based OOXML file).
+ */
+export async function driveAutosaveEncryptedBytes(
+  fileId: string,
+  bytes: Uint8Array | ArrayBuffer,
+  filename: string,
+  dek: Uint8Array,
+): Promise<void> {
+  const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+  await initSodium();
+  const plainBytes = toUint8Array(bytes);
+  const cipherBytes = encryptFile(plainBytes, dek);
+  const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+  const formData = new FormData();
+  formData.append('file', blob, filename);
+  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, { method: 'PUT', body: formData });
+}
+
+/**
+ * Encrypt raw `bytes` with `dek` and save it as a named version snapshot.
+ * See `driveAutosaveEncryptedBytes` for why this avoids `TextEncoder`.
+ */
+export async function driveCreateEncryptedVersionBytes(
+  fileId: string,
+  bytes: Uint8Array | ArrayBuffer,
+  filename: string,
+  dek: Uint8Array,
+  label?: string,
+): Promise<FileVersionItem> {
+  const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+  await initSodium();
+  const plainBytes = toUint8Array(bytes);
   const cipherBytes = encryptFile(plainBytes, dek);
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();

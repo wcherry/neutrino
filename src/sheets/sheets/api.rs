@@ -1,7 +1,8 @@
 use crate::shared::{ApiError, AuthenticatedUser};
 use crate::sheets::sheets::{
     dto::{
-        CreateSheetRequest, ListSheetsResponse, SaveSheetRequest, SheetMetaResponse, SheetResponse,
+        CreateSheetRequest, ListSheetsResponse, PromoteSheetRequest, SaveSheetRequest,
+        SheetMetaResponse, SheetResponse,
     },
     service::SheetsService,
 };
@@ -173,20 +174,54 @@ pub async fn autosave_sheet(
     Ok(web::Json(meta))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/sheets/{id}/promote",
+    params(
+        ("id" = String, Path, description = "Drive file ID of the raw .xlsx file")
+    ),
+    request_body = PromoteSheetRequest,
+    responses(
+        (status = 200, description = "File promoted to a native spreadsheet", body = SheetResponse),
+        (status = 400, description = "File is not an Excel spreadsheet"),
+        (status = 403, description = "Edit access required"),
+        (status = 404, description = "Not found"),
+        (status = 409, description = "File has already been promoted"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "sheets"
+)]
+#[post("/sheets/{id}/promote")]
+pub async fn promote_sheet(
+    state: web::Data<SheetsApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<PromoteSheetRequest>,
+) -> Result<web::Json<SheetResponse>, ApiError> {
+    let sheet_id = path.into_inner();
+    let sheet = state
+        .sheets_service
+        .promote(&user, &sheet_id, &body.into_inner().content)
+        .await?;
+    Ok(web::Json(sheet))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_sheets)
         .service(create_sheet)
         .service(get_sheet)
         .service(save_sheet)
-        .service(autosave_sheet);
+        .service(autosave_sheet)
+        .service(promote_sheet);
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_sheets, create_sheet, get_sheet, save_sheet, autosave_sheet),
+    paths(list_sheets, create_sheet, get_sheet, save_sheet, autosave_sheet, promote_sheet),
     components(schemas(
         CreateSheetRequest,
         SaveSheetRequest,
+        PromoteSheetRequest,
         SheetResponse,
         SheetMetaResponse,
         ListSheetsResponse,

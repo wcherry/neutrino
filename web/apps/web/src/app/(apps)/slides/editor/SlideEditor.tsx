@@ -64,7 +64,13 @@ import {
   useToast,
 } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
-import { slidesApi, driveReadContent, driveAutosaveEncryptedContent, storageApi, type FileItem } from '@/lib/api';
+import {
+  slidesApi, driveReadContent, driveAutosaveEncryptedContent,
+  driveAutosaveBytes,
+  storageApi, filesystemApi, ApiClientError, type FileItem,
+} from '@/lib/api';
+import { OFFICE_MIME, officeAppForFile } from '@/lib/officeFormats';
+import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -108,7 +114,7 @@ import {
   uid,
 } from './slideEditorConstants';
 import { slideBackgroundStyle, dbThemeToTheme, getVideoEmbedInfo } from './slideEditorHelpers';
-import { exportAsPptx } from './pptxExport';
+import { exportAsPptx, exportAsPptxBytes } from './pptxExport';
 import FillPicker from './FillPicker';
 import SlideCanvas from './SlideCanvas';
 import SlideThumbnail from './SlideThumbnail';
@@ -359,6 +365,15 @@ export function SlideEditor() {
   const importInputRef = useRef<HTMLInputElement>(null);
   const dragSrcIdx = useRef<number | null>(null);
   const initialSaveDoneRef = useRef(false);
+  // Forward-ref to the promote mutation trigger (issue #43) — set once
+  // promoteMutation is defined below; read from the office-mode load effect,
+  // which runs before that definition point.
+  const promoteMutationRef = useRef<() => void>(() => {});
+  // Office mode (issue #43) — declared here (before useSlidePresence, which
+  // needs it to skip presence for office-mode files) since `officeMode`
+  // itself isn't known until the getSlide query settles, later in this
+  // component. Synced by an effect below.
+  const officeModeRef = useRef(false);
 
   const onRemotePresentationRef = useRef<((p: unknown) => void) | null>(null);
   onRemotePresentationRef.current = (incoming: unknown) => {
@@ -375,17 +390,49 @@ export function SlideEditor() {
     slideId,
     userName: currentUser?.name ?? 'Anonymous',
     authToken,
-    enabled: !!slideId,
+    // Office-mode files have no `slides` row / collab room — presence is out
+    // of scope for them (plan section 4). officeModeRef lags one render at
+    // most (office mode isn't known until later in this component).
+    enabled: !!slideId && !officeModeRef.current,
     selectedSlideIndex: selectedSlideIdx,
     onRemotePresentationRef,
   });
 
-  const { isLoading: metaLoading, data: slideData } = useQuery({
+  const { isLoading: metaLoading, isError: metaIsError, error: metaError, data: slideData } = useQuery({
     queryKey: ['slide', slideId],
     queryFn: () => slidesApi.getSlide(slideId),
     enabled: !!slideId,
     staleTime: 30_000,
   });
+
+  // ── Office mode (issue #43) ────────────────────────────────────────────────
+  // A raw .pptx Drive file has no `slides` row, so slidesApi.getSlide 404s.
+  // Fall back to the generic Drive file metadata to distinguish "raw pptx,
+  // open it in place" from a genuinely deleted/missing presentation.
+  const slide404 = flags.officeInPlaceEditing && metaIsError
+    && metaError instanceof ApiClientError && metaError.statusCode === 404;
+
+  const {
+    data: officeFileMeta,
+    isLoading: officeFallbackLoading,
+    isError: officeFallbackIsError,
+  } = useQuery({
+    queryKey: ['slide-office-fallback', slideId],
+    queryFn: () => storageApi.getFileMetadata(slideId),
+    enabled: slide404,
+    staleTime: 0,
+    retry: false,
+  });
+
+  const officeApp = officeFileMeta ? officeAppForFile(officeFileMeta.mimeType, officeFileMeta.name) : null;
+  const officeMode = slide404 && officeApp === 'slides';
+  const slideNotFound = slide404 && (officeFallbackIsError || (!!officeFileMeta && officeApp !== 'slides'));
+
+  useEffect(() => { officeModeRef.current = officeMode; }, [officeMode]);
+  const officeFileMetaRef = useRef<FileItem | null>(null);
+  useEffect(() => { officeFileMetaRef.current = officeFileMeta ?? null; }, [officeFileMeta]);
+  const presentationRef = useRef<SlidePresentation>(presentation);
+  presentationRef.current = presentation;
 
   const { isLoading: contentLoading, data: slideContent } = useQuery({
     queryKey: ['slide-content', slideId, dekResolved],
@@ -415,12 +462,50 @@ export function SlideEditor() {
     staleTime: 60_000,
   });
 
-  const isLoading = metaLoading || contentLoading;
+  const isLoading = metaLoading || contentLoading || (slide404 && officeFallbackLoading);
 
   useEffect(() => {
     if (!slideData) return;
     setTitle(slideData.title);
   }, [slideData]);
+
+  // ── Office mode: title + content load (issue #43) ───────────────────────
+  useEffect(() => {
+    if (officeMode && officeFileMeta) setTitle(officeFileMeta.name);
+  }, [officeMode, officeFileMeta]);
+
+  const officeContentLoadStartedRef = useRef(false);
+  useEffect(() => {
+    if (!officeMode || !officeFileMeta || officeContentLoadStartedRef.current) return;
+    officeContentLoadStartedRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const blob = await storageApi.downloadFile(slideId);
+        if (cancelled) return;
+        const file = new File([blob], officeFileMeta.name, { type: officeFileMeta.mimeType });
+        const { importFromPptx } = await import('./pptxImport');
+        if (cancelled) return;
+        const imported = await importFromPptx(file);
+        if (cancelled) return;
+        setPresentation(imported);
+        lastSavedRef.current = JSON.stringify(imported);
+        // Convert-on-open (global setting) or a one-shot promote request from
+        // the Drive context menu's "Convert to Neutrino Slide" action:
+        // silently promote right after the initial client-side import
+        // renders. Non-blocking.
+        if (getOfficeFileMode() === 'convert-on-open' || isOneShotPromoteRequested()) {
+          promoteMutationRef.current();
+        }
+      } catch {
+        if (!cancelled) toast.error('Failed to open this file for editing');
+      }
+    })();
+    return () => { cancelled = true; };
+  // toast is intentionally omitted — a fresh identity on every render would
+  // otherwise cancel this one-shot load via the cleanup function above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [officeMode, officeFileMeta, slideId]);
 
   useEffect(() => {
     if (!slideContent) return;
@@ -453,6 +538,20 @@ export function SlideEditor() {
 
   const contentMutation = useMutation({
     mutationFn: async ({ content }: { content: string }) => {
+      // Office mode (issue #43): re-serialize the current presentation into
+      // real PPTX bytes and write them to the SAME Drive file id via the
+      // binary-safe transport, instead of the native JSON autosave path.
+      if (officeModeRef.current) {
+        const meta = officeFileMetaRef.current;
+        if (!meta) throw new Error('office-meta-missing');
+        const bytes = await exportAsPptxBytes(presentationRef.current);
+        // Office-mode files stay real, uncorrupted OOXML at rest (acceptance
+        // criterion 3 — downloading the raw file must open in real
+        // PowerPoint), so these never go through the E2EE-encrypted transport
+        // even when a DEK is available for this file id.
+        await driveAutosaveBytes(slideId, bytes, meta.name, OFFICE_MIME.pptx);
+        return;
+      }
       if (!dekRef.current) throw new Error('no-dek');
       return driveAutosaveEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current);
     },
@@ -471,9 +570,40 @@ export function SlideEditor() {
   });
 
   const titleMutation = useMutation({
-    mutationFn: ({ title: t }: { title: string }) => slidesApi.saveSlide(slideData!.id, { title: t }),
+    mutationFn: async ({ title: t }: { title: string }): Promise<void> => {
+      // Office mode: no `slides` row to PATCH — rename through the generic
+      // Drive rename call (same one FileContextMenu's rename action uses).
+      if (officeModeRef.current) {
+        await filesystemApi.updateFile(slideId, { name: t });
+        return;
+      }
+      await slidesApi.saveSlide(slideData!.id, { title: t });
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['slides'] }),
   });
+
+  // "Convert to Neutrino Slide" — one-shot promote of the raw office file
+  // into a native slide deck, keeping the same Drive file id.
+  const promoteMutation = useMutation({
+    mutationFn: async () => {
+      const content = JSON.stringify(presentationRef.current);
+      return slidesApi.promoteSlide(slideId, content);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['slide', slideId] });
+      queryClient.invalidateQueries({ queryKey: ['slide-content', slideId] });
+      queryClient.invalidateQueries({ queryKey: ['contents'] });
+      queryClient.invalidateQueries({ queryKey: ['slides'] });
+      toast.success('Converted to a native Neutrino slide deck');
+    },
+    onError: () => toast.error('Failed to convert to a native Neutrino slide deck'),
+  });
+  useEffect(() => {
+    promoteMutationRef.current = () => { promoteMutation.mutate(); };
+  }, [promoteMutation]);
+  const handleConvertToNative = useCallback(() => {
+    promoteMutation.mutate();
+  }, [promoteMutation]);
 
   const scheduleAutoSave = useCallback((pres: SlidePresentation) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -1079,6 +1209,17 @@ export function SlideEditor() {
 
   if (isLoading) return <div style={{ padding: '2rem' }}>Loading presentation…</div>;
 
+  if (slideNotFound) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <p>Presentation not found</p>
+        <Button variant="ghost" icon={<ArrowLeft size={16} />} onClick={() => router.push('/drive')}>
+          Back to Drive
+        </Button>
+      </div>
+    );
+  }
+
   // ── Presenter mode ───────────────────────────────────────────────────────
 
   if (presenterMode) {
@@ -1128,6 +1269,11 @@ export function SlideEditor() {
         <span className={`${styles.saveStatus} ${saveStatusClass}`}>{saveStatusText}</span>
 
         <div className={styles.actions}>
+          {officeMode && (
+            <Button variant="secondary" onClick={handleConvertToNative} title="Convert to Neutrino Slide">
+              Convert to Neutrino Slide
+            </Button>
+          )}
           {/* Master toggle */}
           <Button
             variant={masterMode ? 'primary' : 'secondary'}

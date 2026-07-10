@@ -95,7 +95,7 @@ function parseXlsxToSheets(buffer: ArrayBuffer): { name: string; data: Map<strin
                     if (!cell || cell.v == null) continue;
                     const id = `${numToAlpha(c + 1)}${r + 1}`;
                     const val = cell.w ?? String(cell.v);
-                    if (val !== '') map.set(id, { id, raw: val, edit: false });
+                    if (val !== '') map.set(id, { id, raw: val, value: val, edit: false });
                 }
             }
         }
@@ -145,11 +145,18 @@ export function SheetEditor() {
     const broadcastCellsRef = useRef<(sheetIndex: number, cells: CellSyncItem[]) => void>(() => {});
     const isViewerRef = useRef(false);
 
+    // Office mode (issue #43): raw .xlsx files have no `sheets` row / collab
+    // room to sync against, so presence is out of scope for them. `officeMode`
+    // is only known after usePersistence's load() resolves (later in this
+    // component), so this ref — synced by an effect below — lags at most one
+    // render behind; acceptable since presence itself is out of scope here.
+    const officeModeRef = useRef(false);
+
     const { remoteUsers, broadcastCells } = useSheetPresence({
         sheetId,
         userName: currentUser?.name ?? 'Anonymous',
         authToken,
-        enabled: !!sheetId,
+        enabled: !!sheetId && !officeModeRef.current,
         selectedCellId: selectionAnchor ?? null,
         onRemoteCellsRef,
     });
@@ -316,7 +323,15 @@ export function SheetEditor() {
         sheetsConditionalFormatsRef: flags.sheetsConditionalFormatting ? cf.sheetsConditionalFormatsRef : undefined,
         flushActiveConditionalFormats: flags.sheetsConditionalFormatting ? cf.flushActiveConditionalFormats : undefined,
         setConditionalFormats: flags.sheetsConditionalFormatting ? cf.setConditionalFormats : undefined,
+        officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
     });
+
+    const officeMode = persist.officeMode;
+    useEffect(() => { officeModeRef.current = officeMode; }, [officeMode]);
+    const handleConvertToNative = useCallback(async () => {
+        await persist.promote();
+        queryClient.invalidateQueries({ queryKey: ['contents'] });
+    }, [persist, queryClient]);
 
     const isViewer = persist.yourRole === 'viewer';
     useEffect(() => { isViewerRef.current = isViewer; }, [isViewer]);
@@ -1603,6 +1618,8 @@ export function SheetEditor() {
                     setHamburgerDialog={setHamburgerDialog}
                     setHamburgerDeleteConfirm={setHamburgerDeleteConfirm}
                     isViewer={isViewer}
+                    officeMode={officeMode}
+                    onConvertToNative={handleConvertToNative}
                 />
                 <button className={styles.backBtn} aria-label="Sheets" onClick={handleBack}>
                     <ArrowLeft size={16} />
