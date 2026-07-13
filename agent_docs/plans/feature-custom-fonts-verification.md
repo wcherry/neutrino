@@ -4,7 +4,7 @@
 - [ ] A running backend (`cargo run`) with a fresh or migrated SQLite DB (migration `00099_admin__2026-07-12-000000_create_custom_fonts` applied automatically on startup).
 - [ ] A running frontend (`pnpm dev` in `web/`).
 - [ ] Two accounts: one with `is_admin = true` (to reach `/admin`) and one regular non-admin account.
-- [ ] A handful of real font files to upload for testing: at least one `.woff2` (e.g. any Google Fonts static download), and ideally one each of `.woff`/`.ttf`/`.otf` for format coverage. Also have a renamed `.txt`/`.exe` file handy to test rejection, and a file over 5MB to test the size limit.
+- [ ] A handful of real font files to upload for testing: at least one `.woff2` (e.g. any Google Fonts static download), and ideally one each of `.woff`/`.ttf`/`.otf` for format coverage. Also have a renamed `.txt`/`.exe` file handy to test rejection, and a file over 50MB to test the size limit.
 
 ## Steps to Verify
 
@@ -26,7 +26,7 @@
 ### Edge Cases
 1. **Non-admin access**: sign in as a non-admin user, confirm `/admin` is inaccessible (or the Fonts tab/upload controls are not reachable) and that a direct `PATCH`/`POST`/`DELETE` to `/api/v1/admin/fonts*` without an admin token returns 401/403 (can verify via browser devtools network tab or curl).
 2. **Disallowed file type**: attempt to upload a renamed `.txt` or `.exe` file via the admin DropZone. Confirm it's rejected with a clear error toast (not a silent failure or a 500).
-3. **Oversized file**: attempt to upload a file over 5MB. Confirm it's rejected with a clear "too large" error rather than hanging or crashing the tab.
+3. **Oversized file**: attempt to upload a file over 50MB. Confirm it's rejected with a clear "too large" error rather than hanging or crashing the tab.
 4. **Duplicate display names**: upload two fonts with the same display name. Confirm both are accepted and both appear distinctly in every picker (no collision/overwrite).
 5. **Unauthenticated session**: sign out fully (clear `access_token` from localStorage) and load any page. Confirm no console errors/redirect loops caused by the custom-fonts fetch (it should simply skip fetching and leave built-in fonts fully functional).
 6. **Slow/failed font fetch**: throttle network or block `/api/v1/fonts` in devtools, reload an editor. Confirm the app still loads and built-in fonts still work — custom fonts should fail soft, not block the editor.
@@ -35,7 +35,7 @@
 ## Expected Results
 - Uploading a font in `/admin` makes it selectable and renders correctly in Docs, Slides, Sheets, Drawing, and Diagrams within one page refresh.
 - Deleting a font removes it from the admin list and from every editor's picker after a refresh.
-- Invalid uploads (wrong format, over 5MB) are rejected client-visibly, never silently or with a raw 500.
+- Invalid uploads (wrong format, over 50MB) are rejected client-visibly, never silently or with a raw 500.
 - Non-admin users cannot upload or delete fonts through the API.
 - The app remains fully functional (built-in fonts still work) with zero custom fonts, on a fresh/unauthenticated session, or if the fonts endpoint is unreachable.
 

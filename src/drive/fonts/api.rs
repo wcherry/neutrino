@@ -114,7 +114,7 @@ async fn get_font_file(
 
 /// Upload a new custom font. Admin-only. Accepts `multipart/form-data` with
 /// a `display_name` text field and a `file` field (woff2/woff/ttf/otf, max
-/// 5 MB, validated against both the file extension and declared/sniffed MIME
+/// 50 MB, validated against both the file extension and declared/sniffed MIME
 /// type).
 #[utoipa::path(
     post,
@@ -124,7 +124,7 @@ async fn get_font_file(
         (status = 400, description = "Missing display name, no file, or disallowed format"),
         (status = 401, description = "Missing or invalid authentication token"),
         (status = 403, description = "Authenticated user is not an admin"),
-        (status = 413, description = "File exceeds the 5 MB limit"),
+        (status = 413, description = "File exceeds the 50 MB limit"),
     ),
     security(("bearer_auth" = [])),
     tag = "fonts"
@@ -216,7 +216,7 @@ async fn upload_font(
                 return Err(ApiError::new(
                     413,
                     "PAYLOAD_TOO_LARGE",
-                    "Font file exceeds the 5MB limit",
+                    "Font file exceeds the 50MB limit",
                 ));
             }
             file.write_all(&data).await.map_err(|e| {
@@ -572,13 +572,13 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn upload_font_rejects_file_over_5mb() {
+    async fn upload_font_rejects_file_over_50mb() {
         let ts = make_token_service();
         let app = make_app!(test_state(), ts.clone());
         let token = admin_bearer(&ts);
         let boundary = "X-BOUNDARY-6";
-        // 5 MB limit — send 5 MB + 1 byte of filler payload.
-        let oversized = vec![0u8; 5 * 1024 * 1024 + 1];
+        // 50 MB limit — send 50 MB + 1 byte of filler payload.
+        let oversized = vec![0u8; 50 * 1024 * 1024 + 1];
         let body = build_multipart_body(
             boundary,
             "Too Big",
@@ -596,7 +596,7 @@ mod tests {
         assert_eq!(
             resp.status(),
             413,
-            "expected 413 Payload Too Large for a file over the 5MB limit, got {}",
+            "expected 413 Payload Too Large for a file over the 50MB limit, got {}",
             resp.status()
         );
     }

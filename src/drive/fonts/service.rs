@@ -8,10 +8,10 @@ use super::repository::FontsRepository;
 use crate::drive::storage::store::LocalFileStore;
 use crate::shared::ApiError;
 
-/// Maximum allowed custom font upload size (5 MB), enforced by the caller
+/// Maximum allowed custom font upload size (50 MB), enforced by the caller
 /// while streaming the multipart body to a temp file (see
 /// `drive::fonts::api::upload_font`), before `finalize_upload` is called.
-pub const MAX_FONT_SIZE_BYTES: u64 = 5 * 1024 * 1024;
+pub const MAX_FONT_SIZE_BYTES: u64 = 50 * 1024 * 1024;
 
 /// Font file extensions accepted for upload.
 const ALLOWED_EXTENSIONS: &[&str] = &["woff2", "woff", "ttf", "otf"];
@@ -97,7 +97,7 @@ impl FontsService {
 
     /// Move a validated, fully-streamed temp file into permanent storage
     /// under the `"fonts"` partition and persist its metadata. Caller is
-    /// responsible for having already enforced the 5 MB size limit and
+    /// responsible for having already enforced the 50 MB size limit and
     /// validated the format via `validate_format` while streaming the
     /// upload.
     pub fn finalize_upload(

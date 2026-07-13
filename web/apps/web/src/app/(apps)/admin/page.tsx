@@ -540,7 +540,7 @@ function FontsTab() {
       setDisplayName('');
     },
     onError: () => {
-      toastError('Failed to upload font. Check the format (woff2/woff/ttf/otf) and size (max 5 MB).');
+      toastError('Failed to upload font. Check the format (woff2/woff/ttf/otf) and size (max 50 MB).');
     },
   });
 
@@ -581,7 +581,7 @@ function FontsTab() {
         multiple={false}
         accept=".woff2,.woff,.ttf,.otf"
         label={pendingFile ? pendingFile.name : 'Drag & drop a font file here'}
-        hint="woff2, woff, ttf, or otf — max 5 MB"
+        hint="woff2, woff, ttf, or otf — max 50 MB"
       />
       <div className={styles.serviceRow}>
         <input

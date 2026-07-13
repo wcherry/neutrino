@@ -55,7 +55,7 @@ Add the `custom_fonts` `table!` block and an entry in
   `LocalFileStore`'s existing per-partition path scheme with `"fonts"` as the
   partition key instead of a user id (there's no per-user scoping for fonts).
   Service owns validation: allowed formats `woff2`/`woff`/`ttf`/`otf` checked
-  against both the file extension and sniffed/declared MIME type, 5 MB max
+  against both the file extension and sniffed/declared MIME type, 50 MB max
   size enforced while streaming to the temp file (abort + cleanup temp file
   over limit, same pattern as `upload_file` in `drive/storage/api.rs`).
 - `api.rs`: `FontsApiState { service: Arc<FontsService> }`, handlers:
@@ -239,7 +239,7 @@ imports with the hook):
   corrupt-but-correctly-extensioned file will simply fail to render as a font
   client-side, which is an acceptable failure mode (same as any other
   user-uploaded asset in Drive).
-- **5 MB limit**: enforced server-side while streaming (abort + delete temp
+- **50 MB limit**: enforced server-side while streaming (abort + delete temp
   file over limit) — do not trust a client-side check alone.
 - **Diagrams connector labels**: only the shape-properties font control is in
   scope (see above); connector label font styling has no existing UI and
@@ -253,7 +253,7 @@ imports with the hook):
 - [ ] `GET /api/v1/fonts/{id}/file` serves correct bytes with correct
       `Content-Type` per format, requires authentication.
 - [ ] `POST /api/v1/admin/fonts` — admin-only; rejects disallowed
-      extensions/mime types and files over 5 MB; non-admin gets 403,
+      extensions/mime types and files over 50 MB; non-admin gets 403,
       unauthenticated gets 401 (mirroring feature-flags admin route tests).
 - [ ] `DELETE /api/v1/admin/fonts/{id}` — admin-only, removes DB row and file.
 - [ ] Uploading a font in `/admin` → Fonts tab makes it selectable (after a
