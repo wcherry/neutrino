@@ -134,8 +134,8 @@ export const adminApi = {
    */
   async uploadFont(file: File, displayName: string): Promise<CustomFont> {
     const formData = new FormData();
-    formData.append('file', file);
     formData.append('display_name', displayName);
+    formData.append('file', file);
     return request<CustomFont>('/api/v1/admin/fonts', {
       method: 'POST',
       body: formData,
