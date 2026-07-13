@@ -3,6 +3,7 @@
 import React from 'react';
 import { ColorPickerPopover } from '@neutrino/ui';
 import type { DiagramPage, EditorSelection, DiagramShape, DiagramConnector } from '../types';
+import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import styles from './PropertiesPanel.module.css';
 
 interface PropertiesPanelProps {
@@ -71,6 +72,7 @@ function ShapeProperties({
   shape: DiagramShape;
   onUpdate: (changes: Partial<DiagramShape>) => void;
 }) {
+  const { fontFamilyNames } = useAvailableFonts();
   const { style, x, y, width, height, rotation } = shape;
 
   return (
@@ -170,6 +172,18 @@ function ShapeProperties({
           }
           className={styles.numInputSingle}
         />
+      </div>
+      <div className={styles.row}>
+        <label>Font family</label>
+        <select
+          value={style.fontFamily}
+          onChange={(e) => onUpdate({ style: { ...style, fontFamily: e.target.value } })}
+          className={styles.select}
+        >
+          {fontFamilyNames.map((f) => (
+            <option key={f.value} value={f.value}>{f.label}</option>
+          ))}
+        </select>
       </div>
     </div>
   );
@@ -281,6 +295,7 @@ function MultiShapeProperties({
   shapes: DiagramShape[];
   onUpdate: (changes: Partial<DiagramShape>) => void;
 }) {
+  const { fontFamilyNames } = useAvailableFonts();
   const firstStyle = shapes[0].style;
 
   return (
@@ -303,6 +318,18 @@ function MultiShapeProperties({
           onChange={(hex) => onUpdate({ style: { ...firstStyle, stroke: hex } })}
           title="Stroke color"
         />
+      </div>
+      <div className={styles.row}>
+        <label>Font family</label>
+        <select
+          value={firstStyle.fontFamily}
+          onChange={(e) => onUpdate({ style: { ...firstStyle, fontFamily: e.target.value } })}
+          className={styles.select}
+        >
+          {fontFamilyNames.map((f) => (
+            <option key={f.value} value={f.value}>{f.label}</option>
+          ))}
+        </select>
       </div>
     </div>
   );

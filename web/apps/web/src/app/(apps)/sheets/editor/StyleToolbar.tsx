@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { CellStyle } from './types';
 import { ColorPickerPopover, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
-import { FONT_FAMILIES } from '@/constants/editor';
+import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { CustomFormatDialog } from './CustomFormatDialog';
 
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
@@ -96,6 +96,7 @@ export type StyleToolbarProps = {
 };
 
 export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick }: StyleToolbarProps) {
+    const { fontFamilies: FONT_FAMILIES } = useAvailableFonts();
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
     const isStrikethrough = cellStyle?.textDecoration === 'line-through';

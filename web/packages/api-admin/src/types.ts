@@ -89,3 +89,21 @@ export interface JobResponse {
   createdAt: string;
   updatedAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Custom fonts (feature/custom-fonts)
+//
+// Mirrors CustomFontRecord in neutrino-drive/src/drive/fonts/model.rs
+// (serde rename_all = "camelCase").
+// ---------------------------------------------------------------------------
+
+export type FontFormat = 'woff2' | 'woff' | 'ttf' | 'otf';
+
+export interface CustomFont {
+  id: string;
+  displayName: string;
+  format: FontFormat;
+  fileUrl: string;
+  uploadedBy: string;
+  createdAt: string;
+}

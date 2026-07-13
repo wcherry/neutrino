@@ -1,4 +1,4 @@
-export { adminApi } from './client';
+export { adminApi, fontsApi } from './client';
 
 export type {
   ProcessInfo,
@@ -12,4 +12,6 @@ export type {
   FeatureFlag,
   UpdateFeatureFlagRequest,
   JobResponse,
+  FontFormat,
+  CustomFont,
 } from './types';

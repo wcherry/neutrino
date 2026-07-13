@@ -9,6 +9,7 @@ import type {
   FeatureFlag,
   UpdateFeatureFlagRequest,
   JobResponse,
+  CustomFont,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -125,5 +126,53 @@ export const adminApi = {
    */
   async listJobs(): Promise<JobResponse[]> {
     return request<JobResponse[]>('/api/v1/jobs');
+  },
+
+  /**
+   * Upload a new custom font (admin-only).
+   * POST /api/v1/admin/fonts
+   */
+  async uploadFont(file: File, displayName: string): Promise<CustomFont> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('display_name', displayName);
+    return request<CustomFont>('/api/v1/admin/fonts', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  /**
+   * Delete a custom font (admin-only).
+   * DELETE /api/v1/admin/fonts/{id}
+   */
+  async deleteFont(id: string): Promise<void> {
+    return request<void>(`/api/v1/admin/fonts/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Fonts API
+//
+// GET /api/v1/fonts is any-authenticated-user access (not admin-gated), so it
+// is kept separate from adminApi which is entirely admin-only.
+// ---------------------------------------------------------------------------
+
+export const fontsApi = {
+  /**
+   * List all uploaded custom fonts.
+   * GET /api/v1/fonts
+   */
+  async list(): Promise<CustomFont[]> {
+    return request<CustomFont[]>('/api/v1/fonts');
+  },
+
+  /**
+   * Fetch a font's file bytes as a Blob.
+   */
+  async getFileBlob(fileUrl: string): Promise<Blob> {
+    return request<Blob>(fileUrl, {}, { responseType: 'blob' });
   },
 };

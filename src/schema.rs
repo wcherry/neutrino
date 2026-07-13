@@ -870,6 +870,18 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    custom_fonts (id) {
+        id -> Text,
+        display_name -> Text,
+        original_filename -> Text,
+        format -> Text,
+        storage_key -> Text,
+        uploaded_by -> Text,
+        created_at -> Text,
+    }
+}
+
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 
 diesel::table! {
@@ -1006,4 +1018,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     oauth_authorization_codes,
     // Admin
     feature_flags,
+    custom_fonts,
 );

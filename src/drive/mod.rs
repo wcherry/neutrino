@@ -7,6 +7,7 @@ pub mod compliance;
 pub mod encryption;
 pub mod feature_flags;
 pub mod filesystem;
+pub mod fonts;
 pub mod irm;
 pub mod notifications;
 pub mod permissions;

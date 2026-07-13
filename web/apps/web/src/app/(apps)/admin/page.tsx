@@ -4,10 +4,10 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
-import { Spinner, Toggle, ProgressBar, useToast } from '@neutrino/ui';
+import { Spinner, Toggle, ProgressBar, useToast, DropZone } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
-import { adminApi } from '@neutrino/api-admin';
-import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag, JobResponse } from '@neutrino/api-admin';
+import { adminApi, fontsApi } from '@neutrino/api-admin';
+import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag, JobResponse, CustomFont } from '@neutrino/api-admin';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -520,6 +520,116 @@ function FeatureFlagsTab() {
   );
 }
 
+function FontsTab() {
+  const qc = useQueryClient();
+  const { error: toastError, success: toastSuccess } = useToast();
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [displayName, setDisplayName] = useState('');
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['admin-fonts'],
+    queryFn: () => fontsApi.list(),
+  });
+
+  const uploadFont = useMutation({
+    mutationFn: () => adminApi.uploadFont(pendingFile!, displayName.trim()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-fonts'] });
+      toastSuccess('Font uploaded.');
+      setPendingFile(null);
+      setDisplayName('');
+    },
+    onError: () => {
+      toastError('Failed to upload font. Check the format (woff2/woff/ttf/otf) and size (max 5 MB).');
+    },
+  });
+
+  const deleteFont = useMutation({
+    mutationFn: (id: string) => adminApi.deleteFont(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-fonts'] });
+      toastSuccess('Font deleted.');
+    },
+    onError: () => {
+      toastError('Failed to delete font. Please try again.');
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className={styles.loading}>
+        <Spinner size="md" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={styles.error}>
+        Failed to load custom fonts.
+      </div>
+    );
+  }
+
+  const fonts: CustomFont[] = data ?? [];
+
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.sectionTitle}>Upload a font</h2>
+      <DropZone
+        onFiles={(files) => setPendingFile(files[0] ?? null)}
+        multiple={false}
+        accept=".woff2,.woff,.ttf,.otf"
+        label={pendingFile ? pendingFile.name : 'Drag & drop a font file here'}
+        hint="woff2, woff, ttf, or otf — max 5 MB"
+      />
+      <div className={styles.serviceRow}>
+        <input
+          type="text"
+          className={styles.roleSelect}
+          placeholder="Display name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+        />
+        <button
+          className={styles.pageBtn}
+          type="button"
+          disabled={!pendingFile || !displayName.trim() || uploadFont.isPending}
+          onClick={() => uploadFont.mutate()}
+        >
+          Upload
+        </button>
+      </div>
+
+      <h2 className={styles.sectionTitle}>Custom Fonts</h2>
+      {fonts.length === 0 ? (
+        <div className={styles.empty}>No custom fonts uploaded yet.</div>
+      ) : (
+        <div className={styles.serviceList}>
+          {fonts.map((font) => (
+            <div key={font.id} className={styles.serviceRow}>
+              <div className={styles.serviceInfo}>
+                <span className={styles.serviceName}>{font.displayName}</span>
+                <span className={styles.serviceMeta}>
+                  {font.format} &middot; uploaded {new Date(font.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+              <button
+                className={styles.deleteBtn}
+                type="button"
+                disabled={deleteFont.isPending}
+                onClick={() => deleteFont.mutate(font.id)}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function JobsTab() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['admin-jobs'],
@@ -599,7 +709,7 @@ function JobsTab() {
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = 'processes' | 'disk' | 'services' | 'users' | 'flags' | 'jobs';
+type Tab = 'processes' | 'disk' | 'services' | 'users' | 'flags' | 'fonts' | 'jobs';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'processes', label: 'Processes' },
@@ -607,6 +717,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'services', label: 'Services' },
   { id: 'users', label: 'Users' },
   { id: 'flags', label: 'Feature Flags' },
+  { id: 'fonts', label: 'Fonts' },
   { id: 'jobs', label: 'Jobs' },
 ];
 
@@ -665,6 +776,7 @@ export default function AdminPage() {
         {activeTab === 'services' && <ServicesTab />}
         {activeTab === 'users' && <UsersTab />}
         {activeTab === 'flags' && <FeatureFlagsTab />}
+        {activeTab === 'fonts' && <FontsTab />}
         {activeTab === 'jobs' && <JobsTab />}
       </div>
     </div>

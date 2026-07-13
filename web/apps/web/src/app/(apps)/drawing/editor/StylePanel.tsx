@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Lock, Unlock, ChevronDown } from 'lucide-react';
 import { FillPicker, ColorPickerPopover, type Background, type DriveImageItem } from '@neutrino/ui';
 import type { Shape, StrokeStyle, BezierCurve, TextCurve } from './types';
+import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import styles from './StylePanel.module.css';
 
 interface StylePanelProps {
@@ -142,6 +143,7 @@ function makeDefaultTopCurve(shape: Shape): BezierCurve {
 }
 
 export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock, onFetchDriveImages }: StylePanelProps) {
+  const { customFontFamilies } = useAvailableFonts();
   const selected = shapes.filter((s) => selectedIds.includes(s.id));
   if (selected.length === 0) return null;
 
@@ -243,7 +245,7 @@ export function StylePanel({ shapes, selectedIds, onStyleChange, onToggleLock, o
               value={fontFamily}
               onChange={(e) => onStyleChange(selectedIds, { fontFamily: e.target.value })}
             >
-              {FONT_FAMILIES.map((f) => (
+              {[...FONT_FAMILIES, ...customFontFamilies].map((f) => (
                 <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
                   {f.label}
                 </option>

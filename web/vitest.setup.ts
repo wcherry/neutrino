@@ -26,3 +26,17 @@ if (typeof Blob !== 'undefined' && typeof Blob.prototype.text !== 'function') {
     });
   };
 }
+
+// jsdom does not implement URL.createObjectURL / URL.revokeObjectURL at all.
+// Individual test files have historically worked around this per-file via
+// `Object.defineProperty(URL, 'createObjectURL', ...)`, but `vi.spyOn` (used
+// by e.g. CustomFontsProvider.test.tsx) requires the property to already
+// exist before it can be spied on/mocked. Define no-op stubs once here so
+// both `vi.spyOn(URL, 'createObjectURL')` and direct calls work everywhere;
+// individual tests remain free to override the return value.
+if (typeof URL !== 'undefined' && typeof URL.createObjectURL !== 'function') {
+  URL.createObjectURL = () => 'blob:mock-url';
+}
+if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL !== 'function') {
+  URL.revokeObjectURL = () => {};
+}
