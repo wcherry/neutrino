@@ -370,9 +370,9 @@ export function Toolbar({
       <ToolbarSelect
         style={{ width: 56 }}
         title="Font size"
-        defaultValue="11"
+        value={(editor.getAttributes('textStyle').fontSize as string | undefined)?.replace('pt', '') ?? '11'}
         onChange={e => {
-          editor.chain().focus().setMark('textStyle', { fontSize: `${e.target.value}pt` }).run();
+          editor.chain().focus().setFontSize(`${e.target.value}pt`).run();
         }}
       >
         {FONT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}

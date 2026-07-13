@@ -1,6 +1,7 @@
 'use client';
 
 import './remoteCursors.css';
+import './caretFontSize.css';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
@@ -15,6 +16,8 @@ import { CrossRefExtension } from '@/lib/extensions/CrossRefExtension';
 import { TableOfContentsExtension } from '@/lib/extensions/TableOfContentsExtension';
 import { SectionBreakExtension } from '@/lib/extensions/SectionBreakExtension';
 import { ColumnLayoutExtension } from '@/lib/extensions/ColumnLayoutExtension';
+import { FontSizeExtension } from '@/lib/extensions/FontSizeExtension';
+import { CaretFontSizeExtension } from '@/lib/extensions/CaretFontSizeExtension';
 // Advanced formatting extensions — only loaded when docsAdvancedFormatting flag is on
 import { Superscript, Subscript } from '@/lib/extensions/SubSuperExtension';
 import { IndentExtension } from '@/lib/extensions/IndentExtension';
@@ -955,6 +958,8 @@ export function DocEditor() {
       TextStyle,
       Color,
       FontFamily,
+      FontSizeExtension,
+      CaretFontSizeExtension,
       Highlight.configure({ multicolor: true }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Table.configure({ resizable: true }),

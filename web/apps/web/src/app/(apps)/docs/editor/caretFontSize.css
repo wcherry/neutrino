@@ -1,0 +1,10 @@
+/* Zero-width widget inserted at the caret via CaretFontSizeExtension so the
+   native blinking caret's height reflects the active fontSize mark before
+   any text has been typed at that size. */
+.caret-font-size-anchor {
+  display: inline-block;
+  width: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
