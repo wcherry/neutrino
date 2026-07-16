@@ -11,13 +11,13 @@ import {
 import {
   Toolbar as RickTextToolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect, ColorPickerPopover,
 } from '@neutrino/ui';
-import { FONT_FAMILIES } from '@/constants/editor';
 import { applyTextCase, type TextCaseMode } from '@/lib/textCase';
 import {
   BULLET_LIST_STYLES,
   ORDERED_LIST_STYLES,
 } from '@/lib/extensions/ListStyleExtension';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import styles from './page.module.css';
 
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
@@ -292,6 +292,7 @@ export function Toolbar({
   onInsertDiagram,
 }: ToolbarProps) {
   const flags = useFeatureFlags();
+  const { fontFamilies } = useAvailableFonts();
   const colorSelRef = useRef<{ from: number; to: number } | null>(null);
   if (!editor) return null;
 
@@ -364,7 +365,7 @@ export function Toolbar({
         title="Font family"
         style={{ width: 120 }}
       >
-        {FONT_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+        {fontFamilies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
       </ToolbarSelect>
 
       <ToolbarSelect

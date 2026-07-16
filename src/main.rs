@@ -271,6 +271,12 @@ async fn main() -> std::io::Result<()> {
         }),
     );
 
+    let drive_fonts_repo = Arc::new(drive::fonts::repository::FontsRepository::new(pool.clone()));
+    let drive_fonts_service = Arc::new(drive::fonts::service::FontsService::new(
+        drive_fonts_repo,
+        file_store.clone(),
+    ));
+
     let drive_workspace_repo = Arc::new(WorkspaceRepository::new(pool.clone()));
     let drive_workspace_service = Arc::new(WorkspaceService::new(drive_workspace_repo));
     let drive_workspace_state = web::Data::new(drive::workspace::api::WorkspaceApiState {
@@ -501,6 +507,10 @@ async fn main() -> std::io::Result<()> {
     let drive_feature_flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
     let drive_feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
         repo: drive_feature_flags_repo,
+    });
+
+    let drive_fonts_state = web::Data::new(drive::fonts::api::FontsApiState {
+        service: drive_fonts_service,
     });
 
     // Drive background jobs processor
@@ -827,6 +837,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::activity::api::ActivityApiDoc::openapi());
         doc.merge(drive::admin::api::AdminApiDoc::openapi());
         doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
+        doc.merge(drive::fonts::api::FontsApiDoc::openapi());
         doc.merge(drive::ai::api::DriveAIApiDoc::openapi());
         doc.merge(drive::comments::api::CommentsApiDoc::openapi());
         doc.merge(drive::compliance::api::ComplianceApiDoc::openapi());
@@ -917,6 +928,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_service_registry_state.clone())
             .app_data(drive_admin_state.clone())
             .app_data(drive_feature_flags_state.clone())
+            .app_data(drive_fonts_state.clone())
             // Notes
             .app_data(notes_state.clone())
             // Photos
@@ -960,6 +972,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(auth::api::configure)
                     .configure(oauth::api::configure)
                     .configure(drive::feature_flags::api::configure_public)
+                    .configure(drive::fonts::api::configure_public)
                     .configure(calendar::configure)
                     .configure(docs::configure)
                     .configure(drive::configure)
@@ -974,7 +987,8 @@ async fn main() -> std::io::Result<()> {
                             .configure(drive::compliance::api::configure)
                             .configure(drive::security::api::configure)
                             .configure(drive::admin::api::configure)
-                            .configure(drive::feature_flags::api::configure_admin),
+                            .configure(drive::feature_flags::api::configure_admin)
+                            .configure(drive::fonts::api::configure_admin),
                     )
                     // Internal routes
                     .service(

@@ -5,6 +5,7 @@ import { AuthProvider } from '@neutrino/auth';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { FeatureFlagsProvider } from '@/providers/FeatureFlagsProvider';
+import { CustomFontsProvider } from '@/providers/CustomFontsProvider';
 import { E2ECryptoExpose } from '@/components/E2ECryptoExpose';
 
 export const metadata: Metadata = {
@@ -48,13 +49,15 @@ export default function RootLayout({
         <E2ECryptoExpose />
         <ThemeProvider>
           <FeatureFlagsProvider>
-            <QueryProvider>
-              <AuthProvider>
-                <ToastProvider position="bottom-right">
-                  {children}
-                </ToastProvider>
-              </AuthProvider>
-            </QueryProvider>
+            <CustomFontsProvider>
+              <QueryProvider>
+                <AuthProvider>
+                  <ToastProvider position="bottom-right">
+                    {children}
+                  </ToastProvider>
+                </AuthProvider>
+              </QueryProvider>
+            </CustomFontsProvider>
           </FeatureFlagsProvider>
         </ThemeProvider>
       </body>

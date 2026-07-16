@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { adminApi } from '../client';
+import { adminApi, fontsApi } from '../client';
 
 // ---------------------------------------------------------------------------
 // Mock @neutrino/api-core request
@@ -57,6 +57,15 @@ const sampleService = {
   registeredAt: '2026-01-01T00:00:00Z',
   enabled: true,
   autoUpdate: false,
+};
+
+const sampleFont = {
+  id: 'font-1',
+  displayName: 'My Custom Font',
+  format: 'woff2',
+  fileUrl: '/api/v1/fonts/font-1/file',
+  uploadedBy: 'user-1',
+  createdAt: '2026-01-01T00:00:00Z',
 };
 
 // ---------------------------------------------------------------------------
@@ -179,6 +188,84 @@ describe('adminApi', () => {
         '/api/v1/admin/users/u1',
         { method: 'DELETE' },
       );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Fonts (feature/custom-fonts) — admin-only upload/delete.
+  // ---------------------------------------------------------------------------
+
+  describe('uploadFont', () => {
+    it('calls POST /api/v1/admin/fonts with a multipart FormData body', async () => {
+      mockRequest.mockResolvedValueOnce(sampleFont);
+      const file = new File(['fake font bytes'], 'my-font.woff2', { type: 'font/woff2' });
+
+      const result = await adminApi.uploadFont(file, 'My Custom Font');
+
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+      const [url, options] = mockRequest.mock.calls[0];
+      expect(url).toBe('/api/v1/admin/fonts');
+      expect((options as RequestInit).method).toBe('POST');
+      expect((options as RequestInit).body).toBeInstanceOf(FormData);
+      expect(result).toEqual(sampleFont);
+    });
+
+    it('includes the file and display name in the FormData payload', async () => {
+      mockRequest.mockResolvedValueOnce(sampleFont);
+      const file = new File(['fake font bytes'], 'my-font.woff2', { type: 'font/woff2' });
+
+      await adminApi.uploadFont(file, 'My Custom Font');
+
+      const [, options] = mockRequest.mock.calls[0];
+      const formData = (options as RequestInit).body as FormData;
+      expect(formData.get('file')).toBe(file);
+      expect(formData.get('display_name')).toBe('My Custom Font');
+    });
+  });
+
+  describe('deleteFont', () => {
+    it('calls DELETE /api/v1/admin/fonts/{id}', async () => {
+      mockRequest.mockResolvedValueOnce(undefined);
+      await adminApi.deleteFont('font-1');
+      expect(mockRequest).toHaveBeenCalledWith(
+        '/api/v1/admin/fonts/font-1',
+        { method: 'DELETE' },
+      );
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fontsApi — non-admin, any-authenticated-user read access
+// ---------------------------------------------------------------------------
+
+describe('fontsApi', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('list', () => {
+    it('calls GET /api/v1/fonts and returns the array', async () => {
+      mockRequest.mockResolvedValueOnce([sampleFont]);
+      const result = await fontsApi.list();
+      expect(mockRequest).toHaveBeenCalledWith('/api/v1/fonts');
+      expect(result).toEqual([sampleFont]);
+    });
+  });
+
+  describe('getFileBlob', () => {
+    it('requests the given fileUrl with responseType: blob', async () => {
+      const fakeBlob = new Blob(['fake font bytes'], { type: 'font/woff2' });
+      mockRequest.mockResolvedValueOnce(fakeBlob);
+
+      const result = await fontsApi.getFileBlob(sampleFont.fileUrl);
+
+      expect(mockRequest).toHaveBeenCalledWith(
+        sampleFont.fileUrl,
+        {},
+        { responseType: 'blob' },
+      );
+      expect(result).toBe(fakeBlob);
     });
   });
 });

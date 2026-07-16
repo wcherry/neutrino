@@ -77,9 +77,9 @@ import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme } from '@neutrino/api-slides';
-import { FONT_FAMILY_NAMES as FONT_FAMILIES } from '@/constants/editor';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-embed';
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
 import { InsertSheetDialog } from './InsertSheetDialog';
@@ -323,6 +323,7 @@ export function SlideEditor() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const flags = useFeatureFlags();
+  const { fontFamilyNames: FONT_FAMILIES } = useAvailableFonts();
   const slideId = searchParams.get('id') ?? '';
   useAccessRevocation(slideId);
   const { spellCheck } = useSpellCheck();
