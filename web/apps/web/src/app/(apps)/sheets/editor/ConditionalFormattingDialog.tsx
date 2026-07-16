@@ -44,7 +44,7 @@ function detectColumnType(data: Map<string, CellProps>, range: string): ColumnTy
     if (topFmt && topFmt[1] > filled.length * 0.4) {
         if (topFmt[0] === 'currency')  return 'currency';
         if (topFmt[0] === 'percent')   return 'percentage';
-        if (topFmt[0] === 'date')      return 'date';
+        if (topFmt[0] === 'date' || topFmt[0] === 'time' || topFmt[0] === 'datetime') return 'date';
     }
 
     // Analyze raw values

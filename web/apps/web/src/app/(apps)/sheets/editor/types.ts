@@ -31,7 +31,7 @@ export type CellStyle = {
     textAlign?: 'left' | 'center' | 'right';
     verticalAlign?: 'top' | 'middle' | 'bottom';
     borderStyle?: 'none' | 'thin' | 'medium' | 'thick';
-    numberFormat?: 'number' | 'currency' | 'percent' | 'date';
+    numberFormat?: 'number' | 'currency' | 'percent' | 'date' | 'time' | 'datetime';
     decimalPlaces?: number;
     customFormat?: string;
     wrapMode?: 'overflow' | 'wrap' | 'clip';

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import type { CellStyle } from './types';
 import { applyCustomFormat } from './utils';
 
-type Category = 'number' | 'currency' | 'percent' | 'date';
+type Category = 'number' | 'currency' | 'percent' | 'datetime';
 
 type Preset = {
     label: string;
@@ -37,7 +37,7 @@ const PRESETS: Record<Category, Preset[]> = {
         { label: '75.00%',  customFormat: '0.00%', numberFormat: 'percent', decimalPlaces: 2 },
         { label: '75.000%', customFormat: '0.000%',numberFormat: 'percent', decimalPlaces: 3 },
     ],
-    date: [
+    datetime: [
         { label: '11/1/2025',         customFormat: 'M/D/yyyy',       numberFormat: 'date' },
         { label: '11/01/2025',        customFormat: 'MM/DD/yyyy',     numberFormat: 'date' },
         { label: 'Nov 2025',          customFormat: 'mmm yyyy',       numberFormat: 'date' },
@@ -45,18 +45,33 @@ const PRESETS: Record<Category, Preset[]> = {
         { label: '1-Nov-25',          customFormat: 'D-mmm-yy',       numberFormat: 'date' },
         { label: 'Sat, 1 Nov 2025',      customFormat: 'ddd, D mmm yyyy',  numberFormat: 'date' },
         { label: 'Saturday, 1 Nov 2025', customFormat: 'dddd, D mmm yyyy', numberFormat: 'date' },
+        { label: '1:30 PM',    customFormat: 'h:mm AM/PM',    numberFormat: 'time' },
+        { label: '1:30:00 PM', customFormat: 'h:mm:ss AM/PM', numberFormat: 'time' },
+        { label: '13:30',      customFormat: 'hh:mm',         numberFormat: 'time' },
+        { label: '13:30:00',   customFormat: 'hh:mm:ss',      numberFormat: 'time' },
+        { label: '11/1/2025 1:30 PM',        customFormat: 'M/D/yyyy h:mm AM/PM',     numberFormat: 'datetime' },
+        { label: '11/1/2025 13:30',          customFormat: 'M/D/yyyy hh:mm',          numberFormat: 'datetime' },
+        { label: 'November 1, 2025 1:30 PM', customFormat: 'mmmm D, yyyy h:mm AM/PM', numberFormat: 'datetime' },
     ],
 };
 
 const SAMPLE_NUMBER = '1234.5678';
-const SAMPLE_DATE   = '2025-11-01';
+const SAMPLE_DATETIME = '2025-11-01T13:30:00Z';
 
 function categoryLabel(c: Category): string {
-    return { number: 'Number', currency: 'Currency', percent: 'Percent', date: 'Date' }[c];
+    return { number: 'Number', currency: 'Currency', percent: 'Percent', datetime: 'Date & Time' }[c];
 }
 
 function sampleValue(category: Category): string {
-    return category === 'date' ? SAMPLE_DATE : SAMPLE_NUMBER;
+    return category === 'datetime' ? SAMPLE_DATETIME : SAMPLE_NUMBER;
+}
+
+// Cells formatted before Date/Time were merged into one category may still carry
+// numberFormat 'date' or 'time' individually — route them to the merged tab.
+function toCategory(nf?: CellStyle['numberFormat']): Category {
+    if (nf === 'date' || nf === 'time' || nf === 'datetime') return 'datetime';
+    if (nf === 'currency' || nf === 'percent') return nf;
+    return 'number';
 }
 
 export type CustomFormatDialogProps = {
@@ -66,8 +81,7 @@ export type CustomFormatDialogProps = {
 };
 
 export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormatDialogProps) {
-    const initialCategory: Category =
-        (cellStyle?.numberFormat as Category | undefined) ?? 'number';
+    const initialCategory: Category = toCategory(cellStyle?.numberFormat);
     const [category, setCategory] = useState<Category>(initialCategory);
     const [customInput, setCustomInput] = useState(cellStyle?.customFormat ?? PRESETS[initialCategory][0].customFormat);
     const [selectedPreset, setSelectedPreset] = useState<string | null>(
@@ -138,7 +152,7 @@ export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormat
 
                 {/* Category tabs */}
                 <div style={{ display: 'flex', borderBottom: '1px solid #eee', padding: '0 18px' }}>
-                    {(['number', 'currency', 'percent', 'date'] as Category[]).map(c => (
+                    {(['number', 'currency', 'percent', 'datetime'] as Category[]).map(c => (
                         <button
                             key={c}
                             onClick={() => handleCategoryChange(c)}
