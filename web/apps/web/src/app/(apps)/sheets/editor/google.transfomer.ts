@@ -141,6 +141,8 @@ function translateNumberFormat(fmtData: any): Partial<CellStyle> {
         case 3: numberFormat = 'percent';  break;
         case 4: numberFormat = 'currency'; break;
         case 5: numberFormat = 'date';     break;
+        case 6: numberFormat = 'time';     break;
+        case 7: numberFormat = 'datetime'; break;
         default:
             // Unknown typeCode — still preserve the format string so that custom
             // date patterns (e.g. 'dddd', 'DDDD') are not silently dropped when

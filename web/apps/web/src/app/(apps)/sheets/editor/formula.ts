@@ -62,6 +62,8 @@ export const FUNCTIONS_META: FunctionMeta[] = [
     { name: 'EOMONTH',       signature: 'EOMONTH(start_date, months)',                       description: 'Last day of a month' },
     { name: 'WORKDAY',       signature: 'WORKDAY(start_date, days)',                         description: 'Date N workdays away' },
     { name: 'NETWORKDAYS',   signature: 'NETWORKDAYS(start_date, end_date)',                 description: 'Count working days between dates' },
+    { name: 'DATEADD',       signature: 'DATEADD(date, days, [months], [years])',            description: 'Add days/months/years to a date' },
+    { name: 'TIMEADD',       signature: 'TIMEADD(time, seconds, minutes, hours)',             description: 'Add seconds/minutes/hours to a time' },
     // Statistical
     { name: 'SUMIF',         signature: 'SUMIF(range, criteria, [sum_range])',               description: 'Sum cells matching criteria' },
     { name: 'SUMIFS',        signature: 'SUMIFS(sum_range, criteria_range1, criteria1, ...)', description: 'Sum with multiple criteria' },
@@ -180,6 +182,28 @@ function dateToStr(d: Date): string {
     const m  = String(d.getUTCMonth() + 1).padStart(2, '0');
     const dy = String(d.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${dy}`;
+}
+
+/**
+ * Resolve a time-valued arg (a bare time string, a date+time string, or an
+ * already-numeric Excel serial) to a serial number for TIMEADD. Unlike
+ * parseDate, this keeps the fractional (time-of-day) component.
+ */
+function parseTimeSerial(arg: FuncArg, data: Map<string, CellProps>): number | null {
+    const s = isRange(arg) ? (data.get(arg[0])?.value ?? '') : String(arg);
+    if (!s) return null;
+    if (/^-?\d+(\.\d+)?$/.test(s.trim())) return parseFloat(s);
+    return dateStringToSerial(s);
+}
+
+/** Format a fraction-of-a-day (0 to <1) as a 24-hour "HH:MM:SS" time string. */
+function timeToStr(dayFraction: number): string {
+    const wrapped = ((dayFraction % 1) + 1) % 1;
+    const totalSeconds = Math.round(wrapped * 86400);
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function isWeekend(d: Date): boolean {
@@ -1028,6 +1052,19 @@ class FormulaParser {
                     if (!isWeekend(new Date(ms))) count++;
                 }
                 return d1 <= d2 ? count : -count;
+            }
+            case 'DATEADD': {
+                const d = parseDate(args[0], data);
+                if (!d) return '#VALUE!';
+                const days = num(args[1] ?? 0), months = num(args[2] ?? 0), years = num(args[3] ?? 0);
+                return dateToStr(new Date(Date.UTC(d.getUTCFullYear() + years, d.getUTCMonth() + months, d.getUTCDate() + days)));
+            }
+            case 'TIMEADD': {
+                const serial = parseTimeSerial(args[0], data);
+                if (serial === null) return '#VALUE!';
+                const seconds = num(args[1] ?? 0), minutes = num(args[2] ?? 0), hours = num(args[3] ?? 0);
+                const delta = (seconds + minutes * 60 + hours * 3600) / 86400;
+                return timeToStr(serial + delta);
             }
 
             // ── Statistical ───────────────────────────────────────────────

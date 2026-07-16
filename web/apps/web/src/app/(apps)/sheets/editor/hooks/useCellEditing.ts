@@ -390,6 +390,13 @@ export function useCellEditing({
                 formulaInputRef.current?.blur();
             }
         } else if (event.key === 'Escape') {
+            if (showFunctions || showAllFunctions) {
+                event.preventDefault();
+                event.stopPropagation();
+                setShowFunctions(false);
+                setShowAllFunctions(false);
+                return;
+            }
             setFormulaPickMode(false);
             pickAnchorRef.current = null;
         }

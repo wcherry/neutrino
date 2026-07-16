@@ -97,14 +97,56 @@ function dateToExcelSerial(d: Date): number {
     return adjusted > 59 ? adjusted + 1 : adjusted;
 }
 
-// Parses a plain date string ("01/01/2026", "2026-01-01") into an Excel serial so
-// date-valued cells participate in arithmetic (e.g. =A1+1). Returns null when the
-// value is not a full calendar date, letting callers fall back to numeric parsing.
+// Parses "13:30", "13:30:00", "1:30 PM" or "1:30:00 PM" into hour/minute/second
+// parts (24-hour). Returns null for out-of-range components or a bad shape.
+function parseTimeParts(value: string): { h: number; m: number; s: number } | null {
+    const m = value.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?$/);
+    if (!m) return null;
+    let h = +m[1];
+    const min = +m[2];
+    const sec = m[3] ? +m[3] : 0;
+    const meridiem = m[4]?.toLowerCase();
+    if (min > 59 || sec > 59) return null;
+    if (meridiem) {
+        if (h < 1 || h > 12) return null;
+        h = meridiem === 'am' ? (h % 12) : (h % 12) + 12;
+    } else if (h > 23) {
+        return null;
+    }
+    return { h, m: min, s: sec };
+}
+
+// Fraction of a day represented by a time-of-day (e.g. 13:30:00 -> 0.5625).
+function timePartsToFraction(t: { h: number; m: number; s: number }): number {
+    return (t.h * 3600 + t.m * 60 + t.s) / 86400;
+}
+
+// Parses a plain date string ("01/01/2026", "2026-01-01"), a bare time string
+// ("13:30", "1:30 PM"), or a combined date+time string ("2026-01-01 13:30",
+// "01/01/2026 1:30 PM") into an Excel serial so date/time-valued cells
+// participate in arithmetic (e.g. =A1+0.5 adds 12 hours). Returns null when the
+// value doesn't match any of these shapes, letting callers fall back to numeric
+// parsing.
 export function dateStringToSerial(value: string): number | null {
     const s = value.trim();
+
+    // Split "<date> <time>" or ISO "<date>T<time>" on the first space/T so the
+    // date part (no internal spaces) and time part can be parsed independently.
+    const split = s.match(/^(.+?)[ T](\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp][Mm])?)$/);
+    let datePart = s;
+    let timePart: string | null = null;
+    if (split) {
+        datePart = split[1];
+        timePart = split[2];
+    } else {
+        // No date/time separator found — the whole string might be a bare time.
+        const timeOnly = parseTimeParts(s);
+        if (timeOnly) return timePartsToFraction(timeOnly);
+    }
+
     let y: number, mo: number, d: number;
-    const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-    const us  = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    const iso = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    const us  = datePart.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
     if (iso) {
         y = +iso[1]; mo = +iso[2]; d = +iso[3];
     } else if (us) {
@@ -117,8 +159,17 @@ export function dateStringToSerial(value: string): number | null {
     const date = new Date(Date.UTC(y, mo - 1, d));
     // Reject calendar overflow (e.g. 02/30 rolls forward into March).
     if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
-    return dateToExcelSerial(date);
+    let serial = dateToExcelSerial(date);
+
+    if (timePart) {
+        const t = parseTimeParts(timePart);
+        if (!t) return null;
+        serial += timePartsToFraction(t);
+    }
+    return serial;
 }
+
+const TIME_TOKEN_RE = /mmmm|mmm|mm|m|dddd|ddd|dd|d|yyyy|yy|hh|h|ss|s|am\/pm|a\/p/gi;
 
 function formatDateWithPattern(d: Date, fmt: string): string {
     const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -129,22 +180,47 @@ function formatDateWithPattern(d: Date, fmt: string): string {
     const mo = d.getUTCMonth();
     const day = d.getUTCDate();
     const dow = d.getUTCDay();
+    const hours24 = d.getUTCHours();
+    const minutes = d.getUTCMinutes();
+    const seconds = d.getUTCSeconds();
     // Replace quoted literals with placeholders so their content isn't token-matched
     const literals: string[] = [];
     let result = fmt.replace(/"([^"]*)"/g, (_, s) => { literals.push(s); return `\x00${literals.length - 1}\x00`; });
-    // Single-pass substitution — alternation order determines precedence (longest first)
-    result = result.replace(/mmmm|mmm|mm|m|dddd|ddd|dd|d|yyyy|yy/gi, token => {
+
+    // 'm'/'mm' is ambiguous between month and minute — Excel's rule is that it means
+    // minutes when adjacent to an hour or seconds token, month otherwise. Tokenize
+    // first so each 'm'/'mm' match can inspect its neighbors before substitution.
+    const matches = [...result.matchAll(TIME_TOKEN_RE)];
+    const hasMeridiem = matches.some(m => /^(am\/pm|a\/p)$/i.test(m[0]));
+    const minuteTokenIndexes = new Set<number>();
+    matches.forEach((m, i) => {
+        const tok = m[0].toLowerCase();
+        if (tok !== 'm' && tok !== 'mm') return;
+        const prev = matches[i - 1]?.[0]?.toLowerCase();
+        const next = matches[i + 1]?.[0]?.toLowerCase();
+        if (prev === 'h' || prev === 'hh' || next === 's' || next === 'ss') minuteTokenIndexes.add(i);
+    });
+
+    let matchIndex = 0;
+    result = result.replace(TIME_TOKEN_RE, token => {
+        const i = matchIndex++;
         switch (token.toLowerCase()) {
             case 'mmmm': return months[mo];
             case 'mmm':  return monthsShort[mo];
-            case 'mm':   return String(mo + 1).padStart(2, '0');
-            case 'm':    return String(mo + 1);
+            case 'mm':   return minuteTokenIndexes.has(i) ? String(minutes).padStart(2, '0') : String(mo + 1).padStart(2, '0');
+            case 'm':    return minuteTokenIndexes.has(i) ? String(minutes) : String(mo + 1);
             case 'dddd': return days[dow];
             case 'ddd':  return daysShort[dow];
             case 'dd':   return String(day).padStart(2, '0');
             case 'd':    return String(day);
             case 'yyyy': return String(y);
             case 'yy':   return String(y).slice(-2);
+            case 'hh':   return String(hasMeridiem ? (hours24 % 12 || 12) : hours24).padStart(2, '0');
+            case 'h':    return String(hasMeridiem ? (hours24 % 12 || 12) : hours24);
+            case 'ss':   return String(seconds).padStart(2, '0');
+            case 's':    return String(seconds);
+            case 'am/pm': return token === token.toLowerCase() ? (hours24 < 12 ? 'am' : 'pm') : (hours24 < 12 ? 'AM' : 'PM');
+            case 'a/p':   return token === token.toLowerCase() ? (hours24 < 12 ? 'a' : 'p') : (hours24 < 12 ? 'A' : 'P');
             default:     return token;
         }
     });
@@ -152,18 +228,28 @@ function formatDateWithPattern(d: Date, fmt: string): string {
     return result.replace(/\x00(\d+)\x00/g, (_, i) => literals[parseInt(i)]);
 }
 
-function isDateFormatStr(fmt: string): boolean {
+function isDateOrTimeFormatStr(fmt: string): boolean {
     const noLiterals = fmt.replace(/"[^"]*"/g, '');
-    return /[dmyDMY]/.test(noLiterals);
+    return /[dmyDMY]|\bh{1,2}\b|\bs{1,2}\b|am\/pm|a\/p/i.test(noLiterals);
+}
+
+// Parses a cell's raw value into a Date, treating a purely numeric value as an
+// Excel serial (whose fractional part encodes time-of-day), a recognized date/
+// time/datetime string as a serial via dateStringToSerial, and anything else as
+// a native Date-parseable string. Shared by both custom-format and preset rendering.
+function parseCellDateValue(value: string): Date {
+    const trimmed = value.trim();
+    if (/^\d+(\.\d+)?$/.test(trimmed)) return excelSerialToDate(parseFloat(trimmed));
+    const serial = dateStringToSerial(trimmed);
+    if (serial !== null) return excelSerialToDate(serial);
+    return new Date(value);
 }
 
 export function applyCustomFormat(value: string, fmt: string): string {
     if (!value) return value;
-    // Date format
-    if (isDateFormatStr(fmt)) {
-        const d = /^\d+(\.\d+)?$/.test(value.trim())
-            ? excelSerialToDate(parseFloat(value))
-            : new Date(value);
+    // Date/time format
+    if (isDateOrTimeFormatStr(fmt)) {
+        const d = parseCellDateValue(value);
         if (isNaN(d.getTime())) return value;
         return formatDateWithPattern(d, fmt);
     }
@@ -199,10 +285,16 @@ export function formatCellValue(value: string, style?: CellStyle): string {
         case 'number':
             return num.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
         case 'date': {
-            const d = /^\d+(\.\d+)?$/.test(value.trim())
-                ? excelSerialToDate(num)
-                : new Date(value);
+            const d = parseCellDateValue(value);
             return isNaN(d.getTime()) ? value : d.toLocaleDateString('en-US', { timeZone: 'UTC' });
+        }
+        case 'time': {
+            const d = parseCellDateValue(value);
+            return isNaN(d.getTime()) ? value : d.toLocaleTimeString('en-US', { timeZone: 'UTC' });
+        }
+        case 'datetime': {
+            const d = parseCellDateValue(value);
+            return isNaN(d.getTime()) ? value : d.toLocaleString('en-US', { timeZone: 'UTC' });
         }
         default:
             return value;
