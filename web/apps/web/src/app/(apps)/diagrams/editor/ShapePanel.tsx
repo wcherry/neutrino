@@ -15,6 +15,36 @@ interface ShapePanelProps {
 
 type DragOver = { key: string; position: 'before' | 'after' } | null;
 
+// ---------------------------------------------------------------------------
+// Custom drag image — makes the drag ghost show just the shape preview
+// (enlarged), instead of the browser's default screenshot of the whole tile
+// (icon + label + button chrome).
+// ---------------------------------------------------------------------------
+function setShapeDragImage(e: React.DragEvent, preview: SVGSVGElement | HTMLImageElement) {
+  const scale = 2.5;
+  const rect = preview.getBoundingClientRect();
+  const width = rect.width || 32;
+  const height = rect.height || 20;
+
+  const clone = preview.cloneNode(true) as SVGSVGElement | HTMLImageElement;
+  if (clone instanceof SVGSVGElement && !clone.getAttribute('viewBox')) {
+    clone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  }
+  clone.style.width = `${width * scale}px`;
+  clone.style.height = `${height * scale}px`;
+
+  const host = document.createElement('div');
+  host.style.position = 'fixed';
+  host.style.top = '-9999px';
+  host.style.left = '-9999px';
+  host.style.pointerEvents = 'none';
+  host.appendChild(clone);
+  document.body.appendChild(host);
+
+  e.dataTransfer.setDragImage(clone, (width * scale) / 2, (height * scale) / 2);
+  setTimeout(() => { document.body.removeChild(host); }, 0);
+}
+
 export function ShapePanel({ onAddShape }: ShapePanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set(['builtin:Basic', 'builtin:Flowchart']));
   const [configOpen, setConfigOpen] = useState(false);
@@ -207,6 +237,8 @@ export function ShapePanel({ onAddShape }: ShapePanelProps) {
                           e.stopPropagation();
                           e.dataTransfer.setData('shape-type', item.type);
                           e.dataTransfer.setData('shape-label', item.label);
+                          const preview = e.currentTarget.querySelector('svg');
+                          if (preview) setShapeDragImage(e, preview);
                         }}
                       >
                         <ShapePreview type={item.type} />
@@ -274,6 +306,8 @@ export function ShapePanel({ onAddShape }: ShapePanelProps) {
                             if (shape.previewUrl) {
                               e.dataTransfer.setData('shape-data-url', shape.previewUrl);
                             }
+                            const preview = e.currentTarget.querySelector('svg, img');
+                            if (preview) setShapeDragImage(e, preview as SVGSVGElement | HTMLImageElement);
                           }}
                         >
                           <DrawioShapePreview previewUrl={shape.previewUrl} title={shape.title} />
@@ -321,6 +355,8 @@ export function ShapePanel({ onAddShape }: ShapePanelProps) {
                               e.stopPropagation();
                               e.dataTransfer.setData('shape-type', shape.type);
                               e.dataTransfer.setData('shape-label', shape.label);
+                              const preview = e.currentTarget.querySelector('svg');
+                              if (preview) setShapeDragImage(e, preview);
                             }}
                             style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, width: '100%' }}
                           >
