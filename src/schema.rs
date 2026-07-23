@@ -486,6 +486,8 @@ diesel::table! {
         shared_drive_id -> Nullable<Text>,
         // Added in migration 037
         encrypted_metadata -> Nullable<Text>,
+        // Added in migration 100
+        content_version -> Integer,
     }
 }
 

@@ -1,0 +1,1 @@
+ALTER TABLE files ADD COLUMN content_version INTEGER NOT NULL DEFAULT 1;

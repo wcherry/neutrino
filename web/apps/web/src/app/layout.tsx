@@ -7,6 +7,7 @@ import { ThemeProvider } from '@/providers/ThemeProvider';
 import { FeatureFlagsProvider } from '@/providers/FeatureFlagsProvider';
 import { CustomFontsProvider } from '@/providers/CustomFontsProvider';
 import { E2ECryptoExpose } from '@/components/E2ECryptoExpose';
+import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
 
 export const metadata: Metadata = {
   title: {
@@ -44,9 +45,11 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Open+Sans:wght@400;600;700&family=Lato:wght@400;700&family=Playfair+Display:wght@400;700&display=swap"
           rel="stylesheet"
         />
+        <link rel="manifest" href="/manifest.json" />
       </head>
       <body>
         <E2ECryptoExpose />
+        <ServiceWorkerRegister />
         <ThemeProvider>
           <FeatureFlagsProvider>
             <CustomFontsProvider>

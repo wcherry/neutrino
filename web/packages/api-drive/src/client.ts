@@ -460,10 +460,10 @@ export async function driveWriteContent(path: string, content: string, filename:
 }
 
 /** Autosave: write content to the file without creating a version snapshot. */
-export async function driveAutosaveContent(fileId: string, content: string, filename: string): Promise<void> {
+export async function driveAutosaveContent(fileId: string, content: string, filename: string): Promise<FileItem> {
   const formData = new FormData();
   formData.append('file', new Blob([content], { type: 'application/json' }), filename);
-  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, { method: 'PUT', body: formData });
+  return request<FileItem>(`/api/v1/drive/files/${fileId}/autosave`, { method: 'PUT', body: formData });
 }
 
 /** Explicit save: write content and create a new version snapshot. */
@@ -629,7 +629,7 @@ export async function driveAutosaveEncryptedContent(
   content: string,
   filename: string,
   dek: Uint8Array,
-): Promise<void> {
+): Promise<FileItem> {
   const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
   const plainBytes = new TextEncoder().encode(content);
@@ -637,7 +637,7 @@ export async function driveAutosaveEncryptedContent(
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
   formData.append('file', blob, filename);
-  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, { method: 'PUT', body: formData });
+  return request<FileItem>(`/api/v1/drive/files/${fileId}/autosave`, { method: 'PUT', body: formData });
 }
 
 /**
