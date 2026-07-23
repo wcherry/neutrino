@@ -205,7 +205,10 @@ impl StorageRepository {
                 .filter(files::id.eq(file_id))
                 .filter(files::user_id.eq(user_id)),
         )
-        .set(&changeset)
+        .set((
+            &changeset,
+            files::content_version.eq(files::content_version + 1),
+        ))
         .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB update file content error: {:?}", e);
@@ -479,7 +482,10 @@ impl StorageRepository {
                 .filter(files::id.eq(file_id))
                 .filter(files::user_id.eq(owner_id)),
         )
-        .set(&changeset)
+        .set((
+            &changeset,
+            files::content_version.eq(files::content_version + 1),
+        ))
         .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB update file autosave error: {:?}", e);
@@ -633,5 +639,58 @@ mod tests {
             .expect("find file")
             .expect("file exists");
         assert_eq!(untouched.mime_type, DOCX_MIME);
+    }
+
+    #[test]
+    fn update_file_autosave_bumps_content_version_by_one_each_call() {
+        let repo = StorageRepository::new(test_pool());
+        let inserted = insert_test_file(&repo, "file-6", "user-1", DOCX_MIME);
+        assert_eq!(inserted.content_version, 1);
+
+        let after_first = repo
+            .update_file_autosave(
+                "file-6",
+                "user-1",
+                AutosaveFileContent {
+                    size_bytes: 10,
+                    storage_path: "path-a".to_string(),
+                    updated_at: Utc::now().naive_utc(),
+                },
+            )
+            .expect("first autosave");
+        assert_eq!(after_first.content_version, 2);
+
+        let after_second = repo
+            .update_file_autosave(
+                "file-6",
+                "user-1",
+                AutosaveFileContent {
+                    size_bytes: 20,
+                    storage_path: "path-b".to_string(),
+                    updated_at: Utc::now().naive_utc(),
+                },
+            )
+            .expect("second autosave");
+        assert_eq!(after_second.content_version, 3);
+    }
+
+    #[test]
+    fn update_file_content_bumps_content_version_by_one() {
+        let repo = StorageRepository::new(test_pool());
+        let inserted = insert_test_file(&repo, "file-7", "user-1", DOCX_MIME);
+        assert_eq!(inserted.content_version, 1);
+
+        let updated = repo
+            .update_file_content(
+                "file-7",
+                "user-1",
+                UpdateFileContent {
+                    size_bytes: 30,
+                    storage_path: "path-c".to_string(),
+                    updated_at: Utc::now().naive_utc(),
+                },
+            )
+            .expect("update content");
+        assert_eq!(updated.content_version, 2);
     }
 }

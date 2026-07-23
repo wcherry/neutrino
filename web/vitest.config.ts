@@ -30,6 +30,7 @@ export default defineConfig({
       '@neutrino/ui': path.resolve('./packages/ui/src/index.ts'),
       '@neutrino/layout': path.resolve('./packages/layout/src/index.ts'),
       '@neutrino/search': path.resolve('./packages/search/src/index.ts'),
+      '@neutrino/offline': path.resolve('./packages/offline/src/index.ts'),
       '@neutrino/e2e-crypto': path.resolve('./packages/e2e-crypto/src/index.ts'),
     },
   },

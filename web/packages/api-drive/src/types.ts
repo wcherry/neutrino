@@ -15,6 +15,8 @@ export interface FileItem {
   coverThumbnailMimeType: string | null;
   /** Base64url-encoded encrypted metadata blob. Present only for E2EE files. */
   encryptedMetadata?: string | null;
+  /** Server-side content revision counter, incremented on every autosave/version save. */
+  contentVersion: number;
 }
 
 export type DriveView = 'recent' | 'starred' | 'trash';

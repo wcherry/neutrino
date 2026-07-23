@@ -24,6 +24,10 @@ pub struct FileRecord {
     /// Base64url-encoded XChaCha20-Poly1305 ciphertext of the file's metadata JSON.
     /// Null for non-encrypted files.
     pub encrypted_metadata: Option<String>,
+    /// Monotonically increasing revision counter, bumped atomically by 1 on every
+    /// content write (autosave and named-version save). Used by clients to detect
+    /// "server changed since I last saw it" for offline-conflict handling.
+    pub content_version: i32,
 }
 
 #[derive(Debug, Insertable)]

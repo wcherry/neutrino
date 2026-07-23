@@ -48,6 +48,10 @@ pub struct FileMetadataResponse {
     /// Base64url-encoded XChaCha20-Poly1305 ciphertext of the file's metadata JSON.
     /// Present only for E2EE files; null otherwise.
     pub encrypted_metadata: Option<String>,
+    /// Monotonically increasing revision counter, bumped atomically by 1 on every
+    /// content write (autosave and named-version save). Used by clients to detect
+    /// "server changed since I last saw it" for offline-conflict handling.
+    pub content_version: i32,
 }
 
 impl From<FileRecord> for FileMetadataResponse {
@@ -65,6 +69,7 @@ impl From<FileRecord> for FileMetadataResponse {
             cover_thumbnail_mime_type: f.cover_thumbnail_mime_type,
             tags: vec![],
             encrypted_metadata: f.encrypted_metadata,
+            content_version: f.content_version,
         }
     }
 }
