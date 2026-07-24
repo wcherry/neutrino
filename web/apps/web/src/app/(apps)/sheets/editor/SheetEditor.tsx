@@ -10,7 +10,9 @@ import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
 import { sheetsApi, filesystemApi, driveAutosaveContent } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
 import { useSheetPresence, type CellSyncItem } from '@/hooks/useSheetPresence';
-import type { CellProps, ClipboardCFRule, CFRule } from './types';
+import type { CellProps, ClipboardCFRule, CFRule, SheetFile } from './types';
+import type { SheetTemplate } from './templates/sheetTemplates';
+import { sheetFileToSheetsData } from './hooks/sheetFileUtils';
 import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, type ArrowNavigationKey } from './utils';
 import { MAX_ROWS, MAX_COLS } from './constants';
 import { useHistory } from './hooks/useHistory';
@@ -1395,6 +1397,24 @@ export function SheetEditor() {
         router.push(`/sheets/editor?id=${newSheet.id}`);
     }, [router]);
 
+    const handleNewFromTemplate = useCallback(async (template: SheetTemplate, newTitle: string) => {
+        const newSheet = await sheetsApi.createSheet({ title: newTitle });
+        try {
+            sessionStorage.setItem(`neutrino:sheet-template:${newSheet.id}`, JSON.stringify(template.build()));
+        } catch {
+            // sessionStorage unavailable — sheet still opens, just blank
+        }
+        // Hard navigation (not router.push): the hamburger menu's "New" action is
+        // invoked from within an already-mounted SheetEditor instance, and
+        // navigating to the same pathname (/sheets/editor) with only a different
+        // ?id= query param is a Next.js App Router "soft navigation" — this
+        // component instance would NOT remount, so the dekResolved-gated
+        // persist.load() effect (which is what applies the pending sessionStorage
+        // template) would never re-run for the new sheet id. A full navigation
+        // guarantees a fresh mount.
+        window.location.href = `/sheets/editor?id=${newSheet.id}`;
+    }, []);
+
     const handleDuplicate = useCallback(async (newTitle: string) => {
         const serialized = persist.serialize();
         const newSheet = await sheetsApi.createSheet({ title: newTitle });
@@ -1464,7 +1484,26 @@ export function SheetEditor() {
     // Wait for the E2EE DEK to be resolved before loading content so that
     // dekRef.current is populated before we attempt to decrypt the file.
     useEffect(() => {
-        if (persist.dekResolved) { persist.load(); }
+        if (!persist.dekResolved) return;
+        (async () => {
+            await persist.load();
+            if (!sheetId) return;
+            const key = `neutrino:sheet-template:${sheetId}`;
+            let raw: string | null = null;
+            try { raw = sessionStorage.getItem(key); } catch { /* ignore */ }
+            if (!raw) return;
+            try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+            try {
+                const file = JSON.parse(raw) as SheetFile;
+                const parsed = sheetFileToSheetsData(file);
+                if (parsed.length > 0) {
+                    sheets.replaceAllSheets(parsed);
+                    persist.save();
+                }
+            } catch {
+                // malformed payload — leave the sheet as loaded (blank)
+            }
+        })();
     // persist.load is stable (defined inside usePersistence, not recreated on
     // render), and persist.dekResolved is the only reactive value we need here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1662,6 +1701,7 @@ export function SheetEditor() {
                 setHtmlExportOptions={exports.setHtmlExportOptions}
                 doExportHtml={exports.doExportHtml}
                 onCreateNew={handleNew}
+                onCreateFromTemplate={handleNewFromTemplate}
                 onDuplicate={handleDuplicate}
                 onDelete={handleDelete}
                 onImportSheet={handleImportSheet}
