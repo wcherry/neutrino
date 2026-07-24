@@ -465,6 +465,29 @@ function tokenize(s: string): Token[] {
             if (/\d/.test(s[j])) {
                 let k = j;
                 while (k < s.length && /\d/.test(s[k])) k++;
+                // Cross-sheet reference where the sheet name itself ends in
+                // digits (e.g. the common default name "Sheet1"!A1) — only
+                // treated as a sheet ref when digits are immediately followed
+                // by '!' then a valid cell ref, so plain cell ids like "A1"
+                // are unaffected.
+                if (s[k] === '!') {
+                    const afterBang = k + 1;
+                    const cellRef = tryReadCellRef(s, afterBang);
+                    if (cellRef) {
+                        const sheetName = s.slice(i, k);
+                        if (s[cellRef.end] === ':') {
+                            const endRef = tryReadCellRef(s, cellRef.end + 1);
+                            if (endRef) {
+                                tokens.push({ type: 'SHEET_RANGE', sheet: sheetName, start: cellRef.cell, end: endRef.cell });
+                                i = endRef.end;
+                                continue;
+                            }
+                        }
+                        tokens.push({ type: 'SHEET_CELL', sheet: sheetName, cell: cellRef.cell });
+                        i = cellRef.end;
+                        continue;
+                    }
+                }
                 tokens.push({ type: 'CELL', value: (s.slice(i, j) + s.slice(j, k)).toUpperCase() });
                 i = k; continue;
             }
