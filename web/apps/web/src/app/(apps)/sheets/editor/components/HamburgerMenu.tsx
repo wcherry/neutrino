@@ -1,7 +1,82 @@
 'use client';
 
-import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
+import React, { useState } from 'react';
+import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem, Modal, ModalHeader, ModalBody } from '@neutrino/ui';
 import type { CellStyle } from '../types';
+import styles from './HamburgerMenu.module.css';
+
+// ── Help modal ────────────────────────────────────────────────────────────
+
+const SHORTCUTS = [
+    { action: 'Bold',              keys: ['Ctrl', 'B'] },
+    { action: 'Italic',            keys: ['Ctrl', 'I'] },
+    { action: 'Undo',              keys: ['Ctrl', 'Z'] },
+    { action: 'Redo',              keys: ['Ctrl', 'Y'] },
+    { action: 'Cut',               keys: ['Ctrl', 'X'] },
+    { action: 'Copy',              keys: ['Ctrl', 'C'] },
+    { action: 'Paste',             keys: ['Ctrl', 'V'] },
+    { action: 'Select all',        keys: ['Ctrl', 'A'] },
+    { action: 'Find',              keys: ['Ctrl', 'F'] },
+    { action: 'Find and replace',  keys: ['Ctrl', 'H'] },
+    { action: 'Save',              keys: ['Ctrl', 'S'] },
+];
+
+function HelpModal({ onClose }: { onClose: () => void }) {
+    return (
+        <Modal open onClose={onClose} size="lg">
+            <ModalHeader title="Neutrino Sheets — Help" onClose={onClose} />
+            <ModalBody>
+                <section className={styles.helpSection}>
+                    <h3 className={styles.helpSectionTitle}>Getting started</h3>
+                    <ul className={styles.helpList}>
+                        <li>Click any cell to select it, then start typing to enter a value.</li>
+                        <li>Start a cell with <strong>=</strong> to enter a formula, e.g. <strong>=SUM(A1:A5)</strong>.</li>
+                        <li>Spreadsheets save automatically — look for the save status in the top bar.</li>
+                        <li>Use <strong>File → New</strong> to start a blank sheet or from a starter template.</li>
+                        <li>Use <strong>File → Export</strong> to download as CSV, Excel, or HTML.</li>
+                    </ul>
+                </section>
+
+                <section className={styles.helpSection}>
+                    <h3 className={styles.helpSectionTitle}>Keyboard shortcuts</h3>
+                    <div className={styles.shortcutsGrid}>
+                        {SHORTCUTS.map(({ action, keys }) => (
+                            <div key={action} className={styles.shortcutRow}>
+                                <span className={styles.shortcutAction}>{action}</span>
+                                <span className={styles.shortcutKeys}>
+                                    {keys.map((k, i) => (
+                                        <React.Fragment key={k}>
+                                            {i > 0 && <span className={styles.shortcutPlus}>+</span>}
+                                            <kbd className={styles.kbd}>{k}</kbd>
+                                        </React.Fragment>
+                                    ))}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className={styles.helpSection}>
+                    <h3 className={styles.helpSectionTitle}>Tips</h3>
+                    <ul className={styles.helpList}>
+                        <li>Use <strong>Format</strong> to change font style, colors, borders, and number formats for the selected cells.</li>
+                        <li>Merge multiple selected cells into one via <strong>Format → Merge cells</strong>.</li>
+                        <li>Version History lets you restore any previous save.</li>
+                        <li>Import a CSV or Excel file as a new sheet or a new tab via <strong>File → Import</strong>.</li>
+                    </ul>
+                </section>
+
+                <section className={styles.helpSection}>
+                    <h3 className={styles.helpSectionTitle}>About</h3>
+                    <p className={styles.helpAbout}>
+                        Neutrino Sheets is part of the Neutrino productivity suite — a Google Workspace-compatible
+                        platform for documents, spreadsheets, and cloud storage.
+                    </p>
+                </section>
+            </ModalBody>
+        </Modal>
+    );
+}
 
 type Props = {
     // File (existing, unchanged behavior — just wrapped in a File submenu)
@@ -71,6 +146,7 @@ export function HamburgerMenu({
 
     onInsertChart,
 }: Props) {
+    const [showHelp, setShowHelp] = useState(false);
     const openDialog = (dialog: string) => setHamburgerDialog(dialog);
 
     const isBold          = cellStyle?.fontWeight     === 'bold';
@@ -190,7 +266,17 @@ export function HamburgerMenu({
                 { kind: 'action' as const, label: 'Insert chart…', action: () => onInsertChart() },
             ],
         }] : []),
+        {
+            kind: 'submenu', label: 'Help', items: [
+                { kind: 'action', label: 'Keyboard shortcuts & help', action: () => setShowHelp(true) },
+            ],
+        },
     ];
 
-    return <HamburgerMenuBase items={items} />;
+    return (
+        <>
+            <HamburgerMenuBase items={items} />
+            {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+        </>
+    );
 }
