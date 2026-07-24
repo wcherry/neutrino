@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem, Modal, ModalHeader, ModalBody } from '@neutrino/ui';
+import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem, Modal, ModalHeader, ModalBody, ColorPicker } from '@neutrino/ui';
 import type { CellStyle } from '../types';
 import styles from './HamburgerMenu.module.css';
 
@@ -147,6 +147,7 @@ export function HamburgerMenu({
     onInsertChart,
 }: Props) {
     const [showHelp, setShowHelp] = useState(false);
+    const [colorDialog, setColorDialog] = useState<'text' | 'fill' | null>(null);
     const openDialog = (dialog: string) => setHamburgerDialog(dialog);
 
     const isBold          = cellStyle?.fontWeight     === 'bold';
@@ -205,18 +206,8 @@ export function HamburgerMenu({
         { kind: 'action', label: isItalic ? 'Italic ✓' : 'Italic', shortcut: 'Ctrl+I', disabled: formatDisabled, action: () => onStyleChange({ fontStyle: isItalic ? 'normal' : 'italic' }) },
         { kind: 'action', label: isStrikethrough ? 'Strikethrough ✓' : 'Strikethrough', disabled: formatDisabled, action: () => onStyleChange({ textDecoration: isStrikethrough ? 'none' : 'line-through' }) },
         { kind: 'separator' },
-        {
-            kind: 'action', label: 'Text color…', disabled: formatDisabled, action: () => {
-                const hex = window.prompt('Enter a hex color:', cellStyle?.color ?? '#000000');
-                if (hex != null) onStyleChange({ color: hex });
-            },
-        },
-        {
-            kind: 'action', label: 'Fill color…', disabled: formatDisabled, action: () => {
-                const hex = window.prompt('Enter a hex color:', cellStyle?.backgroundColor ?? '#ffffff');
-                if (hex != null) onStyleChange({ backgroundColor: hex });
-            },
-        },
+        { kind: 'action', label: 'Text color…', disabled: formatDisabled, action: () => setColorDialog('text') },
+        { kind: 'action', label: 'Fill color…', disabled: formatDisabled, action: () => setColorDialog('fill') },
         { kind: 'separator' },
         {
             kind: 'submenu', label: 'Borders', items: [
@@ -277,6 +268,18 @@ export function HamburgerMenu({
         <>
             <HamburgerMenuBase items={items} />
             {showHelp && <HelpModal onClose={() => setShowHelp(false)} />}
+            {colorDialog && (
+                <Modal open onClose={() => setColorDialog(null)} size="sm">
+                    <ModalHeader title={colorDialog === 'text' ? 'Text color' : 'Fill color'} onClose={() => setColorDialog(null)} />
+                    <ModalBody>
+                        <ColorPicker
+                            value={colorDialog === 'text' ? (cellStyle?.color ?? '#000000') : (cellStyle?.backgroundColor ?? '#ffffff')}
+                            onChange={hex => onStyleChange(colorDialog === 'text' ? { color: hex } : { backgroundColor: hex })}
+                            flat
+                        />
+                    </ModalBody>
+                </Modal>
+            )}
         </>
     );
 }
