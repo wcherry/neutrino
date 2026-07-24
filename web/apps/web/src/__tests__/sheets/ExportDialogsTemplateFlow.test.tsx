@@ -1,30 +1,28 @@
 /**
- * Integration-level tests for the new Blank/Template "New" flow in
- * ExportDialogs.tsx (TDD red phase — the `new-choice` / `new-template-gallery`
- * / `new-template-name` dialog states and the `onCreateFromTemplate` prop do
- * not exist yet; this file is expected to fail to compile / fail its
- * assertions until they are added).
+ * Integration-level tests for the Blank/Template "New" flow in
+ * ExportDialogs.tsx. The Blank-vs-Template choice itself lives as two
+ * submenu items ("Blank" / "Template") under "New" in HamburgerMenu.tsx —
+ * each opens its dialog state directly (`new` / `new-template-gallery`).
+ * These tests cover what's left inside ExportDialogs: the template gallery
+ * and the naming dialog for a template-derived sheet.
  *
- * ASSUMPTION (documented per the task brief, since the implementation does
- * not exist yet to inspect): `ExportDialogs` is a controlled component —
- * `hamburgerDialog` is owned by its parent (SheetEditor.tsx) and
- * `setHamburgerDialog` is how it requests a transition. We expect the
- * "selected template" (chosen from the gallery) to be tracked as *internal*
- * component state inside `ExportDialogs`, not lifted to a prop, mirroring how
- * `newTitle`/`duplicateTitle` are already local `useState` in this file. We
- * therefore test the gallery→naming-dialog handoff end-to-end within a single
- * mounted instance: render with `hamburgerDialog="new-template-gallery"`,
- * click a template card (asserting the resulting `setHamburgerDialog` call),
- * then `rerender` the *same* instance with `hamburgerDialog="new-template-name"`
- * (simulating the parent applying that state change) and assert the name
- * input defaults to the selected template's name. `rerender` on the same
- * element preserves component instance state, which is what makes this
- * observable without a dedicated "selected template" prop.
+ * ASSUMPTION: `ExportDialogs` is a controlled component — `hamburgerDialog`
+ * is owned by its parent (SheetEditor.tsx) and `setHamburgerDialog` is how
+ * it requests a transition. The "selected template" (chosen from the
+ * gallery) is tracked as *internal* component state inside `ExportDialogs`,
+ * mirroring how `newTitle`/`duplicateTitle` are already local `useState` in
+ * this file. We therefore test the gallery→naming-dialog handoff end-to-end
+ * within a single mounted instance: render with
+ * `hamburgerDialog="new-template-gallery"`, click a template card (asserting
+ * the resulting `setHamburgerDialog` call), then `rerender` the *same*
+ * instance with `hamburgerDialog="new-template-name"` (simulating the parent
+ * applying that state change) and assert the name input defaults to the
+ * selected template's name. `rerender` on the same element preserves
+ * component instance state, which is what makes this observable without a
+ * dedicated "selected template" prop.
  *
  * See /Users/williamcherry/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
- * for the full plan this test file is written against, and
- * ExportDialogs.tsx's existing `hamburgerDialog === 'new'` block (~line 314)
- * for the current single-step dialog this flow replaces/extends.
+ * for the full plan this test file is written against.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -94,31 +92,6 @@ function baseProps(overrides: Partial<ExportDialogsProps> = {}): ExportDialogsPr
 }
 
 describe('ExportDialogs — Blank/Template "New" flow', () => {
-    it('renders a Blank vs Template choice when hamburgerDialog is "new-choice"', () => {
-        render(<ExportDialogs {...baseProps({ hamburgerDialog: 'new-choice' })} />);
-
-        expect(screen.getByRole('button', { name: /blank/i })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /template/i })).toBeInTheDocument();
-    });
-
-    it('clicking "Blank spreadsheet" transitions back to the existing unchanged name dialog ("new")', () => {
-        const setHamburgerDialog = vi.fn();
-        render(<ExportDialogs {...baseProps({ hamburgerDialog: 'new-choice', setHamburgerDialog })} />);
-
-        fireEvent.click(screen.getByRole('button', { name: /blank/i }));
-
-        expect(setHamburgerDialog).toHaveBeenCalledWith('new');
-    });
-
-    it('clicking "From template" transitions to the template gallery', () => {
-        const setHamburgerDialog = vi.fn();
-        render(<ExportDialogs {...baseProps({ hamburgerDialog: 'new-choice', setHamburgerDialog })} />);
-
-        fireEvent.click(screen.getByRole('button', { name: /template/i }));
-
-        expect(setHamburgerDialog).toHaveBeenCalledWith('new-template-gallery');
-    });
-
     it('selecting a template card in the gallery transitions to the naming dialog', () => {
         const setHamburgerDialog = vi.fn();
         render(<ExportDialogs {...baseProps({ hamburgerDialog: 'new-template-gallery', setHamburgerDialog })} />);

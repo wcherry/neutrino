@@ -348,29 +348,6 @@ export function ExportDialogs({
                 </div>
             )}
 
-            {/* ── New spreadsheet: Blank vs. Template choice ── */}
-            {hamburgerDialog === 'new-choice' && (
-                <div className={styles.dialogOverlay} onClick={closeDialog}>
-                    <div className={styles.dialogBox} onClick={e => e.stopPropagation()}>
-                        <div className={styles.dialogTitle}>New Spreadsheet</div>
-                        <div className={styles.dialogActions}>
-                            <button
-                                className={styles.dialogBtnSecondary}
-                                onClick={() => setHamburgerDialog('new')}
-                            >
-                                Blank spreadsheet
-                            </button>
-                            <button
-                                className={styles.dialogBtnPrimary}
-                                onClick={() => setHamburgerDialog('new-template-gallery')}
-                            >
-                                From template
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* ── New spreadsheet: Template gallery ── */}
             {hamburgerDialog === 'new-template-gallery' && (
                 <SheetTemplatePickerModal

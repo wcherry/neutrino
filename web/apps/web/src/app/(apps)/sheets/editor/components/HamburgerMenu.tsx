@@ -33,7 +33,12 @@ export function HamburgerMenu({
     const openDialog = (dialog: string) => setHamburgerDialog(dialog);
 
     const items: HamburgerMenuItem[] = [
-        ...(!isViewer ? [{ kind: 'action' as const, label: 'New', action: () => openDialog('new-choice') }] : []),
+        ...(!isViewer ? [{
+            kind: 'submenu' as const, label: 'New', items: [
+                { kind: 'action' as const, label: 'Blank',    action: () => openDialog('new') },
+                { kind: 'action' as const, label: 'Template', action: () => openDialog('new-template-gallery') },
+            ],
+        }] : []),
         ...(!isViewer ? [{ kind: 'action' as const, label: 'Save', shortcut: 'Ctrl+S', action: () => onSave() }] : []),
         ...(officeMode ? [{ kind: 'action' as const, label: 'Convert to Neutrino Sheet', action: () => onConvertToNative?.() }] : []),
         {
