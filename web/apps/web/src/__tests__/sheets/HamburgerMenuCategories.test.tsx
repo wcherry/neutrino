@@ -319,4 +319,27 @@ describe('sheets HamburgerMenu — category reorganisation (planned)', () => {
             expect(screen.getByText('Convert to Neutrino Sheet')).toBeInTheDocument();
         });
     });
+
+    describe('Help category', () => {
+        it('shows Help even when isViewer is true', () => {
+            render(<HamburgerMenu {...baseProps({ isViewer: true })} />);
+            openMenu();
+
+            expect(screen.getByText('Help')).toBeInTheDocument();
+        });
+
+        it('opens a help modal with keyboard shortcuts when "Keyboard shortcuts & help" is clicked, and it can be closed', () => {
+            render(<HamburgerMenu {...baseProps()} />);
+            openMenuAndHover('Help');
+
+            fireEvent.click(screen.getByRole('button', { name: /keyboard shortcuts & help/i }));
+
+            expect(screen.getByText('Neutrino Sheets — Help')).toBeInTheDocument();
+            expect(screen.getByText('Keyboard shortcuts')).toBeInTheDocument();
+            expect(screen.getByText('Undo')).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: /close/i }));
+            expect(screen.queryByText('Neutrino Sheets — Help')).not.toBeInTheDocument();
+        });
+    });
 });
