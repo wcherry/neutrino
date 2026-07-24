@@ -263,6 +263,45 @@ describe('sheets HamburgerMenu — category reorganisation (planned)', () => {
         });
     });
 
+    describe('Format category — Text/Fill color', () => {
+        it('opens a color picker modal (not window.prompt) for Text color, and picking a swatch calls onStyleChange', () => {
+            const promptSpy = vi.spyOn(window, 'prompt');
+            const props = baseProps({ cellStyle: { color: '#111111' } });
+            render(<HamburgerMenu {...props} />);
+            openMenuAndHover('Format');
+
+            fireEvent.click(screen.getByRole('button', { name: /text color/i }));
+
+            expect(screen.getByText('Text color')).toBeInTheDocument();
+            expect(promptSpy).not.toHaveBeenCalled();
+
+            fireEvent.click(screen.getByTitle('#000000'));
+            expect(props.onStyleChange).toHaveBeenCalledWith({ color: '#000000' });
+
+            fireEvent.click(screen.getByRole('button', { name: /close/i }));
+            expect(screen.queryByText('Text color')).not.toBeInTheDocument();
+
+            promptSpy.mockRestore();
+        });
+
+        it('opens a color picker modal (not window.prompt) for Fill color, and picking a swatch calls onStyleChange with backgroundColor', () => {
+            const promptSpy = vi.spyOn(window, 'prompt');
+            const props = baseProps({ cellStyle: { backgroundColor: '#ffffff' } });
+            render(<HamburgerMenu {...props} />);
+            openMenuAndHover('Format');
+
+            fireEvent.click(screen.getByRole('button', { name: /fill color/i }));
+
+            expect(screen.getByText('Fill color')).toBeInTheDocument();
+            expect(promptSpy).not.toHaveBeenCalled();
+
+            fireEvent.click(screen.getByTitle('#000000'));
+            expect(props.onStyleChange).toHaveBeenCalledWith({ backgroundColor: '#000000' });
+
+            promptSpy.mockRestore();
+        });
+    });
+
     describe('Format category — Merge/Unmerge cells', () => {
         it('shows "Merge cells" and calls onMergeCells when isMerged is false', () => {
             const props = baseProps({ isMerged: false });
