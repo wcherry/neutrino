@@ -87,7 +87,9 @@ export type ShapeType =
   | 'arrow-notched'
   | 'arrow-quad'
   // Third-party drawio image shapes
-  | 'drawio-image';
+  | 'drawio-image'
+  // Standalone text box (no fill/border, just a label)
+  | 'text';
 
 export interface ShapeStyle {
   fill: string;

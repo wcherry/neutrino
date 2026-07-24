@@ -5,6 +5,7 @@ import {
   MousePointer2,
   Hand,
   Minus,
+  Type,
   Undo2,
   Redo2,
   Save,
@@ -40,7 +41,14 @@ import { ShareButton } from '@neutrino/ui';
 import type { EditorSelection, SelectionMode } from '../types';
 import type { AlignDirection } from './utils/shapeUtils';
 import type { LayoutAlgorithm } from './layout/layoutEngine';
+import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import styles from './DiagramToolbar.module.css';
+
+export interface TextDefaults {
+  fontSize: number;
+  fontFamily: string;
+  textColor: string;
+}
 
 interface DiagramToolbarProps {
   title: string;
@@ -80,6 +88,9 @@ interface DiagramToolbarProps {
   /** Active pen/highlighter color */
   drawColor: string;
   onDrawColorChange: (color: string) => void;
+  /** Default style applied to new text-tool boxes */
+  textDefaults: TextDefaults;
+  onTextDefaultsChange: (changes: Partial<TextDefaults>) => void;
 }
 
 export function DiagramToolbar({
@@ -101,10 +112,14 @@ export function DiagramToolbar({
   onShare,
   drawColor,
   onDrawColorChange,
+  textDefaults,
+  onTextDefaultsChange,
 }: DiagramToolbarProps) {
   const hasSelection = selection.shapeIds.size > 0 || selection.connectorIds.size > 0;
   const hasMultiSelection = selection.shapeIds.size >= 2;
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
+  const [showTextMenu, setShowTextMenu] = useState(false);
+  const { fontFamilyNames } = useAvailableFonts();
 
   const isDrawing = mode === 'pen' || mode === 'pencil' || mode === 'highlighter' || mode === 'eraser';
 
@@ -133,6 +148,60 @@ export function DiagramToolbar({
         >
           <Minus size={16} style={{ transform: 'rotate(-45deg)' }} />
         </button>
+        <button
+          className={`${styles.toolBtn} ${mode === 'text' ? styles.active : ''}`}
+          onClick={() => onModeChange('text')}
+          title="Text (T)"
+        >
+          <Type size={16} />
+        </button>
+        {mode === 'text' && (
+          <div className={styles.layoutMenu}>
+            <button
+              className={`${styles.toolBtn} ${showTextMenu ? styles.active : ''}`}
+              onClick={() => setShowTextMenu((v) => !v)}
+              title="Text defaults"
+            >
+              <ChevronDown size={13} />
+            </button>
+            {showTextMenu && (
+              <div className={`${styles.dropdown} ${styles.textDefaultsDropdown}`}>
+                <div className={styles.textDefaultsRow}>
+                  <label>Font</label>
+                  <select
+                    value={textDefaults.fontFamily}
+                    onChange={(e) => onTextDefaultsChange({ fontFamily: e.target.value })}
+                    className={styles.textDefaultsSelect}
+                  >
+                    {fontFamilyNames.map((f) => (
+                      <option key={f.value} value={f.value}>{f.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.textDefaultsRow}>
+                  <label>Size</label>
+                  <input
+                    type="number"
+                    min={8}
+                    max={72}
+                    value={textDefaults.fontSize}
+                    onChange={(e) => onTextDefaultsChange({ fontSize: Number(e.target.value) })}
+                    className={styles.textDefaultsNumber}
+                  />
+                </div>
+                <div className={styles.textDefaultsRow}>
+                  <label>Color</label>
+                  <input
+                    type="color"
+                    value={textDefaults.textColor}
+                    onChange={(e) => onTextDefaultsChange({ textColor: e.target.value })}
+                    className={styles.colorPicker}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className={styles.divider} />
 

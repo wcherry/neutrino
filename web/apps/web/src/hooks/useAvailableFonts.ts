@@ -3,6 +3,18 @@ import { useCustomFonts } from '@/providers/CustomFontsProvider';
 
 export type FontOption = { label: string; value: string };
 
+// Custom fonts can share a name with a built-in (e.g. an admin uploads their
+// own "Roboto"); keep the first occurrence so dropdowns never render two
+// options with the same value/key.
+function dedupeByValue(options: FontOption[]): FontOption[] {
+  const seen = new Set<string>();
+  return options.filter((opt) => {
+    if (seen.has(opt.value)) return false;
+    seen.add(opt.value);
+    return true;
+  });
+}
+
 export interface AvailableFonts {
   /** Built-ins + custom fonts, CSS-stack form (Docs/Sheets). */
   fontFamilies: FontOption[];
@@ -29,8 +41,8 @@ export function useAvailableFonts(): AvailableFonts {
   }));
 
   return {
-    fontFamilies: [...FONT_FAMILIES, ...customFontFamilies],
-    fontFamilyNames: [...FONT_FAMILY_NAMES, ...customFontFamilyNames],
+    fontFamilies: dedupeByValue([...FONT_FAMILIES, ...customFontFamilies]),
+    fontFamilyNames: dedupeByValue([...FONT_FAMILY_NAMES, ...customFontFamilyNames]),
     customFontFamilies,
     customFontFamilyNames,
     loaded,

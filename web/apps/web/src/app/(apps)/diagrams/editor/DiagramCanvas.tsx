@@ -36,7 +36,7 @@ interface DiagramCanvasProps {
   onShapeMove: (id: string, x: number, y: number) => void;
   onShapeResize: (id: string, x: number, y: number, w: number, h: number) => void;
   onShapeLabel: (id: string, label: string) => void;
-  onAddShape: (type: ShapeType, x: number, y: number, extraData?: Record<string, unknown>) => void;
+  onAddShape: (type: ShapeType, x: number, y: number, extraData?: Record<string, unknown>) => string | void;
   onConnectorUpdate: (id: string, changes: Partial<DiagramConnector>) => void;
   onCanvasMouseMove: (pos: { x: number; y: number } | null) => void;
   onAddStroke: (stroke: FreehandStroke) => void;
@@ -179,12 +179,13 @@ function resolveStyle(shape: DiagramShape): ShapeStyle {
 interface ShapeRendererProps {
   shape: DiagramShape;
   selected: boolean;
+  isEditing: boolean;
   onMouseDown: (e: React.MouseEvent, id: string) => void;
   onDoubleClick: (e: React.MouseEvent, id: string) => void;
   onResizeHandleMouseDown?: (e: React.MouseEvent, id: string, handle: string) => void;
 }
 
-function ShapeRenderer({ shape, selected, onMouseDown, onDoubleClick, onResizeHandleMouseDown }: ShapeRendererProps) {
+function ShapeRenderer({ shape, selected, isEditing, onMouseDown, onDoubleClick, onResizeHandleMouseDown }: ShapeRendererProps) {
   const { type, x, y, width: w, height: h, label, rotation } = shape;
   const style = resolveStyle(shape);
   const transform = rotation ? `rotate(${rotation}, ${x + w / 2}, ${y + h / 2})` : undefined;
@@ -193,6 +194,11 @@ function ShapeRenderer({ shape, selected, onMouseDown, onDoubleClick, onResizeHa
   const cy = y + h / 2;
 
   const shapeEl = (() => {
+    // ── Standalone text (no border/fill — just the label below) ──────────────
+    if (type === 'text') {
+      return null;
+    }
+
     // ── Sticky note ──────────────────────────────────────────────────────────
     if (type === 'sticky-note') {
       const foldSize = 16;
@@ -377,11 +383,11 @@ function ShapeRenderer({ shape, selected, onMouseDown, onDoubleClick, onResizeHa
       onDoubleClick={(e) => onDoubleClick(e, shape.id)}
     >
       {shapeEl}
-      {label && (
+      {label && !isEditing && (
         <text
-          x={x + w / 2}
+          x={type === 'text' ? x : x + w / 2}
           y={y + h / 2}
-          textAnchor="middle"
+          textAnchor={type === 'text' ? 'start' : 'middle'}
           dominantBaseline="middle"
           fontSize={style.fontSize}
           fontFamily={style.fontFamily}
@@ -393,7 +399,7 @@ function ShapeRenderer({ shape, selected, onMouseDown, onDoubleClick, onResizeHa
           {label}
         </text>
       )}
-      {selected && (
+      {selected && !isEditing && (
         <>
           <rect
             x={x - 2} y={y - 2} width={w + 4} height={h + 4}
@@ -1237,6 +1243,16 @@ export function DiagramCanvas({
         return;
       }
 
+      // Text tool — click to place a standalone text box and start typing immediately.
+      // preventDefault stops the browser's default mousedown focus-shift (which
+      // otherwise blurs the input we're about to autoFocus, right after we set it).
+      if (mode === 'text') {
+        e.preventDefault();
+        const id = onAddShape('text', docPt.x, docPt.y);
+        if (id) setEditingShapeId(id);
+        return;
+      }
+
       // Select mode: clicking on a proximity port starts a connector
       if (mode === 'select' && hoveredPort && hoveredShapeId) {
         const PORT_SNAP = 16 / viewport.zoom;
@@ -1333,7 +1349,7 @@ export function DiagramCanvas({
         };
       }
     },
-    [mode, page.shapes, selection, getSvgPoint, svgToDoc, onSelect, viewport.zoom, onRemoveStrokesUnder, onAddConnector, onModeChange, hoveredShapeId, hoveredPort],
+    [mode, page.shapes, selection, getSvgPoint, svgToDoc, onSelect, viewport.zoom, onRemoveStrokesUnder, onAddConnector, onAddShape, onModeChange, hoveredShapeId, hoveredPort],
   );
 
   const handleMouseMove = useCallback(
@@ -1856,7 +1872,7 @@ export function DiagramCanvas({
 
   const cursorClass = (() => {
     if (mode === 'pan') return styles.cursorGrab;
-    if (isDrawingMode(mode) || mode === 'eraser' || mode === 'connector') return styles.cursorCrosshair;
+    if (isDrawingMode(mode) || mode === 'eraser' || mode === 'connector' || mode === 'text') return styles.cursorCrosshair;
     if (mode === 'select' && hoveredPort) return styles.cursorCrosshair;
     return '';
   })();
@@ -1927,6 +1943,7 @@ export function DiagramCanvas({
               key={s.id}
               shape={s}
               selected={selection.shapeIds.has(s.id)}
+              isEditing={editingShapeId === s.id}
               onMouseDown={handleShapeMouseDown}
               onDoubleClick={handleShapeDoubleClick}
               onResizeHandleMouseDown={handleResizeHandleMouseDown}
@@ -2024,6 +2041,7 @@ export function DiagramCanvas({
       {editingShapeId && (() => {
         const shape = page.shapes.find((s) => s.id === editingShapeId);
         if (!shape) return null;
+        const isTextType = shape.type === 'text';
         const scX = shape.x * viewport.zoom + tx;
         const scY = shape.y * viewport.zoom + ty;
         const scW = shape.width * viewport.zoom;
@@ -2038,7 +2056,7 @@ export function DiagramCanvas({
               height: scH,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent: isTextType ? 'flex-start' : 'center',
               pointerEvents: 'all',
             }}
           >
@@ -2058,14 +2076,22 @@ export function DiagramCanvas({
               }}
               style={{
                 width: '90%',
-                textAlign: 'center',
+                textAlign: isTextType ? 'left' : 'center',
                 border: 'none',
-                outline: '2px solid #2563eb',
-                borderRadius: 4,
-                padding: '2px 4px',
+                outline: isTextType ? 'none' : '2px solid #2563eb',
+                borderRadius: isTextType ? 0 : 4,
+                padding: isTextType ? 0 : '2px 4px',
                 fontSize: shape.style.fontSize,
                 fontFamily: shape.style.fontFamily,
-                background: 'rgba(255,255,255,0.95)',
+                // This editor box always uses light-mode colors regardless of app
+                // theme; without pinning colorScheme, browsers under a dark
+                // color-scheme (see packages/tokens colors.css) can silently
+                // recolor the typed glyphs (though not the caret), making input
+                // look empty while the user is actively typing.
+                colorScheme: 'light',
+                color: isTextType ? shape.style.textColor : '#111827',
+                WebkitTextFillColor: isTextType ? shape.style.textColor : '#111827',
+                background: isTextType ? 'transparent' : 'rgba(255,255,255,0.95)',
               }}
             />
           </div>

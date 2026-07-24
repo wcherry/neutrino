@@ -12,6 +12,7 @@ import type {
   ConditionalRule,
   Viewport,
   ShapeType,
+  ShapeStyle,
   ConnectorType,
 } from '../../types';
 import {
@@ -53,6 +54,7 @@ export interface DiagramEditorActions {
     width?: number,
     height?: number,
     extraData?: Record<string, unknown>,
+    styleOverride?: Partial<ShapeStyle>,
   ) => string;
   updateShape: (id: string, changes: Partial<DiagramShape>) => void;
   removeShapes: (ids: string[]) => void;
@@ -178,6 +180,7 @@ const DEFAULT_SHAPE_SIZES: Partial<Record<ShapeType, { w: number; h: number }>> 
   'gcp-sql':      { w: 80,  h: 80 },
   'gcp-function': { w: 80,  h: 80 },
   'gcp-pubsub':   { w: 100, h: 60 },
+  text: { w: 160, h: 40 },
 };
 
 // ---------------------------------------------------------------------------
@@ -250,7 +253,7 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
   // ── Shapes ─────────────────────────────────────────────────────────────────
 
   const addShape = useCallback(
-    (type: ShapeType, x: number, y: number, width?: number, height?: number, extraData?: Record<string, unknown>): string => {
+    (type: ShapeType, x: number, y: number, width?: number, height?: number, extraData?: Record<string, unknown>, styleOverride?: Partial<ShapeStyle>): string => {
       const id = uuidv4();
       const page = activePage();
       const snapped = snapXY(x, y, page);
@@ -264,7 +267,12 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
         width: width ?? defaults.w,
         height: height ?? defaults.h,
         label: '',
-        style: { ...defaultShapeStyle(), ...(libraryItem?.defaultStyle ?? {}) },
+        style: {
+          ...defaultShapeStyle(),
+          ...(type === 'text' ? { fill: 'none', stroke: 'none' } : {}),
+          ...(libraryItem?.defaultStyle ?? {}),
+          ...styleOverride,
+        },
         ...(extraData ? { data: extraData } : {}),
       };
       updatePage(page.id, (p) => ({ ...p, shapes: [...p.shapes, shape] }));

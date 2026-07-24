@@ -7,6 +7,7 @@
   padding: 0 12px;
   gap: 4px;
   flex-shrink: 0;
+  position: relative;
   z-index: 10;
 }
 
@@ -150,7 +151,7 @@
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   min-width: 180px;
-  z-index: 100;
+  z-index: 1000;
   overflow: hidden;
 }
 
@@ -168,4 +169,50 @@
 
 .dropdownItem:hover {
   background: var(--color-surface-hover, #f8fafc);
+}
+
+.textDefaultsDropdown {
+  /* This menu sits near the toolbar's left edge; anchor from the left of the
+     trigger (instead of the shared .dropdown's right:0) so it opens rightward
+     into the toolbar instead of leftward off the app shell's sidebar. */
+  left: 0;
+  right: auto;
+  min-width: 200px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.textDefaultsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.textDefaultsRow label {
+  font-size: 12px;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.textDefaultsSelect {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 3px 4px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 4px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text-primary, #1e293b);
+}
+
+.textDefaultsNumber {
+  width: 52px;
+  font-size: 12px;
+  padding: 3px 4px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 4px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text-primary, #1e293b);
 }

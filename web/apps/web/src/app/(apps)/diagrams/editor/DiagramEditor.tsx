@@ -177,6 +177,7 @@ export function DiagramEditor() {
   const [pendingExport, setPendingExport] = useState<{ format: ExportFormat; filename: string; size: RasterSize; showGrid: boolean; bgColor: string } | null>(null);
   const [presentationMode, setPresentationMode] = useState(false);
   const [drawColor, setDrawColor] = useState('#1e293b');
+  const [textDefaults, setTextDefaults] = useState({ fontSize: 14, fontFamily: 'Inter', textColor: '#111827' });
   const [title, setTitle] = useState('Untitled diagram');
   const [titleEditing, setTitleEditing] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -385,6 +386,8 @@ export function DiagramEditor() {
       if (e.key === 'v' || e.key === 'V') setMode('select');
       // H — pan
       if (e.key === 'h' || e.key === 'H') setMode('pan');
+      // T — text tool
+      if (e.key === 't' || e.key === 'T') setMode('text');
     };
 
     window.addEventListener('keydown', handler);
@@ -536,6 +539,8 @@ export function DiagramEditor() {
         onShare={() => setShowShareDialog(true)}
         drawColor={drawColor}
         onDrawColorChange={setDrawColor}
+        textDefaults={textDefaults}
+        onTextDefaultsChange={(changes) => setTextDefaults((prev) => ({ ...prev, ...changes }))}
       />
 
       <div className={styles.workspace}>
@@ -594,9 +599,13 @@ export function DiagramEditor() {
               }
               onShapeLabel={(id, label) => editor.updateShape(id, { label })}
               onAddShape={(type, x, y, extraData) => {
-                const id = editor.addShape(type, x, y, undefined, undefined, extraData);
+                const styleOverride = type === 'text'
+                  ? { fontSize: textDefaults.fontSize, fontFamily: textDefaults.fontFamily, textColor: textDefaults.textColor }
+                  : undefined;
+                const id = editor.addShape(type, x, y, undefined, undefined, extraData, styleOverride);
                 setSelection({ shapeIds: new Set([id]), connectorIds: new Set() });
                 setMode('select');
+                return id;
               }}
               onConnectorUpdate={(id, changes) => editor.updateConnector(id, changes)}
               onAddConnector={(sourceId, targetId, startX, startY, endX, endY, sourcePort, targetPort) => {
