@@ -193,3 +193,149 @@ structurally but adds the live preview grid per card instead of an icon.
 - No server-side plaintext template content is ever written — only the
   encrypted autosave path is used for the actual content.
 - `pnpm type-check` / `pnpm lint` pass for changed packages.
+
+---
+
+## Continuation: reorganize the hamburger menu into File/Edit/Format/(Insert) categories
+
+Same branch, same PR (#53). This is a follow-on to the "New" submenu work
+above — reorganizing `HamburgerMenu.tsx` from a flat item list into the
+Docs-matching pattern: one hamburger icon, one panel, top-level items of
+`kind: 'submenu'` that fly out into named categories on hover. This is **not**
+a new always-visible File/Edit/Format button row — `HamburgerMenuBase` from
+`@neutrino/ui` already supports arbitrarily nested submenus; no primitive
+changes needed.
+
+### Reference: Docs' MenuBar.tsx structure (mirrored, not copied verbatim)
+
+`docs/editor/MenuBar.tsx` builds a `HamburgerMenuItem[]` tree with File / Edit
+/ Format / Insert / View / Help top-level submenus. Docs has two literal no-op
+stub actions (`Line spacing` options are `action: () => {}`) — explicitly
+**not** replicating that anti-pattern here; every Sheets entry below calls a
+real, already-existing function.
+
+### What is changing and why
+
+`sheets/editor/components/HamburgerMenu.tsx` is currently a flat list (New,
+Save, Convert, Export, Import, Print, Duplicate, Version history, Delete,
+Share, Offline). Reorganizing into categories improves discoverability and
+adds Edit/Format entries that reuse `StyleToolbar`'s existing handlers,
+giving keyboard/menu-only users a second path to the same actions — exactly
+how Docs keeps both a rich-text `Toolbar` AND Format-menu Bold/Italic entries.
+
+### Category mapping decided after reading `SheetEditor.tsx`, `StyleToolbar.tsx`, `hooks/useHistory.ts`, `hooks/useClipboard.ts`, `hooks/useCellEditing.ts`
+
+**File** — straight move of the existing flat list, unchanged behavior:
+New → Blank/Template, Save, (office mode) Convert to Neutrino Sheet, Import →
+New sheet/New tab, Export → CSV/XLSX/HTML, Print, Duplicate, Version history,
+—, Delete (danger), —, Share, Make available offline.
+
+**Edit** — all wired to real functions, none reimplemented:
+- Undo/Redo → `history.undo` / `history.redo`, disabled via
+  `history.historyLen.undo/redo === 0` (same booleans `StyleToolbar` already
+  uses as `canUndo`/`canRedo`).
+- Cut/Copy/Paste → the exact same `document.execCommand('cut'|'copy'|'paste')`
+  wrappers `SheetEditor.tsx` already defines for `SheetContextMenu`
+  (`handleContextMenuCut/Copy/Paste`), passed through unchanged. (The "real"
+  clipboard logic lives in `useClipboard`'s own document-level event
+  listeners; execCommand is the established, already-shipping way other UI
+  surfaces in this file trigger it.)
+- Select all → **existing capability, previously only reachable via
+  Ctrl+A**: `useHistory.ts` had the full range-selection logic inlined
+  inside its keydown handler. Extracted (not reimplemented) into a
+  `selectAll()` callback returned from the hook, and the keydown handler now
+  calls that same function — so this is a refactor-for-reuse, not new
+  functionality.
+- Find and replace… → `setFindReplaceMode('replace')`, identical to what
+  `StyleToolbar`'s existing find/replace toolbar button already calls.
+
+**Format** — wired to `editing.applyStyle` / `editing.mergeCells` /
+`editing.isMerged`, the same functions `StyleToolbar` uses, applied to the
+current selection exactly as the toolbar does:
+- Bold/Italic/Strikethrough (toggle, label shows ✓ when active, mirroring
+  Docs' toggle-label convention). **Underline omitted** — `CellStyle.textDecoration`
+  only has `'none' | 'line-through'`, there is no underline value in the real
+  type, so adding an "Underline" entry would be inventing a capability that
+  doesn't exist.
+- Text color… / Fill color… — `window.prompt` for a hex value then
+  `applyStyle({ color })` / `applyStyle({ backgroundColor })`. No new
+  component: `HamburgerMenuItem` only supports plain action rows (no swatch
+  picker), so a prompt-based entry (same pattern Docs already uses for
+  Insert → Link/Image URLs) is the only way to expose this without adding
+  primitive functionality. The full `ColorPickerPopover` swatch experience
+  stays in `StyleToolbar` only.
+- Borders (submenu: No border / Thin / Medium / Thick) → `applyStyle({ borderStyle })`.
+- Number format (submenu: Currency / Percent / Number / Date, toggle
+  on/off exactly like the toolbar's `$`/`%`/`#`/calendar buttons) →
+  `applyStyle({ numberFormat })`.
+- Merge cells / Unmerge cells (label reflects `isMerged`) → `editing.mergeCells()`.
+- Clear formatting → `applyStyle()` called with every `CellStyle` key
+  explicitly set to `undefined` — reuses the real `applyStyle` merge-patch
+  function with a full-reset payload; not a new mutation path.
+- **Omitted from Format**: font family/size (huge `<select>` list — Docs
+  doesn't menu-ize its analogous long lists either), horizontal/vertical
+  alignment, wrap mode, decimal places — all stay toolbar-only. These weren't
+  in the Docs-parity ask and adding them isn't required for the reorg; they
+  remain reachable via `StyleToolbar`.
+
+**Insert** — only `Insert chart…` → the same `setShowChartDialog(true)`
+`StyleToolbar`'s chart button already calls, and only included when
+`flags.sheetsCharts` is on (mirrors how `StyleToolbar` itself conditionally
+renders that button). Row/column insert (`handleInsertRowAbove` etc. in
+`SheetEditor.tsx`) are **omitted** — they read from `contextMenu.cellId`
+(right-click state), not the current selection, so calling them from the
+hamburger menu (where `contextMenu` is `null`) would silently no-op. Adapting
+them to selection-based input would be a behavior change/new code path, not
+reuse — out of scope per "don't invent to fill a category."
+
+**View** — **omitted entirely**. Searched for gridlines toggle, frozen
+rows/columns, zoom level — none exist in the Sheets editor (only an
+unrelated "Show gridlines" checkbox inside `ChartEditorPanel.tsx` for chart
+axes, not the sheet grid). No real capability to map, so no stub category.
+
+### Gating kept intact
+
+`isViewer` continues to hide all mutating File items (unchanged) and now
+also hides the entire Edit/Format/Insert categories (a viewer can't edit
+cells at all, so none of those actions apply). `officeMode` still gates
+"Convert to Neutrino Sheet" inside File.
+
+### Files touched
+
+- `sheets/editor/components/HamburgerMenu.tsx` — restructured into
+  submenu categories; `Props` gains new callback props.
+- `sheets/editor/SheetEditor.tsx` — passes the new callbacks through
+  (all reusing handlers that already exist in this file/its hooks).
+- `sheets/editor/hooks/useHistory.ts` — extracts `selectAll` as a named,
+  returned callback (behavior-preserving refactor of existing Ctrl+A logic).
+- New/updated test file under `apps/web/src/__tests__/sheets/` covering the
+  new category structure and that a Format/Edit entry invokes the correct
+  real handler.
+
+### Risks / edge cases
+
+- Menu-triggered Cut/Copy/Paste via `execCommand` depends on browser
+  clipboard permissions same as the existing context-menu path — no new risk
+  introduced, same mechanism already shipping.
+- `selectAll` extraction must not change Ctrl+A's existing behavior — covered
+  by keeping the exact same range-computation logic, only moved.
+- Format menu items must reflect `disabled` state consistent with
+  `StyleToolbar` (`!selectionAnchor || isViewer`) so menu and toolbar never
+  disagree on availability.
+
+### Acceptance criteria
+
+- Hamburger menu shows File / Edit / Format (/ Insert when `sheetsCharts` is
+  on) as top-level items that fly out submenus on hover, matching Docs'
+  interaction pattern.
+- Every new entry calls a real, pre-existing handler — zero stub actions.
+- Clicking Format → Bold after selecting a cell produces the identical effect
+  as clicking the toolbar's Bold button (and vice versa — state stays in sync
+  since both read/write the same `editing.selectedCellStyle`/`applyStyle`).
+- Clicking Edit → Undo after an edit undoes it, matching the toolbar's Undo
+  button, with the same disabled-when-nothing-to-undo behavior.
+- `isViewer` still hides all mutating entries; `officeMode` still gates
+  Convert to Neutrino Sheet.
+- `pnpm type-check` / `pnpm lint` pass for touched files; sheets test suite
+  passes with no *new* failures (pre-existing unrelated
+  `autosaveEncryptionWarning.test.tsx` failure not caused by this work).

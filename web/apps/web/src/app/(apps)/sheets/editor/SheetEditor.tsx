@@ -1659,6 +1659,21 @@ export function SheetEditor() {
                     isViewer={isViewer}
                     officeMode={officeMode}
                     onConvertToNative={handleConvertToNative}
+                    onUndo={history.undo}
+                    onRedo={history.redo}
+                    canUndo={history.historyLen.undo > 0}
+                    canRedo={history.historyLen.redo > 0}
+                    onCut={handleContextMenuCut}
+                    onCopy={handleContextMenuCopy}
+                    onPaste={handleContextMenuPaste}
+                    onSelectAll={history.selectAll}
+                    onOpenFindReplace={() => setFindReplaceMode('replace')}
+                    cellStyle={editing.selectedCellStyle}
+                    onStyleChange={editing.applyStyle}
+                    formatDisabled={!selectionAnchor || isViewer}
+                    isMerged={editing.isMerged}
+                    onMergeCells={editing.mergeCells}
+                    onInsertChart={flags.sheetsCharts ? () => setShowChartDialog(true) : undefined}
                 />
                 <button className={styles.backBtn} aria-label="Sheets" onClick={handleBack}>
                     <ArrowLeft size={16} />

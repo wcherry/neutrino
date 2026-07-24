@@ -114,6 +114,25 @@ export function useHistory({
         setHistoryLen({ undo: 0, redo: 0 });
     }, [clearSelectionState]);
 
+    // Selects the full extent of populated cells (A1 through the bottom-right
+    // occupied cell). Extracted so it can be called both from the Ctrl/Cmd+A
+    // keyboard shortcut below and from callers such as the hamburger menu.
+    const selectAll = useCallback(() => {
+        const cells = dataRef.current;
+        if (cells.size === 0) return;
+        let maxCol = 0, maxRow = 0;
+        for (const id of cells.keys()) {
+            const m = id.match(/^([A-Z]+)(\d+)$/);
+            if (!m) continue;
+            const c = alphaToNum(m[1]), r = parseInt(m[2]);
+            if (c > maxCol) maxCol = c;
+            if (r > maxRow) maxRow = r;
+        }
+        if (maxCol === 0 || maxRow === 0) return;
+        setSelectionAnchor('A1');
+        setSelectionActive(`${numToAlpha(maxCol)}${maxRow}`);
+    }, [dataRef, setSelectionAnchor, setSelectionActive]);
+
     // Keyboard shortcuts: Cmd/Ctrl+Z → undo, Cmd/Ctrl+Shift+Z / Y → redo, Cmd/Ctrl+A → select all
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -131,24 +150,12 @@ export function useHistory({
             } else if (e.key === 'a') {
                 if (isTextInput) return;
                 e.preventDefault();
-                const cells = dataRef.current;
-                if (cells.size === 0) return;
-                let maxCol = 0, maxRow = 0;
-                for (const id of cells.keys()) {
-                    const m = id.match(/^([A-Z]+)(\d+)$/);
-                    if (!m) continue;
-                    const c = alphaToNum(m[1]), r = parseInt(m[2]);
-                    if (c > maxCol) maxCol = c;
-                    if (r > maxRow) maxRow = r;
-                }
-                if (maxCol === 0 || maxRow === 0) return;
-                setSelectionAnchor('A1');
-                setSelectionActive(`${numToAlpha(maxCol)}${maxRow}`);
+                selectAll();
             }
         };
         document.addEventListener('keydown', handler);
         return () => document.removeEventListener('keydown', handler);
-    }, [undo, redo, dataRef, setSelectionAnchor, setSelectionActive]);
+    }, [undo, redo, selectAll]);
 
     return {
         undoStackRef,
@@ -159,6 +166,7 @@ export function useHistory({
         pushPatchToUndo,
         undo,
         redo,
+        selectAll,
         resetHistoryAndSelection,
     };
 }
