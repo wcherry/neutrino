@@ -4,6 +4,8 @@ import React, { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { storageApi } from '@/lib/api';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
+import { SheetTemplatePickerModal } from './SheetTemplatePickerModal';
+import type { SheetTemplate } from '../templates/sheetTemplates';
 import styles from '../page.module.css';
 
 type CsvExportOptions = {
@@ -66,6 +68,7 @@ type Props = {
     onDelete: () => Promise<void>;
     onImportSheet: (file: File) => Promise<void>;
     onImportTab: (file: File) => Promise<void>;
+    onCreateFromTemplate: (template: SheetTemplate, title: string) => Promise<void>;
 };
 
 export function ExportDialogs({
@@ -93,11 +96,14 @@ export function ExportDialogs({
     onDelete,
     onImportSheet,
     onImportTab,
+    onCreateFromTemplate,
 }: Props) {
     const [newTitle, setNewTitle] = useState('Untitled spreadsheet');
     const [duplicateTitle, setDuplicateTitle] = useState('');
     const [importSheetFile, setImportSheetFile] = useState<File | null>(null);
     const [importTabFile, setImportTabFile] = useState<File | null>(null);
+    const [selectedTemplate, setSelectedTemplate] = useState<SheetTemplate | null>(null);
+    const [templateTitle, setTemplateTitle] = useState('');
     const importSheetInputRef = useRef<HTMLInputElement>(null);
     const importTabInputRef = useRef<HTMLInputElement>(null);
 
@@ -337,6 +343,83 @@ export function ExportDialogs({
                                 Create
                             </button>
                             <button className={styles.dialogBtnSecondary} onClick={() => { closeDialog(); setNewTitle('Untitled spreadsheet'); }}>Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── New spreadsheet: Blank vs. Template choice ── */}
+            {hamburgerDialog === 'new-choice' && (
+                <div className={styles.dialogOverlay} onClick={closeDialog}>
+                    <div className={styles.dialogBox} onClick={e => e.stopPropagation()}>
+                        <div className={styles.dialogTitle}>New Spreadsheet</div>
+                        <div className={styles.dialogActions}>
+                            <button
+                                className={styles.dialogBtnSecondary}
+                                onClick={() => setHamburgerDialog('new')}
+                            >
+                                Blank spreadsheet
+                            </button>
+                            <button
+                                className={styles.dialogBtnPrimary}
+                                onClick={() => setHamburgerDialog('new-template-gallery')}
+                            >
+                                From template
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── New spreadsheet: Template gallery ── */}
+            {hamburgerDialog === 'new-template-gallery' && (
+                <SheetTemplatePickerModal
+                    open={hamburgerDialog === 'new-template-gallery'}
+                    onClose={closeDialog}
+                    onSelect={(template) => {
+                        setSelectedTemplate(template);
+                        setTemplateTitle(template.name);
+                        setHamburgerDialog('new-template-name');
+                    }}
+                />
+            )}
+
+            {/* ── New spreadsheet: name the sheet created from a template ── */}
+            {hamburgerDialog === 'new-template-name' && selectedTemplate && (
+                <div className={styles.dialogOverlay} onClick={closeDialog}>
+                    <div className={styles.dialogBox} onClick={e => e.stopPropagation()}>
+                        <div className={styles.dialogTitle}>New Spreadsheet</div>
+                        <div className={styles.csvExportField}>
+                            <label className={styles.csvExportLabel}>Name</label>
+                            <input
+                                className={styles.csvExportInput}
+                                style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: '7px 10px' }}
+                                value={templateTitle}
+                                onChange={e => setTemplateTitle(e.target.value)}
+                                onFocus={e => e.target.select()}
+                                spellCheck={false}
+                                autoFocus
+                            />
+                        </div>
+                        <div className={styles.dialogActions}>
+                            <button
+                                className={styles.dialogBtnPrimary}
+                                disabled={!templateTitle.trim()}
+                                onClick={() => {
+                                    onCreateFromTemplate(selectedTemplate, templateTitle.trim());
+                                    closeDialog();
+                                    setSelectedTemplate(null);
+                                    setTemplateTitle('');
+                                }}
+                            >
+                                Create
+                            </button>
+                            <button
+                                className={styles.dialogBtnSecondary}
+                                onClick={() => { closeDialog(); setSelectedTemplate(null); setTemplateTitle(''); }}
+                            >
+                                Cancel
+                            </button>
                         </div>
                     </div>
                 </div>
