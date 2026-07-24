@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import {
+  ArrowLeft,
   MousePointer2,
   Hand,
   Minus,
@@ -42,6 +43,7 @@ import type { EditorSelection, SelectionMode } from '../types';
 import type { AlignDirection } from './utils/shapeUtils';
 import type { LayoutAlgorithm } from './layout/layoutEngine';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
+import { DiagramHamburgerMenu } from './DiagramHamburgerMenu';
 import styles from './DiagramToolbar.module.css';
 
 export interface TextDefaults {
@@ -91,6 +93,10 @@ interface DiagramToolbarProps {
   /** Default style applied to new text-tool boxes */
   textDefaults: TextDefaults;
   onTextDefaultsChange: (changes: Partial<TextDefaults>) => void;
+  onBack: () => void;
+  onNewDiagram: () => void;
+  onDuplicate: () => void;
+  onDeleteClick: () => void;
 }
 
 export function DiagramToolbar({
@@ -114,6 +120,10 @@ export function DiagramToolbar({
   onDrawColorChange,
   textDefaults,
   onTextDefaultsChange,
+  onBack,
+  onNewDiagram,
+  onDuplicate,
+  onDeleteClick,
 }: DiagramToolbarProps) {
   const hasSelection = selection.shapeIds.size > 0 || selection.connectorIds.size > 0;
   const hasMultiSelection = selection.shapeIds.size >= 2;
@@ -125,8 +135,25 @@ export function DiagramToolbar({
 
   return (
     <div className={styles.toolbar}>
-      {/* Left: mode tools + history */}
+      {/* Left: main menu + mode tools + history */}
       <div className={styles.left}>
+        <button
+          className={styles.toolBtn}
+          onClick={onBack}
+          title="Back to Diagrams"
+          aria-label="Back to Diagrams"
+        >
+          <ArrowLeft size={16} />
+        </button>
+        <DiagramHamburgerMenu
+          onNew={onNewDiagram}
+          onSave={onSave}
+          onDuplicate={onDuplicate}
+          onDeleteClick={onDeleteClick}
+        />
+
+        <div className={styles.divider} />
+
         <button
           className={`${styles.toolBtn} ${mode === 'select' ? styles.active : ''}`}
           onClick={() => onModeChange('select')}

@@ -11,7 +11,7 @@ import { RASTER_SIZE_SCALE } from './io/ExportDialog';
 import { exportPNGCropped, exportJPEGCropped, exportSVGCropped, triggerDownload } from './io/exportUtils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Spinner, useToast } from '@neutrino/ui';
+import { Spinner, useToast, Modal, ModalHeader, ModalBody, ModalFooter, Button } from '@neutrino/ui';
 import { diagramsApi } from '@neutrino/api-diagrams';
 import { authApi } from '@neutrino/auth';
 import { decryptFile } from '@neutrino/e2e-crypto';
@@ -289,6 +289,54 @@ export function DiagramEditor() {
     },
   });
 
+  // ── Main menu: back / new / duplicate / delete ──────────────────────────────
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleBack = useCallback(async () => {
+    try {
+      await saveMutation.mutateAsync();
+    } finally {
+      router.push('/diagrams');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
+
+  const handleNewDiagram = useCallback(() => {
+    router.push('/diagrams');
+  }, [router]);
+
+  const duplicateMutation = useMutation({
+    mutationFn: async () => {
+      const newDiagram = await diagramsApi.createDiagram({ title: `${title} (Copy)` });
+      // Seed the copy's starter content the same way a template does — client-side,
+      // so it goes through the new diagram's own encrypted autosave path once its
+      // editor loads, rather than a plaintext server-side write.
+      try {
+        sessionStorage.setItem(`neutrino:diagram-template:${newDiagram.id}`, JSON.stringify(editor.document));
+      } catch {
+        // sessionStorage unavailable — the copy still opens, just blank
+      }
+      return newDiagram;
+    },
+    onSuccess: (newDiagram) => {
+      router.push(`/diagrams/editor?id=${newDiagram.id}`);
+    },
+    onError: () => toast.error('Failed to duplicate diagram'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!diagramId) return;
+      await diagramsApi.deleteDiagram(diagramId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['diagrams'] });
+      router.push('/diagrams');
+    },
+    onError: () => toast.error('Failed to delete diagram'),
+  });
+
   // Schedule autosave 2 s after the last user-driven change.
   // editor.canUndo is false after reset() (load) and true only after push()
   // (user edits), so this guards against saving a freshly-loaded or
@@ -304,6 +352,39 @@ export function DiagramEditor() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor.document, diagramId]);
+
+  // Apply a template's starter content, stashed in sessionStorage by the
+  // "New diagram" picker for a freshly created (still-blank) diagram.
+  // Applied client-side and saved through the normal encrypted autosave path
+  // rather than written as plaintext on the server (see project notes on the
+  // docs-templates encryption pitfall this deliberately avoids).
+  const pendingTemplateSaveRef = useRef(false);
+
+  useEffect(() => {
+    if (!diagramId || isLoading || !dekResolved) return;
+    const key = `neutrino:diagram-template:${diagramId}`;
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return;
+    sessionStorage.removeItem(key);
+    try {
+      const doc = JSON.parse(raw) as DiagramDocument;
+      pendingTemplateSaveRef.current = true;
+      editor.setDocument(doc);
+    } catch {
+      // Malformed payload — leave the diagram blank.
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagramId, isLoading, dekResolved]);
+
+  // setDocument() resets the undo stack (canUndo=false), so the canUndo-gated
+  // autosave effect above won't fire on its own — save explicitly once the
+  // template document has actually landed in editor.document.
+  useEffect(() => {
+    if (!pendingTemplateSaveRef.current) return;
+    pendingTemplateSaveRef.current = false;
+    saveMutation.mutate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor.document]);
 
   // Broadcast local edits to connected peers in real time.
   // Gated on editor.canUndo for the same reason as autosave: canUndo is false
@@ -541,6 +622,10 @@ export function DiagramEditor() {
         onDrawColorChange={setDrawColor}
         textDefaults={textDefaults}
         onTextDefaultsChange={(changes) => setTextDefaults((prev) => ({ ...prev, ...changes }))}
+        onBack={handleBack}
+        onNewDiagram={handleNewDiagram}
+        onDuplicate={() => duplicateMutation.mutate()}
+        onDeleteClick={() => setShowDeleteConfirm(true)}
       />
 
       <div className={styles.workspace}>
@@ -691,6 +776,21 @@ export function DiagramEditor() {
           onClose={() => setShowShareDialog(false)}
         />
       )}
+
+      <Modal open={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} size="sm">
+        <ModalHeader title={`Delete "${title}"?`} onClose={() => setShowDeleteConfirm(false)} />
+        <ModalBody>This action cannot be undone.</ModalBody>
+        <ModalFooter>
+          <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+          <Button
+            variant="danger"
+            onClick={() => { setShowDeleteConfirm(false); deleteMutation.mutate(); }}
+            disabled={deleteMutation.isPending}
+          >
+            Delete
+          </Button>
+        </ModalFooter>
+      </Modal>
 
       {showExport && activePage && (
         <ExportDialog
