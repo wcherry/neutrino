@@ -1756,6 +1756,8 @@ export function SheetEditor() {
                 onConditionalFormat={flags.sheetsConditionalFormatting ? () => setShowCFDialog(v => !v) : undefined}
                 isFormatPainterActive={!!formatPainterSource}
                 onFormatPainterClick={handleFormatPainterClick}
+                selectedCells={editing.selectedCells}
+                onApplyStyleMap={editing.applyStyleMap}
             />
 
             <div className={styles.mainArea}>

@@ -538,6 +538,34 @@ export function useCellEditing({
         });
     }, [selectionAnchor, selectionActive, dirtyRef, pushToUndo, pushPatchToUndo, setData]);
 
+    // Applies a distinct style patch per cell (e.g. a table-style preset) as a
+    // single undo entry. Mirrors applyStyle's two undo branches exactly, but
+    // each cell gets its own patch from `styles` instead of one shared style.
+    const applyStyleMap = useCallback((styles: Map<string, Partial<CellStyle>>) => {
+        if (styles.size === 0) return;
+        dirtyRef.current = true;
+        setData(prev => {
+            if (pushPatchToUndo) {
+                const before = buildReversePatch(prev, styles.keys());
+                const after: Record<string, CellProps | undefined> = {};
+                for (const [cellId, patch] of styles) {
+                    const cell = prev.get(cellId) ?? { id: cellId, value: '', raw: '', edit: false };
+                    after[cellId] = { ...cell, cellStyle: { ...cell.cellStyle, ...patch } };
+                }
+                pushPatchToUndo({ before, after });
+                return applyPatch(prev, after);
+            }
+            // Legacy path: full-clone undo + full-clone apply.
+            pushToUndo(new Map(prev));
+            const next = new Map(prev);
+            for (const [cellId, patch] of styles) {
+                const cell = next.get(cellId) ?? { id: cellId, value: '', raw: '', edit: false };
+                next.set(cellId, { ...cell, cellStyle: { ...cell.cellStyle, ...patch } });
+            }
+            return next;
+        });
+    }, [dirtyRef, pushToUndo, pushPatchToUndo, setData]);
+
     // ── Merge / unmerge ──────────────────────────────────────────────────────
     const mergeCells = useCallback(() => {
         if (!selectionAnchor) return;
@@ -635,6 +663,7 @@ export function useCellEditing({
         toggleAllFunctions,
         handleFunctionSelect,
         applyStyle,
+        applyStyleMap,
         mergeCells,
         selectedCells,
         selectedCellStyle,

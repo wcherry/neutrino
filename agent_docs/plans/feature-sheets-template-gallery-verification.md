@@ -91,3 +91,83 @@
 - Every new Edit/Format/Insert entry produces the exact same effect as its corresponding toolbar button, with state (bold/merged/undo availability) staying in sync between the two.
 - No stub/no-op menu entries exist anywhere in the new structure.
 - `isViewer` and `officeMode` gating behave exactly as before.
+
+---
+
+# Manual Verification: Table styles gallery (28 presets)
+
+## Prerequisites
+- [ ] A logged-in Neutrino account with access to Drive.
+- [ ] Backend (port 8080) and frontend dev server (port 3000) running.
+- [ ] An open spreadsheet with some sample data typed into a rectangular block
+      of cells, e.g. a 4-column x 4-row block with headers "Foo/Bar/Car/Mar"
+      in row 1 and a few data rows below (to visually match the reference
+      "Banded" example), and a second, separate 4-column x 5-row block with a
+      label column (e.g. "Office/Fresno/Modesto/Merced/Totals") in column A
+      and month headers ("Office/Apr/May/Jun") in row 1 (to match the
+      reference "Header & Totals" example).
+
+## Steps to Verify
+
+### Happy Path — Banded style
+1. Select the 4x4 Foo/Bar/Car/Mar block (header row + 3 data rows).
+2. In the toolbar, find the new "Table styles" button (grid/table icon,
+   located near the border-style dropdown) and click it.
+3. Confirm a "Table styles" gallery modal opens showing **28** style cards,
+   each with a small colored preview swatch and a name (e.g. "Blue Banded",
+   "Blue Header & Totals", "Emerald Banded", etc. — 14 color families x 2
+   variants).
+4. Click **"Blue Banded"**.
+5. Confirm the modal closes and the selected range now shows: a solid blue
+   header row (row 1) with bold white text, then body rows alternating
+   white / light-blue-tint backgrounds (row 2 white, row 3 tinted, row 4
+   white).
+
+### Happy Path — Header & Totals style
+1. Select the 4x5 Office/Fresno/Modesto/Merced/Totals block (header row +
+   3 data rows + totals row).
+2. Open the Table styles gallery again and click **"Blue Header & Totals"**.
+3. Confirm: the header row (row 1) is solid blue with bold white text; the
+   header column (column A, every row including the header/total rows) is
+   also solid blue with bold white text; the bottom "Totals" row is solid
+   blue with bold white text; the interior (non-header-column) body cells in
+   the middle rows still alternate white/light-tint by row, consistent with
+   the banded example.
+4. Try a different color family (e.g. "Rose Header & Totals") on the same or
+   another block and confirm the whole look re-colors consistently (header/
+   column/total all rose, band tint changes to the rose-family tint).
+
+### Undo
+1. Immediately after applying either style above, press Undo (toolbar button
+   or Ctrl/Cmd+Z) once.
+2. Confirm the entire table style is removed in a single undo step (all
+   affected cells revert to their prior appearance at once, not one cell at
+   a time / not requiring multiple undos).
+3. Press Redo and confirm the style reapplies in one step.
+
+### Edge Cases
+1. **No selection**: with nothing selected (or only viewing, no active
+   selection anchor), confirm the "Table styles" toolbar button is disabled.
+2. **Viewer role**: open a sheet shared as "viewer" and confirm the Table
+   styles button is disabled (same condition as the rest of the toolbar).
+3. **Single-row selection**: select just one row and apply a "Header &
+   Totals" style; confirm it doesn't try to double-apply a totals look to
+   the same single row in a broken way (the row still gets a sensible
+   header-row appearance).
+4. **Re-applying a different style** to the same range: confirm the new
+   style fully replaces the old one's colors/weights (no leftover colors
+   from the previous style bleeding through).
+5. **Closing the gallery without selecting** (click the X / outside):
+   confirm no style is applied and the selection/data is unchanged.
+
+## Expected Results
+- The Table styles button opens a gallery of exactly 28 presets (14 colors x
+  2 layouts), each preview swatch visually representing its real output.
+- Applying a "Banded" style matches reference example 1 (header row +
+  alternating body rows).
+- Applying a "Header & Totals" style matches reference example 2 (header
+  row + header column + total row, all in the style's color, with interior
+  cells still banded).
+- The whole application (and its reversal) is a single undo/redo step.
+- The button is disabled with no selection or in viewer mode, matching the
+  rest of the formatting toolbar.
