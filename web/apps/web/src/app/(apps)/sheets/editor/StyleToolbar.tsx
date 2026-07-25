@@ -19,6 +19,7 @@ import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { CustomFormatDialog } from './CustomFormatDialog';
 import { TableStyleGalleryModal } from './components/TableStyleGalleryModal';
 import { computeTableStylePatches } from './styles/applyTableStyle';
+import type { TableStyle } from './styles/tableStyles';
 
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
 
@@ -98,9 +99,10 @@ export type StyleToolbarProps = {
     onFormatPainterClick?: () => void;
     selectedCells: Set<string>;
     onApplyStyleMap: (styles: Map<string, Partial<CellStyle>>) => void;
+    onRegisterTableRegion?: (style: TableStyle, cells: Set<string>) => void;
 };
 
-export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick, selectedCells, onApplyStyleMap }: StyleToolbarProps) {
+export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick, selectedCells, onApplyStyleMap, onRegisterTableRegion }: StyleToolbarProps) {
     const { fontFamilies: FONT_FAMILIES } = useAvailableFonts();
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
@@ -421,6 +423,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                     onClose={() => setShowTableStyles(false)}
                     onSelect={style => {
                         onApplyStyleMap(computeTableStylePatches(style, selectedCells));
+                        onRegisterTableRegion?.(style, selectedCells);
                         setShowTableStyles(false);
                     }}
                 />

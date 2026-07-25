@@ -10,10 +10,10 @@ import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
 import { sheetsApi, filesystemApi, driveAutosaveContent } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
 import { useSheetPresence, type CellSyncItem } from '@/hooks/useSheetPresence';
-import type { CellProps, ClipboardCFRule, CFRule, SheetFile } from './types';
+import type { CellProps, ClipboardCFRule, CFRule, SheetFile, TableRegion } from './types';
 import type { SheetTemplate } from './templates/sheetTemplates';
 import { sheetFileToSheetsData } from './hooks/sheetFileUtils';
-import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, type ArrowNavigationKey } from './utils';
+import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, getCellBounds, type ArrowNavigationKey } from './utils';
 import { MAX_ROWS, MAX_COLS } from './constants';
 import { useHistory } from './hooks/useHistory';
 import { useClipboard } from './hooks/useClipboard';
@@ -22,6 +22,9 @@ import { usePersistence } from './hooks/usePersistence';
 import { useExport } from './hooks/useExport';
 import { useCellEditing } from './hooks/useCellEditing';
 import { useConditionalFormatting } from './hooks/useConditionalFormatting';
+import { useTableRegions } from './hooks/useTableRegions';
+import { computeStructuralShift } from './structuralShift';
+import type { TableStyle } from './styles/tableStyles';
 import { ConditionalFormattingDialog } from './ConditionalFormattingDialog';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useNspell } from '@/hooks/useNspell';
@@ -279,6 +282,11 @@ export function SheetEditor() {
         activeSheetIndexRef: sheets.activeSheetIndexRef,
     });
 
+    const tableRegions = useTableRegions({
+        dirtyRef,
+        activeSheetIndexRef: sheets.activeSheetIndexRef,
+    });
+
     // Wrapped flushActiveSheet for usePersistence: ensures in-flight edits are
     // captured before serialization, whether they reached the eager-commit stage
     // (activateCell ran) or are still only in the formula bar DOM (user typed but
@@ -325,6 +333,9 @@ export function SheetEditor() {
         sheetsConditionalFormatsRef: flags.sheetsConditionalFormatting ? cf.sheetsConditionalFormatsRef : undefined,
         flushActiveConditionalFormats: flags.sheetsConditionalFormatting ? cf.flushActiveConditionalFormats : undefined,
         setConditionalFormats: flags.sheetsConditionalFormatting ? cf.setConditionalFormats : undefined,
+        sheetsTableRegionsRef: tableRegions.sheetsTableRegionsRef,
+        flushActiveTableRegions: tableRegions.flushActiveTableRegions,
+        setTableRegions: tableRegions.setTableRegions,
         officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
     });
 
@@ -840,151 +851,84 @@ export function SheetEditor() {
         return { col: alphaToNum(m[1]), row: parseInt(m[2]) };
     }, []);
 
+    // Shared structural insert/delete: shifts the cell map, then recomputes
+    // colWidths/rowHeights/conditionalFormats/tableRegions (and, via
+    // computeStructuralShift, table-style recoloring for any surviving
+    // TableRegion) in one atomic undo step. colWidths/rowHeights/CF/table
+    // regions are applied outside undo tracking, matching how they already
+    // behave today.
+    //
+    // Deliberately NOT computed inside a `setData(prev => ...)` updater: React
+    // may invoke updater functions more than once for the same state update
+    // (StrictMode dev double-invoke is the common case, but the rule holds in
+    // general — updaters must be pure). computeStructuralShift's result is fed
+    // into tableRegions.updateTableRegions/cf.updateConditionalFormats, which
+    // mutate refs as a side effect; a second invocation would then shift an
+    // already-shifted region a second time. Reading the current cells from
+    // `dataRef` (kept in sync via useLayoutEffect, same pattern used elsewhere
+    // in this file, e.g. handleTextChange/contextMenu) and calling setData with
+    // a plain value instead sidesteps that entirely — everything here runs
+    // exactly once per click.
+    const runStructuralShift = useCallback((axis: 'row' | 'col', op: 'insert' | 'delete', index: number) => {
+        const prev = dataRef.current;
+        history.pushToUndo(new Map(prev));
+        const result = computeStructuralShift({
+            cells: prev,
+            colWidths: colWidthsRef.current,
+            rowHeights: rowHeightsRef.current,
+            conditionalFormats: cf.conditionalFormatsRef.current,
+            tableRegions: tableRegions.tableRegionsRef.current,
+            axis, op, index,
+        });
+        setData(result.cells);
+        setColWidths(result.colWidths);
+        setRowHeights(result.rowHeights);
+        cf.updateConditionalFormats(result.conditionalFormats);
+        tableRegions.updateTableRegions(result.tableRegions);
+        dirtyRef.current = true;
+    }, [dataRef, setData, history, cf, tableRegions, setColWidths, setRowHeights, dirtyRef]);
+
     const handleInsertRowAbove = useCallback(() => {
         if (!contextMenu) return;
         const pos = parseContextCellId(contextMenu.cellId);
         if (!pos) return;
-        const rowN = pos.row;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const r = parseInt(m[2]);
-                if (r >= rowN) {
-                    const newId = `${m[1]}${r + 1}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [contextMenu, parseContextCellId, setData, history, dirtyRef]);
+        runStructuralShift('row', 'insert', pos.row);
+    }, [contextMenu, parseContextCellId, runStructuralShift]);
 
     const handleInsertRowBelow = useCallback(() => {
         if (!contextMenu) return;
         const pos = parseContextCellId(contextMenu.cellId);
         if (!pos) return;
-        const rowN = pos.row;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const r = parseInt(m[2]);
-                if (r >= rowN + 1) {
-                    const newId = `${m[1]}${r + 1}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [contextMenu, parseContextCellId, setData, history, dirtyRef]);
+        runStructuralShift('row', 'insert', pos.row + 1);
+    }, [contextMenu, parseContextCellId, runStructuralShift]);
 
     const handleInsertColLeft = useCallback(() => {
         if (!contextMenu) return;
         const pos = parseContextCellId(contextMenu.cellId);
         if (!pos) return;
-        const colN = pos.col;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const c = alphaToNum(m[1]);
-                if (c >= colN) {
-                    const newId = `${numToAlpha(c + 1)}${m[2]}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [contextMenu, parseContextCellId, setData, history, dirtyRef]);
+        runStructuralShift('col', 'insert', pos.col);
+    }, [contextMenu, parseContextCellId, runStructuralShift]);
 
     const handleInsertColRight = useCallback(() => {
         if (!contextMenu) return;
         const pos = parseContextCellId(contextMenu.cellId);
         if (!pos) return;
-        const colN = pos.col;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const c = alphaToNum(m[1]);
-                if (c >= colN + 1) {
-                    const newId = `${numToAlpha(c + 1)}${m[2]}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [contextMenu, parseContextCellId, setData, history, dirtyRef]);
+        runStructuralShift('col', 'insert', pos.col + 1);
+    }, [contextMenu, parseContextCellId, runStructuralShift]);
 
     const handleDeleteRow = useCallback(() => {
         if (!contextMenu) return;
         const pos = parseContextCellId(contextMenu.cellId);
         if (!pos) return;
-        const rowN = pos.row;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const r = parseInt(m[2]);
-                if (r === rowN) continue; // remove this row
-                if (r > rowN) {
-                    const newId = `${m[1]}${r - 1}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [contextMenu, parseContextCellId, setData, history, dirtyRef]);
+        runStructuralShift('row', 'delete', pos.row);
+    }, [contextMenu, parseContextCellId, runStructuralShift]);
 
     const handleDeleteCol = useCallback(() => {
         if (!contextMenu) return;
         const pos = parseContextCellId(contextMenu.cellId);
         if (!pos) return;
-        const colN = pos.col;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const c = alphaToNum(m[1]);
-                if (c === colN) continue; // remove this column
-                if (c > colN) {
-                    const newId = `${numToAlpha(c - 1)}${m[2]}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [contextMenu, parseContextCellId, setData, history, dirtyRef]);
+        runStructuralShift('col', 'delete', pos.col);
+    }, [contextMenu, parseContextCellId, runStructuralShift]);
 
     const handleClearCells = useCallback(() => {
         const cells = editing.selectedCells;
@@ -1131,73 +1075,36 @@ export function SheetEditor() {
         }
     }, [formatPainterSource, selectionAnchor, selectionActive]);
 
+    // Records the applied region so structural inserts/deletes can recolor it
+    // later (the actual bug fix — table styles are otherwise a one-time paint
+    // with no memory of "this range is a table").
+    const handleRegisterTableStyle = useCallback((style: TableStyle, cells: Set<string>) => {
+        const bounds = getCellBounds(cells);
+        tableRegions.registerRegion({
+            id: `table-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+            styleId: style.id,
+            minR: bounds.minRow,
+            maxR: bounds.maxRow,
+            minC: bounds.minCol,
+            maxC: bounds.maxCol,
+        });
+    }, [tableRegions]);
+
     // ── Header context menu: row operations ──────────────────────────────────
     const handleHeaderInsertRowAbove = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'row') return;
-        const rowN = headerContextMenu.index + 1;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const r = parseInt(m[2]);
-                if (r >= rowN) {
-                    const newId = `${m[1]}${r + 1}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [headerContextMenu, setData, history, dirtyRef]);
+        runStructuralShift('row', 'insert', headerContextMenu.index + 1);
+    }, [headerContextMenu, runStructuralShift]);
 
     const handleHeaderInsertRowBelow = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'row') return;
-        const rowN = headerContextMenu.index + 1;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const r = parseInt(m[2]);
-                if (r > rowN) {
-                    const newId = `${m[1]}${r + 1}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [headerContextMenu, setData, history, dirtyRef]);
+        runStructuralShift('row', 'insert', headerContextMenu.index + 2);
+    }, [headerContextMenu, runStructuralShift]);
 
     const handleHeaderDeleteRow = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'row') return;
-        const rowN = headerContextMenu.index + 1;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const r = parseInt(m[2]);
-                if (r === rowN) continue;
-                if (r > rowN) {
-                    const newId = `${m[1]}${r - 1}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [headerContextMenu, setData, history, dirtyRef]);
+        runStructuralShift('row', 'delete', headerContextMenu.index + 1);
+    }, [headerContextMenu, runStructuralShift]);
 
     const handleHeaderClearRow = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'row') return;
@@ -1234,70 +1141,18 @@ export function SheetEditor() {
     // ── Header context menu: column operations ───────────────────────────────
     const handleHeaderInsertColLeft = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'col') return;
-        const colN = headerContextMenu.index + 1;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const c = alphaToNum(m[1]);
-                if (c >= colN) {
-                    const newId = `${numToAlpha(c + 1)}${m[2]}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [headerContextMenu, setData, history, dirtyRef]);
+        runStructuralShift('col', 'insert', headerContextMenu.index + 1);
+    }, [headerContextMenu, runStructuralShift]);
 
     const handleHeaderInsertColRight = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'col') return;
-        const colN = headerContextMenu.index + 1;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const c = alphaToNum(m[1]);
-                if (c > colN) {
-                    const newId = `${numToAlpha(c + 1)}${m[2]}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [headerContextMenu, setData, history, dirtyRef]);
+        runStructuralShift('col', 'insert', headerContextMenu.index + 2);
+    }, [headerContextMenu, runStructuralShift]);
 
     const handleHeaderDeleteCol = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'col') return;
-        const colN = headerContextMenu.index + 1;
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
-            const next = new Map<string, CellProps>();
-            for (const [id, cell] of prev) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (!m) { next.set(id, cell); continue; }
-                const c = alphaToNum(m[1]);
-                if (c === colN) continue;
-                if (c > colN) {
-                    const newId = `${numToAlpha(c - 1)}${m[2]}`;
-                    next.set(newId, { ...cell, id: newId });
-                } else {
-                    next.set(id, cell);
-                }
-            }
-            return next;
-        });
-        dirtyRef.current = true;
-    }, [headerContextMenu, setData, history, dirtyRef]);
+        runStructuralShift('col', 'delete', headerContextMenu.index + 1);
+    }, [headerContextMenu, runStructuralShift]);
 
     const handleHeaderClearCol = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'col') return;
@@ -1758,6 +1613,7 @@ export function SheetEditor() {
                 onFormatPainterClick={handleFormatPainterClick}
                 selectedCells={editing.selectedCells}
                 onApplyStyleMap={editing.applyStyleMap}
+                onRegisterTableRegion={handleRegisterTableStyle}
             />
 
             <div className={styles.mainArea}>
@@ -1859,6 +1715,7 @@ export function SheetEditor() {
                     if (flags.sheetsConditionalFormatting) {
                         cf.flushActiveConditionalFormats();
                     }
+                    tableRegions.flushActiveTableRegions();
                     sheets.switchSheet(idx);
                     if (flags.sheetsCharts) {
                         charts.switchSheetCharts(idx);
@@ -1867,6 +1724,7 @@ export function SheetEditor() {
                     if (flags.sheetsConditionalFormatting) {
                         cf.switchSheetConditionalFormats(idx);
                     }
+                    tableRegions.switchSheetTableRegions(idx);
                 }}
                 onAddSheet={() => {
                     if (flags.sheetsCharts) {
@@ -1875,6 +1733,7 @@ export function SheetEditor() {
                     if (flags.sheetsConditionalFormatting) {
                         cf.flushActiveConditionalFormats();
                     }
+                    tableRegions.flushActiveTableRegions();
                     sheets.addSheet();
                     if (flags.sheetsCharts) {
                         charts.switchSheetCharts(sheets.activeSheetIndexRef.current);
@@ -1883,6 +1742,7 @@ export function SheetEditor() {
                     if (flags.sheetsConditionalFormatting) {
                         cf.switchSheetConditionalFormats(sheets.activeSheetIndexRef.current);
                     }
+                    tableRegions.switchSheetTableRegions(sheets.activeSheetIndexRef.current);
                 }}
                 onDeleteSheet={sheets.deleteSheet}
                 onDuplicateSheet={sheets.duplicateSheet}

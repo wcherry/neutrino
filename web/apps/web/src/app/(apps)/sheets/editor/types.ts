@@ -190,6 +190,19 @@ export type CFTemplate = {
     rules: Array<{ range: string; rule: CFRuleSpec; stopIfTrue?: boolean }>;
 };
 
+// A persisted "this range is a table" region, backing table-style recoloring
+// on structural (row/col insert/delete) edits. `styleId` refers to a
+// `TableStyle.id` from `styles/tableStyles.ts`. Bounds are 1-based, matching
+// the `mergeCells` convention (`alphaToNum`/cell-id numbering).
+export type TableRegion = {
+    id: string;
+    styleId: string;
+    minR: number;
+    maxR: number;
+    minC: number;
+    maxC: number;
+};
+
 export type SheetData = {
     name?: string;
     color?: string | null;
@@ -199,6 +212,7 @@ export type SheetData = {
     charts?: import('./charts/chartTypes').ChartDef[];
     conditionalFormats?: CFRule[];
     cfVariables?: CFVariable[];          // item 19: named reusable rules
+    tables?: TableRegion[];
 };
 
 export type SheetFile = {
