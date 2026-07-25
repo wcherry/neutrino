@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import * as XLSX from 'xlsx';
-import type { CellProps, SheetFile, CFRule } from '../types';
+import type { CellProps, SheetFile, CFRule, TableRegion } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import {
     sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
@@ -69,6 +69,9 @@ export function usePersistence({
     sheetsConditionalFormatsRef,
     flushActiveConditionalFormats,
     setConditionalFormats,
+    sheetsTableRegionsRef,
+    flushActiveTableRegions,
+    setTableRegions,
     // Office mode (issue #43). Defaults to true so callers that don't pass it
     // (and this hook's own unit tests, which render it standalone with no
     // FeatureFlagsProvider) still get the 404-fallback behavior; SheetEditor.tsx
@@ -97,6 +100,10 @@ export function usePersistence({
     sheetsConditionalFormatsRef?: React.MutableRefObject<CFRule[][]>;
     flushActiveConditionalFormats?: () => void;
     setConditionalFormats?: React.Dispatch<React.SetStateAction<CFRule[]>>;
+    // Optional table-region persistence — omit if the feature isn't wired up
+    sheetsTableRegionsRef?: React.MutableRefObject<TableRegion[][]>;
+    flushActiveTableRegions?: () => void;
+    setTableRegions?: React.Dispatch<React.SetStateAction<TableRegion[]>>;
     officeInPlaceEditingEnabled?: boolean;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
@@ -133,6 +140,7 @@ export function usePersistence({
         flushActiveSheet();
         flushActiveCharts?.();
         flushActiveConditionalFormats?.();
+        flushActiveTableRegions?.();
         const fileSheets = sheetsDataRef.current.map((sheetData, i) => {
             const cells: SheetFile['sheets'][0]['cells'] = {};
             for (const [id, cell] of sheetData) {
@@ -150,6 +158,7 @@ export function usePersistence({
             const color = sheetColorsRef.current[i] ?? undefined;
             const sheetCharts = sheetsChartsRef?.current[i];
             const sheetCF = sheetsConditionalFormatsRef?.current[i];
+            const sheetTables = sheetsTableRegionsRef?.current[i];
             return {
                 name: sheetNamesRef.current[i] ?? `Sheet ${i + 1}`,
                 color,
@@ -158,6 +167,7 @@ export function usePersistence({
                 rowHeights: rowHeightsObj,
                 charts: sheetCharts && sheetCharts.length > 0 ? sheetCharts : undefined,
                 conditionalFormats: sheetCF && sheetCF.length > 0 ? sheetCF : undefined,
+                tables: sheetTables && sheetTables.length > 0 ? sheetTables : undefined,
             };
         });
         return JSON.stringify({ sheets: fileSheets } as SheetFile);
@@ -170,6 +180,7 @@ export function usePersistence({
         flushActiveSheet();
         flushActiveCharts?.();
         flushActiveConditionalFormats?.();
+        flushActiveTableRegions?.();
         const wb = XLSX.utils.book_new();
         sheetNamesRef.current.forEach((name, i) => {
             XLSX.utils.book_append_sheet(wb, buildXlsxWorksheet(sheetsDataRef.current[i]), name || `Sheet${i + 1}`);
@@ -443,6 +454,15 @@ export function usePersistence({
                         ...extraCF,
                     ];
                     setConditionalFormats(sheetsConditionalFormatsRef.current[0] ?? []);
+                }
+                // Restore table regions if the hook is wired up.
+                if (sheetsTableRegionsRef && setTableRegions) {
+                    const extraTableRegions = sheetsTableRegionsRef.current.slice(allData.length);
+                    sheetsTableRegionsRef.current = [
+                        ...rawSheets.map(s => s.tables ?? []),
+                        ...extraTableRegions,
+                    ];
+                    setTableRegions(sheetsTableRegionsRef.current[0] ?? []);
                 }
             }
             loadOk = true;
