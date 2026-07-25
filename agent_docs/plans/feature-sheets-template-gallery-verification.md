@@ -40,3 +40,134 @@
 - All 20 templates appear in the gallery with distinct, real-data mini-grid previews.
 - Selecting any template creates a new sheet whose content matches that template's structure, including correctly computed formula values.
 - No template content is ever visible in server logs/API responses as plaintext — it only ever reaches the server via the normal encrypted autosave path (same as any manual edit).
+
+---
+
+# Manual Verification: Hamburger menu reorganization (File/Edit/Format/Insert)
+
+## Prerequisites
+- [ ] A logged-in Neutrino account with access to Drive.
+- [ ] Backend (port 8080) and frontend dev server (port 3000) running.
+- [ ] An open spreadsheet (blank is fine) with at least one cell selected.
+
+## Steps to Verify
+
+### Happy path — menu structure
+1. Open any sheet, click the hamburger icon (☰, top-left of the editor topbar).
+2. Confirm the panel shows exactly **File**, **Edit**, **Format** as top-level rows, each with a right-facing chevron, plus **Insert** when chart creation is available in this environment (feature-flag `sheetsCharts`).
+3. Hover **File** — confirm the existing items still appear unchanged: New (Blank/Template), Save, Export, Import, Print, Duplicate, Version history, Delete, Share, Make available offline (and "Convert to Neutrino Sheet" only when editing a raw Office file in place).
+4. Hover **Edit** — confirm: Undo, Redo, —, Cut, Copy, Paste, —, Select all, —, Find and replace….
+5. Hover **Format** — confirm: Bold, Italic, Strikethrough, —, Text color…, Fill color…, —, Borders ▸, Number format ▸, —, Merge cells, —, Clear formatting.
+6. Hover **Insert** (if present) — confirm: Insert chart….
+
+### Happy path — Edit actions reuse the real toolbar functions
+1. Click a cell (e.g. A1), type some text, press Enter.
+2. Open hamburger → Edit → **Undo**. Confirm the typed text is removed — identical to clicking the toolbar's Undo (↶) button.
+3. With nothing left to undo, reopen Edit and confirm **Undo** is greyed out/disabled.
+4. Retype the text, open Edit → **Redo** after an Undo, confirm it restores the text.
+5. Select a cell with content, use Edit → **Copy**, click a different cell, use Edit → **Paste**: confirm the content is copied — same behavior as the right-click context menu's Copy/Paste.
+6. With cells populated, Edit → **Select all**: confirm the full populated range (A1 through the bottom-right occupied cell) becomes selected, same as pressing Ctrl/Cmd+A.
+7. Edit → **Find and replace…**: confirm the same Find/Replace panel opens as clicking the toolbar's search icon.
+
+### Happy path — Format actions reuse the real toolbar functions
+1. Select a cell with text. Open Format → **Bold**. Confirm the cell text becomes bold — identical to clicking the toolbar's **B** button — and the toolbar's Bold button shows as active/highlighted.
+2. Reopen Format: confirm the entry now reads **"Bold ✓"**.
+3. Repeat for Italic and Strikethrough.
+4. Format → **Text color…**: enter a hex value in the prompt, confirm the cell's font color changes to match.
+5. Format → **Fill color…**: same check for background color.
+6. Format → **Borders** → **Thin**: confirm a thin border appears around the selection, matching the toolbar's border dropdown.
+7. Format → **Number format** → **Currency**: confirm the cell displays as currency, matching the toolbar's `$` button; reopening and clicking **Currency** again toggles it back off.
+8. Select a 2x2 range, Format → **Merge cells**: confirm the cells merge, same as the toolbar's merge button; reopening Format now shows **"Unmerge cells"**.
+9. With a styled cell selected, Format → **Clear formatting**: confirm bold/italic/color/border/number-format are all removed in one action.
+
+### Edge cases
+1. **Viewer role** (open a sheet shared as "viewer", or check with `isViewer` state): confirm the Edit, Format, and Insert categories do not appear at all in the hamburger menu — only File (with its own mutating items already hidden, e.g. no Save/Delete/Duplicate).
+2. **Office in-place-editing mode** (editing a raw `.xlsx`): confirm "Convert to Neutrino Sheet" still appears inside File, unaffected by the reorganization.
+3. **No selection**: with no cell selected, confirm Format items are disabled (matches the toolbar being disabled with no selection).
+4. **sheetsCharts flag off**: confirm the Insert category is entirely absent (not shown empty/disabled).
+
+## Expected Results
+- The hamburger menu now matches Docs' pattern exactly: one icon, one panel, categories fly out on hover.
+- Every new Edit/Format/Insert entry produces the exact same effect as its corresponding toolbar button, with state (bold/merged/undo availability) staying in sync between the two.
+- No stub/no-op menu entries exist anywhere in the new structure.
+- `isViewer` and `officeMode` gating behave exactly as before.
+
+---
+
+# Manual Verification: Table styles gallery (28 presets)
+
+## Prerequisites
+- [ ] A logged-in Neutrino account with access to Drive.
+- [ ] Backend (port 8080) and frontend dev server (port 3000) running.
+- [ ] An open spreadsheet with some sample data typed into a rectangular block
+      of cells, e.g. a 4-column x 4-row block with headers "Foo/Bar/Car/Mar"
+      in row 1 and a few data rows below (to visually match the reference
+      "Banded" example), and a second, separate 4-column x 5-row block with a
+      label column (e.g. "Office/Fresno/Modesto/Merced/Totals") in column A
+      and month headers ("Office/Apr/May/Jun") in row 1 (to match the
+      reference "Header & Totals" example).
+
+## Steps to Verify
+
+### Happy Path — Banded style
+1. Select the 4x4 Foo/Bar/Car/Mar block (header row + 3 data rows).
+2. In the toolbar, find the new "Table styles" button (grid/table icon,
+   located near the border-style dropdown) and click it.
+3. Confirm a "Table styles" gallery modal opens showing **28** style cards,
+   each with a small colored preview swatch and a name (e.g. "Blue Banded",
+   "Blue Header & Totals", "Emerald Banded", etc. — 14 color families x 2
+   variants).
+4. Click **"Blue Banded"**.
+5. Confirm the modal closes and the selected range now shows: a solid blue
+   header row (row 1) with bold white text, then body rows alternating
+   white / light-blue-tint backgrounds (row 2 white, row 3 tinted, row 4
+   white).
+
+### Happy Path — Header & Totals style
+1. Select the 4x5 Office/Fresno/Modesto/Merced/Totals block (header row +
+   3 data rows + totals row).
+2. Open the Table styles gallery again and click **"Blue Header & Totals"**.
+3. Confirm: the header row (row 1) is solid blue with bold white text; the
+   header column (column A, every row including the header/total rows) is
+   also solid blue with bold white text; the bottom "Totals" row is solid
+   blue with bold white text; the interior (non-header-column) body cells in
+   the middle rows still alternate white/light-tint by row, consistent with
+   the banded example.
+4. Try a different color family (e.g. "Rose Header & Totals") on the same or
+   another block and confirm the whole look re-colors consistently (header/
+   column/total all rose, band tint changes to the rose-family tint).
+
+### Undo
+1. Immediately after applying either style above, press Undo (toolbar button
+   or Ctrl/Cmd+Z) once.
+2. Confirm the entire table style is removed in a single undo step (all
+   affected cells revert to their prior appearance at once, not one cell at
+   a time / not requiring multiple undos).
+3. Press Redo and confirm the style reapplies in one step.
+
+### Edge Cases
+1. **No selection**: with nothing selected (or only viewing, no active
+   selection anchor), confirm the "Table styles" toolbar button is disabled.
+2. **Viewer role**: open a sheet shared as "viewer" and confirm the Table
+   styles button is disabled (same condition as the rest of the toolbar).
+3. **Single-row selection**: select just one row and apply a "Header &
+   Totals" style; confirm it doesn't try to double-apply a totals look to
+   the same single row in a broken way (the row still gets a sensible
+   header-row appearance).
+4. **Re-applying a different style** to the same range: confirm the new
+   style fully replaces the old one's colors/weights (no leftover colors
+   from the previous style bleeding through).
+5. **Closing the gallery without selecting** (click the X / outside):
+   confirm no style is applied and the selection/data is unchanged.
+
+## Expected Results
+- The Table styles button opens a gallery of exactly 28 presets (14 colors x
+  2 layouts), each preview swatch visually representing its real output.
+- Applying a "Banded" style matches reference example 1 (header row +
+  alternating body rows).
+- Applying a "Header & Totals" style matches reference example 2 (header
+  row + header column + total row, all in the style's color, with interior
+  cells still banded).
+- The whole application (and its reversal) is a single undo/redo step.
+- The button is disabled with no selection or in viewer mode, matching the
+  rest of the formatting toolbar.

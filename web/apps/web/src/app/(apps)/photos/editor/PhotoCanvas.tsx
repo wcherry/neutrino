@@ -865,8 +865,13 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
     img.onerror = () => console.error('[PhotoCanvas] failed to load image src');
     img.onload = () => {
       imgRef.current = img;
-      const w = Math.min(img.naturalWidth, MAX_CANVAS_WIDTH);
-      const h = Math.min(img.naturalHeight, MAX_CANVAS_HEIGHT);
+      const scale = Math.min(
+        1,
+        MAX_CANVAS_WIDTH / img.naturalWidth,
+        MAX_CANVAS_HEIGHT / img.naturalHeight
+      );
+      const w = Math.round(img.naturalWidth * scale);
+      const h = Math.round(img.naturalHeight * scale);
       setCanvasSize({ width: w, height: h });
       setImgLoadCount((c) => c + 1);
     };
