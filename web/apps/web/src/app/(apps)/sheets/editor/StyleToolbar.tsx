@@ -11,11 +11,14 @@ import {
     Search,
     Palette,
     Paintbrush,
+    TableProperties,
 } from 'lucide-react';
 import type { CellStyle } from './types';
 import { ColorPickerPopover, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { CustomFormatDialog } from './CustomFormatDialog';
+import { TableStyleGalleryModal } from './components/TableStyleGalleryModal';
+import { computeTableStylePatches } from './styles/applyTableStyle';
 
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
 
@@ -93,14 +96,17 @@ export type StyleToolbarProps = {
     onConditionalFormat?: () => void;
     isFormatPainterActive?: boolean;
     onFormatPainterClick?: () => void;
+    selectedCells: Set<string>;
+    onApplyStyleMap: (styles: Map<string, Partial<CellStyle>>) => void;
 };
 
-export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick }: StyleToolbarProps) {
+export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick, selectedCells, onApplyStyleMap }: StyleToolbarProps) {
     const { fontFamilies: FONT_FAMILIES } = useAvailableFonts();
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
     const isStrikethrough = cellStyle?.textDecoration === 'line-through';
     const [showFormatDialog, setShowFormatDialog] = useState(false);
+    const [showTableStyles, setShowTableStyles] = useState(false);
 
     return (
         <Toolbar>
@@ -266,6 +272,17 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                 <option value="thick">Thick Border</option>
             </ToolbarSelect>
 
+            {/* Table styles */}
+            <ToolbarButton
+                onClick={() => setShowTableStyles(true)}
+                disabled={disabled}
+                title="Table styles"
+            >
+                <TableProperties size={15} />
+            </ToolbarButton>
+
+            <ToolbarDivider />
+
             {/* Wrap mode */}
             <ToolbarGroup>
                 <ToolbarButton
@@ -395,6 +412,17 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                     cellStyle={cellStyle}
                     onApply={onStyleChange}
                     onClose={() => setShowFormatDialog(false)}
+                />
+            )}
+
+            {showTableStyles && (
+                <TableStyleGalleryModal
+                    open
+                    onClose={() => setShowTableStyles(false)}
+                    onSelect={style => {
+                        onApplyStyleMap(computeTableStylePatches(style, selectedCells));
+                        setShowTableStyles(false);
+                    }}
                 />
             )}
         </Toolbar>

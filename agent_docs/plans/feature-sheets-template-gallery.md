@@ -339,3 +339,135 @@ cells at all, so none of those actions apply). `officeMode` still gates
 - `pnpm type-check` / `pnpm lint` pass for touched files; sheets test suite
   passes with no *new* failures (pre-existing unrelated
   `autosaveEncryptionWarning.test.tsx` failure not caused by this work).
+
+---
+
+## Continuation: Table styles gallery (28 presets)
+
+Same branch, same PR (#53). Adds a toolbar-driven "table styles" feature: a
+gallery of 28 pre-designed cell/table style presets (colored header row,
+optional header column, optional total row, alternating row banding) that
+apply in one click to the current selection.
+
+### What is changing and why
+
+Today `StyleToolbar.tsx` only exposes single-property style controls
+(`applyStyle` applies one `Partial<CellStyle>` patch uniformly to every
+selected cell). Table styles need *per-cell* patches within one selection
+(header row cells get one look, body cells get banded looks, header column /
+total row cells get another) — this requires a new selection-aware
+application path, not a new UI control on top of the old one.
+
+### Layers affected
+
+- **Frontend only.** No backend changes — this only ever writes
+  `CellStyle` patches into the existing in-memory `data` Map via the existing
+  undo-patch machinery, exactly like every other formatting control.
+- No new fields on `CellStyle` — `backgroundColor`/`color`/`fontWeight`/
+  `borderStyle` already cover every visual need for these presets.
+- No design-system additions — reuses `@neutrino/ui`'s `Modal`/`ModalHeader`/
+  `ModalBody`/`ToolbarButton`, same primitives the template gallery (above)
+  and the rest of `StyleToolbar` already use.
+- Tests: unit tests for the pure geometry/patch function, a component test
+  for the new gallery modal (mirroring `SheetTemplatePickerModal.test.tsx`).
+
+### Existing code being reused (verified by reading, not assumed)
+
+- `CellStyle` (`editor/types.ts` ~line 23) — used as-is.
+- `applyStyle` (`hooks/useCellEditing.ts` ~line 513) — the undo-patch pattern
+  (`buildReversePatch`/`applyPatch`/`pushPatchToUndo` vs. legacy
+  `pushToUndo`) is generalized into a new sibling `applyStyleMap` that takes a
+  `Map<cellId, Partial<CellStyle>>` instead of one shared patch, so different
+  cells in the same selection can get different styles in a single undo step.
+- `mergeCells` (~line 542) — the established `id.match(/^([A-Z]+)(\d+)$/)` +
+  `alphaToNum`/`numToAlpha` → `minC/minR/maxC/maxR` pattern is reused verbatim
+  for table-style geometry in a new standalone pure function (not inside the
+  hook, so it's trivially unit-testable without React).
+- `getRangeCells` (`editor/utils.ts`) — enumerates the selection's cell ids;
+  already returned as `editing.selectedCells` from the hook and already
+  threaded into `SheetEditor.tsx` (passed to `SheetGrid` at ~line 1782), so no
+  new selection-tracking state is needed — `StyleToolbar` just needs the same
+  set threaded in as a prop.
+- `SheetTemplatePickerModal.tsx` (42 lines) — exact modal-gallery pattern to
+  mirror (`Modal`/`ModalHeader`/`ModalBody`, CSS-module card grid, per-item
+  preview + name/description, `onClick={() => onSelect(item)}`).
+  `MiniGridPreview.tsx` is *not* reused directly (it renders an uncolored
+  table) — a new `TableStylePreviewSwatch.tsx` renders a small colored grid
+  reflecting a given style's actual colors instead.
+- `StyleToolbar.tsx`'s `showFormatDialog` local-state + `CustomFormatDialog`
+  render pattern (~line 103, ~line 393) is mirrored for the new gallery
+  button/modal.
+
+### Plan
+
+1. **`editor/styles/tableStyles.ts`** — `TableStyle` interface + `TABLE_STYLES`
+   (28 entries): a `PALETTE` array of the 14 given hue/color triples,
+   `.flatMap`'d over two variant descriptors (`banded`:
+   headerRow only; `headerTotals`: headerRow + headerColumn + totalRow),
+   producing a concrete (not lazy) array.
+2. **`editor/styles/applyTableStyle.ts`** — pure
+   `computeTableStylePatches(style, cells: Set<string>): Map<string, Partial<CellStyle>>`,
+   implementing the geometry/precedence algorithm from the brief: body patch
+   with banding parity computed relative to the first body row
+   (`bodyRowIndex = row - minR - headerOffset`), then header-column,
+   header-row, total-row overrides in that order (each cell's own patch, not
+   a shared one). No React/hooks — a standalone module, easily unit tested
+   against small ranges.
+3. **`hooks/useCellEditing.ts`** — add `applyStyleMap(styles: Map<string, Partial<CellStyle>>)`
+   alongside `applyStyle`, reusing the exact same undo-batching logic
+   (`buildReversePatch`/`applyPatch`, `pushPatchToUndo`/legacy-`pushToUndo`
+   branching) but looking up each cell's patch from the map. Exported from
+   the hook's return object.
+4. **`components/TableStylePreviewSwatch.tsx`** (+ css module) — small
+   presentational component rendering a 3-4×3-4 colored grid for one
+   `TableStyle`, using `computeTableStylePatches` (or equivalent local logic)
+   against a synthetic small range so the preview matches real output exactly.
+5. **`components/TableStyleGalleryModal.tsx`** (+ css module) — mirrors
+   `SheetTemplatePickerModal.tsx`: `Modal size="xl"` / `ModalHeader` /
+   `ModalBody`, grid of 28 cards (`TableStylePreviewSwatch` + name), `onSelect
+   (style)`.
+6. **`StyleToolbar.tsx`** — new `showTableStyles` local state, new
+   `ToolbarButton` (icon: `TableProperties` from `lucide-react`, confirmed to
+   exist in this repo's installed version) titled "Table styles", disabled
+   under the same condition as the rest of the toolbar (`disabled` prop,
+   already `!selectionAnchor || isViewer` at the call site). New required
+   prop `selectedCells: Set<string>` and `onApplyStyleMap: (m: Map<string,
+   Partial<CellStyle>>) => void`. On select: `onApplyStyleMap(computeTableStylePatches(style, selectedCells))`, close modal.
+7. **`SheetEditor.tsx`** (~line 1744 call site) — pass
+   `selectedCells={editing.selectedCells}` and
+   `onApplyStyleMap={editing.applyStyleMap}` to `StyleToolbar`.
+
+### Known risks / edge cases
+
+- **Banding parity reference point** — must be relative to the first body
+  row (post-header), not the absolute selection top, or example 1's row
+  immediately under the header would come out tinted instead of white. Unit
+  tests assert this explicitly against both reference shapes.
+- **1-row selections** — `totalRow` must not fire when `maxR === minR`
+  (guarded explicitly per the brief) so a single selected row doesn't get
+  double-mutated in a confusing way.
+- **Undo must be one step** — achieved by building the whole `Map` of patches
+  first and pushing a single `applyStyleMap` call (one `pushPatchToUndo`
+  invocation), not one `applyStyle` call per cell.
+- Must not touch `photos/editor/PhotoCanvas.tsx` (unrelated pre-existing
+  uncommitted change on this branch).
+- No feature flag — ships enabled directly.
+- No `window.prompt`/`alert`/`confirm` anywhere in the new code.
+
+### Acceptance criteria
+
+- Toolbar has a "Table styles" button (disabled when no selection / viewer)
+  that opens a gallery of exactly 28 styles.
+- Selecting a "Banded" style applies a colored header row + alternating
+  white/tint body rows, matching reference example 1.
+- Selecting a "Header & Totals" style applies a colored header row, colored
+  header column, and colored total row (bottom row of the selection), with
+  interior cells still banded, matching reference example 2.
+- The whole application is a single undo step.
+- `computeTableStylePatches` unit tests cover both reference shapes with
+  exact expected per-cell patches.
+- Component test renders all 28 gallery cards and verifies clicking one
+  invokes the apply path.
+- `pnpm vitest run apps/web/src/__tests__/sheets`, `pnpm type-check`,
+  `pnpm lint` pass for touched files, with no *new* failures beyond the
+  known pre-existing `autosaveEncryptionWarning.test.tsx` failure.

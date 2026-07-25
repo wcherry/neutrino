@@ -78,6 +78,8 @@ function baseProps() {
     canRedo: false,
     onMergeCells: vi.fn(),
     isMerged: false,
+    selectedCells: new Set<string>(),
+    onApplyStyleMap: vi.fn(),
   };
 }
 
