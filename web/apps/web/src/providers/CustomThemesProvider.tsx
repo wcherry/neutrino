@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { themesApi } from '@neutrino/api-themes';
 import type { CustomTheme } from '@neutrino/api-themes';
 
@@ -9,11 +9,17 @@ const STYLE_TAG_ID = 'neutrino-custom-themes';
 type CustomThemesContextValue = {
   themes: CustomTheme[];
   loaded: boolean;
+  /** Re-fetches the theme list and re-injects the `<style>` tag. Used after
+   *  any mutation (duplicate, delete, make-public, edit-save) so the grid
+   *  reflects the change immediately without a full page reload. Same
+   *  `access_token` guard as the mount fetch. */
+  refetch: () => Promise<void>;
 };
 
 const CustomThemesContext = createContext<CustomThemesContextValue>({
   themes: [],
   loaded: false,
+  refetch: async () => {},
 });
 
 // ---------------------------------------------------------------------------
@@ -82,14 +88,30 @@ export function CustomThemesProvider({ children }: { children: React.ReactNode }
   const [themes, setThemes] = useState<CustomTheme[]>([]);
   const [loaded, setLoaded] = useState(false);
 
+  // Shared by the mount effect and the exposed `refetch()` — same
+  // `access_token` guard both times, so calling `refetch()` when the user
+  // was never signed in (or has since signed out) is a safe no-op.
+  const fetchAndInject = useCallback(async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+    if (!token) return;
+
+    try {
+      const res = await themesApi.listThemes();
+      setThemes(res.themes);
+      injectCustomThemeStyles(res.themes);
+    } catch {
+      // Leave themes as-is; built-in presets remain fully usable.
+    }
+  }, []);
+
   useEffect(() => {
+    let cancelled = false;
+
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
     if (!token) {
       setLoaded(true);
       return;
     }
-
-    let cancelled = false;
 
     themesApi
       .listThemes()
@@ -111,7 +133,7 @@ export function CustomThemesProvider({ children }: { children: React.ReactNode }
   }, []);
 
   return (
-    <CustomThemesContext.Provider value={{ themes, loaded }}>
+    <CustomThemesContext.Provider value={{ themes, loaded, refetch: fetchAndInject }}>
       {children}
     </CustomThemesContext.Provider>
   );

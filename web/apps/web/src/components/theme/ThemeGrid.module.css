@@ -62,15 +62,13 @@
   text-overflow: ellipsis;
 }
 
-.cardActions {
+/* Kebab context-menu trigger — mirrors @neutrino/ui's FileGrid `.item-menu-btn`
+   hover-reveal shape (see FileGrid.module.css) so theme cards and Drive's
+   file cards share the same interaction language. */
+.itemMenuBtn {
   position: absolute;
   top: 2px;
   right: 2px;
-  display: flex;
-  gap: 2px;
-}
-
-.cardActions button {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -81,10 +79,22 @@
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background-color 0.15s;
 }
 
-.cardActions button:hover {
+.card:hover .itemMenuBtn {
+  opacity: 1;
+}
+
+.itemMenuBtn:hover {
   background: rgba(0, 0, 0, 0.75);
+}
+
+.itemMenuBtn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 1px;
 }
 
 .sectionLabel {

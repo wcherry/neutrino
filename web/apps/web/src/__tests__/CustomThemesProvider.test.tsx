@@ -52,11 +52,14 @@ const sampleTheme = {
 };
 
 function TestConsumer() {
-  const { themes, loaded } = useCustomThemes();
+  const { themes, loaded, refetch } = useCustomThemes();
   return (
     <div>
       <span data-testid="loaded">{String(loaded)}</span>
       <span data-testid="count">{themes.length}</span>
+      <button type="button" data-testid="refetch-btn" onClick={() => { void refetch(); }}>
+        refetch
+      </button>
     </div>
   );
 }
@@ -223,5 +226,54 @@ describe('CustomThemesProvider', () => {
     }
     render(<Outside />);
     expect(screen.getByTestId('outside').textContent).toBe('0-false');
+  });
+
+  // ── refetch() ─────────────────────────────────────────────────────────
+
+  it('calling refetch() re-fetches and updates the exposed themes', async () => {
+    localStorage.setItem('access_token', 'test-token');
+    mockListThemes.mockResolvedValue({ themes: [sampleTheme] });
+
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
+
+    const secondTheme = {
+      ...sampleTheme,
+      id: 'theme-2',
+      name: 'Another Theme',
+    };
+    mockListThemes.mockResolvedValue({ themes: [sampleTheme, secondTheme] });
+
+    screen.getByTestId('refetch-btn').click();
+
+    await waitFor(() => expect(mockListThemes).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'));
+  });
+
+  it('refetch() re-injects the <style> tag with the newly-fetched themes', async () => {
+    localStorage.setItem('access_token', 'test-token');
+    mockListThemes.mockResolvedValue({ themes: [sampleTheme] });
+
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'));
+
+    const updatedTheme = { ...sampleTheme, tokens: { '--color-bg': '#abcdef' } };
+    mockListThemes.mockResolvedValue({ themes: [updatedTheme] });
+
+    screen.getByTestId('refetch-btn').click();
+
+    await waitFor(() => {
+      const style = document.getElementById('neutrino-custom-themes');
+      expect(style?.textContent).toContain('#abcdef');
+    });
+  });
+
+  it('refetch() is a no-op when there is no access_token', async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId('loaded').textContent).toBe('true'));
+
+    screen.getByTestId('refetch-btn').click();
+
+    expect(mockListThemes).not.toHaveBeenCalled();
   });
 });

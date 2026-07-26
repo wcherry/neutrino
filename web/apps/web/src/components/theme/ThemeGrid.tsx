@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Pencil, Trash2, Plus, Copy } from 'lucide-react';
+import { MoreVertical, Plus } from 'lucide-react';
 import { AlertDialog, useToast } from '@neutrino/ui';
 import { themesApi, type CustomTheme, type ThemeColorScheme } from '@neutrino/api-themes';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { useCustomThemes } from '@/providers/CustomThemesProvider';
 import { ThemeEditorModal } from './ThemeEditorModal';
+import { ThemeContextMenu } from './ThemeContextMenu';
 import { BUILTIN_THEME_TOKENS } from './builtinThemeTokens';
 import styles from './ThemeGrid.module.css';
 
@@ -44,6 +45,14 @@ function customThemeAccent(theme: CustomTheme): string {
 }
 
 // ---------------------------------------------------------------------------
+// Context-menu target
+// ---------------------------------------------------------------------------
+
+type MenuTarget =
+  | { kind: 'preset'; preset: ThemePreset; x: number; y: number }
+  | { kind: 'custom'; theme: CustomTheme; x: number; y: number };
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -59,7 +68,7 @@ export interface ThemeGridProps {
 
 export function ThemeGrid({ onSelect }: ThemeGridProps) {
   const { theme: activeTheme } = useTheme();
-  const { themes: customThemes } = useCustomThemes();
+  const { themes: customThemes, refetch } = useCustomThemes();
   const { success: toastSuccess, error: toastError } = useToast();
 
   const [editorOpen, setEditorOpen] = useState(false);
@@ -68,6 +77,7 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
   const [deleteTarget, setDeleteTarget] = useState<CustomTheme | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [menuTarget, setMenuTarget] = useState<MenuTarget | null>(null);
 
   function openCreate() {
     setEditorMode('create');
@@ -79,13 +89,11 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
   // else's public one) into a brand-new private custom theme, then land the
   // user directly in the editor for the fresh copy — same mechanism openEdit
   // already uses, just fed the newly-created record instead of a list entry.
-  async function handleDuplicate(
-    name: string,
-    colorScheme: ThemeColorScheme,
-    tokens: Record<string, string>,
-    e: React.SyntheticEvent,
-  ) {
-    e.stopPropagation();
+  //
+  // No standalone "Edit" entry point exists in this iteration — the only way
+  // into ThemeEditorModal's edit mode is via this Duplicate flow. See
+  // ThemeContextMenu.tsx for the corresponding note.
+  async function handleDuplicate(name: string, colorScheme: ThemeColorScheme, tokens: Record<string, string>) {
     if (duplicating) return;
     setDuplicating(true);
     try {
@@ -96,6 +104,7 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
         isPublic: false,
       });
       toastSuccess(`Duplicated "${name}"`);
+      await refetch();
       setEditorMode('edit');
       setEditingTheme(created);
       setEditorOpen(true);
@@ -106,25 +115,17 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
     }
   }
 
-  function handleDuplicatePreset(opt: ThemePreset, e: React.SyntheticEvent) {
+  function handleDuplicatePreset(opt: ThemePreset) {
     const preset = BUILTIN_THEME_TOKENS[opt.value];
-    if (!preset) return; // 'system' has no entry — its card never renders this button
-    void handleDuplicate(opt.label, preset.colorScheme, preset.tokens, e);
+    if (!preset) return; // 'system' has no entry — its card never renders a menu
+    void handleDuplicate(opt.label, preset.colorScheme, preset.tokens);
   }
 
-  function handleDuplicateCustom(t: CustomTheme, e: React.SyntheticEvent) {
-    void handleDuplicate(t.name, t.colorScheme, t.tokens, e);
+  function handleDuplicateCustom(t: CustomTheme) {
+    void handleDuplicate(t.name, t.colorScheme, t.tokens);
   }
 
-  function openEdit(theme: CustomTheme, e: React.SyntheticEvent) {
-    e.stopPropagation();
-    setEditorMode('edit');
-    setEditingTheme(theme);
-    setEditorOpen(true);
-  }
-
-  function requestDelete(theme: CustomTheme, e: React.SyntheticEvent) {
-    e.stopPropagation();
+  function requestDelete(theme: CustomTheme) {
     setDeleteTarget(theme);
   }
 
@@ -140,10 +141,31 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
       if (activeTheme === `custom-${deleteTarget.id}`) {
         onSelect('system');
       }
+      await refetch();
       setDeleteTarget(null);
     } finally {
       setDeleting(false);
     }
+  }
+
+  async function handleMakePublic(theme: CustomTheme) {
+    try {
+      await themesApi.updateTheme(theme.id, { isPublic: true });
+      toastSuccess(`"${theme.name}" is now public`);
+      await refetch();
+    } catch {
+      toastError('Failed to update theme. Please try again.');
+    }
+  }
+
+  function handleMenuOpen(
+    target: { kind: 'preset'; preset: ThemePreset } | { kind: 'custom'; theme: CustomTheme },
+    e: React.MouseEvent,
+  ) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = Math.min(rect.right, window.innerWidth - 200);
+    const y = Math.min(rect.bottom, window.innerHeight - 300);
+    setMenuTarget({ ...target, x, y } as MenuTarget);
   }
 
   return (
@@ -169,15 +191,17 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
             </span>
             <span className={styles.cardLabel}>{opt.label}</span>
             {opt.value !== 'system' && (
-              <span className={styles.cardActions}>
-                <button
-                  type="button"
-                  aria-label={`Duplicate ${opt.label}`}
-                  onClick={(e) => handleDuplicatePreset(opt, e)}
-                >
-                  <Copy size={12} />
-                </button>
-              </span>
+              <button
+                type="button"
+                className={styles.itemMenuBtn}
+                aria-label={`More options for ${opt.label}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMenuOpen({ kind: 'preset', preset: opt }, e);
+                }}
+              >
+                <MoreVertical size={14} />
+              </button>
             )}
           </div>
         ))}
@@ -203,21 +227,17 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
                 <span className={styles.swatchAccent} style={{ background: customThemeAccent(t) }} />
               </span>
               <span className={styles.cardLabel}>{t.name}</span>
-              <span className={styles.cardActions}>
-                <button type="button" aria-label={`Duplicate ${t.name}`} onClick={(e) => handleDuplicateCustom(t, e)}>
-                  <Copy size={12} />
-                </button>
-                {t.isOwner && (
-                  <>
-                    <button type="button" aria-label={`Edit ${t.name}`} onClick={(e) => openEdit(t, e)}>
-                      <Pencil size={12} />
-                    </button>
-                    <button type="button" aria-label={`Delete ${t.name}`} onClick={(e) => requestDelete(t, e)}>
-                      <Trash2 size={12} />
-                    </button>
-                  </>
-                )}
-              </span>
+              <button
+                type="button"
+                className={styles.itemMenuBtn}
+                aria-label={`More options for ${t.name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMenuOpen({ kind: 'custom', theme: t }, e);
+                }}
+              >
+                <MoreVertical size={14} />
+              </button>
             </div>
           );
         })}
@@ -230,11 +250,35 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
         </button>
       </div>
 
+      {menuTarget && (
+        <ThemeContextMenu
+          x={menuTarget.x}
+          y={menuTarget.y}
+          onClose={() => setMenuTarget(null)}
+          onDuplicate={
+            menuTarget.kind === 'preset'
+              ? () => handleDuplicatePreset(menuTarget.preset)
+              : () => handleDuplicateCustom(menuTarget.theme)
+          }
+          onMakePublic={
+            menuTarget.kind === 'custom' && !menuTarget.theme.isPublic
+              ? () => void handleMakePublic(menuTarget.theme)
+              : undefined
+          }
+          onDelete={
+            menuTarget.kind === 'custom' && !menuTarget.theme.isPublic
+              ? () => requestDelete(menuTarget.theme)
+              : undefined
+          }
+        />
+      )}
+
       <ThemeEditorModal
         open={editorOpen}
         mode={editorMode}
         theme={editingTheme}
         onClose={() => setEditorOpen(false)}
+        onSaved={() => { void refetch(); }}
       />
 
       <AlertDialog
