@@ -1,10 +1,12 @@
 import type { CellStyle } from '../types';
-import type { TableStyle } from './tableStyles';
+import type { RegularTableStyle } from './tableStyles';
 import { alphaToNum } from '../utils';
 
 // Pure computation of the per-cell style patches produced by applying a
-// TableStyle preset to an arbitrary cell selection. No React, no side effects.
-export function computeTableStylePatches(style: TableStyle, cells: Set<string>): Map<string, Partial<CellStyle>> {
+// RegularTableStyle preset to an arbitrary cell selection. No React, no side
+// effects. Callers must branch on `style.kind` before calling this — a
+// `BlankTableStyle` is handled separately via its `clearPatch`.
+export function computeTableStylePatches(style: RegularTableStyle, cells: Set<string>): Map<string, Partial<CellStyle>> {
     let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
     const parsed = new Map<string, { col: number; row: number }>();
     for (const id of cells) {
@@ -23,7 +25,7 @@ export function computeTableStylePatches(style: TableStyle, cells: Set<string>):
         backgroundColor: style.header.backgroundColor,
         color: style.header.color,
         fontWeight: 'bold',
-        borderStyle: style.borderStyle,
+        ...style.border,
     };
 
     const headerOffset = style.headerRow ? 1 : 0;
@@ -36,7 +38,7 @@ export function computeTableStylePatches(style: TableStyle, cells: Set<string>):
 
         const bodyRowIndex = row - minR - headerOffset;
         let patch: Partial<CellStyle> = {
-            borderStyle: style.borderStyle,
+            ...style.border,
             fontWeight: 'normal',
             color: undefined,
             backgroundColor: bodyRowIndex % 2 === 0 ? style.bandColorA : style.bandColorB,

@@ -48,6 +48,15 @@ export function useTableRegions({
         updateTableRegions(next);
     }, [updateTableRegions]);
 
+    // Pure removal (no add-back), used e.g. by the "Blank" table style to
+    // clear table-region tracking for a selection without registering a new
+    // region in its place.
+    const removeOverlapping = useCallback((bounds: { minR: number; maxR: number; minC: number; maxC: number }) => {
+        const probe: TableRegion = { id: '__probe__', styleId: '', ...bounds };
+        const next = tableRegionsRef.current.filter(r => !regionsOverlap(r, probe));
+        updateTableRegions(next);
+    }, [updateTableRegions]);
+
     return {
         tableRegions,
         tableRegionsRef,
@@ -57,5 +66,6 @@ export function useTableRegions({
         flushActiveTableRegions,
         switchSheetTableRegions,
         registerRegion,
+        removeOverlapping,
     };
 }

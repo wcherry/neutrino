@@ -1090,6 +1090,19 @@ export function SheetEditor() {
         });
     }, [tableRegions]);
 
+    // Companion to handleRegisterTableStyle for the "Blank" table style: clears
+    // table-region tracking for the current selection without registering a
+    // new region in its place.
+    const handleClearTableRegionsForSelection = useCallback((cells: Set<string>) => {
+        const bounds = getCellBounds(cells);
+        tableRegions.removeOverlapping({
+            minR: bounds.minRow,
+            maxR: bounds.maxRow,
+            minC: bounds.minCol,
+            maxC: bounds.maxCol,
+        });
+    }, [tableRegions]);
+
     // ── Header context menu: row operations ──────────────────────────────────
     const handleHeaderInsertRowAbove = useCallback(() => {
         if (!headerContextMenu || headerContextMenu.type !== 'row') return;
@@ -1614,6 +1627,8 @@ export function SheetEditor() {
                 selectedCells={editing.selectedCells}
                 onApplyStyleMap={editing.applyStyleMap}
                 onRegisterTableRegion={handleRegisterTableStyle}
+                onApplyStyle={editing.applyStyle}
+                onClearTableRegions={handleClearTableRegionsForSelection}
             />
 
             <div className={styles.mainArea}>

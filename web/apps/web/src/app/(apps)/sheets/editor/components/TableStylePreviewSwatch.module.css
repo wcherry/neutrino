@@ -7,7 +7,7 @@
 
 .cell {
     padding: 3px 5px;
-    border: 1px solid var(--color-border, #e2e8f0);
+    border: none;
     color: var(--color-text-secondary, #475569);
     white-space: nowrap;
     overflow: hidden;
@@ -16,5 +16,44 @@
 
 :global([data-theme="dark"]) .cell {
     color: var(--color-text-secondary, #94a3b8);
-    border-color: var(--color-border, #334155);
+}
+
+/* "Blank" card: no fill colors, no real borders — a light dashed grid plus a
+   centered muted icon signal "clears formatting" rather than "a color
+   choice that happens to look empty". */
+.blankWrap {
+    position: relative;
+}
+
+.blankTable {
+    opacity: 0.85;
+}
+
+.blankCell {
+    padding: 3px 5px;
+    border: 1px dashed var(--color-border, #cbd5e1);
+    color: var(--color-text-secondary, #94a3b8);
+    background-color: transparent;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+:global([data-theme="dark"]) .blankCell {
+    border-color: var(--color-border, #475569);
+    color: var(--color-text-secondary, #64748b);
+}
+
+.blankIcon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: var(--color-text-secondary, #94a3b8);
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+:global([data-theme="dark"]) .blankIcon {
+    color: var(--color-text-secondary, #64748b);
 }

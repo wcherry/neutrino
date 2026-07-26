@@ -1,11 +1,13 @@
 /**
- * Component tests for TableStyleGalleryModal (TDD red phase — component does
- * not exist yet).
+ * Component tests for TableStyleGalleryModal (TDD red phase — the gallery's
+ * backing catalog is growing from 28 to 85 entries, see tableStyles.test.ts;
+ * this file is updated in place to match).
  *
  * `TableStyleGalleryModal({ open, onClose, onSelect })` mirrors
  * `SheetTemplatePickerModal.tsx`'s structure (one clickable card per catalog
- * entry) but for the 28-entry `TABLE_STYLES` catalog, with a
- * `TableStylePreviewSwatch` per card instead of a `MiniGridPreview`.
+ * entry) but for the (now 85-entry) `TABLE_STYLES` catalog — 84 regular
+ * presets (14 hues x 2 layouts x 3 border variants) plus 1 "Blank" entry —
+ * with a `TableStylePreviewSwatch` per card instead of a `MiniGridPreview`.
  *
  * `@neutrino/ui` is mocked the same way `SheetTemplatePickerModal.test.tsx`
  * mocks it, so these tests don't depend on framer-motion/portal timing in
@@ -13,8 +15,8 @@
  * `ModalBody` expose.
  *
  * See /Users/williamcherry/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
- * ("Continuation: Table styles gallery (28 presets)") for the full plan this
- * test file is written against.
+ * ("Continuation: Table styles gallery (28 presets)") for the original plan
+ * this test file was first written against.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -44,14 +46,14 @@ function cardButtonFor(name: string): HTMLElement {
 }
 
 describe('TableStyleGalleryModal', () => {
-    it('renders exactly one card per entry in TABLE_STYLES (28 total) when open', () => {
+    it('renders exactly one card per entry in TABLE_STYLES (85 total) when open', () => {
         render(<TableStyleGalleryModal open onClose={vi.fn()} onSelect={vi.fn()} />);
         // getByRole throws unless exactly one match, so this loop also proves
-        // there is no ambiguity/duplication across the 28 cards.
+        // there is no ambiguity/duplication across the 85 cards.
         for (const s of TABLE_STYLES) {
             expect(cardButtonFor(s.name)).toBeInTheDocument();
         }
-        expect(TABLE_STYLES).toHaveLength(28);
+        expect(TABLE_STYLES).toHaveLength(85);
     });
 
     it('calls onSelect with the corresponding style object when a card is clicked', () => {

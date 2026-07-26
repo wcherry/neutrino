@@ -272,7 +272,7 @@ export function computeStructuralShift(input: StructuralShiftInput): StructuralS
         newTableRegions.push(newRegion);
 
         const style = TABLE_STYLES.find(s => s.id === region.styleId);
-        if (!style) continue;
+        if (!style || style.kind !== 'regular') continue;
 
         const regionCellIds = new Set<string>();
         for (let r = newRegion.minR; r <= newRegion.maxR; r++) {
