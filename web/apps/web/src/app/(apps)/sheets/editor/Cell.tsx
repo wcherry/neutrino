@@ -14,11 +14,26 @@ export const Cell = React.memo(function Cell(props: CellProps & {
 }) {
     const cs = props.cellStyle;
     const cf = props.cfResult;
-    const borderCss: React.CSSProperties =
-        cs?.borderStyle === 'thin'   ? { border: '1px solid #999' } :
-        cs?.borderStyle === 'medium' ? { border: '2px solid #555' } :
-        cs?.borderStyle === 'thick'  ? { border: '3px solid #111' } :
-        {};
+    const hasPerSideBorder =
+        cs?.borderTop !== undefined || cs?.borderRight !== undefined ||
+        cs?.borderBottom !== undefined || cs?.borderLeft !== undefined;
+    function sideBorder(side?: 'none' | 'thin' | 'medium' | 'thick'): string {
+        return side === 'thin'   ? '1px solid #999' :
+               side === 'medium' ? '2px solid #555' :
+               side === 'thick'  ? '3px solid #111' :
+               'none';
+    }
+    const borderCss: React.CSSProperties = hasPerSideBorder
+        ? {
+              borderTop: sideBorder(cs?.borderTop),
+              borderRight: sideBorder(cs?.borderRight),
+              borderBottom: sideBorder(cs?.borderBottom),
+              borderLeft: sideBorder(cs?.borderLeft),
+          }
+        : cs?.borderStyle === 'thin'   ? { border: '1px solid #999' } :
+          cs?.borderStyle === 'medium' ? { border: '2px solid #555' } :
+          cs?.borderStyle === 'thick'  ? { border: '3px solid #111' } :
+          {};
     const wrapCss: React.CSSProperties =
         cs?.wrapMode === 'wrap' ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'hidden' } :
         cs?.wrapMode === 'clip' ? { whiteSpace: 'nowrap', overflow: 'hidden' } :

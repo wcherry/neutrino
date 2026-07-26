@@ -31,6 +31,10 @@ export type CellStyle = {
     textAlign?: 'left' | 'center' | 'right';
     verticalAlign?: 'top' | 'middle' | 'bottom';
     borderStyle?: 'none' | 'thin' | 'medium' | 'thick';
+    borderTop?: 'none' | 'thin' | 'medium' | 'thick';
+    borderRight?: 'none' | 'thin' | 'medium' | 'thick';
+    borderBottom?: 'none' | 'thin' | 'medium' | 'thick';
+    borderLeft?: 'none' | 'thin' | 'medium' | 'thick';
     numberFormat?: 'number' | 'currency' | 'percent' | 'date' | 'time' | 'datetime';
     decimalPlaces?: number;
     customFormat?: string;

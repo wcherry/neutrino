@@ -211,10 +211,10 @@ export function HamburgerMenu({
         { kind: 'separator' },
         {
             kind: 'submenu', label: 'Borders', items: [
-                { kind: 'action', label: 'No border', disabled: formatDisabled, action: () => onStyleChange({ borderStyle: 'none' }) },
-                { kind: 'action', label: 'Thin',       disabled: formatDisabled, action: () => onStyleChange({ borderStyle: 'thin' }) },
-                { kind: 'action', label: 'Medium',     disabled: formatDisabled, action: () => onStyleChange({ borderStyle: 'medium' }) },
-                { kind: 'action', label: 'Thick',      disabled: formatDisabled, action: () => onStyleChange({ borderStyle: 'thick' }) },
+                { kind: 'action', label: 'No border', disabled: formatDisabled, action: () => onStyleChange({ borderStyle: 'none', borderTop: undefined, borderRight: undefined, borderBottom: undefined, borderLeft: undefined }) },
+                { kind: 'action', label: 'Thin',       disabled: formatDisabled, action: () => onStyleChange({ borderStyle: 'thin', borderTop: undefined, borderRight: undefined, borderBottom: undefined, borderLeft: undefined }) },
+                { kind: 'action', label: 'Medium',     disabled: formatDisabled, action: () => onStyleChange({ borderStyle: 'medium', borderTop: undefined, borderRight: undefined, borderBottom: undefined, borderLeft: undefined }) },
+                { kind: 'action', label: 'Thick',      disabled: formatDisabled, action: () => onStyleChange({ borderStyle: 'thick', borderTop: undefined, borderRight: undefined, borderBottom: undefined, borderLeft: undefined }) },
             ],
         },
         {
@@ -244,6 +244,10 @@ export function HamburgerMenu({
                 decimalPlaces: undefined,
                 customFormat: undefined,
                 wrapMode: undefined,
+                borderTop: undefined,
+                borderRight: undefined,
+                borderBottom: undefined,
+                borderLeft: undefined,
             }),
         },
     ];

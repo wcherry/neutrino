@@ -20,6 +20,19 @@
  *
  * The `dirtyRef`/`activeSheetIndexRef` params are plain refs supplied by the
  * caller (SheetEditor owns them) — tests create local refs the same way.
+ *
+ * TDD red phase addition (table-styles borders/Blank feature): a second new
+ * method, `removeOverlapping(bounds)`, is being added alongside
+ * `registerRegion`. Signature: `removeOverlapping(bounds: { minR: number;
+ * maxR: number; minC: number; maxC: number }): void`. Behavior: removes (via
+ * the hook's existing `regionsOverlap` overlap test) any tracked region
+ * overlapping `bounds`, calling `updateTableRegions` with the filtered list
+ * (so it also marks dirty, same as `registerRegion`) — but unlike
+ * `registerRegion`, it does NOT add anything back; it's pure removal, used
+ * by the planned "Blank" table style to clear table-region tracking for the
+ * selection without registering a new region. The tests below are ADDED to
+ * this file without modifying any of the existing passing tests above, per
+ * the task instructions.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -130,5 +143,59 @@ describe('useTableRegions', () => {
         expect(result.current.tableRegions).toEqual(regions);
         expect(result.current.tableRegionsRef.current).toEqual(regions);
         expect(result.current.dirtyRef.current).toBe(true);
+    });
+
+    describe('removeOverlapping (new — TDD red phase, not implemented yet)', () => {
+        it('removes a region whose bounds overlap the given bounds', () => {
+            const { result } = setup();
+            act(() => result.current.registerRegion(region('t1', 1, 3, 1, 2))); // A1:B3
+
+            act(() => (result.current as any).removeOverlapping({ minR: 2, maxR: 4, minC: 1, maxC: 2 })); // overlaps rows 2-3
+
+            expect(result.current.tableRegions).toEqual([]);
+        });
+
+        it('leaves non-overlapping regions untouched', () => {
+            const { result } = setup();
+            act(() => result.current.registerRegion(region('t1', 1, 3, 1, 2)));   // A1:B3
+            act(() => result.current.registerRegion(region('t2', 10, 12, 1, 2))); // A10:B12 — flushed via separate registerRegion since it doesn't overlap t1
+
+            // Remove only the region overlapping rows 1-3.
+            act(() => (result.current as any).removeOverlapping({ minR: 1, maxR: 3, minC: 1, maxC: 2 }));
+
+            expect(result.current.tableRegions).toEqual([region('t2', 10, 12, 1, 2)]);
+        });
+
+        it('marks dirtyRef.current = true', () => {
+            const { result } = setup();
+            act(() => result.current.registerRegion(region('t1', 1, 3, 1, 2)));
+            // registerRegion already marks dirty; reset it to prove
+            // removeOverlapping marks it independently.
+            act(() => { result.current.dirtyRef.current = false; });
+
+            act(() => (result.current as any).removeOverlapping({ minR: 1, maxR: 3, minC: 1, maxC: 2 }));
+
+            expect(result.current.dirtyRef.current).toBe(true);
+        });
+
+        it('is a no-op on the regions array (but still marks dirty, per updateTableRegions) when nothing overlaps', () => {
+            const { result } = setup();
+            act(() => result.current.registerRegion(region('t1', 1, 3, 1, 2))); // A1:B3
+            act(() => { result.current.dirtyRef.current = false; });
+
+            act(() => (result.current as any).removeOverlapping({ minR: 10, maxR: 12, minC: 1, maxC: 2 })); // no overlap
+
+            expect(result.current.tableRegions).toEqual([region('t1', 1, 3, 1, 2)]);
+            expect(result.current.dirtyRef.current).toBe(true);
+        });
+
+        it('does not add any new region — pure removal', () => {
+            const { result } = setup();
+            act(() => result.current.registerRegion(region('t1', 1, 3, 1, 2)));
+
+            act(() => (result.current as any).removeOverlapping({ minR: 1, maxR: 3, minC: 1, maxC: 2 }));
+
+            expect(result.current.tableRegions).toHaveLength(0);
+        });
     });
 });

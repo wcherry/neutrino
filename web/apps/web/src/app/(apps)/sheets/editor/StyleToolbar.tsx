@@ -100,9 +100,11 @@ export type StyleToolbarProps = {
     selectedCells: Set<string>;
     onApplyStyleMap: (styles: Map<string, Partial<CellStyle>>) => void;
     onRegisterTableRegion?: (style: TableStyle, cells: Set<string>) => void;
+    onApplyStyle?: (style: Partial<CellStyle>) => void;
+    onClearTableRegions?: (cells: Set<string>) => void;
 };
 
-export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick, selectedCells, onApplyStyleMap, onRegisterTableRegion }: StyleToolbarProps) {
+export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick, selectedCells, onApplyStyleMap, onRegisterTableRegion, onApplyStyle, onClearTableRegions }: StyleToolbarProps) {
     const { fontFamilies: FONT_FAMILIES } = useAvailableFonts();
     const isBold          = cellStyle?.fontWeight    === 'bold';
     const isItalic        = cellStyle?.fontStyle     === 'italic';
@@ -264,7 +266,13 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
             {/* Border style */}
             <ToolbarSelect
                 value={cellStyle?.borderStyle ?? 'none'}
-                onChange={e => onStyleChange({ borderStyle: e.target.value as CellStyle['borderStyle'] })}
+                onChange={e => onStyleChange({
+                    borderStyle: e.target.value as CellStyle['borderStyle'],
+                    borderTop: undefined,
+                    borderRight: undefined,
+                    borderBottom: undefined,
+                    borderLeft: undefined,
+                })}
                 disabled={disabled}
                 title="Border Style"
             >
@@ -422,8 +430,13 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                     open
                     onClose={() => setShowTableStyles(false)}
                     onSelect={style => {
-                        onApplyStyleMap(computeTableStylePatches(style, selectedCells));
-                        onRegisterTableRegion?.(style, selectedCells);
+                        if (style.kind === 'blank') {
+                            onApplyStyle?.(style.clearPatch);
+                            onClearTableRegions?.(selectedCells);
+                        } else {
+                            onApplyStyleMap(computeTableStylePatches(style, selectedCells));
+                            onRegisterTableRegion?.(style, selectedCells);
+                        }
                         setShowTableStyles(false);
                     }}
                 />
