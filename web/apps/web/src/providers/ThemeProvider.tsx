@@ -12,8 +12,17 @@ import React, {
 // Types
 // ---------------------------------------------------------------------------
 
-export type ThemeChoice = 'light' | 'dark' | 'system' | 'glass' | 'midnight' | 'beach' | 'forest' | 'sunbeams' | 'light-glass';
-export type ResolvedTheme = 'light' | 'dark' | 'glass' | 'midnight' | 'beach' | 'forest' | 'sunbeams' | 'light-glass';
+/**
+ * A user-defined custom theme choice, stored/applied as the literal string
+ * `custom-<id>` (see agent_docs/plans/feature-custom-themes.md). Modeled as a
+ * template-literal type unioned with the closed preset list below, rather
+ * than widening to bare `string` — keeps autocomplete for built-ins while
+ * still accepting arbitrary custom IDs.
+ */
+export type CustomThemeId = `custom-${string}`;
+
+export type ThemeChoice = 'light' | 'dark' | 'system' | 'glass' | 'midnight' | 'beach' | 'forest' | 'sunbeams' | 'light-glass' | CustomThemeId;
+export type ResolvedTheme = 'light' | 'dark' | 'glass' | 'midnight' | 'beach' | 'forest' | 'sunbeams' | 'light-glass' | CustomThemeId;
 
 interface ThemeContextValue {
   theme: ThemeChoice;
@@ -27,13 +36,24 @@ interface ThemeContextValue {
 
 const STORAGE_KEY = 'neutrino.theme';
 
-const VALID_CHOICES: ThemeChoice[] = ['light', 'dark', 'system', 'glass', 'midnight', 'beach', 'forest', 'sunbeams', 'light-glass'];
+const FIXED_CHOICES: ThemeChoice[] = ['light', 'dark', 'system', 'glass', 'midnight', 'beach', 'forest', 'sunbeams', 'light-glass'];
+
+/**
+ * Valid if it's one of the fixed presets OR matches `/^custom-/`. We don't
+ * validate that the custom ID actually exists client-side — a stale/deleted
+ * custom theme ID just resolves to a `data-theme` attribute with no matching
+ * `<style>` rule, which safely falls through to `:root` defaults with no
+ * visual break (see the plan's "ThemeProvider.tsx changes" section).
+ */
+function isValidChoice(value: string): value is ThemeChoice {
+  return (FIXED_CHOICES as string[]).includes(value) || /^custom-/.test(value);
+}
 
 function readStoredTheme(): ThemeChoice {
   if (typeof window === 'undefined') return 'system';
   try {
-    const stored = localStorage.getItem(STORAGE_KEY) as ThemeChoice | null;
-    if (stored && VALID_CHOICES.includes(stored)) return stored;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && isValidChoice(stored)) return stored;
   } catch {
     // localStorage unavailable (private browsing restrictions, etc.)
   }

@@ -19,6 +19,7 @@
       "@neutrino/api-docs": ["../../packages/api-docs/src/index.ts"],
       "@neutrino/api-sheets": ["../../packages/api-sheets/src/index.ts"],
       "@neutrino/api-slides": ["../../packages/api-slides/src/index.ts"],
+      "@neutrino/api-themes": ["../../packages/api-themes/src/index.ts"],
       "@neutrino/api-photos": ["../../packages/api-photos/src/index.ts"],
       "@neutrino/api-notes": ["../../packages/api-notes/src/index.ts"],
       "@neutrino/sheet-embed": ["../../packages/sheet-embed/src/index.ts"],

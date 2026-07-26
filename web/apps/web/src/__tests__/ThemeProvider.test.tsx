@@ -165,4 +165,61 @@ describe('ThemeProvider', () => {
     expect(screen.getByTestId('theme').textContent).toBe('system');
     expect(screen.getByTestId('resolved').textContent).toBe('light');
   });
+
+  // -------------------------------------------------------------------------
+  // Custom themes (feature/custom-themes, red phase)
+  //
+  // A custom theme choice is stored as the literal string `custom-<id>`
+  // (see agent_docs/plans/feature-custom-themes.md). Today's `VALID_CHOICES`
+  // is a closed 9-name list, so a stored `custom-<id>` value is currently
+  // rejected by `readStoredTheme` and silently falls back to `'system'` —
+  // every test in this block is expected to FAIL until frontend-developer
+  // relaxes the validity check to also accept `/^custom-/` (see the plan's
+  // "ThemeProvider.tsx changes" section) and updates `resolveTheme`/
+  // `applyTheme` to treat a custom id as already-resolved.
+  // -------------------------------------------------------------------------
+  describe('custom theme ids', () => {
+    it('accepts a stored custom-<id> theme choice instead of resetting it to system', () => {
+      localStorage.setItem('neutrino.theme', 'custom-abc123');
+      renderProvider();
+      expect(screen.getByTestId('theme').textContent).toBe('custom-abc123');
+    });
+
+    it('resolves a custom theme choice to itself, never further to light/dark', () => {
+      localStorage.setItem('neutrino.theme', 'custom-abc123');
+      renderProvider();
+      expect(screen.getByTestId('resolved').textContent).toBe('custom-abc123');
+    });
+
+    it('sets data-theme to the literal custom id string via applyTheme', async () => {
+      localStorage.setItem('neutrino.theme', 'custom-abc123');
+      renderProvider();
+      await act(async () => {});
+      expect(document.documentElement.getAttribute('data-theme')).toBe('custom-abc123');
+    });
+
+    it('setTheme accepts a custom-<id> value and applies + persists it', async () => {
+      function CustomConsumer() {
+        const { theme, setTheme, resolvedTheme } = useTheme();
+        return (
+          <div>
+            <span data-testid="theme">{theme}</span>
+            <span data-testid="resolved">{resolvedTheme}</span>
+            <button onClick={() => setTheme('custom-xyz789' as never)}>Set Custom</button>
+          </div>
+        );
+      }
+      render(
+        <ThemeProvider>
+          <CustomConsumer />
+        </ThemeProvider>
+      );
+      await act(async () => {
+        await userEvent.click(screen.getByRole('button', { name: 'Set Custom' }));
+      });
+      expect(screen.getByTestId('theme').textContent).toBe('custom-xyz789');
+      expect(localStorage.getItem('neutrino.theme')).toBe('custom-xyz789');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('custom-xyz789');
+    });
+  });
 });

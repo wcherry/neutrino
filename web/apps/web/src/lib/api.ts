@@ -21,3 +21,7 @@ export * from '@neutrino/auth';
 export * from '@neutrino/api-admin';
 export * from '@neutrino/api-diagrams';
 export * from '@neutrino/api-drawing';
+// NOTE: @neutrino/api-themes is intentionally not re-exported here — its
+// CreateThemeRequest/UpdateThemeRequest/ListThemesResponse type names collide
+// with @neutrino/api-slides' slide-theme types of the same name. Import
+// directly from '@neutrino/api-themes' instead (all new theme code does).

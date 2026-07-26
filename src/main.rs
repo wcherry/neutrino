@@ -29,6 +29,7 @@ mod schema;
 mod shared;
 mod sheets;
 mod slides;
+mod themes;
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
 
@@ -804,6 +805,17 @@ async fn main() -> std::io::Result<()> {
             service: private_lib_service,
         });
 
+    // ── Themes service ────────────────────────────────────────────────────────
+
+    use themes::repository::CustomThemesRepository;
+    use themes::service::CustomThemesService;
+
+    let themes_repo = Arc::new(CustomThemesRepository::new(pool.clone()));
+    let themes_service = Arc::new(CustomThemesService::new(themes_repo));
+    let themes_state = web::Data::new(themes::api::ThemesApiState {
+        service: themes_service,
+    });
+
     // ── HTTP server ───────────────────────────────────────────────────────────
 
     let token_service_data = web::Data::new(token_service.clone());
@@ -876,6 +888,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(diagrams::collab::api::DiagramsCollabApiDoc::openapi());
         doc.merge(diagrams::private_library::api::PrivateLibraryApiDoc::openapi());
         doc.merge(oauth::api::OauthApiDoc::openapi());
+        doc.merge(themes::api::ThemesApiDoc::openapi());
         doc
     };
 
@@ -955,6 +968,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(diagrams_collab_repo.clone())
             .app_data(diagrams_collab_state.clone())
             .app_data(private_lib_state.clone())
+            // Themes
+            .app_data(themes_state.clone())
             // Middleware
             .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
             .wrap(Logger::default())
@@ -973,6 +988,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(oauth::api::configure)
                     .configure(drive::feature_flags::api::configure_public)
                     .configure(drive::fonts::api::configure_public)
+                    .configure(themes::api::configure)
                     .configure(calendar::configure)
                     .configure(docs::configure)
                     .configure(drive::configure)

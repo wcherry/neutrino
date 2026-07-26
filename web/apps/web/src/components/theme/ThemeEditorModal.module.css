@@ -1,0 +1,53 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.baseRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.baseLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  color: var(--color-text-secondary, #6b7280);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visibilityRow {
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}
+
+.footerLeft {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.deleteBtn {
+  color: var(--color-error, #dc2626);
+}

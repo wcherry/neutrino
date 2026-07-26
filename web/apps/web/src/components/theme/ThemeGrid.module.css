@@ -1,0 +1,97 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.card:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-border-strong, #d1d5db);
+}
+
+.cardActive {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.cardActive:hover {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.swatch {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 5px;
+  box-sizing: border-box;
+  color: var(--color-text-muted, #9ca3af);
+}
+
+.swatchAccent {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+}
+
+.cardLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardActions {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  gap: 2px;
+}
+
+.cardActions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+}
+
+.cardActions button:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+.sectionLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 14px 0 8px;
+}

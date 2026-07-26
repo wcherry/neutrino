@@ -884,6 +884,21 @@ diesel::table! {
     }
 }
 
+// ── Themes ───────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    custom_themes (id) {
+        id -> Text,
+        user_id -> Text,
+        name -> Text,
+        is_public -> Bool,
+        color_scheme -> Text,
+        tokens -> Text,
+        created_at -> Text,
+        updated_at -> Text,
+    }
+}
+
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 
 diesel::table! {
@@ -913,6 +928,9 @@ diesel::table! {
 
 // Auth
 diesel::joinable!(refresh_tokens -> users (user_id));
+
+// Themes
+diesel::joinable!(custom_themes -> users (user_id));
 
 // OAuth
 diesel::joinable!(oauth_authorization_codes -> oauth_clients (client_id));
@@ -1021,4 +1039,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     // Admin
     feature_flags,
     custom_fonts,
+    // Themes
+    custom_themes,
 );
