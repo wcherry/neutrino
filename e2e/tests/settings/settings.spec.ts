@@ -78,9 +78,16 @@ test.describe('Settings page — tab navigation', () => {
   test('Appearance tab shows theme picker', async ({ page }) => {
     await clickTab(page, 'Appearance');
     await expect(page.getByRole('heading', { name: 'Appearance', level: 2 })).toBeVisible();
-    // Use exact: true to distinguish "Light" from "Light Glass"
-    await expect(page.getByRole('button', { name: 'Light', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Dark', exact: true })).toBeVisible();
+    // The kebab-menu button nested in each card pollutes the card's
+    // accessible name (e.g. "Dark" -> "Dark More options for Dark"). A bare
+    // substring match on just "Dark" is ambiguous — it also matches the
+    // standalone kebab `<button aria-label="More options for Dark">` — and
+    // "Light" would additionally collide with the "Light Glass" card. Always
+    // match the full polluted name, which is unambiguous against both.
+    await expect(
+      page.getByRole('button', { name: 'Light More options for Light' }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Dark More options for Dark' })).toBeVisible();
   });
 
   test('Notifications tab shows email preference checkboxes', async ({ page }) => {
@@ -132,26 +139,23 @@ test.describe('Settings page — appearance', () => {
     });
   });
 
-  test('selecting a theme card marks it active and save button appears', async ({ page }) => {
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Save appearance' })).toBeVisible();
-  });
-
-  test('saving theme shows Saved confirmation', async ({ page }) => {
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
-    await page.getByRole('button', { name: 'Save appearance' }).click();
-    await expect(page.getByRole('button', { name: /saved/i })).toBeVisible({ timeout: 5_000 });
+  test('selecting a theme card marks it active immediately', async ({ page }) => {
+    // Selecting a card applies and persists the theme instantly — there's no
+    // separate Save step in this UI anymore.
+    const darkCard = page.getByRole('button', { name: 'Dark More options for Dark' });
+    await darkCard.click();
+    await expect(darkCard).toHaveClass(/cardActive/, { timeout: 5_000 });
   });
 
   test('theme choice persists across page reload', async ({ page }) => {
-    await page.getByRole('button', { name: 'Dark', exact: true }).click();
-    await page.getByRole('button', { name: 'Save appearance' }).click();
-    await expect(page.getByRole('button', { name: /saved/i })).toBeVisible({ timeout: 5_000 });
+    const darkCard = page.getByRole('button', { name: 'Dark More options for Dark' });
+    await darkCard.click();
+    await expect(darkCard).toHaveClass(/cardActive/, { timeout: 5_000 });
 
     await page.reload();
     await clickTab(page, 'Appearance');
-    const darkCard = page.getByRole('button', { name: 'Dark', exact: true });
-    await expect(darkCard).toHaveClass(/themeCardActive/, { timeout: 10_000 });
+    const darkCardAfterReload = page.getByRole('button', { name: 'Dark More options for Dark' });
+    await expect(darkCardAfterReload).toHaveClass(/cardActive/, { timeout: 10_000 });
   });
 });
 

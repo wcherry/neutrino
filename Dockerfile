@@ -24,6 +24,7 @@ COPY web/packages/api-sheets/package.json packages/api-sheets/package.json
 COPY web/packages/api-slides/package.json packages/api-slides/package.json
 COPY web/packages/api-diagrams/package.json packages/api-diagrams/package.json
 COPY web/packages/api-drawing/package.json packages/api-drawing/package.json
+COPY web/packages/api-themes/package.json packages/api-themes/package.json
 COPY web/packages/sheet-embed/package.json packages/sheet-embed/package.json
 COPY web/packages/e2e-crypto/package.json packages/e2e-crypto/package.json
 COPY web/packages/auth/package.json packages/auth/package.json

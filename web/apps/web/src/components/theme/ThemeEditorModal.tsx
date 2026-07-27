@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   ModalHeader,
@@ -200,6 +200,28 @@ export function ThemeEditorModal({ open, onClose, mode, theme, onSaved, onDelete
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  // ThemeEditorModal is rendered unconditionally by ThemeGrid (only its
+  // `open` prop toggles Modal's own internal visibility) — this same
+  // component instance is reused across every create/edit session for as
+  // long as ThemeGrid stays mounted, so the `useState(theme?.name ?? '')`
+  // initializers above only ever run once, on ThemeGrid's first render.
+  // Without this resync, reopening the editor with a different `theme` (e.g.
+  // the fresh copy produced by Duplicate, right after having already used
+  // the "Create custom theme" flow once) would keep showing whatever fields
+  // were set during the *previous* open. Re-seed every time the modal
+  // transitions into the open state so it always reflects the current
+  // `theme`/`mode` props.
+  useEffect(() => {
+    if (!open) return;
+    setName(theme?.name ?? '');
+    setColorScheme(theme?.colorScheme ?? 'light');
+    setTokens(seedTokens(theme));
+    setIsPublic(theme?.isPublic ?? false);
+    setActiveTab('base');
+    setTouched(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Switching base re-seeds every color field to that base preset's defaults
   // — but only before the user has touched any field, so we never clobber
