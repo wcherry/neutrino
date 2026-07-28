@@ -22,7 +22,17 @@ export interface FileItem {
 export type DriveView = 'recent' | 'starred' | 'trash';
 
 /** Filter drive contents to a single kind of file, matched by MIME type. */
-export type DriveFileType = 'photo' | 'video' | 'audio' | 'document';
+export type DriveFileType =
+  | 'photo'
+  | 'video'
+  | 'audio'
+  | 'document'
+  | 'doc'
+  | 'sheet'
+  | 'slide'
+  | 'diagram'
+  | 'drawing'
+  | 'note';
 
 export interface FileListQuery {
   limit?: number;

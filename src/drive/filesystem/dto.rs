@@ -111,6 +111,12 @@ pub enum DriveFileType {
     Video,
     Audio,
     Document,
+    Doc,
+    Sheet,
+    Slide,
+    Diagram,
+    Drawing,
+    Note,
 }
 
 impl DriveFileType {
@@ -127,6 +133,12 @@ impl DriveFileType {
                 "application/vnd.%",
                 "application/rtf",
             ],
+            DriveFileType::Doc => &["application/x-neutrino-doc"],
+            DriveFileType::Sheet => &["application/x-neutrino-sheet"],
+            DriveFileType::Slide => &["application/x-neutrino-slide"],
+            DriveFileType::Diagram => &["application/x-neutrino-diagram"],
+            DriveFileType::Drawing => &["application/x-neutrino-drawing"],
+            DriveFileType::Note => &["application/x-neutrino-note"],
         }
     }
 }
@@ -305,5 +317,75 @@ mod tests {
         assert!(patterns.contains(&"application/pdf"));
         assert!(patterns.contains(&"text/%"));
         assert!(!patterns.contains(&"image/%"));
+    }
+
+    #[test]
+    fn photo_video_audio_match_only_their_own_wildcard() {
+        assert_eq!(DriveFileType::Photo.mime_patterns(), &["image/%"]);
+        assert_eq!(DriveFileType::Video.mime_patterns(), &["video/%"]);
+        assert_eq!(DriveFileType::Audio.mime_patterns(), &["audio/%"]);
+    }
+
+    #[test]
+    fn doc_matches_only_its_own_exact_mime() {
+        assert_eq!(
+            DriveFileType::Doc.mime_patterns(),
+            &["application/x-neutrino-doc"]
+        );
+    }
+
+    #[test]
+    fn sheet_matches_only_its_own_exact_mime() {
+        assert_eq!(
+            DriveFileType::Sheet.mime_patterns(),
+            &["application/x-neutrino-sheet"]
+        );
+    }
+
+    #[test]
+    fn slide_matches_only_its_own_exact_mime() {
+        assert_eq!(
+            DriveFileType::Slide.mime_patterns(),
+            &["application/x-neutrino-slide"]
+        );
+    }
+
+    #[test]
+    fn diagram_matches_only_its_own_exact_mime() {
+        assert_eq!(
+            DriveFileType::Diagram.mime_patterns(),
+            &["application/x-neutrino-diagram"]
+        );
+    }
+
+    #[test]
+    fn drawing_matches_only_its_own_exact_mime() {
+        assert_eq!(
+            DriveFileType::Drawing.mime_patterns(),
+            &["application/x-neutrino-drawing"]
+        );
+    }
+
+    #[test]
+    fn note_matches_only_its_own_exact_mime() {
+        assert_eq!(
+            DriveFileType::Note.mime_patterns(),
+            &["application/x-neutrino-note"]
+        );
+    }
+
+    #[test]
+    fn root_query_parses_new_native_type_variants() {
+        for (json_val, expected) in [
+            (r#"{"type":"doc"}"#, DriveFileType::Doc),
+            (r#"{"type":"sheet"}"#, DriveFileType::Sheet),
+            (r#"{"type":"slide"}"#, DriveFileType::Slide),
+            (r#"{"type":"diagram"}"#, DriveFileType::Diagram),
+            (r#"{"type":"drawing"}"#, DriveFileType::Drawing),
+            (r#"{"type":"note"}"#, DriveFileType::Note),
+        ] {
+            let q: RootContentsQuery = serde_json::from_str(json_val).unwrap();
+            assert_eq!(q.file_type, Some(expected));
+        }
     }
 }
