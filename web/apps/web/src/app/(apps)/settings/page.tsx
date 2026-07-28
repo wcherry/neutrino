@@ -12,6 +12,7 @@ import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
 import { getOfficeFileMode, OFFICE_FILE_MODE_KEY, type OfficeFileMode } from '@/hooks/useOfficeFileMode';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
+import { ThemeGrid } from '@/components/theme/ThemeGrid';
 import { useFeatureFlags, type FeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { clearSearchIndex, getOrCreateSearchKey, IndexEngine, type SearchableDocument } from '@neutrino/search';
 import { docsApi, notesApi, sheetsApi, slidesApi } from '@/lib/api';
@@ -27,18 +28,6 @@ import styles from './page.module.css';
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-const THEME_OPTIONS: { value: ThemeChoice; label: string; bg: string; accent: string }[] = [
-  { value: 'light',       label: 'Light',       bg: '#ffffff',                                                           accent: '#2563eb' },
-  { value: 'dark',        label: 'Dark',        bg: '#0f172a',                                                           accent: '#3b82f6' },
-  { value: 'system',      label: 'System',      bg: 'linear-gradient(135deg, #ffffff 50%, #0f172a 50%)',                 accent: '#6b7280' },
-  { value: 'light-glass', label: 'Light Glass', bg: 'linear-gradient(135deg, #dbeafe 0%, #ede9fe 55%, #fce7f3 100%)',   accent: '#6366f1' },
-  { value: 'glass',       label: 'Glass',       bg: '#0e1621',                                                           accent: '#38bdf8' },
-  { value: 'midnight',    label: 'Midnight',    bg: '#06060f',                                                           accent: '#818cf8' },
-  { value: 'beach',       label: 'Beach',       bg: '#fdf8f0',                                                           accent: '#0ea5e9' },
-  { value: 'forest',      label: 'Forest',      bg: '#1a2416',                                                           accent: '#4ade80' },
-  { value: 'sunbeams',    label: 'Sunbeams',    bg: '#fdfaf0',                                                           accent: '#d97706' },
-];
 
 const WEEK_START_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: 'Sunday' },
@@ -209,7 +198,7 @@ const qc = useQueryClient();
     return 'ai';
   });
 
-  const { theme: activeTheme, setTheme: applyTheme } = useTheme();
+  const { setTheme: applyTheme } = useTheme();
 
   // ── AI settings ────────────────────────────────────────────────────────────
   const { settings: aiSettings, setSettings: setAiSettings } = useAiSettings();
@@ -232,10 +221,6 @@ const qc = useQueryClient();
     queryFn: () => authApi.getProfileDetails(),
     enabled: !!user,
   });
-
-  // ── Appearance state ───────────────────────────────────────────────────────
-  const [theme, setTheme] = useState(activeTheme);
-  const [themeSaved, setThemeSaved] = useState(false);
 
   // ── Notifications state ────────────────────────────────────────────────────
   const [emailMarketing, setEmailMarketing] = useState(false);
@@ -448,7 +433,6 @@ const qc = useQueryClient();
     if (!details && !user) return;
     setName(user?.name ?? '');
     if (details) {
-      setTheme((details.theme ?? 'system') as ThemeChoice);
       setEmailMarketing(details.emailPreferences?.marketing ?? false);
       setEmailGeneral(details.emailPreferences?.general ?? true);
       setEmailUpdates(details.emailPreferences?.updates ?? true);
@@ -464,11 +448,9 @@ const qc = useQueryClient();
     },
   });
 
-  function handleThemeSave() {
-    applyTheme(theme);
-    save.mutate({ theme });
-    setThemeSaved(true);
-    setTimeout(() => setThemeSaved(false), 2000);
+  function handleThemeSelect(themeId: string) {
+    applyTheme(themeId as ThemeChoice);
+    save.mutate({ theme: themeId });
   }
 
   function handleNotificationsSave() {
@@ -738,45 +720,14 @@ const qc = useQueryClient();
             <div className={styles.formGroup}>
               <div className={styles.settingInfo}>
                 <div className={styles.settingName}>Theme</div>
-                <div className={styles.settingDesc}>Choose the color scheme for the interface</div>
+                <div className={styles.settingDesc}>Choose the color scheme for the interface — selecting a theme applies and saves it immediately</div>
               </div>
-              <div className={styles.themeGrid}>
-                {THEME_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`${styles.themeCard} ${theme === opt.value ? styles.themeCardActive : ''}`}
-                    onClick={() => { setTheme(opt.value); applyTheme(opt.value); }}
-                    title={opt.label}
-                  >
-                    <span className={styles.themeSwatch} style={{ background: opt.bg }}>
-                      <span className={styles.themeSwatchAccent} style={{ background: opt.accent }} />
-                    </span>
-                    <span className={styles.themeCardLabel}>{opt.label}</span>
-                  </button>
-                ))}
-              </div>
+              <ThemeGrid onSelect={handleThemeSelect} />
             </div>
 
-            <div className={styles.saveBar}>
-              {save.isError && (
-                <span className={styles.saveError}>Failed to save. Please try again.</span>
-              )}
-              <button
-                type="button"
-                className={styles.saveBtn}
-                onClick={handleThemeSave}
-                disabled={save.isPending}
-              >
-                {save.isPending ? (
-                  <><Loader2 size={15} className={styles.spinner} /> Saving…</>
-                ) : themeSaved ? (
-                  <><Check size={15} /> Saved</>
-                ) : (
-                  'Save appearance'
-                )}
-              </button>
-            </div>
+            {save.isError && (
+              <span className={styles.saveError}>Failed to save. Please try again.</span>
+            )}
           </section>
         </div>
       )}

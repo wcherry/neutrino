@@ -6,6 +6,7 @@ import { QueryProvider } from '@/providers/QueryProvider';
 import { ThemeProvider } from '@/providers/ThemeProvider';
 import { FeatureFlagsProvider } from '@/providers/FeatureFlagsProvider';
 import { CustomFontsProvider } from '@/providers/CustomFontsProvider';
+import { CustomThemesProvider } from '@/providers/CustomThemesProvider';
 import { E2ECryptoExpose } from '@/components/E2ECryptoExpose';
 import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
 
@@ -36,7 +37,7 @@ export default function RootLayout({
         {/* Anti-FOUC: resolves and applies theme before first paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var v=['light','dark','system','glass','midnight','beach','forest','sunbeams','light-glass'];var t=localStorage.getItem('neutrino.theme')||'system';if(v.indexOf(t)<0)t='system';var r=t==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;document.documentElement.setAttribute('data-theme',r);}catch(e){}})();`,
+            __html: `(function(){try{var v=['light','dark','system','glass','midnight','beach','forest','sunbeams','light-glass'];var t=localStorage.getItem('neutrino.theme')||'system';if(v.indexOf(t)<0&&t.indexOf('custom-')!==0)t='system';var r=t==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;document.documentElement.setAttribute('data-theme',r);}catch(e){}})();`,
           }}
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -53,13 +54,15 @@ export default function RootLayout({
         <ThemeProvider>
           <FeatureFlagsProvider>
             <CustomFontsProvider>
-              <QueryProvider>
-                <AuthProvider>
-                  <ToastProvider position="bottom-right">
-                    {children}
-                  </ToastProvider>
-                </AuthProvider>
-              </QueryProvider>
+              <CustomThemesProvider>
+                <QueryProvider>
+                  <AuthProvider>
+                    <ToastProvider position="bottom-right">
+                      {children}
+                    </ToastProvider>
+                  </AuthProvider>
+                </QueryProvider>
+              </CustomThemesProvider>
             </CustomFontsProvider>
           </FeatureFlagsProvider>
         </ThemeProvider>

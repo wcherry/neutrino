@@ -24,6 +24,7 @@ export default defineConfig({
       '@neutrino/api-docs': path.resolve('./packages/api-docs/src/index.ts'),
       '@neutrino/api-sheets': path.resolve('./packages/api-sheets/src/index.ts'),
       '@neutrino/api-slides': path.resolve('./packages/api-slides/src/index.ts'),
+      '@neutrino/api-themes': path.resolve('./packages/api-themes/src/index.ts'),
       '@neutrino/api-photos': path.resolve('./packages/api-photos/src/index.ts'),
       '@neutrino/auth': path.resolve('./packages/auth/src/index.ts'),
       '@neutrino/hooks': path.resolve('./packages/hooks/src/index.ts'),
