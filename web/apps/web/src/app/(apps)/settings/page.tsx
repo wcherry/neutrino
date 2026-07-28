@@ -15,7 +15,7 @@ import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { ThemeGrid } from '@/components/theme/ThemeGrid';
 import { useFeatureFlags, type FeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { clearSearchIndex, getOrCreateSearchKey, IndexEngine, type SearchableDocument } from '@neutrino/search';
-import { docsApi, notesApi, sheetsApi, slidesApi } from '@/lib/api';
+import { docsApi, notesApi, sheetsApi, slidesApi, driveReadContent } from '@/lib/api';
 import {
   WEEK_START_KEY,
   DAY_START_HOUR_KEY,
@@ -519,11 +519,12 @@ const qc = useQueryClient();
         for (const n of notesMeta.value.notes) {
           jobs.push(async () => {
             const full = await notesApi.getNote(n.id);
+            const content = await driveReadContent(full.contentUrl).catch(() => '');
             return {
               id: n.id,
               type: 'note' as const,
               title: full.title,
-              content: full.content,
+              content,
               updatedAt: new Date(full.updatedAt).getTime(),
             };
           });
