@@ -42,6 +42,26 @@ export function serializeBlocks(blocks: Block[]): string {
   return JSON.stringify(blocks);
 }
 
+/**
+ * Extract all `[[title]]` wiki-link targets across every block's content.
+ * Mirrors the server's `parse_wiki_links` (src/notes/service.rs) — content is
+ * now encrypted before it reaches the server, so link targets must be
+ * extracted here and sent alongside the ciphertext as `linkedTitles`.
+ */
+export function extractWikiLinkTitles(blocks: Block[]): string[] {
+  const titles: string[] = [];
+  const pattern = /\[\[([^\]\n]*)\]\]/g;
+  for (const block of blocks) {
+    let match: RegExpExecArray | null;
+    pattern.lastIndex = 0;
+    while ((match = pattern.exec(block.content)) !== null) {
+      const title = match[1].trim();
+      if (title) titles.push(title);
+    }
+  }
+  return titles;
+}
+
 export function getWikiLinkQuery(text: string, cursorPos: number): string | null {
   const before = text.slice(0, cursorPos);
   const match = before.match(/\[\[([^\][\n]*)$/);

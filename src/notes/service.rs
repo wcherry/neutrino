@@ -17,6 +17,13 @@ use uuid::Uuid;
 const MIME_TYPE: &str = "application/x-neutrino-note";
 const EMPTY_NOTE_CONTENT: &str = "";
 
+/// Path to read a note's content directly from the drive API — same pattern
+/// as docs' `content_urls` (src/docs/docs/service.rs). The client fetches raw
+/// bytes from here instead of this service embedding content in JSON.
+fn content_url(file_id: &str) -> String {
+    format!("/api/v1/drive/files/{}", file_id)
+}
+
 /// Extract all `[[title]]` wiki-link targets from `content`.
 fn parse_wiki_links(content: &str) -> Vec<String> {
     let mut titles = Vec::new();
@@ -106,9 +113,9 @@ impl NotesService {
             .await?;
 
         Ok(NoteResponse {
-            id: file.id,
+            id: file.id.clone(),
             title: file.name,
-            content: EMPTY_NOTE_CONTENT.to_string(),
+            content_url: content_url(&file.id),
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
@@ -124,15 +131,10 @@ impl NotesService {
         if file.deleted_at.is_some() {
             return Err(ApiError::not_found("Note is in trash"));
         }
-        let content = self
-            .drive
-            .get_content(note_id, "Note content not found")
-            .await
-            .unwrap_or_default();
         Ok(NoteResponse {
-            id: file.id,
+            id: file.id.clone(),
             title: file.name,
-            content,
+            content_url: content_url(&file.id),
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
@@ -166,29 +168,40 @@ impl NotesService {
             file.name.clone()
         };
 
-        self.drive
-            .upload_content(note_id, &req.content, "save_note_content")
-            .await?;
+        // `content` is omitted for a pure rename (title-only save) — leave
+        // content and its wiki-links untouched in that case rather than
+        // overwriting them with nothing.
+        if let Some(ref content) = req.content {
+            self.drive
+                .upload_content(note_id, content, "save_note_content")
+                .await?;
 
-        // Parse [[wiki links]] and update note_links table.
-        let linked_titles = parse_wiki_links(&req.content);
-        let target_ids = if linked_titles.is_empty() {
-            Vec::new()
-        } else {
-            let all_files = self.drive.list_files(user, MIME_TYPE).await?;
-            let title_to_id: HashMap<String, String> = all_files
-                .into_iter()
-                .filter(|f| f.id != note_id) // exclude self-links
-                .map(|f| (f.name.to_lowercase(), f.id))
-                .collect();
-            linked_titles
-                .iter()
-                .filter_map(|t| title_to_id.get(&t.to_lowercase()).cloned())
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .collect()
-        };
-        self.repo.replace_links(note_id, &target_ids)?;
+            // Parse [[wiki links]] and update note_links table. Prefer the
+            // client-supplied titles (required once content is E2EE ciphertext,
+            // since the server can no longer read [[links]] out of it) and fall
+            // back to parsing `content` directly for unencrypted notes.
+            let linked_titles = req
+                .linked_titles
+                .clone()
+                .unwrap_or_else(|| parse_wiki_links(content));
+            let target_ids = if linked_titles.is_empty() {
+                Vec::new()
+            } else {
+                let all_files = self.drive.list_files(user, MIME_TYPE).await?;
+                let title_to_id: HashMap<String, String> = all_files
+                    .into_iter()
+                    .filter(|f| f.id != note_id) // exclude self-links
+                    .map(|f| (f.name.to_lowercase(), f.id))
+                    .collect();
+                linked_titles
+                    .iter()
+                    .filter_map(|t| title_to_id.get(&t.to_lowercase()).cloned())
+                    .collect::<std::collections::HashSet<_>>()
+                    .into_iter()
+                    .collect()
+            };
+            self.repo.replace_links(note_id, &target_ids)?;
+        }
 
         let now = Utc::now().naive_utc();
         let changes = UpdateNoteRecord { updated_at: now };

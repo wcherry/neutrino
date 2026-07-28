@@ -30,6 +30,7 @@ const SHEET_MIME = 'application/x-neutrino-sheet';
 const SLIDES_MIME = 'application/x-neutrino-slide';
 const DIAGRAM_MIME = 'application/x-neutrino-diagram';
 const DRAWING_MIME = 'application/x-neutrino-drawing';
+const NOTE_MIME = 'application/x-neutrino-note';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -53,6 +54,7 @@ describe('routeForFile — native mimetypes (unchanged regardless of office flag
     ['slide', SLIDES_MIME, '/slides/editor?id='],
     ['diagram', DIAGRAM_MIME, '/diagrams/editor?id='],
     ['drawing', DRAWING_MIME, '/drawing/editor?id='],
+    ['note', NOTE_MIME, '/notes/editor?id='],
   ])('routes a native %s file to its editor', (_label, mimeType, expectedPrefix) => {
     const router = makeRouter();
     const opts = makeOpts(true);

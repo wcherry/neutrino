@@ -384,12 +384,24 @@ function SlidePreview({ id }: { id: string }) {
 // ── Note preview ──────────────────────────────────────────────────────────────
 
 function NotePreview({ id }: { id: string }) {
-  const { data: note, isLoading, isError } = useQuery({
+  const { data: note, isLoading: metaLoading, isError: metaIsError } = useQuery({
     queryKey: ['note', id],
     queryFn: () => notesApi.getNote(id),
     staleTime: 0,
     enabled: !!id,
   });
+
+  const { data: content, isLoading: contentLoading, isError: contentIsError } = useQuery({
+    queryKey: ['note-content-preview', id],
+    queryFn: async () => {
+      if (!note?.contentUrl) return null;
+      return driveReadContent(note.contentUrl);
+    },
+    enabled: !!note?.contentUrl,
+    staleTime: 0,
+  });
+
+  const isLoading = metaLoading || (!!note?.contentUrl && contentLoading);
 
   if (isLoading) {
     return (
@@ -399,7 +411,7 @@ function NotePreview({ id }: { id: string }) {
     );
   }
 
-  if (isError || !note) {
+  if (metaIsError || contentIsError || !note || content == null) {
     return (
       <div className={styles.centered}>
         <AlertCircle size={36} style={{ color: 'var(--color-text-muted)' }} />
@@ -408,7 +420,7 @@ function NotePreview({ id }: { id: string }) {
     );
   }
 
-  const blocks: Block[] = parseBlocks(note.content);
+  const blocks: Block[] = parseBlocks(content);
 
   return (
     <div className={styles.noteContent}>

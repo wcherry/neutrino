@@ -9,6 +9,7 @@ import {
   FileText,
   FileVideo,
   GitBranch,
+  NotebookPen,
   Paintbrush,
   Presentation,
   Sheet,
@@ -19,6 +20,7 @@ const SHEET_MIME = 'application/x-neutrino-sheet';
 const SLIDES_MIME = 'application/x-neutrino-slide';
 const DIAGRAM_MIME = 'application/x-neutrino-diagram';
 const DRAWING_MIME = 'application/x-neutrino-drawing';
+const NOTE_MIME = 'application/x-neutrino-note';
 
 export function getFileIcon(mimeType: string) {
   // Neutrino app types
@@ -27,6 +29,7 @@ export function getFileIcon(mimeType: string) {
   if (mimeType === SLIDES_MIME) return Presentation;
   if (mimeType === DIAGRAM_MIME) return GitBranch;
   if (mimeType === DRAWING_MIME) return Paintbrush;
+  if (mimeType === NOTE_MIME) return NotebookPen;
 
   // Media
   if (mimeType.startsWith('image/')) return FileImage;
@@ -100,6 +103,7 @@ export function getIconColor(mimeType: string): string {
   if (mimeType === SLIDES_MIME) return 'var(--color-orange, #ea580c)';
   if (mimeType === DIAGRAM_MIME) return 'var(--color-cyan, #0891b2)';
   if (mimeType === DRAWING_MIME) return 'var(--color-lime, #65a30d)';
+  if (mimeType === NOTE_MIME) return 'var(--color-amber, #d97706)';
 
   // Media
   if (mimeType.startsWith('image/')) return 'var(--color-violet, #7c3aed)';

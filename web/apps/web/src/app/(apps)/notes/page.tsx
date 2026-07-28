@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, Heading, useToast } from '@neutrino/ui';
 import { FilePlus, NotebookPen, Pencil, Link, Trash2 } from 'lucide-react';
-import { notesApi, type NoteMetaResponse } from '@/lib/api';
+import { notesApi } from '@/lib/api';
+import { filesystemApi, type FileItem } from '@neutrino/api-drive';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal } from '@/components/DocumentPreviewModal';
 import styles from './page.module.css';
@@ -19,10 +20,10 @@ function formatDate(iso: string): string {
   });
 }
 
-function noteToGridItem(note: NoteMetaResponse): GridItem {
+function noteToGridItem(note: FileItem): GridItem {
   return {
     id: note.id,
-    name: note.title,
+    name: note.name,
     kind: 'doc',
     icon: NotebookPen,
     iconColor: 'var(--color-orange, #ea580c)',
@@ -144,7 +145,7 @@ export default function NotesPage() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['notes'],
-    queryFn: () => notesApi.listNotes(),
+    queryFn: () => filesystemApi.getRootContents({ type: 'note', orderBy: 'createdAt', direction: 'desc' }),
   });
 
   const createNote = useMutation({
@@ -153,10 +154,8 @@ export default function NotesPage() {
   });
 
   const renameMutation = useMutation({
-    mutationFn: async ({ id, title }: { id: string; title: string }) => {
-      const note = await notesApi.getNote(id);
-      return notesApi.saveNote(id, { content: note.content, title });
-    },
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      notesApi.saveNote(id, { title }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
       toast.success('Note renamed');
@@ -197,7 +196,7 @@ export default function NotesPage() {
     renameMutation.mutate({ id: renaming.id, title: trimmed });
   }
 
-  const notes = data?.notes ?? [];
+  const notes = data?.files ?? [];
   const gridItems: GridItem[] = notes.map(noteToGridItem);
 
   return (
