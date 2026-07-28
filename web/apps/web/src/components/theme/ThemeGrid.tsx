@@ -85,14 +85,19 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
     setEditorOpen(true);
   }
 
+  // Open the editor directly on an existing, owned custom theme — no new
+  // record is created (contrast with handleDuplicate below, which creates a
+  // copy first and opens the editor on that instead).
+  function openEdit(theme: CustomTheme) {
+    setEditorMode('edit');
+    setEditingTheme(theme);
+    setEditorOpen(true);
+  }
+
   // Duplicate a built-in preset or an existing custom theme (own or someone
   // else's public one) into a brand-new private custom theme, then land the
   // user directly in the editor for the fresh copy — same mechanism openEdit
-  // already uses, just fed the newly-created record instead of a list entry.
-  //
-  // No standalone "Edit" entry point exists in this iteration — the only way
-  // into ThemeEditorModal's edit mode is via this Duplicate flow. See
-  // ThemeContextMenu.tsx for the corresponding note.
+  // uses, just fed the newly-created record instead of a list entry.
   async function handleDuplicate(name: string, colorScheme: ThemeColorScheme, tokens: Record<string, string>) {
     if (duplicating) return;
     setDuplicating(true);
@@ -259,6 +264,11 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
             menuTarget.kind === 'preset'
               ? () => handleDuplicatePreset(menuTarget.preset)
               : () => handleDuplicateCustom(menuTarget.theme)
+          }
+          onEdit={
+            menuTarget.kind === 'custom' && menuTarget.theme.isOwner === true
+              ? () => openEdit(menuTarget.theme)
+              : undefined
           }
           onMakePublic={
             menuTarget.kind === 'custom' && !menuTarget.theme.isPublic

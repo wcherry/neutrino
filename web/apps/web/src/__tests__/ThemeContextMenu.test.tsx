@@ -14,14 +14,22 @@ import React from 'react';
 import { ThemeContextMenu } from '@/components/theme/ThemeContextMenu';
 
 describe('ThemeContextMenu', () => {
-  it('renders only Duplicate when no onMakePublic/onDelete are passed', () => {
+  it('renders only Duplicate when no onEdit/onMakePublic/onDelete are passed', () => {
     render(<ThemeContextMenu x={0} y={0} onClose={vi.fn()} onDuplicate={vi.fn()} />);
     const items = screen.getAllByRole('menuitem');
     expect(items).toHaveLength(1);
     expect(items[0]).toHaveTextContent('Duplicate');
   });
 
-  it('renders Duplicate then Make public when onMakePublic is passed but not onDelete', () => {
+  it('renders Edit then Duplicate when only onEdit is passed', () => {
+    render(<ThemeContextMenu x={0} y={0} onClose={vi.fn()} onDuplicate={vi.fn()} onEdit={vi.fn()} />);
+    const items = screen.getAllByRole('menuitem');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('Edit');
+    expect(items[1]).toHaveTextContent('Duplicate');
+  });
+
+  it('renders Duplicate then Make public when onMakePublic is passed but not onEdit/onDelete', () => {
     render(<ThemeContextMenu x={0} y={0} onClose={vi.fn()} onDuplicate={vi.fn()} onMakePublic={vi.fn()} />);
     const items = screen.getAllByRole('menuitem');
     expect(items).toHaveLength(2);
@@ -29,15 +37,24 @@ describe('ThemeContextMenu', () => {
     expect(items[1]).toHaveTextContent('Make public');
   });
 
-  it('renders Duplicate, Make public, a separator, then Delete when both optional props are passed', () => {
+  it('renders Edit, Duplicate, Make public, a separator, then Delete when all optional props are passed', () => {
     render(
-      <ThemeContextMenu x={0} y={0} onClose={vi.fn()} onDuplicate={vi.fn()} onMakePublic={vi.fn()} onDelete={vi.fn()} />
+      <ThemeContextMenu
+        x={0}
+        y={0}
+        onClose={vi.fn()}
+        onDuplicate={vi.fn()}
+        onEdit={vi.fn()}
+        onMakePublic={vi.fn()}
+        onDelete={vi.fn()}
+      />
     );
     const items = screen.getAllByRole('menuitem');
-    expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent('Duplicate');
-    expect(items[1]).toHaveTextContent('Make public');
-    expect(items[2]).toHaveTextContent('Delete');
+    expect(items).toHaveLength(4);
+    expect(items[0]).toHaveTextContent('Edit');
+    expect(items[1]).toHaveTextContent('Duplicate');
+    expect(items[2]).toHaveTextContent('Make public');
+    expect(items[3]).toHaveTextContent('Delete');
     expect(screen.getByRole('separator')).toBeInTheDocument();
   });
 
@@ -63,6 +80,17 @@ describe('ThemeContextMenu', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
 
     expect(onDuplicate).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('clicking Edit calls onEdit and then onClose', async () => {
+    const onEdit = vi.fn();
+    const onClose = vi.fn();
+    render(<ThemeContextMenu x={0} y={0} onClose={onClose} onDuplicate={vi.fn()} onEdit={onEdit} />);
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Edit' }));
+
+    expect(onEdit).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
