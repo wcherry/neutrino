@@ -776,6 +776,7 @@
 }
 
 .themeCard {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -814,6 +815,87 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.themeCardManageBtn {
+  position: absolute;
+  z-index: 2;
+  top: 3px;
+  right: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+
+.themeCard:hover .themeCardManageBtn {
+  opacity: 1;
+}
+
+.themeCardNew {
+  align-items: center;
+  justify-content: center;
+}
+
+.themeCardNewPreview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: calc(var(--radius-md) - 2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface-hover);
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border);
+}
+
+/* ── Theme editor dialog ─────────────────────────────────────────────────── */
+
+.themeReadOnlyBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-hover);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-normal);
+  margin-left: auto;
+}
+
+.themeEditorPreview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--color-border);
+}
+
+.themeFieldRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.themeFieldLabel {
+  width: 84px;
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
 }
 
 /* ── Presenter view ──────────────────────────────────────────────────────── */
@@ -1297,6 +1379,9 @@
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .dialogHint {
@@ -1339,6 +1424,27 @@
 
 .dialogCancelBtn:hover {
   background: var(--color-surface-hover);
+}
+
+.dialogDeleteBtn {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  margin-right: auto;
+}
+
+.dialogDeleteBtn:hover {
+  background: var(--color-error);
+  color: #fff;
+}
+
+.dialogDeleteBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .dialogConfirmBtn {

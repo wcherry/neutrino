@@ -50,6 +50,8 @@ import {
   ListOrdered,
   ArrowUpDown,
   Network,
+  Pencil,
+  Eye,
 } from 'lucide-react';
 import {
   Button,
@@ -76,7 +78,8 @@ import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
-import type { SlideTheme } from '@neutrino/api-slides';
+import type { SlideTheme, CreateThemeRequest, UpdateThemeRequest } from '@neutrino/api-slides';
+import { ThemeEditorDialog, type ThemeEditorMode } from './ThemeEditorDialog';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
@@ -461,6 +464,39 @@ export function SlideEditor() {
     queryKey: ['slide-themes'],
     queryFn: () => slidesApi.listThemes(),
     staleTime: 60_000,
+  });
+
+  const [themeDialogState, setThemeDialogState] = useState<{ mode: ThemeEditorMode; theme: SlideTheme | null } | null>(null);
+
+  const createThemeMutation = useMutation({
+    mutationFn: (body: CreateThemeRequest) => slidesApi.createTheme(body),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['slide-themes'] });
+      applyTheme(dbThemeToTheme(created));
+      setThemeDialogState(null);
+      toast.success('Theme created');
+    },
+    onError: () => toast.error('Failed to create theme'),
+  });
+
+  const updateThemeMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: UpdateThemeRequest }) => slidesApi.updateTheme(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['slide-themes'] });
+      setThemeDialogState(null);
+      toast.success('Theme updated');
+    },
+    onError: () => toast.error('Failed to update theme'),
+  });
+
+  const deleteThemeMutation = useMutation({
+    mutationFn: (id: string) => slidesApi.deleteTheme(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['slide-themes'] });
+      setThemeDialogState(null);
+      toast.success('Theme deleted');
+    },
+    onError: () => toast.error('Failed to delete theme'),
   });
 
   const isLoading = metaLoading || contentLoading || (slide404 && officeFallbackLoading);
@@ -2151,18 +2187,38 @@ export function SlideEditor() {
                 ) : rightPanelTab === 'theme' ? (
                   <div className={styles.themePanel}>
                     <div className={styles.themeGrid}>
+                      <button
+                        className={`${styles.themeCard} ${styles.themeCardNew}`}
+                        onClick={() => setThemeDialogState({ mode: 'create', theme: null })}
+                        title="Create a new theme from scratch"
+                      >
+                        <div className={styles.themeCardNewPreview}>
+                          <Plus size={20} />
+                        </div>
+                        <span className={styles.themeCardName}>New theme</span>
+                      </button>
                       {(dbThemesData?.themes ?? []).map((t) => (
-                        <button
+                        <div
                           key={t.id}
                           className={`${styles.themeCard} ${presentation.theme.name === t.name ? styles.themeCardActive : ''}`}
                           onClick={() => applyTheme(dbThemeToTheme(t))}
                           title={t.name}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') applyTheme(dbThemeToTheme(t)); }}
                         >
+                          <button
+                            className={styles.themeCardManageBtn}
+                            onClick={(e) => { e.stopPropagation(); setThemeDialogState({ mode: t.isSystem ? 'view' : 'edit', theme: t }); }}
+                            title={t.isSystem ? 'View theme' : 'Edit theme'}
+                          >
+                            {t.isSystem ? <Eye size={11} /> : <Pencil size={11} />}
+                          </button>
                           <div className={styles.themeCardPreview}>
                             <ThemePreview theme={t} />
                           </div>
                           <span className={styles.themeCardName}>{t.name}</span>
-                        </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -2348,6 +2404,19 @@ export function SlideEditor() {
         <InsertDiagramDialog
           onInsert={(diagramId) => { addDiagram(diagramId); setDiagramDialogOpen(false); }}
           onClose={() => setDiagramDialogOpen(false)}
+        />
+      )}
+
+      {themeDialogState && (
+        <ThemeEditorDialog
+          mode={themeDialogState.mode}
+          theme={themeDialogState.theme}
+          saving={createThemeMutation.isPending || updateThemeMutation.isPending || deleteThemeMutation.isPending}
+          onClose={() => setThemeDialogState(null)}
+          onCreate={(body) => createThemeMutation.mutate(body)}
+          onSave={(body) => { if (themeDialogState.theme) updateThemeMutation.mutate({ id: themeDialogState.theme.id, body }); }}
+          onDelete={() => { if (themeDialogState.theme) deleteThemeMutation.mutate(themeDialogState.theme.id); }}
+          onDuplicate={(body) => createThemeMutation.mutate(body)}
         />
       )}
 
