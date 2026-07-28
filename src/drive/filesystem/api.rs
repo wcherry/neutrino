@@ -57,7 +57,7 @@ pub async fn create_folder(
         ("orderBy" = Option<FolderContentsOrderField>, Query, description = "Sort field"),
         ("direction" = Option<String>, Query, description = "asc or desc"),
         ("view" = Option<String>, Query, description = "Filter view: recent | starred | trash"),
-        ("type" = Option<DriveFileType>, Query, description = "List only files of this type across the whole drive: photo | video | audio | document"),
+        ("type" = Option<DriveFileType>, Query, description = "List only files of this type across the whole drive: photo | video | audio | document | doc | sheet | slide | diagram | drawing | note"),
     ),
     responses(
         (status = 200, description = "Root folder contents", body = FolderContentsResponse),

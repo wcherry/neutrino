@@ -914,6 +914,14 @@ mod tests {
         insert_file(repo, "pdf", user, "report.pdf", "application/pdf");
         insert_file(repo, "txt", user, "notes.txt", "text/plain");
         insert_file(repo, "bin", user, "blob.bin", "application/octet-stream");
+        insert_file(repo, "doc", user, "my-doc", "application/x-neutrino-doc");
+        insert_file(
+            repo,
+            "sheet",
+            user,
+            "my-sheet",
+            "application/x-neutrino-sheet",
+        );
     }
 
     #[test]
@@ -968,6 +976,22 @@ mod tests {
             .list_files_by_mime("user-1", DriveFileType::Photo.mime_patterns())
             .unwrap();
         assert_eq!(names(&files), vec!["b-photo.jpg"]);
+    }
+
+    #[test]
+    fn doc_and_sheet_are_distinct_native_types() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+
+        let docs = repo
+            .list_files_by_mime("user-1", DriveFileType::Doc.mime_patterns())
+            .unwrap();
+        assert_eq!(names(&docs), vec!["my-doc"]);
+
+        let sheets = repo
+            .list_files_by_mime("user-1", DriveFileType::Sheet.mime_patterns())
+            .unwrap();
+        assert_eq!(names(&sheets), vec!["my-sheet"]);
     }
 
     #[test]
