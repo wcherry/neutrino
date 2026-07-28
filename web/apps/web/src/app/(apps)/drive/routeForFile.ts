@@ -14,6 +14,7 @@ export const SHEET_MIME = 'application/x-neutrino-sheet';
 export const SLIDES_MIME = 'application/x-neutrino-slide';
 export const DIAGRAM_MIME = 'application/x-neutrino-diagram';
 export const DRAWING_MIME = 'application/x-neutrino-drawing';
+export const NOTE_MIME = 'application/x-neutrino-note';
 
 export interface RoutableFile {
   id: string;
@@ -36,6 +37,7 @@ const NATIVE_ROUTE_PREFIX: Record<string, string> = {
   [SLIDES_MIME]: '/slides/editor?id=',
   [DIAGRAM_MIME]: '/diagrams/editor?id=',
   [DRAWING_MIME]: '/drawing/editor?id=',
+  [NOTE_MIME]: '/notes/editor?id=',
 };
 
 const OFFICE_APP_ROUTE_PREFIX: Record<string, string> = {

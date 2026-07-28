@@ -203,11 +203,13 @@ function setupSlideQueries() {
 }
 
 function setupNoteQuery() {
-  mockUseQuery.mockReturnValueOnce({
-    data: { id: 'note-1', title: 'My Note', content: makeNoteContent() },
-    isLoading: false,
-    isError: false,
-  });
+  mockUseQuery
+    .mockReturnValueOnce({
+      data: { id: 'note-1', title: 'My Note', contentUrl: '/api/v1/drive/files/note-1' },
+      isLoading: false,
+      isError: false,
+    })
+    .mockReturnValueOnce({ data: makeNoteContent(), isLoading: false, isError: false });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -514,13 +516,17 @@ describe('NotePreview', () => {
   });
 
   it('shows spinner while loading', () => {
-    mockUseQuery.mockReturnValueOnce({ data: undefined, isLoading: true, isError: false });
+    mockUseQuery
+      .mockReturnValueOnce({ data: undefined, isLoading: true, isError: false })
+      .mockReturnValueOnce({ data: undefined, isLoading: false, isError: false });
     render(<DocumentPreviewModal id="note-1" kind="note" onClose={vi.fn()} />);
     expect(screen.getByTestId('spinner-lg')).toBeInTheDocument();
   });
 
   it('shows error state when note fetch fails', () => {
-    mockUseQuery.mockReturnValueOnce({ data: undefined, isLoading: false, isError: true });
+    mockUseQuery
+      .mockReturnValueOnce({ data: undefined, isLoading: false, isError: true })
+      .mockReturnValueOnce({ data: undefined, isLoading: false, isError: false });
     render(<DocumentPreviewModal id="note-1" kind="note" onClose={vi.fn()} />);
     expect(screen.getByText('Failed to load note preview.')).toBeInTheDocument();
   });

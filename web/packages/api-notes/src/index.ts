@@ -7,7 +7,8 @@ import { request } from '@neutrino/api-core';
 export interface NoteResponse {
   id: string;
   title: string;
-  content: string;
+  /** Path to read note content directly from the drive API (GET). */
+  contentUrl: string;
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -27,8 +28,15 @@ export interface CreateNoteRequest {
 }
 
 export interface SaveNoteRequest {
-  content: string;
+  /** Omit for a pure rename (title-only save) — content/links stay untouched. */
+  content?: string;
   title?: string;
+  /**
+   * Wiki-link target titles extracted client-side from the plaintext content.
+   * Required once content is E2EE-encrypted, since the server can no longer
+   * read `[[links]]` out of ciphertext.
+   */
+  linkedTitles?: string[];
 }
 
 export interface ListNotesResponse {

@@ -12,3 +12,11 @@ VALUES (
   'Neutrino Desktop App',
   '["neutrino://oauth/callback","http://localhost:8080/callback"]'
 );
+
+-- Seed a default desktop client for development
+INSERT INTO oauth_clients (id, name, redirect_uris)
+VALUES (
+  'neutrino-notes-ios',
+  'Neutrino Notes iOS',
+  '["neutrino://oauth/callback","http://localhost:8080/callback"]'
+);
