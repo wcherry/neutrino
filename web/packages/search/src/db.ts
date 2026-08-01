@@ -1,10 +1,17 @@
 import type { SearchableDocType } from './types';
 
 const DB_NAME = 'neutrino_search';
-const DB_VERSION = 1;
+/**
+ * v2 replaced the hashed `tokenHash` key with the plain-text `term`, so that
+ * prefix queries can range over it. A v1 database holds HMACs that cannot be
+ * turned back into terms, so the upgrade drops both stores and the next sync
+ * rebuilds them (see `CONTENT_VERSION` in the web app's `searchIndexer`).
+ */
+const DB_VERSION = 2;
 
 export interface TokenEntry {
-  tokenHash: string;
+  /** The indexed word itself, lowercased and stripped of punctuation. */
+  term: string;
   documentId: string;
   field: 'title' | 'content';
   frequency: number;
@@ -21,8 +28,8 @@ export interface DocEntry {
    * round-trip to the server.
    */
   title: string;
-  titleHashes: string[];
-  contentHashes: string[];
+  titleTerms: string[];
+  contentTerms: string[];
   updatedAt: number;
   /** Drive mimetype for `file` entries; absent for in-app documents. */
   mimeType?: string;
@@ -38,16 +45,18 @@ export function openSearchDb(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains('tokens')) {
-        const tokenStore = db.createObjectStore('tokens', {
-          keyPath: ['tokenHash', 'documentId', 'field'],
-        });
-        tokenStore.createIndex('byTokenHash', 'tokenHash', { unique: false });
-        tokenStore.createIndex('byDocumentId', 'documentId', { unique: false });
-      }
-      if (!db.objectStoreNames.contains('docs')) {
-        db.createObjectStore('docs', { keyPath: 'documentId' });
-      }
+      // Nothing in a v1 database survives the move off hashed keys, so start
+      // clean rather than trying to migrate records whose terms are one-way.
+      if (db.objectStoreNames.contains('tokens')) db.deleteObjectStore('tokens');
+      if (db.objectStoreNames.contains('docs')) db.deleteObjectStore('docs');
+
+      const tokenStore = db.createObjectStore('tokens', {
+        keyPath: ['term', 'documentId', 'field'],
+      });
+      tokenStore.createIndex('byTerm', 'term', { unique: false });
+      tokenStore.createIndex('byDocumentId', 'documentId', { unique: false });
+
+      db.createObjectStore('docs', { keyPath: 'documentId' });
     };
     req.onsuccess = (e) => {
       _db = (e.target as IDBOpenDBRequest).result;
@@ -104,7 +113,7 @@ export function deleteDocumentTokens(docId: string, db: IDBDatabase): Promise<vo
 
 export function deleteTokenEntries(
   docId: string,
-  removals: { hash: string; field: 'title' | 'content' }[],
+  removals: { term: string; field: 'title' | 'content' }[],
   db: IDBDatabase,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -114,32 +123,46 @@ export function deleteTokenEntries(
     }
     const tx = db.transaction('tokens', 'readwrite');
     const store = tx.objectStore('tokens');
-    for (const { hash, field } of removals) {
-      store.delete([hash, docId, field]);
+    for (const { term, field } of removals) {
+      store.delete([term, docId, field]);
     }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }
 
+/**
+ * No term can contain `￿` — `normalizeText` keeps only letters and
+ * numbers — so it is a safe sentinel above every term sharing a prefix.
+ */
+const PREFIX_UPPER_BOUND = '￿';
+
+/**
+ * Postings for every term starting with each of `prefixes`, keyed by the prefix
+ * that matched them.
+ *
+ * The range scan is what makes "mod" find "modesto": `byTerm` is ordered, so
+ * IndexedDB walks straight to the first matching term and stops at the last,
+ * without visiting the rest of the index.
+ */
 export function lookupPostings(
-  tokenHashes: string[],
+  prefixes: string[],
   db: IDBDatabase,
 ): Promise<Map<string, TokenEntry[]>> {
   return new Promise((resolve, reject) => {
     const result = new Map<string, TokenEntry[]>();
-    if (tokenHashes.length === 0) {
+    if (prefixes.length === 0) {
       resolve(result);
       return;
     }
     const tx = db.transaction('tokens', 'readonly');
-    const idx = tx.objectStore('tokens').index('byTokenHash');
-    let pending = tokenHashes.length;
+    const idx = tx.objectStore('tokens').index('byTerm');
+    let pending = prefixes.length;
 
-    for (const hash of tokenHashes) {
-      const req = idx.getAll(IDBKeyRange.only(hash));
+    for (const prefix of prefixes) {
+      const req = idx.getAll(IDBKeyRange.bound(prefix, prefix + PREFIX_UPPER_BOUND));
       req.onsuccess = () => {
-        result.set(hash, (req.result as TokenEntry[]) ?? []);
+        result.set(prefix, (req.result as TokenEntry[]) ?? []);
         pending--;
         if (pending === 0) resolve(result);
       };

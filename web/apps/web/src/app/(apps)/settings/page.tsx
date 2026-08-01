@@ -69,6 +69,7 @@ const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
   apple: 'Sync via CalDAV',
 };
 
+/** Read by `useSearchIndexSync` to skip the periodic background index sync. */
 const SEARCH_SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
 
 type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'drive' | 'advanced';

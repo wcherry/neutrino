@@ -8,6 +8,31 @@ type SheetCell = { raw?: string; value?: string };
 type SheetData = { cells?: Record<string, SheetCell> };
 type SheetFileContent = { sheets?: SheetData[] };
 
+/**
+ * Flatten a stored `sheet.json` body into searchable plain text — every cell's
+ * displayed value, with formula sources skipped in favour of their result.
+ *
+ * Takes the already-decrypted body rather than fetching it: sheet content is
+ * E2EE, so only the caller holds the DEK needed to read it (see
+ * `readDocumentText` in the web app).
+ */
+export function extractSheetText(raw: string): string {
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw) as SheetFileContent;
+    const parts: string[] = [];
+    for (const s of parsed.sheets ?? []) {
+      for (const cell of Object.values(s.cells ?? {})) {
+        const text = cell.value ?? (cell.raw?.startsWith('=') ? '' : cell.raw);
+        if (text) parts.push(text);
+      }
+    }
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Sheets types
 // ---------------------------------------------------------------------------
@@ -160,25 +185,6 @@ export const sheetsApi = {
       method: 'POST',
       body: JSON.stringify({ content }),
     });
-  },
-
-  async retrieveText(sheetId: string): Promise<string> {
-    const sheet = await request<SheetResponse>(`/api/v1/sheets/${sheetId}`);
-    const raw = await request<string>(sheet.contentUrl, {}, { responseType: 'text' }).catch(() => '');
-    if (!raw) return '';
-    try {
-      const parsed = JSON.parse(raw) as SheetFileContent;
-      const parts: string[] = [];
-      for (const s of parsed.sheets ?? []) {
-        for (const cell of Object.values(s.cells ?? {})) {
-          const text = cell.value ?? (cell.raw?.startsWith('=') ? '' : cell.raw);
-          if (text) parts.push(text);
-        }
-      }
-      return parts.join(' ').replace(/\s+/g, ' ').trim();
-    } catch {
-      return '';
-    }
   },
 
   /** Create a named range for a cell selection, returning a stable GUID.

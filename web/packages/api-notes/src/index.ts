@@ -1,6 +1,50 @@
 import { request } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
+// Note text extraction helpers
+// ---------------------------------------------------------------------------
+
+type NoteTableCell = { content?: string };
+type NoteTableRow = { cells?: NoteTableCell[] };
+type NoteBlock = { content?: string; tableData?: { rows?: NoteTableRow[] } };
+
+/**
+ * Flatten a stored note body into searchable plain text — every block's prose
+ * plus any table cells.
+ *
+ * Note bodies are `JSON.stringify(Block[])`, so indexing the raw string would
+ * feed block ids and JSON keys to the tokenizer. Legacy notes were saved as
+ * plain text and are returned as-is.
+ *
+ * Takes the already-decrypted body rather than fetching it: note content is
+ * E2EE, so only the caller holds the DEK needed to read it (see
+ * `readDocumentText` in the web app).
+ */
+export function extractNoteText(raw: string): string {
+  if (!raw.trim()) return '';
+
+  let blocks: NoteBlock[];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return raw.replace(/\s+/g, ' ').trim();
+    blocks = parsed as NoteBlock[];
+  } catch {
+    return raw.replace(/\s+/g, ' ').trim();
+  }
+
+  const parts: string[] = [];
+  for (const block of blocks) {
+    if (block.content) parts.push(block.content);
+    for (const row of block.tableData?.rows ?? []) {
+      for (const cell of row.cells ?? []) {
+        if (cell.content) parts.push(cell.content);
+      }
+    }
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+// ---------------------------------------------------------------------------
 // Notes types
 // ---------------------------------------------------------------------------
 

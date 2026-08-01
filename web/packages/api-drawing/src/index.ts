@@ -1,5 +1,34 @@
 import { request } from '@neutrino/api-core';
 
+// ---------------------------------------------------------------------------
+// Drawing text extraction helpers
+// ---------------------------------------------------------------------------
+
+type DrawingShapeContent = { text?: string };
+type DrawingFileContent = { shapes?: DrawingShapeContent[] };
+
+/**
+ * Flatten a stored drawing body into searchable plain text — the text carried
+ * by each shape. Freehand strokes contribute nothing.
+ *
+ * Takes the already-decrypted body rather than fetching it: drawing content is
+ * E2EE, so only the caller holds the DEK needed to read it (see
+ * `readDocumentText` in the web app).
+ */
+export function extractDrawingText(raw: string): string {
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw) as DrawingFileContent;
+    const parts: string[] = [];
+    for (const shape of parsed.shapes ?? []) {
+      if (shape.text) parts.push(shape.text);
+    }
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
+}
+
 export interface DrawingResponse {
   id: string;
   title: string;

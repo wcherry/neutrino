@@ -50,9 +50,10 @@ import { ShareButton, Spinner, useToast, ZoomSlider } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import {
   docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
-  driveAutosaveBytes, driveCreateVersionBytes,
+  driveAutosaveBytes, driveCreateVersionBytes, extractDocText,
   storageApi, filesystemApi, ApiClientError, type PageSetup, type FileItem,
 } from '@/lib/api';
+import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
@@ -798,9 +799,15 @@ export function DocEditor() {
       return driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current);
     },
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: () => {
+    onSuccess: (_data, content) => {
       setSaveStatus('saved');
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
+      indexOnSave(currentUser?.id, {
+        id: docId,
+        type: 'document',
+        title: titleRef.current,
+        content: extractDocText(content),
+      });
     },
     onError: (err) => {
       setSaveStatus('unsaved');

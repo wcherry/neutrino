@@ -12,12 +12,13 @@ import { exportPNGCropped, exportJPEGCropped, exportSVGCropped, triggerDownload 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToast, Modal, ModalHeader, ModalBody, ModalFooter, Button } from '@neutrino/ui';
-import { diagramsApi } from '@neutrino/api-diagrams';
-import { authApi } from '@neutrino/auth';
+import { diagramsApi, extractDiagramText } from '@neutrino/api-diagrams';
+import { authApi, useUser } from '@neutrino/auth';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { storageApi, type FileItem } from '@/lib/api';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
+import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useDiagramEditor } from './hooks/useDiagramEditor';
 import { useDiagramCollab } from './hooks/useDiagramCollab';
@@ -161,6 +162,7 @@ export function DiagramEditor() {
   const diagramId = searchParams.get('id') ?? '';
   useAccessRevocation(diagramId);
   const queryClient = useQueryClient();
+  const currentUser = useUser();
 
   const [selection, setSelection] = useState<EditorSelection>({
     shapeIds: new Set(),
@@ -274,13 +276,21 @@ export function DiagramEditor() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!diagramId) return;
+      if (!diagramId) return null;
       if (!dekRef.current) throw new Error('no-dek');
       const content = JSON.stringify(editor.document, null, 0);
       await diagramsApi.autosaveEncryptedContent(diagramId, content, 'diagram.json', dekRef.current, { title });
+      return content;
     },
-    onSuccess: () => {
+    onSuccess: (content) => {
       queryClient.invalidateQueries({ queryKey: ['diagrams'] });
+      if (!content) return;
+      indexOnSave(currentUser?.id, {
+        id: diagramId,
+        type: 'diagram',
+        title,
+        content: extractDiagramText(content),
+      });
     },
     onError: (err) => {
       if (err instanceof Error && err.message === 'no-dek') {

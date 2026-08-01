@@ -8,6 +8,31 @@ type SlideEl = { type: string; content?: string };
 type SlideItem = { elements?: SlideEl[]; notes?: string };
 type SlidePresentationContent = { slides?: SlideItem[] };
 
+/**
+ * Flatten a stored presentation body into searchable plain text — every text
+ * element plus each slide's speaker notes.
+ *
+ * Takes the already-decrypted body rather than fetching it: slide content is
+ * E2EE, so only the caller holds the DEK needed to read it (see
+ * `readDocumentText` in the web app).
+ */
+export function extractSlideText(raw: string): string {
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw) as SlidePresentationContent;
+    const parts: string[] = [];
+    for (const s of parsed.slides ?? []) {
+      for (const el of s.elements ?? []) {
+        if (el.type === 'text' && el.content) parts.push(el.content);
+      }
+      if (s.notes) parts.push(s.notes);
+    }
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Slides types
 // ---------------------------------------------------------------------------
@@ -163,25 +188,6 @@ export const slidesApi = {
     return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave`, { method: 'PUT', body: formData });
   },
 
-
-  async retrieveText(slideId: string): Promise<string> {
-    const slide = await request<SlideResponse>(`/api/v1/slides/${slideId}`);
-    const raw = await request<string>(slide.contentUrl, {}, { responseType: 'text' }).catch(() => '');
-    if (!raw) return '';
-    try {
-      const parsed = JSON.parse(raw) as SlidePresentationContent;
-      const parts: string[] = [];
-      for (const s of parsed.slides ?? []) {
-        for (const el of s.elements ?? []) {
-          if (el.type === 'text' && el.content) parts.push(el.content);
-        }
-        if (s.notes) parts.push(s.notes);
-      }
-      return parts.join(' ').replace(/\s+/g, ' ').trim();
-    } catch {
-      return '';
-    }
-  },
 
   // ── Themes ────────────────────────────────────────────────────────────────
 

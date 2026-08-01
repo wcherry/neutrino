@@ -7,8 +7,19 @@ import { isSyncDue, syncSearchIndex } from '@/lib/searchIndexer';
 /** One run at a time per tab — remounts and focus events share this promise. */
 let inFlight: Promise<unknown> | null = null;
 
+/** Settings → Advanced writes this; the toggle is only meaningful if we read it. */
+const SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
+
+function syncDisabled(): boolean {
+  try {
+    return localStorage.getItem(SYNC_DISABLED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 function runSync(userId: string): void {
-  if (inFlight || !isSyncDue(userId)) return;
+  if (inFlight || syncDisabled() || !isSyncDue(userId)) return;
   inFlight = syncSearchIndex(userId)
     .catch(() => {
       // Indexing is best-effort background work; a failed run retries later.

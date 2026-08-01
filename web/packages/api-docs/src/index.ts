@@ -6,10 +6,39 @@ import { request } from '@neutrino/api-core';
 
 type TiptapNode = { type: string; text?: string; content?: TiptapNode[] };
 
+/**
+ * With the `docsLayoutStructure` flag on, `serializeContent` in `DocEditor`
+ * wraps the Tiptap JSON as `{ doc, _meta }` so header/footer/watermark settings
+ * survive a round-trip. Older documents — and any saved with the flag off — are
+ * bare Tiptap JSON.
+ */
+type StoredDoc = TiptapNode | { doc: TiptapNode; _meta?: unknown };
+
 function tiptapToText(node: TiptapNode): string {
   if (node.type === 'text') return node.text ?? '';
   if (node.type === 'hardBreak') return ' ';
   return (node.content ?? []).map(tiptapToText).join(' ');
+}
+
+/**
+ * Flatten a stored `doc.json` body into searchable plain text.
+ *
+ * Takes the already-decrypted document rather than fetching it: doc bodies are
+ * E2EE, so only the caller holds the DEK needed to read them (see
+ * `readDocumentText` in the web app).
+ */
+export function extractDocText(raw: string): string {
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw) as StoredDoc;
+    // Unwrap the layout envelope. Missing this indexes the whole document as
+    // empty: the wrapper has neither `type` nor `content`, so the walk below
+    // finds nothing and returns '' for a document full of text.
+    const root = 'doc' in parsed && parsed.doc ? parsed.doc : (parsed as TiptapNode);
+    return tiptapToText(root).replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -140,17 +169,6 @@ export const docsApi = {
     return request<ExportTextResponse>(`/api/v1/docs/${docId}/export/text`);
   },
 
-  async retrieveText(docId: string): Promise<string> {
-    const doc = await request<DocResponse>(`/api/v1/docs/${docId}`);
-    const raw = await request<string>(doc.contentUrl, {}, { responseType: 'text' }).catch(() => '');
-    if (!raw) return '';
-    try {
-      const parsed = JSON.parse(raw) as TiptapNode;
-      return tiptapToText(parsed).replace(/\s+/g, ' ').trim();
-    } catch {
-      return '';
-    }
-  },
 };
 
 // ---------------------------------------------------------------------------

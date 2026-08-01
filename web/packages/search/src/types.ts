@@ -3,6 +3,8 @@ export type SearchableDocType =
   | 'spreadsheet'
   | 'note'
   | 'slide'
+  | 'diagram'
+  | 'drawing'
   | 'event'
   | 'reminder'
   /** A Drive file with no in-app text — indexed by name only. */
