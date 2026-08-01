@@ -32,7 +32,7 @@ export function tagNavSection(tags: Tag[]): NavSection {
     id: `tag-${tag.id}`,
     label: tag.name,
     icon: TagIcon,
-    href: `/drive/tags/${tag.id}`,
+    href: `/drive/tag?id=${tag.id}`,
     // A zero on every unused tag is noise; show the count only when there is one.
     ...(fileCount(tag) > 0 ? { badge: fileCount(tag) } : {}),
   }));

@@ -39,7 +39,14 @@ export interface TopbarSearchResult {
   subtitle: string;
   href: string;
   icon?: React.ReactNode;
+  /** Icon tint, so results match how the same item is drawn elsewhere. */
+  iconColor?: string;
+  /** Date of last change, pre-formatted by the caller. */
+  modified?: string;
 }
+
+/** Characters typed before the drop-down opens. */
+const MIN_SEARCH_LENGTH = 3;
 
 export interface TopbarProps {
   user?: TopbarUser;
@@ -47,6 +54,10 @@ export interface TopbarProps {
   searchPlaceholder?: string;
   searchResults?: TopbarSearchResult[];
   onResultClick?: (result: TopbarSearchResult) => void;
+  /** Enter pressed in the search box — typically shows the full result list. */
+  onSearchSubmit?: (query: string) => void;
+  /** True while `onSearch` is still resolving, so the drop-down can say so. */
+  searchPending?: boolean;
   actions?: TopbarAction[];
   notifications?: TopbarNotification[];
   unreadNotificationCount?: number;
@@ -95,6 +106,8 @@ export function Topbar({
   searchPlaceholder = 'Search files...',
   searchResults,
   onResultClick,
+  onSearchSubmit,
+  searchPending = false,
   actions = [],
   notifications = [],
   unreadNotificationCount = 0,
@@ -179,17 +192,29 @@ export function Topbar({
     };
   }, [searchDropdownOpen, onSearch]);
 
+  // The drop-down opens on the query, not on the results: an empty result set
+  // still has something to say ("No matches"), which is the only feedback the
+  // user gets that the search actually ran.
   useEffect(() => {
-    if (searchResults && searchResults.length > 0 && searchValue.length >= 3) {
-      setSearchDropdownOpen(true);
-    } else {
-      setSearchDropdownOpen(false);
-    }
-  }, [searchResults, searchValue]);
+    setSearchDropdownOpen(searchValue.trim().length >= MIN_SEARCH_LENGTH);
+  }, [searchValue]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchValue(e.target.value);
     onSearch?.(e.target.value);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    const query = searchValue.trim();
+    if (!query) return;
+    e.preventDefault();
+    // Hand the query off to the full results view; the box clears because that
+    // view shows the term as a dismissible filter from here on.
+    setSearchDropdownOpen(false);
+    setSearchValue('');
+    onSearch?.('');
+    onSearchSubmit?.(query);
   };
 
   const handleSearchClear = () => {
@@ -226,31 +251,56 @@ export function Topbar({
             value={searchValue}
             onChange={handleSearchChange}
             onClear={handleSearchClear}
+            onKeyDown={handleSearchKeyDown}
             aria-label="Search"
             aria-expanded={searchDropdownOpen}
             aria-autocomplete="list"
           />
-          {searchDropdownOpen && searchResults && searchResults.length > 0 && (
-            <ul className={styles['search-dropdown']} role="listbox" aria-label="Search results">
-              {searchResults.map((result) => (
-                <li key={result.id} role="option" aria-selected={false}>
-                  <button
-                    type="button"
-                    className={styles['search-result-btn']}
-                    onMouseDown={() => handleResultClick(result)}
-                  >
-                    {result.icon && (
-                      <span className={styles['search-result-icon']} aria-hidden="true">
-                        {result.icon}
+          {searchDropdownOpen && (
+            <ul
+              className={styles['search-dropdown']}
+              role="listbox"
+              aria-label="Search results"
+              data-testid="topbar-search-dropdown"
+            >
+              {searchResults && searchResults.length > 0 ? (
+                searchResults.map((result) => (
+                  <li key={result.id} role="option" aria-selected={false} data-testid="topbar-search-result">
+                    <button
+                      type="button"
+                      className={styles['search-result-btn']}
+                      onMouseDown={() => handleResultClick(result)}
+                    >
+                      {result.icon && (
+                        <span
+                          className={styles['search-result-icon']}
+                          style={result.iconColor ? { color: result.iconColor } : undefined}
+                          aria-hidden="true"
+                        >
+                          {result.icon}
+                        </span>
+                      )}
+                      <span className={styles['search-result-text']}>
+                        <span className={styles['search-result-title']}>{result.title}</span>
+                        <span className={styles['search-result-subtitle']}>{result.subtitle}</span>
                       </span>
-                    )}
-                    <span className={styles['search-result-text']}>
-                      <span className={styles['search-result-title']}>{result.title}</span>
-                      <span className={styles['search-result-subtitle']}>{result.subtitle}</span>
-                    </span>
-                  </button>
+                      {result.modified && (
+                        <span className={styles['search-result-modified']}>{result.modified}</span>
+                      )}
+                    </button>
+                  </li>
+                ))
+              ) : (
+                <li
+                  className={styles['search-empty']}
+                  role="option"
+                  aria-selected={false}
+                  aria-disabled="true"
+                  data-testid="topbar-search-empty"
+                >
+                  {searchPending ? 'Searching…' : 'No matches'}
                 </li>
-              ))}
+              )}
             </ul>
           )}
         </div>

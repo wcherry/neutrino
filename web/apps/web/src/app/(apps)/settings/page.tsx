@@ -14,8 +14,7 @@ import { getOfficeFileMode, OFFICE_FILE_MODE_KEY, type OfficeFileMode } from '@/
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { ThemeGrid } from '@/components/theme/ThemeGrid';
 import { useFeatureFlags, type FeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { clearSearchIndex, getOrCreateSearchKey, IndexEngine, type SearchableDocument } from '@neutrino/search';
-import { docsApi, notesApi, sheetsApi, slidesApi, driveReadContent } from '@/lib/api';
+import { rebuildSearchIndex } from '@/lib/searchIndexer';
 import {
   WEEK_START_KEY,
   DAY_START_HOUR_KEY,
@@ -491,137 +490,12 @@ const qc = useQueryClient();
     setRebuildProgress(null);
 
     try {
-      await clearSearchIndex();
-
-      // Collect indexable documents from all content types.
-      // Fetch everything in parallel; failures on individual types are non-fatal.
-      const [
-        notesMeta,
-        docsMeta,
-        sheetsMeta,
-        slidesMeta,
-        eventsRes,
-        remindersRes,
-      ] = await Promise.allSettled([
-        notesApi.listNotes(),
-        docsApi.listDocs(),
-        sheetsApi.listSheets(),
-        slidesApi.listSlides(),
-        calendarApi.listEvents(),
-        calendarApi.listReminders(),
-      ]);
-
-      // Build a flat list of items to fetch-and-index.
-      type IndexJob = () => Promise<SearchableDocument>;
-      const jobs: IndexJob[] = [];
-
-      if (notesMeta.status === 'fulfilled') {
-        for (const n of notesMeta.value.notes) {
-          jobs.push(async () => {
-            const full = await notesApi.getNote(n.id);
-            const content = await driveReadContent(full.contentUrl).catch(() => '');
-            return {
-              id: n.id,
-              type: 'note' as const,
-              title: full.title,
-              content,
-              updatedAt: new Date(full.updatedAt).getTime(),
-            };
-          });
-        }
-      }
-
-      if (docsMeta.status === 'fulfilled') {
-        for (const d of docsMeta.value.docs) {
-          jobs.push(async () => {
-            const text = await docsApi.retrieveText(d.id);
-            return {
-              id: d.id,
-              type: 'document' as const,
-              title: d.title,
-              content: text,
-              updatedAt: new Date(d.updatedAt).getTime(),
-            };
-          });
-        }
-      }
-
-      if (sheetsMeta.status === 'fulfilled') {
-        for (const s of sheetsMeta.value.sheets) {
-          jobs.push(async () => {
-            const text = await sheetsApi.retrieveText(s.id);
-            return {
-              id: s.id,
-              type: 'spreadsheet' as const,
-              title: s.title,
-              content: text,
-              updatedAt: new Date(s.updatedAt).getTime(),
-            };
-          });
-        }
-      }
-
-      if (slidesMeta.status === 'fulfilled') {
-        for (const s of slidesMeta.value.slides) {
-          jobs.push(async () => {
-            const text = await slidesApi.retrieveText(s.id);
-            return {
-              id: s.id,
-              type: 'slide' as const,
-              title: s.title,
-              content: text,
-              updatedAt: new Date(s.updatedAt).getTime(),
-            };
-          });
-        }
-      }
-
-      if (eventsRes.status === 'fulfilled') {
-        for (const e of eventsRes.value.events) {
-          jobs.push(async () => ({
-            id: e.id,
-            type: 'event' as const,
-            title: e.title,
-            content: e.description ?? '',
-            updatedAt: new Date(e.updatedAt).getTime(),
-          }));
-        }
-      }
-
-      if (remindersRes.status === 'fulfilled') {
-        for (const r of remindersRes.value.reminders) {
-          jobs.push(async () => ({
-            id: r.id,
-            type: 'reminder' as const,
-            title: r.title,
-            content: '',
-            updatedAt: new Date(r.updatedAt).getTime(),
-          }));
-        }
-      }
-
-      const total = jobs.length;
-      setRebuildProgress({ done: 0, total });
-
+      const total = await rebuildSearchIndex(user.id, setRebuildProgress);
       if (total === 0) {
         toastSuccess('Search index rebuilt — nothing to index yet.');
-        return;
+      } else {
+        toastSuccess(`Search index rebuilt — ${total} item${total === 1 ? '' : 's'} indexed.`);
       }
-
-      const searchKey = getOrCreateSearchKey(user.id);
-      const engine = new IndexEngine();
-
-      for (let i = 0; i < jobs.length; i++) {
-        try {
-          const doc = await jobs[i]();
-          await engine.indexDocument(doc, searchKey);
-        } catch {
-          // skip individual failures silently
-        }
-        setRebuildProgress({ done: i + 1, total });
-      }
-
-      toastSuccess(`Search index rebuilt — ${total} item${total === 1 ? '' : 's'} indexed.`);
     } catch {
       toastError('Failed to rebuild search index. Please try again.');
     } finally {

@@ -43,7 +43,7 @@ describe('tagNavSection', () => {
   it('shows the file count as a badge', () => {
     const section = tagNavSection([tag('t1', 'taxes', 4)]);
     expect(section.items[0].badge).toBe(4);
-    expect(section.items[0].href).toBe('/drive/tags/t1');
+    expect(section.items[0].href).toBe('/drive/tag?id=t1');
   });
 
   it('sorts unused tags last rather than hiding them', () => {

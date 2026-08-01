@@ -8,6 +8,8 @@ import {
   deleteTokenEntries,
   lookupPostings,
   getDocEntries,
+  getAllDocEntries,
+  type DocEntry,
   type TokenEntry,
 } from './db';
 
@@ -62,7 +64,18 @@ export class IndexEngine {
 
     await Promise.all([
       putTokenEntries(entries, db),
-      putDocEntry({ documentId: doc.id, type: doc.type, titleHashes, contentHashes, updatedAt: doc.updatedAt }, db),
+      putDocEntry(
+        {
+          documentId: doc.id,
+          type: doc.type,
+          title: doc.title,
+          titleHashes,
+          contentHashes,
+          updatedAt: doc.updatedAt,
+          mimeType: doc.mimeType,
+        },
+        db,
+      ),
     ]);
 
     const elapsed = (performance.now() - t0).toFixed(1);
@@ -136,9 +149,11 @@ export class IndexEngine {
       putDocEntry({
         documentId: doc.id,
         type: doc.type,
+        title: doc.title,
         titleHashes: [...newTitleHashes],
         contentHashes: [...newContentHashes],
         updatedAt: doc.updatedAt,
+        mimeType: doc.mimeType,
       }, db),
     ]);
   }
@@ -191,12 +206,25 @@ export class IndexEngine {
         return {
           docId: id,
           type: doc?.type ?? 'document',
-          title: id,
+          // Entries written before titles were stored fall back to the id;
+          // the next index pass replaces them with the real title.
+          title: doc?.title || id,
           score: scores.get(id) ?? 0,
           snippets: [],
+          updatedAt: doc?.updatedAt ?? 0,
+          mimeType: doc?.mimeType,
         } satisfies SearchResult;
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_RESULTS);
+  }
+
+  /**
+   * Everything currently in the index, keyed by document id. Callers diff this
+   * against the server's listing to decide what to (re-)index and what to drop.
+   */
+  async listDocuments(): Promise<Map<string, DocEntry>> {
+    const db = await this.getDb();
+    return getAllDocEntries(db);
   }
 }

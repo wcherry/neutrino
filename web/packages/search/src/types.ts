@@ -4,7 +4,9 @@ export type SearchableDocType =
   | 'note'
   | 'slide'
   | 'event'
-  | 'reminder';
+  | 'reminder'
+  /** A Drive file with no in-app text — indexed by name only. */
+  | 'file';
 
 export interface SearchableDocument {
   id: string;
@@ -12,6 +14,8 @@ export interface SearchableDocument {
   title: string;
   content: string;
   updatedAt: number;
+  /** Drive mimetype, for `file` entries — drives the result icon and link. */
+  mimeType?: string;
 }
 
 export interface SearchResult {
@@ -20,4 +24,7 @@ export interface SearchResult {
   title: string;
   score: number;
   snippets: string[];
+  /** Epoch millis of the indexed revision — 0 when the entry predates title/date storage. */
+  updatedAt: number;
+  mimeType?: string;
 }

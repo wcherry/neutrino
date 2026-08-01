@@ -4,17 +4,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heading, Badge, SearchInput } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
-import { IndexEngine, getOrCreateSearchKey, type SearchResult, type SearchableDocType } from '@neutrino/search';
+import { IndexEngine, getOrCreateSearchKey, type SearchResult } from '@neutrino/search';
+import { docTypeLabel } from '@/hooks/useClientSearch';
 import styles from './page.module.css';
-
-const DOC_TYPE_LABELS: Record<SearchableDocType, string> = {
-  document: 'Document',
-  spreadsheet: 'Sheet',
-  note: 'Note',
-  slide: 'Slide',
-  event: 'Event',
-  reminder: 'Reminder',
-};
 
 export default function SearchPage() {
   const user = useUser();
@@ -76,7 +68,7 @@ export default function SearchPage() {
             <li key={r.docId} className={styles.resultItem} data-testid="search-result">
               <span className={styles.resultTitle}>{r.title || r.docId}</span>
               <div className={styles.resultMeta}>
-                <Badge>{DOC_TYPE_LABELS[r.type]}</Badge>
+                <Badge>{docTypeLabel(r.type)}</Badge>
                 <span>Score: {r.score}</span>
               </div>
             </li>

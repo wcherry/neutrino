@@ -29,10 +29,6 @@ import {
   Share2,
   NotebookPen,
   ShieldCheck,
-  FileText,
-  Table2,
-  Presentation,
-  Bell,
   Image,
 } from 'lucide-react';
 import {
@@ -43,86 +39,26 @@ import {
   type UserProfile,
   type QuotaInfo,
   type Tag,
-  type TaggedFile,
 } from '@/lib/api';
 import { tagNavSection } from '@/lib/tagNav';
-import {
-  intersectFileIds,
-  matchTagsForTerm,
-  parseTagQuery,
-  resolveTagFilter,
-} from '@/lib/tagSearch';
-import { hrefForFile } from './drive/routeForFile';
-import { getFileIcon } from '@/lib/file-icons';
-import { IndexEngine, type SearchableDocType } from '@neutrino/search';
-import { loadKeyPair } from '@neutrino/e2e-crypto';
 import { NewItemFAB } from './NewItemFAB';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
+import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
+import { driveSearchHref } from './drive/searchParams';
 
-const SEARCH_KEY_STORAGE = 'search_key_v1';
-const SEARCH_KEY_BYTES = 32;
-const MIN_SEARCH_LENGTH = 3;
-const MAX_SEARCH_RESULTS = 20;
-/** Per tag, matching the backend's paging cap. */
-const TAG_SEARCH_FILE_LIMIT = 200;
-
-/** A Drive file surfaced by a tag match rather than a content match. */
-function taggedFileResult(file: TaggedFile): TopbarSearchResult {
-  const Icon = getFileIcon(file.mimeType);
+/** Search hits carry an icon *component* so Drive can size it its own way. */
+function toTopbarResult(hit: SearchHit): TopbarSearchResult {
+  const { icon: Icon, iconColor } = hit;
   return {
-    id: file.id,
-    title: file.name,
-    subtitle: 'Tagged',
-    href: hrefForFile(file),
+    id: hit.id,
+    title: hit.title,
+    subtitle: hit.subtitle,
+    href: hit.href,
     icon: <Icon size={16} />,
+    iconColor,
+    modified: hit.modified,
   };
-}
-
-function getOrCreateSearchKey(userId: string): Uint8Array {
-  const storageKey = `${SEARCH_KEY_STORAGE}_${userId}`;
-  const stored = localStorage.getItem(storageKey);
-  if (stored) {
-    return Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
-  }
-  const key = crypto.getRandomValues(new Uint8Array(SEARCH_KEY_BYTES));
-  localStorage.setItem(storageKey, btoa(String.fromCharCode(...key)));
-  return key;
-}
-
-function docTypeUrl(type: SearchableDocType, docId: string): string {
-  switch (type) {
-    case 'document': return `/docs/editor?id=${docId}`;
-    case 'spreadsheet': return `/sheets/editor?id=${docId}`;
-    case 'note': return `/notes/editor?id=${docId}`;
-    case 'slide': return `/slides/editor?id=${docId}`;
-    case 'event':
-    case 'reminder': return '/calendar';
-    default: return '/drive';
-  }
-}
-
-function docTypeLabel(type: SearchableDocType): string {
-  const labels: Record<SearchableDocType, string> = {
-    document: 'Document',
-    spreadsheet: 'Sheet',
-    note: 'Note',
-    slide: 'Slide',
-    event: 'Event',
-    reminder: 'Reminder',
-  };
-  return labels[type] ?? type;
-}
-
-function docTypeIcon(type: SearchableDocType): React.ReactNode {
-  switch (type) {
-    case 'document': return <FileText size={16} />;
-    case 'spreadsheet': return <Table2 size={16} />;
-    case 'note': return <NotebookPen size={16} />;
-    case 'slide': return <Presentation size={16} />;
-    case 'event': return <Calendar size={16} />;
-    case 'reminder': return <Bell size={16} />;
-    default: return <FileText size={16} />;
-  }
 }
 
 function notificationHref(n: NotificationItem): string | undefined {
@@ -204,8 +140,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
-  const engineRef = useRef<IndexEngine | null>(null);
-  const searchKeyRef = useRef<Uint8Array | null>(null);
+  const [searchPending, setSearchPending] = useState(false);
+  const { search } = useClientSearch();
+
+  // Nothing is searched server-side, so the local index has to be kept current
+  // or the box would have nothing to match against.
+  useSearchIndexSync(auth.status === 'ready' ? auth.user.id : undefined);
 
   const isAdmin = auth.status === 'ready' ? (auth.user.isAdmin ?? false) : false;
 
@@ -281,11 +221,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             : { usedBytes: 0, totalBytes: DEFAULT_QUOTA_BYTES },
         });
         ensureE2EKeys(user.id).catch(() => {});
-        const kp = loadKeyPair(user.id);
-        if (kp) {
-          engineRef.current = new IndexEngine();
-          searchKeyRef.current = getOrCreateSearchKey(user.id);
-        }
       } catch {
         // Not authenticated or refresh failed — redirect to sign-in.
         router.replace('/sign-in');
@@ -295,136 +230,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     init();
   }, [router]);
 
-  useEffect(() => {
-    if (auth.status !== 'ready') return;
-    const kp = loadKeyPair(auth.user.id);
-    if (kp) {
-      engineRef.current = new IndexEngine();
-      searchKeyRef.current = getOrCreateSearchKey(auth.user.id);
-    }
-  }, [auth]);
-
-
   /**
-   * Files carrying every tag in the filter, as `fileId -> file`. Fetched
-   * through the query cache so repeated keystrokes reuse the same responses.
+   * Keystroke handler for the topbar box. Every keystroke starts a search, so
+   * the sequence number drops results from a query the user has already typed
+   * past — otherwise a slow early query can overwrite a fast later one.
    */
-  const fetchTaggedFiles = useCallback(
-    async (groups: Tag[][]): Promise<Map<string, TaggedFile>> => {
-      const filesById = new Map<string, TaggedFile>();
-      const idsPerGroup: Set<string>[] = [];
-
-      for (const group of groups) {
-        const idsForGroup = new Set<string>();
-        const responses = await Promise.all(
-          group.map((tag) =>
-            queryClient
-              .fetchQuery({
-                queryKey: ['tag-files', tag.id],
-                queryFn: () => tagsApi.filesForTag(tag.id, { limit: TAG_SEARCH_FILE_LIMIT }),
-                staleTime: 30_000,
-              })
-              // A tag deleted in another tab 404s here. Search must degrade to
-              // its other matches rather than throwing out of the handler.
-              .catch(() => ({ files: [], total: 0, limit: 0, offset: 0 })),
-          ),
-        );
-        for (const response of responses) {
-          for (const file of response.files) {
-            idsForGroup.add(file.id);
-            filesById.set(file.id, file);
-          }
-        }
-        idsPerGroup.push(idsForGroup);
-      }
-
-      const matching = intersectFileIds(idsPerGroup);
-      return new Map([...filesById].filter(([id]) => matching.has(id)));
-    },
-    [queryClient],
-  );
-
+  const searchSeqRef = useRef(0);
   const handleSearch = useCallback(async (query: string) => {
-    const { tagTerms, textQuery, hasExplicitTagFilter } = parseTagQuery(query);
-
-    // An explicit `tag:` filter naming an unknown tag matches nothing, rather
-    // than silently degrading to an untagged search.
-    const tagGroups = hasExplicitTagFilter ? resolveTagFilter(tags, tagTerms) : null;
-    if (hasExplicitTagFilter && !tagGroups) {
+    const seq = ++searchSeqRef.current;
+    if (!query.trim()) {
+      setSearchPending(false);
       setSearchResults([]);
       return;
     }
-    const taggedFiles = tagGroups ? await fetchTaggedFiles(tagGroups) : null;
-
-    // Content search covers only the E2EE-indexed apps and needs local keys.
-    const engine = engineRef.current;
-    const searchKey = searchKeyRef.current;
-    const canSearchText = Boolean(engine && searchKey) && textQuery.length >= MIN_SEARCH_LENGTH;
-
-    const textResults =
-      canSearchText && engine && searchKey
-        ? await engine.query(textQuery.split(/\s+/).filter(Boolean), searchKey)
-        : [];
-
-    if (hasExplicitTagFilter && taggedFiles) {
-      // `tag:x some words` — the tag filter narrows the content hits. With no
-      // text terms, the tagged files are the whole result.
-      const matched = canSearchText
-        ? textResults.filter((r) => taggedFiles.has(r.docId))
-        : [];
-
-      const results: TopbarSearchResult[] = canSearchText
-        ? matched.map((r) => ({
-            id: r.docId,
-            title: taggedFiles.get(r.docId)?.name || r.title || r.docId,
-            subtitle: docTypeLabel(r.type),
-            href: docTypeUrl(r.type, r.docId),
-            icon: docTypeIcon(r.type),
-          }))
-        : [...taggedFiles.values()].map(taggedFileResult);
-
-      setSearchResults(results.slice(0, MAX_SEARCH_RESULTS));
-      return;
+    setSearchPending(true);
+    try {
+      const hits = await search(query);
+      if (seq !== searchSeqRef.current) return;
+      setSearchResults(hits.map(toTopbarResult));
+    } catch {
+      if (seq === searchSeqRef.current) setSearchResults([]);
+    } finally {
+      if (seq === searchSeqRef.current) setSearchPending(false);
     }
-
-    if (query.trim().length < MIN_SEARCH_LENGTH) {
-      setSearchResults([]);
-      return;
-    }
-
-    // No `tag:` prefix — surface files whose *tag name* matches the raw query
-    // alongside the content hits, so typing "taxes" finds what you labelled.
-    const impliedTags = matchTagsForTerm(tags, query.trim());
-    const impliedFiles = impliedTags.length > 0
-      ? await fetchTaggedFiles([impliedTags])
-      : new Map<string, TaggedFile>();
-
-    const seen = new Set<string>();
-    const results: TopbarSearchResult[] = [];
-
-    for (const r of textResults) {
-      if (seen.has(r.docId)) continue;
-      seen.add(r.docId);
-      results.push({
-        id: r.docId,
-        title: r.title || r.docId,
-        subtitle: docTypeLabel(r.type),
-        href: docTypeUrl(r.type, r.docId),
-        icon: docTypeIcon(r.type),
-      });
-    }
-
-    for (const file of impliedFiles.values()) {
-      if (seen.has(file.id)) continue;
-      seen.add(file.id);
-      results.push(taggedFileResult(file));
-    }
-
-    setSearchResults(results.slice(0, MAX_SEARCH_RESULTS));
-  }, [tags, fetchTaggedFiles]);
+  }, [search]);
 
   const handleResultClick = useCallback((result: TopbarSearchResult) => {
     router.push(result.href);
+  }, [router]);
+
+  const handleSearchSubmit = useCallback((query: string) => {
+    setSearchResults([]);
+    router.push(driveSearchHref(query));
   }, [router]);
 
   async function handleSignOut() {
@@ -457,6 +294,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       searchPlaceholder="Search in Drive..."
       searchResults={searchResults}
       onResultClick={handleResultClick}
+      onSearchSubmit={handleSearchSubmit}
+      searchPending={searchPending}
       notifications={toTopbarNotifications(notifications)}
       unreadNotificationCount={unreadCount}
       onNotificationRead={markRead}

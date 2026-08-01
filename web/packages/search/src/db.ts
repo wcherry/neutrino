@@ -14,9 +14,18 @@ export interface TokenEntry {
 export interface DocEntry {
   documentId: string;
   type: SearchableDocType;
+  /**
+   * Display title, kept in the clear. The local index never leaves the device
+   * as-is: the sync path (see `agent_docs/search.md`) encrypts the whole
+   * database before uploading it, so results can be rendered without a second
+   * round-trip to the server.
+   */
+  title: string;
   titleHashes: string[];
   contentHashes: string[];
   updatedAt: number;
+  /** Drive mimetype for `file` entries; absent for in-app documents. */
+  mimeType?: string;
 }
 
 let _db: IDBDatabase | null = null;
@@ -163,6 +172,19 @@ export function getDocEntries(
       req.onerror = () => reject(req.error);
     }
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Every indexed document, keyed by id — used to diff the index against the server. */
+export function getAllDocEntries(db: IDBDatabase): Promise<Map<string, DocEntry>> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('docs', 'readonly');
+    const req = tx.objectStore('docs').getAll();
+    req.onsuccess = () => {
+      const entries = (req.result as DocEntry[]) ?? [];
+      resolve(new Map(entries.map((e) => [e.documentId, e])));
+    };
+    req.onerror = () => reject(req.error);
   });
 }
 
