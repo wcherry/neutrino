@@ -102,6 +102,11 @@ function createMockDb() {
           }),
         };
       }),
+      getAll: vi.fn(() => {
+        const req = { result: [...store.values()], onsuccess: null as ((e: object) => void) | null, onerror: null };
+        queueMicrotask(() => req.onsuccess?.({ target: req } as unknown as Event));
+        return req;
+      }),
       createIndex: vi.fn((name: string, fieldName: string) => {
         if (!indexRegistry.has(name)) {
           const data = new Map<string, object[]>();
@@ -227,6 +232,41 @@ describe('IndexEngine', () => {
     expect(contentResult).toBeDefined();
     // title weight=3, frequency=1 → score 3; content weight=1, frequency=3 → score 3 (equal or title wins)
     expect(titleResult!.score).toBeGreaterThanOrEqual(contentResult!.score);
+  });
+
+  it('returns the document title and last-changed date, not the raw id', async () => {
+    await engine.indexDocument(flamingo, searchKey);
+    const [result] = await engine.query(['flamingo'], searchKey);
+    expect(result.title).toBe('Flamingo Budget Report');
+    expect(result.updatedAt).toBe(flamingo.updatedAt);
+  });
+
+  it('re-indexing updates the stored title', async () => {
+    await engine.indexDocument(flamingo, searchKey);
+    await engine.indexDocument({ ...flamingo, title: 'Flamingo Budget Report v2' }, searchKey);
+    const [result] = await engine.query(['flamingo'], searchKey);
+    expect(result.title).toBe('Flamingo Budget Report v2');
+  });
+
+  it('updateDocument keeps the stored title in sync', async () => {
+    await engine.indexDocument(flamingo, searchKey);
+    await engine.updateDocument(
+      { ...flamingo, title: 'Renamed Flamingo Report', updatedAt: flamingo.updatedAt + 1 },
+      searchKey,
+    );
+    const [result] = await engine.query(['flamingo'], searchKey);
+    expect(result.title).toBe('Renamed Flamingo Report');
+  });
+
+  it('listDocuments reports what is currently indexed', async () => {
+    await engine.indexDocument(flamingo, searchKey);
+    const docs = await engine.listDocuments();
+    expect(docs.get('doc-1')).toMatchObject({
+      documentId: 'doc-1',
+      type: 'document',
+      title: 'Flamingo Budget Report',
+      updatedAt: flamingo.updatedAt,
+    });
   });
 
   it('removeDocument clears indexed terms', async () => {

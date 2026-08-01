@@ -52,6 +52,8 @@ vi.mock('@/providers/FeatureFlagsProvider', () => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   usePathname: () => '/drive',
+  // No `?q=` — these tests exercise the plain folder listing, not search.
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 // Auth

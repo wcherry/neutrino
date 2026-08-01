@@ -10,6 +10,7 @@ import { storageApi, filesystemApi, encryptionApi } from '@neutrino/api-drive';
 import { photosAiApi, type DetectedObject } from '@neutrino/api-photos';
 import type { SmartEraseTarget } from '@neutrino/api-photos';
 import { initSodium, loadKeyPair, decryptFileKey, decryptFile } from '@neutrino/e2e-crypto';
+import { toRenderableImageBlob } from '@/lib/heic';
 import { PhotoTopBar } from './PhotoTopBar';
 import { PhotoToolbar } from './PhotoToolbar';
 import { AdjustmentsPanel } from './AdjustmentsPanel';
@@ -253,6 +254,11 @@ export function PhotoEditor() {
           imageBlob = new Blob([blob], { type: mimeType });
         }
 
+        if (cancelled) return;
+
+        // HEIC only decodes natively in Safari — transcode to PNG everywhere.
+        // Must happen after decryption, since the server never sees plaintext.
+        imageBlob = await toRenderableImageBlob(imageBlob);
         if (cancelled) return;
 
         if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
@@ -673,17 +679,31 @@ export function PhotoEditor() {
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
+  // Replaces the canvas image with a local file. HEIC is transcoded first —
+  // some file pickers also report it with an empty type, so a blank type is
+  // let through rather than rejected outright.
+  const loadLocalFile = useCallback(async (file: File) => {
+    if (file.type && !file.type.startsWith('image/')) return;
+    try {
+      const blob = await toRenderableImageBlob(file);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('read failed'));
+        reader.readAsDataURL(blob);
+      });
+      setImageDataUrl(dataUrl);
+      setIsDirty(true);
+    } catch {
+      toastError('Failed to load image');
+    }
+  }, [toastError]);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImageDataUrl(reader.result as string);
-      setIsDirty(true);
-    };
-    reader.readAsDataURL(file);
-  }, []);
+    if (file) void loadLocalFile(file);
+  }, [loadLocalFile]);
 
   useEffect(() => {
     return () => {
@@ -805,17 +825,11 @@ export function PhotoEditor() {
       const item = e.clipboardData?.items[0];
       if (!item || !item.type.startsWith('image/')) return;
       const file = item.getAsFile();
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        setImageDataUrl(reader.result as string);
-        setIsDirty(true);
-      };
-      reader.readAsDataURL(file);
+      if (file) void loadLocalFile(file);
     }
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
-  }, []);
+  }, [loadLocalFile]);
 
   if (loading) {
     return (

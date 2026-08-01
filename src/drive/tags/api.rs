@@ -20,6 +20,14 @@ pub struct TagsListQuery {
     pub q: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct TaggedFilesQuery {
+    /// Page size, default 50, capped at 200.
+    pub limit: Option<i64>,
+    /// Number of files to skip, default 0.
+    pub offset: Option<i64>,
+}
+
 // ── Tag CRUD ──────────────────────────────────────────────────────────────────
 
 #[utoipa::path(
@@ -142,7 +150,11 @@ pub async fn delete_tag(
 #[utoipa::path(
     get,
     path = "/api/v1/drive/tags/{id}/files",
-    params(("id" = String, Path, description = "Tag ID")),
+    params(
+        ("id" = String, Path, description = "Tag ID"),
+        ("limit" = Option<i64>, Query, description = "Page size (default 50, max 200)"),
+        ("offset" = Option<i64>, Query, description = "Files to skip (default 0)"),
+    ),
     responses(
         (status = 200, description = "Files with this tag", body = ListTaggedFilesResponse),
         (status = 404, description = "Tag not found"),
@@ -155,9 +167,13 @@ pub async fn get_files_for_tag(
     state: web::Data<TagsApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
+    query: web::Query<TaggedFilesQuery>,
 ) -> Result<web::Json<ListTaggedFilesResponse>, ApiError> {
     let tag_id = path.into_inner();
-    let response = state.tags_service.get_files_for_tag(&user, &tag_id)?;
+    let response =
+        state
+            .tags_service
+            .get_files_for_tag(&user, &tag_id, query.limit, query.offset)?;
     Ok(web::Json(response))
 }
 

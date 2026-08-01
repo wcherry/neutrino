@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AppShell,
   Sidebar,
   Topbar,
+  type NavItem,
   type NavSection,
   type StorageQuota,
   type TopbarSearchResult,
@@ -28,66 +29,36 @@ import {
   Share2,
   NotebookPen,
   ShieldCheck,
-  FileText,
-  Table2,
-  Presentation,
-  Bell,
   Image,
 } from 'lucide-react';
-import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
-import { IndexEngine, type SearchableDocType } from '@neutrino/search';
-import { loadKeyPair } from '@neutrino/e2e-crypto';
+import {
+  authApi,
+  ensureE2EKeys,
+  storageApi,
+  tagsApi,
+  type UserProfile,
+  type QuotaInfo,
+  type Tag,
+} from '@/lib/api';
+import { tagNavSection } from '@/lib/tagNav';
 import { NewItemFAB } from './NewItemFAB';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
+import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
+import { driveSearchHref } from './drive/searchParams';
 
-const SEARCH_KEY_STORAGE = 'search_key_v1';
-const SEARCH_KEY_BYTES = 32;
-
-function getOrCreateSearchKey(userId: string): Uint8Array {
-  const storageKey = `${SEARCH_KEY_STORAGE}_${userId}`;
-  const stored = localStorage.getItem(storageKey);
-  if (stored) {
-    return Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
-  }
-  const key = crypto.getRandomValues(new Uint8Array(SEARCH_KEY_BYTES));
-  localStorage.setItem(storageKey, btoa(String.fromCharCode(...key)));
-  return key;
-}
-
-function docTypeUrl(type: SearchableDocType, docId: string): string {
-  switch (type) {
-    case 'document': return `/docs/editor?id=${docId}`;
-    case 'spreadsheet': return `/sheets/editor?id=${docId}`;
-    case 'note': return `/notes/editor?id=${docId}`;
-    case 'slide': return `/slides/editor?id=${docId}`;
-    case 'event':
-    case 'reminder': return '/calendar';
-    default: return '/drive';
-  }
-}
-
-function docTypeLabel(type: SearchableDocType): string {
-  const labels: Record<SearchableDocType, string> = {
-    document: 'Document',
-    spreadsheet: 'Sheet',
-    note: 'Note',
-    slide: 'Slide',
-    event: 'Event',
-    reminder: 'Reminder',
+/** Search hits carry an icon *component* so Drive can size it its own way. */
+function toTopbarResult(hit: SearchHit): TopbarSearchResult {
+  const { icon: Icon, iconColor } = hit;
+  return {
+    id: hit.id,
+    title: hit.title,
+    subtitle: hit.subtitle,
+    href: hit.href,
+    icon: <Icon size={16} />,
+    iconColor,
+    modified: hit.modified,
   };
-  return labels[type] ?? type;
-}
-
-function docTypeIcon(type: SearchableDocType): React.ReactNode {
-  switch (type) {
-    case 'document': return <FileText size={16} />;
-    case 'spreadsheet': return <Table2 size={16} />;
-    case 'note': return <NotebookPen size={16} />;
-    case 'slide': return <Presentation size={16} />;
-    case 'event': return <Calendar size={16} />;
-    case 'reminder': return <Bell size={16} />;
-    default: return <FileText size={16} />;
-  }
 }
 
 function notificationHref(n: NotificationItem): string | undefined {
@@ -132,10 +103,11 @@ const BASE_NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function getNavSections(isAdmin: boolean): NavSection[] {
+function getNavSections(isAdmin: boolean, tags: Tag[]): NavSection[] {
+  const sections = [...BASE_NAV_SECTIONS, tagNavSection(tags)];
   if (isAdmin) {
     return [
-      ...BASE_NAV_SECTIONS,
+      ...sections,
       {
         id: 'admin',
         label: 'Administration',
@@ -145,7 +117,7 @@ function getNavSections(isAdmin: boolean): NavSection[] {
       },
     ];
   }
-  return BASE_NAV_SECTIONS;
+  return sections;
 }
 
 const DEFAULT_QUOTA_BYTES = 15 * 1024 * 1024 * 1024; // 15 GB fallback when no server limit set
@@ -168,11 +140,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
-  const engineRef = useRef<IndexEngine | null>(null);
-  const searchKeyRef = useRef<Uint8Array | null>(null);
+  const [searchPending, setSearchPending] = useState(false);
+  const { search } = useClientSearch();
+
+  // Nothing is searched server-side, so the local index has to be kept current
+  // or the box would have nothing to match against.
+  useSearchIndexSync(auth.status === 'ready' ? auth.user.id : undefined);
 
   const isAdmin = auth.status === 'ready' ? (auth.user.isAdmin ?? false) : false;
-  const currentNavSections = getNavSections(isAdmin);
+
+  // Shared with the tag picker and tag pages: one cached list feeds the
+  // sidebar, the picker's filter, and tag-name matching in search.
+  const { data: tagsData } = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => tagsApi.list(),
+    enabled: auth.status === 'ready',
+    staleTime: 30_000,
+  });
+  const tags = useMemo(() => tagsData?.tags ?? [], [tagsData]);
+
+  const currentNavSections = getNavSections(isAdmin, tags);
   const allHrefs = currentNavSections.flatMap((s) => s.items).filter((i) => i.href);
   const activeHref = allHrefs
     .filter((i) => pathname === i.href || pathname.startsWith(i.href! + '/'))
@@ -234,11 +221,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             : { usedBytes: 0, totalBytes: DEFAULT_QUOTA_BYTES },
         });
         ensureE2EKeys(user.id).catch(() => {});
-        const kp = loadKeyPair(user.id);
-        if (kp) {
-          engineRef.current = new IndexEngine();
-          searchKeyRef.current = getOrCreateSearchKey(user.id);
-        }
       } catch {
         // Not authenticated or refresh failed — redirect to sign-in.
         router.replace('/sign-in');
@@ -248,38 +230,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     init();
   }, [router]);
 
-  useEffect(() => {
-    if (auth.status !== 'ready') return;
-    const kp = loadKeyPair(auth.user.id);
-    if (kp) {
-      engineRef.current = new IndexEngine();
-      searchKeyRef.current = getOrCreateSearchKey(auth.user.id);
-    }
-  }, [auth]);
-
-
+  /**
+   * Keystroke handler for the topbar box. Every keystroke starts a search, so
+   * the sequence number drops results from a query the user has already typed
+   * past — otherwise a slow early query can overwrite a fast later one.
+   */
+  const searchSeqRef = useRef(0);
   const handleSearch = useCallback(async (query: string) => {
-    const engine = engineRef.current;
-    const searchKey = searchKeyRef.current;
-    if (!engine || !searchKey || query.length < 3) {
+    const seq = ++searchSeqRef.current;
+    if (!query.trim()) {
+      setSearchPending(false);
       setSearchResults([]);
       return;
     }
-    const terms = query.trim().split(/\s+/).filter(Boolean);
-    const found = await engine.query(terms, searchKey);
-    setSearchResults(
-      found.map((r) => ({
-        id: r.docId,
-        title: r.title || r.docId,
-        subtitle: docTypeLabel(r.type),
-        href: docTypeUrl(r.type, r.docId),
-        icon: docTypeIcon(r.type),
-      })),
-    );
-  }, []);
+    setSearchPending(true);
+    try {
+      const hits = await search(query);
+      if (seq !== searchSeqRef.current) return;
+      setSearchResults(hits.map(toTopbarResult));
+    } catch {
+      if (seq === searchSeqRef.current) setSearchResults([]);
+    } finally {
+      if (seq === searchSeqRef.current) setSearchPending(false);
+    }
+  }, [search]);
 
   const handleResultClick = useCallback((result: TopbarSearchResult) => {
     router.push(result.href);
+  }, [router]);
+
+  const handleSearchSubmit = useCallback((query: string) => {
+    setSearchResults([]);
+    router.push(driveSearchHref(query));
   }, [router]);
 
   async function handleSignOut() {
@@ -312,6 +294,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       searchPlaceholder="Search in Drive..."
       searchResults={searchResults}
       onResultClick={handleResultClick}
+      onSearchSubmit={handleSearchSubmit}
+      searchPending={searchPending}
       notifications={toTopbarNotifications(notifications)}
       unreadNotificationCount={unreadCount}
       onNotificationRead={markRead}

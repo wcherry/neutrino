@@ -80,19 +80,31 @@ Full-text search and autocomplete suggestions are defined but not called by eith
 
 ---
 
-## 7. Drive — Tags
+## 7. Drive — Tags ✅ RESOLVED
 
-The entire tagging system (CRUD + assignment) has no client usage.
+~~The entire tagging system (CRUD + assignment) has no client usage.~~
 
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/drive/tags` |
-| POST | `/api/v1/drive/tags` |
-| GET | `/api/v1/drive/tags/{id}` |
-| PATCH | `/api/v1/drive/tags/{id}` |
-| DELETE | `/api/v1/drive/tags/{id}` |
-| POST | `/api/v1/drive/files/{id}/tags` |
-| DELETE | `/api/v1/drive/files/{id}/tags/{tag_id}` |
+The web client now consumes every tag route via `tagsApi`
+(`web/packages/api-drive/src/client.ts`): the file info panel and its tag
+picker, the sidebar's usage-ordered Tags section, `/drive/tags`,
+`/drive/tags/{id}`, and `tag:` filtering in topbar search. See
+`agent_docs/plans/feature-drive-tags.md`.
+
+The original list was also incomplete — three routes were missing and
+`POST /files/{id}/tags` does not exist. Corrected surface:
+
+| Method | Endpoint | Client usage |
+|--------|----------|--------------|
+| GET | `/api/v1/drive/tags` | sidebar, picker, manage page, search |
+| POST | `/api/v1/drive/tags` | picker "Create", manage page |
+| GET | `/api/v1/drive/tags/{id}` | tag detail page |
+| PATCH | `/api/v1/drive/tags/{id}` | rename (both tag pages) |
+| DELETE | `/api/v1/drive/tags/{id}` | delete (both tag pages) |
+| GET | `/api/v1/drive/tags/{id}/files` | tag detail page, tag search |
+| GET | `/api/v1/drive/files/{id}/tags` | file info panel |
+| PUT | `/api/v1/drive/files/{id}/tags` | *unused* — the picker toggles per tag |
+| POST | `/api/v1/drive/files/{id}/tags/{tag_id}` | picker |
+| DELETE | `/api/v1/drive/files/{id}/tags/{tag_id}` | picker, chip remove |
 
 ---
 

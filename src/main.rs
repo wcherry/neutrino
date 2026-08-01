@@ -582,6 +582,9 @@ async fn main() -> std::io::Result<()> {
     ));
     let notes_state = web::Data::new(notes::api::NotesApiState { notes_service });
 
+    let notes_presence_state =
+        web::Data::new(Arc::new(notes::presence::state::NotePresenceState::new()));
+
     // ── Photos service ────────────────────────────────────────────────────────
 
     use photos::albums::repository::AlbumsRepository;
@@ -870,6 +873,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::tags::api::TagsApiDoc::openapi());
         doc.merge(drive::workspace::api::WorkspaceApiDoc::openapi());
         doc.merge(notes::api::NotesApiDoc::openapi());
+        doc.merge(notes::presence::api::NotesPresenceApiDoc::openapi());
         doc.merge(photos::albums::api::AlbumsApiDoc::openapi());
         doc.merge(photos::faces::api::FacesApiDoc::openapi());
         doc.merge(photos::learning::api::LearningApiDoc::openapi());
@@ -944,6 +948,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_fonts_state.clone())
             // Notes
             .app_data(notes_state.clone())
+            .app_data(notes_presence_state.clone())
             // Photos
             .app_data(photos_state.clone())
             .app_data(photos_albums_state.clone())
@@ -1012,6 +1017,7 @@ async fn main() -> std::io::Result<()> {
                     )
                     // Notes
                     .configure(notes::api::configure)
+                    .configure(notes::presence::api::configure)
                     // Photos
                     .configure(photos::photos::api::configure_photos)
                     .configure(photos::albums::api::configure_albums)

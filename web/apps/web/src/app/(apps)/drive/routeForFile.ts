@@ -84,6 +84,18 @@ export function routeForFile(
 }
 
 /**
+ * The URL a file opens at, for callers that need a link rather than a
+ * navigation (search results, sidebar entries). Falls back to `/drive` for
+ * files that have no editor and can only be previewed in place.
+ */
+export function hrefForFile(file: Pick<RoutableFile, 'id' | 'mimeType'>): string {
+  const nativePrefix = NATIVE_ROUTE_PREFIX[file.mimeType];
+  if (nativePrefix) return `${nativePrefix}${file.id}`;
+  if (file.mimeType.startsWith('image/')) return `/photos/editor?fileId=${file.id}`;
+  return '/drive';
+}
+
+/**
  * Builds the editor URL for a raw office file, optionally tagged with a
  * one-shot `promote=1` marker. The editors' office-mode load paths check
  * for this marker (alongside the persisted "convert on open" preference) to

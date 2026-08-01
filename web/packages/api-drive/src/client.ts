@@ -43,6 +43,12 @@ import type {
   SetFileKeyRequest,
   ShareFileKeyRequest,
   NotificationListResponse,
+  Tag,
+  ListTagsResponse,
+  CreateTagRequest,
+  UpdateTagRequest,
+  SetFileTagsRequest,
+  ListTaggedFilesResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -845,3 +851,69 @@ export function getNotificationsWsUrl(): string {
     : `${typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws'}://${typeof window !== 'undefined' ? window.location.host : ''}`;
   return `${base}/api/v1/drive/notifications/ws?token=${token ?? ''}`;
 }
+
+// ---------------------------------------------------------------------------
+// Tags API
+// ---------------------------------------------------------------------------
+
+export const tagsApi = {
+  /** All of the user's tags, alphabetical. `q` is a partial-name filter. */
+  async list(q?: string): Promise<ListTagsResponse> {
+    const qs = buildQuery({ q });
+    return request<ListTagsResponse>(`/api/v1/drive/tags${qs}`);
+  },
+
+  async get(tagId: string): Promise<Tag> {
+    return request<Tag>(`/api/v1/drive/tags/${tagId}`);
+  },
+
+  async create(name: string): Promise<Tag> {
+    return request<Tag>('/api/v1/drive/tags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name } satisfies CreateTagRequest),
+    });
+  },
+
+  async rename(tagId: string, name: string): Promise<Tag> {
+    return request<Tag>(`/api/v1/drive/tags/${tagId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name } satisfies UpdateTagRequest),
+    });
+  },
+
+  async remove(tagId: string): Promise<void> {
+    return request<void>(`/api/v1/drive/tags/${tagId}`, { method: 'DELETE' });
+  },
+
+  async filesForTag(
+    tagId: string,
+    opts: { limit?: number; offset?: number } = {},
+  ): Promise<ListTaggedFilesResponse> {
+    const qs = buildQuery({ limit: opts.limit, offset: opts.offset });
+    return request<ListTaggedFilesResponse>(`/api/v1/drive/tags/${tagId}/files${qs}`);
+  },
+
+  /** The calling user's tags on one file. */
+  async forFile(fileId: string): Promise<Tag[]> {
+    return request<Tag[]>(`/api/v1/drive/files/${fileId}/tags`);
+  },
+
+  /** Replaces the user's whole tag set on a file. */
+  async setForFile(fileId: string, tagIds: string[]): Promise<Tag[]> {
+    return request<Tag[]>(`/api/v1/drive/files/${fileId}/tags`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tagIds } satisfies SetFileTagsRequest),
+    });
+  },
+
+  async addToFile(fileId: string, tagId: string): Promise<void> {
+    return request<void>(`/api/v1/drive/files/${fileId}/tags/${tagId}`, { method: 'POST' });
+  },
+
+  async removeFromFile(fileId: string, tagId: string): Promise<void> {
+    return request<void>(`/api/v1/drive/files/${fileId}/tags/${tagId}`, { method: 'DELETE' });
+  },
+};

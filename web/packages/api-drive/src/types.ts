@@ -416,3 +416,47 @@ export interface NotificationListResponse {
   unreadCount: number;
   total: number;
 }
+
+// ---------------------------------------------------------------------------
+// Tag types
+// ---------------------------------------------------------------------------
+
+/**
+ * A private, per-user label. Tags are never visible to other collaborators,
+ * even on a shared file — and tag names are stored server-side in plaintext,
+ * unlike E2EE file content.
+ */
+export interface Tag {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** Non-trashed files carrying this tag. Drives "most used first" ordering. */
+  fileCount: number;
+}
+
+export interface ListTagsResponse {
+  tags: Tag[];
+  total: number;
+}
+
+export interface CreateTagRequest {
+  name: string;
+}
+
+export interface UpdateTagRequest {
+  name: string;
+}
+
+export interface SetFileTagsRequest {
+  tagIds: string[];
+}
+
+/** Shaped identically to `FileItem` so tagged files feed the same grid. */
+export type TaggedFile = FileItem;
+
+export interface ListTaggedFilesResponse {
+  files: TaggedFile[];
+  total: number;
+  limit: number;
+  offset: number;
+}

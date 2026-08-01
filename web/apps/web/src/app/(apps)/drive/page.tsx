@@ -3,7 +3,7 @@
 // folderPath) is shared by the breadcrumbs, heading, FileGrid, and every modal/overlay.
 // There is no static server shell of non-trivial size to extract.
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { Suspense, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Heading,
@@ -19,11 +19,16 @@ import {
   Folder,
   Clock,
   Upload,
+  Search,
+  SearchX,
+  X,
 } from 'lucide-react';
 import { storageApi, filesystemApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
+import { DRIVE_SEARCH_PARAM } from './searchParams';
 import { UploadZone } from './UploadZone';
 import { PreviewModal } from './PreviewModal';
 import { FileContextMenu } from './FileContextMenu';
@@ -36,23 +41,14 @@ import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPr
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { routeForFile, officeEditorRoute, DOC_MIME, SHEET_MIME, SLIDES_MIME, DIAGRAM_MIME, DRAWING_MIME } from './routeForFile';
 import { officeAppForFile } from '@/lib/officeFormats';
+import {
+  fileToGridItem,
+  folderToGridItem,
+  formatDate,
+  formatFileSize,
+} from './gridItems';
 import styles from './page.module.css';
 
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
 
 function triggerBlobDownload(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -65,40 +61,6 @@ function triggerBlobDownload(blob: Blob, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-function folderToGridItem(folder: FolderItem): GridItem {
-  return {
-    id: folder.id,
-    name: folder.name,
-    kind: 'folder',
-    icon: Folder,
-    iconColor: folder.color ?? 'var(--color-amber, #d97706)',
-    subtitle: 'Folder',
-    typeText: 'Folder',
-    sizeText: '—',
-    modifiedText: formatDate(folder.updatedAt),
-    isStarred: folder.isStarred,
-  };
-}
-
-function fileToGridItem(file: FileItem): GridItem {
-  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : '—';
-  return {
-    id: file.id,
-    name: file.name,
-    kind: 'file',
-    icon: getFileIcon(file.mimeType),
-    iconColor: getIconColor(file.mimeType),
-    subtitle: formatFileSize(file.sizeBytes),
-    mimeType: file.mimeType,
-    typeText: ext,
-    sizeText: formatFileSize(file.sizeBytes),
-    modifiedText: formatDate(file.updatedAt),
-    isStarred: file.isStarred,
-    coverThumbnail: file.coverThumbnail,
-    coverThumbnailMimeType: file.coverThumbnailMimeType,
-  };
-}
-
 interface ContextMenuState {
   file: FileItem;
   x: number;
@@ -106,11 +68,22 @@ interface ContextMenuState {
 }
 
 export default function DrivePage() {
+  // `useSearchParams` needs a Suspense boundary above it during prerender.
+  return (
+    <Suspense fallback={null}>
+      <DriveContent />
+    </Suspense>
+  );
+}
+
+function DriveContent() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const router = useRouter();
   const currentUser = useUser();
   const flags = useFeatureFlags();
+  const searchParams = useSearchParams();
+  const searchTerm = (searchParams.get(DRIVE_SEARCH_PARAM) ?? '').trim();
 
   const [sortBy, setSortBy] = useState<SortField>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -121,7 +94,9 @@ export default function DrivePage() {
   const dragDepthRef = useRef(0);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [infoFile, setInfoFile] = useState<FileItem | null>(null);
+  // `focusTags` opens the panel with the tag picker already expanded, so
+  // "Manage tags" lands on the tag UI in one click instead of two.
+  const [infoFile, setInfoFile] = useState<{ file: FileItem; focusTags: boolean } | null>(null);
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
   const [moveFile, setMoveFile] = useState<FileItem | null>(null);
   const [docPreview, setDocPreview] = useState<{ id: string; kind: DocumentKind } | null>(null);
@@ -166,6 +141,58 @@ export default function DrivePage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedIds.size]);
+
+  // ── Search view (`/drive?q=…`) ───────────────────────────────────────────
+  // Runs against the same client-side index the topbar drop-down uses, so the
+  // full list here always agrees with the preview the user just saw.
+  const { search } = useClientSearch();
+  const [searchHits, setSearchHits] = useState<SearchHit[] | null>(null);
+
+  useEffect(() => {
+    if (!searchTerm) {
+      setSearchHits(null);
+      return;
+    }
+    let cancelled = false;
+    setSearchHits(null);
+    search(searchTerm)
+      .then((hits) => { if (!cancelled) setSearchHits(hits); })
+      .catch(() => { if (!cancelled) setSearchHits([]); });
+    return () => { cancelled = true; };
+  }, [searchTerm, search]);
+
+  const clearSearch = useCallback(() => router.replace('/drive'), [router]);
+
+  /**
+   * Hits rendered as ordinary Drive items, so the search view is the same grid
+   * (cards, list view, sorting, filter chips) as the rest of Drive.
+   */
+  const searchGridItems: GridItem[] = useMemo(() => {
+    if (!searchHits) return [];
+    const ordered = [...searchHits];
+    // Relevance is the natural order; honour the grid's sort controls for the
+    // two fields a hit actually carries.
+    const dir = sortDir === 'asc' ? 1 : -1;
+    if (sortBy === 'name') ordered.sort((a, b) => a.title.localeCompare(b.title) * dir);
+    else if (sortBy === 'updatedAt') ordered.sort((a, b) => (a.updatedAt - b.updatedAt) * dir);
+
+    return ordered.map((hit) => ({
+      id: hit.id,
+      name: hit.title,
+      kind: 'file' as const,
+      icon: hit.icon,
+      iconColor: hit.iconColor,
+      subtitle: hit.subtitle,
+      mimeType: hit.mimeType,
+      typeText: hit.subtitle,
+      modifiedText: hit.modified || '—',
+    }));
+  }, [searchHits, sortBy, sortDir]);
+
+  const handleSearchItemClick = useCallback((item: GridItem) => {
+    const hit = searchHits?.find((h) => h.id === item.id);
+    if (hit) router.push(hit.href);
+  }, [searchHits, router]);
 
   const { data: starredData } = useQuery({
     queryKey: ['starred'],
@@ -519,10 +546,25 @@ export default function DrivePage() {
               })),
             ]}
           />
+          {searchTerm && (
+            <span className={styles['search-chip']} data-testid="drive-search-chip">
+              <Search size={12} aria-hidden="true" />
+              <span className={styles['search-chip-label']}>{searchTerm}</span>
+              <button
+                type="button"
+                className={styles['search-chip-clear']}
+                onClick={clearSearch}
+                aria-label={`Clear search filter ${searchTerm}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Quick access */}
+      {/* Quick access — hidden while showing search results */}
+      {!searchTerm && (
       <section className={styles.section} aria-labelledby="quick-access-heading">
         <div className={styles['section-header']}>
           <Heading level={2} size="sm" id="quick-access-heading">Quick access</Heading>
@@ -598,16 +640,30 @@ export default function DrivePage() {
               })()}
         </div>
       </section>
+      )}
 
-      {/* All files */}
+      {/* Files — the same grid whether it is listing a folder or search hits */}
       <section className={`${styles.section} ${styles['section-files']}`} aria-labelledby="all-files-heading">
-        <Heading level={2} size="sm" id="all-files-heading">Files</Heading>
+        <Heading level={2} size="sm" id="all-files-heading">
+          {searchTerm ? 'Search results' : 'Files'}
+        </Heading>
         <FileGrid
-          items={gridItems}
-          isLoading={isLoading}
-          isError={isError}
+          items={searchTerm ? searchGridItems : gridItems}
+          isLoading={searchTerm ? searchHits === null : isLoading}
+          isError={searchTerm ? false : isError}
           emptyState={
-            isError ? (
+            searchTerm ? (
+              <EmptyState
+                icon={SearchX}
+                title="No matches"
+                description={`Nothing in your files matched \u201c${searchTerm}\u201d.`}
+                action={
+                  <Button variant="secondary" size="sm" onClick={clearSearch}>
+                    Clear search
+                  </Button>
+                }
+              />
+            ) : isError ? (
               <EmptyState
                 title="Could not load files"
                 description="There was an error loading your files. Please try again."
@@ -626,22 +682,32 @@ export default function DrivePage() {
               />
             )
           }
-          onItemClick={handleGridItemClick}
-          onItemMenuOpen={handleGridItemMenuOpen}
-          onToggleStar={handleToggleStar}
-          selectedIds={selectedIds}
-          onItemSelect={handleItemSelect}
-          onDragEnter={handleAreaDragEnter}
-          onDragOver={handleAreaDragOver}
-          onDragLeave={handleAreaDragLeave}
-          onDrop={handleAreaDrop}
-          isDraggingOver={isDraggingOver}
+          onItemClick={searchTerm ? handleSearchItemClick : handleGridItemClick}
+          {...(searchTerm
+            // Search hits are not all Drive files, so the Drive-only affordances
+            // (context menu, starring, bulk select, upload drop target) are off.
+            ? {}
+            : {
+                onItemMenuOpen: handleGridItemMenuOpen,
+                onToggleStar: handleToggleStar,
+                selectedIds,
+                onItemSelect: handleItemSelect,
+                onDragEnter: handleAreaDragEnter,
+                onDragOver: handleAreaDragOver,
+                onDragLeave: handleAreaDragLeave,
+                onDrop: handleAreaDrop,
+                isDraggingOver,
+              })}
           showFilter
-          showSizeColumn
+          showSizeColumn={!searchTerm}
           sortBy={sortBy}
           sortDir={sortDir}
           onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
-          totalCount={isLoading ? undefined : folders.length + files.length}
+          totalCount={
+            searchTerm
+              ? searchHits?.length
+              : isLoading ? undefined : folders.length + files.length
+          }
         />
       </section>
 
@@ -685,7 +751,8 @@ export default function DrivePage() {
               setContextMenu(null);
             };
           })()}
-          onInfo={() => { setInfoFile(contextMenu.file); setContextMenu(null); }}
+          onInfo={() => { setInfoFile({ file: contextMenu.file, focusTags: false }); setContextMenu(null); }}
+          onManageTags={() => { setInfoFile({ file: contextMenu.file, focusTags: true }); setContextMenu(null); }}
           onShare={() => { setShareFile(contextMenu.file); setContextMenu(null); }}
           onRename={() => { openRename(contextMenu.file); setContextMenu(null); }}
           onStarToggle={() => { handleStar(contextMenu.file); setContextMenu(null); }}
@@ -776,7 +843,14 @@ export default function DrivePage() {
         />
       )}
 
-      {infoFile && <FileInfoPanel file={infoFile} onClose={() => setInfoFile(null)} />}
+      {infoFile && (
+        <FileInfoPanel
+          key={`${infoFile.file.id}:${infoFile.focusTags}`}
+          file={infoFile.file}
+          focusTags={infoFile.focusTags}
+          onClose={() => setInfoFile(null)}
+        />
+      )}
 
       {bulkMoveOpen && (
         <MoveFolderDialog

@@ -9,6 +9,7 @@ import { filesystemApi, storageApi, driveReadContent } from '@neutrino/api-drive
 import type { NoteMetaResponse } from '@neutrino/api-notes';
 import { initSodium, encryptFile, decryptFile, toBase64url } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
+import { useNoteSync } from '@/hooks/useNoteSync';
 import BlockEditor, { Block, parseBlocks, serializeBlocks } from './BlockEditor';
 import { extractWikiLinkTitles } from './blockEditorHelpers';
 import styles from './page.module.css';
@@ -16,6 +17,8 @@ import styles from './page.module.css';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const AUTOSAVE_DELAY_MS = 2000;
+/** Fallback poll used only while the live-update socket is down. */
+const OFFLINE_POLL_MS = 15000;
 
 export default function NoteEditorPage() {
   const searchParams = useSearchParams();
@@ -29,16 +32,50 @@ export default function NoteEditorPage() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef({ content: '', title: '' });
+  /** Editor holds edits that have not reached the server yet. */
+  const dirtyRef = useRef(false);
+  /**
+   * Bumped on every local edit. A save only clears `dirtyRef` if no further
+   * edit arrived while it was in flight — otherwise those newer keystrokes
+   * would be exposed to being overwritten by an incoming remote revision.
+   */
+  const editSeqRef = useRef(0);
+  /** A save is in flight. */
+  const savingRef = useRef(false);
+  /** The editor has been seeded with server content for this note. */
+  const seededRef = useRef(false);
+  /** `updatedAt` of the revision currently in the editor. */
+  const appliedUpdatedAtRef = useRef<string | null>(null);
 
   const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
     id: noteId,
     filename: 'note.json',
   });
 
+  // ── Live updates ──────────────────────────────────────────────────────────
+  // Peers signal "this note changed"; the content itself is re-read (and
+  // decrypted) locally, so E2EE notes never travel through the relay.
+  const onRemoteUpdateRef = useRef<(() => void) | null>(null);
+  onRemoteUpdateRef.current = () => {
+    queryClient.invalidateQueries({ queryKey: ['note', noteId] });
+    queryClient.invalidateQueries({ queryKey: ['note-content', noteId] });
+  };
+
+  const { connected, broadcastNoteUpdate } = useNoteSync({
+    noteId,
+    enabled: !!noteId,
+    onRemoteUpdateRef,
+  });
+
   const { data: note, isLoading: metaLoading } = useQuery({
     queryKey: ['note', noteId],
     queryFn: () => notesApi.getNote(noteId),
     enabled: !!noteId,
+    // Metadata is the change detector for remote edits: always refetch on
+    // focus, and poll as a fallback whenever the socket is unavailable.
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchInterval: connected ? false : OFFLINE_POLL_MS,
   });
 
   // Content is fetched directly from the drive API (note.contentUrl), the
@@ -87,23 +124,71 @@ export default function NoteEditorPage() {
   }));
   const backlinks = backlinksData?.backlinks ?? [];
 
+  // Switching notes starts from a clean slate.
   useEffect(() => {
-    if (note && noteContent !== undefined) {
+    seededRef.current = false;
+    dirtyRef.current = false;
+    savingRef.current = false;
+    appliedUpdatedAtRef.current = null;
+  }, [noteId]);
+
+  // A newer `updatedAt` than the revision on screen means someone else saved —
+  // pull the content down. Our own saves record their `updatedAt` below, so
+  // they never trigger a re-read.
+  useEffect(() => {
+    if (!note || !seededRef.current) return;
+    if (appliedUpdatedAtRef.current && note.updatedAt !== appliedUpdatedAtRef.current) {
+      queryClient.invalidateQueries({ queryKey: ['note-content', noteId] });
+    }
+  }, [note, noteId, queryClient]);
+
+  useEffect(() => {
+    if (!note || noteContent === undefined) return;
+
+    const apply = () => {
       setBlocks(parseBlocks(noteContent));
       setTitle(note.title);
       lastSavedRef.current = { content: noteContent, title: note.title };
+      appliedUpdatedAtRef.current = note.updatedAt;
+      seededRef.current = true;
+    };
+
+    // Initial load always seeds the editor.
+    if (!seededRef.current) {
+      apply();
+      return;
     }
+
+    // Never overwrite edits the user is still making. Their autosave wins
+    // (last write wins, as before); the revision it produces is picked up by
+    // the next update signal.
+    if (dirtyRef.current || savingRef.current) return;
+
+    // Echo of our own save — nothing to apply, but the revision is now current.
+    if (noteContent === lastSavedRef.current.content && note.title === lastSavedRef.current.title) {
+      appliedUpdatedAtRef.current = note.updatedAt;
+      return;
+    }
+
+    apply();
   }, [note, noteContent]);
 
   const save = useCallback(
     async (serialized: string, nextTitle: string) => {
+      const seq = editSeqRef.current;
+      const clearDirtyIfSettled = () => {
+        if (editSeqRef.current === seq) dirtyRef.current = false;
+      };
+
       if (
         serialized === lastSavedRef.current.content &&
         nextTitle === lastSavedRef.current.title
       ) {
+        clearDirtyIfSettled();
         return;
       }
       setSaveStatus('saving');
+      savingRef.current = true;
       try {
         let contentToSend = serialized;
         if (dekRef.current) {
@@ -114,24 +199,32 @@ export default function NoteEditorPage() {
         // Wiki links must be extracted from the plaintext here — once
         // encrypted, the server can no longer read `[[links]]` out of `content`.
         const linkedTitles = extractWikiLinkTitles(JSON.parse(serialized) as Block[]);
-        await notesApi.saveNote(noteId, {
+        const meta = await notesApi.saveNote(noteId, {
           content: contentToSend,
           title: nextTitle !== lastSavedRef.current.title ? nextTitle : undefined,
           linkedTitles,
         });
         lastSavedRef.current = { content: serialized, title: nextTitle };
+        appliedUpdatedAtRef.current = meta.updatedAt;
+        clearDirtyIfSettled();
         setSaveStatus('saved');
         queryClient.invalidateQueries({ queryKey: ['notes'] });
         queryClient.invalidateQueries({ queryKey: ['note-backlinks', noteId] });
+        // Tell anyone else viewing this note to re-read it.
+        broadcastNoteUpdate();
       } catch {
         setSaveStatus('error');
+      } finally {
+        savingRef.current = false;
       }
     },
-    [noteId, queryClient, dekRef]
+    [noteId, queryClient, dekRef, broadcastNoteUpdate]
   );
 
   function scheduleAutosave(nextBlocks: Block[], nextTitle: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    dirtyRef.current = true;
+    editSeqRef.current += 1;
     setSaveStatus('idle');
     const serialized = serializeBlocks(nextBlocks);
     debounceRef.current = setTimeout(() => save(serialized, nextTitle), AUTOSAVE_DELAY_MS);
