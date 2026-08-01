@@ -152,7 +152,7 @@ export default function TagsPage() {
                   <button
                     type="button"
                     className={styles.tagLink}
-                    onClick={() => router.push(`/drive/tags/${tag.id}`)}
+                    onClick={() => router.push(`/drive/tag?id=${tag.id}`)}
                   >
                     <TagIcon size={14} aria-hidden />
                     <span className={styles.tagName}>{tag.name}</span>

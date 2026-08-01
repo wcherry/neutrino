@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import React, { Suspense, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -21,14 +21,28 @@ import {
 import { ArrowLeft, Check, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react';
 import { tagsApi, type FileItem } from '@/lib/api';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { fileToGridItem } from '../../gridItems';
-import { routeForFile } from '../../routeForFile';
-import { PreviewModal } from '../../PreviewModal';
-import styles from '../tags.module.css';
+import { fileToGridItem } from '../gridItems';
+import { routeForFile } from '../routeForFile';
+import { PreviewModal } from '../PreviewModal';
+import styles from '../tags/tags.module.css';
 
+/**
+ * A tag is addressed by query string (`/drive/tag?id=…`) rather than a path
+ * segment: the app ships as a static export, which cannot prerender a route
+ * whose segments are user data.
+ */
 export default function TagDetailPage() {
-  const params = useParams<{ id: string }>();
-  const tagId = params.id;
+  // `useSearchParams` needs a Suspense boundary above it during prerender.
+  return (
+    <Suspense fallback={null}>
+      <TagDetail />
+    </Suspense>
+  );
+}
+
+function TagDetail() {
+  const searchParams = useSearchParams();
+  const tagId = searchParams.get('id') ?? '';
   const router = useRouter();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -44,6 +58,7 @@ export default function TagDetailPage() {
   const { data: tag, isLoading: tagLoading, isError: tagError } = useQuery({
     queryKey: ['tag', tagId],
     queryFn: () => tagsApi.get(tagId),
+    enabled: Boolean(tagId),
   });
 
   const { data: filesData, isLoading: filesLoading } = useQuery({
@@ -92,7 +107,7 @@ export default function TagDetailPage() {
     });
   }
 
-  if (tagError) {
+  if (tagError || !tagId) {
     return (
       <div className={styles.page}>
         <EmptyState
