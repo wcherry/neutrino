@@ -286,7 +286,9 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
             )}
           </div>
 
-          {/* Reminders */}
+          {/* Reminders — create only: `onUpdate` takes no reminders, so in edit
+              mode the control would silently drop whatever was picked. */}
+          {!isEditMode && (
           <div className={styles.formGroup}>
             <label className={styles.formLabel}>Reminders</label>
             {reminders.map((r) => {
@@ -315,6 +317,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
               </select>
             )}
           </div>
+          )}
         </form>
       </ModalBody>
       <ModalFooter>

@@ -78,16 +78,14 @@ test.describe('Settings page — tab navigation', () => {
   test('Appearance tab shows theme picker', async ({ page }) => {
     await clickTab(page, 'Appearance');
     await expect(page.getByRole('heading', { name: 'Appearance', level: 2 })).toBeVisible();
-    // The kebab-menu button nested in each card pollutes the card's
-    // accessible name (e.g. "Dark" -> "Dark More options for Dark"). A bare
-    // substring match on just "Dark" is ambiguous — it also matches the
-    // standalone kebab `<button aria-label="More options for Dark">` — and
-    // "Light" would additionally collide with the "Light Glass" card. Always
-    // match the full polluted name, which is unambiguous against both.
+    // Each card's accessible name is its theme name alone (ThemeGrid sets an
+    // explicit aria-label). `exact: true` is still required: a substring match
+    // on "Dark" would also hit the card's kebab button ("More options for
+    // Dark"), and "Light" would collide with the "Light Glass" card.
     await expect(
-      page.getByRole('button', { name: 'Light More options for Light' }),
+      page.getByRole('button', { name: 'Light', exact: true }),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Dark More options for Dark' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Dark', exact: true })).toBeVisible();
   });
 
   test('Notifications tab shows email preference checkboxes', async ({ page }) => {
@@ -142,19 +140,19 @@ test.describe('Settings page — appearance', () => {
   test('selecting a theme card marks it active immediately', async ({ page }) => {
     // Selecting a card applies and persists the theme instantly — there's no
     // separate Save step in this UI anymore.
-    const darkCard = page.getByRole('button', { name: 'Dark More options for Dark' });
+    const darkCard = page.getByRole('button', { name: 'Dark', exact: true });
     await darkCard.click();
     await expect(darkCard).toHaveClass(/cardActive/, { timeout: 5_000 });
   });
 
   test('theme choice persists across page reload', async ({ page }) => {
-    const darkCard = page.getByRole('button', { name: 'Dark More options for Dark' });
+    const darkCard = page.getByRole('button', { name: 'Dark', exact: true });
     await darkCard.click();
     await expect(darkCard).toHaveClass(/cardActive/, { timeout: 5_000 });
 
     await page.reload();
     await clickTab(page, 'Appearance');
-    const darkCardAfterReload = page.getByRole('button', { name: 'Dark More options for Dark' });
+    const darkCardAfterReload = page.getByRole('button', { name: 'Dark', exact: true });
     await expect(darkCardAfterReload).toHaveClass(/cardActive/, { timeout: 10_000 });
   });
 });

@@ -41,7 +41,9 @@ async function setCell(page: Page, ref: string, value: string): Promise<void> {
 async function openXlsxExportDialog(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Open menu' }).click();
   await expect(page.getByRole('menu')).toBeVisible({ timeout: 5_000 });
-  await page.getByRole('menu').getByText('Export').hover();
+  // Export lives under the File submenu, which opens on hover.
+  await page.getByRole('menu').getByText('File', { exact: true }).hover();
+  await page.getByRole('menu').getByText('Export', { exact: true }).hover();
   await page.getByText('Microsoft Excel (.xlsx)').click();
   await expect(page.getByText('Export as Excel')).toBeVisible({ timeout: 5_000 });
 }

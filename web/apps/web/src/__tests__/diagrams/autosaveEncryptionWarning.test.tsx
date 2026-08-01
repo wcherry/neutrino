@@ -25,6 +25,13 @@ const mockWarning = vi.fn();
 
 vi.mock('@neutrino/ui', () => ({
   Spinner: () => React.createElement('div', { 'data-testid': 'spinner' }),
+  Button: ({ children, onClick }: { children?: React.ReactNode; onClick?: () => void }) =>
+    React.createElement('button', { onClick }, children),
+  Modal: ({ children, open }: { children?: React.ReactNode; open?: boolean }) =>
+    open ? React.createElement('div', { 'data-testid': 'modal' }, children) : null,
+  ModalHeader: ({ title }: { title?: string }) => React.createElement('div', null, title),
+  ModalBody: ({ children }: { children?: React.ReactNode }) => React.createElement('div', null, children),
+  ModalFooter: ({ children }: { children?: React.ReactNode }) => React.createElement('div', null, children),
   useToast: () => ({
     warning: mockWarning,
     success: vi.fn(),
@@ -151,6 +158,7 @@ vi.mock('../../app/(apps)/diagrams/editor/hooks/useDiagramCollab', () => ({
     sendCursorMove: vi.fn(),
     sendSelectionChange: vi.fn(),
     sendPresence: vi.fn(),
+    broadcastDocument: vi.fn(),
   }),
 }));
 

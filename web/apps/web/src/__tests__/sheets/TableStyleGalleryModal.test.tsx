@@ -41,8 +41,18 @@ function escapeRegExp(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Resolve a card by its printed name rather than its accessible name. Two
+ * reasons the latter does not work: the preview swatch contributes "Aa" per
+ * cell, and a uniform variant's name ("Blue Banded") is a literal prefix of
+ * its suffixed siblings ("Blue Banded — No Border"), so a substring match hits
+ * several cards at once. See the note in styles/tableStyles.ts.
+ */
 function cardButtonFor(name: string): HTMLElement {
-    return screen.getByRole('button', { name: new RegExp(escapeRegExp(name)) });
+    const label = screen.getByText(name, { exact: true });
+    const button = label.closest('button');
+    if (!button) throw new Error(`No card button found for style "${name}"`);
+    return button;
 }
 
 describe('TableStyleGalleryModal', () => {

@@ -113,7 +113,8 @@ test.describe('Autosave persistence — notes', () => {
     await registerAndLogin(request, page, 'autosave_notes');
 
     await page.goto('/notes');
-    await page.getByRole('button', { name: /new note/i }).click();
+    // The header CTA and the empty-state CTA share this label.
+    await page.getByRole('button', { name: /new note/i }).first().click();
     await expect(page).toHaveURL(/\/notes\//, { timeout: 15_000 });
 
     // Fill in the title

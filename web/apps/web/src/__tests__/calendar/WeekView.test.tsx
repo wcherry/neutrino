@@ -3,10 +3,10 @@
  *
  * Covers:
  *  - Renders 7 day column headers for the week
- *  - Renders hour labels in the left gutter
+ *  - Renders a full 24-hour gutter, dimming hours outside the day window
  *  - A timed event inside the visible window renders in the correct column
- *  - An event before dayStartHour renders in the early-overflow zone (↑)
- *  - An event after dayEndHour renders in the late-overflow zone (↓)
+ *  - An event scrolled above the viewport raises the early-overflow chip (↑)
+ *  - An event below the viewport raises the late-overflow chip (↓)
  *  - An all-day event renders in the all-day band
  *  - Clicking an event chip calls onEventClick
  */
@@ -43,6 +43,21 @@ function localIso(year: number, month: number, date: number, hour: number, minut
   return new Date(year, month - 1, date, hour, minute).toISOString();
 }
 
+/**
+ * The overflow indicators are driven by the scroll position of the timed area
+ * against its own height. jsdom does no layout, so `clientHeight` has to be
+ * supplied before scrolling for the component to see a viewport at all.
+ */
+function scrollTimedArea(
+  container: HTMLElement,
+  { viewportHeight, scrollTop }: { viewportHeight: number; scrollTop: number },
+) {
+  const area = container.querySelector('[class*="scrollArea"]') as HTMLElement;
+  Object.defineProperty(area, 'clientHeight', { value: viewportHeight, configurable: true });
+  fireEvent.scroll(area, { target: { scrollTop } });
+  return area;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -68,14 +83,17 @@ describe('WeekView (hour-grid)', () => {
     expect(screen.getAllByText(/\b14\b/).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('renders hour labels in the gutter for the visible window', () => {
-    render(<WeekView {...defaultProps} />);
-    // dayStartHour=8 → "8 AM" label should appear
+  it('renders a full 24-hour gutter, dimming the hours outside the day window', () => {
+    const { container } = render(<WeekView {...defaultProps} />);
+    // The grid is a scrollable 24-hour day, so every hour has a label…
     expect(screen.getAllByText(/8\s*AM/i).length).toBeGreaterThanOrEqual(1);
-    // The last rendered row label is "7 PM" (hour 19), since dayEndHour=20 is the boundary
     expect(screen.getAllByText(/7\s*PM/i).length).toBeGreaterThanOrEqual(1);
-    // Hour before window (7 AM) should NOT be rendered as a label
-    expect(screen.queryByText(/^7\s*AM$/i)).toBeNull();
+    expect(screen.getAllByText(/7\s*AM/i).length).toBeGreaterThanOrEqual(1);
+
+    // …and the hours outside [dayStartHour, dayEndHour) are dimmed instead of
+    // omitted: 12 such hours (00–07, 20–23) across 7 day columns.
+    const dimmed = container.querySelectorAll('[class*="hourSlotDimmed"]');
+    expect(dimmed.length).toBe(12 * 7);
   });
 
   it('renders a timed event in the correct column', () => {
@@ -89,35 +107,38 @@ describe('WeekView (hour-grid)', () => {
     expect(screen.getByText('Team Standup')).toBeTruthy();
   });
 
-  it('renders an early-overflow indicator for events before dayStartHour', () => {
+  it('renders an early-overflow indicator for events scrolled above the viewport', () => {
     const earlyEvent = makeEvent({
       id: 'ev-early',
       title: 'Early Bird Meeting',
-      startTime: localIso(2025, 6, 10, 6, 0),  // 6 AM — before dayStartHour=8
+      startTime: localIso(2025, 6, 10, 6, 0),  // 6 AM — ends at y=420px
       endTime:   localIso(2025, 6, 10, 7, 0),
     });
-    render(<WeekView {...defaultProps} events={[earlyEvent]} />);
-    // Should render in the early-overflow zone
+    const { container } = render(<WeekView {...defaultProps} events={[earlyEvent]} />);
+
+    // Scroll past the event so it sits entirely above the visible window.
+    scrollTimedArea(container, { viewportHeight: 600, scrollTop: 600 });
+
     const overflowZone = screen.getByTestId('early-overflow');
-    expect(overflowZone).toBeTruthy();
-    // Should show an up-arrow indicator
+    // The indicator is a count, not a list of titles.
     expect(overflowZone.textContent).toContain('↑');
-    // The event title should also appear in that zone
-    expect(overflowZone.textContent).toContain('Early Bird Meeting');
+    expect(overflowZone.textContent).toContain('1');
   });
 
-  it('renders a late-overflow indicator for events at or after dayEndHour', () => {
+  it('renders a late-overflow indicator for events below the viewport', () => {
     const lateEvent = makeEvent({
       id: 'ev-late',
       title: 'Late Night Sync',
-      startTime: localIso(2025, 6, 10, 21, 0), // 9 PM — after dayEndHour=20
+      startTime: localIso(2025, 6, 10, 21, 0), // 9 PM — starts at y=1260px
       endTime:   localIso(2025, 6, 10, 22, 0),
     });
-    render(<WeekView {...defaultProps} events={[lateEvent]} />);
+    const { container } = render(<WeekView {...defaultProps} events={[lateEvent]} />);
+
+    scrollTimedArea(container, { viewportHeight: 600, scrollTop: 60 });
+
     const overflowZone = screen.getByTestId('late-overflow');
-    expect(overflowZone).toBeTruthy();
     expect(overflowZone.textContent).toContain('↓');
-    expect(overflowZone.textContent).toContain('Late Night Sync');
+    expect(overflowZone.textContent).toContain('1');
   });
 
   it('renders all-day events in the all-day band', () => {

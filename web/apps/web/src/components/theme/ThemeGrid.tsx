@@ -184,6 +184,9 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
                 onSelect(opt.value);
               }
             }}
+            // Without this the card's accessible name absorbs the nested
+            // "More options for …" button, e.g. "Light More options for Light".
+            aria-label={opt.label}
             title={opt.label}
           >
             <span className={styles.swatch} style={{ background: opt.bg }}>
@@ -221,6 +224,7 @@ export function ThemeGrid({ onSelect }: ThemeGridProps) {
                   onSelect(themeId);
                 }
               }}
+              aria-label={t.name}
               title={t.name}
             >
               <span className={styles.swatch} style={{ background: customThemeBg(t) }}>

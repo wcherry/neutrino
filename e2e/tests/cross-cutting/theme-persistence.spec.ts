@@ -33,15 +33,11 @@ async function registerAndLogin(
  * separate Save step (Settings/Profile's old explicit-Save UX was replaced
  * with instant apply+persist on click).
  *
- * Note on locators: ThemeGrid's card wrapper is a `role="button"` div whose
- * accessible name is polluted by the nested kebab-menu button's own
- * `aria-label` (e.g. "Dark" becomes "Dark More options for Dark"). A bare
- * substring match on just "Dark" is NOT safe even though no other *card*
- * name contains it — it also matches the standalone kebab `<button
- * aria-label="More options for Dark">`, which is a second, separate element
- * whose own name contains "Dark" too, causing a strict-mode violation.
- * Always match the full polluted name instead, which is long enough to be
- * unambiguous against both other cards and the kebab buttons.
+ * Note on locators: ThemeGrid's card wrapper is a `role="button"` div that
+ * carries an explicit `aria-label` of just the theme name, so the nested
+ * kebab-menu button no longer pollutes it. `exact: true` is still required —
+ * without it "Dark" also matches the kebab's own "More options for Dark",
+ * and "Light" would match "Light Glass", either way a strict-mode violation.
  */
 async function setTheme(page: Page, themeName: 'Dark' | 'Light'): Promise<void> {
   await page.goto('/settings');
@@ -49,7 +45,7 @@ async function setTheme(page: Page, themeName: 'Dark' | 'Light'): Promise<void> 
   await expect(
     page.getByRole('heading', { name: 'Appearance', level: 2 }),
   ).toBeVisible({ timeout: 10_000 });
-  await page.getByRole('button', { name: `${themeName} More options for ${themeName}` }).click();
+  await page.getByRole('button', { name: themeName, exact: true }).click();
 }
 
 test.describe('Theme persistence', () => {

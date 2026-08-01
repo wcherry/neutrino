@@ -36,22 +36,19 @@ async function gotoAppearance(page: Page): Promise<void> {
 }
 
 /**
- * ThemeGrid's card wrapper is a `role="button"` div whose accessible name is
- * polluted by the nested kebab-menu button's own `aria-label` — e.g. the
- * "Dark" card's computed name is "Dark More options for Dark", not just
- * "Dark". This affects every card locator in this file (both built-in
- * presets and custom themes, since custom cards use the same
- * `title={t.name}` + nested `aria-label="More options for {t.name}"`
- * structure). Matching the full polluted name is unambiguous since no two
- * cards ever produce colliding full strings.
+ * ThemeGrid's card wrapper is a `role="button"` div carrying an explicit
+ * `aria-label` of just the theme name, so its accessible name is the name
+ * alone. Every card locator here pairs it with `exact: true`: without that,
+ * "Dark" also matches the card's own kebab button ("More options for Dark")
+ * and any longer theme name containing it, e.g. "Dark copy".
  */
 function cardName(name: string): string {
-  return `${name} More options for ${name}`;
+  return name;
 }
 
 /** Hover the named theme card and open its kebab context menu. */
 async function openThemeMenu(page: Page, name: string): Promise<void> {
-  await page.getByRole('button', { name: cardName(name) }).hover();
+  await page.getByRole('button', { name: cardName(name), exact: true }).hover();
   await page.getByLabel(`More options for ${name}`).click();
   await expect(page.getByRole('menu', { name: 'Theme options' })).toBeVisible({ timeout: 5_000 });
 }
@@ -116,7 +113,7 @@ test.describe('Theme duplication', () => {
     await expectEditorOpenWithName(page, 'Dark copy');
     await closeEditor(page);
 
-    await expect(page.getByRole('button', { name: cardName('Dark copy') })).toBeVisible({
+    await expect(page.getByRole('button', { name: cardName('Dark copy'), exact: true })).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -130,7 +127,7 @@ test.describe('Theme duplication', () => {
 
     const themeName = `My Theme ${Date.now()}`;
     await createCustomTheme(page, themeName);
-    await expect(page.getByRole('button', { name: cardName(themeName) })).toBeVisible({
+    await expect(page.getByRole('button', { name: cardName(themeName), exact: true })).toBeVisible({
       timeout: 10_000,
     });
 
@@ -140,7 +137,7 @@ test.describe('Theme duplication', () => {
     await expectEditorOpenWithName(page, copyName);
     await closeEditor(page);
 
-    await expect(page.getByRole('button', { name: cardName(copyName) })).toBeVisible({
+    await expect(page.getByRole('button', { name: cardName(copyName), exact: true })).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -155,7 +152,7 @@ test.describe('Theme duplication', () => {
 
     const themeName = `Public Theme ${Date.now()}`;
     await createCustomTheme(page, themeName, { makePublic: true });
-    await expect(page.getByRole('button', { name: cardName(themeName) })).toBeVisible({
+    await expect(page.getByRole('button', { name: cardName(themeName), exact: true })).toBeVisible({
       timeout: 10_000,
     });
 
@@ -165,7 +162,7 @@ test.describe('Theme duplication', () => {
       await registerAndLogin(request, page2, 'dup_other');
       await gotoAppearance(page2);
 
-      const theirCard = page2.getByRole('button', { name: cardName(themeName) });
+      const theirCard = page2.getByRole('button', { name: cardName(themeName), exact: true });
       await expect(theirCard).toBeVisible({ timeout: 10_000 });
 
       await openThemeMenu(page2, themeName);
@@ -182,7 +179,7 @@ test.describe('Theme duplication', () => {
       await expectEditorOpenWithName(page2, copyName);
       await closeEditor(page2);
 
-      await expect(page2.getByRole('button', { name: cardName(copyName) })).toBeVisible({
+      await expect(page2.getByRole('button', { name: cardName(copyName), exact: true })).toBeVisible({
         timeout: 10_000,
       });
     } finally {
@@ -199,7 +196,7 @@ test.describe('Theme duplication', () => {
 
     const themeName = `Delete Source ${Date.now()}`;
     await createCustomTheme(page, themeName);
-    await expect(page.getByRole('button', { name: cardName(themeName) })).toBeVisible({
+    await expect(page.getByRole('button', { name: cardName(themeName), exact: true })).toBeVisible({
       timeout: 10_000,
     });
 
@@ -207,7 +204,7 @@ test.describe('Theme duplication', () => {
     const copyName = `${themeName} copy`;
     await expectEditorOpenWithName(page, copyName);
     await closeEditor(page);
-    await expect(page.getByRole('button', { name: cardName(copyName) })).toBeVisible({
+    await expect(page.getByRole('button', { name: cardName(copyName), exact: true })).toBeVisible({
       timeout: 10_000,
     });
 
@@ -221,11 +218,11 @@ test.describe('Theme duplication', () => {
     await expect(confirmDialog).not.toBeVisible({ timeout: 5_000 });
 
     // The copy is gone...
-    await expect(page.getByRole('button', { name: cardName(copyName) })).not.toBeVisible({
+    await expect(page.getByRole('button', { name: cardName(copyName), exact: true })).not.toBeVisible({
       timeout: 10_000,
     });
 
     // ...but the original custom theme is still present, unaffected.
-    await expect(page.getByRole('button', { name: cardName(themeName) })).toBeVisible();
+    await expect(page.getByRole('button', { name: cardName(themeName), exact: true })).toBeVisible();
   });
 });

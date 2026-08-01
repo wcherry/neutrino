@@ -1,10 +1,10 @@
 /**
  * Tests that usePersistence shows a toast with a settings help link when
- * save() or updateTitle() is called but the encryption key (DEK) is
- * unavailable.
+ * save() is called but the encryption key (DEK) is unavailable.
  *
- * Both code paths check `!dekRef.current` and call `toast.warning()` before
- * attempting any network call.
+ * save() checks `!dekRef.current` and calls `toast.warning()` before attempting
+ * any network call. updateTitle() deliberately does not: the title lives in
+ * plaintext on the `sheets` row, so a rename needs no key.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -56,6 +56,8 @@ vi.mock('@/lib/api', () => ({
     ),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     autosaveContent: vi.fn(() => Promise.resolve()),
+    saveSheet: vi.fn(() => Promise.resolve()),
+    promoteSheet: vi.fn(() => Promise.resolve()),
   },
   driveReadContent: vi.fn(() => Promise.resolve(JSON.stringify({ sheets: [] }))),
   driveCreateVersion: vi.fn(() => Promise.resolve()),
@@ -74,6 +76,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 // ---------------------------------------------------------------------------
 
 import { usePersistence } from '../../app/(apps)/sheets/editor/hooks/usePersistence';
+import { sheetsApi } from '@/lib/api';
 
 // ---------------------------------------------------------------------------
 // Test harness
@@ -173,7 +176,7 @@ describe('usePersistence — encryption warning toast', () => {
     expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=advanced');
   });
 
-  it('updateTitle() shows a toast with a settings link when DEK is unavailable', async () => {
+  it('updateTitle() renames without warning, since the title is not encrypted', async () => {
     const harnessRef = renderHarness();
 
     // Populate sheetRef via load() so updateTitle() passes its guard
@@ -191,10 +194,9 @@ describe('usePersistence — encryption warning toast', () => {
       await harnessRef.current!.updateTitle(fakeEvent);
     });
 
-    await waitFor(() => expect(mockWarning).toHaveBeenCalled(), { timeout: 3000 });
-
-    const message = mockWarning.mock.calls[0][0] as React.ReactNode;
-    const { getByRole } = render(React.createElement(React.Fragment, null, message));
-    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=advanced');
+    // The title is plaintext metadata on the `sheets` row, so the rename goes
+    // through even with no DEK — only content saves need the key.
+    expect(sheetsApi.saveSheet).toHaveBeenCalledWith('sheet-test-id', { title: 'Renamed Sheet' });
+    expect(mockWarning).not.toHaveBeenCalled();
   });
 });

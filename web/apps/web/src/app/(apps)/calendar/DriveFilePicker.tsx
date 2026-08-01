@@ -119,11 +119,14 @@ export function DriveFilePicker({ open, onClose, onSelect }: DriveFilePickerProp
                   </span>
                 )}
                 {isCurrent ? (
-                  <span className={styles.drivePickerBreadcrumbCurrent}>{crumb.name}</span>
+                  <span className={styles.drivePickerBreadcrumbCurrent} data-testid="breadcrumb-item">
+                    {crumb.name}
+                  </span>
                 ) : (
                   <button
                     type="button"
                     className={styles.drivePickerBreadcrumbBtn}
+                    data-testid="breadcrumb-item"
                     onClick={() => handleBreadcrumbClick(crumb, i)}
                   >
                     {crumb.name}
@@ -152,7 +155,7 @@ export function DriveFilePicker({ open, onClose, onSelect }: DriveFilePickerProp
         {/* File / folder list */}
         <div className={styles.drivePickerList} role="listbox" aria-label="Drive contents">
           {isLoading && (
-            <div className={styles.drivePickerLoading}>
+            <div className={styles.drivePickerLoading} data-testid="drive-picker-loading">
               <Spinner size="md" />
             </div>
           )}
@@ -166,12 +169,14 @@ export function DriveFilePicker({ open, onClose, onSelect }: DriveFilePickerProp
           )}
 
           {isEmpty && (
-            <EmptyState
-              size="sm"
-              icon={filter.trim() ? undefined : FolderIcon}
-              title={filter.trim() ? 'No matches' : 'This folder is empty'}
-              description={filter.trim() ? 'Try a different search term.' : undefined}
-            />
+            <div data-testid="drive-picker-empty">
+              <EmptyState
+                size="sm"
+                icon={filter.trim() ? undefined : FolderIcon}
+                title={filter.trim() ? 'No matches' : 'This folder is empty'}
+                description={filter.trim() ? 'Try a different search term.' : undefined}
+              />
+            </div>
           )}
 
           {!isLoading &&

@@ -18,6 +18,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import NewEventModal from '../../app/(apps)/calendar/NewEventModal';
 import type { EventResponse } from '../../app/(apps)/calendar/../../../lib/api';
@@ -25,6 +26,15 @@ import type { EventResponse } from '../../app/(apps)/calendar/../../../lib/api';
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
+
+// The modal reads and mutates event attachments through react-query.
+vi.mock('@/lib/api', () => ({
+  calendarApi: {
+    listAttachments: vi.fn(() => Promise.resolve({ attachments: [] })),
+    createAttachment: vi.fn(() => Promise.resolve({})),
+    deleteAttachment: vi.fn(() => Promise.resolve()),
+  },
+}));
 
 vi.mock('@neutrino/ui', () => ({
   Modal: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
@@ -75,10 +85,19 @@ const existingEvent: EventResponse = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function makeQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+/** The modal calls `useQueryClient`, so it must render under a provider. */
+function renderWithClient(ui: React.ReactElement) {
+  return render(<QueryClientProvider client={makeQueryClient()}>{ui}</QueryClientProvider>);
+}
+
 function renderCreateModal(overrides: Partial<Parameters<typeof NewEventModal>[0]> = {}) {
   const onCreate = vi.fn();
   const onClose = vi.fn();
-  render(
+  renderWithClient(
     <NewEventModal
       defaultDate={defaultDate}
       onClose={onClose}
@@ -94,7 +113,7 @@ function renderEditModal(overrides: Partial<Parameters<typeof NewEventModal>[0]>
   const onUpdate = vi.fn();
   const onCreate = vi.fn();
   const onClose = vi.fn();
-  render(
+  renderWithClient(
     <NewEventModal
       defaultDate={defaultDate}
       existingEvent={existingEvent}

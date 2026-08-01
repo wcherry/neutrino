@@ -91,8 +91,8 @@ const mockFolderContents = {
   shortcuts: [],
 };
 
-const mockGetRootContents = vi.fn(() => Promise.resolve(mockRootContents));
-const mockGetFolderContents = vi.fn(() => Promise.resolve(mockFolderContents));
+const mockGetRootContents = vi.fn((_query?: unknown) => Promise.resolve(mockRootContents));
+const mockGetFolderContents = vi.fn((_id?: unknown, _query?: unknown) => Promise.resolve(mockFolderContents));
 
 vi.mock('@neutrino/api-drive', () => ({
   filesystemApi: {
@@ -122,7 +122,8 @@ function renderPicker(props: { onSelect?: (f: { id: string; name: string }) => v
   const qc = makeQueryClient();
   return render(
     <QueryClientProvider client={qc}>
-      <DriveFilePicker onSelect={props.onSelect ?? vi.fn()} onClose={props.onClose ?? vi.fn()} />
+      {/* The picker is a modal: it fetches and renders nothing unless open. */}
+      <DriveFilePicker open onSelect={props.onSelect ?? vi.fn()} onClose={props.onClose ?? vi.fn()} />
     </QueryClientProvider>
   );
 }
@@ -158,7 +159,7 @@ describe('DriveFilePicker', () => {
     renderPicker();
     await waitFor(() => expect(screen.getByText('Meeting Agenda.docx')).toBeInTheDocument());
 
-    const searchInput = screen.getByPlaceholderText(/search/i);
+    const searchInput = screen.getByPlaceholderText(/filter by name/i);
     fireEvent.change(searchInput, { target: { value: 'Budget' } });
 
     expect(screen.getByText('Budget.xlsx')).toBeInTheDocument();
@@ -170,7 +171,7 @@ describe('DriveFilePicker', () => {
     renderPicker();
     await waitFor(() => expect(screen.getByText('Meeting Agenda.docx')).toBeInTheDocument());
 
-    const searchInput = screen.getByPlaceholderText(/search/i);
+    const searchInput = screen.getByPlaceholderText(/filter by name/i);
     fireEvent.change(searchInput, { target: { value: 'zzz-no-match' } });
 
     expect(screen.getByTestId('drive-picker-empty')).toBeInTheDocument();
@@ -193,7 +194,7 @@ describe('DriveFilePicker', () => {
     fireEvent.click(screen.getByText('Work Docs'));
 
     await waitFor(() => {
-      expect(mockGetFolderContents).toHaveBeenCalledWith('folder-1', expect.any(Object));
+      expect(mockGetFolderContents).toHaveBeenCalledWith('folder-1', undefined);
       expect(screen.getByText('Project Plan.pdf')).toBeInTheDocument();
     });
   });

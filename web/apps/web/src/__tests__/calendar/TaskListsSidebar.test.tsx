@@ -141,7 +141,9 @@ describe('TaskListsSidebar', () => {
   it('applies the done class to a completed task title', () => {
     renderSidebar([listA], [taskPending, taskDone]);
     const doneTitle = screen.getByText('Deploy to staging');
-    expect(doneTitle.style.textDecoration).toBe('line-through');
+    // The strike-through comes from the `taskDone` CSS module class, not an
+    // inline style — only the drag-sortable variant sets it inline.
+    expect(doneTitle.className).toContain('taskDone');
   });
 
   it('calls onToggleTask with id and true when a pending task checkbox is clicked', () => {

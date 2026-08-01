@@ -7,7 +7,7 @@ import { Spinner } from '@neutrino/ui';
 import { notesApi } from '@/lib/api';
 import { filesystemApi, storageApi, driveReadContent } from '@neutrino/api-drive';
 import type { NoteMetaResponse } from '@neutrino/api-notes';
-import { initSodium, encryptFile, decryptFile, toBase64url } from '@neutrino/e2e-crypto';
+import { initSodium, encryptFile, decryptFile, toBase64url, fromBase64url } from '@neutrino/e2e-crypto';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { useNoteSync } from '@/hooks/useNoteSync';
 import BlockEditor, { Block, parseBlocks, serializeBlocks } from './BlockEditor';
@@ -89,8 +89,20 @@ export default function NoteEditorPage() {
         try {
           await initSodium();
           const blob = await storageApi.downloadFile(noteId);
-          const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-          const plainBytes = decryptFile(cipherBytes, dekRef.current);
+          const stored = new Uint8Array(await blob.arrayBuffer());
+          // The save path sends `toBase64url(cipherBytes)`, so what comes back
+          // is the *text* of that encoding, not the raw ciphertext. Decode it
+          // before decrypting; older content written as raw bytes still works
+          // through the fallback.
+          let plainBytes: Uint8Array;
+          try {
+            plainBytes = decryptFile(
+              fromBase64url(new TextDecoder().decode(stored)),
+              dekRef.current,
+            );
+          } catch {
+            plainBytes = decryptFile(stored, dekRef.current);
+          }
           return new TextDecoder().decode(plainBytes);
         } catch {
           // Corrupt ciphertext or a stale/expired key ref — fall back to the

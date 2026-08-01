@@ -148,9 +148,11 @@ test.describe('Diagram import/export', () => {
     await page.getByTitle('Import diagram').click();
 
     // Switch to the Paste tab
-    await page.getByText('Paste').click();
+    await page.getByRole('button', { name: 'Paste Text' }).click();
 
-    const textarea = page.getByRole('textbox').last();
+    // Target the dialog's textarea by placeholder — the editor page has other
+    // textboxes, so `getByRole('textbox').last()` is not reliably this one.
+    const textarea = page.getByPlaceholder(/Paste Mermaid/i);
     await expect(textarea).toBeVisible({ timeout: 5_000 });
 
     const mermaidCode = `graph LR

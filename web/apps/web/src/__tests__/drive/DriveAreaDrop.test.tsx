@@ -2,13 +2,16 @@
  * Unit tests for drive area-wide drag-and-drop (issue #6).
  *
  * Covers:
- *   - Dragging files over the drive page sets the drag-over visual state
+ *   - Dragging files over the file grid sets the drag-over visual state
  *   - Dragging non-file content (e.g. text) does NOT set drag-over state
- *   - Dragging out of the drive page clears the drag-over state
- *   - Dropping files on the drive area opens the UploadZone overlay
+ *   - Dragging out of the grid clears the drag-over state
+ *   - Dropping files on the grid opens the UploadZone overlay
  *   - Dropping an empty transfer (no files) does NOT open the UploadZone
  *   - UploadZone receives the dropped files via initialFiles prop
- *   - Feature flag off: drag events are ignored (no drag-over state, no upload)
+ *
+ * The `driveAreaDropTarget` flag is no longer consulted — migration 00097
+ * enabled it permanently and the page dropped the check — so there is no
+ * flag-off behaviour left to cover.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -33,18 +36,8 @@ vi.mock('../../app/(apps)/drive/UploadZone', () => ({
   },
 }));
 
-// Feature flags — toggled per test
-let driveAreaDropTarget = true;
 vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => new Proxy(
-    {},
-    {
-      get: (_target, prop) => {
-        if (prop === 'driveAreaDropTarget') return driveAreaDropTarget;
-        return false;
-      },
-    }
-  ),
+  useFeatureFlags: () => new Proxy({}, { get: () => false }),
   useFeatureFlagsLoaded: () => true,
 }));
 
@@ -123,7 +116,30 @@ vi.mock('@neutrino/ui', () => ({
   Breadcrumbs: () => <nav />,
   EmptyState: ({ title }: { title: string }) => <div>{title}</div>,
   Skeleton: () => <div />,
-  FileGrid: () => <div data-testid="file-grid" />,
+  // The grid *is* the drop target: the page hands it the drag handlers and the
+  // drag-over flag, and it owns the highlighted state.
+  FileGrid: ({
+    onDragEnter,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    isDraggingOver,
+  }: {
+    onDragEnter?: React.DragEventHandler<HTMLDivElement>;
+    onDragOver?: React.DragEventHandler<HTMLDivElement>;
+    onDragLeave?: React.DragEventHandler<HTMLDivElement>;
+    onDrop?: React.DragEventHandler<HTMLDivElement>;
+    isDraggingOver?: boolean;
+  }) => (
+    <div
+      data-testid="file-grid"
+      data-dragging-over={isDraggingOver ? 'true' : 'false'}
+      onDragEnter={onDragEnter}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    />
+  ),
   useToast: () => ({ success: vi.fn(), error: vi.fn() }),
 }));
 
@@ -199,106 +215,77 @@ function makeDragEvent(files: File[]): Partial<React.DragEvent<HTMLDivElement>> 
 beforeEach(() => {
   vi.clearAllMocks();
   uploadZoneInitialFiles.length = 0;
-  driveAreaDropTarget = true;
 });
 
-describe('Drive area drag-and-drop — feature flag ON', () => {
-  it('applies the drag-over CSS class when files are dragged over the page', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
+/** The drop target is the file grid, not the page wrapper. */
+function grid(): HTMLElement {
+  return screen.getByTestId('file-grid');
+}
 
-    fireEvent.dragEnter(page, makeDragEvent([new File([''], 'test.txt')]));
-    fireEvent.dragOver(page, makeDragEvent([new File([''], 'test.txt')]));
+describe('Drive area drag-and-drop', () => {
+  it('marks the grid as drag-over when files are dragged over it', async () => {
+    await renderDrivePage();
 
-    expect(page.className).toContain('page--drag-over');
+    fireEvent.dragEnter(grid(), makeDragEvent([new File([''], 'test.txt')]));
+    fireEvent.dragOver(grid(), makeDragEvent([new File([''], 'test.txt')]));
+
+    expect(grid().dataset.draggingOver).toBe('true');
   });
 
-  it('removes the drag-over CSS class when drag leaves the page', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
+  it('clears the drag-over state when the drag leaves the grid', async () => {
+    await renderDrivePage();
 
-    // Enter then leave
-    fireEvent.dragEnter(page, makeDragEvent([new File([''], 'test.txt')]));
-    fireEvent.dragLeave(page, makeDragEvent([]));
+    fireEvent.dragEnter(grid(), makeDragEvent([new File([''], 'test.txt')]));
+    fireEvent.dragLeave(grid(), makeDragEvent([]));
 
-    expect(page.className).not.toContain('page--drag-over');
+    expect(grid().dataset.draggingOver).toBe('false');
   });
 
-  it('opens the UploadZone when files are dropped on the drive area', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
+  it('opens the UploadZone when files are dropped on the grid', async () => {
+    await renderDrivePage();
 
-    fireEvent.dragEnter(page, makeDragEvent([new File([''], 'test.txt')]));
-    fireEvent.drop(page, makeDragEvent([new File([''], 'test.txt')]));
+    fireEvent.dragEnter(grid(), makeDragEvent([new File([''], 'test.txt')]));
+    fireEvent.drop(grid(), makeDragEvent([new File([''], 'test.txt')]));
 
     expect(screen.getByTestId('upload-zone')).toBeInTheDocument();
   });
 
   it('passes dropped files to UploadZone via initialFiles', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
+    await renderDrivePage();
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
 
-    fireEvent.dragEnter(page, makeDragEvent([file]));
-    fireEvent.drop(page, makeDragEvent([file]));
+    fireEvent.dragEnter(grid(), makeDragEvent([file]));
+    fireEvent.drop(grid(), makeDragEvent([file]));
 
     expect(uploadZoneInitialFiles.length).toBeGreaterThan(0);
     expect(uploadZoneInitialFiles[0]).toEqual([file]);
   });
 
   it('does NOT open UploadZone when the drop has no files', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
+    await renderDrivePage();
 
-    fireEvent.dragEnter(page, makeDragEvent([]));
-    fireEvent.drop(page, makeDragEvent([]));
+    fireEvent.dragEnter(grid(), makeDragEvent([]));
+    fireEvent.drop(grid(), makeDragEvent([]));
 
     expect(screen.queryByTestId('upload-zone')).not.toBeInTheDocument();
   });
 
   it('does NOT apply drag-over state when non-file content is dragged over', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
+    await renderDrivePage();
 
     // Simulate a text-drag (no Files type)
-    fireEvent.dragEnter(page, makeDragEvent([]));
+    fireEvent.dragEnter(grid(), makeDragEvent([]));
 
-    expect(page.className).not.toContain('page--drag-over');
+    expect(grid().dataset.draggingOver).toBe('false');
   });
 
   it('clears drag-over state after a successful drop', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
+    await renderDrivePage();
     const file = new File([''], 'file.txt');
 
-    fireEvent.dragEnter(page, makeDragEvent([file]));
-    fireEvent.drop(page, makeDragEvent([file]));
+    fireEvent.dragEnter(grid(), makeDragEvent([file]));
+    fireEvent.drop(grid(), makeDragEvent([file]));
 
-    expect(page.className).not.toContain('page--drag-over');
-  });
-});
-
-describe('Drive area drag-and-drop — feature flag OFF', () => {
-  beforeEach(() => {
-    driveAreaDropTarget = false;
-  });
-
-  it('does NOT apply drag-over state when the feature flag is off', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
-
-    fireEvent.dragEnter(page, makeDragEvent([new File([''], 'test.txt')]));
-    fireEvent.dragOver(page, makeDragEvent([new File([''], 'test.txt')]));
-
-    expect(page.className).not.toContain('page--drag-over');
-  });
-
-  it('does NOT open UploadZone on drop when the feature flag is off', async () => {
-    const { container } = await renderDrivePage();
-    const page = container.firstChild as HTMLElement;
-
-    fireEvent.drop(page, makeDragEvent([new File([''], 'test.txt')]));
-
-    expect(screen.queryByTestId('upload-zone')).not.toBeInTheDocument();
+    expect(grid().dataset.draggingOver).toBe('false');
   });
 });

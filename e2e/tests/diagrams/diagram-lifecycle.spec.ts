@@ -42,6 +42,15 @@ async function createDiagramViaApi(
   return data.id;
 }
 
+/**
+ * "New diagram" opens a template picker rather than creating one outright, so
+ * reaching the editor takes a template choice. "Blank" is the neutral one.
+ */
+async function createFromTemplatePicker(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'New diagram' }).first().click();
+  await page.getByRole('button', { name: 'Blank' }).click();
+}
+
 test.describe('Diagram lifecycle', () => {
   test('empty diagrams page shows "No diagrams yet"', async ({ page, request }) => {
     await registerAndLogin(request, page);
@@ -70,7 +79,7 @@ test.describe('Diagram lifecycle', () => {
     await registerAndLogin(request, page);
     await page.goto('/diagrams');
     await expect(page.getByText('No diagrams yet')).toBeVisible({ timeout: 10_000 });
-    await page.getByRole('button', { name: 'New diagram' }).first().click();
+    await createFromTemplatePicker(page);
     await expect(page).toHaveURL(/\/diagrams\/editor\?id=/, { timeout: 15_000 });
   });
 
@@ -80,7 +89,7 @@ test.describe('Diagram lifecycle', () => {
   }) => {
     await registerAndLogin(request, page);
     await page.goto('/diagrams');
-    await page.getByRole('button', { name: 'New diagram' }).first().click();
+    await createFromTemplatePicker(page);
     await expect(page).toHaveURL(/\/diagrams\/editor\?id=/, { timeout: 15_000 });
 
     // Click the title to enter edit mode

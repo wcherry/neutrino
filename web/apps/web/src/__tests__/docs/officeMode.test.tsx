@@ -149,10 +149,23 @@ vi.mock('mammoth', () => ({
   convertToHtml: (...args: unknown[]) => mockConvertToHtml(...args),
 }));
 
-vi.mock('@tiptap/react', () => ({
-  useEditor: () => null,
-  EditorContent: () => React.createElement('div', { 'data-testid': 'editor-content' }),
-}));
+// The editor pulls in custom extensions from @/lib/extensions, which build on
+// Extension/Node/Mark at module scope — so those have to exist on the mock even
+// though no real editor is instantiated here.
+vi.mock('@tiptap/react', () => {
+  const stub = { create: (config?: unknown) => ({ config, extend: () => stub }), extend: () => stub };
+  return {
+    useEditor: () => null,
+    EditorContent: () => React.createElement('div', { 'data-testid': 'editor-content' }),
+    Extension: stub,
+    Node: stub,
+    Mark: stub,
+    mergeAttributes: (...objs: Record<string, unknown>[]) => Object.assign({}, ...objs),
+    NodeViewWrapper: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement('div', null, children),
+    ReactNodeViewRenderer: () => () => null,
+  };
+});
 
 vi.mock('next/dynamic', () => ({ default: () => () => null }));
 

@@ -282,6 +282,7 @@ function WeekViewGrid({
                   {aboveEvents.length > 0 && (
                     <button
                       className={gridStyles.overflowIndicatorTop}
+                      data-testid="early-overflow"
                       onClick={(e) => {
                         e.stopPropagation();
                         onEventClick(aboveEvents[aboveEvents.length - 1]);
@@ -296,6 +297,7 @@ function WeekViewGrid({
                   {belowEvents.length > 0 && (
                     <button
                       className={gridStyles.overflowIndicatorBottom}
+                      data-testid="late-overflow"
                       onClick={(e) => {
                         e.stopPropagation();
                         onEventClick(belowEvents[0]);
