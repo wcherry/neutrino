@@ -29,7 +29,9 @@
   border-color: var(--color-border-strong);
 }
 
-.input:focus {
+/* Same specificity as the hover rule above so the accent ring wins on a
+   focused input the pointer happens to be over. */
+.input:focus:not(:disabled) {
   border-color: var(--color-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 15%, transparent);
   background-color: var(--color-surface);
@@ -54,6 +56,11 @@
   align-items: center;
 }
 
+/*
+ * Colours here come from the semantic tokens, never the raw `--color-neutral-*`
+ * ramp: the ramp is declared once on `:root` and no theme overrides it, so a
+ * raw neutral keeps its light-mode value on a dark background.
+ */
 .clear-btn {
   position: absolute;
   right: var(--space-2);
@@ -63,8 +70,8 @@
   width: 1.25rem;
   height: 1.25rem;
   border-radius: 50%;
-  background-color: var(--color-neutral-300);
-  color: var(--color-neutral-600);
+  background-color: var(--color-border-strong);
+  color: var(--color-text-secondary);
   cursor: pointer;
   border: none;
   padding: 0;
@@ -73,9 +80,11 @@
     color var(--duration-fast) var(--ease-default);
 }
 
+/* Hover moves the chip toward the foreground, which darkens it on a light
+   theme and lightens it on a dark one — a fixed grey can only do one. */
 .clear-btn:hover {
-  background-color: var(--color-neutral-400);
-  color: var(--color-neutral-800);
+  background-color: color-mix(in srgb, var(--color-border-strong) 70%, var(--color-text-primary));
+  color: var(--color-text-primary);
 }
 
 .clear-btn:focus-visible {
@@ -89,12 +98,21 @@
   border-color: transparent;
 }
 
+/*
+ * `--color-neutral-100` here rendered a near-white pill under every dark theme
+ * while the text stayed `--color-text-primary` (near-white too), so hovering
+ * the topbar search made whatever you had typed almost invisible. The semantic
+ * token is the same colour on a light theme and inverts with the rest.
+ */
 .subtle .input:hover:not(:disabled) {
-  background-color: var(--color-neutral-100);
+  background-color: var(--color-surface-hover);
   border-color: transparent;
 }
 
-.subtle .input:focus {
+/* Matches the hover rule's specificity (`:not(:disabled)` counts), so source
+   order decides and a focused input keeps its focus background while the
+   pointer rests on it. */
+.subtle .input:focus:not(:disabled) {
   background-color: var(--color-surface);
   border-color: var(--color-accent);
 }
