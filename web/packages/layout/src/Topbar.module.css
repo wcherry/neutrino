@@ -92,6 +92,7 @@
 
 .search-result-text {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
@@ -108,6 +109,22 @@
 
 .search-result-subtitle {
   font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.search-result-modified {
+  margin-left: auto;
+  padding-left: var(--space-3);
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.search-empty {
+  padding: var(--space-3);
+  text-align: center;
+  font-size: var(--text-sm);
   color: var(--color-text-muted);
 }
 

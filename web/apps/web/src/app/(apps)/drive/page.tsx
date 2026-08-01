@@ -3,7 +3,7 @@
 // folderPath) is shared by the breadcrumbs, heading, FileGrid, and every modal/overlay.
 // There is no static server shell of non-trivial size to extract.
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { Suspense, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Heading,
@@ -19,11 +19,16 @@ import {
   Folder,
   Clock,
   Upload,
+  Search,
+  SearchX,
+  X,
 } from 'lucide-react';
 import { storageApi, filesystemApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
+import { DRIVE_SEARCH_PARAM } from './searchParams';
 import { UploadZone } from './UploadZone';
 import { PreviewModal } from './PreviewModal';
 import { FileContextMenu } from './FileContextMenu';
@@ -63,11 +68,22 @@ interface ContextMenuState {
 }
 
 export default function DrivePage() {
+  // `useSearchParams` needs a Suspense boundary above it during prerender.
+  return (
+    <Suspense fallback={null}>
+      <DriveContent />
+    </Suspense>
+  );
+}
+
+function DriveContent() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const router = useRouter();
   const currentUser = useUser();
   const flags = useFeatureFlags();
+  const searchParams = useSearchParams();
+  const searchTerm = (searchParams.get(DRIVE_SEARCH_PARAM) ?? '').trim();
 
   const [sortBy, setSortBy] = useState<SortField>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -125,6 +141,27 @@ export default function DrivePage() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [selectedIds.size]);
+
+  // ── Search view (`/drive?q=…`) ───────────────────────────────────────────
+  // Runs against the same client-side index the topbar drop-down uses, so the
+  // full list here always agrees with the preview the user just saw.
+  const { search } = useClientSearch();
+  const [searchHits, setSearchHits] = useState<SearchHit[] | null>(null);
+
+  useEffect(() => {
+    if (!searchTerm) {
+      setSearchHits(null);
+      return;
+    }
+    let cancelled = false;
+    setSearchHits(null);
+    search(searchTerm)
+      .then((hits) => { if (!cancelled) setSearchHits(hits); })
+      .catch(() => { if (!cancelled) setSearchHits([]); });
+    return () => { cancelled = true; };
+  }, [searchTerm, search]);
+
+  const clearSearch = useCallback(() => router.replace('/drive'), [router]);
 
   const { data: starredData } = useQuery({
     queryKey: ['starred'],
@@ -478,9 +515,75 @@ export default function DrivePage() {
               })),
             ]}
           />
+          {searchTerm && (
+            <span className={styles['search-chip']} data-testid="drive-search-chip">
+              <Search size={12} aria-hidden="true" />
+              <span className={styles['search-chip-label']}>{searchTerm}</span>
+              <button
+                type="button"
+                className={styles['search-chip-clear']}
+                onClick={clearSearch}
+                aria-label={`Clear search filter ${searchTerm}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          )}
         </div>
       </div>
 
+      {searchTerm ? (
+        <section
+          className={`${styles.section} ${styles['section-files']}`}
+          aria-labelledby="search-results-heading"
+        >
+          <div className={styles['section-header']}>
+            <Heading level={2} size="sm" id="search-results-heading">Search results</Heading>
+            {searchHits && (
+              <Text as="span" size="xs" color="muted">
+                {searchHits.length} {searchHits.length === 1 ? 'result' : 'results'}
+              </Text>
+            )}
+          </div>
+
+          {searchHits === null ? (
+            <div className={styles['search-results']} aria-busy="true">
+              {Array.from({ length: 3 }, (_, i) => (
+                <Skeleton key={i} shape="text" width="60%" height="1.25rem" />
+              ))}
+            </div>
+          ) : searchHits.length === 0 ? (
+            <EmptyState
+              icon={SearchX}
+              title="No matches"
+              description={`Nothing in your files matched “${searchTerm}”.`}
+              action={
+                <Button variant="secondary" size="sm" onClick={clearSearch}>
+                  Clear search
+                </Button>
+              }
+            />
+          ) : (
+            <ul className={styles['search-results']} role="list">
+              {searchHits.map((hit) => (
+                <li key={hit.id} data-testid="drive-search-result">
+                  <button
+                    type="button"
+                    className={styles['search-result']}
+                    onClick={() => router.push(hit.href)}
+                  >
+                    <span className={styles['search-result-icon']} aria-hidden="true">{hit.icon}</span>
+                    <span className={styles['search-result-name']}>{hit.title}</span>
+                    <span className={styles['search-result-type']}>{hit.subtitle}</span>
+                    <span className={styles['search-result-date']}>{hit.modified}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : (
+      <>
       {/* Quick access */}
       <section className={styles.section} aria-labelledby="quick-access-heading">
         <div className={styles['section-header']}>
@@ -603,6 +706,8 @@ export default function DrivePage() {
           totalCount={isLoading ? undefined : folders.length + files.length}
         />
       </section>
+      </>
+      )}
 
       {/* Overlays */}
       {uploadOpen && (
