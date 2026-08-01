@@ -181,15 +181,17 @@ test.describe('Topbar search', () => {
 
     await expect(page).toHaveURL(new RegExp(`/drive.*q=${word}`), { timeout: 15_000 });
     await expect(page.getByTestId('drive-search-chip')).toContainText(word);
-    await expect(page.getByTestId('drive-search-result').first()).toContainText(word);
+    await expect(page.getByRole('heading', { name: 'Search results' })).toBeVisible();
+    // Hits render as ordinary Drive grid items.
+    await expect(page.getByRole('listitem').filter({ hasText: word }).first()).toBeVisible();
     // The box hands the term over to the chip and clears itself.
     await expect(searchBox(page)).toHaveValue('');
 
     await page.getByRole('button', { name: `Clear search filter ${word}` }).click();
 
     await expect(page.getByTestId('drive-search-chip')).toHaveCount(0);
-    await expect(page.getByTestId('drive-search-result')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Quick access' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Files' })).toBeVisible();
   });
 
   test('Drive search view reports when nothing matched', async ({ page, request }) => {

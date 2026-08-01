@@ -163,6 +163,37 @@ function DriveContent() {
 
   const clearSearch = useCallback(() => router.replace('/drive'), [router]);
 
+  /**
+   * Hits rendered as ordinary Drive items, so the search view is the same grid
+   * (cards, list view, sorting, filter chips) as the rest of Drive.
+   */
+  const searchGridItems: GridItem[] = useMemo(() => {
+    if (!searchHits) return [];
+    const ordered = [...searchHits];
+    // Relevance is the natural order; honour the grid's sort controls for the
+    // two fields a hit actually carries.
+    const dir = sortDir === 'asc' ? 1 : -1;
+    if (sortBy === 'name') ordered.sort((a, b) => a.title.localeCompare(b.title) * dir);
+    else if (sortBy === 'updatedAt') ordered.sort((a, b) => (a.updatedAt - b.updatedAt) * dir);
+
+    return ordered.map((hit) => ({
+      id: hit.id,
+      name: hit.title,
+      kind: 'file' as const,
+      icon: hit.icon,
+      iconColor: hit.iconColor,
+      subtitle: hit.subtitle,
+      mimeType: hit.mimeType,
+      typeText: hit.subtitle,
+      modifiedText: hit.modified || '—',
+    }));
+  }, [searchHits, sortBy, sortDir]);
+
+  const handleSearchItemClick = useCallback((item: GridItem) => {
+    const hit = searchHits?.find((h) => h.id === item.id);
+    if (hit) router.push(hit.href);
+  }, [searchHits, router]);
+
   const { data: starredData } = useQuery({
     queryKey: ['starred'],
     queryFn: () => filesystemApi.getStarred(5),
@@ -532,59 +563,8 @@ function DriveContent() {
         </div>
       </div>
 
-      {searchTerm ? (
-        <section
-          className={`${styles.section} ${styles['section-files']}`}
-          aria-labelledby="search-results-heading"
-        >
-          <div className={styles['section-header']}>
-            <Heading level={2} size="sm" id="search-results-heading">Search results</Heading>
-            {searchHits && (
-              <Text as="span" size="xs" color="muted">
-                {searchHits.length} {searchHits.length === 1 ? 'result' : 'results'}
-              </Text>
-            )}
-          </div>
-
-          {searchHits === null ? (
-            <div className={styles['search-results']} aria-busy="true">
-              {Array.from({ length: 3 }, (_, i) => (
-                <Skeleton key={i} shape="text" width="60%" height="1.25rem" />
-              ))}
-            </div>
-          ) : searchHits.length === 0 ? (
-            <EmptyState
-              icon={SearchX}
-              title="No matches"
-              description={`Nothing in your files matched “${searchTerm}”.`}
-              action={
-                <Button variant="secondary" size="sm" onClick={clearSearch}>
-                  Clear search
-                </Button>
-              }
-            />
-          ) : (
-            <ul className={styles['search-results']} role="list">
-              {searchHits.map((hit) => (
-                <li key={hit.id} data-testid="drive-search-result">
-                  <button
-                    type="button"
-                    className={styles['search-result']}
-                    onClick={() => router.push(hit.href)}
-                  >
-                    <span className={styles['search-result-icon']} aria-hidden="true">{hit.icon}</span>
-                    <span className={styles['search-result-name']}>{hit.title}</span>
-                    <span className={styles['search-result-type']}>{hit.subtitle}</span>
-                    <span className={styles['search-result-date']}>{hit.modified}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : (
-      <>
-      {/* Quick access */}
+      {/* Quick access — hidden while showing search results */}
+      {!searchTerm && (
       <section className={styles.section} aria-labelledby="quick-access-heading">
         <div className={styles['section-header']}>
           <Heading level={2} size="sm" id="quick-access-heading">Quick access</Heading>
@@ -660,16 +640,30 @@ function DriveContent() {
               })()}
         </div>
       </section>
+      )}
 
-      {/* All files */}
+      {/* Files — the same grid whether it is listing a folder or search hits */}
       <section className={`${styles.section} ${styles['section-files']}`} aria-labelledby="all-files-heading">
-        <Heading level={2} size="sm" id="all-files-heading">Files</Heading>
+        <Heading level={2} size="sm" id="all-files-heading">
+          {searchTerm ? 'Search results' : 'Files'}
+        </Heading>
         <FileGrid
-          items={gridItems}
-          isLoading={isLoading}
-          isError={isError}
+          items={searchTerm ? searchGridItems : gridItems}
+          isLoading={searchTerm ? searchHits === null : isLoading}
+          isError={searchTerm ? false : isError}
           emptyState={
-            isError ? (
+            searchTerm ? (
+              <EmptyState
+                icon={SearchX}
+                title="No matches"
+                description={`Nothing in your files matched \u201c${searchTerm}\u201d.`}
+                action={
+                  <Button variant="secondary" size="sm" onClick={clearSearch}>
+                    Clear search
+                  </Button>
+                }
+              />
+            ) : isError ? (
               <EmptyState
                 title="Could not load files"
                 description="There was an error loading your files. Please try again."
@@ -688,26 +682,34 @@ function DriveContent() {
               />
             )
           }
-          onItemClick={handleGridItemClick}
-          onItemMenuOpen={handleGridItemMenuOpen}
-          onToggleStar={handleToggleStar}
-          selectedIds={selectedIds}
-          onItemSelect={handleItemSelect}
-          onDragEnter={handleAreaDragEnter}
-          onDragOver={handleAreaDragOver}
-          onDragLeave={handleAreaDragLeave}
-          onDrop={handleAreaDrop}
-          isDraggingOver={isDraggingOver}
+          onItemClick={searchTerm ? handleSearchItemClick : handleGridItemClick}
+          {...(searchTerm
+            // Search hits are not all Drive files, so the Drive-only affordances
+            // (context menu, starring, bulk select, upload drop target) are off.
+            ? {}
+            : {
+                onItemMenuOpen: handleGridItemMenuOpen,
+                onToggleStar: handleToggleStar,
+                selectedIds,
+                onItemSelect: handleItemSelect,
+                onDragEnter: handleAreaDragEnter,
+                onDragOver: handleAreaDragOver,
+                onDragLeave: handleAreaDragLeave,
+                onDrop: handleAreaDrop,
+                isDraggingOver,
+              })}
           showFilter
-          showSizeColumn
+          showSizeColumn={!searchTerm}
           sortBy={sortBy}
           sortDir={sortDir}
           onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
-          totalCount={isLoading ? undefined : folders.length + files.length}
+          totalCount={
+            searchTerm
+              ? searchHits?.length
+              : isLoading ? undefined : folders.length + files.length
+          }
         />
       </section>
-      </>
-      )}
 
       {/* Overlays */}
       {uploadOpen && (

@@ -43,9 +43,23 @@ import {
 import { tagNavSection } from '@/lib/tagNav';
 import { NewItemFAB } from './NewItemFAB';
 import { useNotifications } from '@/hooks/useNotifications';
-import { useClientSearch } from '@/hooks/useClientSearch';
+import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
 import { driveSearchHref } from './drive/searchParams';
+
+/** Search hits carry an icon *component* so Drive can size it its own way. */
+function toTopbarResult(hit: SearchHit): TopbarSearchResult {
+  const { icon: Icon, iconColor } = hit;
+  return {
+    id: hit.id,
+    title: hit.title,
+    subtitle: hit.subtitle,
+    href: hit.href,
+    icon: <Icon size={16} />,
+    iconColor,
+    modified: hit.modified,
+  };
+}
 
 function notificationHref(n: NotificationItem): string | undefined {
   const payload = n.payload as Record<string, string>;
@@ -233,7 +247,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     try {
       const hits = await search(query);
       if (seq !== searchSeqRef.current) return;
-      setSearchResults(hits);
+      setSearchResults(hits.map(toTopbarResult));
     } catch {
       if (seq === searchSeqRef.current) setSearchResults([]);
     } finally {

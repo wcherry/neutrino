@@ -39,6 +39,8 @@ export interface TopbarSearchResult {
   subtitle: string;
   href: string;
   icon?: React.ReactNode;
+  /** Icon tint, so results match how the same item is drawn elsewhere. */
+  iconColor?: string;
   /** Date of last change, pre-formatted by the caller. */
   modified?: string;
 }
@@ -270,7 +272,11 @@ export function Topbar({
                       onMouseDown={() => handleResultClick(result)}
                     >
                       {result.icon && (
-                        <span className={styles['search-result-icon']} aria-hidden="true">
+                        <span
+                          className={styles['search-result-icon']}
+                          style={result.iconColor ? { color: result.iconColor } : undefined}
+                          aria-hidden="true"
+                        >
                           {result.icon}
                         </span>
                       )}

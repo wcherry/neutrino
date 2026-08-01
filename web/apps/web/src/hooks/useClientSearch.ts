@@ -1,20 +1,20 @@
 'use client';
 
-import React, { useCallback, useMemo, useRef } from 'react';
+import type React from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Bell,
-  Calendar,
-  FileText,
-  NotebookPen,
-  Presentation,
-  Table2,
-} from 'lucide-react';
+import { Bell, Calendar, File as FileIcon } from 'lucide-react';
 import { IndexEngine, getOrCreateSearchKey, type SearchableDocType } from '@neutrino/search';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
 import { tagsApi, useUser, type TaggedFile, type Tag } from '@/lib/api';
-import { getFileIcon } from '@/lib/file-icons';
-import { hrefForFile } from '@/app/(apps)/drive/routeForFile';
+import { getFileIcon, getIconColor } from '@/lib/file-icons';
+import {
+  hrefForFile,
+  DOC_MIME,
+  NOTE_MIME,
+  SHEET_MIME,
+  SLIDES_MIME,
+} from '@/app/(apps)/drive/routeForFile';
 import {
   intersectFileIds,
   matchTagsForTerm,
@@ -28,22 +28,49 @@ export const MAX_SEARCH_RESULTS = 20;
 /** Per tag, matching the backend's paging cap. */
 const TAG_SEARCH_FILE_LIMIT = 200;
 
-/** One row in the search drop-down / Drive results list. */
+/** Lucide-style icon component, as `FileGrid` and the topbar both expect. */
+export type HitIcon = React.ComponentType<{
+  size?: number | string;
+  strokeWidth?: number | string;
+}>;
+
+/** One search hit, shaped so Drive can render it exactly like a Drive item. */
 export interface SearchHit {
   id: string;
   title: string;
   /** Item kind — "Document", "Note", "Tagged", … */
   subtitle: string;
   href: string;
-  icon: React.ReactNode;
-  /** Last change, already formatted for display; empty when unknown. */
+  icon: HitIcon;
+  iconColor: string;
+  /** Drive mimetype when the hit has one; feeds Drive's type filter. */
+  mimeType?: string;
+  /** Last change, formatted for display; empty when unknown. */
   modified: string;
+  /** Last change as epoch millis, for sorting; 0 when unknown. */
+  updatedAt: number;
 }
 
-function formatModified(value: number | string | null | undefined): string {
-  if (value === null || value === undefined || value === '') return '';
+/**
+ * Doc types that are Drive files under the hood. Reusing their mimetypes here
+ * means a Doc looks the same in search results as it does in Drive — same
+ * icon, same colour, from the same helpers.
+ */
+const DOC_TYPE_MIME: Partial<Record<SearchableDocType, string>> = {
+  document: DOC_MIME,
+  spreadsheet: SHEET_MIME,
+  slide: SLIDES_MIME,
+  note: NOTE_MIME,
+};
+
+function toMillis(value: number | string | null | undefined): number {
+  if (value === null || value === undefined || value === '') return 0;
   const ms = typeof value === 'number' ? value : new Date(value).getTime();
-  if (!Number.isFinite(ms) || ms <= 0) return '';
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
+function formatModified(ms: number): string {
+  if (ms <= 0) return '';
   return new Date(ms).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -77,32 +104,32 @@ export function docTypeLabel(type: SearchableDocType): string {
   return labels[type] ?? type;
 }
 
-export function docTypeIcon(type: SearchableDocType, mimeType?: string): React.ReactNode {
-  switch (type) {
-    case 'document': return <FileText size={16} />;
-    case 'spreadsheet': return <Table2 size={16} />;
-    case 'note': return <NotebookPen size={16} />;
-    case 'slide': return <Presentation size={16} />;
-    case 'event': return <Calendar size={16} />;
-    case 'reminder': return <Bell size={16} />;
-    case 'file': {
-      const Icon = getFileIcon(mimeType ?? '');
-      return <Icon size={16} />;
-    }
-    default: return <FileText size={16} />;
-  }
+/** Icon and colour for a hit, matching how Drive draws the same item. */
+export function docTypeIcon(
+  type: SearchableDocType,
+  mimeType?: string,
+): { icon: HitIcon; iconColor: string } {
+  if (type === 'event') return { icon: Calendar, iconColor: 'var(--color-blue, #2563eb)' };
+  if (type === 'reminder') return { icon: Bell, iconColor: 'var(--color-amber, #d97706)' };
+
+  const mime = mimeType || DOC_TYPE_MIME[type];
+  if (!mime) return { icon: FileIcon, iconColor: 'var(--color-text-secondary)' };
+  return { icon: getFileIcon(mime), iconColor: getIconColor(mime) };
 }
 
 /** A Drive file surfaced by a tag match rather than a content match. */
 function taggedFileHit(file: TaggedFile): SearchHit {
-  const Icon = getFileIcon(file.mimeType);
+  const updatedAt = toMillis(file.updatedAt);
   return {
     id: file.id,
     title: file.name,
     subtitle: 'Tagged',
     href: hrefForFile(file),
-    icon: <Icon size={16} />,
-    modified: formatModified(file.updatedAt),
+    icon: getFileIcon(file.mimeType),
+    iconColor: getIconColor(file.mimeType),
+    mimeType: file.mimeType,
+    modified: formatModified(updatedAt),
+    updatedAt,
   };
 }
 
@@ -195,14 +222,21 @@ export function useClientSearch() {
         const hits: SearchHit[] = canSearchText
           ? textResults
               .filter((r) => taggedFiles.has(r.docId))
-              .map((r) => ({
-                id: r.docId,
-                title: taggedFiles.get(r.docId)?.name || r.title || r.docId,
-                subtitle: docTypeLabel(r.type),
-                href: docTypeUrl(r.type, r.docId, r.mimeType),
-                icon: docTypeIcon(r.type, r.mimeType),
-                modified: formatModified(taggedFiles.get(r.docId)?.updatedAt ?? r.updatedAt),
-              }))
+              .map((r) => {
+                const file = taggedFiles.get(r.docId);
+                const mimeType = r.mimeType ?? file?.mimeType;
+                const updatedAt = toMillis(file?.updatedAt ?? r.updatedAt);
+                return {
+                  id: r.docId,
+                  title: file?.name || r.title || r.docId,
+                  subtitle: docTypeLabel(r.type),
+                  href: docTypeUrl(r.type, r.docId, mimeType),
+                  ...docTypeIcon(r.type, mimeType),
+                  mimeType,
+                  modified: formatModified(updatedAt),
+                  updatedAt,
+                };
+              })
           : [...taggedFiles.values()].map(taggedFileHit);
 
         return hits.slice(0, MAX_SEARCH_RESULTS);
@@ -228,8 +262,10 @@ export function useClientSearch() {
           title: r.title || r.docId,
           subtitle: docTypeLabel(r.type),
           href: docTypeUrl(r.type, r.docId, r.mimeType),
-          icon: docTypeIcon(r.type, r.mimeType),
+          ...docTypeIcon(r.type, r.mimeType),
+          mimeType: r.mimeType,
           modified: formatModified(r.updatedAt),
+          updatedAt: r.updatedAt,
         });
       }
 
