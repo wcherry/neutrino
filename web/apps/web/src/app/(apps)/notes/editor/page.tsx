@@ -6,9 +6,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Spinner } from '@neutrino/ui';
 import { notesApi } from '@/lib/api';
 import { filesystemApi, storageApi, driveReadContent } from '@neutrino/api-drive';
-import type { NoteMetaResponse } from '@neutrino/api-notes';
+import { extractNoteText, type NoteMetaResponse } from '@neutrino/api-notes';
 import { initSodium, encryptFile, decryptFile, toBase64url, fromBase64url } from '@neutrino/e2e-crypto';
+import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
+import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useNoteSync } from '@/hooks/useNoteSync';
 import BlockEditor, { Block, parseBlocks, serializeBlocks } from './BlockEditor';
 import { extractWikiLinkTitles } from './blockEditorHelpers';
@@ -25,6 +27,7 @@ export default function NoteEditorPage() {
   const router = useRouter();
   const noteId = searchParams.get('id') ?? '';
   const queryClient = useQueryClient();
+  const currentUser = useUser();
 
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [title, setTitle] = useState('');
@@ -222,6 +225,13 @@ export default function NoteEditorPage() {
         setSaveStatus('saved');
         queryClient.invalidateQueries({ queryKey: ['notes'] });
         queryClient.invalidateQueries({ queryKey: ['note-backlinks', noteId] });
+        indexOnSave(currentUser?.id, {
+          id: noteId,
+          type: 'note',
+          title: nextTitle,
+          content: extractNoteText(serialized),
+          updatedAt: new Date(meta.updatedAt).getTime(),
+        });
         // Tell anyone else viewing this note to re-read it.
         broadcastNoteUpdate();
       } catch {
@@ -230,7 +240,7 @@ export default function NoteEditorPage() {
         savingRef.current = false;
       }
     },
-    [noteId, queryClient, dekRef, broadcastNoteUpdate]
+    [noteId, queryClient, dekRef, broadcastNoteUpdate, currentUser?.id]
   );
 
   function scheduleAutosave(nextBlocks: Block[], nextTitle: string) {

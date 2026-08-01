@@ -7,10 +7,12 @@ import type { CellProps, SheetFile, CFRule, TableRegion } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import {
     sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
-    driveAutosaveBytes, driveCreateVersionBytes,
+    driveAutosaveBytes, driveCreateVersionBytes, extractSheetText,
     storageApi, filesystemApi, ApiClientError, type SheetResponse, type FileItem,
 } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { useUser } from '@neutrino/auth';
+import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { useToast } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
@@ -109,6 +111,7 @@ export function usePersistence({
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
     const toast = useToast();
+    const currentUser = useUser();
     const [title, setTitle] = useState('Untitled');
     const [yourRole, setYourRole] = useState<string>('owner');
     // ── Office mode (issue #43) ──────────────────────────────────────────────
@@ -210,6 +213,7 @@ export function usePersistence({
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
+        const savedTitle = sheetRef.current.title;
         const content = serialize();
         // Retry once on failure: the autosave PUT has been observed to occasionally
         // fail with a transient transport-level error (e.g. a truncated request body)
@@ -221,6 +225,12 @@ export function usePersistence({
         } catch {
             await driveAutosaveEncryptedContent(sheetId, content, 'sheet.json', dekRef.current);
         }
+        indexOnSave(currentUser?.id, {
+            id: sheetId,
+            type: 'spreadsheet',
+            title: savedTitle,
+            content: extractSheetText(content),
+        });
     };
     saveRef.current = save;
 

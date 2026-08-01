@@ -68,9 +68,10 @@ import {
 import { useUser } from '@neutrino/auth';
 import {
   slidesApi, driveReadContent, driveAutosaveEncryptedContent,
-  driveAutosaveBytes,
+  driveAutosaveBytes, extractSlideText,
   storageApi, filesystemApi, ApiClientError, type FileItem,
 } from '@/lib/api';
+import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { OFFICE_MIME, officeAppForFile } from '@/lib/officeFormats';
 import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
@@ -597,6 +598,12 @@ export function SlideEditor() {
       setSaveStatus('saved');
       lastSavedRef.current = content;
       queryClient.invalidateQueries({ queryKey: ['slides'] });
+      indexOnSave(currentUser?.id, {
+        id: slideId,
+        type: 'slide',
+        title,
+        content: extractSlideText(content),
+      });
     },
     onError: (err) => {
       setSaveStatus('error');

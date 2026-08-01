@@ -4,8 +4,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Heading, Badge, SearchInput } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
-import { IndexEngine, getOrCreateSearchKey, type SearchResult } from '@neutrino/search';
-import { docTypeLabel } from '@/hooks/useClientSearch';
+import { IndexEngine, type SearchResult } from '@neutrino/search';
+import { docTypeLabel, MIN_SEARCH_LENGTH } from '@/hooks/useClientSearch';
 import styles from './page.module.css';
 
 export default function SearchPage() {
@@ -14,30 +14,28 @@ export default function SearchPage() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const engineRef = useRef<IndexEngine | null>(null);
-  const searchKeyRef = useRef<Uint8Array | null>(null);
-
 
   useEffect(() => {
     if (!user?.id) return;
     const kp = loadKeyPair(user.id);
     if (!kp) return;
     engineRef.current = new IndexEngine();
-    searchKeyRef.current = getOrCreateSearchKey(user.id);
   }, [user?.id]);
 
   const handleSearch = useCallback(
     async (value: string) => {
       setQuery(value);
       const engine = engineRef.current;
-      const searchKey = searchKeyRef.current;
-      if (!engine || !searchKey || !value.trim()) {
+      // Terms are prefix-matched, so a one or two letter query would scan a
+      // large slice of the index — the same floor the topbar search uses.
+      if (!engine || value.trim().length < MIN_SEARCH_LENGTH) {
         setResults([]);
         return;
       }
       setSearching(true);
       try {
         const terms = value.trim().split(/\s+/).filter(Boolean);
-        const found = await engine.query(terms, searchKey);
+        const found = await engine.query(terms);
         setResults(found);
       } finally {
         setSearching(false);

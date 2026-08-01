@@ -1,6 +1,47 @@
 import { request } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
+// Diagram text extraction helpers
+// ---------------------------------------------------------------------------
+
+type DiagramShapeContent = { label?: string };
+type DiagramConnectorContent = { label?: string };
+type DiagramPageContent = {
+  name?: string;
+  shapes?: DiagramShapeContent[];
+  connectors?: DiagramConnectorContent[];
+};
+type DiagramFileContent = { pages?: DiagramPageContent[] };
+
+/**
+ * Flatten a stored diagram body into searchable plain text — page names plus
+ * every shape and connector label.
+ *
+ * Takes the already-decrypted body rather than fetching it: diagram content is
+ * E2EE, so only the caller holds the DEK needed to read it (see
+ * `readDocumentText` in the web app).
+ */
+export function extractDiagramText(raw: string): string {
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw) as DiagramFileContent;
+    const parts: string[] = [];
+    for (const page of parsed.pages ?? []) {
+      if (page.name) parts.push(page.name);
+      for (const shape of page.shapes ?? []) {
+        if (shape.label) parts.push(shape.label);
+      }
+      for (const connector of page.connectors ?? []) {
+        if (connector.label) parts.push(connector.label);
+      }
+    }
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+  } catch {
+    return '';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Diagram types
 // ---------------------------------------------------------------------------
 

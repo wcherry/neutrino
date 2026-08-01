@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeText, hashToken, tokenize } from '../tokenizer';
+import { normalizeText, tokenizeWithPositions } from '../tokenizer';
 
 describe('normalizeText', () => {
   it('lowercases input', () => {
@@ -32,48 +32,38 @@ describe('normalizeText', () => {
   });
 });
 
-describe('hashToken', () => {
-  const key = new Uint8Array(32).fill(1);
-  const key2 = new Uint8Array(32).fill(2);
-
-  it('returns a hex string', async () => {
-    const hash = await hashToken('budget', key);
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+describe('tokenizeWithPositions', () => {
+  it('stores terms as plain text, so an ordered index can range over them', () => {
+    // The whole point of dropping the HMAC: "modesto" has to sort under the
+    // "mod" prefix for `IDBKeyRange.bound` to reach it.
+    const [term] = tokenizeWithPositions('Modesto');
+    expect(term.term).toBe('modesto');
+    expect(term.term.startsWith('mod')).toBe(true);
   });
 
-  it('is deterministic — same token + key always produces same hash', async () => {
-    const h1 = await hashToken('budget', key);
-    const h2 = await hashToken('budget', key);
-    expect(h1).toBe(h2);
+  it('records every offset a repeated term appears at', () => {
+    const terms = tokenizeWithPositions('budget planning budget');
+    expect(terms.map((t) => t.term)).toEqual(['budget', 'planning']);
+    expect(terms[0].positions).toEqual([0, 2]);
+    expect(terms[1].positions).toEqual([1]);
   });
 
-  it('different keys produce different hashes', async () => {
-    const h1 = await hashToken('budget', key);
-    const h2 = await hashToken('budget', key2);
-    expect(h1).not.toBe(h2);
+  it('positions count words, not characters, and skip punctuation', () => {
+    const terms = tokenizeWithPositions('Q3 report — budget');
+    expect(terms.map((t) => [t.term, t.positions])).toEqual([
+      ['q3', [0]],
+      ['report', [1]],
+      ['budget', [2]],
+    ]);
   });
 
-  it('different tokens produce different hashes', async () => {
-    const h1 = await hashToken('budget', key);
-    const h2 = await hashToken('planning', key);
-    expect(h1).not.toBe(h2);
-  });
-});
-
-describe('tokenize', () => {
-  const key = new Uint8Array(32).fill(5);
-
-  it('returns an array of hex hashes', async () => {
-    const hashes = await tokenize('Hello World', key);
-    expect(hashes).toHaveLength(2);
-    for (const h of hashes) {
-      expect(h).toMatch(/^[0-9a-f]{64}$/);
-    }
+  it('is case-insensitive', () => {
+    expect(tokenizeWithPositions('Budget BUDGET budget')).toEqual([
+      { term: 'budget', positions: [0, 1, 2] },
+    ]);
   });
 
-  it('is deterministic', async () => {
-    const h1 = await tokenize('Hello World', key);
-    const h2 = await tokenize('Hello World', key);
-    expect(h1).toEqual(h2);
+  it('handles empty input', () => {
+    expect(tokenizeWithPositions('')).toEqual([]);
   });
 });

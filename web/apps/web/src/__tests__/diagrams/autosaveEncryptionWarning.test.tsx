@@ -63,6 +63,7 @@ vi.mock('@neutrino/auth', () => ({
   authApi: {
     getProfile: vi.fn(() => Promise.resolve({ name: 'Test User' })),
   },
+  useUser: () => ({ id: 'user-1', name: 'Test User' }),
 }));
 
 vi.mock('@neutrino/e2e-crypto', () => ({

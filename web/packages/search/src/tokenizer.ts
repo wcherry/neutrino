@@ -1,64 +1,57 @@
+/**
+ * Splitting text into the terms the index stores.
+ *
+ * Terms are kept as plain text. They used to be stored as
+ * `HMAC-SHA256(term, searchKey)`, which made the index opaque at rest but also
+ * made prefix search impossible: hashing is exactly the operation that destroys
+ * the shared prefix between "mod" and "modesto", so `IDBKeyRange.bound` had
+ * nothing to range over and every lookup had to be an exact-equality match.
+ *
+ * The hashing bought less than it appeared to — the key it used lived in
+ * `localStorage` beside the user's E2EE keys, and document titles were already
+ * stored in the clear next to the postings — so it was traded for a term index
+ * the database can actually scan.
+ */
+
 const PUNCTUATION_RE = /[^\p{L}\p{N}\s]/gu;
 
+/** Lowercased, punctuation-stripped words, deduplicated. */
 export function normalizeText(text: string): string[] {
-  const normalized = text
+  return [...new Set(splitWords(text))];
+}
+
+function splitWords(text: string): string[] {
+  return text
     .normalize('NFC')
     .toLowerCase()
-    .replace(PUNCTUATION_RE, ' ');
-  const tokens = normalized.split(/\s+/).filter(Boolean);
-  return [...new Set(tokens)];
+    .replace(PUNCTUATION_RE, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
 }
 
-export async function hashToken(token: string, searchKey: Uint8Array): Promise<string> {
-  const keyMaterial = new Uint8Array(searchKey) as Uint8Array<ArrayBuffer>;
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyMaterial,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(token));
-  return Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-export async function tokenize(text: string, searchKey: Uint8Array): Promise<string[]> {
-  const tokens = normalizeText(text);
-  return Promise.all(tokens.map((t) => hashToken(t, searchKey)));
-}
-
-export interface TokenWithPositions {
-  hash: string;
+export interface TermWithPositions {
+  term: string;
   positions: number[];
 }
 
-export async function tokenizeWithPositions(
-  text: string,
-  searchKey: Uint8Array,
-): Promise<TokenWithPositions[]> {
-  const normalized = text
-    .normalize('NFC')
-    .toLowerCase()
-    .replace(PUNCTUATION_RE, ' ');
-  const words = normalized.split(/\s+/).filter(Boolean);
+/**
+ * Every distinct term in `text`, with the word offsets it appears at.
+ *
+ * Synchronous now that no crypto is involved; it used to have to await an HMAC
+ * per term.
+ */
+export function tokenizeWithPositions(text: string): TermWithPositions[] {
+  const words = splitWords(text);
 
   const positionMap = new Map<string, number[]>();
   for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    const existing = positionMap.get(w);
+    const existing = positionMap.get(words[i]);
     if (existing) {
       existing.push(i);
     } else {
-      positionMap.set(w, [i]);
+      positionMap.set(words[i], [i]);
     }
   }
 
-  const results: TokenWithPositions[] = [];
-  for (const [token, positions] of positionMap) {
-    const hash = await hashToken(token, searchKey);
-    results.push({ hash, positions });
-  }
-  return results;
+  return [...positionMap].map(([term, positions]) => ({ term, positions }));
 }

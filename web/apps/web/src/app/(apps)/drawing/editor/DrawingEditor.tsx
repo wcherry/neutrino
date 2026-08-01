@@ -5,9 +5,11 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft } from 'lucide-react';
 import { Spinner } from '@neutrino/ui';
-import { drawingApi } from '@neutrino/api-drawing';
+import { drawingApi, extractDrawingText } from '@neutrino/api-drawing';
 import { request } from '@neutrino/api-core';
 import { storageApi } from '@neutrino/api-drive';
+import { useUser } from '@neutrino/auth';
+import { indexOnSave } from '@/lib/searchIndexUpdate';
 import type { DriveImageItem } from '@neutrino/ui';
 import type { Shape, Layer, ToolType, DrawingContent, Transform } from './types';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
@@ -48,6 +50,7 @@ export function DrawingEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const drawingId = searchParams.get('id');
+  const currentUser = useUser();
 
   const bgLayerIdRef = useRef(Math.random().toString(36).slice(2, 10));
 
@@ -174,11 +177,20 @@ export function DrawingEditor() {
     isDirtyRef.current = false;
     saveInProgress.current = true;
     const content: DrawingContent = { version: 1, shapes: debouncedShapes, layers };
+    const serialized = JSON.stringify(content);
     drawingApi
-      .autosaveContent(drawingId, JSON.stringify(content), 'drawing.json', { title })
+      .autosaveContent(drawingId, serialized, 'drawing.json', { title })
+      .then(() => {
+        indexOnSave(currentUser?.id, {
+          id: drawingId,
+          type: 'drawing',
+          title,
+          content: extractDrawingText(serialized),
+        });
+      })
       .catch(() => {})
       .finally(() => { saveInProgress.current = false; });
-  }, [debouncedShapes, drawingId, title, layers]);
+  }, [debouncedShapes, drawingId, title, layers, currentUser?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {

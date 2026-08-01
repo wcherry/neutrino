@@ -20,6 +20,14 @@ function createMockDb() {
   const tokenStore = new Map<string, object>();
   const docStore = new Map<string, object>();
 
+  /**
+   * Cursor walks still in flight. A real transaction doesn't complete until its
+   * requests finish; without tracking that, `oncomplete` fires on the first
+   * microtask and a caller awaiting the transaction resumes before the cursor
+   * has deleted anything.
+   */
+  const pending = { count: 0 };
+
   function makeStore(store: Map<string, object>, keyPath: string | string[]) {
     // index name → { fieldName, data }
     const indexRegistry = new Map<string, { fieldName: string; data: Map<string, object[]> }>();
@@ -70,33 +78,55 @@ function createMockDb() {
       index: vi.fn((name: string) => {
         const entry = indexRegistry.get(name);
         const data = entry?.data ?? new Map<string, object[]>();
+
+        /**
+         * Records whose indexed value falls inside `range`, mirroring how
+         * IndexedDB walks an ordered index. `IDBKeyRange.only` arrives here as
+         * lower === upper, so exact lookups fall out of the same code — and a
+         * prefix bound picks up every term sharing that prefix.
+         */
+        function inRange(range: IDBKeyRange): object[] {
+          const { lower, upper, lowerOpen, upperOpen } = range as unknown as {
+            lower: string; upper: string; lowerOpen: boolean; upperOpen: boolean;
+          };
+          const keys = [...data.keys()].sort();
+          const matched: object[] = [];
+          for (const k of keys) {
+            if (lower !== undefined && (lowerOpen ? k <= lower : k < lower)) continue;
+            if (upper !== undefined && (upperOpen ? k >= upper : k > upper)) continue;
+            matched.push(...(data.get(k) ?? []));
+          }
+          return matched;
+        }
+
         return {
           openCursor: vi.fn((range: IDBKeyRange) => {
-            const val = (range as unknown as { lower: string }).lower;
-            const entries = [...(data.get(val) ?? [])];
+            const entries = inRange(range);
             let i = 0;
             const req = { onsuccess: null as ((e: object) => void) | null, onerror: null };
+            pending.count++;
             function nextCursor() {
               const record = entries[i++] ?? null;
-              const cursor = record
-                ? {
-                    delete: vi.fn(() => {
-                      const key = getKey(record as Record<string, unknown>);
-                      store.delete(key);
-                      indexDelete(key);
-                    }),
-                    continue: vi.fn(() => queueMicrotask(nextCursor)),
-                  }
-                : null;
+              if (!record) {
+                pending.count--;
+                req.onsuccess?.({ target: { result: null } } as unknown as Event);
+                return;
+              }
+              const cursor = {
+                delete: vi.fn(() => {
+                  const key = getKey(record as Record<string, unknown>);
+                  store.delete(key);
+                  indexDelete(key);
+                }),
+                continue: vi.fn(() => queueMicrotask(nextCursor)),
+              };
               req.onsuccess?.({ target: { result: cursor } } as unknown as Event);
             }
             queueMicrotask(nextCursor);
             return req;
           }),
           getAll: vi.fn((range: IDBKeyRange) => {
-            const val = (range as unknown as { lower: string }).lower;
-            const results = [...(data.get(val) ?? [])];
-            const req = { result: results, onsuccess: null as ((e: object) => void) | null, onerror: null };
+            const req = { result: inRange(range), onsuccess: null as ((e: object) => void) | null, onerror: null };
             queueMicrotask(() => req.onsuccess?.({ target: req } as unknown as Event));
             return req;
           }),
@@ -125,11 +155,11 @@ function createMockDb() {
     return storeObj;
   }
 
-  const tokenStoreObj = makeStore(tokenStore, ['tokenHash', 'documentId', 'field']);
+  const tokenStoreObj = makeStore(tokenStore, ['term', 'documentId', 'field']);
   const docStoreObj = makeStore(docStore, 'documentId');
 
   // Wire up indexes
-  tokenStoreObj.createIndex('byTokenHash', 'tokenHash');
+  tokenStoreObj.createIndex('byTerm', 'term');
   tokenStoreObj.createIndex('byDocumentId', 'documentId');
 
   function makeTx(_storeNames: string[], _mode: string) {
@@ -147,7 +177,12 @@ function createMockDb() {
       set onerror(cb: ((e: unknown) => void) | null) { onerror = cb; },
     };
 
-    queueMicrotask(() => oncomplete?.());
+    // Wait for in-flight cursor walks before reporting the transaction done.
+    function settle() {
+      if (pending.count > 0) queueMicrotask(settle);
+      else oncomplete?.();
+    }
+    queueMicrotask(settle);
     return tx;
   }
 
@@ -160,7 +195,6 @@ function createMockDb() {
 }
 
 describe('IndexEngine', () => {
-  const searchKey = new Uint8Array(32).fill(7);
   let engine: IndexEngine;
 
   beforeEach(() => {
@@ -176,35 +210,94 @@ describe('IndexEngine', () => {
     updatedAt: Date.now(),
   };
 
+  it('matches a prefix of a title word', async () => {
+    await engine.indexDocument({ ...flamingo, title: 'Modesto Trip' });
+    const results = await engine.query(['mod']);
+    expect(results.map((r) => r.docId)).toEqual(['doc-1']);
+  });
+
+  it('matches a prefix of a body word', async () => {
+    await engine.indexDocument({
+      ...flamingo,
+      title: 'Untitled document',
+      content: 'Notes from the Modesto office',
+    });
+    const results = await engine.query(['mod']);
+    expect(results.map((r) => r.docId)).toEqual(['doc-1']);
+  });
+
+  it('matches the whole word too, not only shorter prefixes', async () => {
+    await engine.indexDocument({ ...flamingo, title: 'Modesto Trip' });
+    expect(await engine.query(['modesto'])).toHaveLength(1);
+  });
+
+  it('does not match a suffix or an interior fragment', async () => {
+    // Prefix search only — a range scan can't reach words by their middle.
+    await engine.indexDocument({ ...flamingo, title: 'Modesto Trip' });
+    expect(await engine.query(['desto'])).toHaveLength(0);
+    expect(await engine.query(['esto'])).toHaveLength(0);
+  });
+
+  it('requires every term to prefix-match some word', async () => {
+    await engine.indexDocument({ ...flamingo, title: 'Modesto Budget' });
+    expect(await engine.query(['mod', 'bud'])).toHaveLength(1);
+    expect(await engine.query(['mod', 'zep'])).toHaveLength(0);
+  });
+
+  it('ignores terms too short to prefix-match, rather than scanning the index', async () => {
+    await engine.indexDocument({ ...flamingo, title: 'Modesto Trip' });
+    expect(await engine.query(['mo'])).toHaveLength(0);
+    // A short term alongside a usable one is dropped, not treated as a miss.
+    expect(await engine.query(['mo', 'modesto'])).toHaveLength(1);
+  });
+
+  it('counts one document once when several of its words share the prefix', async () => {
+    await engine.indexDocument({
+      ...flamingo,
+      title: 'Modesto',
+      content: 'modern models modelling',
+    });
+    const results = await engine.query(['mod']);
+    expect(results).toHaveLength(1);
+    expect(results[0].docId).toBe('doc-1');
+  });
+
+  it('stops a prefix at its own range — "budget" must not match "bud"-only docs', async () => {
+    await engine.indexDocument({ ...flamingo, id: 'doc-bud', title: 'Buddy List', content: '' });
+    await engine.indexDocument({ ...flamingo, id: 'doc-budget', title: 'Budget Plan', content: '' });
+    const results = await engine.query(['budget']);
+    expect(results.map((r) => r.docId)).toEqual(['doc-budget']);
+  });
+
   it('indexes a document and retrieves it by title term', async () => {
-    await engine.indexDocument(flamingo, searchKey);
-    const results = await engine.query(['flamingo'], searchKey);
+    await engine.indexDocument(flamingo);
+    const results = await engine.query(['flamingo']);
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].docId).toBe('doc-1');
   });
 
   it('multi-word AND: returns doc when all terms match', async () => {
-    await engine.indexDocument(flamingo, searchKey);
-    const results = await engine.query(['flamingo', 'budget'], searchKey);
+    await engine.indexDocument(flamingo);
+    const results = await engine.query(['flamingo', 'budget']);
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].docId).toBe('doc-1');
   });
 
   it('multi-word AND: returns empty when one term is absent', async () => {
-    await engine.indexDocument(flamingo, searchKey);
-    const results = await engine.query(['flamingo', 'zephyr'], searchKey);
+    await engine.indexDocument(flamingo);
+    const results = await engine.query(['flamingo', 'zephyr']);
     expect(results).toHaveLength(0);
   });
 
   it('returns empty results for unrelated term', async () => {
-    await engine.indexDocument(flamingo, searchKey);
-    const results = await engine.query(['xylophone'], searchKey);
+    await engine.indexDocument(flamingo);
+    const results = await engine.query(['xylophone']);
     expect(results).toHaveLength(0);
   });
 
   it('returns empty results for empty query', async () => {
-    await engine.indexDocument(flamingo, searchKey);
-    const results = await engine.query([], searchKey);
+    await engine.indexDocument(flamingo);
+    const results = await engine.query([]);
     expect(results).toHaveLength(0);
   });
 
@@ -223,9 +316,9 @@ describe('IndexEngine', () => {
       content: 'flamingo flamingo flamingo',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(titleDoc, searchKey);
-    await engine.indexDocument(contentDoc, searchKey);
-    const results = await engine.query(['flamingo'], searchKey);
+    await engine.indexDocument(titleDoc);
+    await engine.indexDocument(contentDoc);
+    const results = await engine.query(['flamingo']);
     const titleResult = results.find((r) => r.docId === 'doc-title');
     const contentResult = results.find((r) => r.docId === 'doc-content');
     expect(titleResult).toBeDefined();
@@ -235,31 +328,29 @@ describe('IndexEngine', () => {
   });
 
   it('returns the document title and last-changed date, not the raw id', async () => {
-    await engine.indexDocument(flamingo, searchKey);
-    const [result] = await engine.query(['flamingo'], searchKey);
+    await engine.indexDocument(flamingo);
+    const [result] = await engine.query(['flamingo']);
     expect(result.title).toBe('Flamingo Budget Report');
     expect(result.updatedAt).toBe(flamingo.updatedAt);
   });
 
   it('re-indexing updates the stored title', async () => {
-    await engine.indexDocument(flamingo, searchKey);
-    await engine.indexDocument({ ...flamingo, title: 'Flamingo Budget Report v2' }, searchKey);
-    const [result] = await engine.query(['flamingo'], searchKey);
+    await engine.indexDocument(flamingo);
+    await engine.indexDocument({ ...flamingo, title: 'Flamingo Budget Report v2' });
+    const [result] = await engine.query(['flamingo']);
     expect(result.title).toBe('Flamingo Budget Report v2');
   });
 
   it('updateDocument keeps the stored title in sync', async () => {
-    await engine.indexDocument(flamingo, searchKey);
+    await engine.indexDocument(flamingo);
     await engine.updateDocument(
-      { ...flamingo, title: 'Renamed Flamingo Report', updatedAt: flamingo.updatedAt + 1 },
-      searchKey,
-    );
-    const [result] = await engine.query(['flamingo'], searchKey);
+      { ...flamingo, title: 'Renamed Flamingo Report', updatedAt: flamingo.updatedAt + 1 });
+    const [result] = await engine.query(['flamingo']);
     expect(result.title).toBe('Renamed Flamingo Report');
   });
 
   it('listDocuments reports what is currently indexed', async () => {
-    await engine.indexDocument(flamingo, searchKey);
+    await engine.indexDocument(flamingo);
     const docs = await engine.listDocuments();
     expect(docs.get('doc-1')).toMatchObject({
       documentId: 'doc-1',
@@ -270,15 +361,14 @@ describe('IndexEngine', () => {
   });
 
   it('removeDocument clears indexed terms', async () => {
-    await engine.indexDocument(flamingo, searchKey);
+    await engine.indexDocument(flamingo);
     await engine.removeDocument('doc-1');
-    const results = await engine.query(['flamingo'], searchKey);
+    const results = await engine.query(['flamingo']);
     expect(results).toHaveLength(0);
   });
 });
 
 describe('body/content search', () => {
-  const searchKey = new Uint8Array(32).fill(7);
   let engine: IndexEngine;
 
   beforeEach(() => {
@@ -294,8 +384,8 @@ describe('body/content search', () => {
       content: 'The quarterly revenue figures show significant growth in APAC markets.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(doc, searchKey);
-    const results = await engine.query(['revenue'], searchKey);
+    await engine.indexDocument(doc);
+    const results = await engine.query(['revenue']);
     expect(results).toHaveLength(1);
     expect(results[0].docId).toBe('doc-body-only');
   });
@@ -308,8 +398,8 @@ describe('body/content search', () => {
       content: 'We discussed the roadmap and team capacity for next quarter.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(doc, searchKey);
-    const results = await engine.query(['invoice'], searchKey);
+    await engine.indexDocument(doc);
+    const results = await engine.query(['invoice']);
     expect(results).toHaveLength(0);
   });
 
@@ -328,9 +418,9 @@ describe('body/content search', () => {
       content: 'Reminder to water the plants.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(matching, searchKey);
-    await engine.indexDocument(nonMatching, searchKey);
-    const results = await engine.query(['vendor'], searchKey);
+    await engine.indexDocument(matching);
+    await engine.indexDocument(nonMatching);
+    const results = await engine.query(['vendor']);
     expect(results).toHaveLength(1);
     expect(results[0].docId).toBe('doc-match');
   });
@@ -343,8 +433,8 @@ describe('body/content search', () => {
       content: 'The deployment pipeline failed due to a missing environment variable.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(doc, searchKey);
-    const results = await engine.query(['deployment', 'pipeline'], searchKey);
+    await engine.indexDocument(doc);
+    const results = await engine.query(['deployment', 'pipeline']);
     expect(results).toHaveLength(1);
     expect(results[0].docId).toBe('doc-multi');
   });
@@ -357,8 +447,8 @@ describe('body/content search', () => {
       content: 'Refactoring the authentication module will improve reliability.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(doc, searchKey);
-    const results = await engine.query(['authentication', 'invoice'], searchKey);
+    await engine.indexDocument(doc);
+    const results = await engine.query(['authentication', 'invoice']);
     expect(results).toHaveLength(0);
   });
 
@@ -370,8 +460,8 @@ describe('body/content search', () => {
       content: 'Revenue Expenses Profit Headcount',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(sheet, searchKey);
-    const results = await engine.query(['headcount'], searchKey);
+    await engine.indexDocument(sheet);
+    const results = await engine.query(['headcount']);
     expect(results).toHaveLength(1);
     expect(results[0].docId).toBe('sheet-1');
     expect(results[0].type).toBe('spreadsheet');
@@ -385,8 +475,8 @@ describe('body/content search', () => {
       content: 'Our go-to-market strategy focuses on enterprise customers in Europe.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(slide, searchKey);
-    const results = await engine.query(['enterprise'], searchKey);
+    await engine.indexDocument(slide);
+    const results = await engine.query(['enterprise']);
     expect(results).toHaveLength(1);
     expect(results[0].docId).toBe('slide-1');
     expect(results[0].type).toBe('slide');
@@ -400,8 +490,8 @@ describe('body/content search', () => {
       content: 'Consider using WebSockets for the real-time collaboration feature.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(note, searchKey);
-    const results = await engine.query(['websockets'], searchKey);
+    await engine.indexDocument(note);
+    const results = await engine.query(['websockets']);
     expect(results).toHaveLength(1);
     expect(results[0].docId).toBe('note-1');
   });
@@ -414,20 +504,20 @@ describe('body/content search', () => {
       content: 'This document covers legacy infrastructure.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(original, searchKey);
+    await engine.indexDocument(original);
 
     const updated: SearchableDocument = {
       ...original,
       content: 'This document covers cloud migration planning.',
       updatedAt: Date.now() + 1,
     };
-    await engine.indexDocument(updated, searchKey);
+    await engine.indexDocument(updated);
 
-    const cloudResults = await engine.query(['cloud'], searchKey);
+    const cloudResults = await engine.query(['cloud']);
     expect(cloudResults).toHaveLength(1);
     expect(cloudResults[0].docId).toBe('doc-update');
 
-    const legacyResults = await engine.query(['legacy'], searchKey);
+    const legacyResults = await engine.query(['legacy']);
     expect(legacyResults).toHaveLength(0);
   });
 
@@ -439,8 +529,8 @@ describe('body/content search', () => {
       content: 'The KUBERNETES cluster needs to be upgraded to version 1.30.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(doc, searchKey);
-    const results = await engine.query(['kubernetes'], searchKey);
+    await engine.indexDocument(doc);
+    const results = await engine.query(['kubernetes']);
     expect(results).toHaveLength(1);
     expect(results[0].docId).toBe('doc-case');
   });
@@ -460,9 +550,9 @@ describe('body/content search', () => {
       content: 'New hire onboarding starts next Monday.',
       updatedAt: Date.now(),
     };
-    await engine.indexDocument(doc1, searchKey);
-    await engine.indexDocument(doc2, searchKey);
-    const results = await engine.query(['onboarding'], searchKey);
+    await engine.indexDocument(doc1);
+    await engine.indexDocument(doc2);
+    const results = await engine.query(['onboarding']);
     const ids = results.map((r) => r.docId);
     expect(ids).toContain('doc-a');
     expect(ids).toContain('doc-b');

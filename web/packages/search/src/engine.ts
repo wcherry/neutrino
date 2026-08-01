@@ -1,5 +1,5 @@
 import type { SearchableDocument, SearchResult } from './types';
-import { tokenizeWithPositions, normalizeText, hashToken } from './tokenizer';
+import { tokenizeWithPositions, normalizeText } from './tokenizer';
 import {
   openSearchDb,
   putTokenEntries,
@@ -16,6 +16,13 @@ import {
 const TITLE_WEIGHT = 3;
 const MAX_RESULTS = 20;
 
+/**
+ * Query terms shorter than this are dropped rather than prefix-matched. A one
+ * or two letter prefix matches a large share of the index, which costs a big
+ * scan to return a result nobody wanted.
+ */
+const MIN_PREFIX_LENGTH = 3;
+
 function positionsToBytes(positions: number[]): Uint8Array {
   const buf = new Uint8Array(positions.length * 4);
   const view = new DataView(buf.buffer);
@@ -25,6 +32,20 @@ function positionsToBytes(positions: number[]): Uint8Array {
   return buf;
 }
 
+function toTokenEntries(
+  terms: { term: string; positions: number[] }[],
+  documentId: string,
+  field: 'title' | 'content',
+): TokenEntry[] {
+  return terms.map((t) => ({
+    term: t.term,
+    documentId,
+    field,
+    frequency: t.positions.length,
+    positions: positionsToBytes(t.positions),
+  }));
+}
+
 export class IndexEngine {
   private getDb: () => Promise<IDBDatabase>;
 
@@ -32,35 +53,18 @@ export class IndexEngine {
     this.getDb = dbFactory ?? openSearchDb;
   }
 
-  async indexDocument(doc: SearchableDocument, searchKey: Uint8Array): Promise<void> {
+  async indexDocument(doc: SearchableDocument): Promise<void> {
     const t0 = performance.now();
     const db = await this.getDb();
     await deleteDocumentTokens(doc.id, db);
 
-    const [titleTokens, contentTokens] = await Promise.all([
-      tokenizeWithPositions(doc.title, searchKey),
-      tokenizeWithPositions(doc.content, searchKey),
-    ]);
+    const titleTerms = tokenizeWithPositions(doc.title);
+    const contentTerms = tokenizeWithPositions(doc.content);
 
-    const entries: TokenEntry[] = [
-      ...titleTokens.map((t) => ({
-        tokenHash: t.hash,
-        documentId: doc.id,
-        field: 'title' as const,
-        frequency: t.positions.length,
-        positions: positionsToBytes(t.positions),
-      })),
-      ...contentTokens.map((t) => ({
-        tokenHash: t.hash,
-        documentId: doc.id,
-        field: 'content' as const,
-        frequency: t.positions.length,
-        positions: positionsToBytes(t.positions),
-      })),
+    const entries = [
+      ...toTokenEntries(titleTerms, doc.id, 'title'),
+      ...toTokenEntries(contentTerms, doc.id, 'content'),
     ];
-
-    const titleHashes = titleTokens.map((t) => t.hash);
-    const contentHashes = contentTokens.map((t) => t.hash);
 
     await Promise.all([
       putTokenEntries(entries, db),
@@ -69,8 +73,8 @@ export class IndexEngine {
           documentId: doc.id,
           type: doc.type,
           title: doc.title,
-          titleHashes,
-          contentHashes,
+          titleTerms: titleTerms.map((t) => t.term),
+          contentTerms: contentTerms.map((t) => t.term),
           updatedAt: doc.updatedAt,
           mimeType: doc.mimeType,
         },
@@ -82,7 +86,7 @@ export class IndexEngine {
     const contentWords = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
     console.debug(
       `[search] indexed ${doc.type} "${doc.id}" — ` +
-      `title tokens: ${titleTokens.length}, content tokens: ${contentTokens.length}, ` +
+      `title terms: ${titleTerms.length}, content terms: ${contentTerms.length}, ` +
       `content words: ${contentWords}, total entries: ${entries.length}, ` +
       `${elapsed}ms`,
     );
@@ -93,48 +97,32 @@ export class IndexEngine {
     await deleteDocumentTokens(docId, db);
   }
 
-  async updateDocument(doc: SearchableDocument, searchKey: Uint8Array): Promise<void> {
+  async updateDocument(doc: SearchableDocument): Promise<void> {
     const db = await this.getDb();
     const existing = (await getDocEntries([doc.id], db)).get(doc.id);
 
     if (!existing) {
-      return this.indexDocument(doc, searchKey);
+      return this.indexDocument(doc);
     }
 
     const t0 = performance.now();
-    const [titleTokens, contentTokens] = await Promise.all([
-      tokenizeWithPositions(doc.title, searchKey),
-      tokenizeWithPositions(doc.content, searchKey),
-    ]);
+    const titleTerms = tokenizeWithPositions(doc.title);
+    const contentTerms = tokenizeWithPositions(doc.content);
 
-    const newTitleHashes = new Set(titleTokens.map((t) => t.hash));
-    const newContentHashes = new Set(contentTokens.map((t) => t.hash));
-    const oldTitleHashes = new Set(existing.titleHashes);
-    const oldContentHashes = new Set(existing.contentHashes ?? []);
+    const newTitleTerms = new Set(titleTerms.map((t) => t.term));
+    const newContentTerms = new Set(contentTerms.map((t) => t.term));
 
-    const removals: { hash: string; field: 'title' | 'content' }[] = [];
-    for (const h of oldTitleHashes) {
-      if (!newTitleHashes.has(h)) removals.push({ hash: h, field: 'title' });
+    const removals: { term: string; field: 'title' | 'content' }[] = [];
+    for (const term of existing.titleTerms ?? []) {
+      if (!newTitleTerms.has(term)) removals.push({ term, field: 'title' });
     }
-    for (const h of oldContentHashes) {
-      if (!newContentHashes.has(h)) removals.push({ hash: h, field: 'content' });
+    for (const term of existing.contentTerms ?? []) {
+      if (!newContentTerms.has(term)) removals.push({ term, field: 'content' });
     }
 
-    const entries: TokenEntry[] = [
-      ...titleTokens.map((t) => ({
-        tokenHash: t.hash,
-        documentId: doc.id,
-        field: 'title' as const,
-        frequency: t.positions.length,
-        positions: positionsToBytes(t.positions),
-      })),
-      ...contentTokens.map((t) => ({
-        tokenHash: t.hash,
-        documentId: doc.id,
-        field: 'content' as const,
-        frequency: t.positions.length,
-        positions: positionsToBytes(t.positions),
-      })),
+    const entries = [
+      ...toTokenEntries(titleTerms, doc.id, 'title'),
+      ...toTokenEntries(contentTerms, doc.id, 'content'),
     ];
 
     const elapsed = (performance.now() - t0).toFixed(1);
@@ -150,35 +138,41 @@ export class IndexEngine {
         documentId: doc.id,
         type: doc.type,
         title: doc.title,
-        titleHashes: [...newTitleHashes],
-        contentHashes: [...newContentHashes],
+        titleTerms: [...newTitleTerms],
+        contentTerms: [...newContentTerms],
         updatedAt: doc.updatedAt,
         mimeType: doc.mimeType,
       }, db),
     ]);
   }
 
-  async query(terms: string[], searchKey: Uint8Array): Promise<SearchResult[]> {
+  /**
+   * Documents matching every term, where each term matches any indexed word it
+   * is a prefix of — so "mod" finds "Modesto", and "mod bud" finds a document
+   * with both a "mod…" and a "bud…" word.
+   */
+  async query(terms: string[]): Promise<SearchResult[]> {
     if (terms.length === 0) return [];
     const db = await this.getDb();
 
-    const normalizedTerms = terms.flatMap((t) => normalizeText(t));
-    if (normalizedTerms.length === 0) return [];
+    const prefixes = terms
+      .flatMap((t) => normalizeText(t))
+      .filter((t) => t.length >= MIN_PREFIX_LENGTH);
+    if (prefixes.length === 0) return [];
 
-    const termHashes = await Promise.all(normalizedTerms.map((t) => hashToken(t, searchKey)));
+    const postingsMap = await lookupPostings(prefixes, db);
 
-    const postingsMap = await lookupPostings(termHashes, db);
-
-    // intersect: only docIds appearing in ALL term hashes
+    // Intersect: a document must match every prefix, though any word starting
+    // with that prefix satisfies it.
     let matchingDocIds: Set<string> | null = null;
-    for (const hash of termHashes) {
-      const entries = postingsMap.get(hash) ?? [];
-      const docIdsForHash = new Set(entries.map((e) => e.documentId));
+    for (const prefix of prefixes) {
+      const entries = postingsMap.get(prefix) ?? [];
+      const docIdsForPrefix = new Set(entries.map((e) => e.documentId));
       if (matchingDocIds === null) {
-        matchingDocIds = docIdsForHash;
+        matchingDocIds = docIdsForPrefix;
       } else {
         for (const id of matchingDocIds) {
-          if (!docIdsForHash.has(id)) matchingDocIds.delete(id);
+          if (!docIdsForPrefix.has(id)) matchingDocIds.delete(id);
         }
       }
     }
@@ -187,11 +181,12 @@ export class IndexEngine {
     if (docIds.length === 0) return [];
 
     const docEntries = await getDocEntries(docIds, db);
+    const matched = new Set(docIds);
 
     const scores = new Map<string, number>();
     for (const entries of postingsMap.values()) {
       for (const entry of entries) {
-        if (!docIds.includes(entry.documentId)) continue;
+        if (!matched.has(entry.documentId)) continue;
         const weight = entry.field === 'title' ? TITLE_WEIGHT : 1;
         scores.set(
           entry.documentId,

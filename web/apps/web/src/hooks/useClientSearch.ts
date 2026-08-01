@@ -4,13 +4,15 @@ import type React from 'react';
 import { useCallback, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, Calendar, File as FileIcon } from 'lucide-react';
-import { IndexEngine, getOrCreateSearchKey, type SearchableDocType } from '@neutrino/search';
+import { IndexEngine, type SearchableDocType } from '@neutrino/search';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
 import { tagsApi, useUser, type TaggedFile, type Tag } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import {
   hrefForFile,
+  DIAGRAM_MIME,
   DOC_MIME,
+  DRAWING_MIME,
   NOTE_MIME,
   SHEET_MIME,
   SLIDES_MIME,
@@ -61,6 +63,8 @@ const DOC_TYPE_MIME: Partial<Record<SearchableDocType, string>> = {
   spreadsheet: SHEET_MIME,
   slide: SLIDES_MIME,
   note: NOTE_MIME,
+  diagram: DIAGRAM_MIME,
+  drawing: DRAWING_MIME,
 };
 
 function toMillis(value: number | string | null | undefined): number {
@@ -84,6 +88,8 @@ export function docTypeUrl(type: SearchableDocType, docId: string, mimeType?: st
     case 'spreadsheet': return `/sheets/editor?id=${docId}`;
     case 'note': return `/notes/editor?id=${docId}`;
     case 'slide': return `/slides/editor?id=${docId}`;
+    case 'diagram': return `/diagrams/editor?id=${docId}`;
+    case 'drawing': return `/drawing/editor?id=${docId}`;
     case 'event':
     case 'reminder': return '/calendar';
     case 'file': return hrefForFile({ id: docId, mimeType: mimeType ?? '' });
@@ -97,6 +103,8 @@ export function docTypeLabel(type: SearchableDocType): string {
     spreadsheet: 'Sheet',
     note: 'Note',
     slide: 'Slide',
+    diagram: 'Diagram',
+    drawing: 'Drawing',
     event: 'Event',
     reminder: 'Reminder',
     file: 'File',
@@ -213,7 +221,7 @@ export function useClientSearch() {
 
       const textResults =
         canSearchText && engine && userId
-          ? await engine.query(textQuery.split(/\s+/).filter(Boolean), getOrCreateSearchKey(userId))
+          ? await engine.query(textQuery.split(/\s+/).filter(Boolean))
           : [];
 
       if (hasExplicitTagFilter && taggedFiles) {
