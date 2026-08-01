@@ -261,10 +261,10 @@
   height: 100%;
 }
 
+/* Rendered in a portal on document.body and anchored to the cell being edited
+   (see FunctionHelper.tsx) — top/left/bottom/max-height come from inline styles. */
 .functionDropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  position: fixed;
   background: var(--color-surface-raised);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);

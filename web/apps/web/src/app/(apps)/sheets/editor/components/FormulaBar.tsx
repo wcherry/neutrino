@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useRef } from 'react';
 import type { CellProps } from '../types';
 import { functionsList } from '../formula';
+import { FunctionHelper } from './FunctionHelper';
 import styles from '../page.module.css';
 
 type Props = {
@@ -41,27 +42,13 @@ export function FormulaBar({
     spellCheck = false,
     readOnly = false,
 }: Props) {
-    const dropdownRef = useRef<HTMLDivElement>(null);
+    const wrapperRef = useRef<HTMLDivElement>(null);
 
     const query = showFunctions && !showAllFunctions
         ? (currentCell?.raw ?? '').slice(1).toUpperCase()
         : '';
     const fns = (showFunctions || showAllFunctions) ? functionsList(query) : [];
     const isOpen = fns.length > 0 && (showFunctions || showAllFunctions);
-
-    // Close dropdown on outside click
-    useEffect(() => {
-        if (!isOpen) return;
-        const handle = (e: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-                // Only close the "all functions" panel via outside click — typing-triggered
-                // showFunctions is managed by the input handler in useCellEditing.
-                if (showAllFunctions) onToggleAllFunctions();
-            }
-        };
-        document.addEventListener('mousedown', handle);
-        return () => document.removeEventListener('mousedown', handle);
-    }, [isOpen, showAllFunctions, onToggleAllFunctions]);
 
     return (
         <div className={styles.formulaBar}>
@@ -74,7 +61,7 @@ export function FormulaBar({
             >
                 <i>f</i>(x)
             </button>
-            <div className={styles.formulaInputWrapper} ref={dropdownRef}>
+            <div className={styles.formulaInputWrapper} ref={wrapperRef}>
                 <input
                     ref={formulaInputRef}
                     type="text"
@@ -95,25 +82,15 @@ export function FormulaBar({
                     </span>
                 )}
                 {isOpen && (
-                    <div className={styles.functionDropdown}>
-                        {fns.map(fn => (
-                            <button
-                                key={fn.name}
-                                className={styles.functionItem}
-                                onMouseDown={e => {
-                                    e.preventDefault();
-                                    onFunctionSelect(fn.name);
-                                }}
-                                type="button"
-                            >
-                                <span className={styles.functionSignature}>
-                                    <span className={styles.functionName}>{fn.name}</span>
-                                    {fn.signature.slice(fn.name.length)}
-                                </span>
-                                <span className={styles.functionDescription}>{fn.description}</span>
-                            </button>
-                        ))}
-                    </div>
+                    <FunctionHelper
+                        functions={fns}
+                        anchorCellId={currentCell?.id}
+                        fallbackRef={wrapperRef}
+                        onSelect={onFunctionSelect}
+                        // Only the "all functions" panel closes on an outside click —
+                        // typing-triggered showFunctions is managed by useCellEditing.
+                        onDismiss={showAllFunctions ? onToggleAllFunctions : undefined}
+                    />
                 )}
             </div>
         </div>
