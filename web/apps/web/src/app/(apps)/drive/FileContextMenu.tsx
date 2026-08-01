@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eye, Info, Pencil, Star, StarOff, Download, Trash2, Link, Share2, FolderInput, FileCog } from 'lucide-react';
+import { Eye, Info, Pencil, Star, StarOff, Download, Trash2, Link, Share2, FolderInput, FileCog, Tag } from 'lucide-react';
 import { type FileItem } from '@/lib/api';
 import { officeAppForFile, type OfficeApp } from '@/lib/officeFormats';
 import styles from './FileContextMenu.module.css';
@@ -26,6 +26,7 @@ interface Props {
   onCopyLink: () => void;
   onShare: () => void;
   onMove: () => void;
+  onManageTags: () => void;
   /** Present only when `file` is a raw, not-yet-promoted office file and the
    *  office-in-place-editing flag is on (issue #43). */
   onConvert?: () => void;
@@ -45,6 +46,7 @@ export function FileContextMenu({
   onCopyLink,
   onShare,
   onMove,
+  onManageTags,
   onConvert,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
@@ -86,6 +88,7 @@ export function FileContextMenu({
       label: file.isStarred ? 'Remove star' : 'Star',
       action: onStarToggle,
     },
+    { icon: <Tag size={14} />, label: 'Manage tags', action: onManageTags },
     { icon: <Link size={14} />, label: 'Copy link', action: onCopyLink },
     { icon: <FolderInput size={14} />, label: 'Move to', action: onMove },
     { icon: <Download size={14} />, label: 'Download', action: onDownload },

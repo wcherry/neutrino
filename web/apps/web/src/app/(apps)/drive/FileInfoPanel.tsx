@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   X,
   History,
@@ -9,9 +9,10 @@ import {
   HardDrive,
   Tag,
 } from 'lucide-react';
-import { Text, Heading, Spinner } from '@neutrino/ui';
-import { storageApi, type FileItem } from '@/lib/api';
+import { Text, Heading, Spinner, useToast } from '@neutrino/ui';
+import { storageApi, tagsApi, type FileItem, type Tag as TagType } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
+import { TagPicker, tagWriteErrorMessage } from './TagPicker';
 import styles from './FileInfoPanel.module.css';
 
 function formatFileSize(bytes: number): string {
@@ -35,13 +36,46 @@ function formatDate(iso: string): string {
 interface Props {
   file: FileItem;
   onClose: () => void;
+  /** Opens with the tag picker already showing — used by "Manage tags". */
+  focusTags?: boolean;
 }
 
-export function FileInfoPanel({ file, onClose }: Props) {
+export function FileInfoPanel({ file, onClose, focusTags = false }: Props) {
+  const [pickerOpen, setPickerOpen] = useState(focusTags);
+  const queryClient = useQueryClient();
+  const toast = useToast();
+
   const { data: versionsData, isLoading: versionsLoading } = useQuery({
     queryKey: ['file-versions', file.id],
     queryFn: () => storageApi.listVersions(file.id),
     staleTime: 60_000,
+  });
+
+  const { data: tags, isLoading: tagsLoading } = useQuery({
+    queryKey: ['file-tags', file.id],
+    queryFn: () => tagsApi.forFile(file.id),
+    staleTime: 30_000,
+  });
+
+  const removeTagMutation = useMutation({
+    mutationFn: (tag: TagType) => tagsApi.removeFromFile(file.id, tag.id),
+    onMutate: async (tag) => {
+      await queryClient.cancelQueries({ queryKey: ['file-tags', file.id] });
+      const previous = queryClient.getQueryData<TagType[]>(['file-tags', file.id]);
+      queryClient.setQueryData<TagType[]>(['file-tags', file.id], (current = []) =>
+        current.filter((t) => t.id !== tag.id),
+      );
+      return { previous };
+    },
+    onError: (err, _tag, context) => {
+      queryClient.setQueryData(['file-tags', file.id], context?.previous);
+      toast.error(tagWriteErrorMessage(err, 'remove'));
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['file-tags', file.id] });
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
+      queryClient.invalidateQueries({ queryKey: ['tag-files'] });
+    },
   });
 
   const IconComponent = getFileIcon(file.mimeType);
@@ -121,6 +155,46 @@ export function FileInfoPanel({ file, onClose }: Props) {
             </dd>
           </div>
         </dl>
+      </div>
+
+      <div className={styles.section}>
+        <Text
+          size="xs"
+          color="muted"
+          weight="semibold"
+        >
+          Tags
+        </Text>
+        {tagsLoading ? (
+          <Spinner size="sm" />
+        ) : (
+          <div className={styles.tagSection}>
+            {(tags ?? []).length > 0 && (
+              <div className={styles.tagList}>
+                {(tags ?? []).map((tag) => (
+                  <span key={tag.id} className={styles.tagChip}>
+                    <Tag size={11} aria-hidden />
+                    {tag.name}
+                    <button
+                      type="button"
+                      className={styles.tagRemove}
+                      aria-label={`Remove tag ${tag.name}`}
+                      onClick={() => removeTagMutation.mutate(tag)}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <TagPicker
+              fileId={file.id}
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
+              appliedTags={tags ?? []}
+            />
+          </div>
+        )}
       </div>
 
       <div className={styles.section}>

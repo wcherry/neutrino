@@ -110,3 +110,50 @@
   display: flex;
   align-items: center;
 }
+
+.tagSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 999px);
+  background-color: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  max-width: 100%;
+}
+
+.tagRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.tagRemove:hover {
+  color: var(--color-text-primary);
+}
+
+.tagRemove:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}

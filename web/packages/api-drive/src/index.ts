@@ -26,6 +26,7 @@ export {
   downloadAndDecryptFile,
   notificationsApi,
   getNotificationsWsUrl,
+  tagsApi,
 } from './client';
 
 export type {
@@ -78,4 +79,11 @@ export type {
   ShareFileKeyRequest,
   NotificationItem,
   NotificationListResponse,
+  Tag,
+  ListTagsResponse,
+  CreateTagRequest,
+  UpdateTagRequest,
+  SetFileTagsRequest,
+  TaggedFile,
+  ListTaggedFilesResponse,
 } from './types';

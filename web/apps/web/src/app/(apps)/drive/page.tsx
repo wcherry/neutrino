@@ -36,23 +36,14 @@ import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPr
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { routeForFile, officeEditorRoute, DOC_MIME, SHEET_MIME, SLIDES_MIME, DIAGRAM_MIME, DRAWING_MIME } from './routeForFile';
 import { officeAppForFile } from '@/lib/officeFormats';
+import {
+  fileToGridItem,
+  folderToGridItem,
+  formatDate,
+  formatFileSize,
+} from './gridItems';
 import styles from './page.module.css';
 
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
 
 function triggerBlobDownload(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -63,40 +54,6 @@ function triggerBlobDownload(blob: Blob, fileName: string) {
   a.click();
   document.body.removeChild(a);
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-}
-
-function folderToGridItem(folder: FolderItem): GridItem {
-  return {
-    id: folder.id,
-    name: folder.name,
-    kind: 'folder',
-    icon: Folder,
-    iconColor: folder.color ?? 'var(--color-amber, #d97706)',
-    subtitle: 'Folder',
-    typeText: 'Folder',
-    sizeText: '—',
-    modifiedText: formatDate(folder.updatedAt),
-    isStarred: folder.isStarred,
-  };
-}
-
-function fileToGridItem(file: FileItem): GridItem {
-  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : '—';
-  return {
-    id: file.id,
-    name: file.name,
-    kind: 'file',
-    icon: getFileIcon(file.mimeType),
-    iconColor: getIconColor(file.mimeType),
-    subtitle: formatFileSize(file.sizeBytes),
-    mimeType: file.mimeType,
-    typeText: ext,
-    sizeText: formatFileSize(file.sizeBytes),
-    modifiedText: formatDate(file.updatedAt),
-    isStarred: file.isStarred,
-    coverThumbnail: file.coverThumbnail,
-    coverThumbnailMimeType: file.coverThumbnailMimeType,
-  };
 }
 
 interface ContextMenuState {
@@ -121,7 +78,9 @@ export default function DrivePage() {
   const dragDepthRef = useRef(0);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [infoFile, setInfoFile] = useState<FileItem | null>(null);
+  // `focusTags` opens the panel with the tag picker already expanded, so
+  // "Manage tags" lands on the tag UI in one click instead of two.
+  const [infoFile, setInfoFile] = useState<{ file: FileItem; focusTags: boolean } | null>(null);
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
   const [moveFile, setMoveFile] = useState<FileItem | null>(null);
   const [docPreview, setDocPreview] = useState<{ id: string; kind: DocumentKind } | null>(null);
@@ -685,7 +644,8 @@ export default function DrivePage() {
               setContextMenu(null);
             };
           })()}
-          onInfo={() => { setInfoFile(contextMenu.file); setContextMenu(null); }}
+          onInfo={() => { setInfoFile({ file: contextMenu.file, focusTags: false }); setContextMenu(null); }}
+          onManageTags={() => { setInfoFile({ file: contextMenu.file, focusTags: true }); setContextMenu(null); }}
           onShare={() => { setShareFile(contextMenu.file); setContextMenu(null); }}
           onRename={() => { openRename(contextMenu.file); setContextMenu(null); }}
           onStarToggle={() => { handleStar(contextMenu.file); setContextMenu(null); }}
@@ -776,7 +736,14 @@ export default function DrivePage() {
         />
       )}
 
-      {infoFile && <FileInfoPanel file={infoFile} onClose={() => setInfoFile(null)} />}
+      {infoFile && (
+        <FileInfoPanel
+          key={`${infoFile.file.id}:${infoFile.focusTags}`}
+          file={infoFile.file}
+          focusTags={infoFile.focusTags}
+          onClose={() => setInfoFile(null)}
+        />
+      )}
 
       {bulkMoveOpen && (
         <MoveFolderDialog

@@ -1,0 +1,181 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--space-2);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-full, 999px);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.trigger:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Laid out in normal flow, not floating: the host info panel scrolls and would
+   clip an absolutely-positioned child at its 300px edge. */
+.picker {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 280px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-surface-overlay, var(--color-surface));
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.searchIcon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  padding: var(--space-1) 0;
+}
+
+.searchInput:focus {
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.option:hover {
+  background-color: var(--color-bg-subtle);
+}
+
+.option:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.checkOn,
+.checkOff {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.checkOn {
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse, #fff);
+  border: 1px solid var(--color-primary);
+}
+
+.checkOff {
+  border: 1px solid var(--color-border);
+}
+
+.tagIcon {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.optionName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) var(--space-3);
+  text-align: center;
+}
+
+.createRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-top: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.createRow:hover:not(:disabled) {
+  background-color: var(--color-bg-subtle);
+}
+
+.createRow:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.createRow strong {
+  font-weight: var(--font-weight-semibold, 600);
+}

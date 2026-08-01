@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AppShell,
   Sidebar,
   Topbar,
+  type NavItem,
   type NavSection,
   type StorageQuota,
   type TopbarSearchResult,
@@ -34,7 +35,25 @@ import {
   Bell,
   Image,
 } from 'lucide-react';
-import { authApi, ensureE2EKeys, storageApi, type UserProfile, type QuotaInfo } from '@/lib/api';
+import {
+  authApi,
+  ensureE2EKeys,
+  storageApi,
+  tagsApi,
+  type UserProfile,
+  type QuotaInfo,
+  type Tag,
+  type TaggedFile,
+} from '@/lib/api';
+import { tagNavSection } from '@/lib/tagNav';
+import {
+  intersectFileIds,
+  matchTagsForTerm,
+  parseTagQuery,
+  resolveTagFilter,
+} from '@/lib/tagSearch';
+import { hrefForFile } from './drive/routeForFile';
+import { getFileIcon } from '@/lib/file-icons';
 import { IndexEngine, type SearchableDocType } from '@neutrino/search';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
 import { NewItemFAB } from './NewItemFAB';
@@ -42,6 +61,22 @@ import { useNotifications } from '@/hooks/useNotifications';
 
 const SEARCH_KEY_STORAGE = 'search_key_v1';
 const SEARCH_KEY_BYTES = 32;
+const MIN_SEARCH_LENGTH = 3;
+const MAX_SEARCH_RESULTS = 20;
+/** Per tag, matching the backend's paging cap. */
+const TAG_SEARCH_FILE_LIMIT = 200;
+
+/** A Drive file surfaced by a tag match rather than a content match. */
+function taggedFileResult(file: TaggedFile): TopbarSearchResult {
+  const Icon = getFileIcon(file.mimeType);
+  return {
+    id: file.id,
+    title: file.name,
+    subtitle: 'Tagged',
+    href: hrefForFile(file),
+    icon: <Icon size={16} />,
+  };
+}
 
 function getOrCreateSearchKey(userId: string): Uint8Array {
   const storageKey = `${SEARCH_KEY_STORAGE}_${userId}`;
@@ -132,10 +167,11 @@ const BASE_NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function getNavSections(isAdmin: boolean): NavSection[] {
+function getNavSections(isAdmin: boolean, tags: Tag[]): NavSection[] {
+  const sections = [...BASE_NAV_SECTIONS, tagNavSection(tags)];
   if (isAdmin) {
     return [
-      ...BASE_NAV_SECTIONS,
+      ...sections,
       {
         id: 'admin',
         label: 'Administration',
@@ -145,7 +181,7 @@ function getNavSections(isAdmin: boolean): NavSection[] {
       },
     ];
   }
-  return BASE_NAV_SECTIONS;
+  return sections;
 }
 
 const DEFAULT_QUOTA_BYTES = 15 * 1024 * 1024 * 1024; // 15 GB fallback when no server limit set
@@ -172,7 +208,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const searchKeyRef = useRef<Uint8Array | null>(null);
 
   const isAdmin = auth.status === 'ready' ? (auth.user.isAdmin ?? false) : false;
-  const currentNavSections = getNavSections(isAdmin);
+
+  // Shared with the tag picker and tag pages: one cached list feeds the
+  // sidebar, the picker's filter, and tag-name matching in search.
+  const { data: tagsData } = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => tagsApi.list(),
+    enabled: auth.status === 'ready',
+    staleTime: 30_000,
+  });
+  const tags = useMemo(() => tagsData?.tags ?? [], [tagsData]);
+
+  const currentNavSections = getNavSections(isAdmin, tags);
   const allHrefs = currentNavSections.flatMap((s) => s.items).filter((i) => i.href);
   const activeHref = allHrefs
     .filter((i) => pathname === i.href || pathname.startsWith(i.href! + '/'))
@@ -258,25 +305,123 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [auth]);
 
 
+  /**
+   * Files carrying every tag in the filter, as `fileId -> file`. Fetched
+   * through the query cache so repeated keystrokes reuse the same responses.
+   */
+  const fetchTaggedFiles = useCallback(
+    async (groups: Tag[][]): Promise<Map<string, TaggedFile>> => {
+      const filesById = new Map<string, TaggedFile>();
+      const idsPerGroup: Set<string>[] = [];
+
+      for (const group of groups) {
+        const idsForGroup = new Set<string>();
+        const responses = await Promise.all(
+          group.map((tag) =>
+            queryClient
+              .fetchQuery({
+                queryKey: ['tag-files', tag.id],
+                queryFn: () => tagsApi.filesForTag(tag.id, { limit: TAG_SEARCH_FILE_LIMIT }),
+                staleTime: 30_000,
+              })
+              // A tag deleted in another tab 404s here. Search must degrade to
+              // its other matches rather than throwing out of the handler.
+              .catch(() => ({ files: [], total: 0, limit: 0, offset: 0 })),
+          ),
+        );
+        for (const response of responses) {
+          for (const file of response.files) {
+            idsForGroup.add(file.id);
+            filesById.set(file.id, file);
+          }
+        }
+        idsPerGroup.push(idsForGroup);
+      }
+
+      const matching = intersectFileIds(idsPerGroup);
+      return new Map([...filesById].filter(([id]) => matching.has(id)));
+    },
+    [queryClient],
+  );
+
   const handleSearch = useCallback(async (query: string) => {
-    const engine = engineRef.current;
-    const searchKey = searchKeyRef.current;
-    if (!engine || !searchKey || query.length < 3) {
+    const { tagTerms, textQuery, hasExplicitTagFilter } = parseTagQuery(query);
+
+    // An explicit `tag:` filter naming an unknown tag matches nothing, rather
+    // than silently degrading to an untagged search.
+    const tagGroups = hasExplicitTagFilter ? resolveTagFilter(tags, tagTerms) : null;
+    if (hasExplicitTagFilter && !tagGroups) {
       setSearchResults([]);
       return;
     }
-    const terms = query.trim().split(/\s+/).filter(Boolean);
-    const found = await engine.query(terms, searchKey);
-    setSearchResults(
-      found.map((r) => ({
+    const taggedFiles = tagGroups ? await fetchTaggedFiles(tagGroups) : null;
+
+    // Content search covers only the E2EE-indexed apps and needs local keys.
+    const engine = engineRef.current;
+    const searchKey = searchKeyRef.current;
+    const canSearchText = Boolean(engine && searchKey) && textQuery.length >= MIN_SEARCH_LENGTH;
+
+    const textResults =
+      canSearchText && engine && searchKey
+        ? await engine.query(textQuery.split(/\s+/).filter(Boolean), searchKey)
+        : [];
+
+    if (hasExplicitTagFilter && taggedFiles) {
+      // `tag:x some words` — the tag filter narrows the content hits. With no
+      // text terms, the tagged files are the whole result.
+      const matched = canSearchText
+        ? textResults.filter((r) => taggedFiles.has(r.docId))
+        : [];
+
+      const results: TopbarSearchResult[] = canSearchText
+        ? matched.map((r) => ({
+            id: r.docId,
+            title: taggedFiles.get(r.docId)?.name || r.title || r.docId,
+            subtitle: docTypeLabel(r.type),
+            href: docTypeUrl(r.type, r.docId),
+            icon: docTypeIcon(r.type),
+          }))
+        : [...taggedFiles.values()].map(taggedFileResult);
+
+      setSearchResults(results.slice(0, MAX_SEARCH_RESULTS));
+      return;
+    }
+
+    if (query.trim().length < MIN_SEARCH_LENGTH) {
+      setSearchResults([]);
+      return;
+    }
+
+    // No `tag:` prefix — surface files whose *tag name* matches the raw query
+    // alongside the content hits, so typing "taxes" finds what you labelled.
+    const impliedTags = matchTagsForTerm(tags, query.trim());
+    const impliedFiles = impliedTags.length > 0
+      ? await fetchTaggedFiles([impliedTags])
+      : new Map<string, TaggedFile>();
+
+    const seen = new Set<string>();
+    const results: TopbarSearchResult[] = [];
+
+    for (const r of textResults) {
+      if (seen.has(r.docId)) continue;
+      seen.add(r.docId);
+      results.push({
         id: r.docId,
         title: r.title || r.docId,
         subtitle: docTypeLabel(r.type),
         href: docTypeUrl(r.type, r.docId),
         icon: docTypeIcon(r.type),
-      })),
-    );
-  }, []);
+      });
+    }
+
+    for (const file of impliedFiles.values()) {
+      if (seen.has(file.id)) continue;
+      seen.add(file.id);
+      results.push(taggedFileResult(file));
+    }
+
+    setSearchResults(results.slice(0, MAX_SEARCH_RESULTS));
+  }, [tags, fetchTaggedFiles]);
 
   const handleResultClick = useCallback((result: TopbarSearchResult) => {
     router.push(result.href);
