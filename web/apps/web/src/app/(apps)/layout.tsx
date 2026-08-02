@@ -301,6 +301,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       onNotificationRead={markRead}
       onMarkAllNotificationsRead={markAllRead}
       onSettings={() => router.push('/settings')}
+      onImport={() => router.push('/import')}
       onSignOut={handleSignOut}
       onProfileClick={() => router.push('/profile')}
     >
