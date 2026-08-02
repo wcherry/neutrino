@@ -1,5 +1,5 @@
-import type { GridItem } from '@neutrino/ui';
-import type { FileItem, Folder as FolderItem } from '@/lib/api';
+import type { GridItem, SortDir, SortField } from '@neutrino/ui';
+import type { FileItem, Folder as FolderItem, TrashFileItem, TrashFolderItem } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { Folder } from 'lucide-react';
 
@@ -56,4 +56,72 @@ export function folderToGridItem(folder: FolderItem): GridItem {
     modifiedText: formatDate(folder.updatedAt),
     isStarred: folder.isStarred,
   };
+}
+
+/**
+ * Trash rows carry `deletedAt` instead of `updatedAt`, so the Modified column
+ * shows when the item was deleted — the only date that matters in Trash.
+ */
+export function trashFileToGridItem(file: TrashFileItem): GridItem {
+  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : '—';
+  return {
+    id: file.id,
+    name: file.name,
+    kind: 'file',
+    icon: getFileIcon(file.mimeType),
+    iconColor: getIconColor(file.mimeType),
+    subtitle: `Deleted ${formatDate(file.deletedAt)}`,
+    mimeType: file.mimeType,
+    typeText: ext,
+    sizeText: formatFileSize(file.sizeBytes),
+    modifiedText: formatDate(file.deletedAt),
+  };
+}
+
+export function trashFolderToGridItem(folder: TrashFolderItem): GridItem {
+  return {
+    id: folder.id,
+    name: folder.name,
+    kind: 'folder',
+    icon: Folder,
+    iconColor: 'var(--color-amber, #d97706)',
+    subtitle: `Deleted ${formatDate(folder.deletedAt)}`,
+    typeText: 'Folder',
+    sizeText: '—',
+    modifiedText: formatDate(folder.deletedAt),
+  };
+}
+
+export interface SortableEntry {
+  name: string;
+  sizeBytes?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Client-side ordering for the Drive views whose endpoints take no sort
+ * parameters (Recent, Starred, Shared with me, Trash). My Drive sorts in the
+ * query instead, since it pages through the whole folder. Dates are ISO-8601,
+ * so a string compare is a chronological one; entries missing the field keep
+ * their relative order.
+ */
+export function sortEntries<T extends SortableEntry>(
+  entries: T[],
+  field: SortField,
+  dir: SortDir,
+): T[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  return [...entries].sort((a, b) => {
+    switch (field) {
+      case 'size':
+        return sign * ((a.sizeBytes ?? 0) - (b.sizeBytes ?? 0));
+      case 'createdAt':
+        return sign * (a.createdAt ?? '').localeCompare(b.createdAt ?? '');
+      case 'updatedAt':
+        return sign * (a.updatedAt ?? '').localeCompare(b.updatedAt ?? '');
+      default:
+        return sign * a.name.localeCompare(b.name);
+    }
+  });
 }

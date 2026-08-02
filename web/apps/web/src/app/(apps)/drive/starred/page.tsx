@@ -1,35 +1,51 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Heading, EmptyState } from '@neutrino/ui';
-import { Star, File, Folder } from 'lucide-react';
-import { filesystemApi } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { Heading, EmptyState, FileGrid, type GridItem, type SortDir, type SortField } from '@neutrino/ui';
+import { Star } from 'lucide-react';
+import { filesystemApi, type FileItem } from '@/lib/api';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { fileToGridItem, folderToGridItem, sortEntries } from '../gridItems';
+import { routeForFile } from '../routeForFile';
+import { PreviewModal } from '../PreviewModal';
 import styles from '../shared/page.module.css';
 
 export default function StarredPage() {
-  const { data, isLoading } = useQuery({
+  const router = useRouter();
+  const flags = useFeatureFlags();
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [sortBy, setSortBy] = useState<SortField>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['starred-page'],
     queryFn: () => filesystemApi.getStarred(50),
   });
 
-  const files = data?.files ?? [];
-  const folders = data?.folders ?? [];
-  const isEmpty = !isLoading && files.length === 0 && folders.length === 0;
+  const files = useMemo(() => data?.files ?? [], [data]);
+  const folders = useMemo(() => data?.folders ?? [], [data]);
 
-  if (isEmpty) {
-    return (
-      <div className={styles.page}>
-        <div className={styles.header}>
-          <Heading level={1} size="xl">Starred</Heading>
-        </div>
-        <EmptyState
-          icon={Star}
-          title="No starred files"
-          description="Star files and folders to quickly find them here."
-        />
-      </div>
-    );
+  // Folders first, as on My Drive; each group ordered by the current sort.
+  const items: GridItem[] = useMemo(
+    () => [
+      ...sortEntries(folders, sortBy, sortDir).map(folderToGridItem),
+      ...sortEntries(files, sortBy, sortDir).map(fileToGridItem),
+    ],
+    [files, folders, sortBy, sortDir],
+  );
+
+  function openItem(item: GridItem) {
+    // Folders are not addressable by URL — My Drive tracks the open folder in
+    // component state — so a starred folder has nowhere to navigate to.
+    if (item.kind === 'folder') return;
+    const file = files.find((f) => f.id === item.id);
+    if (!file) return;
+    routeForFile(file, router, {
+      officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
+      onPreviewFallback: () => setPreviewFile(file),
+    });
   }
 
   return (
@@ -37,20 +53,33 @@ export default function StarredPage() {
       <div className={styles.header}>
         <Heading level={1} size="xl">Starred</Heading>
       </div>
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {folders.map((folder) => (
-          <li key={folder.id} aria-label={folder.name} style={{ padding: '8px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Folder size={16} />
-            <span>{folder.name}</span>
-          </li>
-        ))}
-        {files.map((file) => (
-          <li key={file.id} aria-label={file.name} style={{ padding: '8px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <File size={16} />
-            <span>{file.name}</span>
-          </li>
-        ))}
-      </ul>
+
+      <FileGrid
+        items={items}
+        isLoading={isLoading}
+        isError={isError}
+        onItemClick={openItem}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+        totalCount={isLoading ? undefined : files.length + folders.length}
+        emptyState={
+          isError ? (
+            <EmptyState
+              title="Could not load starred items"
+              description="There was an error loading your starred files and folders."
+            />
+          ) : (
+            <EmptyState
+              icon={Star}
+              title="No starred files"
+              description="Star files and folders to quickly find them here."
+            />
+          )
+        }
+      />
+
+      {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
     </div>
   );
 }

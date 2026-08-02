@@ -263,6 +263,9 @@ export function FileGrid({
                   ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
                   : <item.icon size={48} strokeWidth={1} />
                 }
+                {/* Without `onToggleStar` the badge is only an indicator, so it
+                    is dropped entirely for unstarred items (Trash, tag pages). */}
+                {(onToggleStar || item.isStarred) && (
                 <button
                   type="button"
                   className={styles['star-badge']}
@@ -277,6 +280,7 @@ export function FileGrid({
                     fill={item.isStarred ? 'var(--color-amber, #d97706)' : 'none'}
                   />
                 </button>
+                )}
               </div>
               <div className={styles['card-large-body']}>
                 <Text size="sm" weight="medium" truncate>{item.name}</Text>
@@ -324,6 +328,7 @@ export function FileGrid({
                   ? <img src={thumbSrc} alt={item.name} className={styles['preview-thumb']} loading="lazy" />
                   : <item.icon size={28} strokeWidth={1.25} />
                 }
+                {(onToggleStar || item.isStarred) && (
                 <button
                   type="button"
                   className={styles['star-badge']}
@@ -338,6 +343,7 @@ export function FileGrid({
                     fill={item.isStarred ? 'var(--color-amber, #d97706)' : 'none'}
                   />
                 </button>
+                )}
               </div>
               <div className={styles['card-small-body']}>
                 <Text size="xs" weight="medium" truncate>{item.name}</Text>
