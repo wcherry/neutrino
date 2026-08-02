@@ -3,7 +3,7 @@
 import React, { useRef, useState } from 'react';
 import type { NoteMetaResponse } from '@/lib/api';
 import type { Block, BlockType, BlockEditorProps, FocusRequest } from './blockEditorTypes';
-import { genId } from './blockEditorHelpers';
+import { caretIndexForColumn, genId } from './blockEditorHelpers';
 import BlockRow from './BlockRow';
 import styles from './BlockEditor.module.css';
 
@@ -72,6 +72,27 @@ export default function BlockEditor({
     setFocusRequest({ id: prev.id, position: cursorPos });
   }
 
+  /**
+   * Arrow up/down out of a block: focus the nearest editable neighbour, landing
+   * on its last (moving up) or first (moving down) line at the same column.
+   * Tables have no textarea to focus, so they are skipped over.
+   */
+  function handleMoveFocus(id: string, direction: 'up' | 'down', column: number) {
+    const idx = blocks.findIndex((b) => b.id === id);
+    if (idx === -1) return;
+    const step = direction === 'up' ? -1 : 1;
+    let target = idx + step;
+    while (target >= 0 && target < blocks.length && blocks[target].type === 'table') {
+      target += step;
+    }
+    if (target < 0 || target >= blocks.length) return;
+    const next = blocks[target];
+    setFocusRequest({
+      id: next.id,
+      position: caretIndexForColumn(next.content, column, direction === 'up' ? 'last' : 'first'),
+    });
+  }
+
   function handleDragStart(index: number) {
     dragFromIndex.current = index;
   }
@@ -109,6 +130,7 @@ export default function BlockEditor({
           onToggleCheck={handleToggleCheck}
           onSplitBlock={handleSplitBlock}
           onDeleteBlock={handleDeleteBlock}
+          onMoveFocus={handleMoveFocus}
           allNotes={allNotes}
           currentNoteId={currentNoteId}
           onLinkClick={onLinkClick}

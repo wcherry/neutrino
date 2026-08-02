@@ -5,9 +5,13 @@ import type { NoteMetaResponse } from '@/lib/api';
 import type { Block, BlockType, BlockRowProps, FocusRequest } from './blockEditorTypes';
 import { SLASH_COMMANDS } from './blockEditorConstants';
 import {
+  caretColumn,
   createDefaultTable,
   getWikiLinkQuery,
   insertWikiLink,
+  isOnFirstLine,
+  isOnLastLine,
+  isSoftWrapped,
   renderInline,
   numberedIndexInGroup,
 } from './blockEditorHelpers';
@@ -27,6 +31,7 @@ export default function BlockRow({
   onToggleCheck,
   onSplitBlock,
   onDeleteBlock,
+  onMoveFocus,
   allNotes,
   currentNoteId,
   onLinkClick,
@@ -44,12 +49,16 @@ export default function BlockRow({
 
   // Stores a pending cursor position to apply once the textarea mounts
   const pendingFocusPositionRef = useRef<'start' | 'end' | number | null>(null);
+  // Bumped on every focus request so the effect below re-runs even when this
+  // row is already in edit mode (rapid arrow-key navigation back and forth)
+  const [focusNonce, setFocusNonce] = useState(0);
 
-  // Handle focus requests from parent (Enter / Backspace merge)
+  // Handle focus requests from parent (Enter / Backspace merge / arrow keys)
   useEffect(() => {
     if (!focusRequest || focusRequest.id !== block.id) return;
     pendingFocusPositionRef.current = focusRequest.position;
     setIsEditing(true);
+    setFocusNonce((n) => n + 1);
     onFocusHandled();
   }, [focusRequest, block.id, onFocusHandled]);
 
@@ -66,7 +75,7 @@ export default function BlockRow({
         pos === 'end' ? ta.value.length : pos === 'start' ? 0 : (pos as number);
       ta.setSelectionRange(cursor, cursor);
     });
-  }, [isEditing]);
+  }, [isEditing, focusNonce]);
 
   // Auto-resize textarea height whenever content or edit mode changes
   useEffect(() => {
@@ -153,6 +162,33 @@ export default function BlockRow({
 
     const ta = e.currentTarget;
 
+    // Arrow up/down at the top/bottom line moves the caret into the adjacent block
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
+      const cursor = ta.selectionStart ?? 0;
+      const direction = e.key === 'ArrowUp' ? 'up' : 'down';
+      const atEdge = direction === 'up'
+        ? isOnFirstLine(block.content, cursor)
+        : isOnLastLine(block.content, cursor);
+
+      if (ta.selectionStart === ta.selectionEnd && atEdge) {
+        const column = caretColumn(block.content, cursor);
+        if (!isSoftWrapped(ta)) {
+          e.preventDefault();
+          onMoveFocus(block.id, direction, column);
+          return;
+        }
+        // A line wraps, so the text line the caret is on may span several visual
+        // rows. Let the browser move first; if the caret stayed put we were on
+        // the first/last visual row after all and should leave the block.
+        requestAnimationFrame(() => {
+          const el = taRef.current;
+          if (!el || el.selectionStart !== cursor || el.selectionEnd !== cursor) return;
+          onMoveFocus(block.id, direction, column);
+        });
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey && block.type !== 'code') {
       e.preventDefault();
       // Empty list/task/quote block → escape back to paragraph
@@ -199,6 +235,8 @@ export default function BlockRow({
 
   function handleBlur() {
     setTimeout(() => {
+      // Focus may have come straight back (arrow key out and back again)
+      if (taRef.current && document.activeElement === taRef.current) return;
       setIsEditing(false);
       setAcQuery(null);
       setSlashQuery(null);
