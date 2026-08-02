@@ -1,21 +1,26 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Heading,
   Text,
   Button,
   EmptyState,
+  FileGrid,
   useToast,
   Modal,
   ModalHeader,
   ModalBody,
   ModalFooter,
+  type GridItem,
+  type SortDir,
+  type SortField,
 } from '@neutrino/ui';
-import { Trash2, Folder, RotateCcw } from 'lucide-react';
-import { filesystemApi, type TrashFileItem, type TrashFolderItem } from '@/lib/api';
-import { getFileIcon, getIconColor } from '@/lib/file-icons';
+import { Trash2 } from 'lucide-react';
+import { filesystemApi } from '@/lib/api';
+import { sortEntries, trashFileToGridItem, trashFolderToGridItem } from '../gridItems';
+import { TrashContextMenu } from './TrashContextMenu';
 import styles from './page.module.css';
 
 interface PendingDelete {
@@ -24,12 +29,21 @@ interface PendingDelete {
   kind: 'file' | 'folder';
 }
 
+interface ContextMenuState {
+  item: GridItem;
+  x: number;
+  y: number;
+}
+
 export default function TrashPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [sortBy, setSortBy] = useState<SortField>('updatedAt');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['trash'],
     queryFn: () => filesystemApi.listTrash(),
   });
@@ -95,103 +109,98 @@ export default function TrashPage() {
   const isConfirmPending =
     deleteFilePermanentlyMutation.isPending || deleteFolderPermanentlyMutation.isPending;
 
-  const files = data?.files ?? [];
-  const folders = data?.folders ?? [];
-  const isEmpty = !isLoading && files.length === 0 && folders.length === 0;
+  const files = useMemo(() => data?.files ?? [], [data]);
+  const folders = useMemo(() => data?.folders ?? [], [data]);
+  const total = files.length + folders.length;
+  const isEmpty = !isLoading && total === 0;
 
-  if (isEmpty) {
-    return (
-      <div className={styles.page}>
-        <div className={styles.header}>
-          <Heading level={1} size="xl">Trash</Heading>
-        </div>
-        <EmptyState
-          icon={Trash2}
-          title="Trash is empty"
-          description="Files you delete will appear here for 30 days before being permanently removed."
-        />
-      </div>
-    );
+  // Trash rows carry `deletedAt` rather than `updatedAt`; the grid's "Modified"
+  // sort therefore orders by when the item was deleted.
+  const items: GridItem[] = useMemo(
+    () => [
+      ...sortEntries(
+        folders.map((f) => ({ ...f, updatedAt: f.deletedAt })),
+        sortBy,
+        sortDir,
+      ).map(trashFolderToGridItem),
+      ...sortEntries(
+        files.map((f) => ({ ...f, updatedAt: f.deletedAt })),
+        sortBy,
+        sortDir,
+      ).map(trashFileToGridItem),
+    ],
+    [files, folders, sortBy, sortDir],
+  );
+
+  function handleMenuOpen(item: GridItem, e: React.MouseEvent) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setContextMenu({ item, x: rect.right, y: rect.bottom });
+  }
+
+  function restore(item: GridItem) {
+    if (item.kind === 'folder') restoreFolderMutation.mutate(item.id);
+    else restoreFileMutation.mutate(item.id);
   }
 
   return (
     <div className={styles.page}>
       <div className={styles.header}>
         <Heading level={1} size="xl">Trash</Heading>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => emptyTrash()}
-          disabled={isEmptyingTrash}
-        >
-          Empty trash
-        </Button>
+        {!isEmpty && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => emptyTrash()}
+            disabled={isEmptyingTrash}
+          >
+            Empty trash
+          </Button>
+        )}
       </div>
 
-      <ul className={styles.list} role="list">
-        {folders.map((folder: TrashFolderItem) => (
-          <li key={folder.id} className={styles.item} aria-label={folder.name}>
-            <div className={styles.itemIcon} style={{ color: 'var(--color-amber, #d97706)' }}>
-              <Folder size={20} strokeWidth={1.5} />
-            </div>
-            <div className={styles.itemInfo}>
-              <Text size="sm" weight="medium" truncate>{folder.name}</Text>
-              <Text size="xs" color="muted">Deleted {formatDate(folder.deletedAt)}</Text>
-            </div>
-            <div className={styles.itemActions}>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<RotateCcw size={14} />}
-                onClick={() => restoreFolderMutation.mutate(folder.id)}
-                disabled={restoreFolderMutation.isPending}
-              >
-                Restore
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setPendingDelete({ id: folder.id, name: folder.name, kind: 'folder' })}
-              >
-                Delete forever
-              </Button>
-            </div>
-          </li>
-        ))}
-        {files.map((file: TrashFileItem) => {
-          const IconComponent = getFileIcon(file.mimeType);
-          const iconColor = getIconColor(file.mimeType);
-          return (
-            <li key={file.id} className={styles.item} aria-label={file.name}>
-              <div className={styles.itemIcon} style={{ color: iconColor }}>
-                <IconComponent size={20} strokeWidth={1.5} />
-              </div>
-              <div className={styles.itemInfo}>
-                <Text size="sm" weight="medium" truncate>{file.name}</Text>
-                <Text size="xs" color="muted">Deleted {formatDate(file.deletedAt)}</Text>
-              </div>
-              <div className={styles.itemActions}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon={<RotateCcw size={14} />}
-                  onClick={() => restoreFileMutation.mutate(file.id)}
-                  disabled={restoreFileMutation.isPending}
-                >
-                  Restore
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setPendingDelete({ id: file.id, name: file.name, kind: 'file' })}
-                >
-                  Delete forever
-                </Button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <FileGrid
+        items={items}
+        isLoading={isLoading}
+        isError={isError}
+        // Trashed items cannot be opened — restore them first.
+        onItemClick={() => {}}
+        onItemMenuOpen={handleMenuOpen}
+        defaultViewMode="list"
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+        totalCount={isLoading ? undefined : total}
+        emptyState={
+          isError ? (
+            <EmptyState
+              title="Could not load trash"
+              description="There was an error loading your deleted files."
+            />
+          ) : (
+            <EmptyState
+              icon={Trash2}
+              title="Trash is empty"
+              description="Files you delete will appear here for 30 days before being permanently removed."
+            />
+          )
+        }
+      />
+
+      {contextMenu && (
+        <TrashContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onRestore={() => restore(contextMenu.item)}
+          onDeleteForever={() =>
+            setPendingDelete({
+              id: contextMenu.item.id,
+              name: contextMenu.item.name,
+              kind: contextMenu.item.kind === 'folder' ? 'folder' : 'file',
+            })
+          }
+        />
+      )}
 
       {pendingDelete && (
         <Modal open onClose={() => setPendingDelete(null)} size="sm">
@@ -213,12 +222,4 @@ export default function TrashPage() {
       )}
     </div>
   );
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
 }

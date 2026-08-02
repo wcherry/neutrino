@@ -88,6 +88,12 @@ async function trashFolderViaApi(
   expect(res.ok(), `trash folder failed: ${res.status()} ${await res.text()}`).toBeTruthy();
 }
 
+async function openTrashMenu(page: Page, name: string): Promise<void> {
+  await page.getByRole('listitem', { name }).first().hover();
+  await page.getByLabel(`More options for ${name}`).click();
+  await expect(page.getByRole('menu', { name: 'Trash item options' })).toBeVisible({ timeout: 5_000 });
+}
+
 test.describe('Drive trash', () => {
   test('restoring a trashed file returns it to My Drive', async ({ page, request }) => {
     await registerAndLogin(request, page);
@@ -100,7 +106,8 @@ test.describe('Drive trash', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Trash');
     await expect(page.getByRole('listitem', { name: fileName })).toBeVisible({ timeout: 10_000 });
 
-    await page.getByRole('listitem', { name: fileName }).getByRole('button', { name: 'Restore' }).click();
+    await openTrashMenu(page, fileName);
+    await page.getByRole('menuitem', { name: 'Restore' }).click();
 
     await expect(page.getByRole('listitem', { name: fileName })).not.toBeVisible({ timeout: 10_000 });
 
@@ -120,7 +127,8 @@ test.describe('Drive trash', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Trash');
     await expect(page.getByRole('listitem', { name: folderName })).toBeVisible({ timeout: 10_000 });
 
-    await page.getByRole('listitem', { name: folderName }).getByRole('button', { name: 'Restore' }).click();
+    await openTrashMenu(page, folderName);
+    await page.getByRole('menuitem', { name: 'Restore' }).click();
 
     await expect(page.getByRole('listitem', { name: folderName })).not.toBeVisible({ timeout: 10_000 });
 
@@ -140,7 +148,8 @@ test.describe('Drive trash', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Trash');
     await expect(page.getByRole('listitem', { name: fileName })).toBeVisible({ timeout: 10_000 });
 
-    await page.getByRole('listitem', { name: fileName }).getByRole('button', { name: 'Delete forever' }).click();
+    await openTrashMenu(page, fileName);
+    await page.getByRole('menuitem', { name: 'Delete forever' }).click();
 
     const modal = page.getByRole('dialog', { name: 'Delete permanently?' });
     await expect(modal).toBeVisible({ timeout: 5_000 });
@@ -161,7 +170,8 @@ test.describe('Drive trash', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Trash');
     await expect(page.getByRole('listitem', { name: folderName })).toBeVisible({ timeout: 10_000 });
 
-    await page.getByRole('listitem', { name: folderName }).getByRole('button', { name: 'Delete forever' }).click();
+    await openTrashMenu(page, folderName);
+    await page.getByRole('menuitem', { name: 'Delete forever' }).click();
 
     const modal = page.getByRole('dialog', { name: 'Delete permanently?' });
     await expect(modal).toBeVisible({ timeout: 5_000 });
@@ -181,7 +191,8 @@ test.describe('Drive trash', () => {
     await page.goto('/drive/trash');
     await expect(page.getByRole('listitem', { name: fileName })).toBeVisible({ timeout: 10_000 });
 
-    await page.getByRole('listitem', { name: fileName }).getByRole('button', { name: 'Delete forever' }).click();
+    await openTrashMenu(page, fileName);
+    await page.getByRole('menuitem', { name: 'Delete forever' }).click();
 
     const modal = page.getByRole('dialog', { name: 'Delete permanently?' });
     await expect(modal).toBeVisible({ timeout: 5_000 });
