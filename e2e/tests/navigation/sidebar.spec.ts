@@ -2,16 +2,23 @@ import { test, expect } from '../../fixtures/base';
 
 const BASE_URL = 'http://localhost:9880';
 
-// Mirrors NAV_SECTIONS in apps/web/src/app/(apps)/layout.tsx.
+// Mirrors getNavSections in apps/web/src/app/(apps)/navSections.ts.
 // pageTitle is the h1 text rendered by the target page; omit for pages with no h1.
 const NAV_LINKS: { label: string; href: string; pageTitle?: string }[] = [
   { label: 'My Drive',       href: '/drive' },
-  { label: 'Notes',          href: '/notes',         pageTitle: 'Notes' },
-  { label: 'Calendar',       href: '/calendar' },
   { label: 'Shared with me', href: '/drive/shared',  pageTitle: 'Shared with me' },
   { label: 'Recent',         href: '/drive/recent',  pageTitle: 'Recent' },
   { label: 'Starred',        href: '/drive/starred', pageTitle: 'Starred' },
   { label: 'Trash',          href: '/drive/trash',   pageTitle: 'Trash' },
+  // Apps — one entry per application, each with its own landing page.
+  { label: 'Docs',           href: '/docs',          pageTitle: 'Documents' },
+  { label: 'Sheets',         href: '/sheets',        pageTitle: 'Spreadsheets' },
+  { label: 'Slides',         href: '/slides',        pageTitle: 'Presentations' },
+  { label: 'Notes',          href: '/notes',         pageTitle: 'Notes' },
+  { label: 'Diagrams',       href: '/diagrams',      pageTitle: 'Diagrams' },
+  { label: 'Drawings',       href: '/drawing',       pageTitle: 'Drawings' },
+  { label: 'Photos',         href: '/photos',        pageTitle: 'Photos' },
+  { label: 'Calendar',       href: '/calendar' },
   { label: 'Shared Drives',  href: '/drive/team',    pageTitle: 'Shared Drives' },
 ];
 
@@ -37,6 +44,13 @@ async function registerAndLogin(
 test.describe('Sidebar navigation', () => {
   test.beforeEach(async ({ page, request }) => {
     await registerAndLogin(request, page);
+  });
+
+  test('groups the application links under an "Apps" header', async ({ page }) => {
+    await page.goto('/drive');
+
+    const sidebar = page.getByRole('navigation', { name: 'Primary navigation' });
+    await expect(sidebar.getByText('Apps', { exact: true })).toBeVisible();
   });
 
   for (const { label, href, pageTitle } of NAV_LINKS) {

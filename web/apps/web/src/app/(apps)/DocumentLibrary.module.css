@@ -1,0 +1,65 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 1200px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.rename-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+
+.rename-dialog {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-6);
+  width: 360px;
+  max-width: calc(100vw - var(--space-8));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.rename-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.rename-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-default);
+  box-sizing: border-box;
+}
+
+.rename-input:focus {
+  border-color: var(--color-accent);
+}
+
+.rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
