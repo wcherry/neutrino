@@ -7,8 +7,6 @@ import {
   AppShell,
   Sidebar,
   Topbar,
-  type NavItem,
-  type NavSection,
   type StorageQuota,
   type TopbarSearchResult,
   type TopbarNotification,
@@ -19,28 +17,14 @@ import {
   useToast,
 } from '@neutrino/ui';
 import {
-  Calendar,
-  GitBranch,
-  HardDrive,
-  Users,
-  Star,
-  Clock,
-  Trash2,
-  Share2,
-  NotebookPen,
-  ShieldCheck,
-  Image,
-} from 'lucide-react';
-import {
   authApi,
   ensureE2EKeys,
   storageApi,
   tagsApi,
   type UserProfile,
   type QuotaInfo,
-  type Tag,
 } from '@/lib/api';
-import { tagNavSection } from '@/lib/tagNav';
+import { getNavSections, withActiveItem } from './navSections';
 import { NewItemFAB } from './NewItemFAB';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
@@ -77,47 +61,6 @@ function notificationHref(n: NotificationItem): string | undefined {
 
 function toTopbarNotifications(items: NotificationItem[]): TopbarNotification[] {
   return items.map((n) => ({ ...n, href: notificationHref(n) }));
-}
-
-const BASE_NAV_SECTIONS: NavSection[] = [
-  {
-    id: 'main',
-    items: [
-      { id: 'my-drive', label: 'My Drive', icon: HardDrive, href: '/drive' },
-      { id: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes' },
-      { id: 'photos', label: 'Photos', icon: Image, href: '/photos' },
-      { id: 'diagrams', label: 'Diagrams', icon: GitBranch, href: '/diagrams' },
-      { id: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar' },
-      { id: 'shared', label: 'Shared with me', icon: Share2, href: '/drive/shared' },
-      { id: 'recent', label: 'Recent', icon: Clock, href: '/drive/recent' },
-      { id: 'starred', label: 'Starred', icon: Star, href: '/drive/starred' },
-      { id: 'trash', label: 'Trash', icon: Trash2, href: '/drive/trash' },
-    ],
-  },
-  {
-    id: 'team',
-    label: 'Team',
-    items: [
-      { id: 'shared-drives', label: 'Shared Drives', icon: Users, href: '/drive/team' },
-    ],
-  },
-];
-
-function getNavSections(isAdmin: boolean, tags: Tag[]): NavSection[] {
-  const sections = [...BASE_NAV_SECTIONS, tagNavSection(tags)];
-  if (isAdmin) {
-    return [
-      ...sections,
-      {
-        id: 'admin',
-        label: 'Administration',
-        items: [
-          { id: 'admin-dashboard', label: 'Admin', icon: ShieldCheck, href: '/admin' },
-        ],
-      },
-    ];
-  }
-  return sections;
 }
 
 const DEFAULT_QUOTA_BYTES = 15 * 1024 * 1024 * 1024; // 15 GB fallback when no server limit set
@@ -159,15 +102,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
   const tags = useMemo(() => tagsData?.tags ?? [], [tagsData]);
 
-  const currentNavSections = getNavSections(isAdmin, tags);
-  const allHrefs = currentNavSections.flatMap((s) => s.items).filter((i) => i.href);
-  const activeHref = allHrefs
-    .filter((i) => pathname === i.href || pathname.startsWith(i.href! + '/'))
-    .sort((a, b) => b.href!.length - a.href!.length)[0]?.href;
-  const navSections = currentNavSections.map((section) => ({
-    ...section,
-    items: section.items.map((item) => ({ ...item, active: item.href === activeHref })),
-  }));
+  const navSections = withActiveItem(getNavSections(isAdmin, tags), pathname);
 
   const { data: profileDetails } = useQuery({
     queryKey: ['profile-details'],
