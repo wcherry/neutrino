@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, Bell, Settings, LogOut, User, ChevronDown } from 'lucide-react';
+import { Menu, Bell, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { slideUp } from './variants';
 import { SearchInput } from '@neutrino/ui';
@@ -64,6 +64,7 @@ export interface TopbarProps {
   onNotificationRead?: (id: string) => void;
   onMarkAllNotificationsRead?: () => void;
   onSettings?: () => void;
+  onImport?: () => void;
   onSignOut?: () => void;
   onProfileClick?: () => void;
   className?: string;
@@ -114,6 +115,7 @@ export function Topbar({
   onNotificationRead,
   onMarkAllNotificationsRead,
   onSettings,
+  onImport,
   onSignOut,
   onProfileClick,
   className = '',
@@ -487,6 +489,36 @@ export function Topbar({
                     >
                       <Settings size={16} aria-hidden="true" />
                       Settings
+                    </button>
+                  )}
+                  {onImport && (
+                    <button
+                      type="button"
+                      onClick={() => { setUserMenuOpen(false); onImport(); }}
+                      role="menuitem"
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--space-3)',
+                        padding: 'var(--space-2) var(--space-4)',
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: 'var(--text-sm)',
+                        color: 'var(--color-text-primary)',
+                        textAlign: 'left',
+                        transition: 'background-color var(--duration-fast) var(--ease-default)',
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-subtle)';
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <Import size={16} aria-hidden="true" />
+                      Import
                     </button>
                   )}
                   <div className={styles.divider} aria-hidden="true" />
