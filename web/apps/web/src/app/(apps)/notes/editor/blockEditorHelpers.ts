@@ -82,6 +82,62 @@ export function insertWikiLink(
   return { newContent: prefix + link + after, newCursor: prefix.length + link.length };
 }
 
+// ── Caret helpers (arrow-key navigation between blocks) ──────────────────────
+
+/** Offset of the caret from the start of the line it sits on. */
+export function caretColumn(content: string, cursor: number): number {
+  if (cursor <= 0) return 0;
+  return cursor - (content.lastIndexOf('\n', cursor - 1) + 1);
+}
+
+/** True when the caret sits on the first line of `content`. */
+export function isOnFirstLine(content: string, cursor: number): boolean {
+  if (cursor <= 0) return true;
+  return content.lastIndexOf('\n', cursor - 1) === -1;
+}
+
+/** True when the caret sits on the last line of `content`. */
+export function isOnLastLine(content: string, cursor: number): boolean {
+  return content.indexOf('\n', cursor) === -1;
+}
+
+/**
+ * Absolute caret index for `column` on the first or last line of `content`,
+ * clamped to that line's length. Used to keep the caret in roughly the same
+ * horizontal spot when moving between blocks.
+ */
+export function caretIndexForColumn(
+  content: string,
+  column: number,
+  edge: 'first' | 'last'
+): number {
+  if (edge === 'first') {
+    const lineEnd = content.indexOf('\n');
+    return Math.min(column, lineEnd === -1 ? content.length : lineEnd);
+  }
+  const lineStart = content.lastIndexOf('\n') + 1;
+  return lineStart + Math.min(column, content.length - lineStart);
+}
+
+/**
+ * True when the textarea renders more visual rows than it has text lines, i.e.
+ * at least one line soft-wraps. Line-based caret checks are exact only while
+ * nothing wraps; when something does, the caller defers to the browser's own
+ * caret movement instead.
+ */
+export function isSoftWrapped(ta: HTMLTextAreaElement): boolean {
+  const cs = window.getComputedStyle(ta);
+  let lineHeight = parseFloat(cs.lineHeight);
+  if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+    lineHeight = parseFloat(cs.fontSize) * 1.2;
+  }
+  if (!Number.isFinite(lineHeight) || lineHeight <= 0) return false;
+  const inner =
+    ta.scrollHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+  const visualRows = Math.max(1, Math.round(inner / lineHeight));
+  return visualRows > ta.value.split('\n').length;
+}
+
 export function renderInline(
   text: string,
   allNotes: NoteMetaResponse[],

@@ -75,6 +75,7 @@ export interface BlockRowProps {
   onToggleCheck: (id: string) => void;
   onSplitBlock: (id: string, before: string, after: string) => void;
   onDeleteBlock: (id: string) => void;
+  onMoveFocus: (id: string, direction: 'up' | 'down', column: number) => void;
   allNotes: import('@/lib/api').NoteMetaResponse[];
   currentNoteId: string;
   onLinkClick: (noteId: string) => void;
