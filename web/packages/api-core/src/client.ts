@@ -261,3 +261,42 @@ export function buildQuery(params: Record<string, string | number | boolean | un
   if (entries.length === 0) return '';
   return '?' + new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString();
 }
+
+// ---------------------------------------------------------------------------
+// Optimistic concurrency for content writes
+// ---------------------------------------------------------------------------
+
+/**
+ * Error code a content write is rejected with when the file has changed on the
+ * server since `expectedContentVersion` was read.
+ */
+export const CONTENT_VERSION_CONFLICT = 'CONTENT_VERSION_CONFLICT';
+
+/**
+ * Guard for a save, mirroring `shared::ContentVersionQuery` on the server.
+ *
+ * Every content write bumps the file's `contentVersion`. Sending back the one
+ * you last read makes the server reject a save that would overwrite someone
+ * else's newer revision — the alternative being silent data loss when the same
+ * document is open in two tabs, on two devices, or after an offline edit.
+ */
+export interface ContentVersionCheck {
+  /** The `contentVersion` this client last read. Omit to save unconditionally. */
+  expectedContentVersion?: number;
+  /** Save anyway, whatever the server holds. The user's "keep my copy" answer. */
+  force?: boolean;
+}
+
+/** Query string for a content write, empty when the save is unguarded. */
+export function contentVersionQuery(check?: ContentVersionCheck): string {
+  if (!check) return '';
+  return buildQuery({
+    expectedContentVersion: check.expectedContentVersion,
+    force: check.force ? true : undefined,
+  });
+}
+
+/** True when a save was rejected because the server has a newer revision. */
+export function isContentVersionConflict(error: unknown): boolean {
+  return error instanceof ApiClientError && error.code === CONTENT_VERSION_CONFLICT;
+}

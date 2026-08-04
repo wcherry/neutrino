@@ -246,27 +246,6 @@ pub async fn delete_policy(
     Ok(HttpResponse::NoContent().finish())
 }
 
-// eDiscovery
-#[utoipa::path(
-    post,
-    path = "/api/v1/admin/compliance/ediscovery/search",
-    request_body = EDiscoverySearchRequest,
-    responses(
-        (status = 200, description = "eDiscovery search results", body = EDiscoverySearchResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "drive-compliance"
-)]
-#[post("/compliance/ediscovery/search")]
-pub async fn ediscovery_search(
-    state: web::Data<ComplianceApiState>,
-    _admin: AdminUser,
-    body: web::Json<EDiscoverySearchRequest>,
-) -> Result<web::Json<EDiscoverySearchResponse>, ApiError> {
-    let result = state.service.ediscovery_search(body.into_inner())?;
-    Ok(web::Json(result))
-}
-
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_holds)
         .service(create_hold)
@@ -278,8 +257,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(list_policies)
         .service(create_policy)
         .service(get_policy)
-        .service(delete_policy)
-        .service(ediscovery_search);
+        .service(delete_policy);
 }
 
 #[derive(utoipa::OpenApi)]
@@ -296,7 +274,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         create_policy,
         get_policy,
         delete_policy,
-        ediscovery_search,
     ),
     components(schemas(
         CreateLegalHoldRequest,
@@ -307,9 +284,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         UpdateRetentionPolicyRequest,
         RetentionPolicyResponse,
         RetentionPolicyListResponse,
-        EDiscoverySearchRequest,
-        EDiscoveryResult,
-        EDiscoverySearchResponse,
     )),
     tags((name = "drive-compliance", description = "Drive compliance endpoints")),
     security(("bearer_auth" = []))

@@ -15,6 +15,7 @@ import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { ThemeGrid } from '@/components/theme/ThemeGrid';
 import { useFeatureFlags, type FeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { rebuildSearchIndex } from '@/lib/searchIndexer';
+import { forceUploadSnapshot } from '@/lib/searchIndexSnapshot';
 import {
   WEEK_START_KEY,
   DAY_START_HOUR_KEY,
@@ -496,6 +497,19 @@ const qc = useQueryClient();
         toastSuccess('Search index rebuilt — nothing to index yet.');
       } else {
         toastSuccess(`Search index rebuilt — ${total} item${total === 1 ? '' : 's'} indexed.`);
+      }
+
+      // A rebuild is the user asserting this device's index is the good one, so
+      // it overrides the stored snapshot rather than deferring to it. Without
+      // the force the upload would lose to whatever version is on the server —
+      // very possibly the broken index they just rebuilt to escape.
+      if (total > 0) {
+        try {
+          await forceUploadSnapshot(user.id);
+        } catch {
+          // The local rebuild succeeded, which is what was asked for. Sharing
+          // it can wait for the next background sync.
+        }
       }
     } catch {
       toastError('Failed to rebuild search index. Please try again.');

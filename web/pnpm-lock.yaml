@@ -89,6 +89,9 @@ importers:
       '@neutrino/api-photos':
         specifier: workspace:*
         version: link:../../packages/api-photos
+      '@neutrino/api-search':
+        specifier: workspace:*
+        version: link:../../packages/api-search
       '@neutrino/api-sheets':
         specifier: workspace:*
         version: link:../../packages/api-sheets
@@ -194,6 +197,9 @@ importers:
       '@types/file-saver':
         specifier: ^2.0.7
         version: 2.0.7
+      '@zip.js/zip.js':
+        specifier: ^2.8.34
+        version: 2.8.34
       dictionary-en:
         specifier: ^4.0.0
         version: 4.0.0
@@ -232,7 +238,7 @@ importers:
         version: 1.12.0
       next:
         specifier: ^15.0.0
-        version: 15.5.14(@babel/core@7.29.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 15.5.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       nspell:
         specifier: ^2.1.5
         version: 2.1.5
@@ -393,6 +399,16 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  packages/api-search:
+    dependencies:
+      '@neutrino/api-core':
+        specifier: workspace:*
+        version: link:../api-core
+    devDependencies:
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   packages/api-sheets:
     dependencies:
       '@neutrino/api-core':
@@ -487,7 +503,7 @@ importers:
         version: link:../ui
       next:
         specifier: '>=14.0.0'
-        version: 15.5.14(@babel/core@7.29.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 15.5.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
     devDependencies:
       '@types/react':
         specifier: ^18.3.0
@@ -516,6 +532,9 @@ importers:
 
   packages/search:
     devDependencies:
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
@@ -2279,6 +2298,10 @@ packages:
   '@xmldom/xmldom@0.8.11':
     resolution: {integrity: sha512-cQzWCtO6C8TQiYl1ruKNn2U6Ao4o4WBBcbL61yJl84x+j5sOWWFU9X7DpND8XZG3daDppSsigMdfAIl2upQBRw==}
     engines: {node: '>=10.0.0'}
+
+  '@zip.js/zip.js@2.8.34':
+    resolution: {integrity: sha512-+6a3lyqq69rpseLbvDPiVIWsZ/HdTGAAD6afFtug6ECPDGttb2dHnPC6cJgdPofYkzL9OvXizegq+DQVfL2rnA==}
+    engines: {bun: '>=0.7.0', deno: '>=1.0.0', node: '>=18.0.0'}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -6039,6 +6062,8 @@ snapshots:
 
   '@xmldom/xmldom@0.8.11': {}
 
+  '@zip.js/zip.js@2.8.34': {}
+
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
       acorn: 8.16.0
@@ -7437,7 +7462,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  next@15.5.14(@babel/core@7.29.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  next@15.5.14(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       '@next/env': 15.5.14
       '@swc/helpers': 0.5.15
@@ -7445,7 +7470,7 @@ snapshots:
       postcss: 8.4.31
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      styled-jsx: 5.1.6(@babel/core@7.29.0)(react@18.3.1)
+      styled-jsx: 5.1.6(react@18.3.1)
     optionalDependencies:
       '@next/swc-darwin-arm64': 15.5.14
       '@next/swc-darwin-x64': 15.5.14
@@ -8287,12 +8312,10 @@ snapshots:
 
   strip-json-comments@3.1.1: {}
 
-  styled-jsx@5.1.6(@babel/core@7.29.0)(react@18.3.1):
+  styled-jsx@5.1.6(react@18.3.1):
     dependencies:
       client-only: 0.0.1
       react: 18.3.1
-    optionalDependencies:
-      '@babel/core': 7.29.0
 
   supports-color@7.2.0:
     dependencies:

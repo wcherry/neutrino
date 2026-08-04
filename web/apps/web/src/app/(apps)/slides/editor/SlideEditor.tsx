@@ -72,6 +72,7 @@ import {
   storageApi, filesystemApi, ApiClientError, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
+import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { OFFICE_MIME, officeAppForFile } from '@/lib/officeFormats';
 import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
@@ -340,6 +341,9 @@ export function SlideEditor() {
   const { dekRef, dekResolved, isNewEncryption } =
     useEncryptedDocumentContent({ id: slideId, filename: 'slide.json' });
   const toast = useToast();
+  // Rejects a save that would overwrite a revision written elsewhere since this
+  // presentation was loaded. See `useContentVersionGuard`.
+  const versionGuard = useContentVersionGuard();
 
   const [title, setTitle] = useState('');
   const [presentation, setPresentation] = useState<SlidePresentation>(makeDefaultPresentation);
@@ -409,6 +413,10 @@ export function SlideEditor() {
     enabled: !!slideId,
     staleTime: 30_000,
   });
+
+  useEffect(() => {
+    versionGuard.observe(slideData?.contentVersion);
+  }, [slideData?.contentVersion, versionGuard]);
 
   // ── Office mode (issue #43) ────────────────────────────────────────────────
   // A raw .pptx Drive file has no `slides` row, so slidesApi.getSlide 404s.
@@ -591,11 +599,14 @@ export function SlideEditor() {
         return;
       }
       if (!dekRef.current) throw new Error('no-dek');
-      return driveAutosaveEncryptedContent(slideData!.id, content, 'slide.json', dekRef.current);
+      return driveAutosaveEncryptedContent(
+        slideData!.id, content, 'slide.json', dekRef.current, versionGuard.check(),
+      );
     },
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: (_, { content }) => {
+    onSuccess: (saved, { content }) => {
       setSaveStatus('saved');
+      versionGuard.observe(saved?.contentVersion);
       lastSavedRef.current = content;
       queryClient.invalidateQueries({ queryKey: ['slides'] });
       indexOnSave(currentUser?.id, {
@@ -609,6 +620,13 @@ export function SlideEditor() {
       setSaveStatus('error');
       if (err instanceof Error && err.message === 'no-dek') {
         toast.warning(ENCRYPTION_WARNING_MESSAGE);
+        return;
+      }
+      if (versionGuard.handleError(err)) {
+        toast.warning(
+          'This presentation changed elsewhere since you opened it. Reload to get the ' +
+            'latest version, or save again to keep your copy.',
+        );
       }
     },
   });

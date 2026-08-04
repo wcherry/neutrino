@@ -7,7 +7,7 @@ use crate::drawing::drawing::{
     repository::DrawingRepository,
 };
 use crate::shared::drive_client::DriveClient;
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionCheck};
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -45,6 +45,7 @@ impl DrawingService {
                 folder_id: item.folder_id,
                 created_at: item.created_at.and_utc().to_rfc3339(),
                 updated_at: item.updated_at.and_utc().to_rfc3339(),
+                content_version: item.content_version,
             })
             .collect();
         Ok(ListDrawingsResponse { drawings })
@@ -67,8 +68,14 @@ impl DrawingService {
         let new_drawing = NewDrawingRecord { file_id: &id };
         self.repo.insert_drawing(new_drawing)?;
 
-        self.drive
-            .upload_content(&id, EMPTY_DRAWING_CONTENT, "upload_drawing_content")
+        let content_version = self
+            .drive
+            .upload_content(
+                &id,
+                EMPTY_DRAWING_CONTENT,
+                "upload_drawing_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
 
         let (content_url, content_write_url) = content_urls(&id);
@@ -80,6 +87,7 @@ impl DrawingService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -104,6 +112,7 @@ impl DrawingService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -113,6 +122,7 @@ impl DrawingService {
         drawing_id: &str,
         bytes: &[u8],
         title: Option<&str>,
+        check: ContentVersionCheck,
     ) -> Result<DrawingMetaResponse, ApiError> {
         let file = self
             .drive
@@ -126,7 +136,7 @@ impl DrawingService {
             return Err(ApiError::not_found("Drawing is in trash"));
         }
 
-        self.drive.upload_content_bytes(drawing_id, bytes)?;
+        let content_version = self.drive.upload_content_bytes(drawing_id, bytes, check)?;
 
         let new_title = if let Some(t) = title {
             let trimmed = t.trim().to_string();
@@ -152,6 +162,7 @@ impl DrawingService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -214,6 +225,7 @@ impl DrawingService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 }

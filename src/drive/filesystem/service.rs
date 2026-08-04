@@ -2,18 +2,17 @@ use crate::drive::filesystem::{
     dto::{
         BulkMoveRequest, BulkResult, BulkTrashRequest, CreateFolderRequest, CreateShortcutRequest,
         DriveFileType, DriveView, FileResponse, FolderContentsOrderField, FolderContentsResponse,
-        FolderResponse,
-        ShortcutResponse, StarredContentsResponse, TrashContentsResponse, TrashOrderField,
-        UpdateFileRequest, UpdateFolderRequest,
+        FolderResponse, RootContentsQuery, ShortcutResponse, StarredContentsResponse,
+        TrashContentsQuery, TrashContentsResponse, TrashOrderField, UpdateFileRequest,
+        UpdateFolderRequest,
     },
     model::{NewFolderRecord, NewShortcutRecord, UpdateFolderRecord},
     repository::FilesystemRepository,
 };
 use crate::drive::permissions::service::PermissionsService;
+use crate::drive::storage::model::FileRecord;
 use crate::drive::storage::store::LocalFileStore;
-use crate::shared::{
-    apply_list_query, ApiError, AuthenticatedUser, ListQueryParams, OrderDirection,
-};
+use crate::shared::{apply_list_query, ApiError, AuthenticatedUser, OrderDirection};
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -22,6 +21,24 @@ pub struct FilesystemService {
     repo: Arc<FilesystemRepository>,
     store: Arc<LocalFileStore>,
     permissions: Arc<PermissionsService>,
+}
+
+/// Narrow an already-loaded file listing to one [`DriveFileType`]; a `None`
+/// filter leaves the listing untouched.
+///
+/// Folders are deliberately never filtered — a folder is a container and may
+/// hold files of the requested type, so it stays navigable in every listing.
+pub(crate) fn filter_by_type(
+    files: Vec<FileRecord>,
+    file_type: Option<DriveFileType>,
+) -> Vec<FileRecord> {
+    match file_type {
+        Some(t) => files
+            .into_iter()
+            .filter(|f| t.matches(&f.mime_type))
+            .collect(),
+        None => files,
+    }
 }
 
 impl FilesystemService {
@@ -68,8 +85,13 @@ impl FilesystemService {
         &self,
         user_id: &str,
         folder_id: Option<&str>,
-        query: &ListQueryParams<FolderContentsOrderField>,
+        query: &RootContentsQuery,
     ) -> Result<FolderContentsResponse, ApiError> {
+        let file_type = query.file_type;
+        // `view` selects *which* listing the caller wants and is resolved by the
+        // caller; the rest of the query applies here.
+        let query = &query.list_params();
+
         // Validate folder exists if an ID is given
         let folder_response = if let Some(fid) = folder_id {
             let f = self
@@ -82,7 +104,10 @@ impl FilesystemService {
         };
 
         let subfolders = self.repo.list_subfolders(user_id, folder_id)?;
-        let files = self.repo.list_files_in_folder(user_id, folder_id)?;
+        let files = filter_by_type(
+            self.repo.list_files_in_folder(user_id, folder_id)?,
+            file_type,
+        );
         let shortcuts = self.repo.list_shortcuts_in_folder(user_id, folder_id)?;
 
         let subfolders = apply_list_query(
@@ -302,12 +327,18 @@ impl FilesystemService {
         &self,
         user_id: &str,
         view: DriveView,
-        query: &ListQueryParams<FolderContentsOrderField>,
+        query: &RootContentsQuery,
     ) -> Result<FolderContentsResponse, ApiError> {
+        let file_type = query.file_type;
         match view {
             DriveView::Recent => {
                 let limit = query.limit.unwrap_or(50);
-                let files = self.repo.list_recent_files(user_id, limit)?;
+                // Filtered in SQL so `limit` counts matching files (see the repo method).
+                let files = self.repo.list_recent_files(
+                    user_id,
+                    limit,
+                    file_type.map(|t| t.mime_patterns()),
+                )?;
                 Ok(FolderContentsResponse {
                     folder: None,
                     folders: vec![],
@@ -316,7 +347,7 @@ impl FilesystemService {
                 })
             }
             DriveView::Starred => {
-                let files = self.repo.list_starred_files(user_id)?;
+                let files = filter_by_type(self.repo.list_starred_files(user_id)?, file_type);
                 let folders = self.repo.list_starred_folders(user_id)?;
                 Ok(FolderContentsResponse {
                     folder: None,
@@ -326,7 +357,7 @@ impl FilesystemService {
                 })
             }
             DriveView::Trash => {
-                let files = self.repo.list_trashed_files(user_id)?;
+                let files = filter_by_type(self.repo.list_trashed_files(user_id)?, file_type);
                 let folders = self.repo.list_trashed_folders(user_id)?;
                 Ok(FolderContentsResponse {
                     folder: None,
@@ -345,7 +376,7 @@ impl FilesystemService {
         &self,
         user_id: &str,
         file_type: DriveFileType,
-        query: &ListQueryParams<FolderContentsOrderField>,
+        query: &RootContentsQuery,
     ) -> Result<FolderContentsResponse, ApiError> {
         let files = self
             .repo
@@ -353,7 +384,7 @@ impl FilesystemService {
 
         let files = apply_list_query(
             files,
-            query,
+            &query.list_params(),
             FolderContentsOrderField::Name,
             OrderDirection::Asc,
             |a, b, order_by| match order_by {
@@ -419,10 +450,11 @@ impl FilesystemService {
     pub fn list_trash(
         &self,
         user_id: &str,
-        query: &ListQueryParams<TrashOrderField>,
+        query: &TrashContentsQuery,
     ) -> Result<TrashContentsResponse, ApiError> {
-        let files = self.repo.list_trashed_files(user_id)?;
+        let files = filter_by_type(self.repo.list_trashed_files(user_id)?, query.file_type);
         let folders = self.repo.list_trashed_folders(user_id)?;
+        let query = &query.list_params();
 
         let files = apply_list_query(
             files,

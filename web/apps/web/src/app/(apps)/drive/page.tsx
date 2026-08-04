@@ -28,6 +28,7 @@ import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
+import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import { DRIVE_SEARCH_PARAM } from './searchParams';
 import { UploadZone } from './UploadZone';
 import { PreviewModal } from './PreviewModal';
@@ -148,18 +149,31 @@ function DriveContent() {
   const { search } = useClientSearch();
   const [searchHits, setSearchHits] = useState<SearchHit[] | null>(null);
 
+  /** Bumped when the index changes, to re-run the search below against it. */
+  const [indexVersion, setIndexVersion] = useState(0);
+  useSearchIndexUpdates(() => setIndexVersion((v) => v + 1));
+
+  /** The term the hits on screen belong to, so a re-run doesn't flash empty. */
+  const shownTermRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!searchTerm) {
+      shownTermRef.current = null;
       setSearchHits(null);
       return;
     }
     let cancelled = false;
-    setSearchHits(null);
+    // Only a new term clears the grid: re-running because the index changed
+    // should replace the hits in place, not drop the user into a spinner.
+    if (shownTermRef.current !== searchTerm) {
+      shownTermRef.current = searchTerm;
+      setSearchHits(null);
+    }
     search(searchTerm)
       .then((hits) => { if (!cancelled) setSearchHits(hits); })
       .catch(() => { if (!cancelled) setSearchHits([]); });
     return () => { cancelled = true; };
-  }, [searchTerm, search]);
+  }, [searchTerm, search, indexVersion]);
 
   const clearSearch = useCallback(() => router.replace('/drive'), [router]);
 

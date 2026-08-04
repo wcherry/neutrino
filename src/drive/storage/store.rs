@@ -7,6 +7,9 @@ pub enum ServeResolveError {
     EmptyKey,
     /// The key resolves to a directory rather than a file.
     IsDirectory,
+    /// The key resolves to a path with nothing on disk — the file row outlived
+    /// its blob (content never landed, or was removed out from under the DB).
+    Missing,
 }
 
 pub struct LocalFileStore {
@@ -52,14 +55,20 @@ impl LocalFileStore {
 
     /// Resolve a relative DB key to a path safe to hand to a file streamer.
     ///
-    /// Guards against two hazards that otherwise crash the response stream
-    /// with `IsADirectory (Os code 21)`:
+    /// Guards against three hazards. The first two otherwise crash the response
+    /// stream with `IsADirectory (Os code 21)`:
     /// 1. An empty `key` (placeholder records created before content upload)
     ///    would resolve to the storage root directory via `join("")`.
     /// 2. Any key that resolves to a directory rather than a file.
+    /// 3. A key pointing at nothing on disk. Returning the path anyway left the
+    ///    caller's `NamedFile::open` to fail, which surfaced as a bare HTTP 500
+    ///    `INTERNAL_ERROR` — indistinguishable, to a client, from the server
+    ///    being broken. A file row whose blob is gone is a data-integrity fact
+    ///    worth reporting precisely, so it gets its own variant.
     ///
-    /// Returns `Err` if the resolved path would be a directory or the key is
-    /// empty, so callers can surface a meaningful client error.
+    /// Returns `Err` in all three cases so callers can surface a meaningful
+    /// client error. A path that exists here can still fail to open (permissions,
+    /// I/O, or a delete racing this check) — that remains a genuine 500.
     pub fn resolve_for_serving(&self, key: &str) -> Result<PathBuf, ServeResolveError> {
         if key.is_empty() {
             return Err(ServeResolveError::EmptyKey);
@@ -67,6 +76,9 @@ impl LocalFileStore {
         let path = self.base_path.join(key);
         if path.is_dir() {
             return Err(ServeResolveError::IsDirectory);
+        }
+        if !path.exists() {
+            return Err(ServeResolveError::Missing);
         }
         Ok(path)
     }
@@ -120,6 +132,18 @@ mod tests {
         std::fs::create_dir_all(base.join("user1/folder")).expect("mkdir");
         let err = store.resolve_for_serving("user1/folder").unwrap_err();
         assert_eq!(err, ServeResolveError::IsDirectory);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A file row whose blob is gone must be reported as `Missing` here rather
+    /// than handed on as a path — letting `NamedFile::open` fail turned it into
+    /// an opaque HTTP 500.
+    #[test]
+    fn resolve_for_serving_rejects_missing_file() {
+        let (store, base) = temp_store();
+        std::fs::create_dir_all(base.join("user1")).expect("mkdir");
+        let err = store.resolve_for_serving("user1/vanished").unwrap_err();
+        assert_eq!(err, ServeResolveError::Missing);
         let _ = std::fs::remove_dir_all(base);
     }
 

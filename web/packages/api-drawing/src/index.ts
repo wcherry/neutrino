@@ -1,4 +1,4 @@
-import { request } from '@neutrino/api-core';
+import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
 // Drawing text extraction helpers
@@ -37,6 +37,12 @@ export interface DrawingResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision at load time. The editor sends it back as
+   * `expectedContentVersion` on its first save, so a document changed by
+   * another device since it was opened is caught immediately.
+   */
+  contentVersion: number;
 }
 
 export interface DrawingMetaResponse {
@@ -45,6 +51,12 @@ export interface DrawingMetaResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision, bumped on every content write. Pass it back as
+   * `expectedContentVersion` on the next save so a stale write is rejected
+   * rather than silently overwriting a newer revision.
+   */
+  contentVersion: number;
 }
 
 export interface CreateDrawingRequest {
@@ -88,11 +100,12 @@ export const drawingApi = {
     content: string,
     filename: string,
     metadata?: { title?: string },
+    versionCheck?: ContentVersionCheck,
   ): Promise<DrawingMetaResponse> {
     const formData = new FormData();
     formData.append('file', new Blob([content], { type: 'application/json' }), filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DrawingMetaResponse>(`/api/v1/drawing/${drawingId}/autosave`, {
+    return request<DrawingMetaResponse>(`/api/v1/drawing/${drawingId}/autosave${contentVersionQuery(versionCheck)}`, {
       method: 'PUT',
       body: formData,
     });

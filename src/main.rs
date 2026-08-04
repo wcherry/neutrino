@@ -26,6 +26,7 @@ mod notes;
 mod oauth;
 mod photos;
 mod schema;
+mod search;
 mod shared;
 mod sheets;
 mod slides;
@@ -246,7 +247,6 @@ async fn main() -> std::io::Result<()> {
     use drive::permissions::repository::PermissionsRepository;
     use drive::permissions::service::PermissionsService;
     use drive::priority::service::PriorityService;
-    use drive::search::service::SearchService;
     use drive::security::repository::SecurityRepository;
     use drive::security::service::SecurityService;
     use drive::service_registry::repository::ServiceRegistrationRepository;
@@ -448,11 +448,6 @@ async fn main() -> std::io::Result<()> {
         storage_service: drive_storage_service.clone(),
     });
 
-    let drive_search_service = Arc::new(SearchService::new(pool.clone()));
-    let drive_search_state = web::Data::new(drive::search::api::SearchApiState {
-        search_service: drive_search_service.clone(),
-    });
-
     let drive_priority_service = Arc::new(PriorityService::new(pool.clone()));
     let drive_priority_state = web::Data::new(drive::priority::api::PriorityApiState {
         priority_service: drive_priority_service,
@@ -461,7 +456,6 @@ async fn main() -> std::io::Result<()> {
     let drive_ai_service = Arc::new(DriveAIService::new(pool.clone()));
     let drive_ai_state = web::Data::new(drive::ai::api::DriveAIApiState {
         ai_service: drive_ai_service,
-        search_service: drive_search_service,
     });
 
     let drive_shared_drives_repo = Arc::new(SharedDrivesRepository::new(pool.clone()));
@@ -473,7 +467,7 @@ async fn main() -> std::io::Result<()> {
 
     let drive_compliance_repo = Arc::new(ComplianceRepository::new(pool.clone()));
     let drive_compliance_service =
-        Arc::new(ComplianceService::new(drive_compliance_repo, pool.clone()));
+        Arc::new(ComplianceService::new(drive_compliance_repo));
     let drive_compliance_state = web::Data::new(drive::compliance::api::ComplianceApiState {
         service: drive_compliance_service,
     });
@@ -802,7 +796,10 @@ async fn main() -> std::io::Result<()> {
             .unwrap_or_else(|e| panic!("Failed to init private store: {}", e)),
     );
     let private_lib_repo = Arc::new(PrivateLibraryRepository::new(pool.clone()));
-    let private_lib_service = Arc::new(PrivateLibraryService::new(private_lib_repo, private_store));
+    let private_lib_service = Arc::new(PrivateLibraryService::new(
+        private_lib_repo,
+        private_store.clone(),
+    ));
     let private_lib_state =
         web::Data::new(diagrams::private_library::api::PrivateLibraryApiState {
             service: private_lib_service,
@@ -817,6 +814,24 @@ async fn main() -> std::io::Result<()> {
     let themes_service = Arc::new(CustomThemesService::new(themes_repo));
     let themes_state = web::Data::new(themes::api::ThemesApiState {
         service: themes_service,
+    });
+
+    // ── Search index sync ─────────────────────────────────────────────────────
+    //
+    // No server-side search: this only stores the encrypted index snapshot a
+    // client uploads so its other devices can restore it. Shares the private
+    // store with the diagram library — the blob is machinery, not a Drive file.
+
+    use search::repository::SearchSnapshotRepository;
+    use search::service::SearchSnapshotService;
+
+    let search_snapshot_repo = Arc::new(SearchSnapshotRepository::new(pool.clone()));
+    let search_snapshot_service = Arc::new(SearchSnapshotService::new(
+        search_snapshot_repo,
+        private_store.clone(),
+    ));
+    let search_state = web::Data::new(search::api::SearchApiState {
+        service: search_snapshot_service,
     });
 
     // ── HTTP server ───────────────────────────────────────────────────────────
@@ -863,7 +878,6 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::notifications::api::NotificationsApiDoc::openapi());
         doc.merge(drive::permissions::api::PermissionsApiDoc::openapi());
         doc.merge(drive::priority::api::PriorityApiDoc::openapi());
-        doc.merge(drive::search::api::SearchApiDoc::openapi());
         doc.merge(drive::security::api::SecurityApiDoc::openapi());
         doc.merge(drive::service_registry::api::ServiceRegistryApiDoc::openapi());
         doc.merge(drive::shared_drives::api::SharedDrivesApiDoc::openapi());
@@ -893,6 +907,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(diagrams::private_library::api::PrivateLibraryApiDoc::openapi());
         doc.merge(oauth::api::OauthApiDoc::openapi());
         doc.merge(themes::api::ThemesApiDoc::openapi());
+        doc.merge(search::api::SearchApiDoc::openapi());
         doc
     };
 
@@ -934,7 +949,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_activity_state.clone())
             .app_data(drive_comments_state.clone())
             .app_data(drive_suggestions_state.clone())
-            .app_data(drive_search_state.clone())
             .app_data(drive_priority_state.clone())
             .app_data(drive_ai_state.clone())
             .app_data(drive_shared_drives_state.clone())
@@ -975,6 +989,8 @@ async fn main() -> std::io::Result<()> {
             .app_data(private_lib_state.clone())
             // Themes
             .app_data(themes_state.clone())
+            // Search
+            .app_data(search_state.clone())
             // Middleware
             .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
             .wrap(Logger::default())
@@ -994,6 +1010,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(drive::feature_flags::api::configure_public)
                     .configure(drive::fonts::api::configure_public)
                     .configure(themes::api::configure)
+                    .configure(search::api::configure)
                     .configure(calendar::configure)
                     .configure(docs::configure)
                     .configure(drive::configure)

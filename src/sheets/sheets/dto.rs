@@ -41,6 +41,11 @@ pub struct SheetResponse {
     pub updated_at: String,
     /// The current user's role on this spreadsheet: "owner", "editor", "commenter", or "viewer".
     pub your_role: String,
+    /// Server-side content revision at the time of this read. The editor sends
+    /// it back as `expectedContentVersion` on its first save, so a document
+    /// changed by another device since it was opened is caught immediately
+    /// rather than on the second save.
+    pub content_version: i32,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -51,6 +56,10 @@ pub struct SheetMetaResponse {
     pub folder_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// Server-side content revision, bumped on every content write. Send it back
+    /// as `expectedContentVersion` on the next save so a stale write is rejected
+    /// instead of silently overwriting a newer revision.
+    pub content_version: i32,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

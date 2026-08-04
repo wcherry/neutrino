@@ -7,7 +7,7 @@ use crate::notes::{
     repository::NotesRepository,
 };
 use crate::shared::drive_client::DriveClient;
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionCheck};
 use chrono::Utc;
 use reqwest::Client;
 use std::collections::HashMap;
@@ -85,6 +85,7 @@ impl NotesService {
                 folder_id: item.folder_id,
                 created_at: item.created_at.and_utc().to_rfc3339(),
                 updated_at: item.updated_at.and_utc().to_rfc3339(),
+                content_version: item.content_version,
             })
             .collect();
         Ok(ListNotesResponse { notes })
@@ -108,8 +109,14 @@ impl NotesService {
         let new_note = NewNoteRecord { file_id: &id };
         self.repo.insert_note(new_note)?;
 
-        self.drive
-            .upload_content(&id, EMPTY_NOTE_CONTENT, "create_note_content")
+        let content_version = self
+            .drive
+            .upload_content(
+                &id,
+                EMPTY_NOTE_CONTENT,
+                "create_note_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
 
         Ok(NoteResponse {
@@ -119,6 +126,7 @@ impl NotesService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -138,6 +146,7 @@ impl NotesService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -146,6 +155,7 @@ impl NotesService {
         user: &AuthenticatedUser,
         note_id: &str,
         req: SaveNoteRequest,
+        check: ContentVersionCheck,
     ) -> Result<NoteMetaResponse, ApiError> {
         let file = self.drive.get_file(user, note_id, "Note not found").await?;
         match file.your_role.as_str() {
@@ -171,9 +181,12 @@ impl NotesService {
         // `content` is omitted for a pure rename (title-only save) — leave
         // content and its wiki-links untouched in that case rather than
         // overwriting them with nothing.
+        // A title-only save writes no content, so it leaves the revision alone.
+        let mut content_version = file.content_version;
         if let Some(ref content) = req.content {
-            self.drive
-                .upload_content(note_id, content, "save_note_content")
+            content_version = self
+                .drive
+                .upload_content(note_id, content, "save_note_content", check)
                 .await?;
 
             // Parse [[wiki links]] and update note_links table. Prefer the
@@ -213,6 +226,7 @@ impl NotesService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 

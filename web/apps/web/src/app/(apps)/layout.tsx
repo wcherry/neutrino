@@ -29,7 +29,9 @@ import { NewItemFAB } from './NewItemFAB';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
+import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import { driveSearchHref } from './drive/searchParams';
+import { bugReportHref } from '@/lib/bugReport';
 
 /** Search hits carry an icon *component* so Drive can size it its own way. */
 function toTopbarResult(hit: SearchHit): TopbarSearchResult {
@@ -112,6 +114,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
 
+  // The bug report carries the page it was filed from. Read off `window` rather
+  // than `usePathname` alone so the query string comes with it (`?id=…` is what
+  // identifies the document an editor bug happened in), and off an effect
+  // because this layout is prerendered — no `location` on the server. No dep
+  // array: a re-render is the only signal we get for a query-only navigation.
+  const [reportPage, setReportPage] = useState(pathname);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the equality guard is what stops the loop
+  useEffect(() => {
+    const current = window.location.pathname + window.location.search;
+    setReportPage((prev) => (prev === current ? prev : current));
+  });
+
   async function handleUpload(files: FileList) {
     const fileArr = Array.from(files);
     toast.info(`Uploading ${fileArr.length} file${fileArr.length > 1 ? 's' : ''}…`);
@@ -171,8 +185,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
    * past — otherwise a slow early query can overwrite a fast later one.
    */
   const searchSeqRef = useRef(0);
+  /** The query on screen, so an index change can be re-run against it. */
+  const searchQueryRef = useRef('');
   const handleSearch = useCallback(async (query: string) => {
     const seq = ++searchSeqRef.current;
+    searchQueryRef.current = query;
     if (!query.trim()) {
       setSearchPending(false);
       setSearchResults([]);
@@ -189,6 +206,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (seq === searchSeqRef.current) setSearchPending(false);
     }
   }, [search]);
+
+  /**
+   * An open drop-down is a live view of the index, so a save in another app —
+   * or in another tab — re-runs the query behind it rather than leaving hits
+   * for content that has since changed.
+   */
+  useSearchIndexUpdates(() => {
+    if (searchQueryRef.current.trim()) void handleSearch(searchQueryRef.current);
+  });
 
   const handleResultClick = useCallback((result: TopbarSearchResult) => {
     router.push(result.href);
@@ -235,6 +261,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       unreadNotificationCount={unreadCount}
       onNotificationRead={markRead}
       onMarkAllNotificationsRead={markAllRead}
+      bugReportHref={bugReportHref(reportPage)}
       onSettings={() => router.push('/settings')}
       onImport={() => router.push('/import')}
       onSignOut={handleSignOut}

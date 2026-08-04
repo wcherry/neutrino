@@ -1,4 +1,4 @@
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionQuery};
 use crate::sheets::sheets::{
     dto::{
         CreateSheetRequest, ListSheetsResponse, PromoteSheetRequest, SaveSheetRequest,
@@ -130,6 +130,7 @@ pub async fn autosave_sheet(
     state: web::Data<SheetsApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
+    version_check: web::Query<ContentVersionQuery>,
     mut payload: Multipart,
 ) -> Result<web::Json<SheetMetaResponse>, ApiError> {
     let sheet_id = path.into_inner();
@@ -169,7 +170,13 @@ pub async fn autosave_sheet(
     let bytes = file_bytes.ok_or_else(|| ApiError::bad_request("No file provided"))?;
     let meta = state
         .sheets_service
-        .autosave(&user, &sheet_id, &bytes, title.as_deref())
+        .autosave(
+            &user,
+            &sheet_id,
+            &bytes,
+            title.as_deref(),
+            version_check.into_inner().into(),
+        )
         .await?;
     Ok(web::Json(meta))
 }

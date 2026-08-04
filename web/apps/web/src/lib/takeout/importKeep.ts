@@ -22,10 +22,13 @@ import {
   type KeyPair,
 } from '@neutrino/e2e-crypto';
 import { extractNoteText } from '@neutrino/api-notes';
-import { notesApi, filesystemApi, encryptionApi } from '@/lib/api';
+import { notesApi, encryptionApi } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import type { TakeoutArchive, TakeoutEntry } from './archive';
+import { createFolderResolver } from './folders';
 import { convertKeepNote, looksLikeKeepNote, parseKeepNote, type KeepNote } from './keep';
+import { describeError, formatBytes, logFail, logStep, logWarn } from './log';
+import type { ImportItem, ImportProgress, ImportSummary } from './types';
 
 /** Directory names Google uses for Keep. */
 const KEEP_DIR_NAMES = ['keep', 'google keep'];
@@ -48,41 +51,8 @@ export const DEFAULT_KEEP_IMPORT_OPTIONS: KeepImportOptions = {
   folderName: 'Google Keep',
 };
 
-export type ImportStatus = 'imported' | 'skipped' | 'failed';
-
-export interface ImportItem {
-  /** The file inside the export, e.g. `Some note.json`. */
-  file: string;
-  title: string;
-  status: ImportStatus;
-  /** Why it was skipped or how it failed. Absent for an import. */
-  reason?: string;
-}
-
-export interface KeepImportSummary {
-  total: number;
-  imported: number;
-  skipped: number;
-  failed: number;
-  items: ImportItem[];
-  /** Set when the notes went into a folder. */
-  folderId: string | null;
-  /** True when the user stopped the run before it finished. */
-  cancelled: boolean;
-  /**
-   * True when this device holds no E2EE key pair, so the notes were written
-   * as plaintext. The caller warns about it.
-   */
-  unencrypted: boolean;
-}
-
-export interface KeepImportProgress {
-  /** Notes processed so far, including skipped and failed ones. */
-  done: number;
-  total: number;
-  /** The note being worked on. */
-  current: string;
-}
+export type KeepImportSummary = ImportSummary;
+export type KeepImportProgress = ImportProgress;
 
 export interface RunKeepImportArgs {
   entries: TakeoutEntry[];
@@ -113,6 +83,11 @@ export async function findKeepNotes(archive: TakeoutArchive): Promise<KeepSource
   const named = archive.products.find((p) => KEEP_DIR_NAMES.includes(p.name.toLowerCase()));
   if (named) {
     const entries = named.entries.filter((e) => e.ext === 'json');
+    logStep('keep', `using ${named.name}`, {
+      matchedBy: 'name',
+      json: entries.length,
+      otherFiles: named.entries.length - entries.length,
+    });
     if (entries.length > 0) return { directory: named.name, entries };
   }
 
@@ -123,27 +98,20 @@ export async function findKeepNotes(archive: TakeoutArchive): Promise<KeepSource
     // in a large Drive export just to check would be wasteful.
     try {
       if (looksLikeKeepNote(JSON.parse(await json[0].text()))) {
+        logStep('keep', `using ${product.name}`, { matchedBy: `${json[0].path} parsing as a Keep note`, json: json.length });
         return { directory: product.name, entries: json };
       }
-    } catch {
+    } catch (err) {
       // Not JSON we understand — try the next product.
+      logStep('keep', `${product.name} is not Keep`, { probed: json[0].path, reason: describeError(err) });
     }
   }
+
+  logWarn('keep', 'no Keep notes found', { products: archive.products.map((p) => p.name), looksFor: KEEP_DIR_NAMES });
   return null;
 }
 
 // ── The import ────────────────────────────────────────────────────────────────
-
-/** Find the destination folder by name, creating it when it isn't there yet. */
-async function resolveFolder(name: string): Promise<string | null> {
-  const wanted = name.trim();
-  if (!wanted) return null;
-  const root = await filesystemApi.getRootContents();
-  const existing = root.folders.find((f) => f.name.toLowerCase() === wanted.toLowerCase());
-  if (existing) return existing.id;
-  const created = await filesystemApi.createFolder({ name: wanted });
-  return created.id;
-}
 
 /**
  * Encrypt a note's content the way the editor's first save does, and register
@@ -177,10 +145,17 @@ export async function runKeepImport({
   // Without a key pair on this device there is nothing to encrypt with. The
   // editor tolerates plaintext content, so the import still runs — the caller
   // surfaces `unencrypted` so the user knows.
+  logStep('keep', `starting: ${entries.length} note${entries.length === 1 ? '' : 's'}`, { options, userId });
+
   await initSodium();
   const keyPair = userId ? loadKeyPair(userId) : null;
+  if (!keyPair) {
+    logWarn('keep', 'no key pair on this device — notes will be saved as plaintext', { userId });
+  }
 
-  const folderId = options.folderName ? await resolveFolder(options.folderName) : null;
+  const folderId = options.folderName
+    ? await createFolderResolver().folderFor([options.folderName])
+    : null;
 
   const summary = (extra: Partial<KeepImportSummary> = {}): KeepImportSummary => ({
     total: entries.length,
@@ -204,9 +179,15 @@ export async function runKeepImport({
   }
 
   for (const entry of entries) {
-    if (signal?.aborted) return summary({ cancelled: true });
+    if (signal?.aborted) {
+      logStep('keep', 'stopped by the user', { done: items.length, remaining: entries.length - items.length });
+      return summary({ cancelled: true });
+    }
 
     let title = entry.path;
+    // Which step we reached, so the failure log says what was being attempted
+    // rather than only what went wrong.
+    let step = 'reading the note';
     try {
       const note = parseKeepNote(await entry.text());
       if (!note) {
@@ -231,16 +212,28 @@ export async function runKeepImport({
         continue;
       }
 
+      step = 'creating the note';
       const created = await notesApi.createNote({ title, folderId });
+
+      step = keyPair ? 'encrypting the body' : 'preparing the body';
       const content = keyPair
         ? await encryptForNote(created.id, converted.content, keyPair)
         : converted.content;
 
+      logStep('keep', `saving ${title}`, {
+        id: created.id,
+        blocks: converted.blocks.length,
+        body: formatBytes(content.length),
+        encrypted: !!keyPair,
+      });
+
       // Keep notes contain no `[[wiki links]]`, so there is nothing for the
       // server to link up — send the empty list explicitly rather than let it
       // try to parse ciphertext.
+      step = 'saving the body';
       await notesApi.saveNote(created.id, { content, linkedTitles: [] });
 
+      step = 'indexing it for search';
       indexOnSave(userId, {
         id: created.id,
         type: 'note',
@@ -250,16 +243,18 @@ export async function runKeepImport({
 
       items.push({ file: entry.path, title, status: 'imported' });
     } catch (err) {
-      items.push({
-        file: entry.path,
-        title,
-        status: 'failed',
-        reason: err instanceof Error ? err.message : 'Unknown error',
-      });
+      logFail('keep', `failed while ${step}`, err, { file: entry.path, title });
+      items.push({ file: entry.path, title, status: 'failed', reason: describeError(err) });
     }
 
     onProgress?.({ done: items.length, total: entries.length, current: title });
   }
 
-  return summary();
+  const result = summary();
+  logStep('keep', 'finished', {
+    imported: result.imported,
+    skipped: result.skipped,
+    failed: result.failed,
+  });
+  return result;
 }

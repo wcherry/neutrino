@@ -1,4 +1,4 @@
-import { request } from '@neutrino/api-core';
+import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
 // Sheet text extraction helpers
@@ -49,6 +49,12 @@ export interface SheetResponse {
   updatedAt: string;
   /** The current user's role: "owner", "editor", "commenter", or "viewer". */
   yourRole: string;
+  /**
+   * Server-side content revision at load time. The editor sends it back as
+   * `expectedContentVersion` on its first save, so a document changed by
+   * another device since it was opened is caught immediately.
+   */
+  contentVersion: number;
 }
 
 export interface SheetMetaResponse {
@@ -57,6 +63,12 @@ export interface SheetMetaResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision, bumped on every content write. Pass it back as
+   * `expectedContentVersion` on the next save so a stale write is rejected
+   * rather than silently overwriting a newer revision.
+   */
+  contentVersion: number;
 }
 
 export interface CreateSheetRequest {
@@ -148,11 +160,12 @@ export const sheetsApi = {
     content: string,
     filename: string,
     metadata?: { title?: string },
+    versionCheck?: ContentVersionCheck,
   ): Promise<SheetMetaResponse> {
     const formData = new FormData();
     formData.append('file', new Blob([content], { type: 'application/json' }), filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<SheetMetaResponse>(`/api/v1/sheets/${sheetId}/autosave`, { method: 'PUT', body: formData });
+    return request<SheetMetaResponse>(`/api/v1/sheets/${sheetId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
   },
 
   async autosaveEncryptedContent(
@@ -161,6 +174,7 @@ export const sheetsApi = {
     filename: string,
     dek: Uint8Array,
     metadata?: { title?: string },
+    versionCheck?: ContentVersionCheck,
   ): Promise<SheetMetaResponse> {
     const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
     await initSodium();
@@ -170,7 +184,7 @@ export const sheetsApi = {
     const formData = new FormData();
     formData.append('file', blob, filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<SheetMetaResponse>(`/api/v1/sheets/${sheetId}/autosave`, { method: 'PUT', body: formData });
+    return request<SheetMetaResponse>(`/api/v1/sheets/${sheetId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
   },
 
 

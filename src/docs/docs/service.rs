@@ -6,7 +6,7 @@ use crate::docs::docs::{
     model::{NewDocRecord, UpdateDocRecord},
     repository::DocsRepository,
 };
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionCheck};
 
 fn content_urls(file_id: &str) -> (String, String) {
     (
@@ -46,6 +46,7 @@ impl DocsService {
                 folder_id: item.folder_id,
                 created_at: item.created_at.and_utc().to_rfc3339(),
                 updated_at: item.updated_at.and_utc().to_rfc3339(),
+                content_version: item.content_version,
             })
             .collect();
         Ok(ListDocsResponse { docs })
@@ -72,8 +73,13 @@ impl DocsService {
         self.repo.insert_doc(new_doc)?;
 
         // Upload initial empty content to drive storage
-        self.drive
-            .upload_content(&id, EMPTY_DOC_CONTENT, "upload_doc_content")
+        let content_version = self.drive
+            .upload_content(
+                &id,
+                EMPTY_DOC_CONTENT,
+                "upload_doc_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
 
         let page_setup = default_page_setup();
@@ -87,6 +93,7 @@ impl DocsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -115,6 +122,7 @@ impl DocsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -125,6 +133,7 @@ impl DocsService {
         bytes: &[u8],
         title: Option<&str>,
         page_setup: Option<&PageSetup>,
+        check: ContentVersionCheck,
     ) -> Result<DocMetaResponse, ApiError> {
         let file = self
             .drive
@@ -138,7 +147,7 @@ impl DocsService {
             return Err(ApiError::not_found("Document is in trash"));
         }
 
-        self.drive.upload_content_bytes(doc_id, bytes)?;
+        let content_version = self.drive.upload_content_bytes(doc_id, bytes, check)?;
 
         let new_title = if let Some(t) = title {
             let trimmed = t.trim().to_string();
@@ -166,6 +175,7 @@ impl DocsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -217,6 +227,7 @@ impl DocsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -253,8 +264,13 @@ impl DocsService {
             return Err(ApiError::conflict("Document has already been promoted"));
         }
 
-        self.drive
-            .upload_content(doc_id, content, "promote_doc_content")
+        let content_version = self.drive
+            .upload_content(
+                doc_id,
+                content,
+                "promote_doc_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
         self.drive
             .update_file_mime_type(user, doc_id, MIME_TYPE)
@@ -278,6 +294,7 @@ impl DocsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -288,8 +305,14 @@ impl DocsService {
         content: &str,
     ) -> Result<(), ApiError> {
         self.drive
-            .upload_content(doc_id, content, "write_doc_content")
-            .await
+            .upload_content(
+                doc_id,
+                content,
+                "write_doc_content",
+                ContentVersionCheck::UNCHECKED,
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn export_text(

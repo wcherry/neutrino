@@ -1,4 +1,5 @@
 import type { SearchableDocType } from './types';
+import { emitSearchIndexUpdate } from './events';
 
 const DB_NAME = 'neutrino_search';
 /**
@@ -59,9 +60,19 @@ export function openSearchDb(): Promise<IDBDatabase> {
       db.createObjectStore('docs', { keyPath: 'documentId' });
     };
     req.onsuccess = (e) => {
-      _db = (e.target as IDBOpenDBRequest).result;
+      const db = (e.target as IDBOpenDBRequest).result;
+      // `clearSearchIndex` deletes the whole database, and any connection still
+      // open blocks that until it closes — including one this module has since
+      // stopped tracking. Closing the connection itself (rather than whatever
+      // `_db` currently points at) is what lets a rebuild or a snapshot import
+      // go through; the next read reopens the fresh database.
+      db.onversionchange = () => {
+        db.close();
+        if (_db === db) _db = null;
+      };
+      _db = db;
       _opening = null;
-      resolve(_db);
+      resolve(db);
     };
     req.onerror = () => {
       _opening = null;
@@ -211,6 +222,22 @@ export function getAllDocEntries(db: IDBDatabase): Promise<Map<string, DocEntry>
   });
 }
 
+/**
+ * How many documents the index holds.
+ *
+ * Cheaper than `getAllDocEntries` — IndexedDB counts from the store's own
+ * metadata rather than deserialising every record — because callers use this
+ * only to answer "is there an index here at all?".
+ */
+export function countDocEntries(db: IDBDatabase): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('docs', 'readonly');
+    const req = tx.objectStore('docs').count();
+    req.onsuccess = () => resolve(req.result ?? 0);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export function resetSearchDb(): void {
   _db = null;
   _opening = null;
@@ -224,7 +251,13 @@ export function clearSearchIndex(): Promise<void> {
   _opening = null;
   return new Promise((resolve, reject) => {
     const req = indexedDB.deleteDatabase(DB_NAME);
-    req.onsuccess = () => resolve();
+    req.onsuccess = () => {
+      // Announced from the delete itself: every caller here — rebuild, snapshot
+      // import, "forget this device" — leaves readers holding results for
+      // documents that no longer have entries.
+      emitSearchIndexUpdate({ wholesale: true });
+      resolve();
+    };
     req.onerror = () => reject(req.error);
     req.onblocked = () => resolve(); // resolve anyway; stale tabs will clean up on reload
   });

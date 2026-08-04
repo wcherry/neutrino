@@ -157,6 +157,12 @@
 }
 
 /* ── Detected product ────────────────────────────────────────────────────── */
+.product {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .productRow {
   display: flex;
   align-items: center;
@@ -167,8 +173,24 @@
   background: var(--color-primary-subtle, rgb(37 99 235 / 6%));
 }
 
+/* A product the user has switched off: still listed, visibly not taking part. */
+.productRowOff {
+  border-color: var(--color-border, #e5e7eb);
+  background: transparent;
+}
+
+.productRowOff .productIcon,
+.productRowOff .productName {
+  color: var(--color-text-secondary, #6b7280);
+}
+
 .productIcon {
   color: var(--color-primary, #2563eb);
+  flex-shrink: 0;
+}
+
+.productToggle {
+  margin-left: auto;
   flex-shrink: 0;
 }
 

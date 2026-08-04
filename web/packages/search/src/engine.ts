@@ -9,9 +9,11 @@ import {
   lookupPostings,
   getDocEntries,
   getAllDocEntries,
+  countDocEntries,
   type DocEntry,
   type TokenEntry,
 } from './db';
+import { emitSearchIndexUpdate } from './events';
 
 const TITLE_WEIGHT = 3;
 const MAX_RESULTS = 20;
@@ -82,6 +84,8 @@ export class IndexEngine {
       ),
     ]);
 
+    emitSearchIndexUpdate({ documentIds: [doc.id] });
+
     const elapsed = (performance.now() - t0).toFixed(1);
     const contentWords = doc.content.trim() ? doc.content.trim().split(/\s+/).length : 0;
     console.debug(
@@ -95,6 +99,7 @@ export class IndexEngine {
   async removeDocument(docId: string): Promise<void> {
     const db = await this.getDb();
     await deleteDocumentTokens(docId, db);
+    emitSearchIndexUpdate({ documentIds: [docId] });
   }
 
   async updateDocument(doc: SearchableDocument): Promise<void> {
@@ -144,6 +149,8 @@ export class IndexEngine {
         mimeType: doc.mimeType,
       }, db),
     ]);
+
+    emitSearchIndexUpdate({ documentIds: [doc.id] });
   }
 
   /**
@@ -221,5 +228,18 @@ export class IndexEngine {
   async listDocuments(): Promise<Map<string, DocEntry>> {
     const db = await this.getDb();
     return getAllDocEntries(db);
+  }
+
+  /**
+   * How many documents are indexed.
+   *
+   * Distinguishes "this device has an index" from "this device has bookkeeping
+   * that claims it has an index" — the two diverge whenever IndexedDB is
+   * cleared independently of localStorage, which an upgrade, a failed rebuild
+   * or quota eviction all do.
+   */
+  async countDocuments(): Promise<number> {
+    const db = await this.getDb();
+    return countDocEntries(db);
   }
 }

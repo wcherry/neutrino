@@ -5,7 +5,7 @@ use crate::docs::docs::{
     },
     service::DocsService,
 };
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionQuery};
 use actix_multipart::Multipart;
 use actix_web::{get, patch, post, put, web, HttpResponse};
 use futures_util::StreamExt;
@@ -155,6 +155,7 @@ pub async fn autosave_doc(
     state: web::Data<DocsApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
+    version_check: web::Query<ContentVersionQuery>,
     mut payload: Multipart,
 ) -> Result<web::Json<DocMetaResponse>, ApiError> {
     let doc_id = path.into_inner();
@@ -204,6 +205,7 @@ pub async fn autosave_doc(
             &bytes,
             title.as_deref(),
             page_setup.as_ref(),
+            version_check.into_inner().into(),
         )
         .await?;
     Ok(web::Json(meta))

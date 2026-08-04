@@ -1,18 +1,46 @@
 /**
  * Tests for reading a Takeout zip (`lib/takeout/archive.ts`).
  *
- * The archives are built with JSZip rather than checked in as binaries, so the
- * layout each test depends on is visible in the test.
+ * The archives are built rather than checked in as binaries, so the layout
+ * each test depends on is visible in the test. They are built with JSZip while
+ * the module under test reads with zip.js, which also keeps the two
+ * implementations honest about the format.
  */
 
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
 import { openTakeout, TakeoutError } from '@/lib/takeout/archive';
 
-async function zipOf(files: Record<string, string>): Promise<Blob> {
+async function zipOf(files: Record<string, string | Uint8Array>): Promise<Blob> {
   const zip = new JSZip();
   for (const [path, content] of Object.entries(files)) zip.file(path, content);
   return zip.generateAsync({ type: 'blob' });
+}
+
+/** Bytes that will not compress away, so the archive is as big as it looks. */
+function incompressible(bytes: number): Uint8Array {
+  const out = new Uint8Array(bytes);
+  for (let i = 0; i < bytes; i++) out[i] = (i * 2654435761) % 256;
+  return out;
+}
+
+/**
+ * A real Blob that counts the bytes read out of it.
+ *
+ * `slice` is what a random-access reader uses to seek, so the running total is
+ * a direct measure of how much of the archive has actually been touched.
+ */
+function counting(blob: Blob): { blob: Blob; read: () => number } {
+  let read = 0;
+  const slice = blob.slice.bind(blob);
+  Object.defineProperty(blob, 'slice', {
+    value: (start?: number, end?: number) => {
+      const part = slice(start, end);
+      read += part.size;
+      return part;
+    },
+  });
+  return { blob, read: () => read };
 }
 
 describe('openTakeout', () => {
@@ -106,5 +134,76 @@ describe('openTakeout', () => {
 
   it('rejects an archive with no product folders', async () => {
     await expect(openTakeout(await zipOf({ 'notes.txt': 'hello' }))).rejects.toThrow(/product folders/);
+  });
+});
+
+/**
+ * The reason this module reads with zip.js rather than JSZip: a Takeout export
+ * is measured in gigabytes and must never be held in memory to be read. These
+ * are the properties that buys, so they are the ones worth pinning down.
+ */
+describe('openTakeout memory behaviour', () => {
+  it('reads only the directory at the tail when opening, not the archive', async () => {
+    const { blob, read } = counting(
+      await zipOf({
+        'Takeout/Drive/a.bin': incompressible(300_000),
+        'Takeout/Drive/b.bin': incompressible(300_000),
+      }),
+    );
+
+    const archive = await openTakeout(blob);
+
+    // Opening costs a fixed tail read (zip.js looks for the end-of-central-
+    // directory record) — a fraction of the archive, and the same fraction
+    // however much bigger the archive gets.
+    expect(read()).toBeLessThan(blob.size / 4);
+    expect(archive.product('Drive')!.entries).toHaveLength(2);
+    await archive.close();
+  });
+
+  it('reads an entry’s bytes only when that entry is asked for', async () => {
+    const { blob, read } = counting(
+      await zipOf({
+        'Takeout/Drive/a.bin': incompressible(300_000),
+        'Takeout/Drive/b.bin': incompressible(300_000),
+      }),
+    );
+
+    const archive = await openTakeout(blob);
+    const afterOpen = read();
+    await archive.product('Drive')!.entries[0].blob();
+
+    // One entry read costs one entry's worth of bytes: the second file is
+    // still untouched, which is what keeps a 20 GB export importable.
+    const cost = read() - afterOpen;
+    expect(cost).toBeGreaterThanOrEqual(300_000);
+    expect(cost).toBeLessThan(400_000);
+    await archive.close();
+  });
+
+  it('takes the entry size from the directory, without reading the entry', async () => {
+    const { blob, read } = counting(await zipOf({ 'Takeout/Drive/a.bin': incompressible(300_000) }));
+    const archive = await openTakeout(blob);
+
+    expect(archive.product('Drive')!.entries[0].size).toBe(300_000);
+    expect(read()).toBeLessThan(300_000);
+    await archive.close();
+  });
+
+  it('lets an entry be read more than once', async () => {
+    // The Keep importer sniffs a note to identify the directory, then reads it
+    // again to convert it.
+    const archive = await openTakeout(await zipOf({ 'Takeout/Keep/a.json': '{"a":1}' }));
+    const entry = archive.product('Keep')!.entries[0];
+
+    await expect(entry.text()).resolves.toBe('{"a":1}');
+    await expect(entry.text()).resolves.toBe('{"a":1}');
+    await archive.close();
+  });
+
+  it('closes cleanly, and closing twice is not an error', async () => {
+    const archive = await openTakeout(await zipOf({ 'Takeout/Keep/a.json': '{}' }));
+    await expect(archive.close()).resolves.toBeUndefined();
+    await expect(archive.close()).resolves.toBeUndefined();
   });
 });

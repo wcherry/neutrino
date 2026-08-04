@@ -702,15 +702,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    file_content_index (file_id) {
-        file_id -> Text,
-        user_id -> Text,
-        indexed_at -> Timestamp,
-        text_content -> Text,
-    }
-}
-
-diesel::table! {
     file_access_scores (file_id) {
         file_id -> Text,
         user_id -> Text,
@@ -899,6 +890,19 @@ diesel::table! {
     }
 }
 
+// ── Search ───────────────────────────────────────────────────────────────────
+
+diesel::table! {
+    search_index_snapshots (user_id) {
+        user_id -> Text,
+        version -> Integer,
+        size_bytes -> BigInt,
+        wrapped_key -> Text,
+        device_id -> Nullable<Text>,
+        updated_at -> Text,
+    }
+}
+
 // ── OAuth ─────────────────────────────────────────────────────────────────────
 
 diesel::table! {
@@ -931,6 +935,9 @@ diesel::joinable!(refresh_tokens -> users (user_id));
 
 // Themes
 diesel::joinable!(custom_themes -> users (user_id));
+
+// Search
+diesel::joinable!(search_index_snapshots -> users (user_id));
 
 // OAuth
 diesel::joinable!(oauth_authorization_codes -> oauth_clients (client_id));
@@ -1019,7 +1026,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     comment_replies,
     notifications,
     file_activity_log,
-    file_content_index,
     file_access_scores,
     file_summaries,
     file_classifications,

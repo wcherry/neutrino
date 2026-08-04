@@ -90,6 +90,14 @@ vi.mock('@neutrino/ui', () => ({
   Spinner: ({ overlay }: { overlay?: boolean }) => (
     <div data-testid="spinner" data-overlay={overlay} />
   ),
+  // The editor warns through a toast when a save is rejected for being stale
+  // (see `useContentVersionGuard`); these tests only need it to exist.
+  useToast: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  }),
 }));
 
 // Live-update relay — stubbed out here so these tests make no socket/token
@@ -237,6 +245,9 @@ describe('NoteEditorPage — "all notes" query (Drive API refactor)', () => {
         folderId: null,
         createdAt: '2026-01-01T00:00:00Z',
         updatedAt: '2026-01-02T00:00:00Z',
+        // Carried through deliberately: the editor guards saves against it,
+        // so it is part of NoteMetaResponse rather than a Drive-only field.
+        contentVersion: 1,
       },
     ]);
 
@@ -246,7 +257,6 @@ describe('NoteEditorPage — "all notes" query (Drive API refactor)', () => {
     expect(allNotes[0]).not.toHaveProperty('isStarred');
     expect(allNotes[0]).not.toHaveProperty('coverThumbnail');
     expect(allNotes[0]).not.toHaveProperty('coverThumbnailMimeType');
-    expect(allNotes[0]).not.toHaveProperty('contentVersion');
     expect(allNotes[0]).not.toHaveProperty('name');
   });
 });

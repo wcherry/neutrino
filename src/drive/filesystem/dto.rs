@@ -1,5 +1,6 @@
 use crate::drive::filesystem::model::{FolderRecord, ShortcutRecord};
 use crate::drive::storage::model::FileRecord;
+use crate::shared::ListQueryParams;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -141,6 +142,22 @@ impl DriveFileType {
             DriveFileType::Note => &["application/x-neutrino-note"],
         }
     }
+
+    /// Whether a MIME type matches this file type, in memory.
+    ///
+    /// The SQL counterpart is [`Self::mime_patterns`] fed to `LIKE`; this is for
+    /// the listings that are already loaded and sorted in Rust (folder contents,
+    /// the `view=` listings, trash, shared-with-me, tagged files) rather than
+    /// filtered in the query. Every pattern is either an exact MIME or a
+    /// trailing-`%` prefix, so those are the only two forms handled.
+    pub fn matches(&self, mime: &str) -> bool {
+        self.mime_patterns()
+            .iter()
+            .any(|pattern| match pattern.strip_suffix('%') {
+                Some(prefix) => mime.starts_with(prefix),
+                None => mime == *pattern,
+            })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -152,6 +169,53 @@ pub struct RootContentsQuery {
     pub direction: Option<crate::shared::OrderDirection>,
     pub view: Option<DriveView>,
     /// List only files of this type (e.g. `photo`) across the whole drive.
+    #[serde(rename = "type")]
+    pub file_type: Option<DriveFileType>,
+}
+
+impl RootContentsQuery {
+    /// The pagination/sort subset, for the services that take a plain list query.
+    pub fn list_params(&self) -> ListQueryParams<FolderContentsOrderField> {
+        ListQueryParams {
+            limit: self.limit,
+            offset: self.offset,
+            order_by: self.order_by,
+            direction: self.direction,
+        }
+    }
+}
+
+/// The trash listing's query: the usual pagination/sort plus the same `type`
+/// filter the drive listings take.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashContentsQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub order_by: Option<TrashOrderField>,
+    pub direction: Option<crate::shared::OrderDirection>,
+    /// List only trashed files of this type. Trashed folders are always listed.
+    #[serde(rename = "type")]
+    pub file_type: Option<DriveFileType>,
+}
+
+impl TrashContentsQuery {
+    pub fn list_params(&self) -> ListQueryParams<TrashOrderField> {
+        ListQueryParams {
+            limit: self.limit,
+            offset: self.offset,
+            order_by: self.order_by,
+            direction: self.direction,
+        }
+    }
+}
+
+/// The shared-with-me listing's query. Only `type` — the endpoint returns
+/// everything shared with the user, unpaginated.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedWithMeQuery {
+    /// List only shared files of this type. Shared folders are always listed.
     #[serde(rename = "type")]
     pub file_type: Option<DriveFileType>,
 }
@@ -309,6 +373,82 @@ mod tests {
     fn root_query_type_is_optional() {
         let q: RootContentsQuery = serde_json::from_str("{}").unwrap();
         assert_eq!(q.file_type, None);
+    }
+
+    #[test]
+    fn list_params_carries_the_pagination_and_sort_subset() {
+        let q: RootContentsQuery = serde_json::from_str(
+            r#"{"limit":10,"offset":20,"orderBy":"createdAt","direction":"desc"}"#,
+        )
+        .unwrap();
+        let params = q.list_params();
+        assert_eq!(params.limit, Some(10));
+        assert_eq!(params.offset, Some(20));
+        assert_eq!(params.order_by, Some(FolderContentsOrderField::CreatedAt));
+        assert_eq!(params.direction, Some(crate::shared::OrderDirection::Desc));
+    }
+
+    #[test]
+    fn list_params_drops_the_whole_drive_filters() {
+        // The folder listing takes the same query type as the root listing but
+        // only honours the subset below; `view`/`type` are drive-wide.
+        let q: RootContentsQuery =
+            serde_json::from_str(r#"{"view":"recent","type":"photo","limit":5}"#).unwrap();
+        let params = q.list_params();
+        assert_eq!(params.limit, Some(5));
+        assert_eq!(params.order_by, None);
+        assert_eq!(params.direction, None);
+    }
+
+    #[test]
+    fn matches_handles_exact_mimes() {
+        assert!(DriveFileType::Doc.matches("application/x-neutrino-doc"));
+        assert!(!DriveFileType::Doc.matches("application/x-neutrino-note"));
+        assert!(DriveFileType::Note.matches("application/x-neutrino-note"));
+        assert!(!DriveFileType::Note.matches("image/png"));
+    }
+
+    #[test]
+    fn matches_handles_wildcard_prefixes() {
+        assert!(DriveFileType::Photo.matches("image/png"));
+        assert!(DriveFileType::Photo.matches("image/jpeg"));
+        assert!(!DriveFileType::Photo.matches("video/mp4"));
+        // The prefix must be a real prefix, not a substring.
+        assert!(!DriveFileType::Photo.matches("application/image/png"));
+    }
+
+    #[test]
+    fn matches_accepts_any_of_several_patterns() {
+        assert!(DriveFileType::Document.matches("text/plain"));
+        assert!(DriveFileType::Document.matches("application/pdf"));
+        assert!(DriveFileType::Document.matches("application/vnd.oasis.opendocument.text"));
+        assert!(!DriveFileType::Document.matches("image/png"));
+    }
+
+    #[test]
+    fn matches_agrees_with_the_sql_patterns() {
+        // Every exact (non-wildcard) pattern must match itself, so the in-memory
+        // filter and the `LIKE` query cannot drift apart.
+        for file_type in [
+            DriveFileType::Photo,
+            DriveFileType::Video,
+            DriveFileType::Audio,
+            DriveFileType::Document,
+            DriveFileType::Doc,
+            DriveFileType::Sheet,
+            DriveFileType::Slide,
+            DriveFileType::Diagram,
+            DriveFileType::Drawing,
+            DriveFileType::Note,
+        ] {
+            for pattern in file_type.mime_patterns() {
+                let sample = pattern.replace('%', "sample");
+                assert!(
+                    file_type.matches(&sample),
+                    "{file_type:?} should match {sample}"
+                );
+            }
+        }
     }
 
     #[test]

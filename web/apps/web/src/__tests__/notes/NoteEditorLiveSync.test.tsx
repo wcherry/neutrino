@@ -82,6 +82,14 @@ vi.mock('@neutrino/ui', () => ({
   Spinner: ({ overlay }: { overlay?: boolean }) => (
     <div data-testid="spinner" data-overlay={overlay} />
   ),
+  // The editor warns through a toast when a save is rejected for being stale
+  // (see `useContentVersionGuard`); these tests only need it to exist.
+  useToast: () => ({
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  }),
 }));
 
 // Blocks round-trip through JSON so `serializeBlocks(parseBlocks(x)) === x`,

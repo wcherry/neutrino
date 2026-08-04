@@ -4,7 +4,7 @@ use crate::drive::storage::model::{
     NewUserQuota, UpdateFileContent, UserQuota,
 };
 use crate::schema::{file_versions, files, user_quotas};
-use crate::shared::{ApiError, ListQuery, OrderDirection};
+use crate::shared::{ApiError, ContentVersionCheck, ListQuery, OrderDirection};
 use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -469,37 +469,67 @@ impl StorageRepository {
             })
     }
 
+    /// Overwrite a file's content row, optionally only if its `content_version`
+    /// still matches what the caller last read.
+    ///
+    /// The version predicate lives in the `UPDATE`'s `WHERE` clause rather than
+    /// a read followed by a write: two devices saving at the same instant would
+    /// otherwise both read version N, both pass a separate check, and both
+    /// write — exactly the lost update the check exists to prevent.
     pub fn update_file_autosave(
         &self,
         file_id: &str,
         owner_id: &str,
         changeset: AutosaveFileContent,
+        check: ContentVersionCheck,
     ) -> Result<FileRecord, ApiError> {
         let mut conn = self.get_conn()?;
 
-        diesel::update(
-            files::table
-                .filter(files::id.eq(file_id))
-                .filter(files::user_id.eq(owner_id)),
-        )
-        .set((
-            &changeset,
-            files::content_version.eq(files::content_version + 1),
-        ))
-        .execute(&mut conn)
-        .map_err(|e| {
-            tracing::error!("DB update file autosave error: {:?}", e);
-            ApiError::internal("Database error")
-        })?;
+        let mut update = diesel::update(files::table)
+            .filter(files::id.eq(file_id))
+            .filter(files::user_id.eq(owner_id))
+            .into_boxed();
+        if let Some(expected) = check.enforced() {
+            update = update.filter(files::content_version.eq(expected));
+        }
 
-        files::table
+        let rows = update
+            .set((
+                &changeset,
+                files::content_version.eq(files::content_version + 1),
+            ))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update file autosave error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        let current = files::table
             .filter(files::id.eq(file_id))
             .select(FileRecord::as_select())
             .first(&mut conn)
+            .optional()
             .map_err(|e| {
                 tracing::error!("DB fetch autosaved file error: {:?}", e);
                 ApiError::internal("Database error")
-            })
+            })?;
+
+        match current {
+            // Nothing matched and the file is gone, so the miss was not the
+            // version check — report it as what it is.
+            None => Err(ApiError::not_found("File not found")),
+            Some(file) if rows == 0 => match check.enforced() {
+                Some(expected) => Err(crate::shared::content_version::conflict_error(
+                    file_id,
+                    expected,
+                    file.content_version,
+                )),
+                // An unguarded update matching nothing means the owner filter
+                // rejected it: the file exists but belongs to someone else.
+                None => Err(ApiError::not_found("File not found")),
+            },
+            Some(file) => Ok(file),
+        }
     }
 
     pub fn set_cover_thumbnail(
@@ -656,6 +686,7 @@ mod tests {
                     storage_path: "path-a".to_string(),
                     updated_at: Utc::now().naive_utc(),
                 },
+                ContentVersionCheck::UNCHECKED,
             )
             .expect("first autosave");
         assert_eq!(after_first.content_version, 2);
@@ -669,9 +700,126 @@ mod tests {
                     storage_path: "path-b".to_string(),
                     updated_at: Utc::now().naive_utc(),
                 },
+                ContentVersionCheck::UNCHECKED,
             )
             .expect("second autosave");
         assert_eq!(after_second.content_version, 3);
+    }
+
+    fn autosave_with(
+        repo: &StorageRepository,
+        file_id: &str,
+        check: ContentVersionCheck,
+    ) -> Result<FileRecord, ApiError> {
+        repo.update_file_autosave(
+            file_id,
+            "user-1",
+            AutosaveFileContent {
+                size_bytes: 42,
+                storage_path: "path-checked".to_string(),
+                updated_at: Utc::now().naive_utc(),
+            },
+            check,
+        )
+    }
+
+    #[test]
+    fn autosave_with_a_matching_expected_version_is_accepted() {
+        let repo = StorageRepository::new(test_pool());
+        let inserted = insert_test_file(&repo, "file-cv-1", "user-1", DOCX_MIME);
+
+        let saved = autosave_with(
+            &repo,
+            "file-cv-1",
+            ContentVersionCheck {
+                expected: Some(inserted.content_version),
+                force: false,
+            },
+        )
+        .expect("matching version");
+        assert_eq!(saved.content_version, 2);
+    }
+
+    #[test]
+    fn autosave_with_a_stale_expected_version_is_rejected_and_writes_nothing() {
+        // Two devices hold version 1. The first saves (making it 2); the
+        // second must not be allowed to overwrite that with its older copy.
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "file-cv-2", "user-1", DOCX_MIME);
+        autosave_with(
+            &repo,
+            "file-cv-2",
+            ContentVersionCheck {
+                expected: Some(1),
+                force: false,
+            },
+        )
+        .expect("first device saves");
+
+        let err = autosave_with(
+            &repo,
+            "file-cv-2",
+            ContentVersionCheck {
+                expected: Some(1),
+                force: false,
+            },
+        )
+        .expect_err("second device is stale");
+        assert_eq!(err.status, 409);
+        assert_eq!(err.code, "CONTENT_VERSION_CONFLICT");
+
+        let stored = repo
+            .find_file_by_id("file-cv-2")
+            .expect("find file")
+            .expect("file exists");
+        assert_eq!(
+            stored.content_version, 2,
+            "a rejected save must not bump the version"
+        );
+        assert_eq!(
+            stored.size_bytes, 42,
+            "the rejected save must not have replaced the first device's row"
+        );
+    }
+
+    #[test]
+    fn autosave_with_force_overwrites_a_stale_version() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "file-cv-3", "user-1", DOCX_MIME);
+        autosave_with(&repo, "file-cv-3", ContentVersionCheck::UNCHECKED).expect("first save");
+
+        let forced = autosave_with(
+            &repo,
+            "file-cv-3",
+            ContentVersionCheck {
+                expected: Some(1),
+                force: true,
+            },
+        )
+        .expect("force wins");
+        assert_eq!(forced.content_version, 3);
+    }
+
+    #[test]
+    fn an_unchecked_autosave_of_someone_elses_file_is_not_found_not_a_conflict() {
+        // The owner filter and the version filter both make the UPDATE match
+        // zero rows; only the latter is a conflict.
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "file-cv-4", "owner-a", DOCX_MIME);
+
+        let err = repo
+            .update_file_autosave(
+                "file-cv-4",
+                "owner-b",
+                AutosaveFileContent {
+                    size_bytes: 1,
+                    storage_path: "nope".to_string(),
+                    updated_at: Utc::now().naive_utc(),
+                },
+                ContentVersionCheck::UNCHECKED,
+            )
+            .expect_err("wrong owner");
+        assert_eq!(err.status, 404);
     }
 
     #[test]

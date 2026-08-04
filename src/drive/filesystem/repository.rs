@@ -762,15 +762,29 @@ impl FilesystemRepository {
 
     // ── Recent ────────────────────────────────────────────────────────────────
 
+    /// The most recently updated files, newest first, optionally narrowed to a
+    /// set of MIME `LIKE` patterns.
+    ///
+    /// The MIME filter is applied in SQL rather than by the caller because
+    /// `limit` is applied here: filtering afterwards would return fewer than
+    /// `limit` matching files whenever other file types are more recent.
     pub fn list_recent_files(
         &self,
         user_id: &str,
         limit: i64,
+        patterns: Option<&[&'static str]>,
     ) -> Result<Vec<FileRecord>, ApiError> {
         let mut conn = self.get_conn()?;
-        files::table
+        let mut query = files::table
             .filter(files::user_id.eq(user_id))
             .filter(files::deleted_at.is_null())
+            .into_boxed();
+
+        if let Some(patterns) = patterns {
+            query = query.filter(Self::mime_matches(patterns));
+        }
+
+        query
             .select(FileRecord::as_select())
             .order(files::updated_at.desc())
             .limit(limit)
@@ -781,20 +795,20 @@ impl FilesystemRepository {
             })
     }
 
-    /// List every non-deleted file for the user whose MIME type matches any of
-    /// the given `LIKE` patterns, across the whole drive.
-    pub fn list_files_by_mime(
-        &self,
-        user_id: &str,
+    /// `(mime LIKE p1 OR mime LIKE p2 OR ...)` as one boxed expression, so it
+    /// ANDs correctly with the surrounding filters rather than binding loosely.
+    fn mime_matches(
         patterns: &[&'static str],
-    ) -> Result<Vec<FileRecord>, ApiError> {
+    ) -> Box<
+        dyn BoxableExpression<
+            files::table,
+            diesel::sqlite::Sqlite,
+            SqlType = diesel::sql_types::Bool,
+        >,
+    > {
         use diesel::sql_types::Bool;
         use diesel::sqlite::Sqlite;
 
-        let mut conn = self.get_conn()?;
-
-        // Build `(mime LIKE p1 OR mime LIKE p2 OR ...)` so it ANDs correctly
-        // with the user/deleted filters rather than binding loosely.
         let mut mime_match: Box<dyn BoxableExpression<files::table, Sqlite, SqlType = Bool>> =
             match patterns.first() {
                 Some(first) => Box::new(files::mime_type.like(*first)),
@@ -804,6 +818,18 @@ impl FilesystemRepository {
         for pattern in patterns.iter().skip(1) {
             mime_match = Box::new(mime_match.or(files::mime_type.like(*pattern)));
         }
+        mime_match
+    }
+
+    /// List every non-deleted file for the user whose MIME type matches any of
+    /// the given `LIKE` patterns, across the whole drive.
+    pub fn list_files_by_mime(
+        &self,
+        user_id: &str,
+        patterns: &[&'static str],
+    ) -> Result<Vec<FileRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        let mime_match = Self::mime_matches(patterns);
 
         files::table
             .filter(files::user_id.eq(user_id))
@@ -1004,5 +1030,55 @@ mod tests {
             .list_files_by_mime("user-1", DriveFileType::Photo.mime_patterns())
             .unwrap();
         assert_eq!(names(&files), vec!["a-photo.png", "b-photo.jpg"]);
+    }
+
+    // ── Recent, with and without a type filter ────────────────────────────────
+
+    #[test]
+    fn recent_without_a_type_filter_returns_every_type() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+
+        let files = repo.list_recent_files("user-1", 100, None).unwrap();
+        assert_eq!(files.len(), 9);
+    }
+
+    #[test]
+    fn recent_with_a_type_filter_returns_only_that_type() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+
+        let files = repo
+            .list_recent_files("user-1", 100, Some(DriveFileType::Doc.mime_patterns()))
+            .unwrap();
+        assert_eq!(names(&files), vec!["my-doc"]);
+    }
+
+    /// The filter has to run in SQL, before `LIMIT`. If it ran afterwards, a
+    /// limit smaller than the number of newer non-matching files would return
+    /// nothing at all.
+    #[test]
+    fn recent_limit_counts_matching_files_only() {
+        let repo = test_repo();
+        // Eight non-docs, then the doc — so the doc is the *oldest* by rowid but
+        // still the only file a `type=doc` listing should ever return.
+        seed(&repo, "user-1");
+
+        let files = repo
+            .list_recent_files("user-1", 1, Some(DriveFileType::Doc.mime_patterns()))
+            .unwrap();
+        assert_eq!(names(&files), vec!["my-doc"]);
+    }
+
+    #[test]
+    fn recent_excludes_trashed_files_even_with_a_type_filter() {
+        let repo = test_repo();
+        seed(&repo, "user-1");
+        repo.trash_file("doc", "user-1").unwrap();
+
+        let files = repo
+            .list_recent_files("user-1", 100, Some(DriveFileType::Doc.mime_patterns()))
+            .unwrap();
+        assert!(files.is_empty());
     }
 }

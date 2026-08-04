@@ -5,7 +5,7 @@ use crate::drawing::drawing::{
     },
     service::DrawingService,
 };
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionQuery};
 use actix_multipart::Multipart;
 use actix_web::{delete, get, patch, post, put, web, HttpResponse};
 use futures_util::StreamExt;
@@ -161,6 +161,7 @@ pub async fn autosave_drawing(
     state: web::Data<DrawingApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
+    version_check: web::Query<ContentVersionQuery>,
     mut payload: Multipart,
 ) -> Result<web::Json<DrawingMetaResponse>, ApiError> {
     let drawing_id = path.into_inner();
@@ -200,7 +201,13 @@ pub async fn autosave_drawing(
     let bytes = file_bytes.ok_or_else(|| ApiError::bad_request("No file provided"))?;
     let meta = state
         .drawing_service
-        .autosave(&user, &drawing_id, &bytes, title.as_deref())
+        .autosave(
+            &user,
+            &drawing_id,
+            &bytes,
+            title.as_deref(),
+            version_check.into_inner().into(),
+        )
         .await?;
     Ok(web::Json(meta))
 }

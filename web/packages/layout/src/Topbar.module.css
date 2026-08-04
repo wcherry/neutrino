@@ -147,6 +147,9 @@
   border: none;
   cursor: pointer;
   padding: 0;
+  /* The bug report action is an <a>, which would otherwise be underlined. */
+  text-decoration: none;
+  flex-shrink: 0;
   transition:
     background-color var(--duration-fast) var(--ease-default),
     color var(--duration-fast) var(--ease-default);

@@ -8,6 +8,9 @@ export {
   refreshTokensOnce,
   request,
   buildQuery,
+  contentVersionQuery,
+  isContentVersionConflict,
+  CONTENT_VERSION_CONFLICT,
 } from './client';
 
 export type {
@@ -15,4 +18,5 @@ export type {
   PaginatedResponse,
   ListQuery,
   RequestConfig,
+  ContentVersionCheck,
 } from './client';

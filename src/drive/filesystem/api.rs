@@ -2,14 +2,15 @@ use crate::drive::filesystem::{
     dto::{
         BulkMoveRequest, BulkResult, BulkTrashRequest, CreateFolderRequest, CreateShortcutRequest,
         FileResponse, FolderContentsOrderField, FolderContentsResponse, FolderResponse,
-        RootContentsQuery, ShortcutResponse, StarredContentsResponse, TrashContentsResponse,
-        TrashOrderField, UpdateFileRequest, UpdateFolderRequest,
+        RootContentsQuery, SharedWithMeQuery, ShortcutResponse, StarredContentsResponse,
+        TrashContentsQuery, TrashContentsResponse, TrashOrderField, UpdateFileRequest,
+        UpdateFolderRequest,
     },
     repository::FilesystemRepository,
     service::FilesystemService,
 };
 use crate::drive::permissions::repository::PermissionsRepository;
-use crate::shared::{ApiError, AuthenticatedUser, ListQueryParams};
+use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use serde::Serialize;
 use std::sync::Arc;
@@ -73,44 +74,27 @@ pub async fn get_root_contents(
 ) -> Result<web::Json<FolderContentsResponse>, ApiError> {
     info!("get_root_contents");
 
-    if let Some(file_type) = query.file_type {
-        let list_params = ListQueryParams {
-            limit: query.limit,
-            offset: query.offset,
-            order_by: query.order_by,
-            direction: query.direction,
-        };
-        let contents =
-            state
-                .filesystem_service
-                .get_typed_contents(&user.user_id, file_type, &list_params)?;
-        return Ok(web::Json(contents));
-    }
-
+    // `view` is checked first so it composes with `type`: `?view=recent&type=doc`
+    // is "the most recent docs", not "all docs". Without a view, `type` is a
+    // whole-drive flat listing; with neither, it is the root folder's contents.
     if let Some(view) = query.view {
-        let list_params = ListQueryParams {
-            limit: query.limit,
-            offset: query.offset,
-            order_by: query.order_by,
-            direction: query.direction,
-        };
-        let contents =
-            state
-                .filesystem_service
-                .get_view_contents(&user.user_id, view, &list_params)?;
+        let contents = state
+            .filesystem_service
+            .get_view_contents(&user.user_id, view, &query)?;
         return Ok(web::Json(contents));
     }
 
-    let list_params = ListQueryParams {
-        limit: query.limit,
-        offset: query.offset,
-        order_by: query.order_by,
-        direction: query.direction,
-    };
-    let contents =
-        state
-            .filesystem_service
-            .get_folder_contents(&user.user_id, None, &list_params)?;
+    if let Some(file_type) = query.file_type {
+        let contents =
+            state
+                .filesystem_service
+                .get_typed_contents(&user.user_id, file_type, &query)?;
+        return Ok(web::Json(contents));
+    }
+
+    let contents = state
+        .filesystem_service
+        .get_folder_contents(&user.user_id, None, &query)?;
     Ok(web::Json(contents))
 }
 
@@ -123,6 +107,8 @@ pub async fn get_root_contents(
         ("offset" = Option<i64>, Query, description = "Pagination offset"),
         ("orderBy" = Option<FolderContentsOrderField>, Query, description = "Sort field"),
         ("direction" = Option<String>, Query, description = "asc or desc"),
+        ("view" = Option<String>, Query, description = "Accepted for parity with the root listing but IGNORED: views are whole-drive, not folder-scoped"),
+        ("type" = Option<DriveFileType>, Query, description = "List only files of this type in this folder; subfolders and shortcuts are always listed"),
     ),
     responses(
         (status = 200, description = "Folder contents", body = FolderContentsResponse),
@@ -136,7 +122,7 @@ pub async fn get_folder_contents(
     state: web::Data<FilesystemApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
-    query: web::Query<ListQueryParams<FolderContentsOrderField>>,
+    query: web::Query<RootContentsQuery>,
 ) -> Result<web::Json<FolderContentsResponse>, ApiError> {
     let folder_id = path.into_inner();
     let contents =
@@ -401,6 +387,7 @@ pub async fn bulk_download(
         ("offset" = Option<i64>, Query, description = "Pagination offset"),
         ("orderBy" = Option<TrashOrderField>, Query, description = "Sort field"),
         ("direction" = Option<String>, Query, description = "asc or desc"),
+        ("type" = Option<DriveFileType>, Query, description = "List only trashed files of this type; trashed folders are always listed"),
     ),
     responses(
         (status = 200, description = "Trashed items", body = TrashContentsResponse),
@@ -412,7 +399,7 @@ pub async fn bulk_download(
 pub async fn list_trash(
     state: web::Data<FilesystemApiState>,
     user: AuthenticatedUser,
-    query: web::Query<ListQueryParams<TrashOrderField>>,
+    query: web::Query<TrashContentsQuery>,
 ) -> Result<web::Json<TrashContentsResponse>, ApiError> {
     let contents = state.filesystem_service.list_trash(&user.user_id, &query)?;
     Ok(web::Json(contents))
@@ -574,6 +561,9 @@ pub struct SharedWithMeResponse {
 #[utoipa::path(
     get,
     path = "/api/v1/drive/shared-with-me",
+    params(
+        ("type" = Option<DriveFileType>, Query, description = "List only shared files of this type; shared folders are always listed"),
+    ),
     responses(
         (status = 200, description = "Files and folders shared with the current user"),
     ),
@@ -584,6 +574,7 @@ pub struct SharedWithMeResponse {
 pub async fn get_shared_with_me(
     state: web::Data<FilesystemApiState>,
     user: AuthenticatedUser,
+    query: web::Query<SharedWithMeQuery>,
 ) -> Result<web::Json<SharedWithMeResponse>, ApiError> {
     let perms = state
         .permissions_repo
@@ -603,12 +594,13 @@ pub async fn get_shared_with_me(
     let files = if file_ids.is_empty() {
         vec![]
     } else {
-        state
-            .filesystem_repo
-            .find_files_by_ids_shared(&file_ids)?
-            .into_iter()
-            .map(FileResponse::from)
-            .collect()
+        crate::drive::filesystem::service::filter_by_type(
+            state.filesystem_repo.find_files_by_ids_shared(&file_ids)?,
+            query.file_type,
+        )
+        .into_iter()
+        .map(FileResponse::from)
+        .collect()
     };
 
     let folders = if folder_ids.is_empty() {

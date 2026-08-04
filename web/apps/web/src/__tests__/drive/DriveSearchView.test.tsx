@@ -7,12 +7,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { FileText } from 'lucide-react';
 import { ToastProvider } from '@neutrino/ui';
+import { emitSearchIndexUpdate, resetSearchIndexEvents } from '@neutrino/search';
 
 const push = vi.fn();
 const replace = vi.fn();
@@ -92,6 +93,12 @@ const HIT = {
   updatedAt: Date.parse('2026-03-03T10:00:00Z'),
 };
 
+/** An index change, waited out past the bus's coalescing window. */
+function announceIndexChange(documentIds: string[]): Promise<void> {
+  emitSearchIndexUpdate({ documentIds });
+  return new Promise((resolve) => setTimeout(resolve, 400));
+}
+
 async function renderDrivePage() {
   const { default: DrivePage } = await import('../../app/(apps)/drive/page');
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
@@ -106,6 +113,7 @@ async function renderDrivePage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetSearchIndexEvents();
   query = 'budget';
   search.mockResolvedValue([HIT]);
 });
@@ -156,6 +164,30 @@ describe('Drive search view', () => {
     await user.click(await screen.findByRole('button', { name: 'Clear search filter budget' }));
 
     expect(replace).toHaveBeenCalledWith('/drive');
+  });
+
+  it('re-runs the search when the index changes underneath it', async () => {
+    await renderDrivePage();
+    await screen.findByRole('listitem', { name: 'Q3 Budget' });
+
+    // What a save in the Docs tab, a periodic sync or a snapshot pull looks
+    // like from here: the index moved, and these hits are of the old one.
+    search.mockResolvedValue([{ ...HIT, id: 'doc-2', title: 'Q4 Budget' }]);
+    await act(() => announceIndexChange(['doc-2']));
+
+    expect(await screen.findByRole('listitem', { name: 'Q4 Budget' })).toBeInTheDocument();
+  });
+
+  it('leaves the hits on screen while that re-run is in flight', async () => {
+    await renderDrivePage();
+    await screen.findByRole('listitem', { name: 'Q3 Budget' });
+
+    // A refresh nobody asked for must not drop the user into a loading grid.
+    search.mockReturnValue(new Promise(() => {}));
+    await act(() => announceIndexChange(['doc-1']));
+
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('listitem', { name: 'Q3 Budget' })).toBeInTheDocument();
   });
 
   it('runs no search and shows the normal listing without a query', async () => {

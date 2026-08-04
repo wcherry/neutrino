@@ -6,7 +6,7 @@ use crate::diagrams::diagrams::{
     },
     service::DiagramsService,
 };
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionQuery};
 use actix_multipart::Multipart;
 use actix_web::{delete, get, patch, post, put, web, HttpResponse};
 use futures_util::StreamExt;
@@ -164,6 +164,7 @@ pub async fn autosave_diagram(
     state: web::Data<DiagramsApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
+    version_check: web::Query<ContentVersionQuery>,
     mut payload: Multipart,
 ) -> Result<web::Json<DiagramMetaResponse>, ApiError> {
     let diagram_id = path.into_inner();
@@ -203,7 +204,13 @@ pub async fn autosave_diagram(
     let bytes = file_bytes.ok_or_else(|| ApiError::bad_request("No file provided"))?;
     let meta = state
         .diagrams_service
-        .autosave(&user, &diagram_id, &bytes, title.as_deref())
+        .autosave(
+            &user,
+            &diagram_id,
+            &bytes,
+            title.as_deref(),
+            version_check.into_inner().into(),
+        )
         .await?;
     Ok(web::Json(meta))
 }

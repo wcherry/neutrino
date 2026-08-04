@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Menu, Bell, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
+import { Menu, Bell, Bug, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { slideUp } from './variants';
 import { SearchInput } from '@neutrino/ui';
@@ -63,6 +63,8 @@ export interface TopbarProps {
   unreadNotificationCount?: number;
   onNotificationRead?: (id: string) => void;
   onMarkAllNotificationsRead?: () => void;
+  /** Issue tracker URL, opened in a new tab by the bug button. Hidden when unset. */
+  bugReportHref?: string;
   onSettings?: () => void;
   onImport?: () => void;
   onSignOut?: () => void;
@@ -114,6 +116,7 @@ export function Topbar({
   unreadNotificationCount = 0,
   onNotificationRead,
   onMarkAllNotificationsRead,
+  bugReportHref,
   onSettings,
   onImport,
   onSignOut,
@@ -411,6 +414,21 @@ export function Topbar({
           </AnimatePresence>
         </div>
 
+        {/* Report a bug — a link, not a button, so it can be opened however the
+            reporter prefers and survives a popup blocker. */}
+        {bugReportHref && (
+          <a
+            className={styles['icon-btn']}
+            href={bugReportHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Report a bug"
+            title="Report a bug"
+          >
+            <Bug size={18} aria-hidden="true" />
+          </a>
+        )}
+
         {/* User menu */}
         {user && (
           <div className={styles['user-menu-wrapper']} ref={userMenuRef}>
@@ -442,7 +460,6 @@ export function Topbar({
                   {onProfileClick && (
                     <button
                       type="button"
-                      className={`${styles['icon-btn']} ${styles['menu-item']}`}
                       onClick={() => { setUserMenuOpen(false); onProfileClick(); }}
                       role="menuitem"
                       style={{
@@ -451,10 +468,19 @@ export function Topbar({
                         alignItems: 'center',
                         gap: 'var(--space-3)',
                         padding: 'var(--space-2) var(--space-4)',
-                        borderRadius: 0,
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
                         fontSize: 'var(--text-sm)',
                         color: 'var(--color-text-primary)',
-                        height: 'auto',
+                        textAlign: 'left',
+                        transition: 'background-color var(--duration-fast) var(--ease-default)',
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--color-bg-subtle)';
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
                       }}
                     >
                       <User size={16} aria-hidden="true" />

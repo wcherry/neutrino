@@ -8,7 +8,7 @@ use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::dto::FileOrderField;
 use crate::drive::storage::model::FileRecord;
 use crate::drive::storage::service::StorageService;
-use crate::shared::{ApiError, AuthenticatedUser, ListQuery};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionCheck, ListQuery};
 
 #[derive(Debug)]
 pub struct DriveListItem {
@@ -17,6 +17,9 @@ pub struct DriveListItem {
     pub folder_id: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    /// Server-side content revision. Clients echo it back on their next save so
+    /// a stale write is rejected — see `shared::content_version`.
+    pub content_version: i32,
 }
 
 #[derive(Debug)]
@@ -34,6 +37,7 @@ pub struct DriveFileRecord {
     pub updated_at: NaiveDateTime,
     pub cover_thumbnail: Option<String>,
     pub cover_thumbnail_mime_type: Option<String>,
+    pub content_version: i32,
 }
 
 fn to_drive_record(file: FileRecord, role: String) -> DriveFileRecord {
@@ -58,6 +62,7 @@ fn to_drive_record(file: FileRecord, role: String) -> DriveFileRecord {
         updated_at: file.updated_at,
         cover_thumbnail: file.cover_thumbnail,
         cover_thumbnail_mime_type: file.cover_thumbnail_mime_type,
+        content_version: file.content_version,
     }
 }
 
@@ -104,6 +109,7 @@ impl DriveClient {
                 folder_id: f.folder_id,
                 created_at: f.created_at,
                 updated_at: f.updated_at,
+                content_version: f.content_version,
             })
             .collect())
     }
@@ -161,12 +167,19 @@ impl DriveClient {
         })
     }
 
+    /// Write text content over a file's current content.
+    ///
+    /// `check` is the caller's optimistic-concurrency guard. Creation and
+    /// server-side rewrites pass `ContentVersionCheck::UNCHECKED`; an editor
+    /// save passes the version the client last read so a stale save is
+    /// rejected with 409 rather than overwriting a newer revision.
     pub async fn upload_content(
         &self,
         file_id: &str,
         content: &str,
         label: &str,
-    ) -> Result<(), ApiError> {
+        check: ContentVersionCheck,
+    ) -> Result<i32, ApiError> {
         let file = self
             .storage
             .find_file_any_user(file_id)?
@@ -187,14 +200,15 @@ impl DriveClient {
         })?;
 
         let size_bytes = content.len() as i64;
-        self.storage
-            .autosave(file_id, &temp_path, size_bytes)
+        let saved = self
+            .storage
+            .autosave(file_id, &temp_path, size_bytes, check)
             .map_err(|e| {
                 let _ = std::fs::remove_file(&temp_path);
                 e
             })?;
 
-        Ok(())
+        Ok(saved.content_version)
     }
 
     pub async fn update_file_name(
@@ -244,7 +258,14 @@ impl DriveClient {
 
     /// Autosave raw bytes as the file's current content without creating a version snapshot.
     /// Used by per-app autosave endpoints that receive multipart binary data.
-    pub fn upload_content_bytes(&self, file_id: &str, bytes: &[u8]) -> Result<(), ApiError> {
+    ///
+    /// See `upload_content` for what `check` guards against.
+    pub fn upload_content_bytes(
+        &self,
+        file_id: &str,
+        bytes: &[u8],
+        check: ContentVersionCheck,
+    ) -> Result<i32, ApiError> {
         let file = self
             .storage
             .find_file_any_user(file_id)?
@@ -261,13 +282,14 @@ impl DriveClient {
             ApiError::internal("Failed to write content")
         })?;
         let size_bytes = bytes.len() as i64;
-        self.storage
-            .autosave(file_id, &temp_path, size_bytes)
+        let saved = self
+            .storage
+            .autosave(file_id, &temp_path, size_bytes, check)
             .map_err(|e| {
                 let _ = std::fs::remove_file(&temp_path);
                 e
             })?;
-        Ok(())
+        Ok(saved.content_version)
     }
 }
 

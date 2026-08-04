@@ -10,7 +10,7 @@ use crate::diagrams::diagrams::{
     repository::DiagramsRepository,
 };
 use crate::shared::drive_client::DriveClient;
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionCheck};
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -51,6 +51,7 @@ impl DiagramsService {
                 folder_id: item.folder_id,
                 created_at: item.created_at.and_utc().to_rfc3339(),
                 updated_at: item.updated_at.and_utc().to_rfc3339(),
+                content_version: item.content_version,
             })
             .collect();
         Ok(ListDiagramsResponse { diagrams })
@@ -73,8 +74,14 @@ impl DiagramsService {
         let new_diagram = NewDiagramRecord { file_id: &id };
         self.repo.insert_diagram(new_diagram)?;
 
-        self.drive
-            .upload_content(&id, EMPTY_DIAGRAM_CONTENT, "upload_diagram_content")
+        let content_version = self
+            .drive
+            .upload_content(
+                &id,
+                EMPTY_DIAGRAM_CONTENT,
+                "upload_diagram_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
 
         let (content_url, content_write_url) = content_urls(&id);
@@ -86,6 +93,7 @@ impl DiagramsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -110,6 +118,7 @@ impl DiagramsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -155,6 +164,7 @@ impl DiagramsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -181,6 +191,7 @@ impl DiagramsService {
         diagram_id: &str,
         bytes: &[u8],
         title: Option<&str>,
+        check: ContentVersionCheck,
     ) -> Result<DiagramMetaResponse, ApiError> {
         let file = self
             .drive
@@ -194,7 +205,7 @@ impl DiagramsService {
             return Err(ApiError::not_found("Diagram is in trash"));
         }
 
-        self.drive.upload_content_bytes(diagram_id, bytes)?;
+        let content_version = self.drive.upload_content_bytes(diagram_id, bytes, check)?;
 
         let new_title = if let Some(t) = title {
             let trimmed = t.trim().to_string();
@@ -220,6 +231,7 @@ impl DiagramsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 

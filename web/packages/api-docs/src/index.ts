@@ -1,4 +1,4 @@
-import { request } from '@neutrino/api-core';
+import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
 // Tiptap text extraction (client-side, no tiptap dependency required)
@@ -65,6 +65,12 @@ export interface DocResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision at load time. The editor sends it back as
+   * `expectedContentVersion` on its first save, so a document changed by
+   * another device since it was opened is caught immediately.
+   */
+  contentVersion: number;
 }
 
 export interface DocMetaResponse {
@@ -73,6 +79,12 @@ export interface DocMetaResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision, bumped on every content write. Pass it back as
+   * `expectedContentVersion` on the next save so a stale write is rejected
+   * rather than silently overwriting a newer revision.
+   */
+  contentVersion: number;
 }
 
 export interface CreateDocRequest {
@@ -127,11 +139,12 @@ export const docsApi = {
     content: string,
     filename: string,
     metadata?: { title?: string; pageSetup?: PageSetup },
+    versionCheck?: ContentVersionCheck,
   ): Promise<DocMetaResponse> {
     const formData = new FormData();
     formData.append('file', new Blob([content], { type: 'application/json' }), filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave`, { method: 'PUT', body: formData });
+    return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
   },
 
   async autosaveEncryptedContent(
@@ -140,6 +153,7 @@ export const docsApi = {
     filename: string,
     dek: Uint8Array,
     metadata?: { title?: string; pageSetup?: PageSetup },
+    versionCheck?: ContentVersionCheck,
   ): Promise<DocMetaResponse> {
     const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
     await initSodium();
@@ -149,7 +163,7 @@ export const docsApi = {
     const formData = new FormData();
     formData.append('file', blob, filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave`, { method: 'PUT', body: formData });
+    return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
   },
 
   /**

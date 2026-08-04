@@ -1,4 +1,4 @@
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionCheck};
 use crate::slides::slides::{
     dto::{
         CreateSlideRequest, CreateThemeRequest, ListSlidesResponse, ListThemesResponse,
@@ -296,6 +296,7 @@ impl SlidesService {
                 folder_id: item.folder_id,
                 created_at: item.created_at.and_utc().to_rfc3339(),
                 updated_at: item.updated_at.and_utc().to_rfc3339(),
+                content_version: item.content_version,
             })
             .collect();
         Ok(ListSlidesResponse { slides })
@@ -318,8 +319,13 @@ impl SlidesService {
         let new_slide = NewSlideRecord { file_id: &id };
         self.repo.insert_slide(new_slide)?;
 
-        self.drive
-            .upload_content(&id, EMPTY_SLIDES_CONTENT, "upload_slide_content")
+        let content_version = self.drive
+            .upload_content(
+                &id,
+                EMPTY_SLIDES_CONTENT,
+                "upload_slide_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
 
         let (content_url, content_write_url) = content_urls(&id);
@@ -331,6 +337,7 @@ impl SlidesService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -356,6 +363,7 @@ impl SlidesService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -450,6 +458,7 @@ impl SlidesService {
         slide_id: &str,
         bytes: &[u8],
         title: Option<&str>,
+        check: ContentVersionCheck,
     ) -> Result<SlideMetaResponse, ApiError> {
         let file = self
             .drive
@@ -463,7 +472,7 @@ impl SlidesService {
             return Err(ApiError::not_found("Presentation is in trash"));
         }
 
-        self.drive.upload_content_bytes(slide_id, bytes)?;
+        let content_version = self.drive.upload_content_bytes(slide_id, bytes, check)?;
 
         let new_title = if let Some(t) = title {
             let trimmed = t.trim().to_string();
@@ -489,6 +498,7 @@ impl SlidesService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -534,6 +544,7 @@ impl SlidesService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -573,8 +584,13 @@ impl SlidesService {
             return Err(ApiError::conflict("Presentation has already been promoted"));
         }
 
-        self.drive
-            .upload_content(slide_id, content, "promote_slide_content")
+        let content_version = self.drive
+            .upload_content(
+                slide_id,
+                content,
+                "promote_slide_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
         self.drive
             .update_file_mime_type(user, slide_id, MIME_TYPE)
@@ -592,6 +608,7 @@ impl SlidesService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: Utc::now().naive_utc().and_utc().to_rfc3339(),
+            content_version,
         })
     }
 }

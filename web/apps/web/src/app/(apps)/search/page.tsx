@@ -6,6 +6,7 @@ import { useUser } from '@neutrino/auth';
 import { loadKeyPair } from '@neutrino/e2e-crypto';
 import { IndexEngine, type SearchResult } from '@neutrino/search';
 import { docTypeLabel, MIN_SEARCH_LENGTH } from '@/hooks/useClientSearch';
+import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import styles from './page.module.css';
 
 export default function SearchPage() {
@@ -14,6 +15,8 @@ export default function SearchPage() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const engineRef = useRef<IndexEngine | null>(null);
+  /** The query the results belong to, for re-running it when the index moves. */
+  const queryRef = useRef('');
 
   useEffect(() => {
     if (!user?.id) return;
@@ -25,6 +28,7 @@ export default function SearchPage() {
   const handleSearch = useCallback(
     async (value: string) => {
       setQuery(value);
+      queryRef.current = value;
       const engine = engineRef.current;
       // Terms are prefix-matched, so a one or two letter query would scan a
       // large slice of the index — the same floor the topbar search uses.
@@ -43,6 +47,12 @@ export default function SearchPage() {
     },
     [],
   );
+
+  // Editors index as they save, and the sync and snapshot pull rewrite whole
+  // swathes of the index — none of which this page would otherwise notice.
+  useSearchIndexUpdates(() => {
+    if (queryRef.current.trim()) void handleSearch(queryRef.current);
+  });
 
   return (
     <div className={styles.page}>

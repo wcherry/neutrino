@@ -22,6 +22,7 @@ import { buildXlsxWorksheet } from './useExport';
 import { buildRawSheetMap, evaluateSheetMap } from './sheetFileUtils';
 import { officeAppForFile, OFFICE_MIME } from '@/lib/officeFormats';
 import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
+import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 
 /**
  * Parse raw .xlsx bytes into per-sheet cell maps — office-mode counterpart of
@@ -111,6 +112,9 @@ export function usePersistence({
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
     const toast = useToast();
+    // Rejects a save that would overwrite a revision written elsewhere since
+    // this spreadsheet was loaded. See `useContentVersionGuard`.
+    const versionGuard = useContentVersionGuard();
     const currentUser = useUser();
     const [title, setTitle] = useState('Untitled');
     const [yourRole, setYourRole] = useState<string>('owner');
@@ -220,11 +224,27 @@ export function usePersistence({
         // when it follows closely after another request to the same endpoint. This
         // save is often the last chance to persist an edit before the user navigates
         // away, so silently swallowing a transient failure would lose real data.
+        // The retry must not swallow a rejected save: a 409 is a decision for
+        // the user, and retrying it would only fail again against the same
+        // stale revision.
+        let saved;
         try {
-            await driveAutosaveEncryptedContent(sheetId, content, 'sheet.json', dekRef.current);
-        } catch {
-            await driveAutosaveEncryptedContent(sheetId, content, 'sheet.json', dekRef.current);
+            saved = await driveAutosaveEncryptedContent(
+                sheetId, content, 'sheet.json', dekRef.current, versionGuard.check(),
+            );
+        } catch (err) {
+            if (versionGuard.handleError(err)) {
+                toast.warning(
+                    'This spreadsheet changed elsewhere since you opened it. Reload to get ' +
+                    'the latest version, or save again to keep your copy.',
+                );
+                return;
+            }
+            saved = await driveAutosaveEncryptedContent(
+                sheetId, content, 'sheet.json', dekRef.current, versionGuard.check(),
+            );
         }
+        versionGuard.observe(saved.contentVersion);
         indexOnSave(currentUser?.id, {
             id: sheetId,
             type: 'spreadsheet',
@@ -379,6 +399,7 @@ export function usePersistence({
             return;
         }
         sheetRef.current = sheet;
+        versionGuard.observe(sheet.contentVersion);
         setTitle(sheet.title);
         setYourRole(sheet.yourRole ?? 'owner');
         // True only when decryptFile throws on a brand-new file (isNewEncryption),

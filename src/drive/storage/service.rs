@@ -11,7 +11,8 @@ use crate::drive::storage::{
     store::{LocalFileStore, ServeResolveError},
 };
 use crate::shared::{
-    apply_list_query, ApiError, AuthenticatedUser, ListQuery, ListQueryParams, OrderDirection,
+    apply_list_query, ApiError, AuthenticatedUser, ContentVersionCheck, ListQuery, ListQueryParams,
+    OrderDirection,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -26,8 +27,30 @@ const MAX_VERSIONS: i64 = 100;
 /// Map a path-resolution failure to a client error instead of handing a
 /// directory (or the storage root) to the file streamer, which crashes the
 /// actix response stream with `IsADirectory (Os code 21)`.
-fn no_content_error(_err: ServeResolveError) -> ApiError {
-    ApiError::new(409, "NO_CONTENT", "File has no uploaded content")
+///
+/// `Missing` gets its own code: unlike the other two — which mean content was
+/// never uploaded — it means the file row outlived its blob, and reporting that
+/// as `NO_CONTENT` would tell a syncing client to expect bytes that will never
+/// arrive. Both stay 409 (the file resource exists; only its content doesn't).
+/// `Missing` is also logged with its key, since an orphaned row is an operator
+/// problem that no amount of client retrying will fix.
+fn no_content_error(err: ServeResolveError, key: &str) -> ApiError {
+    match err {
+        ServeResolveError::Missing => {
+            tracing::warn!(
+                "Storage blob missing for key {:?}; file row is orphaned",
+                key
+            );
+            ApiError::new(
+                409,
+                "CONTENT_MISSING",
+                "File content is missing from storage",
+            )
+        }
+        ServeResolveError::EmptyKey | ServeResolveError::IsDirectory => {
+            ApiError::new(409, "NO_CONTENT", "File has no uploaded content")
+        }
+    }
 }
 
 pub struct StorageService {
@@ -147,16 +170,35 @@ impl StorageService {
     ///   - More than 10 minutes have elapsed since the last version, or
     ///   - The content size changed by more than 50 KB.
     /// Permission check (owner/editor) must be enforced by the caller before calling this.
+    ///
+    /// `check` carries the client's optimistic-concurrency guard; pass
+    /// `ContentVersionCheck::UNCHECKED` for writes with no client-held version.
+    /// A rejected check fails with 409 and leaves the stored content alone.
     pub fn autosave(
         &self,
         file_id: &str,
         temp_path: &Path,
         size_bytes: i64,
+        check: ContentVersionCheck,
     ) -> Result<FileMetadataResponse, ApiError> {
         let file = self
             .repo
             .find_file_by_id(file_id)?
             .ok_or_else(|| ApiError::not_found("File not found"))?;
+
+        // Reject before touching the filesystem. Renaming first and rolling
+        // back on a 409 would leave a window where the file on disk and the
+        // version in the database disagree, which is what other readers use to
+        // decide their copy is current.
+        if let Some(expected) = check.enforced() {
+            if file.content_version != expected {
+                return Err(crate::shared::content_version::conflict_error(
+                    file_id,
+                    expected,
+                    file.content_version,
+                ));
+            }
+        }
 
         let owner_id = &file.user_id;
         let main_path = self.store.file_path(owner_id, file_id);
@@ -175,6 +217,7 @@ impl StorageService {
                 storage_path: self.store.file_key(owner_id, file_id),
                 updated_at: now,
             },
+            check,
         )?;
 
         Ok(FileMetadataResponse::from(updated))
@@ -307,7 +350,7 @@ impl StorageService {
         let path = self
             .store
             .resolve_for_serving(&version.storage_path)
-            .map_err(no_content_error)?;
+            .map_err(|e| no_content_error(e, &version.storage_path))?;
         Ok((
             path,
             "application/json".to_string(),
@@ -454,7 +497,7 @@ impl StorageService {
         let path = self
             .store
             .resolve_for_serving(&file.storage_path)
-            .map_err(no_content_error)?;
+            .map_err(|e| no_content_error(e, &file.storage_path))?;
         Ok((path, file.mime_type, file.name))
     }
 
@@ -470,7 +513,7 @@ impl StorageService {
         let path = self
             .store
             .resolve_for_serving(&file.storage_path)
-            .map_err(no_content_error)?;
+            .map_err(|e| no_content_error(e, &file.storage_path))?;
         Ok((path, file.mime_type, file.name))
     }
 
@@ -723,6 +766,54 @@ mod tests {
         let result = service.update_mime_type("does-not-exist", NATIVE_DOC_MIME);
 
         assert!(result.is_err());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A vanished blob must be distinguishable from content that was never
+    /// uploaded — a syncing client should not keep waiting on bytes that are
+    /// gone — and must not reach the streamer as a 500.
+    #[test]
+    fn missing_blob_maps_to_content_missing_not_internal_error() {
+        let err = no_content_error(ServeResolveError::Missing, "user-1/file-1");
+        assert_eq!(err.status, 409);
+        assert_eq!(err.code, "CONTENT_MISSING");
+    }
+
+    #[test]
+    fn never_uploaded_content_still_maps_to_no_content() {
+        for variant in [ServeResolveError::EmptyKey, ServeResolveError::IsDirectory] {
+            let err = no_content_error(variant, "user-1/file-1");
+            assert_eq!(err.status, 409);
+            assert_eq!(err.code, "NO_CONTENT");
+        }
+    }
+
+    /// End-to-end through the real resolver: a file row pointing at a path with
+    /// nothing on disk surfaces as CONTENT_MISSING, which is exactly the shape
+    /// of the rows that were returning HTTP 500 on download.
+    #[test]
+    fn resolving_an_orphaned_file_row_returns_content_missing() {
+        let (service, repo, base) = test_storage_service();
+        // A populated storage_path pointing at a blob that isn't on disk — an
+        // empty path would be the different, already-handled NO_CONTENT case.
+        repo.insert_file(NewFileRecord {
+            id: "file-1",
+            user_id: "user-1",
+            name: "report.docx",
+            size_bytes: 0,
+            mime_type: DOCX_MIME,
+            storage_path: "user-1/file-1",
+            folder_id: None,
+            encrypted_metadata: None,
+        })
+        .expect("insert file");
+
+        let err = service
+            .resolve_file_path_by_id("file-1")
+            .expect_err("orphaned row must not resolve");
+
+        assert_eq!(err.status, 409);
+        assert_eq!(err.code, "CONTENT_MISSING");
         let _ = std::fs::remove_dir_all(base);
     }
 }

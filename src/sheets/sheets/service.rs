@@ -1,4 +1,4 @@
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionCheck};
 use crate::sheets::sheets::{
     dto::{
         CreateSheetRequest, ListSheetsResponse, SaveSheetRequest, SheetMetaResponse, SheetResponse,
@@ -314,6 +314,7 @@ impl SheetsService {
                 folder_id: item.folder_id,
                 created_at: item.created_at.and_utc().to_rfc3339(),
                 updated_at: item.updated_at.and_utc().to_rfc3339(),
+                content_version: item.content_version,
             })
             .collect();
         Ok(ListSheetsResponse { sheets })
@@ -336,8 +337,13 @@ impl SheetsService {
         let new_sheet = NewSheetRecord { file_id: &id };
         self.repo.insert_sheet(new_sheet)?;
 
-        self.drive
-            .upload_content(&id, EMPTY_SHEET_CONTENT, "upload_sheet_content")
+        let content_version = self.drive
+            .upload_content(
+                &id,
+                EMPTY_SHEET_CONTENT,
+                "upload_sheet_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
 
         let (content_url, content_write_url) = content_urls(&id);
@@ -350,6 +356,7 @@ impl SheetsService {
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
             your_role: file.your_role,
+            content_version,
         })
     }
 
@@ -376,6 +383,7 @@ impl SheetsService {
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: file.updated_at.and_utc().to_rfc3339(),
             your_role: file.your_role,
+            content_version: file.content_version,
         })
     }
 
@@ -385,6 +393,7 @@ impl SheetsService {
         sheet_id: &str,
         bytes: &[u8],
         title: Option<&str>,
+        check: ContentVersionCheck,
     ) -> Result<SheetMetaResponse, ApiError> {
         let file = self
             .drive
@@ -398,7 +407,7 @@ impl SheetsService {
             return Err(ApiError::not_found("Spreadsheet is in trash"));
         }
 
-        self.drive.upload_content_bytes(sheet_id, bytes)?;
+        let content_version = self.drive.upload_content_bytes(sheet_id, bytes, check)?;
 
         let new_title = if let Some(t) = title {
             let trimmed = t.trim().to_string();
@@ -424,6 +433,7 @@ impl SheetsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version,
         })
     }
 
@@ -469,6 +479,7 @@ impl SheetsService {
             folder_id: file.folder_id,
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: now.and_utc().to_rfc3339(),
+            content_version: file.content_version,
         })
     }
 
@@ -508,8 +519,13 @@ impl SheetsService {
             return Err(ApiError::conflict("Spreadsheet has already been promoted"));
         }
 
-        self.drive
-            .upload_content(sheet_id, content, "promote_sheet_content")
+        let content_version = self.drive
+            .upload_content(
+                sheet_id,
+                content,
+                "promote_sheet_content",
+                ContentVersionCheck::UNCHECKED,
+            )
             .await?;
         self.drive
             .update_file_mime_type(user, sheet_id, MIME_TYPE)
@@ -528,6 +544,7 @@ impl SheetsService {
             created_at: file.created_at.and_utc().to_rfc3339(),
             updated_at: Utc::now().naive_utc().and_utc().to_rfc3339(),
             your_role: file.your_role,
+            content_version,
         })
     }
 }

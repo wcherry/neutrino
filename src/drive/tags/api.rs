@@ -1,3 +1,4 @@
+use crate::drive::filesystem::dto::DriveFileType;
 use crate::drive::tags::{
     dto::{
         CreateTagRequest, ListTaggedFilesResponse, ListTagsResponse, SetFileTagsRequest,
@@ -26,6 +27,9 @@ pub struct TaggedFilesQuery {
     pub limit: Option<i64>,
     /// Number of files to skip, default 0.
     pub offset: Option<i64>,
+    /// List only tagged files of this type.
+    #[serde(rename = "type")]
+    pub file_type: Option<DriveFileType>,
 }
 
 // ── Tag CRUD ──────────────────────────────────────────────────────────────────
@@ -154,6 +158,7 @@ pub async fn delete_tag(
         ("id" = String, Path, description = "Tag ID"),
         ("limit" = Option<i64>, Query, description = "Page size (default 50, max 200)"),
         ("offset" = Option<i64>, Query, description = "Files to skip (default 0)"),
+        ("type" = Option<DriveFileType>, Query, description = "List only tagged files of this type"),
     ),
     responses(
         (status = 200, description = "Files with this tag", body = ListTaggedFilesResponse),
@@ -170,10 +175,13 @@ pub async fn get_files_for_tag(
     query: web::Query<TaggedFilesQuery>,
 ) -> Result<web::Json<ListTaggedFilesResponse>, ApiError> {
     let tag_id = path.into_inner();
-    let response =
-        state
-            .tags_service
-            .get_files_for_tag(&user, &tag_id, query.limit, query.offset)?;
+    let response = state.tags_service.get_files_for_tag(
+        &user,
+        &tag_id,
+        query.limit,
+        query.offset,
+        query.file_type,
+    )?;
     Ok(web::Json(response))
 }
 

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Spinner } from '@neutrino/ui';
+import { Spinner, useToast } from '@neutrino/ui';
 import { notesApi } from '@/lib/api';
 import { filesystemApi, storageApi, driveReadContent } from '@neutrino/api-drive';
 import { extractNoteText, type NoteMetaResponse } from '@neutrino/api-notes';
@@ -11,6 +11,7 @@ import { initSodium, encryptFile, decryptFile, toBase64url, fromBase64url } from
 import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
+import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { useNoteSync } from '@/hooks/useNoteSync';
 import BlockEditor, { Block, parseBlocks, serializeBlocks } from './BlockEditor';
 import { extractWikiLinkTitles } from './blockEditorHelpers';
@@ -28,6 +29,10 @@ export default function NoteEditorPage() {
   const noteId = searchParams.get('id') ?? '';
   const queryClient = useQueryClient();
   const currentUser = useUser();
+  const toast = useToast();
+  // Rejects a save that would overwrite a revision written elsewhere since this
+  // note was loaded. See `useContentVersionGuard`.
+  const versionGuard = useContentVersionGuard();
 
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [title, setTitle] = useState('');
@@ -136,6 +141,7 @@ export default function NoteEditorPage() {
     folderId: f.folderId,
     createdAt: f.createdAt,
     updatedAt: f.updatedAt,
+    contentVersion: f.contentVersion,
   }));
   const backlinks = backlinksData?.backlinks ?? [];
 
@@ -156,6 +162,13 @@ export default function NoteEditorPage() {
       queryClient.invalidateQueries({ queryKey: ['note-content', noteId] });
     }
   }, [note, noteId, queryClient]);
+
+  // The note metadata query is also the guard's source of truth: it refetches
+  // on focus and polls while the live socket is down, so a revision written by
+  // another device reaches the guard before the next local save does.
+  useEffect(() => {
+    versionGuard.observe(note?.contentVersion);
+  }, [note?.contentVersion, versionGuard]);
 
   useEffect(() => {
     if (!note || noteContent === undefined) return;
@@ -214,11 +227,16 @@ export default function NoteEditorPage() {
         // Wiki links must be extracted from the plaintext here — once
         // encrypted, the server can no longer read `[[links]]` out of `content`.
         const linkedTitles = extractWikiLinkTitles(JSON.parse(serialized) as Block[]);
-        const meta = await notesApi.saveNote(noteId, {
-          content: contentToSend,
-          title: nextTitle !== lastSavedRef.current.title ? nextTitle : undefined,
-          linkedTitles,
-        });
+        const meta = await notesApi.saveNote(
+          noteId,
+          {
+            content: contentToSend,
+            title: nextTitle !== lastSavedRef.current.title ? nextTitle : undefined,
+            linkedTitles,
+          },
+          versionGuard.check(),
+        );
+        versionGuard.observe(meta.contentVersion);
         lastSavedRef.current = { content: serialized, title: nextTitle };
         appliedUpdatedAtRef.current = meta.updatedAt;
         clearDirtyIfSettled();
@@ -234,13 +252,21 @@ export default function NoteEditorPage() {
         });
         // Tell anyone else viewing this note to re-read it.
         broadcastNoteUpdate();
-      } catch {
+      } catch (err) {
         setSaveStatus('error');
+        // Another device saved this note while we were editing. Overwriting it
+        // is a choice the user makes, not something autosave does quietly.
+        if (versionGuard.handleError(err)) {
+          toast.warning(
+            'This note changed elsewhere since you opened it. Reload to get the ' +
+              'latest version, or save again to keep your copy.',
+          );
+        }
       } finally {
         savingRef.current = false;
       }
     },
-    [noteId, queryClient, dekRef, broadcastNoteUpdate, currentUser?.id]
+    [noteId, queryClient, dekRef, broadcastNoteUpdate, currentUser?.id, versionGuard, toast]
   );
 
   function scheduleAutosave(nextBlocks: Block[], nextTitle: string) {

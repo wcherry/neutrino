@@ -27,6 +27,7 @@
 
 import type { Block, BlockType } from '@/app/(apps)/notes/editor/blockEditorTypes';
 import { keepTextToMarkdown, stripInlineMarkdown } from './inlineHtml';
+import { sanitiseTitle } from './titles';
 
 // ── Keep's JSON shape ─────────────────────────────────────────────────────────
 
@@ -70,8 +71,6 @@ export interface KeepNote {
 
 /** Longest title we will derive from a note's body. */
 const DERIVED_TITLE_MAX = 60;
-/** Drive file names back note titles; keep them to a sane length. */
-const TITLE_MAX = 200;
 
 export const UNTITLED = 'Untitled note';
 
@@ -267,15 +266,6 @@ export function keepNoteTitle(note: KeepNote, blocks: Block[]): string {
   return UNTITLED;
 }
 
-function sanitiseTitle(raw: string): string {
-  const cleaned = raw
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u001f]+/g, ' ')
-    .replace(/[/\\]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned.length > TITLE_MAX ? `${cleaned.slice(0, TITLE_MAX).trimEnd()}\u2026` : cleaned;
-}
 
 export interface ConvertedKeepNote {
   title: string;

@@ -78,37 +78,3 @@ pub struct RetentionPolicyListResponse {
     pub policies: Vec<RetentionPolicyResponse>,
     pub total: i64,
 }
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct EDiscoverySearchRequest {
-    pub query: String,
-    pub custodian_ids: Option<Vec<String>>,
-    pub date_from: Option<String>,
-    pub date_to: Option<String>,
-    pub mime_type: Option<String>,
-    pub page: Option<i64>,
-    pub page_size: Option<i64>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct EDiscoveryResult {
-    pub file_id: String,
-    pub file_name: String,
-    pub owner_id: String,
-    pub mime_type: String,
-    pub size_bytes: i64,
-    pub created_at: String,
-    pub updated_at: String,
-    pub snippet: Option<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct EDiscoverySearchResponse {
-    pub results: Vec<EDiscoveryResult>,
-    pub total: i64,
-    pub page: i64,
-    pub page_size: i64,
-}

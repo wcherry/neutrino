@@ -1,4 +1,4 @@
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionQuery};
 use crate::slides::slides::{
     dto::{
         CreateSlideRequest, CreateThemeRequest, ListSlidesResponse, ListThemesResponse,
@@ -222,6 +222,7 @@ pub async fn autosave_slide(
     state: web::Data<SlidesApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
+    version_check: web::Query<ContentVersionQuery>,
     mut payload: Multipart,
 ) -> Result<web::Json<SlideMetaResponse>, ApiError> {
     let slide_id = path.into_inner();
@@ -261,7 +262,13 @@ pub async fn autosave_slide(
     let bytes = file_bytes.ok_or_else(|| ApiError::bad_request("No file provided"))?;
     let meta = state
         .slides_service
-        .autosave(&user, &slide_id, &bytes, title.as_deref())
+        .autosave(
+            &user,
+            &slide_id,
+            &bytes,
+            title.as_deref(),
+            version_check.into_inner().into(),
+        )
         .await?;
     Ok(web::Json(meta))
 }

@@ -1,4 +1,4 @@
-import { request } from '@neutrino/api-core';
+import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
 // Slide text extraction helpers
@@ -47,6 +47,12 @@ export interface SlideResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision at load time. The editor sends it back as
+   * `expectedContentVersion` on its first save, so a document changed by
+   * another device since it was opened is caught immediately.
+   */
+  contentVersion: number;
 }
 
 export interface SlideMetaResponse {
@@ -55,6 +61,12 @@ export interface SlideMetaResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision, bumped on every content write. Pass it back as
+   * `expectedContentVersion` on the next save so a stale write is rejected
+   * rather than silently overwriting a newer revision.
+   */
+  contentVersion: number;
 }
 
 export interface CreateSlideRequest {
@@ -163,11 +175,12 @@ export const slidesApi = {
     content: string,
     filename: string,
     metadata?: { title?: string },
+    versionCheck?: ContentVersionCheck,
   ): Promise<SlideMetaResponse> {
     const formData = new FormData();
     formData.append('file', new Blob([content], { type: 'application/json' }), filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave`, { method: 'PUT', body: formData });
+    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
   },
 
   async autosaveEncryptedContent(
@@ -176,6 +189,7 @@ export const slidesApi = {
     filename: string,
     dek: Uint8Array,
     metadata?: { title?: string },
+    versionCheck?: ContentVersionCheck,
   ): Promise<SlideMetaResponse> {
     const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
     await initSodium();
@@ -185,7 +199,7 @@ export const slidesApi = {
     const formData = new FormData();
     formData.append('file', blob, filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave`, { method: 'PUT', body: formData });
+    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
   },
 
 

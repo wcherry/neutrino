@@ -5,22 +5,16 @@ use crate::drive::compliance::{
 };
 use crate::shared::ApiError;
 use chrono::Utc;
-use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
 use std::sync::Arc;
 use uuid::Uuid;
 
 pub struct ComplianceService {
     repo: Arc<ComplianceRepository>,
-    pool: Pool<ConnectionManager<SqliteConnection>>,
 }
 
 impl ComplianceService {
-    pub fn new(
-        repo: Arc<ComplianceRepository>,
-        pool: Pool<ConnectionManager<SqliteConnection>>,
-    ) -> Self {
-        ComplianceService { repo, pool }
+    pub fn new(repo: Arc<ComplianceRepository>) -> Self {
+        ComplianceService { repo }
     }
 
     pub fn create_hold(
@@ -145,85 +139,6 @@ impl ComplianceService {
             .find_policy_by_id(id)?
             .ok_or_else(|| ApiError::not_found("Retention policy not found"))?;
         self.repo.delete_policy(id)
-    }
-
-    pub fn ediscovery_search(
-        &self,
-        req: EDiscoverySearchRequest,
-    ) -> Result<EDiscoverySearchResponse, ApiError> {
-        use crate::schema::{file_content_index, files};
-
-        let page = req.page.unwrap_or(1).max(1);
-        let page_size = req.page_size.unwrap_or(20).min(100).max(1);
-        let offset = (page - 1) * page_size;
-
-        let mut conn = self
-            .pool
-            .get()
-            .map_err(|_| ApiError::internal("DB error"))?;
-
-        // Search file_content_index for query term
-        let query_lower = req.query.to_lowercase();
-
-        let mut db_query = files::table
-            .inner_join(file_content_index::table.on(file_content_index::file_id.eq(files::id)))
-            .filter(file_content_index::text_content.like(format!("%{}%", query_lower)))
-            .into_boxed();
-
-        if let Some(mime) = &req.mime_type {
-            db_query = db_query.filter(files::mime_type.eq(mime));
-        }
-
-        if let Some(custodians) = &req.custodian_ids {
-            if !custodians.is_empty() {
-                db_query = db_query.filter(files::user_id.eq_any(custodians));
-            }
-        }
-
-        let matched: Vec<(crate::drive::storage::model::FileRecord, String)> = db_query
-            .select((files::all_columns, file_content_index::text_content))
-            .offset(offset)
-            .limit(page_size)
-            .load::<(crate::drive::storage::model::FileRecord, String)>(&mut conn)
-            .map_err(|_| ApiError::internal("DB error"))?;
-
-        let total = matched.len() as i64 + offset;
-
-        let results = matched
-            .into_iter()
-            .map(|(f, content)| {
-                let snippet = extract_snippet(&content, &req.query);
-                EDiscoveryResult {
-                    file_id: f.id,
-                    file_name: f.name,
-                    owner_id: f.user_id,
-                    mime_type: f.mime_type,
-                    size_bytes: f.size_bytes,
-                    created_at: f.created_at.to_string(),
-                    updated_at: f.updated_at.to_string(),
-                    snippet,
-                }
-            })
-            .collect();
-
-        Ok(EDiscoverySearchResponse {
-            results,
-            total,
-            page,
-            page_size,
-        })
-    }
-}
-
-fn extract_snippet(content: &str, query: &str) -> Option<String> {
-    let lower = content.to_lowercase();
-    let query_lower = query.to_lowercase();
-    if let Some(pos) = lower.find(&query_lower) {
-        let start = pos.saturating_sub(100);
-        let end = (pos + query.len() + 100).min(content.len());
-        Some(content[start..end].to_string())
-    } else {
-        None
     }
 }
 

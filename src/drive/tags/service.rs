@@ -1,3 +1,4 @@
+use crate::drive::filesystem::dto::DriveFileType;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::tags::{
     dto::{
@@ -167,6 +168,7 @@ impl TagsService {
         tag_id: &str,
         limit: Option<i64>,
         offset: Option<i64>,
+        file_type: Option<DriveFileType>,
     ) -> Result<ListTaggedFilesResponse, ApiError> {
         self.repo
             .find_tag(tag_id, &user.user_id)?
@@ -179,12 +181,13 @@ impl TagsService {
 
         // A user can tag any file they can edit, including files owned by
         // someone else — so accessibility, not ownership, decides what comes
-        // back. Filtering happens before pagination so `total` is honest.
+        // back. Both filters happen before pagination so `total` is honest.
         let accessible: Vec<_> = self
             .repo
             .get_files_for_tag(tag_id)?
             .into_iter()
             .filter(|f| self.can_access(user, f))
+            .filter(|f| file_type.is_none_or(|t| t.matches(&f.mime_type)))
             .collect();
 
         let total = accessible.len();

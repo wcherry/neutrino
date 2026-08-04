@@ -11,7 +11,8 @@ use crate::drive::storage::{
 };
 use crate::drive::tags::service::TagsService;
 use crate::shared::{
-    apply_list_query, ApiError, AuthenticatedUser, ListQuery, ListQueryParams, OrderDirection,
+    apply_list_query, ApiError, AuthenticatedUser, ContentVersionQuery, ListQuery, ListQueryParams,
+    OrderDirection,
 };
 use actix_files::NamedFile;
 use actix_multipart::Multipart;
@@ -592,11 +593,12 @@ pub async fn get_quota(
 #[utoipa::path(
     put,
     path = "/api/v1/drive/files/{id}/autosave",
-    params(("id" = String, Path, description = "File ID")),
+    params(("id" = String, Path, description = "File ID"), ContentVersionQuery),
     responses(
         (status = 200, description = "File autosaved", body = FileMetadataResponse),
         (status = 403, description = "Edit access required"),
         (status = 404, description = "File not found"),
+        (status = 409, description = "File changed on the server since expectedContentVersion"),
     ),
     security(("bearer_auth" = [])),
     tag = "storage"
@@ -606,6 +608,7 @@ pub async fn autosave_file(
     state: web::Data<StorageApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
+    version_check: web::Query<ContentVersionQuery>,
     mut payload: Multipart,
 ) -> Result<web::Json<FileMetadataResponse>, ApiError> {
     let file_id = path.into_inner();
@@ -671,7 +674,12 @@ pub async fn autosave_file(
 
         let response = state
             .storage_service
-            .autosave(&file_id, &temp_path, size)
+            .autosave(
+                &file_id,
+                &temp_path,
+                size,
+                version_check.into_inner().into(),
+            )
             .inspect_err(|_| {
                 let _ = std::fs::remove_file(&temp_path);
             })?;

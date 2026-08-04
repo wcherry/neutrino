@@ -1,4 +1,4 @@
-import { request } from '@neutrino/api-core';
+import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
 // Diagram text extraction helpers
@@ -55,6 +55,12 @@ export interface DiagramResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision at load time. The editor sends it back as
+   * `expectedContentVersion` on its first save, so a document changed by
+   * another device since it was opened is caught immediately.
+   */
+  contentVersion: number;
 }
 
 export interface DiagramMetaResponse {
@@ -63,6 +69,12 @@ export interface DiagramMetaResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision, bumped on every content write. Pass it back as
+   * `expectedContentVersion` on the next save so a stale write is rejected
+   * rather than silently overwriting a newer revision.
+   */
+  contentVersion: number;
 }
 
 export interface CreateDiagramRequest {
@@ -145,11 +157,12 @@ export const diagramsApi = {
     content: string,
     filename: string,
     metadata?: { title?: string },
+    versionCheck?: ContentVersionCheck,
   ): Promise<DiagramMetaResponse> {
     const formData = new FormData();
     formData.append('file', new Blob([content], { type: 'application/json' }), filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DiagramMetaResponse>(`/api/v1/diagrams/${diagramId}/autosave`, {
+    return request<DiagramMetaResponse>(`/api/v1/diagrams/${diagramId}/autosave${contentVersionQuery(versionCheck)}`, {
       method: 'PUT',
       body: formData,
     });
@@ -161,6 +174,7 @@ export const diagramsApi = {
     filename: string,
     dek: Uint8Array,
     metadata?: { title?: string },
+    versionCheck?: ContentVersionCheck,
   ): Promise<DiagramMetaResponse> {
     const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
     await initSodium();
@@ -170,7 +184,7 @@ export const diagramsApi = {
     const formData = new FormData();
     formData.append('file', blob, filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DiagramMetaResponse>(`/api/v1/diagrams/${diagramId}/autosave`, {
+    return request<DiagramMetaResponse>(`/api/v1/diagrams/${diagramId}/autosave${contentVersionQuery(versionCheck)}`, {
       method: 'PUT',
       body: formData,
     });

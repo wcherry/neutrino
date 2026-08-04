@@ -66,6 +66,7 @@ function archiveOf(products: Record<string, TakeoutEntry[]>): TakeoutArchive {
     root: 'Takeout/',
     products: list,
     product: (name) => list.find((p) => p.name.toLowerCase() === name.toLowerCase()),
+    close: async () => {},
   };
 }
 

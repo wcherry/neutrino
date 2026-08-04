@@ -5,7 +5,7 @@ use crate::notes::{
     },
     service::NotesService,
 };
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{ApiError, AuthenticatedUser, ContentVersionQuery};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
@@ -85,13 +85,15 @@ pub async fn get_note(
     patch,
     path = "/api/v1/notes/{id}",
     params(
-        ("id" = String, Path, description = "Note ID")
+        ("id" = String, Path, description = "Note ID"),
+        ContentVersionQuery,
     ),
     request_body = SaveNoteRequest,
     responses(
         (status = 200, description = "Note saved", body = NoteMetaResponse),
         (status = 403, description = "Access denied"),
         (status = 404, description = "Not found"),
+        (status = 409, description = "Note changed on the server since expectedContentVersion"),
     ),
     security(("bearer_auth" = [])),
     tag = "notes"
@@ -101,12 +103,18 @@ pub async fn save_note(
     state: web::Data<NotesApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
+    version_check: web::Query<ContentVersionQuery>,
     body: web::Json<SaveNoteRequest>,
 ) -> Result<web::Json<NoteMetaResponse>, ApiError> {
     let note_id = path.into_inner();
     let meta = state
         .notes_service
-        .save_note(&user, &note_id, body.into_inner())
+        .save_note(
+            &user,
+            &note_id,
+            body.into_inner(),
+            version_check.into_inner().into(),
+        )
         .await?;
     Ok(web::Json(meta))
 }

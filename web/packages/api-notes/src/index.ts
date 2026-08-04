@@ -1,4 +1,4 @@
-import { request } from '@neutrino/api-core';
+import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
 
 // ---------------------------------------------------------------------------
 // Note text extraction helpers
@@ -56,6 +56,12 @@ export interface NoteResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision at load time. The editor sends it back as
+   * `expectedContentVersion` on its first save, so a document changed by
+   * another device since it was opened is caught immediately.
+   */
+  contentVersion: number;
 }
 
 export interface NoteMetaResponse {
@@ -64,6 +70,12 @@ export interface NoteMetaResponse {
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Server-side content revision, bumped on every content write. Pass it back as
+   * `expectedContentVersion` on the next save so a stale write is rejected
+   * rather than silently overwriting a newer revision.
+   */
+  contentVersion: number;
 }
 
 export interface CreateNoteRequest {
@@ -116,8 +128,12 @@ export const notesApi = {
     return request<NoteResponse>(`/api/v1/notes/${noteId}`);
   },
 
-  async saveNote(noteId: string, body: SaveNoteRequest): Promise<NoteMetaResponse> {
-    return request<NoteMetaResponse>(`/api/v1/notes/${noteId}`, {
+  async saveNote(
+    noteId: string,
+    body: SaveNoteRequest,
+    versionCheck?: ContentVersionCheck,
+  ): Promise<NoteMetaResponse> {
+    return request<NoteMetaResponse>(`/api/v1/notes/${noteId}${contentVersionQuery(versionCheck)}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     });

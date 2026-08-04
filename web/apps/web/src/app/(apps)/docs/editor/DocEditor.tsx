@@ -54,6 +54,7 @@ import {
   storageApi, filesystemApi, ApiClientError, type PageSetup, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
+import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
@@ -740,6 +741,13 @@ export function DocEditor() {
     enabled: !!docId,
   });
 
+  // Rejects a save that would overwrite a revision written elsewhere since this
+  // document was loaded. See `useContentVersionGuard`.
+  const versionGuard = useContentVersionGuard();
+  useEffect(() => {
+    versionGuard.observe(doc?.contentVersion);
+  }, [doc?.contentVersion, versionGuard]);
+
   // ── Office mode (issue #43) ────────────────────────────────────────────────
   // A raw .docx Drive file has no `docs` row, so docsApi.getDoc 404s. When
   // that happens (and the flag is on) fall back to the generic Drive file
@@ -794,13 +802,21 @@ export function DocEditor() {
   const isLoading = metaLoading || contentLoading || (doc404 && officeFallbackLoading);
 
   const contentMutation = useMutation({
-    mutationFn: async (content: string) => {
+    mutationFn: async ({ content }: { content: string }) => {
       if (!dekRef.current) throw new Error('no-dek');
-      return driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current);
+      return driveAutosaveEncryptedContent(
+        docId,
+        content,
+        'doc.json',
+        dekRef.current,
+        versionGuard.check(),
+      );
     },
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: (_data, content) => {
+    onSuccess: (data, { content }) => {
       setSaveStatus('saved');
+      // Chain the guard: the next save asserts the revision this one produced.
+      versionGuard.observe(data?.contentVersion);
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
       indexOnSave(currentUser?.id, {
         id: docId,
@@ -813,6 +829,15 @@ export function DocEditor() {
       setSaveStatus('unsaved');
       if (err instanceof Error && err.message === 'no-dek') {
         toast.warning(ENCRYPTION_WARNING_MESSAGE);
+        return;
+      }
+      // The document changed elsewhere while this tab was editing. Saving
+      // anyway would erase that change, so the choice is the user's.
+      if (versionGuard.handleError(err)) {
+        toast.warning(
+          'This document changed elsewhere since you opened it. Reload to get the ' +
+            'latest version, or save again to keep your copy.',
+        );
       }
     },
   });
@@ -911,7 +936,7 @@ export function DocEditor() {
   const triggerSave = useCallback(
     (content: string, metadata?: { title?: string; pageSetup?: PageSetup }) => {
       if (!isLocalWriterRef.current) return;
-      contentMutation.mutate(content);
+      contentMutation.mutate({ content });
       if (metadata) metaMutation.mutate(metadata);
     },
     [contentMutation, metaMutation]
@@ -1297,7 +1322,7 @@ export function DocEditor() {
         await officeAutosaveMutation.mutateAsync();
       } else {
         await Promise.all([
-          contentMutation.mutateAsync(content),
+          contentMutation.mutateAsync({ content }),
           metaMutation.mutateAsync({ title: titleRef.current, pageSetup: pageSetupRef.current }),
         ]);
       }

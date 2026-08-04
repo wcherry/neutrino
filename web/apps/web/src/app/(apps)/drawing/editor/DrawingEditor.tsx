@@ -4,12 +4,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft } from 'lucide-react';
-import { Spinner } from '@neutrino/ui';
+import { Spinner, useToast } from '@neutrino/ui';
 import { drawingApi, extractDrawingText } from '@neutrino/api-drawing';
 import { request } from '@neutrino/api-core';
 import { storageApi } from '@neutrino/api-drive';
 import { useUser } from '@neutrino/auth';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
+import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import type { DriveImageItem } from '@neutrino/ui';
 import type { Shape, Layer, ToolType, DrawingContent, Transform } from './types';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
@@ -51,6 +52,10 @@ export function DrawingEditor() {
   const router = useRouter();
   const drawingId = searchParams.get('id');
   const currentUser = useUser();
+  const toast = useToast();
+  // Rejects a save that would overwrite a revision written elsewhere since this
+  // drawing was loaded. See `useContentVersionGuard`.
+  const versionGuard = useContentVersionGuard();
 
   const bgLayerIdRef = useRef(Math.random().toString(36).slice(2, 10));
 
@@ -125,6 +130,7 @@ export function DrawingEditor() {
       try {
         const drawing = await drawingApi.getDrawing(drawingId!);
         setTitle(drawing.title);
+        versionGuard.observe(drawing.contentVersion);
         const raw = await request<string>(drawing.contentUrl, {}, { responseType: 'text' }).catch(() => '');
         if (raw) {
           try {
@@ -179,8 +185,9 @@ export function DrawingEditor() {
     const content: DrawingContent = { version: 1, shapes: debouncedShapes, layers };
     const serialized = JSON.stringify(content);
     drawingApi
-      .autosaveContent(drawingId, serialized, 'drawing.json', { title })
-      .then(() => {
+      .autosaveContent(drawingId, serialized, 'drawing.json', { title }, versionGuard.check())
+      .then((meta) => {
+        versionGuard.observe(meta.contentVersion);
         indexOnSave(currentUser?.id, {
           id: drawingId,
           type: 'drawing',
@@ -188,7 +195,15 @@ export function DrawingEditor() {
           content: extractDrawingText(serialized),
         });
       })
-      .catch(() => {})
+      .catch((err) => {
+        // A drawing changed elsewhere would be silently overwritten otherwise.
+        if (versionGuard.handleError(err)) {
+          toast.warning(
+            'This document changed elsewhere since you opened it. Reload to get the ' +
+            'latest version, or save again to keep your copy.',
+          );
+        }
+      })
       .finally(() => { saveInProgress.current = false; });
   }, [debouncedShapes, drawingId, title, layers, currentUser?.id]);
 

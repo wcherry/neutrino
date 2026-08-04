@@ -19,6 +19,7 @@ import { storageApi, type FileItem } from '@/lib/api';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
+import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useDiagramEditor } from './hooks/useDiagramEditor';
 import { useDiagramCollab } from './hooks/useDiagramCollab';
@@ -189,6 +190,9 @@ export function DiagramEditor() {
 
   const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: diagramId, filename: 'diagram.json' });
   const toast = useToast();
+  // Rejects a save that would overwrite a revision written elsewhere since this
+  // diagram was loaded. See `useContentVersionGuard`.
+  const versionGuard = useContentVersionGuard();
 
   // Load auth token for collab WebSocket
   useEffect(() => {
@@ -220,6 +224,7 @@ export function DiagramEditor() {
     queryFn: async () => {
       const diagram = await diagramsApi.getDiagram(diagramId);
       setTitle(diagram.title);
+      versionGuard.observe(diagram.contentVersion);
       if (diagram.contentUrl) {
         try {
           let raw: string;
@@ -279,12 +284,21 @@ export function DiagramEditor() {
       if (!diagramId) return null;
       if (!dekRef.current) throw new Error('no-dek');
       const content = JSON.stringify(editor.document, null, 0);
-      await diagramsApi.autosaveEncryptedContent(diagramId, content, 'diagram.json', dekRef.current, { title });
-      return content;
+      const meta = await diagramsApi.autosaveEncryptedContent(
+        diagramId,
+        content,
+        'diagram.json',
+        dekRef.current,
+        { title },
+        versionGuard.check(),
+      );
+      return { content, contentVersion: meta.contentVersion };
     },
-    onSuccess: (content) => {
+    onSuccess: (saved) => {
       queryClient.invalidateQueries({ queryKey: ['diagrams'] });
-      if (!content) return;
+      if (!saved) return;
+      const { content } = saved;
+      versionGuard.observe(saved.contentVersion);
       indexOnSave(currentUser?.id, {
         id: diagramId,
         type: 'diagram',
@@ -295,6 +309,13 @@ export function DiagramEditor() {
     onError: (err) => {
       if (err instanceof Error && err.message === 'no-dek') {
         toast.warning(ENCRYPTION_WARNING_MESSAGE);
+        return;
+      }
+      if (versionGuard.handleError(err)) {
+        toast.warning(
+          'This document changed elsewhere since you opened it. Reload to get the ' +
+            'latest version, or save again to keep your copy.',
+        );
       }
     },
   });

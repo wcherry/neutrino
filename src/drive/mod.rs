@@ -13,7 +13,6 @@ pub mod notifications;
 pub mod permissions;
 pub mod priority;
 pub mod private_store;
-pub mod search;
 pub mod security;
 pub mod service_registry;
 pub mod shared_drives;
@@ -38,7 +37,6 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .configure(suggestions::api::configure)
             .configure(activity::api::configure)
             .configure(notifications::api::configure)
-            .configure(search::api::configure)
             .configure(priority::api::configure)
             .configure(ai::api::configure)
             .configure(tags::api::configure)
