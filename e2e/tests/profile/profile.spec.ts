@@ -47,7 +47,12 @@ test.describe('Profile page — smoke', () => {
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
     });
-    await page.goto('/profile');
+    // The redirect under test is also what makes this `goto` fail: the shell
+    // navigates away as soon as /auth/me comes back 401, which Playwright
+    // reports as ERR_ABORTED or "interrupted by another navigation" depending
+    // on how far the original request got. Landing on /sign-in is the real
+    // assertion, so let the navigation's own outcome go.
+    await page.goto('/profile').catch(() => {});
     await expect(page).toHaveURL(/\/sign-in/, { timeout: 10_000 });
   });
 });

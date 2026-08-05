@@ -25,6 +25,59 @@ import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeF
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 
 /**
+ * How long one save may hold the save chain before the next one is allowed to
+ * run. Comfortably longer than a slow upload of a large sheet; short enough
+ * that a request which will never answer does not cost the user a whole
+ * editing session's worth of saves.
+ */
+const SAVE_DEADLINE_MS = 20_000;
+
+/** How long to wait before re-sending a save whose request failed in transit. */
+const SAVE_RETRY_DELAY_MS = 400;
+
+interface SaveOptions {
+    /**
+     * This save is the last thing the page does — the user is navigating away.
+     * The request has to be allowed to outlive the document, or the browser
+     * cancels it partway and the edit that triggered it is lost.
+     */
+    keepalive?: boolean;
+}
+
+function delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * A signal that aborts after `ms`, so a request with no answer releases its
+ * connection instead of holding one open for the rest of the session. Without
+ * this the deadline below would only stop the *waiting* — the socket would stay
+ * occupied and take the retry down with it.
+ *
+ * `AbortSignal.timeout` is Baseline-supported but absent in older Safari and in
+ * jsdom, where saving unguarded is the pre-existing behaviour.
+ */
+function abortAfter(ms: number): AbortSignal | undefined {
+    return typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
+        ? AbortSignal.timeout(ms)
+        : undefined;
+}
+
+/**
+ * `promise`, but rejecting if it has not settled within `ms`.
+ *
+ * The timer is cleared either way: a pending `setTimeout` per save would keep
+ * the editor awake and, on the flush-on-unmount path, outlive the component.
+ */
+function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('save-timeout')), ms);
+    });
+    return Promise.race([promise, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
+/**
  * Parse raw .xlsx bytes into per-sheet cell maps — office-mode counterpart of
  * `parseXlsxToSheets` in SheetEditor.tsx (kept separate to avoid a hook ->
  * top-level-component import).
@@ -129,7 +182,7 @@ export function usePersistence({
     const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     // Always points to the latest save function so the flush-on-unmount effect
     // (which uses empty deps) can call it without a stale closure.
-    const saveRef = useRef<() => Promise<void>>(async () => {});
+    const saveRef = useRef<(opts?: SaveOptions) => Promise<void>>(async () => {});
     // Every save (initial re-encryption, timer tick, flush-on-unmount) chains onto
     // this promise so the underlying PUT requests never overlap. Firing two
     // autosave PUTs back-to-back on the same connection has been observed to
@@ -138,8 +191,16 @@ export function usePersistence({
     // edge case between the browser and the dev/test proxy. Chaining guarantees
     // one request's response is fully received before the next one is sent.
     const saveChainRef = useRef<Promise<void>>(Promise.resolve());
-    const queueSave = () => {
-        saveChainRef.current = saveChainRef.current.then(() => saveRef.current()).catch(() => {});
+    const queueSave = (opts?: SaveOptions) => {
+        saveChainRef.current = saveChainRef.current
+            // Bounded, because everything queued behind a save waits for it. The
+            // same connection-reuse fault that truncates a body can also leave a
+            // PUT with no response at all, and an unbounded link here turns that
+            // into an editor that never saves again — every later edit silently
+            // dropped, with no error anywhere. Giving up on one save is recoverable;
+            // the next timer tick tries again.
+            .then(() => withDeadline(saveRef.current(opts), SAVE_DEADLINE_MS))
+            .catch(() => {});
         return saveChainRef.current;
     };
 
@@ -196,7 +257,8 @@ export function usePersistence({
         return new Uint8Array(buf);
     };
 
-    const save = async () => {
+    const save = async ({ keepalive = false }: SaveOptions = {}) => {
+        const transport = { signal: abortAfter(SAVE_DEADLINE_MS), keepalive };
         if (officeMode) {
             const meta = officeFileMetaRef.current;
             if (!meta) return;
@@ -206,9 +268,11 @@ export function usePersistence({
             // these never go through the E2EE-encrypted transport even when a DEK
             // is available for this file id.
             try {
-                await driveAutosaveBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx);
+                await driveAutosaveBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx, transport);
             } catch {
-                await driveAutosaveBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx);
+                if (keepalive) throw new Error('save-failed-on-unload');
+                await delay(SAVE_RETRY_DELAY_MS);
+                await driveAutosaveBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx, transport);
             }
             return;
         }
@@ -227,10 +291,15 @@ export function usePersistence({
         // The retry must not swallow a rejected save: a 409 is a decision for
         // the user, and retrying it would only fail again against the same
         // stale revision.
+        //
+        // It waits first. "Follows closely after another request" is the condition
+        // that breaks these requests, and an immediate retry follows more closely
+        // than anything — it reproduces the fault it is meant to recover from, and
+        // the retry has been seen to hang outright rather than fail.
         let saved;
         try {
             saved = await driveAutosaveEncryptedContent(
-                sheetId, content, 'sheet.json', dekRef.current, versionGuard.check(),
+                sheetId, content, 'sheet.json', dekRef.current, versionGuard.check(), transport,
             );
         } catch (err) {
             if (versionGuard.handleError(err)) {
@@ -240,8 +309,12 @@ export function usePersistence({
                 );
                 return;
             }
+            // Nothing to retry into on the unload path — this document is going
+            // away, and the keepalive request above was the one chance to land.
+            if (keepalive) throw err;
+            await delay(SAVE_RETRY_DELAY_MS);
             saved = await driveAutosaveEncryptedContent(
-                sheetId, content, 'sheet.json', dekRef.current, versionGuard.check(),
+                sheetId, content, 'sheet.json', dekRef.current, versionGuard.check(), transport,
             );
         }
         versionGuard.observe(saved.contentVersion);
@@ -325,7 +398,13 @@ export function usePersistence({
             // cleanup may throw "flushSync was called from inside a lifecycle method".
             // The save must still fire even if the flush is skipped.
             try { flushSync(() => {}); } catch (_) {}
-            queueSave(); // fire and forget — chained so it can't overlap another save
+            // Fire and forget — chained so it can't overlap another save, and
+            // `keepalive` so the browser still delivers it once this document is
+            // gone. Every path into here is the user leaving: the tab hidden,
+            // the page unloading, or the editor unmounting under a navigation
+            // that may well be a full document load. Without it the request is
+            // torn down mid-flight and the edit is silently lost.
+            queueSave({ keepalive: true });
         };
         const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
         document.addEventListener('visibilitychange', onVisibilityChange);
@@ -546,7 +625,13 @@ export function usePersistence({
         setTitle,
         yourRole,
         load,
-        save,
+        /**
+         * Queued, not the raw `save`. Callers outside this hook — the back
+         * button, the CSV/XLSX imports, the template apply — were the one path
+         * that could still put two autosave PUTs on the wire at once, which is
+         * exactly what the chain was built to prevent.
+         */
+        save: queueSave,
         manualSave,
         serialize,
         updateTitle,

@@ -503,13 +503,15 @@ const qc = useQueryClient();
       // it overrides the stored snapshot rather than deferring to it. Without
       // the force the upload would lose to whatever version is on the server —
       // very possibly the broken index they just rebuilt to escape.
-      if (total > 0) {
-        try {
-          await forceUploadSnapshot(user.id);
-        } catch {
-          // The local rebuild succeeded, which is what was asked for. Sharing
-          // it can wait for the next background sync.
-        }
+      //
+      // This runs for an empty rebuild too: leaving the old snapshot up there
+      // means the next pull imports it straight back over the index we just
+      // emptied, so deleted documents keep turning up in search.
+      try {
+        await forceUploadSnapshot(user.id);
+      } catch {
+        // The local rebuild succeeded, which is what was asked for. Sharing
+        // it can wait for the next background sync.
       }
     } catch {
       toastError('Failed to rebuild search index. Please try again.');

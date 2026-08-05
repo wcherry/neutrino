@@ -1246,7 +1246,13 @@ export function DocEditor() {
     if (!isLocalWriterRef.current) return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(editor.getJSON());
-    driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current).catch(() => {});
+    driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current)
+      // This write bumps `contentVersion` just like any other, and nothing
+      // re-reads the metadata query afterwards — so without feeding the result
+      // back the guard keeps asserting the version we loaded and the first real
+      // autosave is rejected as stale.
+      .then((saved) => versionGuard.observe(saved?.contentVersion))
+      .catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dekResolved, editor, doc, contentLoading, contentError, isNewEncryption, docContent, docId]);

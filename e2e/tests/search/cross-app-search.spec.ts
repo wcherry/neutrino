@@ -23,10 +23,15 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
 }
 
 /**
- * Wait for ensureE2EKeys to store the Curve25519 keypair, then return the user ID.
- * The engine in the search page only initializes if a keypair exists in localStorage.
+ * Get the page ready to hold seeded index entries.
+ *
+ * Waits for `ensureE2EKeys` to store the keypair, since the search page only
+ * builds its engine when one exists. Then turns off the background index sync
+ * through the same localStorage flag Settings → Advanced writes: the sync
+ * reconciles the index against the server's listing and drops entries for
+ * anything it does not find, which is every document these tests seed.
  */
-async function waitForKeypairAndGetUserId(page: Page): Promise<string> {
+async function prepareForSeeding(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
       for (let i = 0; i < localStorage.length; i++) {
@@ -36,13 +41,7 @@ async function waitForKeypairAndGetUserId(page: Page): Promise<string> {
     },
     { timeout: 15_000 },
   );
-  return page.evaluate(() => {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k?.startsWith('neutrino_e2e_')) return k.slice('neutrino_e2e_'.length);
-    }
-    return '';
-  });
+  await page.evaluate(() => localStorage.setItem('neutrino:search:syncDisabled', 'true'));
 }
 
 type SeedDoc = {
@@ -54,100 +53,88 @@ type SeedDoc = {
 
 /**
  * Seeds the real neutrino_search IndexedDB with the given documents.
- * Uses (or creates) the user's HMAC search key from localStorage so that
- * the search page queries against the same key.
+ *
+ * Mirrors what `IndexEngine.indexDocument` writes (see
+ * `web/packages/search/src/db.ts`): schema v2, one `tokens` row per distinct
+ * term keyed by `[term, documentId, field]`, and a `docs` row carrying the
+ * title the results list renders. Terms are stored as plain text — v1's HMACs
+ * were dropped because hashing destroys the prefixes range queries need — so
+ * no search key is involved any more.
  */
-async function seedSearchDb(page: Page, userId: string, docs: SeedDoc[]): Promise<void> {
-  await page.evaluate(
-    async ({ userId, docs }: { userId: string; docs: SeedDoc[] }) => {
-      const PUNCT_RE = /[^\p{L}\p{N}\s]/gu;
-      function normalizeText(text: string): string[] {
-        const normalized = text.normalize('NFC').toLowerCase().replace(PUNCT_RE, ' ');
-        return [...new Set(normalized.split(/\s+/).filter(Boolean))];
-      }
-      async function hashToken(token: string, key: CryptoKey): Promise<string> {
-        const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(token));
-        return Array.from(new Uint8Array(sig))
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-      }
-
-      // Get or create the search key so it matches what the search page will use.
-      const storageKey = `search_key_v1_${userId}`;
-      let stored = localStorage.getItem(storageKey);
-      if (!stored) {
-        const raw = crypto.getRandomValues(new Uint8Array(32));
-        stored = btoa(String.fromCharCode(...raw));
-        localStorage.setItem(storageKey, stored);
-      }
-      const rawKey = Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        rawKey,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign'],
-      );
-
-      const db = await new Promise<IDBDatabase>((resolve, reject) => {
-        const req = indexedDB.open('neutrino_search', 1);
-        req.onupgradeneeded = (e) => {
-          const d = (e.target as IDBOpenDBRequest).result;
-          if (!d.objectStoreNames.contains('tokens')) {
-            const ts = d.createObjectStore('tokens', {
-              keyPath: ['tokenHash', 'documentId', 'field'],
-            });
-            ts.createIndex('byTokenHash', 'tokenHash', { unique: false });
-            ts.createIndex('byDocumentId', 'documentId', { unique: false });
-          }
-          if (!d.objectStoreNames.contains('docs')) {
-            d.createObjectStore('docs', { keyPath: 'documentId' });
-          }
-        };
-        req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
-        req.onerror = () => reject(req.error);
+async function seedSearchDb(page: Page, docs: SeedDoc[]): Promise<void> {
+  await page.evaluate(async (docs: SeedDoc[]) => {
+    const PUNCT_RE = /[^\p{L}\p{N}\s]/gu;
+    /** Word offsets per distinct term, matching `tokenizeWithPositions`. */
+    function termPositions(text: string): Map<string, number[]> {
+      const words = text.normalize('NFC').toLowerCase().replace(PUNCT_RE, ' ').split(/\s+/).filter(Boolean);
+      const map = new Map<string, number[]>();
+      words.forEach((word, i) => {
+        const existing = map.get(word);
+        if (existing) existing.push(i);
+        else map.set(word, [i]);
       });
+      return map;
+    }
+    /** Positions are stored packed little-endian, four bytes each. */
+    function positionsToBytes(positions: number[]): Uint8Array {
+      const buf = new Uint8Array(positions.length * 4);
+      const view = new DataView(buf.buffer);
+      positions.forEach((p, i) => view.setUint32(i * 4, p, true));
+      return buf;
+    }
 
-      function idbPut(storeName: string, record: object): Promise<void> {
-        return new Promise((resolve, reject) => {
-          const tx = db.transaction(storeName, 'readwrite');
-          tx.objectStore(storeName).put(record);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-      }
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('neutrino_search', 2);
+      req.onupgradeneeded = (e) => {
+        const d = (e.target as IDBOpenDBRequest).result;
+        if (d.objectStoreNames.contains('tokens')) d.deleteObjectStore('tokens');
+        if (d.objectStoreNames.contains('docs')) d.deleteObjectStore('docs');
+        const ts = d.createObjectStore('tokens', { keyPath: ['term', 'documentId', 'field'] });
+        ts.createIndex('byTerm', 'term', { unique: false });
+        ts.createIndex('byDocumentId', 'documentId', { unique: false });
+        d.createObjectStore('docs', { keyPath: 'documentId' });
+      };
+      req.onsuccess = (e) => resolve((e.target as IDBOpenDBRequest).result);
+      req.onerror = () => reject(req.error);
+    });
 
-      for (const doc of docs) {
-        for (const [field, text] of [
-          ['title', doc.title],
-          ['content', doc.content ?? ''],
-        ] as [string, string][]) {
-          if (!text.trim()) continue;
-          const tokens = normalizeText(text);
-          for (const token of tokens) {
-            const hash = await hashToken(token, cryptoKey);
-            await idbPut('tokens', {
-              tokenHash: hash,
-              documentId: doc.id,
-              field,
-              frequency: 1,
-              positions: new Uint8Array(4),
-            });
-          }
+    function idbPut(storeName: string, record: object): Promise<void> {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        tx.objectStore(storeName).put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    for (const doc of docs) {
+      const fields: [string, Map<string, number[]>][] = [
+        ['title', termPositions(doc.title)],
+        ['content', termPositions(doc.content ?? '')],
+      ];
+      for (const [field, terms] of fields) {
+        for (const [term, positions] of terms) {
+          await idbPut('tokens', {
+            term,
+            documentId: doc.id,
+            field,
+            frequency: positions.length,
+            positions: positionsToBytes(positions),
+          });
         }
-        await idbPut('docs', {
-          documentId: doc.id,
-          type: doc.type,
-          titleHashes: [],
-          contentHashes: [],
-          updatedAt: Date.now(),
-        });
       }
+      await idbPut('docs', {
+        documentId: doc.id,
+        type: doc.type,
+        title: doc.title,
+        titleTerms: [...fields[0][1].keys()],
+        contentTerms: [...fields[1][1].keys()],
+        updatedAt: Date.now(),
+      });
+    }
 
-      db.close();
-    },
-    { userId, docs } as { userId: string; docs: SeedDoc[] },
-  );
+    db.close();
+  }, docs);
 }
 
 test.describe('Search page rendering', () => {
@@ -181,8 +168,8 @@ test.describe('Search page: no-results state', () => {
 test.describe('Search page: results from indexed content', () => {
   test('document type shows Document badge', async ({ page, request }) => {
     await registerAndLogin(request, page);
-    const userId = await waitForKeypairAndGetUserId(page);
-    await seedSearchDb(page, userId, [
+    await prepareForSeeding(page);
+    await seedSearchDb(page, [
       { id: 'e2e-quasar-doc', type: 'document', title: 'quasar finance report' },
     ]);
     await page.goto('/search');
@@ -193,8 +180,8 @@ test.describe('Search page: results from indexed content', () => {
 
   test('note type shows Note badge', async ({ page, request }) => {
     await registerAndLogin(request, page);
-    const userId = await waitForKeypairAndGetUserId(page);
-    await seedSearchDb(page, userId, [
+    await prepareForSeeding(page);
+    await seedSearchDb(page, [
       { id: 'e2e-pulsar-note', type: 'note', title: 'pulsar meeting notes' },
     ]);
     await page.goto('/search');
@@ -205,8 +192,8 @@ test.describe('Search page: results from indexed content', () => {
 
   test('spreadsheet type shows Sheet badge', async ({ page, request }) => {
     await registerAndLogin(request, page);
-    const userId = await waitForKeypairAndGetUserId(page);
-    await seedSearchDb(page, userId, [
+    await prepareForSeeding(page);
+    await seedSearchDb(page, [
       { id: 'e2e-parsec-sheet', type: 'spreadsheet', title: 'parsec budget tracker' },
     ]);
     await page.goto('/search');
@@ -217,8 +204,8 @@ test.describe('Search page: results from indexed content', () => {
 
   test('slide type shows Slide badge', async ({ page, request }) => {
     await registerAndLogin(request, page);
-    const userId = await waitForKeypairAndGetUserId(page);
-    await seedSearchDb(page, userId, [
+    await prepareForSeeding(page);
+    await seedSearchDb(page, [
       { id: 'e2e-nebula-slide', type: 'slide', title: 'nebula presentation deck' },
     ]);
     await page.goto('/search');
@@ -232,8 +219,8 @@ test.describe('Search page: results from indexed content', () => {
     request,
   }) => {
     await registerAndLogin(request, page);
-    const userId = await waitForKeypairAndGetUserId(page);
-    await seedSearchDb(page, userId, [
+    await prepareForSeeding(page);
+    await seedSearchDb(page, [
       { id: 'e2e-multi-doc', type: 'document', title: 'neutrinotest overview document' },
       { id: 'e2e-multi-note', type: 'note', title: 'neutrinotest meeting note' },
       { id: 'e2e-multi-sheet', type: 'spreadsheet', title: 'neutrinotest budget sheet' },
@@ -243,10 +230,14 @@ test.describe('Search page: results from indexed content', () => {
     await page.locator('main').getByRole('searchbox', { name: 'Search' }).fill('neutrinotest');
     const results = page.locator('[data-testid="search-result"]');
     await expect(results).toHaveCount(4, { timeout: 5_000 });
-    await expect(results.filter({ hasText: 'Document' })).toHaveCount(1);
-    await expect(results.filter({ hasText: 'Note' })).toHaveCount(1);
-    await expect(results.filter({ hasText: 'Sheet' })).toHaveCount(1);
-    await expect(results.filter({ hasText: 'Slide' })).toHaveCount(1);
+    // Match the badge element exactly rather than the row's text: a row also
+    // renders its title, and "neutrinotest" happens to contain "note", so a
+    // substring filter over the whole row matches every result.
+    for (const label of ['Document', 'Note', 'Sheet', 'Slide']) {
+      await expect(
+        results.filter({ has: page.getByText(label, { exact: true }) }),
+      ).toHaveCount(1);
+    }
   });
 
   test('multi-word AND: only returns docs matching all query terms', async ({
@@ -254,8 +245,8 @@ test.describe('Search page: results from indexed content', () => {
     request,
   }) => {
     await registerAndLogin(request, page);
-    const userId = await waitForKeypairAndGetUserId(page);
-    await seedSearchDb(page, userId, [
+    await prepareForSeeding(page);
+    await seedSearchDb(page, [
       { id: 'e2e-and-match', type: 'note', title: 'flamingo budget planning' },
       { id: 'e2e-and-nomatch', type: 'note', title: 'flamingo general overview' },
     ]);
@@ -274,8 +265,8 @@ test.describe('Search page: results from indexed content', () => {
     request,
   }) => {
     await registerAndLogin(request, page);
-    const userId = await waitForKeypairAndGetUserId(page);
-    await seedSearchDb(page, userId, [
+    await prepareForSeeding(page);
+    await seedSearchDb(page, [
       { id: 'e2e-clear-doc', type: 'document', title: 'zephyr cleartest report' },
     ]);
     await page.goto('/search');

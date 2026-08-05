@@ -513,16 +513,50 @@ function toBlobPart(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
+/** How an autosave request should behave on the wire. */
+export interface AutosaveTransport {
+  /** Abort the request if it has not completed — frees a stuck connection. */
+  signal?: AbortSignal;
+  /**
+   * Let the request outlive the document, for the save an editor fires as the
+   * user navigates away. A normal `fetch` started while the page is unloading
+   * is cancelled with it, so the last edit before a link click or a tab close
+   * is lost roughly whenever the browser wins the race.
+   */
+  keepalive?: boolean;
+}
+
+/**
+ * Total body budget for `keepalive` requests, per the Fetch standard. Going
+ * over makes the browser reject the fetch outright, so a body this big has to
+ * take its chances as an ordinary request rather than not be sent at all.
+ */
+const KEEPALIVE_MAX_BYTES = 64 * 1024;
+
+function transportInit(transport: AutosaveTransport | undefined, bodyBytes: number): RequestInit {
+  if (!transport) return {};
+  const keepalive = transport.keepalive === true && bodyBytes <= KEEPALIVE_MAX_BYTES;
+  // A signal is pointless alongside keepalive: whatever holds it is being torn
+  // down with the page, and aborting is the outcome we are trying to avoid.
+  return keepalive ? { keepalive: true } : { signal: transport.signal };
+}
+
 /** Autosave raw bytes: write file content without creating a version snapshot. */
 export async function driveAutosaveBytes(
   fileId: string,
   bytes: Uint8Array | ArrayBuffer,
   filename: string,
   mimeType: string,
+  transport?: AutosaveTransport,
 ): Promise<void> {
+  const payload = toUint8Array(bytes);
   const formData = new FormData();
-  formData.append('file', new Blob([toBlobPart(toUint8Array(bytes))], { type: mimeType }), filename);
-  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, { method: 'PUT', body: formData });
+  formData.append('file', new Blob([toBlobPart(payload)], { type: mimeType }), filename);
+  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, {
+    method: 'PUT',
+    body: formData,
+    ...transportInit(transport, payload.byteLength),
+  });
 }
 
 /** Explicit save of raw bytes: write content and create a new version snapshot. */
@@ -647,6 +681,7 @@ export async function driveAutosaveEncryptedContent(
   filename: string,
   dek: Uint8Array,
   versionCheck?: ContentVersionCheck,
+  transport?: AutosaveTransport,
 ): Promise<FileItem> {
   const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
@@ -657,7 +692,7 @@ export async function driveAutosaveEncryptedContent(
   formData.append('file', blob, filename);
   return request<FileItem>(
     `/api/v1/drive/files/${fileId}/autosave${contentVersionQuery(versionCheck)}`,
-    { method: 'PUT', body: formData },
+    { method: 'PUT', body: formData, ...transportInit(transport, cipherBytes.byteLength) },
   );
 }
 

@@ -81,19 +81,14 @@ test.describe('Autosave persistence — slides', () => {
     // Fill in the title
     await page.getByPlaceholder('Untitled presentation').fill('Autosave Slide Title');
 
-    // Wait for the PATCH to the slides API (title save)
+    // Wait for the PATCH to the slides API (title save). The title lives in the
+    // presentation's metadata row, not in its encrypted Drive body, so this is
+    // the whole of the write under test — renaming never triggers a content
+    // autosave to /api/v1/drive/files/, and waiting for one only ever timed out.
     await page.waitForResponse(
       (r) =>
         r.url().includes('/api/v1/slides/') && r.request().method() === 'PATCH',
       { timeout: 10_000 },
-    );
-
-    // Wait for the autosave to drive files
-    await page.waitForResponse(
-      (r) =>
-        r.url().includes('/api/v1/drive/files/') &&
-        ['POST', 'PUT'].includes(r.request().method()),
-      { timeout: 20_000 },
     );
 
     await page.reload();

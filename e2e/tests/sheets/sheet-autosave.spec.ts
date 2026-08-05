@@ -42,6 +42,25 @@ async function createSheetAndGetId(page: Page): Promise<string> {
   return match[1];
 }
 
+async function getAuthToken(page: Page): Promise<string> {
+  const token = await page.evaluate(() => localStorage.getItem('access_token'));
+  if (!token) throw new Error('access_token not found in localStorage');
+  return token;
+}
+
+/** The file's current content revision — bumped by the server on every write. */
+async function contentVersion(
+  request: APIRequestContext,
+  token: string,
+  fileId: string,
+): Promise<number> {
+  const res = await request.get(`${BASE_URL}/api/v1/drive/files/${fileId}/metadata`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(res.ok(), `metadata failed: ${res.status()}`).toBeTruthy();
+  return ((await res.json()) as { contentVersion: number }).contentVersion;
+}
+
 /** Click a cell, type a value into the formula bar, commit with Enter. */
 async function setCell(page: Page, ref: string, value: string): Promise<void> {
   await page.locator(`[data-type="cell"][id="${ref}"]`).click();
@@ -142,31 +161,29 @@ test.describe('Sheets autosave — flush on SPA navigation (sidebar)', () => {
     await registerAndLogin(request, page, 'sidebar');
     const sheetId = await createSheetAndGetId(page);
 
+    const token = await getAuthToken(page);
+    const versionBeforeEdit = await contentVersion(request, token, sheetId);
+
     const cellValue = 'SidebarSaveValue';
-
-    // Set up the response listener BEFORE editing the cell. The 3-second
-    // autosave timer may fire during setCell (after dirtyRef is set) and its
-    // response can arrive before waitForResponse is registered, causing a miss.
-    // Registering first ensures we capture any save — timer-fired or
-    // flush-on-unmount — regardless of timing.
-    const saveResponse = page.waitForResponse(
-      (r) =>
-        r.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
-        r.request().method() === 'PUT',
-      { timeout: 15_000 },
-    );
-
     await setCell(page, 'A1', cellValue);
 
-    // Navigate to Drive via the sidebar "My Drive" link (SPA navigation that
-    // unmounts the SheetEditor and triggers the flush-on-unmount effect).
+    // Navigate to Drive via the sidebar "My Drive" link, which unmounts the
+    // SheetEditor and triggers its flush-on-unmount effect.
     const sidebar = page.getByRole('navigation', { name: 'Primary navigation' });
     await sidebar.getByRole('link', { name: 'My Drive' }).click();
 
-    // The save must have been acknowledged by the server.
-    await saveResponse;
-
     await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
+
+    // Watch the file's revision rather than the flush request itself. That save
+    // is sent with `keepalive` so it survives the document being torn down by
+    // the navigation — and the flip side of outliving the page is that its
+    // response is never delivered back to it, so there is no response event for
+    // the test to await. A bumped contentVersion is the server's own record
+    // that the write landed, and waiting for it stops the reopen below from
+    // reading the file before the save reaches it.
+    await expect
+      .poll(() => contentVersion(request, token, sheetId), { timeout: 15_000 })
+      .toBeGreaterThan(versionBeforeEdit);
 
     // Reopen and verify
     await page.goto(`/sheets/editor?id=${sheetId}`);

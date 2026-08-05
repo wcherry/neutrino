@@ -1259,6 +1259,47 @@ export function SheetEditor() {
         try { await persist.save(); } finally { router.push('/drive'); }
     }, [persist, router]);
 
+    /**
+     * Save before following a link out of the editor — what `handleBack` does
+     * for the editor's own back button, extended to every other way out: the
+     * sidebar, the topbar, a breadcrumb.
+     *
+     * The flush-on-unmount effect is not enough on its own. It runs while the
+     * page is being torn down, and a request started that late is at the mercy
+     * of the browser: the outgoing document's connections are already busy
+     * fetching the next page, and one that has not been handed a socket by the
+     * time the renderer goes away is simply dropped — taking the user's last
+     * edit with it. Saving first turns that race into an ordinary save, and
+     * costs nothing when there is nothing pending.
+     */
+    useEffect(() => {
+        function onClickCapture(event: MouseEvent) {
+            if (!dirtyRef.current || event.defaultPrevented) return;
+            // Anything but a plain left click is the browser's to handle —
+            // modified clicks open tabs and windows rather than navigating here.
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+            const anchor = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+            if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+
+            const url = new URL(anchor.href, window.location.href);
+            if (url.origin !== window.location.origin) return;
+            // Same page (or a fragment on it) — nothing is unmounting.
+            if (url.pathname === window.location.pathname) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            try { flushSync(() => {}); } catch (_) {}
+            // `finally`, not `then`: a save that fails must not strand the user
+            // in an editor they asked to leave.
+            void Promise.resolve(persist.save()).finally(() => {
+                router.push(`${url.pathname}${url.search}`);
+            });
+        }
+        document.addEventListener('click', onClickCapture, true);
+        return () => document.removeEventListener('click', onClickCapture, true);
+    }, [persist, router, dirtyRef]);
+
     // ── New / Duplicate / Delete ─────────────────────────────────────────────
     const handleNew = useCallback(async (newTitle: string) => {
         const newSheet = await sheetsApi.createSheet({ title: newTitle });

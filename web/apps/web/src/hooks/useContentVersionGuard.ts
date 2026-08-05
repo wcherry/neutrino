@@ -16,7 +16,7 @@
  * that choice and leaves it to the user.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { isContentVersionConflict, type ContentVersionCheck } from '@neutrino/api-core';
 
 export interface ContentVersionGuard {
@@ -30,7 +30,15 @@ export interface ContentVersionGuard {
    * against the revision the overwrite produced.
    */
   check: () => ContentVersionCheck | undefined;
-  /** Record the version a load or a successful save reported. */
+  /**
+   * Record the version a load or a successful save reported.
+   *
+   * Only ever moves forward. `content_version` is monotonic server-side (it is
+   * incremented, never assigned), so a lower number is always a stale read —
+   * typically a metadata query that resolved before a save it does not know
+   * about. Letting one of those win would re-arm the guard against a revision
+   * the server has already passed, and every later save would 409.
+   */
   observe: (version: number | undefined) => void;
   /**
    * Classify a save failure. Returns true when it was a version conflict, which
@@ -70,6 +78,7 @@ export function useContentVersionGuard(initialVersion?: number): ContentVersionG
 
   const observe = useCallback((version: number | undefined) => {
     if (version === undefined) return;
+    if (versionRef.current !== undefined && version < versionRef.current) return;
     versionRef.current = version;
   }, []);
 
@@ -86,5 +95,12 @@ export function useContentVersionGuard(initialVersion?: number): ContentVersionG
     setHasConflict(false);
   }, []);
 
-  return { check, observe, handleError, hasConflict, dismiss };
+  // Stable identity: callers put the guard in effect and mutation dependency
+  // lists, and a fresh object every render re-runs them on every keystroke —
+  // including the `observe(loadedVersion)` effect every editor has, which would
+  // then keep resetting the guard to the version the page was opened with.
+  return useMemo(
+    () => ({ check, observe, handleError, hasConflict, dismiss }),
+    [check, observe, handleError, hasConflict, dismiss],
+  );
 }

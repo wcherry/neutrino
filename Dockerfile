@@ -22,6 +22,7 @@ COPY web/packages/api-notes/package.json packages/api-notes/package.json
 COPY web/packages/api-photos/package.json packages/api-photos/package.json
 COPY web/packages/api-sheets/package.json packages/api-sheets/package.json
 COPY web/packages/api-slides/package.json packages/api-slides/package.json
+COPY web/packages/api-search/package.json packages/api-search/package.json
 COPY web/packages/api-diagrams/package.json packages/api-diagrams/package.json
 COPY web/packages/api-drawing/package.json packages/api-drawing/package.json
 COPY web/packages/api-themes/package.json packages/api-themes/package.json

@@ -233,13 +233,19 @@ export async function pushSnapshot(userId: string): Promise<PushResult> {
  * The deliberate "my index is the good one" path, behind Settings → Rebuild
  * index. A normal push defers to whatever is stored, which is wrong here: the
  * user rebuilt precisely because the stored snapshot is not to be trusted.
+ *
+ * Unlike `pushSnapshot` this uploads an empty index too. "Nothing to index" is
+ * a real answer — the user deleted everything the previous snapshot described —
+ * and refusing to publish it leaves that snapshot on the server for `pullSnapshot`
+ * to restore, resurrecting the deleted documents on the very device that just
+ * rebuilt. The guard there protects a device whose index was never *built*;
+ * here the index has just been rebuilt from the server's own listing.
  */
 export async function forceUploadSnapshot(userId: string): Promise<PushResult> {
   const keys = loadKeyPair(userId);
   if (!keys) return { status: 'skipped' };
 
   const snapshot = await exportSnapshot();
-  if (snapshot.docs.length === 0) return { status: 'skipped' };
 
   const { ciphertext, wrappedKey } = await encryptSnapshot(snapshot, keys.publicKey);
   const meta = await searchSnapshotApi.upload(ciphertext, {

@@ -576,7 +576,13 @@ export function SlideEditor() {
     if (initialSaveDoneRef.current || lastSavedRef.current !== '') return;
     initialSaveDoneRef.current = true;
     const content = JSON.stringify(presentation);
-    driveAutosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current).catch(() => {});
+    driveAutosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current)
+      // This write bumps `contentVersion` just like any other, and nothing
+      // re-reads the metadata query afterwards — so without feeding the result
+      // back the guard keeps asserting the version we loaded and every
+      // subsequent save is rejected as stale.
+      .then((saved) => versionGuard.observe(saved?.contentVersion))
+      .catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // presentation intentionally omitted: we capture the default once, not on every change.
   // eslint-disable-next-line react-hooks/exhaustive-deps

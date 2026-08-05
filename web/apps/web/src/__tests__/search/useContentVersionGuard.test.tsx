@@ -116,11 +116,31 @@ describe('useContentVersionGuard', () => {
     expect(result.current.check()).toEqual({ expectedContentVersion: 1 });
   });
 
+  it('ignores an observation older than the one it holds', () => {
+    // A metadata query that resolved before a save it knows nothing about.
+    // Taking its word would re-arm the guard against a revision the server has
+    // already moved past, and every save after it would be rejected.
+    const { result } = renderHook(() => useContentVersionGuard(1));
+    act(() => result.current.observe(3));
+    act(() => result.current.observe(2));
+    expect(result.current.check()).toEqual({ expectedContentVersion: 3 });
+  });
+
   it('keeps `check` stable across renders so mutations are not rebuilt per keystroke', () => {
     const { result, rerender } = renderHook(() => useContentVersionGuard(1));
     const first = result.current.check;
     rerender();
     expect(result.current.check).toBe(first);
+  });
+
+  it('keeps the guard itself stable across renders', () => {
+    // Editors put the guard in the dependency list of the effect that reports
+    // the loaded version. A fresh object per render re-runs that effect on
+    // every keystroke, undoing every version learned from a save since.
+    const { result, rerender } = renderHook(() => useContentVersionGuard(1));
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
   });
 });
 

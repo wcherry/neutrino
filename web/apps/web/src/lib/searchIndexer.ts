@@ -269,7 +269,11 @@ export async function rebuildSearchIndex(
   const jobs = await collectIndexJobs(userId);
   const total = jobs.length;
   onProgress?.({ done: 0, total });
-  if (total === 0) return 0;
+  if (total === 0) {
+    // An account with nothing in it is fully synced, not never-synced.
+    markSynced(userId);
+    return 0;
+  }
 
   const engine = new IndexEngine();
 

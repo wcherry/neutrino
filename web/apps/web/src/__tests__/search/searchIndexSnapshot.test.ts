@@ -65,6 +65,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 
 import {
   deviceId,
+  forceUploadSnapshot,
   forgetSyncedVersion,
   pullSnapshot,
   pushSnapshot,
@@ -187,6 +188,27 @@ describe('pushSnapshot', () => {
   it('lets a non-conflict failure propagate', async () => {
     uploadMock.mockRejectedValue(new Error('network down'));
     await expect(pushSnapshot(USER)).rejects.toThrow('network down');
+  });
+});
+
+describe('forceUploadSnapshot', () => {
+  it('overrides the stored version instead of asserting one', async () => {
+    const result = await forceUploadSnapshot(USER);
+
+    expect(result).toMatchObject({ status: 'uploaded', documents: 2 });
+    expect(uploadMock.mock.calls[0][1]).toMatchObject({ force: true });
+    expect(uploadMock.mock.calls[0][1].expectedVersion).toBeUndefined();
+  });
+
+  it('publishes an empty index, so a rebuild that finds nothing is not undone', async () => {
+    // The user deleted everything the stored snapshot described. Skipping the
+    // upload here would leave it on the server for the next pull to restore.
+    exportSnapshotMock.mockResolvedValue(makeSnapshot(0));
+
+    const result = await forceUploadSnapshot(USER);
+
+    expect(result).toMatchObject({ status: 'uploaded', documents: 0 });
+    expect(uploadMock).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -94,7 +94,9 @@ test.describe('Calendar event lifecycle', () => {
     await createEventViaApi(request, token, title);
 
     await page.goto('/calendar');
-    await page.getByRole('button', { name: 'Agenda' }).click();
+    // Exact, or the accessible-name substring match also picks up the month
+    // view's event chip — every title here contains the word "agenda".
+    await page.getByRole('button', { name: 'Agenda', exact: true }).click();
     await expect(page.getByText(title)).toBeVisible({ timeout: 10_000 });
   });
 
@@ -171,7 +173,7 @@ test.describe('Calendar event lifecycle', () => {
     await createEventViaApi(request, token, title);
 
     await page.goto('/calendar');
-    await page.getByRole('button', { name: 'Agenda' }).click();
+    await page.getByRole('button', { name: 'Agenda', exact: true }).click();
 
     // Agenda events are divs — target by text content
     await page.getByText(title).click();
