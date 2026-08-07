@@ -32,6 +32,7 @@ import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
 import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import { driveSearchHref } from './drive/searchParams';
 import { bugReportHref } from '@/lib/bugReport';
+import { signInHref } from '@/lib/signInRedirect';
 
 /** Search hits carry an icon *component* so Drive can size it its own way. */
 function toTopbarResult(hit: SearchHit): TopbarSearchResult {
@@ -171,8 +172,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         });
         ensureE2EKeys(user.id).catch(() => {});
       } catch {
-        // Not authenticated or refresh failed — redirect to sign-in.
-        router.replace('/sign-in');
+        // Not authenticated or refresh failed — redirect to sign-in, carrying where the user was
+        // headed. Shared links (`/open/note/<id>`, a document URL in an email) routinely arrive
+        // signed-out, and without this they all land on Drive with the destination lost.
+        router.replace(signInHref(window.location.pathname + window.location.search));
       }
     }
 

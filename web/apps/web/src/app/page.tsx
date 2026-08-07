@@ -1,64 +1,24 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import styles from './page.module.css';
+import { AppShowcase, BrowserFrame, type ShowcaseApp } from './AppShowcase';
+
+const GITHUB_URL = 'https://github.com/wcherry/neutrino';
+const HOSTED_URL = 'https://getneutrino.app';
 
 export const metadata: Metadata = {
-  title: 'Neutrino — Cloud Storage for Everyone',
+  title: 'Neutrino — The self-hosted productivity suite',
   description:
-    'Secure, fast, open-source cloud storage. Self-host on your own infrastructure or use our hosted service at neutrino.app.',
+    'Drive, Docs, Sheets, Slides, Notes, Photos, Calendar, Diagrams and Drawings in a single Rust binary. End-to-end encrypted, open source, and hosted wherever you want.',
 };
 
 // ── Icon components (inline SVGs — no runtime dependency) ─────────────────────
 
-function IconCloud() {
+function IconLock() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
-    </svg>
-  );
-}
-
-function IconFolder() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
-    </svg>
-  );
-}
-
-function IconShield() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"/>
-    </svg>
-  );
-}
-
-function IconZap() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14Z"/>
-    </svg>
-  );
-}
-
-function IconServer() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect width="20" height="8" x="2" y="2" rx="2" ry="2"/>
-      <rect width="20" height="8" x="2" y="14" rx="2" ry="2"/>
-      <line x1="6" x2="6.01" y1="6" y2="6"/>
-      <line x1="6" x2="6.01" y1="18" y2="18"/>
-    </svg>
-  );
-}
-
-function IconGlobe() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="12" cy="12" r="10"/>
-      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
-      <path d="M2 12h20"/>
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
     </svg>
   );
 }
@@ -74,10 +34,96 @@ function IconUsers() {
   );
 }
 
-function IconStar() {
+function IconSearch() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      <circle cx="11" cy="11" r="8"/>
+      <path d="m21 21-4.3-4.3"/>
+    </svg>
+  );
+}
+
+function IconOffline() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 20h.01"/>
+      <path d="M8.5 16.4a5 5 0 0 1 7 0"/>
+      <path d="M5 12.9a10 10 0 0 1 14 0"/>
+      <path d="m2 2 20 20"/>
+    </svg>
+  );
+}
+
+function IconShare() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="18" cy="5" r="3"/>
+      <circle cx="6" cy="12" r="3"/>
+      <circle cx="18" cy="19" r="3"/>
+      <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/>
+    </svg>
+  );
+}
+
+function IconImport() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <path d="m7 10 5 5 5-5"/>
+      <path d="M12 15V3"/>
+    </svg>
+  );
+}
+
+function IconZap() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14Z"/>
+    </svg>
+  );
+}
+
+function IconShield() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"/>
+    </svg>
+  );
+}
+
+function IconServer() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect width="20" height="8" x="2" y="2" rx="2" ry="2"/>
+      <rect width="20" height="8" x="2" y="14" rx="2" ry="2"/>
+      <line x1="6" x2="6.01" y1="6" y2="6"/>
+      <line x1="6" x2="6.01" y1="18" y2="18"/>
+    </svg>
+  );
+}
+
+function IconMonitor() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect width="20" height="14" x="2" y="3" rx="2"/>
+      <path d="M8 21h8M12 17v4"/>
+    </svg>
+  );
+}
+
+function IconApple() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M16.365 1.43c0 1.14-.42 2.2-1.13 3.01-.85.98-2.24 1.74-3.4 1.65a3.6 3.6 0 0 1 1.15-2.9c.79-.84 2.16-1.5 3.38-1.76ZM20.5 17.1c-.6 1.38-.88 2-1.66 3.22-1.08 1.7-2.6 3.82-4.49 3.83-1.68.02-2.11-1.1-4.39-1.08-2.28.01-2.75 1.1-4.43 1.08-1.89-.02-3.33-1.93-4.41-3.63C-1.9 15.75-2.2 9.2 1.05 6.5c1.16-.98 2.62-1.55 4.12-1.55 1.7 0 2.77 1.09 4.18 1.09 1.36 0 2.19-1.09 4.16-1.09 1.33 0 2.74.58 3.75 1.58-3.3 1.8-2.76 6.5.24 7.6-.34 1-.5 1.44-1 2.97Z"/>
+    </svg>
+  );
+}
+
+function IconSmartphone() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect width="14" height="20" x="5" y="2" rx="2" ry="2"/>
+      <path d="M12 18h.01"/>
     </svg>
   );
 }
@@ -108,61 +154,243 @@ function IconGithub() {
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
+const showcaseApps: ShowcaseApp[] = [
+  {
+    id: 'drive',
+    label: 'Drive',
+    headline: 'Every file, one place',
+    description:
+      'Streaming uploads up to 10 GB, nested folders, tags, stars and shortcuts. Quick access surfaces what you starred; the grid, list and detail views are all one click away.',
+    bullets: [
+      'Large grid, small grid and detailed list views',
+      'Folders, tags, colour labels, shortcuts and bulk actions',
+      'Trash with restore, plus a full activity trail on every file',
+      'HTTP Range downloads, so an interrupted transfer resumes',
+    ],
+    image: '/screenshots/drive.png',
+    alt: 'Neutrino Drive showing Quick access, folders and files in the grid view',
+  },
+  {
+    id: 'docs',
+    label: 'Docs',
+    headline: 'Documents that write like paper',
+    description:
+      'A full rich-text editor with a live outline, page rulers, styles and a word count — collaborative in real time and encrypted before a single byte leaves the browser.',
+    bullets: [
+      'Real-time co-editing with presence',
+      'Automatic outline from your headings',
+      'Version history with restore',
+      'Import and export Word, PDF and plain text',
+    ],
+    image: '/screenshots/docs.png',
+    alt: 'The Neutrino Docs editor showing a formatted document with an outline sidebar',
+  },
+  {
+    id: 'sheets',
+    label: 'Sheets',
+    headline: 'Spreadsheets with real formulas',
+    description:
+      'A virtualised grid that stays fast at scale, with a formula engine, cross-sheet references, named ranges, conditional formatting and charts.',
+    bullets: [
+      'Formulas, named ranges and cross-sheet references',
+      'Currency, percent, date and custom number formats',
+      'Charts, conditional formatting and filters',
+      'Round-trips with .xlsx',
+    ],
+    image: '/screenshots/sheets.png',
+    alt: 'A Neutrino Sheets spreadsheet showing a revenue plan with currency and percentage formatting',
+  },
+  {
+    id: 'slides',
+    label: 'Slides',
+    headline: 'Decks without the ceremony',
+    description:
+      'Pick a layout, type, present. Master slides and themes keep a deck consistent, and speaker notes travel with it.',
+    bullets: [
+      'Layout and theme library, plus master slides',
+      'Speaker notes and presenter mode',
+      'Import and export PowerPoint',
+      'Real-time co-editing with presence',
+    ],
+    image: '/screenshots/slides.png',
+    alt: 'The Neutrino Slides editor showing a title slide and the layout picker',
+  },
+  {
+    id: 'notes',
+    label: 'Notes',
+    headline: 'Quick thoughts, kept private',
+    description:
+      'Block-based notes that sync live across every device you own. Notes are end-to-end encrypted, so the server stores ciphertext and nothing else.',
+    bullets: [
+      'Live sync across devices and tabs',
+      'End-to-end encrypted — the relay never sees content',
+      'Markdown-style inline formatting',
+      'Import straight from Google Keep',
+    ],
+    image: '/screenshots/notes.png',
+    alt: 'The Neutrino Notes library showing a grid of notes',
+  },
+  {
+    id: 'photos',
+    label: 'Photos',
+    headline: 'Your library, not theirs',
+    description:
+      'Albums, favourites, archive and memories over the same storage as the rest of your drive — with people grouping that runs against your own data.',
+    bullets: [
+      'Albums, favourites, archive and memories',
+      'People grouping and suggestions',
+      'Backed by the same Drive storage and quota',
+      'Import your Google Takeout archive',
+    ],
+    image: '/screenshots/photos.png',
+    alt: 'The Neutrino Photos library showing a grid of photographs',
+  },
+  {
+    id: 'calendar',
+    label: 'Calendar',
+    headline: 'Schedules, reminders and tasks',
+    description:
+      'Month, week and agenda views with recurring events, reminders and task lists in the sidebar. Sync with Google or Outlook, or import an .ics and keep it local.',
+    bullets: [
+      'Month, week and agenda views',
+      'Recurring events, reminders and browser notifications',
+      'Task lists alongside the calendar',
+      'Google and Outlook sync, plus ICS import and export',
+    ],
+    image: '/screenshots/calendar.png',
+    alt: 'The Neutrino Calendar showing a month view with events and a reminders sidebar',
+  },
+];
+
 const features = [
   {
-    icon: <IconCloud />,
-    title: 'Unlimited Storage',
+    icon: <IconLock />,
+    title: 'End-to-end encrypted',
     description:
-      'Store files of any type, up to 10 GB per file. Your data lives on infrastructure you control — no artificial limits from a vendor.',
-  },
-  {
-    icon: <IconFolder />,
-    title: 'Smart Organization',
-    description:
-      'Nested folders, star favorites, color-label folders, create shortcuts, and bulk-manage thousands of files in seconds.',
-  },
-  {
-    icon: <IconShield />,
-    title: 'Privacy First',
-    description:
-      'Self-hosted means only you hold the keys. Your files never touch a third-party cloud. Full audit trail on every action.',
-  },
-  {
-    icon: <IconZap />,
-    title: 'Built for Speed',
-    description:
-      'Rust backend handles streaming uploads and downloads with HTTP Range support. Resume interrupted transfers without losing progress.',
+      'Documents, sheets, slides and notes are encrypted in the browser. Your key never leaves your device, so a server operator — including you — only ever sees ciphertext.',
   },
   {
     icon: <IconUsers />,
-    title: 'Team-Ready',
+    title: 'Real-time collaboration',
     description:
-      'Per-user storage quotas, daily upload caps, and admin controls. Built from day one for organizations of any size.',
+      'Docs, Sheets and Slides carry live presence and co-editing. Notes sync between your own devices the moment a save lands.',
   },
   {
-    icon: <IconGlobe />,
-    title: 'Open Source',
+    icon: <IconSearch />,
+    title: 'Search across everything',
     description:
-      'Every line of code is auditable and forkable. Build on top of Neutrino, contribute back, or just trust what you can verify.',
+      'One index spans every app. Because content is encrypted, search runs locally in your browser — the server is never asked what you were looking for.',
+  },
+  {
+    icon: <IconOffline />,
+    title: 'Works offline',
+    description:
+      'Keep editing on a plane. Writes queue locally and reconcile when you reconnect, on the web app and the native clients alike.',
+  },
+  {
+    icon: <IconShare />,
+    title: 'Sharing and permissions',
+    description:
+      'Share links with roles and expiry, shared drives for teams, access requests, comments and rights management on sensitive files.',
+  },
+  {
+    icon: <IconImport />,
+    title: 'Bring your data with you',
+    description:
+      'Import a Google Takeout archive straight from the browser — Keep becomes Notes, Drive documents become Docs, folder tree intact.',
+  },
+  {
+    icon: <IconZap />,
+    title: 'One binary, no dependencies',
+    description:
+      'A Rust server that embeds its own migrations and serves the web app. SQLite by default — no external database to run before you start.',
+  },
+  {
+    icon: <IconShield />,
+    title: 'Admin you can actually run',
+    description:
+      'Per-user quotas, upload caps, TOTP two-factor, session management, feature flags and an audit trail, all in the admin panel.',
+  },
+];
+
+/**
+ * Native-client screenshots are supplied by hand (App Store / TestFlight
+ * captures), so each card declares the file it expects. Drop a PNG at that path
+ * and flip `hasImage` to true — until then the card renders a labelled slot
+ * rather than a broken image.
+ */
+const platforms = [
+  {
+    icon: <IconMonitor />,
+    name: 'Web',
+    status: 'available' as const,
+    statusLabel: 'Available',
+    description:
+      'The full suite in any modern browser, installable as a PWA so it opens in its own window and keeps working offline.',
+    shape: 'wide' as const,
+    image: { src: '/screenshots/drive.png', alt: 'The Neutrino web app', hasImage: true },
+  },
+  {
+    icon: <IconApple />,
+    name: 'macOS desktop',
+    status: 'available' as const,
+    statusLabel: 'Available',
+    description:
+      'A native menu-bar app with a Finder File Provider extension, so your drive is a folder like any other and syncs in the background.',
+    shape: 'wide' as const,
+    image: { src: '/screenshots/desktop-macos.png', alt: 'Neutrino Drive for macOS', hasImage: false },
+  },
+  {
+    icon: <IconSmartphone />,
+    name: 'iOS — Notes & Docs',
+    status: 'available' as const,
+    statusLabel: 'Available',
+    description:
+      'Native SwiftUI apps with offline editing, version history, Face ID app lock and the same end-to-end encryption as the web.',
+    shape: 'tall' as const,
+    image: { src: '/screenshots/ios-notes.png', alt: 'Neutrino Notes for iOS', hasImage: false },
+  },
+  {
+    icon: <IconSmartphone />,
+    name: 'iOS — Drive',
+    status: 'progress' as const,
+    statusLabel: 'In development',
+    description:
+      'The mobile file browser: offline files, search and settings are done; the browser, viewers and transfers are in progress.',
+    shape: 'tall' as const,
+    image: { src: '/screenshots/ios-drive.png', alt: 'Neutrino Drive for iOS', hasImage: false },
   },
 ];
 
 const selfHostBenefits = [
   'Your data never leaves your servers',
-  'No per-seat pricing or vendor lock-in',
-  'Customize storage limits and policies',
-  'Integrate with your existing infrastructure',
-  'Full control over retention and deletion',
-  'GDPR and compliance-friendly by default',
+  'No per-seat pricing and no vendor lock-in',
+  'Set your own quotas, retention and policies',
+  'Runs on a VPS, a NAS or a Raspberry Pi',
+  'Single binary with SQLite — no external database',
+  'MIT licensed, so you can fork it and keep going',
 ];
 
-const roadmapItems = [
-  { phase: '1.0', label: 'Bootstrap', done: true, desc: 'Auth, health checks, workspace setup' },
-  { phase: '1.1', label: 'Cloud Storage', done: true, desc: 'Upload, download, quotas, metadata' },
-  { phase: '1.2', label: 'File System', done: true, desc: 'Folders, trash, stars, shortcuts, bulk ops' },
-  { phase: '1.3', label: 'File Preview', done: false, desc: 'In-browser PDF, image, video, text viewer' },
-  { phase: '1.4', label: 'Versioning', done: false, desc: 'Automatic snapshots, version history, restore' },
-  { phase: '2.0', label: 'Sharing', done: false, desc: 'Link sharing, role-based permissions, IRM' },
+const roadmapShipped = [
+  { label: 'Accounts & security', desc: 'Auth, sessions, TOTP two-factor, per-user quotas, admin panel' },
+  { label: 'Drive', desc: 'Streaming upload and download, folders, trash, stars, tags, shortcuts, bulk operations' },
+  { label: 'Sharing', desc: 'Share links with roles, shared drives, access requests, comments, rights management' },
+  { label: 'Office suite', desc: 'Docs, Sheets and Slides with real-time collaboration and Office file round-trips' },
+  { label: 'Notes, Photos & Calendar', desc: 'Block notes, photo library with albums and people, calendar with reminders and tasks' },
+  { label: 'Diagrams & Drawings', desc: 'Flowchart, UML, BPMN, ERD and cloud shape libraries, plus a freehand canvas' },
+  { label: 'End-to-end encryption', desc: 'Client-side keys across Docs, Sheets, Slides and Notes, with key rotation' },
+  { label: 'Search & offline', desc: 'Local encrypted index across every app, offline editing and a cross-device snapshot' },
+  { label: 'Google Takeout import', desc: 'Keep to Notes and Drive documents to Docs, entirely in the browser' },
+  { label: 'macOS desktop client', desc: 'Menu-bar app with a File Provider extension and a background sync agent' },
+  { label: 'iOS — Notes & Docs', desc: 'Native SwiftUI apps with offline editing, version history and Face ID lock' },
+];
+
+const roadmapNext = [
+  { label: 'iOS — Drive', desc: 'Full mobile file browser with viewers, uploads and downloads', status: 'In development' },
+  { label: 'iOS — Sheets, Slides & Photos', desc: 'The rest of the suite on iPhone and iPad', status: 'Planned' },
+  { label: 'Android apps', desc: 'Drive, Notes and Docs for Android, sharing the same encryption model', status: 'Planned' },
+  { label: 'Windows client', desc: 'Native sync client with Explorer integration', status: 'Planned' },
+  { label: 'Linux client', desc: 'Native sync client with a virtual filesystem mount', status: 'Planned' },
 ];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -179,11 +407,13 @@ export default function LandingPage() {
             <span className={styles.logoText}>Neutrino</span>
           </div>
           <nav className={styles.navLinks} aria-label="Site navigation">
+            <a href="#apps" className={styles.navLink}>Apps</a>
             <a href="#features" className={styles.navLink}>Features</a>
-            <a href="#self-host" className={styles.navLink}>Self-Host</a>
+            <a href="#platforms" className={styles.navLink}>Clients</a>
+            <Link href="/self-host" className={styles.navLink}>Self-host</Link>
             <a href="#roadmap" className={styles.navLink}>Roadmap</a>
             <a
-              href="https://github.com/your-org/neutrino"
+              href={GITHUB_URL}
               className={styles.navLink}
               target="_blank"
               rel="noopener noreferrer"
@@ -209,77 +439,43 @@ export default function LandingPage() {
         <div className={styles.heroInner}>
           <div className={styles.heroBadge}>
             <span className={styles.heroBadgeDot} />
-            Open source · MIT license
+            Open source · MIT licensed · End-to-end encrypted
           </div>
           <h1 className={styles.heroHeading}>
-            Cloud storage that
+            Your whole office.
             <br />
-            <span className={styles.heroAccent}>belongs to you</span>
+            <span className={styles.heroAccent}>On your own server.</span>
           </h1>
           <p className={styles.heroSub}>
-            Neutrino is a fast, open-source cloud storage platform built with Rust.
-            Self-host on any server you own, or use our fully managed service.
-            No artificial limits. No surveillance. Just your files.
+            Drive, Docs, Sheets, Slides, Notes, Photos, Calendar, Diagrams and Drawings —
+            nine apps in a single Rust binary. End-to-end encrypted, works offline, and
+            runs on hardware you control.
           </p>
           <div className={styles.heroCtas}>
             <Link href="/register" className={styles.ctaPrimary}>
-              Try hosted free
+              Try it free
               <IconArrowRight />
             </Link>
-            <a href="#self-host" className={styles.ctaSecondary}>
+            <Link href="/self-host" className={styles.ctaSecondary}>
               Self-host in minutes
-            </a>
+            </Link>
           </div>
           <p className={styles.heroNote}>
-            Hosted version at{' '}
-            <a href="/sign-in" className={styles.heroNoteLink}>
-              neutrino.app
+            Hosted at{' '}
+            <a href={HOSTED_URL} className={styles.heroNoteLink}>
+              getneutrino.app
             </a>{' '}
             · No credit card required
           </p>
         </div>
 
-        {/* Hero visual */}
-        <div className={styles.heroVisual} aria-hidden>
-          <div className={styles.heroCard}>
-            <div className={styles.heroCardBar}>
-              <span className={styles.dot} style={{ background: '#ff5f57' }} />
-              <span className={styles.dot} style={{ background: '#febc2e' }} />
-              <span className={styles.dot} style={{ background: '#28c840' }} />
-              <span className={styles.heroCardTitle}>My Drive</span>
-            </div>
-            <div className={styles.heroCardRow}>
-              <span className={styles.heroCardIcon}>📁</span>
-              <span className={styles.heroCardName}>Projects</span>
-              <span className={styles.heroCardMeta}>4 items</span>
-            </div>
-            <div className={styles.heroCardRow}>
-              <span className={styles.heroCardIcon}>📁</span>
-              <span className={styles.heroCardName}>Design</span>
-              <span className={styles.heroCardMeta}>12 items</span>
-            </div>
-            <div className={`${styles.heroCardRow} ${styles.heroCardRowActive}`}>
-              <span className={styles.heroCardIcon}>📄</span>
-              <span className={styles.heroCardName}>Q4 Report.pdf</span>
-              <span className={styles.heroCardMeta}>2.4 MB</span>
-            </div>
-            <div className={styles.heroCardRow}>
-              <span className={styles.heroCardIcon}>🖼️</span>
-              <span className={styles.heroCardName}>Cover photo.png</span>
-              <span className={styles.heroCardMeta}>840 KB</span>
-            </div>
-            <div className={styles.heroCardRow}>
-              <span className={styles.heroCardIcon}>📦</span>
-              <span className={styles.heroCardName}>Archive.zip</span>
-              <span className={styles.heroCardMeta}>18 MB</span>
-            </div>
-            <div className={styles.heroCardQuota}>
-              <div className={styles.heroCardQuotaBar}>
-                <div className={styles.heroCardQuotaFill} style={{ width: '34%' }} />
-              </div>
-              <span>21.3 GB of 50 GB used</span>
-            </div>
-          </div>
+        <div className={styles.heroVisual}>
+          <BrowserFrame
+            src="/screenshots/drive.png"
+            alt="Neutrino Drive showing Quick access, folders and files alongside the app sidebar"
+            eager
+            className={styles.heroFrame}
+          />
         </div>
       </section>
 
@@ -287,36 +483,50 @@ export default function LandingPage() {
       <div className={styles.stats}>
         <div className={styles.statsInner}>
           <div className={styles.stat}>
-            <span className={styles.statValue}>10 GB</span>
-            <span className={styles.statLabel}>max file size</span>
+            <span className={styles.statValue}>9 apps</span>
+            <span className={styles.statLabel}>one suite</span>
           </div>
           <div className={styles.statDivider} />
           <div className={styles.stat}>
-            <span className={styles.statValue}>Rust</span>
-            <span className={styles.statLabel}>backend language</span>
+            <span className={styles.statValue}>1 binary</span>
+            <span className={styles.statLabel}>Rust + SQLite</span>
           </div>
           <div className={styles.statDivider} />
           <div className={styles.stat}>
-            <span className={styles.statValue}>HTTP Range</span>
-            <span className={styles.statLabel}>resume support</span>
+            <span className={styles.statValue}>E2E</span>
+            <span className={styles.statLabel}>encrypted by default</span>
           </div>
           <div className={styles.statDivider} />
           <div className={styles.stat}>
             <span className={styles.statValue}>MIT</span>
-            <span className={styles.statLabel}>open source license</span>
+            <span className={styles.statLabel}>open source licence</span>
           </div>
         </div>
       </div>
 
-      {/* ── Features ── */}
-      <section id="features" className={styles.section}>
+      {/* ── App showcase ── */}
+      <section id="apps" className={styles.section}>
         <div className={styles.sectionInner}>
           <div className={styles.sectionHeader}>
-            <span className={styles.sectionEyebrow}>Everything you need</span>
+            <span className={styles.sectionEyebrow}>The suite</span>
+            <h2 className={styles.sectionHeading}>Nine apps that already work together</h2>
+            <p className={styles.sectionSub}>
+              Not a file host with an editor bolted on. Every app writes to the same drive,
+              shares the same search index, and is encrypted with the same key.
+            </p>
+          </div>
+          <AppShowcase apps={showcaseApps} />
+        </div>
+      </section>
+
+      {/* ── Features ── */}
+      <section id="features" className={styles.sectionAlt}>
+        <div className={styles.sectionInner}>
+          <div className={styles.sectionHeader}>
+            <span className={styles.sectionEyebrow}>What you get</span>
             <h2 className={styles.sectionHeading}>Built for real work</h2>
             <p className={styles.sectionSub}>
-              Neutrino covers the full lifecycle of cloud storage — from upload to organization,
-              search, sharing, and beyond. Here&apos;s what&apos;s available today.
+              Everything below is shipped and running today — not a plan.
             </p>
           </div>
           <div className={styles.featuresGrid}>
@@ -331,41 +541,63 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── How it works ── */}
-      <section className={styles.sectionAlt}>
+      {/* ── Platforms ── */}
+      <section id="platforms" className={styles.section}>
         <div className={styles.sectionInner}>
           <div className={styles.sectionHeader}>
-            <span className={styles.sectionEyebrow}>Simple workflow</span>
-            <h2 className={styles.sectionHeading}>Store, organize, access</h2>
+            <span className={styles.sectionEyebrow}>Clients</span>
+            <h2 className={styles.sectionHeading}>On the web, on your Mac, in your pocket</h2>
+            <p className={styles.sectionSub}>
+              Native clients speak the same encrypted protocol as the web app, so a file
+              you edit on your phone is the same file your desktop syncs a second later.
+            </p>
           </div>
-          <div className={styles.stepsGrid}>
-            <div className={styles.step}>
-              <div className={styles.stepNumber}>01</div>
-              <h3 className={styles.stepTitle}>Upload anything</h3>
-              <p className={styles.stepDesc}>
-                Drag and drop files up to 10 GB. Streaming multipart upload means
-                you never wait for the whole file to buffer before transfer begins.
-              </p>
-            </div>
-            <div className={styles.stepConnector} aria-hidden />
-            <div className={styles.step}>
-              <div className={styles.stepNumber}>02</div>
-              <h3 className={styles.stepTitle}>Organize your way</h3>
-              <p className={styles.stepDesc}>
-                Create nested folders, star favorites, add color labels, and build shortcuts
-                so a file appears in multiple places without duplicating storage.
-              </p>
-            </div>
-            <div className={styles.stepConnector} aria-hidden />
-            <div className={styles.step}>
-              <div className={styles.stepNumber}>03</div>
-              <h3 className={styles.stepTitle}>Access from anywhere</h3>
-              <p className={styles.stepDesc}>
-                Download with HTTP Range support so interrupted transfers resume exactly
-                where they left off — even on slow or flaky connections.
-              </p>
-            </div>
+          <div className={styles.platformGrid}>
+            {platforms.map((p) => (
+              <article key={p.name} className={styles.platformCard}>
+                <div
+                  className={`${styles.platformShot} ${
+                    p.shape === 'tall' ? styles.platformShotTall : styles.platformShotWide
+                  }`}
+                >
+                  {p.image.hasImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.image.src}
+                      alt={p.image.alt}
+                      className={styles.platformImg}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className={styles.platformSlot}>
+                      <span className={styles.platformSlotIcon} aria-hidden>{p.icon}</span>
+                      <span className={styles.platformSlotLabel}>Screenshot slot</span>
+                      <code className={styles.platformSlotPath}>{p.image.src}</code>
+                    </div>
+                  )}
+                </div>
+                <div className={styles.platformBody}>
+                  <div className={styles.platformTop}>
+                    <span className={styles.platformIcon} aria-hidden>{p.icon}</span>
+                    <h3 className={styles.platformName}>{p.name}</h3>
+                    <span
+                      className={`${styles.platformStatus} ${
+                        p.status === 'available' ? styles.platformStatusReady : styles.platformStatusProgress
+                      }`}
+                    >
+                      {p.statusLabel}
+                    </span>
+                  </div>
+                  <p className={styles.platformDesc}>{p.description}</p>
+                </div>
+              </article>
+            ))}
           </div>
+          <p className={styles.platformFootnote}>
+            Android, Windows and Linux clients are on the roadmap — see{' '}
+            <a href="#roadmap" className={styles.inlineLink}>what&apos;s next</a>.
+          </p>
         </div>
       </section>
 
@@ -380,8 +612,9 @@ export default function LandingPage() {
               </span>
               <h2 className={styles.sectionHeading}>Your server. Your rules.</h2>
               <p className={styles.sectionSub}>
-                Deploy Neutrino on any Linux server, VPS, Raspberry Pi, or bare metal box.
-                A single binary backed by SQLite — no external database required to get started.
+                Deploy Neutrino on any Linux server, VPS, NAS or Raspberry Pi. One binary
+                backed by SQLite — migrations run themselves on first boot, and the same
+                process serves the API and the web app.
               </p>
               <ul className={styles.benefitList}>
                 {selfHostBenefits.map((b) => (
@@ -394,15 +627,10 @@ export default function LandingPage() {
                 ))}
               </ul>
               <div className={styles.selfHostCtas}>
-                <a
-                  href="https://github.com/your-org/neutrino#self-hosting"
-                  className={styles.ctaPrimary}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Read the docs
+                <Link href="/self-host" className={styles.ctaPrimary}>
+                  Read the self-hosting guide
                   <IconArrowRight />
-                </a>
+                </Link>
               </div>
             </div>
             <div className={styles.selfHostCode}>
@@ -413,26 +641,23 @@ export default function LandingPage() {
                   <span className={styles.dot} style={{ background: '#28c840' }} />
                   <span className={styles.codeWindowTitle}>Terminal</span>
                 </div>
-                <pre className={styles.code}><code>{`# Download the latest release
-curl -LO https://github.com/your-org/neutrino/releases/latest/download/drive-linux-x86_64
+                <pre className={styles.code}><code>{`# One container — API, web app and worker
+docker run -d --name neutrino -p 8080:8080 \\
+  -e JWT_SECRET="$(openssl rand -hex 32)" \\
+  -e WORKER_SECRET="$(openssl rand -hex 32)" \\
+  -e DATABASE_URL=/usr/local/data/neutrino.db \\
+  -e STORAGE_PATH=/usr/local/data/storage \\
+  -v neutrino-data:/usr/local/data \\
+  ghcr.io/wcherry/neutrino:latest
 
-chmod +x drive-linux-x86_64
-
-# Configure your instance
-export JWT_SECRET="$(openssl rand -hex 32)"
-export DATABASE_URL="neutrino.db"
-export STORAGE_PATH="/var/neutrino/storage"
-export PORT=8080
-
-# Run
-./drive-linux-x86_64
-
-# ✓ Neutrino Drive listening on 0.0.0.0:8080
-# ✓ Database migrations applied
-# ✓ Storage path: /var/neutrino/storage`}</code></pre>
+# ✓ Migrations applied
+# ✓ Storage path: /usr/local/data/storage
+# ✓ Listening on 0.0.0.0:8080`}</code></pre>
               </div>
               <p className={styles.codeNote}>
-                Or use Docker: <code>docker run -e JWT_SECRET=... ghcr.io/your-org/neutrino:latest</code>
+                Prefer a binary? Grab a release, set four environment variables and run it.
+                The <Link href="/self-host" className={styles.inlineLink}>full guide</Link> covers
+                TLS, backups and upgrades.
               </p>
             </div>
           </div>
@@ -440,29 +665,54 @@ export PORT=8080
       </section>
 
       {/* ── Roadmap ── */}
-      <section id="roadmap" className={styles.section}>
+      <section id="roadmap" className={styles.sectionAlt}>
         <div className={styles.sectionInner}>
           <div className={styles.sectionHeader}>
-            <span className={styles.sectionEyebrow}>What&apos;s coming</span>
+            <span className={styles.sectionEyebrow}>Where this is going</span>
             <h2 className={styles.sectionHeading}>Roadmap</h2>
             <p className={styles.sectionSub}>
-              Neutrino is under active development. File storage and organization are
-              complete and production-ready. Here&apos;s what&apos;s next.
+              The suite and the macOS and iOS clients are shipped. Next up is finishing iOS
+              and bringing the same native experience to Android, Windows and Linux.
             </p>
           </div>
-          <div className={styles.roadmap}>
-            {roadmapItems.map((item) => (
-              <div key={item.phase} className={`${styles.roadmapItem} ${item.done ? styles.roadmapItemDone : ''}`}>
-                <div className={styles.roadmapDot}>
-                  {item.done ? <IconCheck /> : null}
-                </div>
-                <div className={styles.roadmapContent}>
-                  <div className={styles.roadmapPhase}>Phase {item.phase}</div>
-                  <div className={styles.roadmapLabel}>{item.label}</div>
-                  <div className={styles.roadmapDesc}>{item.desc}</div>
-                </div>
+
+          <div className={styles.roadmapColumns}>
+            <div className={styles.roadmapColumn}>
+              <h3 className={styles.roadmapColumnTitle}>
+                <span className={styles.roadmapColumnBadgeDone}>Shipped</span>
+              </h3>
+              <div className={styles.roadmap}>
+                {roadmapShipped.map((item) => (
+                  <div key={item.label} className={`${styles.roadmapItem} ${styles.roadmapItemDone}`}>
+                    <div className={styles.roadmapDot}>
+                      <IconCheck />
+                    </div>
+                    <div className={styles.roadmapContent}>
+                      <div className={styles.roadmapLabel}>{item.label}</div>
+                      <div className={styles.roadmapDesc}>{item.desc}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+
+            <div className={styles.roadmapColumn}>
+              <h3 className={styles.roadmapColumnTitle}>
+                <span className={styles.roadmapColumnBadgeNext}>Next</span>
+              </h3>
+              <div className={styles.roadmap}>
+                {roadmapNext.map((item) => (
+                  <div key={item.label} className={styles.roadmapItem}>
+                    <div className={styles.roadmapDot} />
+                    <div className={styles.roadmapContent}>
+                      <div className={styles.roadmapPhase}>{item.status}</div>
+                      <div className={styles.roadmapLabel}>{item.label}</div>
+                      <div className={styles.roadmapDesc}>{item.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -477,7 +727,7 @@ export PORT=8080
             Start today.
           </h2>
           <p className={styles.finalCtaSub}>
-            Use the hosted version at neutrino.app — free, no credit card.
+            Use the hosted version at getneutrino.app — free, no credit card.
             Or self-host in minutes on your own infrastructure.
           </p>
           <div className={styles.finalCtaButtons}>
@@ -485,8 +735,8 @@ export PORT=8080
               Create free account
               <IconArrowRight />
             </Link>
-            <Link href="/sign-in" className={styles.ctaSecondary}>
-              Sign in
+            <Link href="/self-host" className={styles.ctaSecondary}>
+              Self-host it instead
             </Link>
           </div>
         </div>
@@ -501,10 +751,10 @@ export PORT=8080
               <span className={styles.logoText}>Neutrino</span>
             </div>
             <p className={styles.footerTagline}>
-              Open-source cloud storage built with Rust.
+              The self-hosted productivity suite, built with Rust.
             </p>
             <a
-              href="https://github.com/your-org/neutrino"
+              href={GITHUB_URL}
               className={styles.footerGithub}
               target="_blank"
               rel="noopener noreferrer"
@@ -516,28 +766,30 @@ export PORT=8080
           <div className={styles.footerLinks}>
             <div className={styles.footerCol}>
               <div className={styles.footerColTitle}>Product</div>
+              <a href="#apps" className={styles.footerLink}>Apps</a>
               <a href="#features" className={styles.footerLink}>Features</a>
+              <a href="#platforms" className={styles.footerLink}>Clients</a>
               <a href="#roadmap" className={styles.footerLink}>Roadmap</a>
-              <Link href="/register" className={styles.footerLink}>Hosted version</Link>
             </div>
             <div className={styles.footerCol}>
               <div className={styles.footerColTitle}>Self-Host</div>
-              <a href="https://github.com/your-org/neutrino#self-hosting" className={styles.footerLink} target="_blank" rel="noopener noreferrer">Getting started</a>
-              <a href="https://github.com/your-org/neutrino/releases" className={styles.footerLink} target="_blank" rel="noopener noreferrer">Releases</a>
-              <a href="https://github.com/your-org/neutrino/blob/main/docs" className={styles.footerLink} target="_blank" rel="noopener noreferrer">Documentation</a>
+              <Link href="/self-host" className={styles.footerLink}>Self-hosting guide</Link>
+              <a href={`${GITHUB_URL}/releases`} className={styles.footerLink} target="_blank" rel="noopener noreferrer">Releases</a>
+              <a href={`${GITHUB_URL}#configuration`} className={styles.footerLink} target="_blank" rel="noopener noreferrer">Configuration</a>
+              <a href={GITHUB_URL} className={styles.footerLink} target="_blank" rel="noopener noreferrer">Source code</a>
             </div>
             <div className={styles.footerCol}>
               <div className={styles.footerColTitle}>Account</div>
               <Link href="/sign-in" className={styles.footerLink}>Sign in</Link>
               <Link href="/register" className={styles.footerLink}>Register</Link>
+              <a href={HOSTED_URL} className={styles.footerLink}>Hosted version</a>
             </div>
           </div>
         </div>
         <div className={styles.footerBottom}>
           <span>© {new Date().getFullYear()} Neutrino. MIT License.</span>
           <div className={styles.footerBottomLinks}>
-            <a href="/privacy" className={styles.footerBottomLink}>Privacy</a>
-            <a href="/terms" className={styles.footerBottomLink}>Terms</a>
+            <a href={GITHUB_URL} className={styles.footerBottomLink} target="_blank" rel="noopener noreferrer">GitHub</a>
           </div>
         </div>
       </footer>

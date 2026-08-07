@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ApiClientError, buildQuery, shouldSkipRefresh, getAuthHeader } from '../client';
+import {
+  ApiClientError,
+  buildQuery,
+  shouldSkipRefresh,
+  getAuthHeader,
+  clearAuthAndRedirect,
+} from '../client';
 
 // ---------------------------------------------------------------------------
 // ApiClientError
@@ -126,4 +132,52 @@ describe('getAuthHeader', () => {
     localStorage.setItem('access_token', 'undefined');
     expect(getAuthHeader()).toEqual({});
   });
+});
+
+// ---------------------------------------------------------------------------
+// clearAuthAndRedirect
+// ---------------------------------------------------------------------------
+
+describe('clearAuthAndRedirect', () => {
+  let assigned: string[];
+
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('access_token', 'a.b.c');
+    localStorage.setItem('refresh_token', 'r.e.f');
+    assigned = [];
+    // jsdom's location is read-only, so stand in a minimal stub we can inspect.
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      writable: true,
+      value: { pathname: '/', assign: (url: string) => assigned.push(url) },
+    });
+  });
+
+  function visit(pathname: string) {
+    (window.location as unknown as { pathname: string }).pathname = pathname;
+    clearAuthAndRedirect();
+  }
+
+  it('always clears the stored tokens', () => {
+    visit('/drive');
+    expect(localStorage.getItem('access_token')).toBeNull();
+    expect(localStorage.getItem('refresh_token')).toBeNull();
+  });
+
+  it('redirects to sign-in from an authenticated page', () => {
+    visit('/drive');
+    expect(assigned).toEqual(['/sign-in/']);
+  });
+
+  // A signed-out visitor reading the marketing pages must not be bounced away
+  // from them by a background 401 — that made the landing page unreachable for
+  // exactly the people it is written for.
+  it.each(['/', '/self-host', '/self-host/', '/sign-in/', '/register/', '/share'])(
+    'stays put on the public path %s',
+    (pathname) => {
+      visit(pathname);
+      expect(assigned).toEqual([]);
+    },
+  );
 });
