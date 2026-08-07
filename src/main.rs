@@ -69,6 +69,33 @@ fn run_migrations(pool: &DbPool) -> Result<(), String> {
     Ok(())
 }
 
+// ── Apple App Site Association ───────────────────────────────────────────────
+
+/// The routing table iOS fetches to decide which Neutrino app opens a
+/// `https://www.getneutrino.app/open/…` Universal Link.
+///
+/// Embedded rather than served from `web_dir` for three reasons, each of which is a silent
+/// failure if got wrong:
+///
+/// * `actix_files::Files` does not serve hidden paths, so a file under `.well-known/` would fall
+///   through to the SPA's `index.html` handler and Apple would be handed HTML.
+/// * The document has no file extension, so the guessed content type would be
+///   `application/octet-stream`. Apple requires `application/json`.
+/// * It must never redirect. `NormalizePath` is configured `MergeOnly`, so this exact path is
+///   returned as-is — but only because nothing rewrites it first.
+///
+/// The source of truth is `static/apple-app-site-association`. Editing the app id or path list
+/// there means re-checking `NeutrinoAppLink.swift` in all three iOS repositories, which mint the
+/// links these patterns have to match.
+const APPLE_APP_SITE_ASSOCIATION: &str = include_str!("../static/apple-app-site-association");
+
+#[get("/.well-known/apple-app-site-association")]
+async fn apple_app_site_association() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .body(APPLE_APP_SITE_ASSOCIATION)
+}
+
 // ── Health check ─────────────────────────────────────────────────────────────
 
 #[get("/health")]
@@ -1001,6 +1028,9 @@ async fn main() -> std::io::Result<()> {
             )
             // Health
             .service(health)
+            // Universal Links. Registered ahead of the static web app below, which would
+            // otherwise answer this path with index.html.
+            .service(apple_app_site_association)
             // All /api/v1 routes in a single scope — multiple scopes with the same
             // prefix cause actix-web to route only to the first-registered one.
             .service(
@@ -1079,4 +1109,108 @@ async fn main() -> std::io::Result<()> {
     .bind(&bind_addr)?
     .run()
     .await
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::test;
+
+    /// Everything about Universal Links fails silently: a wrong content type, a redirect, or a
+    /// missing app id all look exactly like "Safari opened instead", which is also the correct
+    /// behaviour when the app is not installed. These assertions are the only place that
+    /// distinguishes the two before a device does.
+    mod apple_app_site_association {
+        use super::*;
+
+        async fn get() -> actix_web::dev::ServiceResponse {
+            let app = test::init_service(App::new().service(apple_app_site_association)).await;
+            let req = test::TestRequest::get()
+                .uri("/.well-known/apple-app-site-association")
+                .to_request();
+            test::call_service(&app, req).await
+        }
+
+        #[actix_web::test]
+        async fn is_served_at_the_well_known_path() {
+            assert_eq!(get().await.status(), 200);
+        }
+
+        /// Apple requires `application/json`. The document has no file extension, so nothing
+        /// infers this for us.
+        #[actix_web::test]
+        async fn is_served_as_json() {
+            let resp = get().await;
+            let content_type = resp
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            assert!(
+                content_type.starts_with("application/json"),
+                "expected application/json, got {content_type:?}"
+            );
+        }
+
+        /// A redirect — including the trailing-slash kind a normalising middleware would add —
+        /// makes Apple discard the document.
+        #[actix_web::test]
+        async fn does_not_redirect() {
+            assert!(!get().await.status().is_redirection());
+        }
+
+        #[actix_web::test]
+        async fn is_parseable_json() {
+            let body: serde_json::Value = test::read_body_json(get().await).await;
+            assert!(body.get("applinks").is_some(), "missing applinks key");
+        }
+
+        /// The three claims the iOS apps depend on. `NeutrinoAppLink.swift` mints
+        /// `/open/<kind>/<id>` links in each repository; if a pattern here stops matching, those
+        /// links open Safari instead of the app, and nothing reports it.
+        #[actix_web::test]
+        async fn claims_a_path_for_each_shipping_app() {
+            let body: serde_json::Value = test::read_body_json(get().await).await;
+            let details = body["applinks"]["details"]
+                .as_array()
+                .expect("applinks.details must be an array");
+
+            for (app_id, path) in [
+                ("46KWJJ63FU.com.neutrino.notes", "/open/note/*"),
+                ("46KWJJ63FU.com.neutrino.docs", "/open/doc/*"),
+                ("46KWJJ63FU.com.neutrino.drive", "/open/file/*"),
+            ] {
+                let entry = details
+                    .iter()
+                    .find(|d| {
+                        d["appIDs"]
+                            .as_array()
+                            .is_some_and(|ids| ids.iter().any(|id| id == app_id))
+                    })
+                    .unwrap_or_else(|| panic!("no entry for {app_id}"));
+
+                let claims_path = entry["components"]
+                    .as_array()
+                    .is_some_and(|cs| cs.iter().any(|c| c["/"] == path));
+                assert!(claims_path, "{app_id} does not claim {path}");
+            }
+        }
+
+        /// Two apps claiming the same pattern makes routing a coin flip, and the AASA document is
+        /// the only place that constraint exists.
+        #[actix_web::test]
+        async fn no_path_is_claimed_twice() {
+            let body: serde_json::Value = test::read_body_json(get().await).await;
+            let mut seen: Vec<String> = Vec::new();
+            for detail in body["applinks"]["details"].as_array().unwrap() {
+                for component in detail["components"].as_array().unwrap() {
+                    let path = component["/"].as_str().unwrap().to_string();
+                    assert!(!seen.contains(&path), "{path} is claimed more than once");
+                    seen.push(path);
+                }
+            }
+        }
+    }
 }

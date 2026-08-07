@@ -1,13 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useState } from 'react';
 import { authApi } from '@/lib/api';
+import { routeAfterSignIn, SIGN_IN_NEXT_PARAM } from '@/lib/signInRedirect';
 import styles from './page.module.css';
 
 export default function SignInPage() {
+  // `useSearchParams` needs a Suspense boundary above it during prerender.
+  return (
+    <Suspense fallback={null}>
+      <SignInForm />
+    </Suspense>
+  );
+}
+
+function SignInForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -22,7 +33,10 @@ export default function SignInPage() {
 
     try {
       await authApi.login({ email, password });
-      router.push('/drive');
+      // Returns to whatever the user was trying to open, when they arrived from a link that
+      // required signing in first. `routeAfterSignIn` drops anything that is not a path on this
+      // site, so `?next=` cannot bounce them off-origin.
+      router.push(routeAfterSignIn(searchParams.get(SIGN_IN_NEXT_PARAM)));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Sign in failed');
     } finally {

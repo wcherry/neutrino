@@ -29,7 +29,7 @@ import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
-import { DRIVE_SEARCH_PARAM } from './searchParams';
+import { DRIVE_SEARCH_PARAM, DRIVE_PREVIEW_PARAM } from './searchParams';
 import { UploadZone } from './UploadZone';
 import { PreviewModal } from './PreviewModal';
 import { FileContextMenu } from './FileContextMenu';
@@ -122,6 +122,24 @@ function DriveContent() {
       renameInputRef.current.select();
     }
   }, [renaming]);
+
+  // ── Deep-linked preview (`/drive?preview=<file id>`) ─────────────────────
+  // Where an `/open/file/<id>` Universal Link lands when the file has no editor of its own — see
+  // `open/appLink.ts`. Fetched by id rather than looked up in `files`, because the link routinely
+  // names a file in a folder this session has never listed.
+  const previewParam = searchParams.get(DRIVE_PREVIEW_PARAM);
+  useEffect(() => {
+    if (!previewParam) return;
+    let cancelled = false;
+    storageApi
+      .getFileMetadata(previewParam)
+      .then((file) => { if (!cancelled) setPreviewFile(file); })
+      .catch(() => { if (!cancelled) toast.error('That file could not be opened'); });
+    return () => { cancelled = true; };
+    // `toast` is deliberately not a dependency: it is recreated on every render, and re-running
+    // this would refetch the file each time anything on the page changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewParam]);
 
   useEffect(() => {
     function onNewFolder() { setNewFolderName('New folder'); setNewFolderDialogOpen(true); }
