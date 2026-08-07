@@ -52,7 +52,22 @@ const AUTH_LOGIN_PATH = '/api/v1/auth/login';
 const AUTH_REGISTER_PATH = '/api/v1/auth/register';
 const AUTH_REFRESH_PATH = '/api/v1/auth/refresh';
 const LOGIN_REDIRECT_PATH = '/sign-in/';
-const PUBLIC_PATHS = ['/sign-in', '/register', '/sign-in/', '/register/', '/share'];
+/**
+ * Pages a signed-out visitor is allowed to stay on. A 401 anywhere else bounces
+ * to sign-in, so the marketing pages have to be listed here or the landing page
+ * redirects itself away from the very people it exists for. Both slash variants
+ * are listed because `trailingSlash` is on but in-app links are written without.
+ */
+const PUBLIC_PATHS = [
+  '/',
+  '/sign-in',
+  '/sign-in/',
+  '/register',
+  '/register/',
+  '/self-host',
+  '/self-host/',
+  '/share',
+];
 let refreshInFlight: Promise<{ accessToken: string; refreshToken: string; tokenType: string; expiresIn: number } | null> | null = null;
 
 export function getAuthHeader(): Record<string, string> {
