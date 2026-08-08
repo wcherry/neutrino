@@ -92,6 +92,25 @@ impl DriveClient {
     ) -> Result<Vec<DriveListItem>, ApiError> {
         let mut filters = std::collections::HashMap::new();
         filters.insert("mimeType".to_string(), mime_type.to_string());
+        self.list_files_filtered(user, filters).await
+    }
+
+    /// Lists every file type the user owns (no `mimeType` filter) — used by
+    /// the links resolver, which must match wiki-link titles against files
+    /// of any type, not just one app's own MIME type.
+    pub async fn list_all_files(
+        &self,
+        user: &AuthenticatedUser,
+    ) -> Result<Vec<DriveListItem>, ApiError> {
+        self.list_files_filtered(user, std::collections::HashMap::new())
+            .await
+    }
+
+    async fn list_files_filtered(
+        &self,
+        user: &AuthenticatedUser,
+        filters: std::collections::HashMap<String, String>,
+    ) -> Result<Vec<DriveListItem>, ApiError> {
         let query = ListQuery {
             limit: 200,
             offset: 0,

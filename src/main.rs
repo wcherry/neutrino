@@ -22,6 +22,7 @@ mod docs;
 mod drawing;
 mod drive;
 mod jobs;
+mod links;
 mod notes;
 mod oauth;
 mod photos;
@@ -606,6 +607,20 @@ async fn main() -> std::io::Result<()> {
     let notes_presence_state =
         web::Data::new(Arc::new(notes::presence::state::NotePresenceState::new()));
 
+    // ── Links service ─────────────────────────────────────────────────────────
+
+    use links::repository::LinksRepository;
+    use links::service::LinksService;
+
+    let drive_client_for_links = Arc::new(DriveClient::new(
+        drive_storage_service.clone(),
+        drive_permissions_service.clone(),
+        drive_fs_repo.clone(),
+    ));
+    let links_repo = Arc::new(LinksRepository::new(pool.clone()));
+    let links_service = Arc::new(LinksService::new(links_repo, drive_client_for_links));
+    let links_state = web::Data::new(links::api::LinksApiState { links_service });
+
     // ── Photos service ────────────────────────────────────────────────────────
 
     use photos::albums::repository::AlbumsRepository;
@@ -915,6 +930,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::workspace::api::WorkspaceApiDoc::openapi());
         doc.merge(notes::api::NotesApiDoc::openapi());
         doc.merge(notes::presence::api::NotesPresenceApiDoc::openapi());
+        doc.merge(links::api::LinksApiDoc::openapi());
         doc.merge(photos::albums::api::AlbumsApiDoc::openapi());
         doc.merge(photos::faces::api::FacesApiDoc::openapi());
         doc.merge(photos::learning::api::LearningApiDoc::openapi());
@@ -990,6 +1006,8 @@ async fn main() -> std::io::Result<()> {
             // Notes
             .app_data(notes_state.clone())
             .app_data(notes_presence_state.clone())
+            // Links
+            .app_data(links_state.clone())
             // Photos
             .app_data(photos_state.clone())
             .app_data(photos_albums_state.clone())
@@ -1065,6 +1083,8 @@ async fn main() -> std::io::Result<()> {
                     // Notes
                     .configure(notes::api::configure)
                     .configure(notes::presence::api::configure)
+                    // Links
+                    .configure(links::api::configure)
                     // Photos
                     .configure(photos::photos::api::configure_photos)
                     .configure(photos::albums::api::configure_albums)
