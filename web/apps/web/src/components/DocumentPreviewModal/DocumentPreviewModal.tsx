@@ -16,14 +16,18 @@ import { X, ExternalLink, AlertCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Text, Spinner, Button } from '@neutrino/ui';
 import { useRouter } from 'next/navigation';
+import { decryptFile, fromBase64url, initSodium } from '@neutrino/e2e-crypto';
 
 import {
   docsApi,
   sheetsApi,
   slidesApi,
   notesApi,
+  storageApi,
   driveReadContent,
 } from '@/lib/api';
+
+import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 
 import {
   parseBlocks,
@@ -71,6 +75,11 @@ function editorRoute(kind: DocumentKind, id: string): string {
 // ── Doc preview ───────────────────────────────────────────────────────────────
 
 function DocPreview({ id }: { id: string }) {
+  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+    id,
+    filename: 'doc.json',
+  });
+
   const { data: doc } = useQuery({
     queryKey: ['doc', id],
     queryFn: () => docsApi.getDoc(id),
@@ -79,12 +88,23 @@ function DocPreview({ id }: { id: string }) {
   });
 
   const { data: content, isLoading, isError } = useQuery({
-    queryKey: ['doc-content-preview', id],
+    queryKey: ['doc-content-preview', id, dekResolved, doc?.contentUrl ?? ''],
     queryFn: async () => {
       if (!doc?.contentUrl) return null;
+      if (dekRef.current) {
+        const blob = await storageApi.downloadFile(id);
+        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
+        try {
+          const plainBytes = decryptFile(cipherBytes, dekRef.current);
+          return new TextDecoder().decode(plainBytes);
+        } catch {
+          if (isNewEncryption) return null;
+          return driveReadContent(doc.contentUrl);
+        }
+      }
       return driveReadContent(doc.contentUrl);
     },
-    enabled: !!doc?.contentUrl,
+    enabled: !!doc?.contentUrl && dekResolved,
     staleTime: 0,
   });
 
@@ -107,9 +127,12 @@ function DocPreview({ id }: { id: string }) {
 
   // The doc content is a Tiptap JSON document. Parse and extract an HTML-like
   // structure for read-only rendering without loading the full editor bundle.
+  // Docs saved with the layout-structure feature (see DocEditor.tsx) wrap the
+  // Tiptap doc as `{ doc, _meta }` — unwrap it the same way before rendering.
   let html = '';
   try {
-    const json = JSON.parse(content);
+    const parsed = JSON.parse(content);
+    const json = parsed && typeof parsed === 'object' && parsed._meta && parsed.doc ? parsed.doc : parsed;
     html = tiptapJsonToHtml(json);
   } catch {
     html = `<p>${escapeHtml(content)}</p>`;
@@ -132,6 +155,11 @@ const PREVIEW_MAX_ROWS = 50;
 const PREVIEW_MAX_COLS = 26;
 
 function SheetPreview({ id }: { id: string }) {
+  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+    id,
+    filename: 'sheet.json',
+  });
+
   const { data: sheet } = useQuery({
     queryKey: ['sheet', id],
     queryFn: () => sheetsApi.getSheet(id),
@@ -140,12 +168,23 @@ function SheetPreview({ id }: { id: string }) {
   });
 
   const { data: content, isLoading, isError } = useQuery({
-    queryKey: ['sheet-content-preview', id],
+    queryKey: ['sheet-content-preview', id, dekResolved, sheet?.contentUrl ?? ''],
     queryFn: async () => {
       if (!sheet?.contentUrl) return null;
+      if (dekRef.current) {
+        const blob = await storageApi.downloadFile(id);
+        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
+        try {
+          const plainBytes = decryptFile(cipherBytes, dekRef.current);
+          return new TextDecoder().decode(plainBytes);
+        } catch {
+          if (isNewEncryption) return null;
+          return driveReadContent(sheet.contentUrl);
+        }
+      }
       return driveReadContent(sheet.contentUrl);
     },
-    enabled: !!sheet?.contentUrl,
+    enabled: !!sheet?.contentUrl && dekResolved,
     staleTime: 0,
   });
 
@@ -269,6 +308,11 @@ function SheetPreview({ id }: { id: string }) {
 // ── Slide preview ─────────────────────────────────────────────────────────────
 
 function SlidePreview({ id }: { id: string }) {
+  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+    id,
+    filename: 'slide.json',
+  });
+
   const { data: slide } = useQuery({
     queryKey: ['slide', id],
     queryFn: () => slidesApi.getSlide(id),
@@ -277,12 +321,23 @@ function SlidePreview({ id }: { id: string }) {
   });
 
   const { data: content, isLoading, isError } = useQuery({
-    queryKey: ['slide-content-preview', id],
+    queryKey: ['slide-content-preview', id, dekResolved, slide?.contentUrl ?? ''],
     queryFn: async () => {
       if (!slide?.contentUrl) return null;
+      if (dekRef.current) {
+        const blob = await storageApi.downloadFile(id);
+        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
+        try {
+          const plainBytes = decryptFile(cipherBytes, dekRef.current);
+          return new TextDecoder().decode(plainBytes);
+        } catch {
+          if (isNewEncryption) return null;
+          return driveReadContent(slide.contentUrl);
+        }
+      }
       return driveReadContent(slide.contentUrl);
     },
-    enabled: !!slide?.contentUrl,
+    enabled: !!slide?.contentUrl && dekResolved,
     staleTime: 0,
   });
 
@@ -384,6 +439,11 @@ function SlidePreview({ id }: { id: string }) {
 // ── Note preview ──────────────────────────────────────────────────────────────
 
 function NotePreview({ id }: { id: string }) {
+  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+    id,
+    filename: 'note.json',
+  });
+
   const { data: note, isLoading: metaLoading, isError: metaIsError } = useQuery({
     queryKey: ['note', id],
     queryFn: () => notesApi.getNote(id),
@@ -392,12 +452,32 @@ function NotePreview({ id }: { id: string }) {
   });
 
   const { data: content, isLoading: contentLoading, isError: contentIsError } = useQuery({
-    queryKey: ['note-content-preview', id],
+    queryKey: ['note-content-preview', id, dekResolved, note?.contentUrl ?? ''],
     queryFn: async () => {
       if (!note?.contentUrl) return null;
+      if (dekRef.current && !isNewEncryption) {
+        try {
+          await initSodium();
+          const blob = await storageApi.downloadFile(id);
+          const stored = new Uint8Array(await blob.arrayBuffer());
+          let plainBytes: Uint8Array;
+          try {
+            plainBytes = decryptFile(
+              fromBase64url(new TextDecoder().decode(stored)),
+              dekRef.current,
+            );
+          } catch {
+            plainBytes = decryptFile(stored, dekRef.current);
+          }
+          return new TextDecoder().decode(plainBytes);
+        } catch {
+          // Corrupt ciphertext or a stale/expired key ref — fall back to the
+          // raw content rather than crashing the preview.
+        }
+      }
       return driveReadContent(note.contentUrl);
     },
-    enabled: !!note?.contentUrl,
+    enabled: !!note?.contentUrl && dekResolved,
     staleTime: 0,
   });
 

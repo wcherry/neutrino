@@ -52,13 +52,43 @@ const mockGetSheet = vi.fn();
 const mockGetSlide = vi.fn();
 const mockGetNote = vi.fn();
 const mockDriveReadContent = vi.fn();
+const mockDownloadFile = vi.fn();
 
 vi.mock('../../lib/api', () => ({
   docsApi: { getDoc: (...args: unknown[]) => mockGetDoc(...args) },
   sheetsApi: { getSheet: (...args: unknown[]) => mockGetSheet(...args) },
   slidesApi: { getSlide: (...args: unknown[]) => mockGetSlide(...args) },
   notesApi: { getNote: (...args: unknown[]) => mockGetNote(...args) },
+  storageApi: { downloadFile: (...args: unknown[]) => mockDownloadFile(...args) },
   driveReadContent: (...args: unknown[]) => mockDriveReadContent(...args),
+}));
+
+// DEK resolution defaults to "unencrypted" (dekRef.current === null) so the
+// existing plaintext-fixture tests keep exercising the `driveReadContent`
+// fallback unchanged. Individual tests override the return value to exercise
+// the encrypted (`storageApi.downloadFile` + `decryptFile`) path.
+const mockUseEncryptedDocumentContent = vi.fn(() => ({
+  dekRef: { current: null },
+  dekResolved: true,
+  isNewEncryption: false,
+  autosave: vi.fn(),
+  createVersion: vi.fn(),
+  isAutosaving: false,
+  isCreatingVersion: false,
+  autosaveError: null,
+  createVersionError: null,
+}));
+
+vi.mock('../../hooks/useEncryptedDocumentContent', () => ({
+  useEncryptedDocumentContent: (...args: unknown[]) => mockUseEncryptedDocumentContent(...args),
+}));
+
+const mockDecryptFile = vi.fn();
+
+vi.mock('@neutrino/e2e-crypto', () => ({
+  decryptFile: (...args: unknown[]) => mockDecryptFile(...args),
+  fromBase64url: vi.fn((s: string) => new TextEncoder().encode(s)),
+  initSodium: vi.fn(() => Promise.resolve()),
 }));
 
 // ── React Query mock ──────────────────────────────────────────────────────────
@@ -366,6 +396,108 @@ describe('DocPreview', () => {
       .mockReturnValueOnce({ data: null, isLoading: false, isError: true });
     render(<DocumentPreviewModal id="doc-1" kind="doc" onClose={vi.fn()} />);
     expect(screen.getByText('Failed to load document preview.')).toBeInTheDocument();
+  });
+
+  // Regression coverage for https://github.com/wcherry/neutrino/issues/81:
+  // docs saved under the layout-structure feature (see DocEditor.tsx) wrap
+  // the Tiptap doc as `{ doc, _meta }`. Treating that wrapper itself as the
+  // Tiptap doc has no `type` field to recurse on, so it silently rendered a
+  // blank preview instead of unwrapping to `.doc` first.
+  it('unwraps the { doc, _meta } layout-structure envelope before rendering', () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { id: 'doc-1', contentUrl: '/content' }, isLoading: false, isError: false })
+      .mockReturnValueOnce({
+        data: JSON.stringify({
+          doc: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Wrapped content' }] }],
+          },
+          _meta: { headerText: '', footerText: '', showPageNumbers: false, watermarkText: '', bgColor: '', docTheme: 'default' },
+        }),
+        isLoading: false,
+        isError: false,
+      });
+    render(<DocumentPreviewModal id="doc-1" kind="doc" onClose={vi.fn()} />);
+    expect(screen.getByText('Wrapped content')).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression coverage for https://github.com/wcherry/neutrino/issues/81:
+// previewing an E2EE file must decrypt content via storageApi.downloadFile +
+// decryptFile, not render the raw (still-encrypted) bytes returned by
+// driveReadContent. These drive the real `docsApi`/`notesApi` + `useQuery`
+// implementations (rather than short-circuiting via mockReturnValueOnce) so
+// the preview's actual queryFn — and its decrypt branch — executes.
+describe('DocumentPreviewModal — encrypted content', () => {
+  it('DocPreview decrypts via storageApi + decryptFile when the file has a DEK', async () => {
+    mockUseEncryptedDocumentContent.mockReturnValue({
+      dekRef: { current: new Uint8Array([1, 2, 3]) },
+      dekResolved: true,
+      isNewEncryption: false,
+      autosave: vi.fn(),
+      createVersion: vi.fn(),
+      isAutosaving: false,
+      isCreatingVersion: false,
+      autosaveError: null,
+      createVersionError: null,
+    });
+    mockGetDoc.mockResolvedValue({ id: 'doc-1', contentUrl: '/content' });
+    mockDownloadFile.mockResolvedValue({
+      arrayBuffer: () => Promise.resolve(new TextEncoder().encode('ciphertext').buffer),
+    });
+    mockDecryptFile.mockReturnValue(new TextEncoder().encode(makeDocContent()));
+
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+    const queryClient = new QueryClient();
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <DocumentPreviewModal id="doc-1" kind="doc" onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('h1')?.textContent).toBe('Hello World');
+    });
+
+    expect(mockDownloadFile).toHaveBeenCalledWith('doc-1');
+    expect(mockDecryptFile).toHaveBeenCalled();
+    expect(mockDriveReadContent).not.toHaveBeenCalled();
+  });
+
+  it('NotePreview decrypts via storageApi + decryptFile when the file has a DEK', async () => {
+    mockUseEncryptedDocumentContent.mockReturnValue({
+      dekRef: { current: new Uint8Array([1, 2, 3]) },
+      dekResolved: true,
+      isNewEncryption: false,
+      autosave: vi.fn(),
+      createVersion: vi.fn(),
+      isAutosaving: false,
+      isCreatingVersion: false,
+      autosaveError: null,
+      createVersionError: null,
+    });
+    mockGetNote.mockResolvedValue({ id: 'note-1', title: 'My Note', contentUrl: '/api/v1/drive/files/note-1' });
+    mockDownloadFile.mockResolvedValue({
+      arrayBuffer: () => Promise.resolve(new TextEncoder().encode('ciphertext').buffer),
+    });
+    mockDecryptFile.mockReturnValue(new TextEncoder().encode(makeNoteContent()));
+
+    const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <DocumentPreviewModal id="note-1" kind="note" onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Hello note')).toBeInTheDocument();
+    });
+
+    expect(mockDownloadFile).toHaveBeenCalledWith('note-1');
+    expect(mockDecryptFile).toHaveBeenCalled();
+    expect(mockDriveReadContent).not.toHaveBeenCalled();
   });
 });
 
