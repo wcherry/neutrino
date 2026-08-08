@@ -26,7 +26,7 @@ const HANDLE_SIZE = 8;
 const ROTATE_OFFSET = 20;
 const EXPORT_PAD = 24;
 
-function shapeToSVGElement(shape: Shape): string {
+export function shapeToSVGElement(shape: Shape): string {
   if (shape.hidden) return '';
   const stroke = shape.stroke || '#000000';
   const fill = shape.fill || 'transparent';
@@ -82,7 +82,7 @@ function shapeToSVGElement(shape: Shape): string {
   }
 }
 
-function contentBounds(shapes: Shape[]): { x: number; y: number; w: number; h: number } | null {
+export function contentBounds(shapes: Shape[]): { x: number; y: number; w: number; h: number } | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const s of shapes) {
     if (s.hidden) continue;

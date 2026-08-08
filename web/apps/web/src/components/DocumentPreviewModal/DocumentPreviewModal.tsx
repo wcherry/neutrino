@@ -23,6 +23,8 @@ import {
   sheetsApi,
   slidesApi,
   notesApi,
+  diagramsApi,
+  drawingApi,
   storageApi,
   driveReadContent,
 } from '@/lib/api';
@@ -53,11 +55,17 @@ import type { SheetFile, CellProps } from '@/app/(apps)/sheets/editor/types';
 import { computeCell } from '@/app/(apps)/sheets/editor/formula';
 import { numToAlpha } from '@/app/(apps)/sheets/editor/utils';
 
+import { EmbeddedDiagramView } from '@/app/(apps)/diagrams/editor/EmbeddedDiagramView';
+import type { DiagramDocument } from '@/app/(apps)/diagrams/types';
+
+import { shapeToSVGElement, contentBounds } from '@/app/(apps)/drawing/editor/DrawingCanvas';
+import type { DrawingContent } from '@/app/(apps)/drawing/editor/types';
+
 import styles from './DocumentPreviewModal.module.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type DocumentKind = 'doc' | 'sheet' | 'slide' | 'note';
+export type DocumentKind = 'doc' | 'sheet' | 'slide' | 'note' | 'diagram' | 'drawing';
 
 export interface DocumentPreviewModalProps {
   id: string;
@@ -68,7 +76,13 @@ export interface DocumentPreviewModalProps {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function editorRoute(kind: DocumentKind, id: string): string {
-  const base = kind === 'doc' ? '/docs' : kind === 'sheet' ? '/sheets' : kind === 'slide' ? '/slides' : '/notes';
+  const base =
+    kind === 'doc' ? '/docs' :
+    kind === 'sheet' ? '/sheets' :
+    kind === 'slide' ? '/slides' :
+    kind === 'diagram' ? '/diagrams' :
+    kind === 'drawing' ? '/drawing' :
+    '/notes';
   return `${base}/editor?id=${id}`;
 }
 
@@ -555,6 +569,170 @@ function NotePreview({ id }: { id: string }) {
   );
 }
 
+// ── Diagram preview ───────────────────────────────────────────────────────────
+
+function DiagramPreview({ id }: { id: string }) {
+  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+    id,
+    filename: 'diagram.json',
+  });
+
+  const { data: diagram } = useQuery({
+    queryKey: ['diagram', id],
+    queryFn: () => diagramsApi.getDiagram(id),
+    staleTime: 0,
+    enabled: !!id,
+  });
+
+  const { data: content, isLoading, isError } = useQuery({
+    queryKey: ['diagram-content-preview', id, dekResolved, diagram?.contentUrl ?? ''],
+    queryFn: async () => {
+      if (!diagram?.contentUrl) return null;
+      if (dekRef.current) {
+        const blob = await storageApi.downloadFile(id);
+        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
+        try {
+          const plainBytes = decryptFile(cipherBytes, dekRef.current);
+          return new TextDecoder().decode(plainBytes);
+        } catch {
+          if (isNewEncryption) return null;
+          return driveReadContent(diagram.contentUrl);
+        }
+      }
+      return driveReadContent(diagram.contentUrl);
+    },
+    enabled: !!diagram?.contentUrl && dekResolved,
+    staleTime: 0,
+  });
+
+  if (isError) {
+    return (
+      <div className={styles.centered}>
+        <AlertCircle size={36} style={{ color: 'var(--color-text-muted)' }} />
+        <Text color="muted">Failed to load diagram preview.</Text>
+      </div>
+    );
+  }
+
+  if (isLoading || !content) {
+    return (
+      <div className={styles.centered}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  let doc: DiagramDocument | null = null;
+  try {
+    doc = JSON.parse(content) as DiagramDocument;
+  } catch {
+    return (
+      <div className={styles.centered}>
+        <Text color="muted">Could not parse diagram content.</Text>
+      </div>
+    );
+  }
+
+  const page = doc?.pages?.[0];
+  if (!page || (page.shapes.length === 0 && page.connectors.length === 0)) {
+    return (
+      <div className={styles.centered}>
+        <Text color="muted">This diagram is empty.</Text>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.canvasWrapper}>
+      <div className={styles.canvasFrame}>
+        <EmbeddedDiagramView page={page} width="100%" height="100%" bgColor={page.background || '#ffffff'} />
+      </div>
+    </div>
+  );
+}
+
+// ── Drawing preview ───────────────────────────────────────────────────────────
+
+function DrawingPreview({ id }: { id: string }) {
+  const { data: drawing } = useQuery({
+    queryKey: ['drawing', id],
+    queryFn: () => drawingApi.getDrawing(id),
+    staleTime: 0,
+    enabled: !!id,
+  });
+
+  // Drawing content is not E2EE (see DrawingEditor.tsx's load path), so the
+  // preview reads it the same way the editor does — no dekRef/decrypt step.
+  const { data: content, isLoading, isError } = useQuery({
+    queryKey: ['drawing-content-preview', id, drawing?.contentUrl ?? ''],
+    queryFn: () => driveReadContent(drawing!.contentUrl),
+    enabled: !!drawing?.contentUrl,
+    staleTime: 0,
+  });
+
+  if (isError) {
+    return (
+      <div className={styles.centered}>
+        <AlertCircle size={36} style={{ color: 'var(--color-text-muted)' }} />
+        <Text color="muted">Failed to load drawing preview.</Text>
+      </div>
+    );
+  }
+
+  if (isLoading || !content) {
+    return (
+      <div className={styles.centered}>
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  let drawingContent: DrawingContent | null = null;
+  try {
+    drawingContent = JSON.parse(content) as DrawingContent;
+  } catch {
+    return (
+      <div className={styles.centered}>
+        <Text color="muted">Could not parse drawing content.</Text>
+      </div>
+    );
+  }
+
+  const shapes = (drawingContent?.shapes ?? []).filter((s) => !s.hidden);
+  const bounds = contentBounds(shapes);
+  if (!bounds) {
+    return (
+      <div className={styles.centered}>
+        <Text color="muted">This drawing is empty.</Text>
+      </div>
+    );
+  }
+
+  const pad = 24;
+  const x = bounds.x - pad;
+  const y = bounds.y - pad;
+  const w = Math.max(1, bounds.w + pad * 2);
+  const h = Math.max(1, bounds.h + pad * 2);
+  const els = shapes.map(shapeToSVGElement).filter(Boolean).join('\n');
+
+  return (
+    <div className={styles.canvasWrapper}>
+      <div className={styles.canvasFrame}>
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`${x} ${y} ${w} ${h}`}
+          preserveAspectRatio="xMidYMid meet"
+          // Built from shapeToSVGElement (see DrawingCanvas.tsx), which serializes
+          // structurally-typed Shape fields, not user-supplied HTML.
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: els }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Modal shell ───────────────────────────────────────────────────────────────
 
 export function DocumentPreviewModal({ id, kind, onClose }: DocumentPreviewModalProps) {
@@ -578,7 +756,13 @@ export function DocumentPreviewModal({ id, kind, onClose }: DocumentPreviewModal
     onClose();
   }
 
-  const kindLabel = kind === 'doc' ? 'Document' : kind === 'sheet' ? 'Spreadsheet' : kind === 'slide' ? 'Presentation' : 'Note';
+  const kindLabel =
+    kind === 'doc' ? 'Document' :
+    kind === 'sheet' ? 'Spreadsheet' :
+    kind === 'slide' ? 'Presentation' :
+    kind === 'diagram' ? 'Diagram' :
+    kind === 'drawing' ? 'Drawing' :
+    'Note';
 
   return (
     <div
@@ -617,10 +801,12 @@ export function DocumentPreviewModal({ id, kind, onClose }: DocumentPreviewModal
 
         {/* Body */}
         <div className={styles.body}>
-          {kind === 'doc'   && <DocPreview   id={id} />}
-          {kind === 'sheet' && <SheetPreview id={id} />}
-          {kind === 'slide' && <SlidePreview id={id} />}
-          {kind === 'note'  && <NotePreview  id={id} />}
+          {kind === 'doc'     && <DocPreview     id={id} />}
+          {kind === 'sheet'   && <SheetPreview   id={id} />}
+          {kind === 'slide'   && <SlidePreview   id={id} />}
+          {kind === 'note'    && <NotePreview    id={id} />}
+          {kind === 'diagram' && <DiagramPreview id={id} />}
+          {kind === 'drawing' && <DrawingPreview id={id} />}
         </div>
       </div>
     </div>

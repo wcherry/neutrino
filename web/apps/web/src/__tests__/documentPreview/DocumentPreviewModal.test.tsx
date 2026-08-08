@@ -51,6 +51,8 @@ const mockGetDoc = vi.fn();
 const mockGetSheet = vi.fn();
 const mockGetSlide = vi.fn();
 const mockGetNote = vi.fn();
+const mockGetDiagram = vi.fn();
+const mockGetDrawing = vi.fn();
 const mockDriveReadContent = vi.fn();
 const mockDownloadFile = vi.fn();
 
@@ -59,8 +61,20 @@ vi.mock('../../lib/api', () => ({
   sheetsApi: { getSheet: (...args: unknown[]) => mockGetSheet(...args) },
   slidesApi: { getSlide: (...args: unknown[]) => mockGetSlide(...args) },
   notesApi: { getNote: (...args: unknown[]) => mockGetNote(...args) },
+  diagramsApi: { getDiagram: (...args: unknown[]) => mockGetDiagram(...args) },
+  drawingApi: { getDrawing: (...args: unknown[]) => mockGetDrawing(...args) },
   storageApi: { downloadFile: (...args: unknown[]) => mockDownloadFile(...args) },
   driveReadContent: (...args: unknown[]) => mockDriveReadContent(...args),
+}));
+
+// ── Diagram / drawing renderer mocks ────────────────────────────────────────────
+// Their real implementations are covered by their own component tests; here we
+// only need to confirm DocumentPreviewModal fetches, parses and hands off content.
+
+vi.mock('../../app/(apps)/diagrams/editor/EmbeddedDiagramView', () => ({
+  EmbeddedDiagramView: ({ page }: { page: { shapes: { label: string }[] } }) => (
+    <div data-testid="embedded-diagram-view">{page.shapes.map((s) => s.label).join(', ')}</div>
+  ),
 }));
 
 // DEK resolution defaults to "unencrypted" (dekRef.current === null) so the
@@ -212,6 +226,38 @@ function makeNoteContent() {
   ]);
 }
 
+function makeDiagramContent() {
+  return JSON.stringify({
+    version: 1,
+    pages: [
+      {
+        id: 'page-1',
+        name: 'Page 1',
+        shapes: [
+          {
+            id: 'shape-1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50, label: 'Start',
+            style: { fill: '#fff', stroke: '#000', strokeWidth: 1, fontSize: 12, fontFamily: 'sans-serif', textColor: '#000', opacity: 1 },
+          },
+        ],
+        connectors: [],
+      },
+    ],
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+}
+
+function makeDrawingContent() {
+  return JSON.stringify({
+    version: 1,
+    shapes: [
+      {
+        id: 'shape-1', type: 'rectangle', x: 0, y: 0, width: 40, height: 30, points: [], text: '',
+        fill: '#fff', stroke: '#000', strokeWidth: 1, rotation: 0, opacity: 1,
+      },
+    ],
+  });
+}
+
 // ── Shared query setup helpers ────────────────────────────────────────────────
 
 function setupDocQueries() {
@@ -240,6 +286,18 @@ function setupNoteQuery() {
       isError: false,
     })
     .mockReturnValueOnce({ data: makeNoteContent(), isLoading: false, isError: false });
+}
+
+function setupDiagramQueries() {
+  mockUseQuery
+    .mockReturnValueOnce({ data: { id: 'diagram-1', contentUrl: '/api/v1/drive/files/diagram-1/content' }, isLoading: false, isError: false })
+    .mockReturnValueOnce({ data: makeDiagramContent(), isLoading: false, isError: false });
+}
+
+function setupDrawingQueries() {
+  mockUseQuery
+    .mockReturnValueOnce({ data: { id: 'drawing-1', contentUrl: '/api/v1/drive/files/drawing-1/content' }, isLoading: false, isError: false })
+    .mockReturnValueOnce({ data: makeDrawingContent(), isLoading: false, isError: false });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -288,6 +346,18 @@ describe('DocumentPreviewModal — modal shell', () => {
     setupNoteQuery();
     render(<DocumentPreviewModal id="note-1" kind="note" onClose={vi.fn()} />);
     expect(screen.getByText('Note preview')).toBeInTheDocument();
+  });
+
+  it('shows "Diagram preview" label for diagram kind', () => {
+    setupDiagramQueries();
+    render(<DocumentPreviewModal id="diagram-1" kind="diagram" onClose={vi.fn()} />);
+    expect(screen.getByText('Diagram preview')).toBeInTheDocument();
+  });
+
+  it('shows "Drawing preview" label for drawing kind', () => {
+    setupDrawingQueries();
+    render(<DocumentPreviewModal id="drawing-1" kind="drawing" onClose={vi.fn()} />);
+    expect(screen.getByText('Drawing preview')).toBeInTheDocument();
   });
 });
 
@@ -362,6 +432,22 @@ describe('DocumentPreviewModal — "Open in editor" navigation', () => {
     render(<DocumentPreviewModal id="note-1" kind="note" onClose={onClose} />);
     fireEvent.click(screen.getByText('Open in editor'));
     expect(mockRouterPush).toHaveBeenCalledWith('/notes/editor?id=note-1');
+  });
+
+  it('navigates to diagrams editor for diagram kind', () => {
+    const onClose = vi.fn();
+    setupDiagramQueries();
+    render(<DocumentPreviewModal id="diagram-1" kind="diagram" onClose={onClose} />);
+    fireEvent.click(screen.getByText('Open in editor'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/diagrams/editor?id=diagram-1');
+  });
+
+  it('navigates to drawing editor for drawing kind', () => {
+    const onClose = vi.fn();
+    setupDrawingQueries();
+    render(<DocumentPreviewModal id="drawing-1" kind="drawing" onClose={onClose} />);
+    fireEvent.click(screen.getByText('Open in editor'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/drawing/editor?id=drawing-1');
   });
 });
 
@@ -661,5 +747,86 @@ describe('NotePreview', () => {
       .mockReturnValueOnce({ data: undefined, isLoading: false, isError: false });
     render(<DocumentPreviewModal id="note-1" kind="note" onClose={vi.fn()} />);
     expect(screen.getByText('Failed to load note preview.')).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression coverage for issue #68 — the Drive "Preview" action navigated
+// straight into the diagrams editor instead of rendering a preview.
+describe('DiagramPreview', () => {
+  it('renders the first page via EmbeddedDiagramView', () => {
+    setupDiagramQueries();
+    render(<DocumentPreviewModal id="diagram-1" kind="diagram" onClose={vi.fn()} />);
+    expect(screen.getByTestId('embedded-diagram-view')).toHaveTextContent('Start');
+  });
+
+  it('shows empty state when the diagram has no shapes or connectors', () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { id: 'diagram-1', contentUrl: '/content' }, isLoading: false, isError: false })
+      .mockReturnValueOnce({
+        data: JSON.stringify({ version: 1, pages: [{ id: 'p1', name: 'Page 1', shapes: [], connectors: [] }], viewport: { x: 0, y: 0, zoom: 1 } }),
+        isLoading: false,
+        isError: false,
+      });
+    render(<DocumentPreviewModal id="diagram-1" kind="diagram" onClose={vi.fn()} />);
+    expect(screen.getByText('This diagram is empty.')).toBeInTheDocument();
+  });
+
+  it('shows error state when content fetch fails', () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { id: 'diagram-1', contentUrl: '/content' }, isLoading: false, isError: false })
+      .mockReturnValueOnce({ data: null, isLoading: false, isError: true });
+    render(<DocumentPreviewModal id="diagram-1" kind="diagram" onClose={vi.fn()} />);
+    expect(screen.getByText('Failed to load diagram preview.')).toBeInTheDocument();
+  });
+
+  it('shows spinner while loading', () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { id: 'diagram-1', contentUrl: '/content' }, isLoading: false, isError: false })
+      .mockReturnValueOnce({ data: undefined, isLoading: true, isError: false });
+    render(<DocumentPreviewModal id="diagram-1" kind="diagram" onClose={vi.fn()} />);
+    expect(screen.getByTestId('spinner-lg')).toBeInTheDocument();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression coverage for issue #68 — the Drive "Preview" action navigated
+// straight into the drawing editor instead of rendering a preview. Drawing
+// content isn't E2EE (see DrawingEditor.tsx's load path), so unlike the other
+// kinds this preview reads content directly via driveReadContent, no dekRef.
+describe('DrawingPreview', () => {
+  it('renders shapes as an inline SVG', () => {
+    setupDrawingQueries();
+    const { container } = render(<DocumentPreviewModal id="drawing-1" kind="drawing" onClose={vi.fn()} />);
+    const rect = container.querySelector('svg rect');
+    expect(rect).not.toBeNull();
+  });
+
+  it('shows empty state when the drawing has no shapes', () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { id: 'drawing-1', contentUrl: '/content' }, isLoading: false, isError: false })
+      .mockReturnValueOnce({
+        data: JSON.stringify({ version: 1, shapes: [] }),
+        isLoading: false,
+        isError: false,
+      });
+    render(<DocumentPreviewModal id="drawing-1" kind="drawing" onClose={vi.fn()} />);
+    expect(screen.getByText('This drawing is empty.')).toBeInTheDocument();
+  });
+
+  it('shows error state when content fetch fails', () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { id: 'drawing-1', contentUrl: '/content' }, isLoading: false, isError: false })
+      .mockReturnValueOnce({ data: null, isLoading: false, isError: true });
+    render(<DocumentPreviewModal id="drawing-1" kind="drawing" onClose={vi.fn()} />);
+    expect(screen.getByText('Failed to load drawing preview.')).toBeInTheDocument();
+  });
+
+  it('shows spinner while loading', () => {
+    mockUseQuery
+      .mockReturnValueOnce({ data: { id: 'drawing-1', contentUrl: '/content' }, isLoading: false, isError: false })
+      .mockReturnValueOnce({ data: undefined, isLoading: true, isError: false });
+    render(<DocumentPreviewModal id="drawing-1" kind="drawing" onClose={vi.fn()} />);
+    expect(screen.getByTestId('spinner-lg')).toBeInTheDocument();
   });
 });

@@ -83,6 +83,34 @@ export function routeForFile(
   opts.onPreviewFallback(file);
 }
 
+export type PreviewKind = 'doc' | 'sheet' | 'slide' | 'note' | 'diagram' | 'drawing' | 'image';
+
+const NATIVE_PREVIEW_KIND: Record<string, PreviewKind> = {
+  [DOC_MIME]: 'doc',
+  [SHEET_MIME]: 'sheet',
+  [SLIDES_MIME]: 'slide',
+  [NOTE_MIME]: 'note',
+  [DIAGRAM_MIME]: 'diagram',
+  [DRAWING_MIME]: 'drawing',
+};
+
+/**
+ * The lightweight preview-modal kind for a file's "Preview" context-menu
+ * action, or null when there is no dedicated preview renderer and the
+ * generic PreviewModal / routeForFile fallback should handle it instead.
+ *
+ * Deliberately separate from routeForFile: that function is built for
+ * click-to-open and unconditionally navigates native Neutrino mimetypes and
+ * images into their editor, which made the Drive "Preview" action open the
+ * app instead of a preview for Notes/Diagrams/Drawing/Photos (issue #68).
+ */
+export function previewKindForMime(mimeType: string): PreviewKind | null {
+  const kind = NATIVE_PREVIEW_KIND[mimeType];
+  if (kind) return kind;
+  if (mimeType.startsWith('image/')) return 'image';
+  return null;
+}
+
 /**
  * The URL a file opens at, for callers that need a link rather than a
  * navigation (search results, sidebar entries). Falls back to `/drive` for

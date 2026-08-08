@@ -40,7 +40,7 @@ import { MoveFolderDialog } from './MoveFolderDialog';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { routeForFile, officeEditorRoute, DOC_MIME, SHEET_MIME, SLIDES_MIME, DIAGRAM_MIME, DRAWING_MIME } from './routeForFile';
+import { routeForFile, officeEditorRoute, previewKindForMime } from './routeForFile';
 import { officeAppForFile } from '@/lib/officeFormats';
 import {
   fileToGridItem,
@@ -764,17 +764,18 @@ function DriveContent() {
           onClose={() => setContextMenu(null)}
           onPreview={(() => {
             const f = contextMenu.file;
-            // Native docs/sheets/slides keep the lightweight preview-modal
-            // experience (distinct from "open to edit"); everything else
-            // (diagrams/drawings, raw Office files when the office-editing
-            // flag is on, and the generic fallback) is delegated to
-            // routeForFile.
-            if (f.mimeType === DOC_MIME)
-              return () => { setDocPreview({ id: f.id, kind: 'doc' }); setContextMenu(null); };
-            if (f.mimeType === SHEET_MIME)
-              return () => { setDocPreview({ id: f.id, kind: 'sheet' }); setContextMenu(null); };
-            if (f.mimeType === SLIDES_MIME)
-              return () => { setDocPreview({ id: f.id, kind: 'slide' }); setContextMenu(null); };
+            // Docs/sheets/slides/notes/diagrams/drawings each have a
+            // lightweight read-only preview renderer (distinct from "open to
+            // edit"); images use the generic PreviewModal directly. Everything
+            // else (raw Office files when the office-editing flag is on, and
+            // the generic fallback) is delegated to routeForFile, which is
+            // built for click-to-open and would otherwise navigate straight
+            // into the editor for these same native mimetypes (issue #68).
+            const kind = previewKindForMime(f.mimeType);
+            if (kind === 'image')
+              return () => { setPreviewFile(f); setContextMenu(null); };
+            if (kind)
+              return () => { setDocPreview({ id: f.id, kind }); setContextMenu(null); };
             return () => {
               routeForFile(f, router, {
                 officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
