@@ -23,7 +23,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { routeForFile } from '../../app/(apps)/drive/routeForFile';
+import { routeForFile, previewKindForMime } from '../../app/(apps)/drive/routeForFile';
 
 const DOC_MIME = 'application/x-neutrino-doc';
 const SHEET_MIME = 'application/x-neutrino-sheet';
@@ -149,5 +149,36 @@ describe('routeForFile — images and fallback', () => {
     routeForFile(file, router, opts);
     expect(router.push).not.toHaveBeenCalled();
     expect(opts.onPreviewFallback).toHaveBeenCalledWith(expect.objectContaining({ id: 'file-10' }));
+  });
+});
+
+/**
+ * Regression coverage for issue #68 — the Drive context menu's "Preview"
+ * action used to call routeForFile itself, which unconditionally navigates
+ * native Neutrino mimetypes and images into their editor. previewKindForMime
+ * is the dedicated dispatch for the Preview action: it must identify a
+ * lightweight in-place preview kind for every type that has one, and defer
+ * (return null) only for types with no preview renderer.
+ */
+describe('previewKindForMime', () => {
+  it.each([
+    ['doc', DOC_MIME],
+    ['sheet', SHEET_MIME],
+    ['slide', SLIDES_MIME],
+    ['note', NOTE_MIME],
+    ['diagram', DIAGRAM_MIME],
+    ['drawing', DRAWING_MIME],
+  ])('resolves %s mimetypes to their preview kind', (expectedKind, mimeType) => {
+    expect(previewKindForMime(mimeType)).toBe(expectedKind);
+  });
+
+  it('resolves images to the "image" preview kind', () => {
+    expect(previewKindForMime('image/png')).toBe('image');
+    expect(previewKindForMime('image/jpeg')).toBe('image');
+  });
+
+  it('returns null for types with no dedicated preview renderer', () => {
+    expect(previewKindForMime('application/pdf')).toBeNull();
+    expect(previewKindForMime(DOCX_MIME)).toBeNull();
   });
 });
