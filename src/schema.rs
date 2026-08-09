@@ -208,9 +208,9 @@ diesel::table! {
 }
 
 diesel::table! {
-    note_links (source_note_id, target_note_id) {
-        source_note_id -> Text,
-        target_note_id -> Text,
+    file_links (source_file_id, target_file_id) {
+        source_file_id -> Text,
+        target_file_id -> Text,
         created_at -> Timestamp,
     }
 }
@@ -988,7 +988,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     doc_templates,
     // Notes
     notes,
-    note_links,
+    // Links
+    file_links,
     // Photos
     photos,
     photo_edits,

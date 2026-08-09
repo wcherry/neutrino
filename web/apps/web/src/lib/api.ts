@@ -25,3 +25,8 @@ export * from '@neutrino/api-drawing';
 // CreateThemeRequest/UpdateThemeRequest/ListThemesResponse type names collide
 // with @neutrino/api-slides' slide-theme types of the same name. Import
 // directly from '@neutrino/api-themes' instead (all new theme code does).
+// NOTE: @neutrino/api-links is intentionally not re-exported here either —
+// its BacklinksResponse/FileLinkItem type names collide with
+// @neutrino/api-notes' equivalents of the same name (notes' own backlinks
+// types are removed once notes migrates onto this package). Import directly
+// from '@neutrino/api-links' instead.

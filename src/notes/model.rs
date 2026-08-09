@@ -25,17 +25,17 @@ pub struct UpdateNoteRecord {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Queryable, Selectable)]
-#[diesel(table_name = crate::schema::note_links)]
+#[diesel(table_name = crate::schema::file_links)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NoteLinkRecord {
-    pub source_note_id: String,
-    pub target_note_id: String,
+    pub source_file_id: String,
+    pub target_file_id: String,
     pub created_at: NaiveDateTime,
 }
 
 #[derive(Debug, Insertable)]
-#[diesel(table_name = crate::schema::note_links)]
+#[diesel(table_name = crate::schema::file_links)]
 pub struct NewNoteLinkRecord<'a> {
-    pub source_note_id: &'a str,
-    pub target_note_id: &'a str,
+    pub source_file_id: &'a str,
+    pub target_file_id: &'a str,
 }
