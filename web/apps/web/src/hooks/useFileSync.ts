@@ -1,15 +1,18 @@
 'use client';
 
 /**
- * useNoteSync
+ * useFileSync
  *
- * Keeps an open note in sync with edits made elsewhere — another user, or the
+ * Keeps an open file in sync with edits made elsewhere — another user, or the
  * same user on another device — without a manual refresh.
  *
- * The note relay (`/api/v1/notes/{id}/ws`) only carries a *signal*: "this note
- * changed, and it wasn't you". Note content is end-to-end encrypted, so the
- * content itself never travels over the relay; on receiving a signal the editor
- * re-reads the note through the normal read path and decrypts it locally.
+ * The file relay (`/api/v1/files/{id}/ws`) only carries a *signal*: "this file
+ * changed, and it wasn't you". Content itself never travels over the relay —
+ * on receiving a signal the caller re-reads the file through the normal
+ * (E2EE-aware) read path and decrypts it locally if needed. The endpoint is
+ * generic (`src/shared/file_events/`, backed by the same `PresenceRoom`
+ * primitive sheets/slides use for their own sockets), but notes is the only
+ * caller today.
  *
  * Falls back to nothing on its own — callers should poll while `connected` is
  * false so a blocked/failed WebSocket degrades to eventual consistency rather
@@ -21,13 +24,13 @@ import type { MutableRefObject } from 'react';
 import { readVarint, encodeMessage } from '@neutrino/collab-core';
 import { refreshTokensOnce } from '@neutrino/api-core';
 
-/** Message type for the note-updated signal (`1` is awareness, as elsewhere). */
-const MSG_NOTE_UPDATED = 2;
+/** Message type for the file-updated signal (`1` is awareness, as elsewhere). */
+const MSG_FILE_UPDATED = 2;
 
 const RECONNECT_BASE_MS = 2_000;
 const RECONNECT_MAX_MS = 30_000;
 
-interface NoteUpdatedPayload {
+interface FileUpdatedPayload {
   /** Sender's client id — used to ignore the echo of our own broadcast. */
   clientId: string;
 }
@@ -48,29 +51,29 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
-export interface UseNoteSyncOptions {
-  noteId: string;
+export interface UseFileSyncOptions {
+  fileId: string;
   enabled?: boolean;
   /**
-   * Called when a peer reports that the note changed. Held in a ref so the
+   * Called when a peer reports that the file changed. Held in a ref so the
    * WebSocket never has to be torn down just because the handler identity
    * changed between renders.
    */
   onRemoteUpdateRef?: MutableRefObject<(() => void) | null>;
 }
 
-export interface UseNoteSyncResult {
+export interface UseFileSyncResult {
   /** True while the relay socket is open. */
   connected: boolean;
-  /** Tell peers this note just changed. No-op when the socket is not open. */
-  broadcastNoteUpdate: () => void;
+  /** Tell peers this file just changed. No-op when the socket is not open. */
+  broadcastFileUpdate: () => void;
 }
 
-export function useNoteSync({
-  noteId,
+export function useFileSync({
+  fileId,
   enabled = true,
   onRemoteUpdateRef,
-}: UseNoteSyncOptions): UseNoteSyncResult {
+}: UseFileSyncOptions): UseFileSyncResult {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const mountedRef = useRef(true);
@@ -80,16 +83,16 @@ export function useNoteSync({
     Math.random().toString(36).slice(2) + Date.now().toString(36)
   );
 
-  const broadcastNoteUpdate = useCallback(() => {
+  const broadcastFileUpdate = useCallback(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const payload: NoteUpdatedPayload = { clientId: clientIdRef.current };
-    ws.send(encodeMessage(MSG_NOTE_UPDATED, new TextEncoder().encode(JSON.stringify(payload))));
+    const payload: FileUpdatedPayload = { clientId: clientIdRef.current };
+    ws.send(encodeMessage(MSG_FILE_UPDATED, new TextEncoder().encode(JSON.stringify(payload))));
   }, []);
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!enabled || !noteId) return;
+    if (!enabled || !fileId) return;
 
     async function connect() {
       if (!mountedRef.current) return;
@@ -105,7 +108,7 @@ export function useNoteSync({
       const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const token = encodeURIComponent(getStoredToken());
       const ws = new WebSocket(
-        `${scheme}://${window.location.host}/api/v1/notes/${noteId}/ws?token=${token}`
+        `${scheme}://${window.location.host}/api/v1/files/${fileId}/ws?token=${token}`
       );
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
@@ -121,12 +124,12 @@ export function useNoteSync({
         if (data.length === 0) return;
 
         const [msgType, offset] = readVarint(data, 0);
-        if (msgType !== MSG_NOTE_UPDATED) return;
+        if (msgType !== MSG_FILE_UPDATED) return;
 
         try {
           const parsed = JSON.parse(
             new TextDecoder().decode(data.slice(offset))
-          ) as NoteUpdatedPayload;
+          ) as FileUpdatedPayload;
           if (parsed.clientId === clientIdRef.current) return;
           onRemoteUpdateRef?.current?.();
         } catch {
@@ -163,7 +166,7 @@ export function useNoteSync({
       wsRef.current = null;
       setConnected(false);
     };
-  }, [enabled, noteId, onRemoteUpdateRef]);
+  }, [enabled, fileId, onRemoteUpdateRef]);
 
-  return { connected, broadcastNoteUpdate };
+  return { connected, broadcastFileUpdate };
 }

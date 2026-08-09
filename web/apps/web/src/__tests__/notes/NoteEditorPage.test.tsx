@@ -101,10 +101,10 @@ vi.mock('@neutrino/ui', () => ({
 }));
 
 // Live-update relay — stubbed out here so these tests make no socket/token
-// calls. Its behaviour is covered by useNoteSync.test.ts and
+// calls. Its behaviour is covered by useFileSync.test.ts and
 // NoteEditorLiveSync.test.tsx.
-vi.mock('@/hooks/useNoteSync', () => ({
-  useNoteSync: () => ({ connected: true, broadcastNoteUpdate: vi.fn() }),
+vi.mock('@/hooks/useFileSync', () => ({
+  useFileSync: () => ({ connected: true, broadcastFileUpdate: vi.fn() }),
 }));
 
 // BlockEditor is a large component — stub it and capture the `allNotes` prop

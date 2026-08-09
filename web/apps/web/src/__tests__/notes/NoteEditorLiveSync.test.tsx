@@ -66,15 +66,15 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
 
 // The relay is stubbed so tests can deliver a remote signal directly and
 // observe what the editor broadcasts. (The socket itself is covered by
-// useNoteSync.test.ts.)
-const broadcastNoteUpdateMock = vi.fn();
+// useFileSync.test.ts.)
+const broadcastFileUpdateMock = vi.fn();
 let syncConnected = true;
 let remoteUpdateRef: { current: (() => void) | null } = { current: null };
 
-vi.mock('@/hooks/useNoteSync', () => ({
-  useNoteSync: ({ onRemoteUpdateRef }: { onRemoteUpdateRef?: { current: (() => void) | null } }) => {
+vi.mock('@/hooks/useFileSync', () => ({
+  useFileSync: ({ onRemoteUpdateRef }: { onRemoteUpdateRef?: { current: (() => void) | null } }) => {
     if (onRemoteUpdateRef) remoteUpdateRef = onRemoteUpdateRef;
-    return { connected: syncConnected, broadcastNoteUpdate: broadcastNoteUpdateMock };
+    return { connected: syncConnected, broadcastFileUpdate: broadcastFileUpdateMock };
   },
 }));
 
@@ -278,7 +278,7 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     await settle();
 
     expect(saveNoteMock).toHaveBeenCalledTimes(1);
-    expect(broadcastNoteUpdateMock).toHaveBeenCalledTimes(1);
+    expect(broadcastFileUpdateMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps keystrokes typed while a save was in flight', async () => {

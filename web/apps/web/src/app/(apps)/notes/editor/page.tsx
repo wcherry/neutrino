@@ -12,7 +12,7 @@ import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
-import { useNoteSync } from '@/hooks/useNoteSync';
+import { useFileSync } from '@/hooks/useFileSync';
 import BlockEditor, { Block, parseBlocks, serializeBlocks } from './BlockEditor';
 import { extractWikiLinkTitles } from './blockEditorHelpers';
 import styles from './page.module.css';
@@ -69,8 +69,8 @@ export default function NoteEditorPage() {
     queryClient.invalidateQueries({ queryKey: ['note-content', noteId] });
   };
 
-  const { connected, broadcastNoteUpdate } = useNoteSync({
-    noteId,
+  const { connected, broadcastFileUpdate } = useFileSync({
+    fileId: noteId,
     enabled: !!noteId,
     onRemoteUpdateRef,
   });
@@ -254,7 +254,7 @@ export default function NoteEditorPage() {
           updatedAt: new Date(meta.updatedAt).getTime(),
         });
         // Tell anyone else viewing this note to re-read it.
-        broadcastNoteUpdate();
+        broadcastFileUpdate();
       } catch (err) {
         setSaveStatus('error');
         // Another device saved this note while we were editing. Overwriting it
@@ -269,7 +269,7 @@ export default function NoteEditorPage() {
         savingRef.current = false;
       }
     },
-    [noteId, queryClient, dekRef, broadcastNoteUpdate, currentUser?.id, versionGuard, toast]
+    [noteId, queryClient, dekRef, broadcastFileUpdate, currentUser?.id, versionGuard, toast]
   );
 
   function scheduleAutosave(nextBlocks: Block[], nextTitle: string) {
