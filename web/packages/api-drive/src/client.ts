@@ -5,7 +5,10 @@ import { request, buildQuery, ApiClientError, BASE_URL,
 import type { PaginatedResponse } from '@neutrino/api-core';
 import type {
   FileItem,
+  FileInfo,
+  CreateFileRequest,
   FileListQuery,
+  DriveFileType,
   QuotaInfo,
   FileVersionItem,
   ListVersionsResponse,
@@ -20,6 +23,7 @@ import type {
   BulkDeleteRequest,
   Shortcut,
   ShortcutCreateRequest,
+  ShortcutListResponse,
   Permission,
   ListPermissionsResponse,
   GrantPermissionRequest,
@@ -113,6 +117,19 @@ export const storageApi = {
     return request<FileItem>(`/api/v1/drive/files/${fileId}/metadata`);
   },
 
+  /** Permission-checked file metadata — works for any file the caller can access, not just ones they own. */
+  async getFileInfo(fileId: string): Promise<FileInfo> {
+    return request<FileInfo>(`/api/v1/drive/files/${fileId}/info`);
+  },
+
+  /** Create an empty file record (no content yet) with a client-generated id. */
+  async createFile(body: CreateFileRequest): Promise<FileInfo> {
+    return request<FileInfo>('/api/v1/drive/files', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
   getFileDownloadUrl(fileId: string): string {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : '';
     return `${BASE_URL}/api/v1/drive/files/${fileId}?token=${token ?? ''}`;
@@ -177,19 +194,26 @@ export const storageApi = {
 // ---------------------------------------------------------------------------
 
 export const filesystemApi = {
-  async getStarred(limit = 5): Promise<StarredContentsResponse> {
-    return request<StarredContentsResponse>(`/api/v1/drive/starred?limit=${limit}`);
+  async getStarred(limit = 5, type?: DriveFileType): Promise<StarredContentsResponse> {
+    const qs = buildQuery({ limit, type });
+    return request<StarredContentsResponse>(`/api/v1/drive/starred${qs}`);
   },
 
-  async getRootContents(query: FileListQuery = {}): Promise<FolderContentsResponse> {
-    const { limit = 200, offset = 0, orderBy, direction, view, type } = query;
-    const qs = buildQuery({ limit, offset, orderBy, direction, view, type });
-    return request<FolderContentsResponse>(`/api/v1/drive${qs}`);
+  /** Most recently modified files, across the whole drive. */
+  async getRecent(query: FileListQuery = {}): Promise<FolderContentsResponse> {
+    const { limit = 50, type } = query;
+    const qs = buildQuery({ limit, type });
+    return request<FolderContentsResponse>(`/api/v1/drive/recent${qs}`);
   },
 
+  /**
+   * A folder's contents. `folderId` must be a real folder id, or the caller's
+   * own user id (see `authApi.getProfile`/`useUser`) to list the drive root —
+   * a user's root folder has no id of its own.
+   */
   async getFolderContents(folderId: string, query: FileListQuery = {}): Promise<FolderContentsResponse> {
-    const { limit = 200, offset = 0, orderBy, direction } = query;
-    const qs = buildQuery({ limit, offset, orderBy, direction });
+    const { limit = 200, offset = 0, orderBy, direction, type } = query;
+    const qs = buildQuery({ limit, offset, orderBy, direction, type });
     return request<FolderContentsResponse>(`/api/v1/drive/folders/${folderId}${qs}`);
   },
 
@@ -265,6 +289,11 @@ export const filesystemApi = {
 
   async deleteShortcut(shortcutId: string): Promise<void> {
     return request<void>(`/api/v1/drive/shortcuts/${shortcutId}`, { method: 'DELETE' });
+  },
+
+  /** All of the caller's shortcuts, anywhere in the drive. */
+  async listShortcuts(): Promise<ShortcutListResponse> {
+    return request<ShortcutListResponse>('/api/v1/drive/shortcuts');
   },
 };
 

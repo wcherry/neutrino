@@ -64,11 +64,8 @@ vi.mock('@/lib/api', () => ({
     getFileDownloadUrl: vi.fn(() => 'https://example.com/file'),
   },
   filesystemApi: {
-    getRootContents: vi.fn(() =>
-      Promise.resolve({ folder: null, folders: [], files: [], shortcuts: [] })
-    ),
     getFolderContents: vi.fn(() =>
-      Promise.resolve({ folder: null, folders: [], files: [], shortcuts: [] })
+      Promise.resolve({ folder: null, folders: [], files: [] })
     ),
     getStarred: vi.fn(() => Promise.resolve({ folders: [], files: [] })),
     createFolder: vi.fn(),

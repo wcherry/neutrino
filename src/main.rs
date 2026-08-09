@@ -23,7 +23,6 @@ mod drawing;
 mod drive;
 mod jobs;
 mod links;
-mod notes;
 mod oauth;
 mod photos;
 mod schema;
@@ -586,26 +585,19 @@ async fn main() -> std::io::Result<()> {
     let docs_collab_repo = web::Data::new(Arc::new(CollabRepository::new(pool.clone())));
     let docs_collab_state = web::Data::new(Arc::new(CollabState::new()));
 
-    // ── Notes service ─────────────────────────────────────────────────────────
+    // ── Shared file events (WS "this file changed" relay) ───────────────────────
+    // Was three copies of this exact primitive (notes/sheets/slides presence);
+    // this is the one shared instance. Notes is the only caller so far — see
+    // agent_docs/notes-links-roadmap.md Phase 2.
 
-    use notes::repository::NotesRepository;
-    use notes::service::NotesService;
-
-    let drive_client_for_notes = Arc::new(DriveClient::new(
+    let drive_client_for_file_events = Arc::new(DriveClient::new(
         drive_storage_service.clone(),
         drive_permissions_service.clone(),
         drive_fs_repo.clone(),
     ));
-    let notes_repo = Arc::new(NotesRepository::new(pool.clone()));
-    let notes_service = Arc::new(NotesService::new(
-        notes_repo,
-        drive_client_for_notes,
-        config.drive_base_url.clone(),
-    ));
-    let notes_state = web::Data::new(notes::api::NotesApiState { notes_service });
-
-    let notes_presence_state =
-        web::Data::new(Arc::new(notes::presence::state::NotePresenceState::new()));
+    let file_events_state =
+        web::Data::new(Arc::new(shared::file_events::state::FileEventsState::new()));
+    let file_events_drive_data = web::Data::new(drive_client_for_file_events);
 
     // ── Links service ─────────────────────────────────────────────────────────
 
@@ -928,8 +920,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::suggestions::api::DriveSuggestionsApiDoc::openapi());
         doc.merge(drive::tags::api::TagsApiDoc::openapi());
         doc.merge(drive::workspace::api::WorkspaceApiDoc::openapi());
-        doc.merge(notes::api::NotesApiDoc::openapi());
-        doc.merge(notes::presence::api::NotesPresenceApiDoc::openapi());
+        doc.merge(shared::file_events::api::FileEventsApiDoc::openapi());
         doc.merge(links::api::LinksApiDoc::openapi());
         doc.merge(photos::albums::api::AlbumsApiDoc::openapi());
         doc.merge(photos::faces::api::FacesApiDoc::openapi());
@@ -1003,9 +994,9 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_admin_state.clone())
             .app_data(drive_feature_flags_state.clone())
             .app_data(drive_fonts_state.clone())
-            // Notes
-            .app_data(notes_state.clone())
-            .app_data(notes_presence_state.clone())
+            // File events (shared)
+            .app_data(file_events_state.clone())
+            .app_data(file_events_drive_data.clone())
             // Links
             .app_data(links_state.clone())
             // Photos
@@ -1080,9 +1071,8 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         web::scope("/internal").configure(drive::service_registry::api::configure),
                     )
-                    // Notes
-                    .configure(notes::api::configure)
-                    .configure(notes::presence::api::configure)
+                    // File events (shared)
+                    .configure(shared::file_events::api::configure)
                     // Links
                     .configure(links::api::configure)
                     // Photos

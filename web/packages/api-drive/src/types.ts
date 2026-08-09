@@ -19,7 +19,39 @@ export interface FileItem {
   contentVersion: number;
 }
 
-export type DriveView = 'recent' | 'starred' | 'trash';
+/**
+ * File metadata with the caller's permission role, returned by
+ * `GET /files/{id}/info`. Unlike `FileItem` (which `storageApi.listFiles`/
+ * `getFileMetadata` return, owner-scoped only), this endpoint is
+ * permission-checked — it works for any file the caller has been granted a
+ * role on, not just ones they own.
+ */
+export interface FileInfo {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  folderId: string | null;
+  deletedAt: string | null;
+  yourRole: string;
+  storagePath: string | null;
+  mimeType: string | null;
+  createdAt: string;
+  updatedAt: string;
+  coverThumbnail: string | null;
+  coverThumbnailMimeType: string | null;
+  tags: string[];
+  encryptedMetadata: string | null;
+  /** Server-side content revision counter, incremented on every autosave/version save. */
+  contentVersion: number;
+}
+
+export interface CreateFileRequest {
+  /** Client-generated id (e.g. `crypto.randomUUID()`) for the new file. */
+  id: string;
+  name: string;
+  mimeType: string;
+  folderId?: string | null;
+}
 
 /** Filter drive contents to a single kind of file, matched by MIME type. */
 export type DriveFileType =
@@ -39,8 +71,7 @@ export interface FileListQuery {
   offset?: number;
   orderBy?: 'name' | 'size' | 'createdAt' | 'updatedAt';
   direction?: 'asc' | 'desc';
-  view?: DriveView;
-  /** List only files of this type across the whole drive. */
+  /** List only files of this type within the folder being listed. */
   type?: DriveFileType;
 }
 
@@ -104,7 +135,6 @@ export interface FolderContentsResponse {
   folder: Folder | null;
   folders: Folder[];
   files: FileItem[];
-  shortcuts: unknown[];
 }
 
 export interface StarredContentsResponse {
@@ -143,17 +173,19 @@ export interface BulkDeleteRequest {
 
 export interface Shortcut {
   id: string;
-  userId: string;
-  name: string;
-  targetId: string;
-  targetType: 'file' | 'folder';
+  targetFileId: string;
+  /** Containing folder; null for a shortcut at the drive root. */
+  folderId: string | null;
   createdAt: string;
 }
 
 export interface ShortcutCreateRequest {
-  targetId: string;
-  targetType: 'file' | 'folder';
-  name?: string;
+  targetFileId: string;
+  folderId?: string;
+}
+
+export interface ShortcutListResponse {
+  shortcuts: Shortcut[];
 }
 
 // ---------------------------------------------------------------------------

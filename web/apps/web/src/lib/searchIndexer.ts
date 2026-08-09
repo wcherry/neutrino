@@ -22,15 +22,14 @@ import {
   extractDiagramText,
   extractDocText,
   extractDrawingText,
-  extractNoteText,
   extractSheetText,
   extractSlideText,
-  notesApi,
   sheetsApi,
   slidesApi,
   storageApi,
   type FileItem,
 } from '@/lib/api';
+import { extractNoteText, listAllNotes } from '@/lib/noteFiles';
 import { readDocumentText } from '@/lib/documentContent';
 import {
   DIAGRAM_MIME,
@@ -151,7 +150,7 @@ interface DocumentSource {
 }
 
 const DOCUMENT_SOURCES: DocumentSource[] = [
-  { type: 'note', list: async () => (await notesApi.listNotes()).notes, extract: extractNoteText },
+  { type: 'note', list: listAllNotes, extract: extractNoteText },
   { type: 'document', list: async () => (await docsApi.listDocs()).docs, extract: extractDocText },
   { type: 'spreadsheet', list: async () => (await sheetsApi.listSheets()).sheets, extract: extractSheetText },
   { type: 'slide', list: async () => (await slidesApi.listSlides()).slides, extract: extractSlideText },

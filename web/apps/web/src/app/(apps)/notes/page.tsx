@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, Heading, useToast } from '@neutrino/ui';
 import { FilePlus, NotebookPen, Pencil, Link, Trash2 } from 'lucide-react';
-import { notesApi } from '@/lib/api';
-import { filesystemApi, type FileItem } from '@neutrino/api-drive';
+import { createNote, listAllNotes, type NoteMeta } from '@/lib/noteFiles';
+import { filesystemApi, storageApi } from '@neutrino/api-drive';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal } from '@/components/DocumentPreviewModal';
 import styles from './page.module.css';
@@ -20,10 +20,10 @@ function formatDate(iso: string): string {
   });
 }
 
-function noteToGridItem(note: FileItem): GridItem {
+function noteToGridItem(note: NoteMeta): GridItem {
   return {
     id: note.id,
-    name: note.name,
+    name: note.title,
     kind: 'doc',
     icon: NotebookPen,
     iconColor: 'var(--color-orange, #ea580c)',
@@ -145,17 +145,17 @@ export default function NotesPage() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['notes'],
-    queryFn: () => filesystemApi.getRootContents({ type: 'note', orderBy: 'createdAt', direction: 'desc' }),
+    queryFn: () => listAllNotes(),
   });
 
-  const createNote = useMutation({
-    mutationFn: () => notesApi.createNote({ title: 'Untitled note' }),
+  const createNoteMutation = useMutation({
+    mutationFn: () => createNote('Untitled note'),
     onSuccess: (note) => router.push(`/notes/editor?id=${note.id}`),
   });
 
   const renameMutation = useMutation({
     mutationFn: ({ id, title }: { id: string; title: string }) =>
-      notesApi.saveNote(id, { title }),
+      filesystemApi.updateFile(id, { name: title }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
       toast.success('Note renamed');
@@ -165,7 +165,7 @@ export default function NotesPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => notesApi.deleteNote(id),
+    mutationFn: (id: string) => storageApi.deleteFile(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notes'] });
       toast.success('Note deleted');
@@ -196,14 +196,14 @@ export default function NotesPage() {
     renameMutation.mutate({ id: renaming.id, title: trimmed });
   }
 
-  const notes = data?.files ?? [];
+  const notes = [...(data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const gridItems: GridItem[] = notes.map(noteToGridItem);
 
   return (
     <div className={styles.page}>
       <div className={styles.header}>
         <Heading level={1} size="xl">Notes</Heading>
-        <Button onClick={() => createNote.mutate()} disabled={createNote.isPending} icon={<FilePlus size={16} />}>
+        <Button onClick={() => createNoteMutation.mutate()} disabled={createNoteMutation.isPending} icon={<FilePlus size={16} />}>
           New Note
         </Button>
       </div>
@@ -218,7 +218,7 @@ export default function NotesPage() {
             title="No notes yet"
             description="Create a new note to get started."
             action={
-              <Button onClick={() => createNote.mutate()} disabled={createNote.isPending} icon={<FilePlus size={16} />}>
+              <Button onClick={() => createNoteMutation.mutate()} disabled={createNoteMutation.isPending} icon={<FilePlus size={16} />}>
                 New Note
               </Button>
             }

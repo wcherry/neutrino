@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import type { NoteMetaResponse } from '@/lib/api';
 import type { Block, BlockType, BlockEditorProps, FocusRequest } from './blockEditorTypes';
 import { caretIndexForColumn, genId } from './blockEditorHelpers';
 import BlockRow from './BlockRow';

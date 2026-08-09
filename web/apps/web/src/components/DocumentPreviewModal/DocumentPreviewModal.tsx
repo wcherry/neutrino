@@ -22,7 +22,6 @@ import {
   docsApi,
   sheetsApi,
   slidesApi,
-  notesApi,
   diagramsApi,
   drawingApi,
   storageApi,
@@ -460,15 +459,15 @@ function NotePreview({ id }: { id: string }) {
 
   const { data: note, isLoading: metaLoading, isError: metaIsError } = useQuery({
     queryKey: ['note', id],
-    queryFn: () => notesApi.getNote(id),
+    queryFn: () => storageApi.getFileInfo(id),
     staleTime: 0,
     enabled: !!id,
   });
 
   const { data: content, isLoading: contentLoading, isError: contentIsError } = useQuery({
-    queryKey: ['note-content-preview', id, dekResolved, note?.contentUrl ?? ''],
+    queryKey: ['note-content-preview', id, dekResolved, !!note],
     queryFn: async () => {
-      if (!note?.contentUrl) return null;
+      if (!note) return null;
       if (dekRef.current && !isNewEncryption) {
         try {
           await initSodium();
@@ -489,13 +488,13 @@ function NotePreview({ id }: { id: string }) {
           // raw content rather than crashing the preview.
         }
       }
-      return driveReadContent(note.contentUrl);
+      return driveReadContent(`/api/v1/drive/files/${id}`);
     },
-    enabled: !!note?.contentUrl && dekResolved,
+    enabled: !!note && dekResolved,
     staleTime: 0,
   });
 
-  const isLoading = metaLoading || (!!note?.contentUrl && contentLoading);
+  const isLoading = metaLoading || (!!note && contentLoading);
 
   if (isLoading) {
     return (

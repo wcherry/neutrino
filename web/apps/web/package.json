@@ -24,7 +24,6 @@
     "@neutrino/api-drawing": "workspace:*",
     "@neutrino/api-drive": "workspace:*",
     "@neutrino/api-links": "workspace:*",
-    "@neutrino/api-notes": "workspace:*",
     "@neutrino/api-photos": "workspace:*",
     "@neutrino/api-search": "workspace:*",
     "@neutrino/api-sheets": "workspace:*",

@@ -232,11 +232,15 @@ function DriveContent() {
   });
 
   const { data: contentsData, isLoading, isError } = useQuery({
-    queryKey: ['contents', currentFolderId, { orderBy: sortBy, direction: sortDir }],
+    queryKey: ['contents', currentFolderId, currentUser?.id, { orderBy: sortBy, direction: sortDir }],
     queryFn: () =>
-      currentFolderId
-        ? filesystemApi.getFolderContents(currentFolderId, { limit: 200, offset: 0, orderBy: sortBy, direction: sortDir })
-        : filesystemApi.getRootContents({ limit: 200, offset: 0, orderBy: sortBy, direction: sortDir }),
+      filesystemApi.getFolderContents(currentFolderId ?? currentUser!.id, {
+        limit: 200,
+        offset: 0,
+        orderBy: sortBy,
+        direction: sortDir,
+      }),
+    enabled: !!currentFolderId || !!currentUser,
   });
 
   const folders: FolderItem[] = contentsData?.folders ?? [];

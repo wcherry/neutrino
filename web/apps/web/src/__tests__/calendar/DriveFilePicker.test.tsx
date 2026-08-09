@@ -21,6 +21,12 @@ import { DriveFilePicker } from '../../app/(apps)/calendar/DriveFilePicker';
 // Mocks
 // ---------------------------------------------------------------------------
 
+const CURRENT_USER_ID = 'user-1';
+
+vi.mock('@neutrino/auth', () => ({
+  useUser: () => ({ id: CURRENT_USER_ID }),
+}));
+
 const mockRootContents = {
   folder: null,
   folders: [
@@ -60,7 +66,6 @@ const mockRootContents = {
       coverThumbnailMimeType: null,
     },
   ],
-  shortcuts: [],
 };
 
 const mockFolderContents = {
@@ -88,15 +93,17 @@ const mockFolderContents = {
       coverThumbnailMimeType: null,
     },
   ],
-  shortcuts: [],
 };
 
-const mockGetRootContents = vi.fn((_query?: unknown) => Promise.resolve(mockRootContents));
-const mockGetFolderContents = vi.fn((_id?: unknown, _query?: unknown) => Promise.resolve(mockFolderContents));
+// The picker calls `getFolderContents` for both the root (id === the
+// caller's own user id, see `useUser`/`GET /auth/me`) and real folders —
+// there is no separate root-listing call any more.
+const mockGetFolderContents = vi.fn((id?: unknown, _query?: unknown) =>
+  Promise.resolve(id === CURRENT_USER_ID ? mockRootContents : mockFolderContents)
+);
 
 vi.mock('@neutrino/api-drive', () => ({
   filesystemApi: {
-    getRootContents: (query: any) => mockGetRootContents(query),
     getFolderContents: (id: any, query: any) => mockGetFolderContents(id, query),
   },
 }));
@@ -135,8 +142,14 @@ function renderPicker(props: { onSelect?: (f: { id: string; name: string }) => v
 describe('DriveFilePicker', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetRootContents.mockResolvedValue(mockRootContents);
-    mockGetFolderContents.mockResolvedValue(mockFolderContents);
+    // clearAllMocks() clears call history but NOT a `mockReturnValue`/
+    // `mockResolvedValue` override left by a previous test (that needs
+    // mockReset()) — re-arm the id-dispatching default explicitly so one
+    // test's override (e.g. the loading-indicator test below) can't leak
+    // into the next.
+    mockGetFolderContents.mockImplementation((id?: unknown) =>
+      Promise.resolve(id === CURRENT_USER_ID ? mockRootContents : mockFolderContents)
+    );
   });
 
   it('renders file and folder names from root Drive contents', async () => {
@@ -150,7 +163,7 @@ describe('DriveFilePicker', () => {
 
   it('shows a loading indicator while files are being fetched', async () => {
     // Never-resolving promise to hold loading state
-    mockGetRootContents.mockReturnValue(new Promise(() => {}));
+    mockGetFolderContents.mockReturnValue(new Promise(() => {}));
     renderPicker();
     expect(screen.getByTestId('drive-picker-loading')).toBeInTheDocument();
   });

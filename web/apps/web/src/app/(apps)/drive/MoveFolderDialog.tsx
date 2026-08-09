@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Modal, ModalHeader, ModalBody, Button, Text, Spinner } from '@neutrino/ui';
 import { Folder, ChevronRight, Home } from 'lucide-react';
-import { filesystemApi, type Folder as FolderItem } from '@/lib/api';
+import { filesystemApi, useUser, type Folder as FolderItem } from '@/lib/api';
 import styles from './MoveFolderDialog.module.css';
 
 interface Props {
@@ -21,15 +21,20 @@ interface BreadcrumbEntry {
 }
 
 export function MoveFolderDialog({ itemName, currentFolderId, onMove, onClose, isPending }: Props) {
+  const currentUser = useUser();
   const [browseFolderId, setBrowseFolderId] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([{ id: null, name: 'My Drive' }]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['move-folder-browse', browseFolderId],
+    queryKey: ['move-folder-browse', browseFolderId, currentUser?.id],
     queryFn: () =>
-      browseFolderId
-        ? filesystemApi.getFolderContents(browseFolderId, { limit: 200, offset: 0, orderBy: 'name', direction: 'asc' })
-        : filesystemApi.getRootContents({ limit: 200, offset: 0, orderBy: 'name', direction: 'asc' }),
+      filesystemApi.getFolderContents(browseFolderId ?? currentUser!.id, {
+        limit: 200,
+        offset: 0,
+        orderBy: 'name',
+        direction: 'asc',
+      }),
+    enabled: !!browseFolderId || !!currentUser,
   });
 
   const folders: FolderItem[] = data?.folders ?? [];

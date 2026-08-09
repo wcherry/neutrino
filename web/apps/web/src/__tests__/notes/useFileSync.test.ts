@@ -1,7 +1,7 @@
 /**
- * Tests for useNoteSync — the note live-update relay client.
+ * Tests for useFileSync — the file live-update relay client.
  *
- * The relay carries a signal only ("this note changed"), never note content,
+ * The relay carries a signal only ("this file changed"), never file content,
  * so these tests assert the wire format, the self-echo guard, and that a
  * remote signal reaches the caller's handler.
  */
@@ -14,9 +14,9 @@ vi.mock('@neutrino/api-core', () => ({
   refreshTokensOnce: vi.fn(async () => true),
 }));
 
-import { useNoteSync } from '@/hooks/useNoteSync';
+import { useFileSync } from '@/hooks/useFileSync';
 
-const NOTE_ID = 'note-1';
+const FILE_ID = 'file-1';
 
 // ---------------------------------------------------------------------------
 // Fake WebSocket
@@ -59,7 +59,7 @@ class FakeWebSocket {
 function encodeSignal(clientId: string): Uint8Array {
   const payload = new TextEncoder().encode(JSON.stringify({ clientId }));
   const buf = new Uint8Array(payload.length + 1);
-  buf[0] = 2; // MSG_NOTE_UPDATED
+  buf[0] = 2; // MSG_FILE_UPDATED
   buf.set(payload, 1);
   return buf;
 }
@@ -77,7 +77,7 @@ function makeUnexpiredToken(): string {
 async function connectHook() {
   const onRemoteUpdateRef = { current: vi.fn() as (() => void) | null };
   const hook = renderHook(() =>
-    useNoteSync({ noteId: NOTE_ID, onRemoteUpdateRef })
+    useFileSync({ fileId: FILE_ID, onRemoteUpdateRef })
   );
 
   await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
@@ -102,12 +102,12 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('useNoteSync', () => {
-  it('connects to the note relay with the access token', async () => {
+describe('useFileSync', () => {
+  it('connects to the file relay with the access token', async () => {
     const token = localStorage.getItem('access_token') as string;
     const { ws } = await connectHook();
 
-    expect(ws.url).toContain(`/api/v1/notes/${NOTE_ID}/ws`);
+    expect(ws.url).toContain(`/api/v1/files/${FILE_ID}/ws`);
     expect(ws.url).toContain(`token=${encodeURIComponent(token)}`);
   });
 
@@ -120,12 +120,12 @@ describe('useNoteSync', () => {
   it('broadcasts a content-free update signal', async () => {
     const { hook, ws } = await connectHook();
 
-    act(() => hook.result.current.broadcastNoteUpdate());
+    act(() => hook.result.current.broadcastFileUpdate());
 
     expect(ws.sent).toHaveLength(1);
     const { type, payload } = decodeSignal(ws.sent[0]);
     expect(type).toBe(2);
-    // The signal must carry an identity and nothing else — no note content.
+    // The signal must carry an identity and nothing else — no file content.
     expect(Object.keys(payload)).toEqual(['clientId']);
     expect(typeof payload.clientId).toBe('string');
   });
@@ -141,7 +141,7 @@ describe('useNoteSync', () => {
   it('ignores the echo of its own broadcast', async () => {
     const { hook, ws, handler } = await connectHook();
 
-    act(() => hook.result.current.broadcastNoteUpdate());
+    act(() => hook.result.current.broadcastFileUpdate());
     const ownClientId = decodeSignal(ws.sent[0]).payload.clientId as string;
 
     await act(async () => { ws.receive(encodeSignal(ownClientId)); });
@@ -167,7 +167,7 @@ describe('useNoteSync', () => {
   });
 
   it('does not connect when disabled', async () => {
-    renderHook(() => useNoteSync({ noteId: NOTE_ID, enabled: false }));
+    renderHook(() => useFileSync({ fileId: FILE_ID, enabled: false }));
 
     await new Promise((r) => setTimeout(r, 0));
     expect(FakeWebSocket.instances).toHaveLength(0);

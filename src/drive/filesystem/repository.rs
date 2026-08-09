@@ -700,30 +700,19 @@ impl FilesystemRepository {
         Ok(count > 0)
     }
 
-    pub fn list_shortcuts_in_folder(
-        &self,
-        user_id: &str,
-        folder_id: Option<&str>,
-    ) -> Result<Vec<ShortcutRecord>, ApiError> {
+    /// All of a user's shortcuts, anywhere in the drive.
+    pub fn list_shortcuts(&self, user_id: &str) -> Result<Vec<ShortcutRecord>, ApiError> {
         let mut conn = self.get_conn()?;
 
-        let result = match folder_id {
-            Some(fid) => shortcuts::table
-                .filter(shortcuts::user_id.eq(user_id))
-                .filter(shortcuts::folder_id.eq(fid))
-                .select(ShortcutRecord::as_select())
-                .load(&mut conn),
-            None => shortcuts::table
-                .filter(shortcuts::user_id.eq(user_id))
-                .filter(shortcuts::folder_id.is_null())
-                .select(ShortcutRecord::as_select())
-                .load(&mut conn),
-        };
-
-        result.map_err(|e| {
-            tracing::error!("DB list shortcuts error: {:?}", e);
-            ApiError::internal("Database error")
-        })
+        shortcuts::table
+            .filter(shortcuts::user_id.eq(user_id))
+            .select(ShortcutRecord::as_select())
+            .order(shortcuts::created_at.desc())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list shortcuts error: {:?}", e);
+                ApiError::internal("Database error")
+            })
     }
 
     /// Fetch files by IDs regardless of owner (for shared-with-me view).
@@ -821,29 +810,6 @@ impl FilesystemRepository {
         mime_match
     }
 
-    /// List every non-deleted file for the user whose MIME type matches any of
-    /// the given `LIKE` patterns, across the whole drive.
-    pub fn list_files_by_mime(
-        &self,
-        user_id: &str,
-        patterns: &[&'static str],
-    ) -> Result<Vec<FileRecord>, ApiError> {
-        let mut conn = self.get_conn()?;
-        let mime_match = Self::mime_matches(patterns);
-
-        files::table
-            .filter(files::user_id.eq(user_id))
-            .filter(files::deleted_at.is_null())
-            .filter(mime_match)
-            .select(FileRecord::as_select())
-            .order(files::name.asc())
-            .load(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB list files by mime error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
     // ── Starred (Quick Access) ─────────────────────────────────────────────────
 
     pub fn list_starred_files(&self, user_id: &str) -> Result<Vec<FileRecord>, ApiError> {
@@ -932,6 +898,15 @@ mod tests {
         files.iter().map(|f| f.name.as_str()).collect()
     }
 
+    /// `names`, order-independent. Used against `list_recent_files`, whose
+    /// `updated_at desc` order is unspecified between rows inserted in the
+    /// same instant — unlike the old name-sorted whole-drive type listing.
+    fn sorted_names(files: &[FileRecord]) -> Vec<&str> {
+        let mut n = names(files);
+        n.sort_unstable();
+        n
+    }
+
     fn seed(repo: &FilesystemRepository, user: &str) {
         insert_file(repo, "png", user, "a-photo.png", "image/png");
         insert_file(repo, "jpg", user, "b-photo.jpg", "image/jpeg");
@@ -950,17 +925,21 @@ mod tests {
         );
     }
 
+    /// `list_recent_files` is the only caller left of the SQL mime filter
+    /// (`mime_matches`), so these drive it directly with a limit high enough
+    /// that recency ordering never drops a match — mirroring what
+    /// `list_files_by_mime` used to cover before folder-scoped listings
+    /// replaced the whole-drive type filter.
     #[test]
-    fn photo_matches_only_images_sorted_by_name() {
+    fn photo_matches_only_images() {
         let repo = test_repo();
         seed(&repo, "user-1");
 
         let files = repo
-            .list_files_by_mime("user-1", DriveFileType::Photo.mime_patterns())
+            .list_recent_files("user-1", 100, Some(DriveFileType::Photo.mime_patterns()))
             .unwrap();
 
-        // Both images, and ordered by name (a-photo before b-photo).
-        assert_eq!(names(&files), vec!["a-photo.png", "b-photo.jpg"]);
+        assert_eq!(sorted_names(&files), vec!["a-photo.png", "b-photo.jpg"]);
     }
 
     #[test]
@@ -969,12 +948,12 @@ mod tests {
         seed(&repo, "user-1");
 
         let videos = repo
-            .list_files_by_mime("user-1", DriveFileType::Video.mime_patterns())
+            .list_recent_files("user-1", 100, Some(DriveFileType::Video.mime_patterns()))
             .unwrap();
         assert_eq!(names(&videos), vec!["clip.mp4"]);
 
         let audio = repo
-            .list_files_by_mime("user-1", DriveFileType::Audio.mime_patterns())
+            .list_recent_files("user-1", 100, Some(DriveFileType::Audio.mime_patterns()))
             .unwrap();
         assert_eq!(names(&audio), vec!["song.mp3"]);
     }
@@ -985,11 +964,11 @@ mod tests {
         seed(&repo, "user-1");
 
         let docs = repo
-            .list_files_by_mime("user-1", DriveFileType::Document.mime_patterns())
+            .list_recent_files("user-1", 100, Some(DriveFileType::Document.mime_patterns()))
             .unwrap();
 
         // pdf + text/plain, but not the generic octet-stream blob.
-        assert_eq!(names(&docs), vec!["notes.txt", "report.pdf"]);
+        assert_eq!(sorted_names(&docs), vec!["notes.txt", "report.pdf"]);
     }
 
     #[test]
@@ -999,7 +978,7 @@ mod tests {
         repo.trash_file("png", "user-1").unwrap();
 
         let files = repo
-            .list_files_by_mime("user-1", DriveFileType::Photo.mime_patterns())
+            .list_recent_files("user-1", 100, Some(DriveFileType::Photo.mime_patterns()))
             .unwrap();
         assert_eq!(names(&files), vec!["b-photo.jpg"]);
     }
@@ -1010,12 +989,12 @@ mod tests {
         seed(&repo, "user-1");
 
         let docs = repo
-            .list_files_by_mime("user-1", DriveFileType::Doc.mime_patterns())
+            .list_recent_files("user-1", 100, Some(DriveFileType::Doc.mime_patterns()))
             .unwrap();
         assert_eq!(names(&docs), vec!["my-doc"]);
 
         let sheets = repo
-            .list_files_by_mime("user-1", DriveFileType::Sheet.mime_patterns())
+            .list_recent_files("user-1", 100, Some(DriveFileType::Sheet.mime_patterns()))
             .unwrap();
         assert_eq!(names(&sheets), vec!["my-sheet"]);
     }
@@ -1027,9 +1006,9 @@ mod tests {
         insert_file(&repo, "other", "user-2", "their-photo.png", "image/png");
 
         let files = repo
-            .list_files_by_mime("user-1", DriveFileType::Photo.mime_patterns())
+            .list_recent_files("user-1", 100, Some(DriveFileType::Photo.mime_patterns()))
             .unwrap();
-        assert_eq!(names(&files), vec!["a-photo.png", "b-photo.jpg"]);
+        assert_eq!(sorted_names(&files), vec!["a-photo.png", "b-photo.jpg"]);
     }
 
     // ── Recent, with and without a type filter ────────────────────────────────

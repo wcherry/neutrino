@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Bell, CalendarPlus, FileText, FolderPlus, GitBranch, NotebookPen, Plus, Presentation, Table2, Upload, Paintbrush } from 'lucide-react';
 import { useToast } from '@neutrino/ui';
-import { docsApi, sheetsApi, slidesApi, notesApi, diagramsApi, drawingApi } from '@/lib/api';
+import { docsApi, sheetsApi, slidesApi, diagramsApi, drawingApi } from '@/lib/api';
+import { createNote } from '@/lib/noteFiles';
 import styles from './NewItemFAB.module.css';
 
 const ACTIONS = [
@@ -61,7 +62,7 @@ export function NewItemFAB() {
           break;
         }
         case 'note': {
-          const note = await notesApi.createNote({ title: 'Untitled note' });
+          const note = await createNote('Untitled note');
           router.push(`/notes/editor?id=${note.id}`);
           break;
         }

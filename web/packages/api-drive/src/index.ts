@@ -31,8 +31,9 @@ export {
 
 export type {
   FileItem,
+  FileInfo,
+  CreateFileRequest,
   FileListQuery,
-  DriveView,
   DriveFileType,
   QuotaInfo,
   FileVersionItem,
@@ -49,6 +50,7 @@ export type {
   BulkDeleteRequest,
   Shortcut,
   ShortcutCreateRequest,
+  ShortcutListResponse,
   PermissionRole,
   ResourceType,
   Permission,

@@ -3,8 +3,10 @@ import type { FileItem } from '@neutrino/api-drive';
 
 // API modules are always mocked — no real HTTP in tests.
 vi.mock('@neutrino/api-drive', () => ({
-  filesystemApi: { getRootContents: vi.fn() },
+  filesystemApi: { getFolderContents: vi.fn() },
 }));
+
+const ROOT_ID = 'user-1';
 
 vi.mock('@neutrino/api-core', () => ({
   request: vi.fn(),
@@ -18,13 +20,16 @@ vi.mock('@neutrino/api-core', () => ({
     return '?' + entries.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
   },
   ApiClientError: class ApiClientError extends Error {},
+  // `photosApi` addresses the drive root by the caller's own user id — see
+  // `getCurrentUserId` in `@neutrino/api-core`.
+  getCurrentUserId: () => ROOT_ID,
 }));
 
 import { photosApi } from '../index';
 import { filesystemApi } from '@neutrino/api-drive';
 import { request } from '@neutrino/api-core';
 
-const getRootContents = vi.mocked(filesystemApi.getRootContents);
+const getFolderContents = vi.mocked(filesystemApi.getFolderContents);
 const mockRequest = vi.mocked(request);
 
 function fileItem(overrides: Partial<FileItem> = {}): FileItem {
@@ -44,7 +49,7 @@ function fileItem(overrides: Partial<FileItem> = {}): FileItem {
 }
 
 function rootContents(files: FileItem[]) {
-  return { folder: null, folders: [], files, shortcuts: [] };
+  return { folder: null, folders: [], files };
 }
 
 describe('photosApi.listPhotos', () => {
@@ -53,16 +58,16 @@ describe('photosApi.listPhotos', () => {
   });
 
   it('routes the unfiltered listing to the Drive endpoint via type=photo', async () => {
-    getRootContents.mockResolvedValue(rootContents([fileItem()]));
+    getFolderContents.mockResolvedValue(rootContents([fileItem()]));
 
     await photosApi.listPhotos();
 
-    expect(getRootContents).toHaveBeenCalledWith({ type: 'photo' });
+    expect(getFolderContents).toHaveBeenCalledWith(ROOT_ID, { type: 'photo' });
     expect(mockRequest).not.toHaveBeenCalled();
   });
 
   it('maps Drive FileItems into PhotoResponses', async () => {
-    getRootContents.mockResolvedValue(rootContents([fileItem()]));
+    getFolderContents.mockResolvedValue(rootContents([fileItem()]));
 
     const result = await photosApi.listPhotos();
 
@@ -88,7 +93,7 @@ describe('photosApi.listPhotos', () => {
   });
 
   it('returns an empty list when the drive has no photos', async () => {
-    getRootContents.mockResolvedValue(rootContents([]));
+    getFolderContents.mockResolvedValue(rootContents([]));
 
     const result = await photosApi.listPhotos();
 
@@ -100,7 +105,7 @@ describe('photosApi.listPhotos', () => {
 
     await photosApi.listPhotos({ starredOnly: true });
 
-    expect(getRootContents).not.toHaveBeenCalled();
+    expect(getFolderContents).not.toHaveBeenCalled();
     expect(mockRequest).toHaveBeenCalledWith('/api/v1/photos?starredOnly=true');
   });
 
@@ -109,7 +114,7 @@ describe('photosApi.listPhotos', () => {
 
     await photosApi.listPhotos({ archivedOnly: true });
 
-    expect(getRootContents).not.toHaveBeenCalled();
+    expect(getFolderContents).not.toHaveBeenCalled();
     expect(mockRequest).toHaveBeenCalledWith('/api/v1/photos?archivedOnly=true');
   });
 
@@ -118,18 +123,18 @@ describe('photosApi.listPhotos', () => {
 
     await photosApi.listPhotos({ personIds: ['p1', 'p2'], excludePersonIds: ['p3'] });
 
-    expect(getRootContents).not.toHaveBeenCalled();
+    expect(getFolderContents).not.toHaveBeenCalled();
     expect(mockRequest).toHaveBeenCalledWith(
       '/api/v1/photos?personIds=p1%2Cp2&excludePersonIds=p3',
     );
   });
 
   it('treats empty person-id arrays as unfiltered and uses Drive', async () => {
-    getRootContents.mockResolvedValue(rootContents([]));
+    getFolderContents.mockResolvedValue(rootContents([]));
 
     await photosApi.listPhotos({ personIds: [], excludePersonIds: [] });
 
-    expect(getRootContents).toHaveBeenCalledWith({ type: 'photo' });
+    expect(getFolderContents).toHaveBeenCalledWith(ROOT_ID, { type: 'photo' });
     expect(mockRequest).not.toHaveBeenCalled();
   });
 });

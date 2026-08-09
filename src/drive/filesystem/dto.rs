@@ -94,16 +94,6 @@ impl From<FileRecord> for FileResponse {
     }
 }
 
-// ── Drive view filter ─────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum DriveView {
-    Recent,
-    Starred,
-    Trash,
-}
-
 /// Filter drive contents to a single kind of file, matched by MIME type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -160,20 +150,22 @@ impl DriveFileType {
     }
 }
 
+/// The folder-contents listing's query: `id == user_id` is the folder route's
+/// root sentinel (see `get_folder_contents`), so this has no separate "whole
+/// drive" mode any more — `type` scopes to whichever folder is being listed.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RootContentsQuery {
+pub struct FolderContentsQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     pub order_by: Option<FolderContentsOrderField>,
     pub direction: Option<crate::shared::OrderDirection>,
-    pub view: Option<DriveView>,
-    /// List only files of this type (e.g. `photo`) across the whole drive.
+    /// List only files of this type (e.g. `photo`) within the folder being listed.
     #[serde(rename = "type")]
     pub file_type: Option<DriveFileType>,
 }
 
-impl RootContentsQuery {
+impl FolderContentsQuery {
     /// The pagination/sort subset, for the services that take a plain list query.
     pub fn list_params(&self) -> ListQueryParams<FolderContentsOrderField> {
         ListQueryParams {
@@ -183,6 +175,16 @@ impl RootContentsQuery {
             direction: self.direction,
         }
     }
+}
+
+/// The recent-files listing's query: whole-drive, sorted by recency, no
+/// pagination beyond `limit`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentQuery {
+    pub limit: Option<i64>,
+    #[serde(rename = "type")]
+    pub file_type: Option<DriveFileType>,
 }
 
 /// The trash listing's query: the usual pagination/sort plus the same `type`
@@ -229,7 +231,6 @@ pub struct FolderContentsResponse {
     pub folder: Option<FolderResponse>,
     pub folders: Vec<FolderResponse>,
     pub files: Vec<FileResponse>,
-    pub shortcuts: Vec<ShortcutResponse>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
@@ -267,6 +268,13 @@ impl From<ShortcutRecord> for ShortcutResponse {
             created_at: s.created_at,
         }
     }
+}
+
+/// All of the caller's shortcuts, anywhere in the drive.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutListResponse {
+    pub shortcuts: Vec<ShortcutResponse>,
 }
 
 // ── Bulk DTOs ─────────────────────────────────────────────────────────────────
@@ -363,21 +371,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn root_query_parses_type_param_as_file_type() {
+    fn folder_query_parses_type_param_as_file_type() {
         // The query key is `type` (renamed) and the value is camelCase.
-        let q: RootContentsQuery = serde_json::from_str(r#"{"type":"photo"}"#).unwrap();
+        let q: FolderContentsQuery = serde_json::from_str(r#"{"type":"photo"}"#).unwrap();
         assert_eq!(q.file_type, Some(DriveFileType::Photo));
     }
 
     #[test]
-    fn root_query_type_is_optional() {
-        let q: RootContentsQuery = serde_json::from_str("{}").unwrap();
+    fn folder_query_type_is_optional() {
+        let q: FolderContentsQuery = serde_json::from_str("{}").unwrap();
         assert_eq!(q.file_type, None);
     }
 
     #[test]
     fn list_params_carries_the_pagination_and_sort_subset() {
-        let q: RootContentsQuery = serde_json::from_str(
+        let q: FolderContentsQuery = serde_json::from_str(
             r#"{"limit":10,"offset":20,"orderBy":"createdAt","direction":"desc"}"#,
         )
         .unwrap();
@@ -389,11 +397,10 @@ mod tests {
     }
 
     #[test]
-    fn list_params_drops_the_whole_drive_filters() {
-        // The folder listing takes the same query type as the root listing but
-        // only honours the subset below; `view`/`type` are drive-wide.
-        let q: RootContentsQuery =
-            serde_json::from_str(r#"{"view":"recent","type":"photo","limit":5}"#).unwrap();
+    fn list_params_drops_the_type_filter() {
+        // `list_params` is the pagination/sort subset; `type` is applied
+        // separately by the caller.
+        let q: FolderContentsQuery = serde_json::from_str(r#"{"type":"photo","limit":5}"#).unwrap();
         let params = q.list_params();
         assert_eq!(params.limit, Some(5));
         assert_eq!(params.order_by, None);
@@ -515,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn root_query_parses_new_native_type_variants() {
+    fn folder_query_parses_new_native_type_variants() {
         for (json_val, expected) in [
             (r#"{"type":"doc"}"#, DriveFileType::Doc),
             (r#"{"type":"sheet"}"#, DriveFileType::Sheet),
@@ -524,7 +531,7 @@ mod tests {
             (r#"{"type":"drawing"}"#, DriveFileType::Drawing),
             (r#"{"type":"note"}"#, DriveFileType::Note),
         ] {
-            let q: RootContentsQuery = serde_json::from_str(json_val).unwrap();
+            let q: FolderContentsQuery = serde_json::from_str(json_val).unwrap();
             assert_eq!(q.file_type, Some(expected));
         }
     }

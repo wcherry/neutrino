@@ -1,21 +1,20 @@
 /**
- * Tests for the Notes list page's TARGET post-refactor behavior (in-progress
- * refactor: dedicated `notesApi.listNotes()` -> generic Drive API's typed
- * listing `filesystemApi.getRootContents({ type: 'note', ... })`).
- *
- * RED PHASE: the implementation on disk (apps/web/src/app/(apps)/notes/page.tsx)
- * still calls `notesApi.listNotes()` today, so these tests are expected to
- * FAIL until a follow-up change swaps the query over to `filesystemApi`.
+ * Tests for the Notes list page's Drive-native listing and mutations (post
+ * Phase 3 of `agent_docs/notes-links-roadmap.md` — the notes CRUD API is
+ * gone; a note is a plain Drive file).
  *
  * Covers:
- *   - `filesystemApi.getRootContents` is called with exactly
- *     `{ type: 'note', orderBy: 'createdAt', direction: 'desc' }`.
- *   - The old `notesApi.listNotes` is NOT called for the listing.
- *   - `FileGrid` receives grid items whose `name` comes from
- *     `FileItem.name` (not the old `NoteMetaResponse.title`).
- *   - `isLoading` / `isError` still pass through to `FileGrid` correctly.
- *   - The create / rename / delete mutations (still on `notesApi`, untouched
- *     by this refactor) keep invalidating the `['notes']` query key.
+ *   - `listAllNotes` (`@/lib/noteFiles`) is called to populate the listing —
+ *     the whole-drive `type=` filter it used to reach via
+ *     `filesystemApi.getRootContents` was removed with the root listing
+ *     route (folder listings are folder-scoped only now), so the page
+ *     switched to the same whole-drive helper the note editor's backlink
+ *     picker already used.
+ *   - `FileGrid` receives grid items whose `name` comes from `NoteMeta.title`.
+ *   - `isLoading` / `isError` pass through to `FileGrid` correctly.
+ *   - Create goes through `createNote` (`@/lib/noteFiles`); rename through
+ *     `filesystemApi.updateFile`; delete through `storageApi.deleteFile`
+ *     (trash) — each invalidating the `['notes']` query on success.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -31,33 +30,23 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
-// `@/lib/api` — houses `notesApi`, still used for create/rename/delete.
-// Rename no longer calls `getNote` (content is optional on save now — a pure
-// rename doesn't need to fetch/preserve it), so there's no mock for it here.
-const listNotesMock = vi.fn();
 const createNoteMock = vi.fn();
-const getNoteMock = vi.fn();
-const saveNoteMock = vi.fn();
-const deleteNoteMock = vi.fn();
+const listAllNotesMock = vi.fn();
 
-vi.mock('@/lib/api', () => ({
-  notesApi: {
-    listNotes: (...args: unknown[]) => listNotesMock(...args),
-    createNote: (...args: unknown[]) => createNoteMock(...args),
-    getNote: (...args: unknown[]) => getNoteMock(...args),
-    saveNote: (...args: unknown[]) => saveNoteMock(...args),
-    deleteNote: (...args: unknown[]) => deleteNoteMock(...args),
-  },
+vi.mock('@/lib/noteFiles', () => ({
+  createNote: (...args: unknown[]) => createNoteMock(...args),
+  listAllNotes: (...args: unknown[]) => listAllNotesMock(...args),
 }));
 
-// `@neutrino/api-drive` — separate module specifier from `@/lib/api`; the
-// refactor imports `filesystemApi` directly from here, per repo convention
-// for new code (see web/CLAUDE.md).
-const getRootContentsMock = vi.fn();
+const updateFileMock = vi.fn();
+const deleteFileMock = vi.fn();
 
 vi.mock('@neutrino/api-drive', () => ({
   filesystemApi: {
-    getRootContents: (...args: unknown[]) => getRootContentsMock(...args),
+    updateFile: (...args: unknown[]) => updateFileMock(...args),
+  },
+  storageApi: {
+    deleteFile: (...args: unknown[]) => deleteFileMock(...args),
   },
 }));
 
@@ -108,19 +97,12 @@ vi.mock('../../app/(apps)/drive/FileContextMenu.module.css', () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeFileItem(overrides: Partial<Record<string, unknown>> = {}) {
+function makeNoteMeta(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: '1',
-    name: 'My Note',
-    sizeBytes: 0,
-    mimeType: 'text/plain',
-    folderId: null,
-    isStarred: false,
+    title: 'My Note',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
-    coverThumbnail: null,
-    coverThumbnailMimeType: null,
-    contentVersion: 1,
     ...overrides,
   };
 }
@@ -162,67 +144,41 @@ function fakeMenuEvent() {
 beforeEach(() => {
   vi.clearAllMocks();
   fileGridProps.length = 0;
-  getRootContentsMock.mockResolvedValue({ folder: null, folders: [], files: [], shortcuts: [] });
-  listNotesMock.mockResolvedValue({ notes: [] });
+  listAllNotesMock.mockResolvedValue([]);
   createNoteMock.mockResolvedValue({
     id: 'new-note',
-    title: 'Untitled note',
-    contentUrl: '/api/v1/drive/files/new-note',
+    name: 'Untitled note',
     folderId: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    contentVersion: 1,
   });
-  getNoteMock.mockResolvedValue({
+  updateFileMock.mockResolvedValue({
     id: '1',
-    title: 'My Note',
-    contentUrl: '/api/v1/drive/files/1',
+    name: 'Renamed',
     folderId: null,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   });
-  saveNoteMock.mockResolvedValue({
-    id: '1',
-    title: 'Renamed',
-    folderId: null,
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
-  });
-  deleteNoteMock.mockResolvedValue(undefined);
+  deleteFileMock.mockResolvedValue(undefined);
 });
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('NotesPage — listing query (Drive API refactor)', () => {
-  it('calls filesystemApi.getRootContents with exactly { type: "note", orderBy: "createdAt", direction: "desc" }', async () => {
+describe('NotesPage — listing query', () => {
+  it('calls listAllNotes to populate the listing', async () => {
     await renderNotesPage();
 
-    await waitFor(() => expect(getRootContentsMock).toHaveBeenCalled());
-
-    expect(getRootContentsMock).toHaveBeenCalledTimes(1);
-    expect(getRootContentsMock).toHaveBeenCalledWith({
-      type: 'note',
-      orderBy: 'createdAt',
-      direction: 'desc',
-    });
+    await waitFor(() => expect(listAllNotesMock).toHaveBeenCalled());
+    expect(listAllNotesMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT call the old notesApi.listNotes for the listing', async () => {
-    await renderNotesPage();
-
-    await waitFor(() => expect(getRootContentsMock).toHaveBeenCalled());
-
-    expect(listNotesMock).not.toHaveBeenCalled();
-  });
-
-  it('maps FileItem.name (not NoteMetaResponse.title) onto the grid item name', async () => {
-    getRootContentsMock.mockResolvedValue({
-      folder: null,
-      folders: [],
-      files: [makeFileItem({ id: '1', name: 'My Note', updatedAt: '2026-01-01T00:00:00Z' })],
-      shortcuts: [],
-    });
+  it('maps NoteMeta.title onto the grid item name', async () => {
+    listAllNotesMock.mockResolvedValue([
+      makeNoteMeta({ id: '1', title: 'My Note', updatedAt: '2026-01-01T00:00:00Z' }),
+    ]);
 
     await renderNotesPage();
 
@@ -237,7 +193,7 @@ describe('NotesPage — listing query (Drive API refactor)', () => {
   });
 
   it('passes isLoading=true to FileGrid while the query is pending', async () => {
-    getRootContentsMock.mockReturnValue(new Promise(() => {})); // never resolves
+    listAllNotesMock.mockReturnValue(new Promise(() => {})); // never resolves
 
     await renderNotesPage();
 
@@ -246,7 +202,7 @@ describe('NotesPage — listing query (Drive API refactor)', () => {
   });
 
   it('passes isError=true to FileGrid when the query rejects', async () => {
-    getRootContentsMock.mockRejectedValue(new Error('network error'));
+    listAllNotesMock.mockRejectedValue(new Error('network error'));
 
     await renderNotesPage();
 
@@ -256,24 +212,22 @@ describe('NotesPage — listing query (Drive API refactor)', () => {
   });
 });
 
-describe('NotesPage — content mutations (untouched by the listing refactor)', () => {
-  // These exercise notesApi.createNote/getNote/saveNote/deleteNote directly —
-  // behavior the refactor is NOT supposed to touch — via the "New Note"
-  // button (always rendered, independent of listing state) and the
-  // onItemMenuOpen callback captured off the mocked FileGrid (bypassing the
-  // real grid's item rendering, since that depends on the listing query this
-  // refactor changes).
+describe('NotesPage — content mutations', () => {
+  // Exercised via the "New Note" button (always rendered, independent of
+  // listing state) and the onItemMenuOpen callback captured off the mocked
+  // FileGrid (bypassing the real grid's item rendering, since that depends
+  // on the listing query).
 
-  it('createNote still calls notesApi.createNote', async () => {
+  it('create calls createNote and navigates to the new note', async () => {
     await renderNotesPage();
 
     fireEvent.click(screen.getByRole('button', { name: /new note/i }));
 
     await waitFor(() => expect(createNoteMock).toHaveBeenCalledTimes(1));
-    expect(createNoteMock).toHaveBeenCalledWith({ title: 'Untitled note' });
+    expect(createNoteMock).toHaveBeenCalledWith('Untitled note');
   });
 
-  it('rename calls notesApi.saveNote with title only (content untouched) and invalidates ["notes"] on success', async () => {
+  it('rename calls filesystemApi.updateFile with the new name and invalidates ["notes"] on success', async () => {
     const { qc } = await renderNotesPage();
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
 
@@ -290,18 +244,15 @@ describe('NotesPage — content mutations (untouched by the listing refactor)', 
     fireEvent.change(input, { target: { value: 'Renamed Note' } });
     fireEvent.submit(input.closest('form')!);
 
-    await waitFor(() => expect(saveNoteMock).toHaveBeenCalledTimes(1));
-    // Rename no longer round-trips through getNote to preserve content —
-    // content is optional on save now, so a pure rename omits it entirely.
-    expect(getNoteMock).not.toHaveBeenCalled();
-    expect(saveNoteMock).toHaveBeenCalledWith('1', { title: 'Renamed Note' });
+    await waitFor(() => expect(updateFileMock).toHaveBeenCalledTimes(1));
+    expect(updateFileMock).toHaveBeenCalledWith('1', { name: 'Renamed Note' });
 
     await waitFor(() =>
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['notes'] })
     );
   });
 
-  it('delete still calls notesApi.deleteNote and invalidates ["notes"] on success', async () => {
+  it('delete calls storageApi.deleteFile (trash) and invalidates ["notes"] on success', async () => {
     const { qc } = await renderNotesPage();
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
 
@@ -313,7 +264,7 @@ describe('NotesPage — content mutations (untouched by the listing refactor)', 
 
     fireEvent.click(await screen.findByRole('menuitem', { name: /move to trash/i }));
 
-    await waitFor(() => expect(deleteNoteMock).toHaveBeenCalledWith('1'));
+    await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith('1'));
     await waitFor(() =>
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['notes'] })
     );

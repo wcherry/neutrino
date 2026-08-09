@@ -89,8 +89,11 @@ impl LinksRepository {
     }
 
     /// Delete all links where `file_id` is either source or target (called on file deletion).
-    /// Not wired to a caller yet — file deletion still goes through each app's own module
-    /// (e.g. `notes::repository::delete_links_for_note`) until Phase 3 migrates them here.
+    /// Not wired to a caller yet — trashing/deleting a file goes through the generic
+    /// filesystem module, which has no dependency on `links`. Rows for a trashed or
+    /// deleted file are already inert (every read path excludes deleted files), so
+    /// this is dead-row cleanup rather than a correctness fix; wire it in if that
+    /// stops being true, or if the table needs pruning.
     #[allow(dead_code)]
     pub fn delete_links_for_file(&self, file_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;

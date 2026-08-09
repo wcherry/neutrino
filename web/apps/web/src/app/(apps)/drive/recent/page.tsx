@@ -21,7 +21,7 @@ export default function RecentPage() {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['recent'],
-    queryFn: () => filesystemApi.getRootContents({ view: 'recent', limit: 50 }),
+    queryFn: () => filesystemApi.getRecent({ limit: 50 }),
   });
 
   const files = useMemo(() => data?.files ?? [], [data]);
