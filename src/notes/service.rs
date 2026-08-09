@@ -8,6 +8,7 @@ use crate::notes::{
 };
 use crate::shared::drive_client::DriveClient;
 use crate::shared::{ApiError, AuthenticatedUser, ContentVersionCheck};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::Utc;
 use reqwest::Client;
 use std::collections::HashMap;
@@ -22,6 +23,23 @@ const EMPTY_NOTE_CONTENT: &str = "";
 /// bytes from here instead of this service embedding content in JSON.
 fn content_url(file_id: &str) -> String {
     format!("/api/v1/drive/files/{}", file_id)
+}
+
+/// Decodes a `SaveNoteRequest.content` string into the raw bytes storage
+/// should hold, per its declared `content_encoding`.
+///
+/// Plain saves (`encoding` is `None`) write `content`'s UTF-8 bytes as-is.
+/// E2EE saves declare `Some("base64url")`: the client encrypted the note body
+/// and base64url-encoded the ciphertext to carry it in JSON, so this decodes
+/// it back to the raw `[24-byte header]` + ciphertext bytes every reader
+/// (mobile, version history, this app's own content query) expects on disk.
+fn decode_note_content(content: &str, encoding: Option<&str>) -> Result<Vec<u8>, ApiError> {
+    match encoding {
+        Some("base64url") => URL_SAFE_NO_PAD
+            .decode(content)
+            .map_err(|_| ApiError::bad_request("content is not valid base64url")),
+        _ => Ok(content.as_bytes().to_vec()),
+    }
 }
 
 /// Extract all `[[title]]` wiki-link targets from `content`.
@@ -184,10 +202,8 @@ impl NotesService {
         // A title-only save writes no content, so it leaves the revision alone.
         let mut content_version = file.content_version;
         if let Some(ref content) = req.content {
-            content_version = self
-                .drive
-                .upload_content(note_id, content, "save_note_content", check)
-                .await?;
+            let decoded = decode_note_content(content, req.content_encoding.as_deref())?;
+            content_version = self.drive.upload_content_bytes(note_id, &decoded, check)?;
 
             // Parse [[wiki links]] and update note_links table. Prefer the
             // client-supplied titles (required once content is E2EE ciphertext,
@@ -298,6 +314,38 @@ impl NotesService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Regression coverage for https://github.com/wcherry/neutrino_notes_ios_mobile/issues/7 —
+    // the notes editor E2EE-encrypts content client-side and sends the
+    // ciphertext's base64url text over JSON. Without decoding it back to raw
+    // bytes before writing to storage, every non-web reader (mobile, version
+    // history) fails to decrypt the note because the file on disk holds
+    // base64url text instead of the `[24-byte header]` + ciphertext format
+    // they all expect.
+
+    #[test]
+    fn decode_note_content_plain_writes_utf8_bytes_as_is() {
+        let decoded = decode_note_content("hello world", None).unwrap();
+        assert_eq!(decoded, b"hello world");
+    }
+
+    #[test]
+    fn decode_note_content_base64url_decodes_to_raw_bytes() {
+        // Bytes that are NOT valid UTF-8 on their own, to prove this is a
+        // true binary decode and not just round-tripping text.
+        let raw: &[u8] = &[0, 1, 2, 253, 254, 255, b'h', b'i'];
+        let encoded = URL_SAFE_NO_PAD.encode(raw);
+
+        let decoded = decode_note_content(&encoded, Some("base64url")).unwrap();
+
+        assert_eq!(decoded, raw);
+    }
+
+    #[test]
+    fn decode_note_content_invalid_base64url_is_a_bad_request() {
+        let err = decode_note_content("not valid base64!!", Some("base64url")).unwrap_err();
+        assert_eq!(err.status, 400);
+    }
 
     #[test]
     fn parse_wiki_links_basic() {

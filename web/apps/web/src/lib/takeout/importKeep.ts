@@ -231,7 +231,11 @@ export async function runKeepImport({
       // server to link up — send the empty list explicitly rather than let it
       // try to parse ciphertext.
       step = 'saving the body';
-      await notesApi.saveNote(created.id, { content, linkedTitles: [] });
+      await notesApi.saveNote(created.id, {
+        content,
+        contentEncoding: keyPair ? 'base64url' : undefined,
+        linkedTitles: [],
+      });
 
       step = 'indexing it for search';
       indexOnSave(userId, {
