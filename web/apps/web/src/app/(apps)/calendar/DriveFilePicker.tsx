@@ -12,7 +12,7 @@ import {
   EmptyState,
 } from '@neutrino/ui';
 import { Folder as FolderIcon, FileText, ChevronRight, Search } from 'lucide-react';
-import { filesystemApi, type FileItem, type Folder } from '@/lib/api';
+import { filesystemApi, useUser, type FileItem, type Folder } from '@/lib/api';
 import styles from './page.module.css';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -45,6 +45,7 @@ function formatMimeType(mimeType: string): string {
 // ── DriveFilePicker ───────────────────────────────────────────────────────────
 
 export function DriveFilePicker({ open, onClose, onSelect }: DriveFilePickerProps) {
+  const currentUser = useUser();
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([
     { id: null, name: 'My Drive' },
@@ -52,12 +53,9 @@ export function DriveFilePicker({ open, onClose, onSelect }: DriveFilePickerProp
   const [filter, setFilter] = useState('');
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['drive-picker', currentFolderId],
-    queryFn: () =>
-      currentFolderId
-        ? filesystemApi.getFolderContents(currentFolderId)
-        : filesystemApi.getRootContents(),
-    enabled: open,
+    queryKey: ['drive-picker', currentFolderId, currentUser?.id],
+    queryFn: () => filesystemApi.getFolderContents(currentFolderId ?? currentUser!.id),
+    enabled: open && (!!currentFolderId || !!currentUser),
   });
 
   const folders: Folder[] = data?.folders ?? [];

@@ -8,7 +8,7 @@
  * cached: a hundred documents in one folder must not be a hundred lookups.
  */
 
-import { filesystemApi } from '@/lib/api';
+import { filesystemApi, getCurrentUserId } from '@/lib/api';
 import { logStep, logWarn } from './log';
 
 /**
@@ -41,9 +41,9 @@ export function createFolderResolver(): FolderResolver {
   const cache = new Map<string, string | null>();
 
   async function child(parentId: string | null, name: string): Promise<string> {
-    const contents = parentId
-      ? await filesystemApi.getFolderContents(parentId, { limit: LISTING_LIMIT })
-      : await filesystemApi.getRootContents({ limit: LISTING_LIMIT });
+    const rootId = parentId ?? getCurrentUserId();
+    if (!rootId) throw new Error('Not signed in');
+    const contents = await filesystemApi.getFolderContents(rootId, { limit: LISTING_LIMIT });
 
     const wanted = name.toLowerCase();
     const existing = contents.folders.find((f) => f.name.toLowerCase() === wanted);

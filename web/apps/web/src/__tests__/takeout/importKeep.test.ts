@@ -28,7 +28,7 @@ vi.mock('@neutrino/api-drive', () => ({
 }));
 
 const filesystemApi = {
-  getRootContents: vi.fn(),
+  getFolderContents: vi.fn(),
   createFolder: vi.fn(),
 };
 const encryptionApi = {
@@ -38,6 +38,9 @@ const encryptionApi = {
 vi.mock('@/lib/api', () => ({
   get filesystemApi() { return filesystemApi; },
   get encryptionApi() { return encryptionApi; },
+  // The folder resolver (`lib/takeout/folders.ts`) uses this to address the
+  // drive root — a user's root folder id is their own user id.
+  getCurrentUserId: () => 'user-1',
 }));
 
 const indexOnSave = vi.fn();
@@ -95,7 +98,7 @@ beforeEach(() => {
   }));
   driveAutosaveContent.mockResolvedValue({ updatedAt: '2026-01-01T00:00:00Z' });
   driveAutosaveEncryptedContent.mockResolvedValue({ updatedAt: '2026-01-01T00:00:00Z' });
-  filesystemApi.getRootContents.mockResolvedValue({ folders: [], files: [] });
+  filesystemApi.getFolderContents.mockResolvedValue({ folders: [], files: [] });
 });
 
 describe('runKeepImport', () => {
@@ -200,7 +203,7 @@ describe('runKeepImport', () => {
   });
 
   it('reuses a destination folder that already exists', async () => {
-    filesystemApi.getRootContents.mockResolvedValue({ folders: [{ id: 'f1', name: 'google keep' }], files: [] });
+    filesystemApi.getFolderContents.mockResolvedValue({ folders: [{ id: 'f1', name: 'google keep' }], files: [] });
     const summary = await run([entry('a.json', { title: 'A', textContent: 'x' })], { folderName: 'Google Keep' });
 
     expect(filesystemApi.createFolder).not.toHaveBeenCalled();

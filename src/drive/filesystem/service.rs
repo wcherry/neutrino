@@ -1,10 +1,10 @@
 use crate::drive::filesystem::{
     dto::{
         BulkMoveRequest, BulkResult, BulkTrashRequest, CreateFolderRequest, CreateShortcutRequest,
-        DriveFileType, DriveView, FileResponse, FolderContentsOrderField, FolderContentsResponse,
-        FolderResponse, RootContentsQuery, ShortcutResponse, StarredContentsResponse,
-        TrashContentsQuery, TrashContentsResponse, TrashOrderField, UpdateFileRequest,
-        UpdateFolderRequest,
+        DriveFileType, FileResponse, FolderContentsOrderField, FolderContentsQuery,
+        FolderContentsResponse, FolderResponse, ShortcutListResponse, ShortcutResponse,
+        StarredContentsResponse, TrashContentsQuery, TrashContentsResponse, TrashOrderField,
+        UpdateFileRequest, UpdateFolderRequest,
     },
     model::{NewFolderRecord, NewShortcutRecord, UpdateFolderRecord},
     repository::FilesystemRepository,
@@ -81,15 +81,18 @@ impl FilesystemService {
         Ok(FolderResponse::from(folder))
     }
 
+    /// `folder_id == Some(user_id)` is the root sentinel: a user's root folder
+    /// has no row of its own (root is `parent_id IS NULL`), and its id is the
+    /// user's own id (see `GET /api/v1/auth/me`), so that case is folded to
+    /// `None` here rather than requiring every caller to special-case it.
     pub fn get_folder_contents(
         &self,
         user_id: &str,
         folder_id: Option<&str>,
-        query: &RootContentsQuery,
+        query: &FolderContentsQuery,
     ) -> Result<FolderContentsResponse, ApiError> {
+        let folder_id = folder_id.filter(|&id| id != user_id);
         let file_type = query.file_type;
-        // `view` selects *which* listing the caller wants and is resolved by the
-        // caller; the rest of the query applies here.
         let query = &query.list_params();
 
         // Validate folder exists if an ID is given
@@ -108,7 +111,6 @@ impl FilesystemService {
             self.repo.list_files_in_folder(user_id, folder_id)?,
             file_type,
         );
-        let shortcuts = self.repo.list_shortcuts_in_folder(user_id, folder_id)?;
 
         let subfolders = apply_list_query(
             subfolders,
@@ -134,24 +136,10 @@ impl FilesystemService {
             },
         );
 
-        let shortcuts = apply_list_query(
-            shortcuts,
-            query,
-            FolderContentsOrderField::CreatedAt,
-            OrderDirection::Asc,
-            |a, b, order_by| match order_by {
-                FolderContentsOrderField::Name => a.target_file_id.cmp(&b.target_file_id),
-                FolderContentsOrderField::CreatedAt | FolderContentsOrderField::UpdatedAt => {
-                    a.created_at.cmp(&b.created_at)
-                }
-            },
-        );
-
         Ok(FolderContentsResponse {
             folder: folder_response,
             folders: subfolders.into_iter().map(FolderResponse::from).collect(),
             files: files.into_iter().map(FileResponse::from).collect(),
-            shortcuts: shortcuts.into_iter().map(ShortcutResponse::from).collect(),
         })
     }
 
@@ -321,84 +309,31 @@ impl FilesystemService {
         Ok(cursor.into_inner())
     }
 
-    // ── View-filtered root contents ───────────────────────────────────────────
+    // ── Recent (whole-drive, sorted by recency) ───────────────────────────────
 
-    pub fn get_view_contents(
+    pub fn list_recent(
         &self,
         user_id: &str,
-        view: DriveView,
-        query: &RootContentsQuery,
+        limit: i64,
+        file_type: Option<DriveFileType>,
     ) -> Result<FolderContentsResponse, ApiError> {
-        let file_type = query.file_type;
-        match view {
-            DriveView::Recent => {
-                let limit = query.limit.unwrap_or(50);
-                // Filtered in SQL so `limit` counts matching files (see the repo method).
-                let files = self.repo.list_recent_files(
-                    user_id,
-                    limit,
-                    file_type.map(|t| t.mime_patterns()),
-                )?;
-                Ok(FolderContentsResponse {
-                    folder: None,
-                    folders: vec![],
-                    files: files.into_iter().map(FileResponse::from).collect(),
-                    shortcuts: vec![],
-                })
-            }
-            DriveView::Starred => {
-                let files = filter_by_type(self.repo.list_starred_files(user_id)?, file_type);
-                let folders = self.repo.list_starred_folders(user_id)?;
-                Ok(FolderContentsResponse {
-                    folder: None,
-                    folders: folders.into_iter().map(FolderResponse::from).collect(),
-                    files: files.into_iter().map(FileResponse::from).collect(),
-                    shortcuts: vec![],
-                })
-            }
-            DriveView::Trash => {
-                let files = filter_by_type(self.repo.list_trashed_files(user_id)?, file_type);
-                let folders = self.repo.list_trashed_folders(user_id)?;
-                Ok(FolderContentsResponse {
-                    folder: None,
-                    folders: folders.into_iter().map(FolderResponse::from).collect(),
-                    files: files.into_iter().map(FileResponse::from).collect(),
-                    shortcuts: vec![],
-                })
-            }
-        }
-    }
-
-    /// List all files of a given type across the whole drive (a flat listing,
-    /// not scoped to a folder). Folders and shortcuts are not typed, so they
-    /// are omitted.
-    pub fn get_typed_contents(
-        &self,
-        user_id: &str,
-        file_type: DriveFileType,
-        query: &RootContentsQuery,
-    ) -> Result<FolderContentsResponse, ApiError> {
-        let files = self
-            .repo
-            .list_files_by_mime(user_id, file_type.mime_patterns())?;
-
-        let files = apply_list_query(
-            files,
-            &query.list_params(),
-            FolderContentsOrderField::Name,
-            OrderDirection::Asc,
-            |a, b, order_by| match order_by {
-                FolderContentsOrderField::Name => a.name.cmp(&b.name),
-                FolderContentsOrderField::CreatedAt => a.created_at.cmp(&b.created_at),
-                FolderContentsOrderField::UpdatedAt => a.updated_at.cmp(&b.updated_at),
-            },
-        );
-
+        // Filtered in SQL so `limit` counts matching files (see the repo method).
+        let files =
+            self.repo
+                .list_recent_files(user_id, limit, file_type.map(|t| t.mime_patterns()))?;
         Ok(FolderContentsResponse {
             folder: None,
             folders: vec![],
             files: files.into_iter().map(FileResponse::from).collect(),
-            shortcuts: vec![],
+        })
+    }
+
+    // ── Shortcuts (whole-drive) ────────────────────────────────────────────────
+
+    pub fn list_shortcuts(&self, user_id: &str) -> Result<ShortcutListResponse, ApiError> {
+        let shortcuts = self.repo.list_shortcuts(user_id)?;
+        Ok(ShortcutListResponse {
+            shortcuts: shortcuts.into_iter().map(ShortcutResponse::from).collect(),
         })
     }
 
@@ -408,8 +343,9 @@ impl FilesystemService {
         &self,
         user_id: &str,
         limit: usize,
+        file_type: Option<DriveFileType>,
     ) -> Result<StarredContentsResponse, ApiError> {
-        let files = self.repo.list_starred_files(user_id)?;
+        let files = filter_by_type(self.repo.list_starred_files(user_id)?, file_type);
         let folders = self.repo.list_starred_folders(user_id)?;
 
         // Merge files and folders sorted by starred_at desc, then take the top `limit`.

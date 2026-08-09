@@ -3,9 +3,9 @@
  * nothing else notes-specific server-side (see `agent_docs/notes-links-roadmap.md`
  * Phase 3) — these are the helpers `@neutrino/api-notes` used to centralize:
  * creating one, listing every note the caller owns across all folders (the
- * generic `filesystemApi.getRootContents`/`getFolderContents` are folder-scoped,
- * so a global list needs its own pass over `storageApi.listFiles`), and
- * flattening a stored note body to plain text for search indexing.
+ * generic `filesystemApi.getFolderContents` is folder-scoped, so a global
+ * list needs its own pass over `storageApi.listFiles`), and flattening a
+ * stored note body to plain text for search indexing.
  */
 
 import { storageApi, type FileInfo } from '@neutrino/api-drive';
@@ -17,6 +17,7 @@ const LIST_MAX_PAGES = 5;
 export interface NoteMeta {
   id: string;
   title: string;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -41,7 +42,9 @@ export async function listAllNotes(): Promise<NoteMeta[]> {
   for (let page = 0; page < LIST_MAX_PAGES; page++) {
     const res = await storageApi.listFiles({ limit: LIST_PAGE_SIZE, offset: page * LIST_PAGE_SIZE });
     for (const f of res.items) {
-      if (f.mimeType === NOTE_MIME) notes.push({ id: f.id, title: f.name, updatedAt: f.updatedAt });
+      if (f.mimeType === NOTE_MIME) {
+        notes.push({ id: f.id, title: f.name, createdAt: f.createdAt, updatedAt: f.updatedAt });
+      }
     }
     if (res.items.length < LIST_PAGE_SIZE) break;
   }

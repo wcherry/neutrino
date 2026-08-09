@@ -1,4 +1,4 @@
-import { request, buildQuery, ApiClientError } from '@neutrino/api-core';
+import { request, buildQuery, ApiClientError, getCurrentUserId } from '@neutrino/api-core';
 import { filesystemApi } from '@neutrino/api-drive';
 import type { FileItem } from '@neutrino/api-drive';
 
@@ -337,17 +337,18 @@ export const photosApi = {
     personIds?: string[];
     excludePersonIds?: string[];
   }): Promise<ListPhotosResponse> {
-    // The unfiltered listing is served by the generic Drive endpoint
-    // (`/api/v1/drive?type=photo`). The photo-specific filters
-    // (archived/starred/person) aren't expressible there, so those keep
-    // hitting the dedicated photos endpoint.
+    // The unfiltered listing is served by the generic Drive folder endpoint
+    // (`/api/v1/drive/folders/{rootId}?type=photo`), root-scoped only. The
+    // photo-specific filters (archived/starred/person) aren't expressible
+    // there, so those keep hitting the dedicated photos endpoint.
     const hasFilters =
       opts?.archivedOnly ||
       opts?.starredOnly ||
       opts?.personIds?.length ||
       opts?.excludePersonIds?.length;
-    if (!hasFilters) {
-      const contents = await filesystemApi.getRootContents({ type: 'photo' });
+    const rootId = getCurrentUserId();
+    if (!hasFilters && rootId) {
+      const contents = await filesystemApi.getFolderContents(rootId, { type: 'photo' });
       return {
         photos: contents.files.map(fileToPhoto),
         total: contents.files.length,

@@ -12,7 +12,7 @@ import {
   driveAutosaveEncryptedContent,
 } from '@neutrino/api-drive';
 import { linksApi } from '@neutrino/api-links';
-import { extractNoteText } from '@/lib/noteFiles';
+import { extractNoteText, listAllNotes } from '@/lib/noteFiles';
 import { initSodium, decryptFile, fromBase64url } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -130,7 +130,7 @@ export default function NoteEditorPage() {
 
   const { data: allNotesData } = useQuery({
     queryKey: ['notes'],
-    queryFn: () => filesystemApi.getRootContents({ type: 'note' }),
+    queryFn: () => listAllNotes(),
   });
 
   const { data: backlinksData } = useQuery({
@@ -139,10 +139,7 @@ export default function NoteEditorPage() {
     enabled: !!noteId,
   });
 
-  const allNotes: NoteLinkTarget[] = (allNotesData?.files ?? []).map((f) => ({
-    id: f.id,
-    title: f.name,
-  }));
+  const allNotes: NoteLinkTarget[] = allNotesData ?? [];
   const backlinks = backlinksData?.backlinks ?? [];
 
   // Switching notes starts from a clean slate.

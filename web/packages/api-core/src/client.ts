@@ -77,6 +77,29 @@ export function getAuthHeader(): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
+/**
+ * The signed-in user's id, read from the access token's `sub` claim rather
+ * than an extra round trip to `/auth/me` — every drive listing that needs to
+ * address the caller's own root folder (whose id *is* the user's id; see
+ * `GET /api/v1/drive/folders/{id}`) can resolve it synchronously this way.
+ * Not a verification of the token — the server still does that on every
+ * request — just a cheap read of a claim already sitting in local storage.
+ */
+export function getCurrentUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const token = localStorage.getItem('access_token');
+  if (!token || token === 'undefined' || token === 'null') return null;
+  const payload = token.split('.')[1];
+  if (!payload) return null;
+  try {
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const claims = JSON.parse(json) as { sub?: string };
+    return claims.sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function shouldSkipRefresh(path: string): boolean {
   return (
     path.startsWith(AUTH_LOGIN_PATH) ||

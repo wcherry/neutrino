@@ -15,7 +15,6 @@ const docsApi = {
   createDoc: vi.fn(),
 };
 const filesystemApi = {
-  getRootContents: vi.fn(),
   getFolderContents: vi.fn(),
   createFolder: vi.fn(),
 };
@@ -31,6 +30,9 @@ vi.mock('@/lib/api', () => ({
   get encryptionApi() { return encryptionApi; },
   driveAutosaveContent: (...args: unknown[]) => driveAutosaveContent(...args),
   driveAutosaveEncryptedContent: (...args: unknown[]) => driveAutosaveEncryptedContent(...args),
+  // The folder resolver (`lib/takeout/folders.ts`) uses this to address the
+  // drive root — a user's root folder id is their own user id.
+  getCurrentUserId: () => 'user-1',
 }));
 
 const indexOnSave = vi.fn();
@@ -95,7 +97,6 @@ beforeEach(() => {
   loadKeyPair.mockReturnValue(KEY_PAIR);
   docsApi.listDocs.mockResolvedValue({ docs: [] });
   docsApi.createDoc.mockImplementation(async ({ title }: { title: string }) => ({ id: `id-${title}`, title }));
-  filesystemApi.getRootContents.mockResolvedValue({ folders: [], files: [] });
   filesystemApi.getFolderContents.mockResolvedValue({ folders: [], files: [] });
   convertToHtml.mockResolvedValue({ value: '<p>Hello</p>' });
 });
@@ -194,7 +195,7 @@ describe('runDocsImport', () => {
   });
 
   it('reuses a destination folder that already exists', async () => {
-    filesystemApi.getRootContents.mockResolvedValue({ folders: [{ id: 'f1', name: 'google docs' }], files: [] });
+    filesystemApi.getFolderContents.mockResolvedValue({ folders: [{ id: 'f1', name: 'google docs' }], files: [] });
     const summary = await run([doc('a.docx')], { folderName: 'Google Docs' });
 
     expect(filesystemApi.createFolder).not.toHaveBeenCalled();

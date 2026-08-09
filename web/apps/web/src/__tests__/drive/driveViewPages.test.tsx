@@ -15,7 +15,7 @@ const { pushMock, api } = vi.hoisted(() => ({
   pushMock: vi.fn(),
   api: {
     filesystemApi: {
-      getRootContents: vi.fn(),
+      getRecent: vi.fn(),
       getStarred: vi.fn(),
       listTrash: vi.fn(),
       emptyTrash: vi.fn(),
@@ -93,7 +93,7 @@ function renderPage(ui: React.ReactElement) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.filesystemApi.getRootContents.mockResolvedValue({ files: [file()], folders: [] });
+  api.filesystemApi.getRecent.mockResolvedValue({ files: [file()], folders: [] });
   api.filesystemApi.getStarred.mockResolvedValue({ files: [file()], folders: [folder()] });
   api.sharedWithMeApi.list.mockResolvedValue({ files: [file()], folders: [folder()] });
   api.filesystemApi.listTrash.mockResolvedValue({
@@ -140,7 +140,7 @@ describe('Drive view pages — view mode selector', () => {
 
 describe('Recent page', () => {
   it('opens a file through the shared route dispatch', async () => {
-    api.filesystemApi.getRootContents.mockResolvedValue({
+    api.filesystemApi.getRecent.mockResolvedValue({
       files: [file({ id: 'doc1', name: 'Notes', mimeType: 'application/x-neutrino-doc' })],
       folders: [],
     });

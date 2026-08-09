@@ -1,10 +1,10 @@
 use crate::drive::filesystem::{
     dto::{
         BulkMoveRequest, BulkResult, BulkTrashRequest, CreateFolderRequest, CreateShortcutRequest,
-        FileResponse, FolderContentsOrderField, FolderContentsResponse, FolderResponse,
-        RootContentsQuery, SharedWithMeQuery, ShortcutResponse, StarredContentsResponse,
-        TrashContentsQuery, TrashContentsResponse, TrashOrderField, UpdateFileRequest,
-        UpdateFolderRequest,
+        DriveFileType, FileResponse, FolderContentsOrderField, FolderContentsQuery,
+        FolderContentsResponse, FolderResponse, RecentQuery, SharedWithMeQuery,
+        ShortcutListResponse, ShortcutResponse, StarredContentsResponse, TrashContentsQuery,
+        TrashContentsResponse, TrashOrderField, UpdateFileRequest, UpdateFolderRequest,
     },
     repository::FilesystemRepository,
     service::FilesystemService,
@@ -14,7 +14,6 @@ use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use serde::Serialize;
 use std::sync::Arc;
-use tracing::info;
 use utoipa::OpenApi;
 
 pub struct FilesystemApiState {
@@ -51,64 +50,14 @@ pub async fn create_folder(
 
 #[utoipa::path(
     get,
-    path = "/api/v1/drive/",
-    params(
-        ("limit" = Option<i64>, Query, description = "Max results per page"),
-        ("offset" = Option<i64>, Query, description = "Pagination offset"),
-        ("orderBy" = Option<FolderContentsOrderField>, Query, description = "Sort field"),
-        ("direction" = Option<String>, Query, description = "asc or desc"),
-        ("view" = Option<String>, Query, description = "Filter view: recent | starred | trash"),
-        ("type" = Option<DriveFileType>, Query, description = "List only files of this type across the whole drive: photo | video | audio | document | doc | sheet | slide | diagram | drawing | note"),
-    ),
-    responses(
-        (status = 200, description = "Root folder contents", body = FolderContentsResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "filesystem"
-)]
-#[get("")]
-pub async fn get_root_contents(
-    state: web::Data<FilesystemApiState>,
-    user: AuthenticatedUser,
-    query: web::Query<RootContentsQuery>,
-) -> Result<web::Json<FolderContentsResponse>, ApiError> {
-    info!("get_root_contents");
-
-    // `view` is checked first so it composes with `type`: `?view=recent&type=doc`
-    // is "the most recent docs", not "all docs". Without a view, `type` is a
-    // whole-drive flat listing; with neither, it is the root folder's contents.
-    if let Some(view) = query.view {
-        let contents = state
-            .filesystem_service
-            .get_view_contents(&user.user_id, view, &query)?;
-        return Ok(web::Json(contents));
-    }
-
-    if let Some(file_type) = query.file_type {
-        let contents =
-            state
-                .filesystem_service
-                .get_typed_contents(&user.user_id, file_type, &query)?;
-        return Ok(web::Json(contents));
-    }
-
-    let contents = state
-        .filesystem_service
-        .get_folder_contents(&user.user_id, None, &query)?;
-    Ok(web::Json(contents))
-}
-
-#[utoipa::path(
-    get,
     path = "/api/v1/drive/folders/{id}",
     params(
-        ("id" = String, Path, description = "Folder ID"),
+        ("id" = String, Path, description = "Folder ID. Pass the caller's own user id (see GET /api/v1/auth/me) to list the drive root — a user's root folder has no id of its own."),
         ("limit" = Option<i64>, Query, description = "Max results per page"),
         ("offset" = Option<i64>, Query, description = "Pagination offset"),
         ("orderBy" = Option<FolderContentsOrderField>, Query, description = "Sort field"),
         ("direction" = Option<String>, Query, description = "asc or desc"),
-        ("view" = Option<String>, Query, description = "Accepted for parity with the root listing but IGNORED: views are whole-drive, not folder-scoped"),
-        ("type" = Option<DriveFileType>, Query, description = "List only files of this type in this folder; subfolders and shortcuts are always listed"),
+        ("type" = Option<DriveFileType>, Query, description = "List only files of this type in this folder; subfolders are always listed"),
     ),
     responses(
         (status = 200, description = "Folder contents", body = FolderContentsResponse),
@@ -122,13 +71,40 @@ pub async fn get_folder_contents(
     state: web::Data<FilesystemApiState>,
     user: AuthenticatedUser,
     path: web::Path<String>,
-    query: web::Query<RootContentsQuery>,
+    query: web::Query<FolderContentsQuery>,
 ) -> Result<web::Json<FolderContentsResponse>, ApiError> {
     let folder_id = path.into_inner();
     let contents =
         state
             .filesystem_service
             .get_folder_contents(&user.user_id, Some(&folder_id), &query)?;
+    Ok(web::Json(contents))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/recent",
+    params(
+        ("limit" = Option<i64>, Query, description = "Max results (default 50)"),
+        ("type" = Option<DriveFileType>, Query, description = "List only files of this type"),
+    ),
+    responses(
+        (status = 200, description = "Most recently modified files, across the whole drive", body = FolderContentsResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "filesystem"
+)]
+#[get("/recent")]
+pub async fn get_recent(
+    state: web::Data<FilesystemApiState>,
+    user: AuthenticatedUser,
+    query: web::Query<RecentQuery>,
+) -> Result<web::Json<FolderContentsResponse>, ApiError> {
+    let limit = query.limit.unwrap_or(50);
+    let contents =
+        state
+            .filesystem_service
+            .list_recent(&user.user_id, limit, query.file_type)?;
     Ok(web::Json(contents))
 }
 
@@ -281,6 +257,24 @@ pub async fn delete_shortcut(
         .filesystem_service
         .delete_shortcut(&user.user_id, &shortcut_id)?;
     Ok(HttpResponse::NoContent().finish())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/shortcuts",
+    responses(
+        (status = 200, description = "All of the caller's shortcuts, anywhere in the drive", body = ShortcutListResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "filesystem"
+)]
+#[get("/shortcuts")]
+pub async fn list_shortcuts(
+    state: web::Data<FilesystemApiState>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<ShortcutListResponse>, ApiError> {
+    let result = state.filesystem_service.list_shortcuts(&user.user_id)?;
+    Ok(web::Json(result))
 }
 
 // ── Bulk endpoints ────────────────────────────────────────────────────────────
@@ -520,8 +514,12 @@ pub async fn delete_folder_permanently(
 // ── Starred (Quick Access) ────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StarredQuery {
     pub limit: Option<usize>,
+    /// List only starred files of this type. Starred folders are always listed.
+    #[serde(rename = "type")]
+    pub file_type: Option<DriveFileType>,
 }
 
 #[utoipa::path(
@@ -529,6 +527,7 @@ pub struct StarredQuery {
     path = "/api/v1/drive/starred",
     params(
         ("limit" = Option<usize>, Query, description = "Max number of starred items to return (default 5)"),
+        ("type" = Option<DriveFileType>, Query, description = "List only starred files of this type; starred folders are always listed"),
     ),
     responses(
         (status = 200, description = "Most recently starred files and folders", body = StarredContentsResponse),
@@ -543,9 +542,10 @@ pub async fn get_starred(
     query: web::Query<StarredQuery>,
 ) -> Result<web::Json<StarredContentsResponse>, ApiError> {
     let limit = query.limit.unwrap_or(5);
-    let result = state
-        .filesystem_service
-        .list_starred(&user.user_id, limit)?;
+    let result =
+        state
+            .filesystem_service
+            .list_starred(&user.user_id, limit, query.file_type)?;
     Ok(web::Json(result))
 }
 
@@ -620,13 +620,14 @@ pub async fn get_shared_with_me(
 pub fn configure(conf: &mut web::ServiceConfig) {
     conf.service(create_folder)
         .service(get_folder_contents)
-        .service(get_root_contents)
+        .service(get_recent)
         .service(update_folder)
         .service(trash_folder)
         .service(update_file)
         .service(trash_file)
         .service(create_shortcut)
         .service(delete_shortcut)
+        .service(list_shortcuts)
         .service(bulk_move)
         .service(bulk_trash)
         .service(bulk_download)
@@ -644,14 +645,15 @@ pub fn configure(conf: &mut web::ServiceConfig) {
 #[openapi(
     paths(
         create_folder,
-        get_root_contents,
         get_folder_contents,
+        get_recent,
         update_folder,
         trash_folder,
         update_file,
         trash_file,
         create_shortcut,
         delete_shortcut,
+        list_shortcuts,
         bulk_move,
         bulk_trash,
         bulk_download,
@@ -674,6 +676,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         FileResponse,
         CreateShortcutRequest,
         ShortcutResponse,
+        ShortcutListResponse,
         BulkMoveRequest,
         BulkTrashRequest,
         BulkResult,
@@ -682,7 +685,6 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         crate::drive::filesystem::dto::TrashFileItem,
         crate::drive::filesystem::dto::TrashFolderItem,
         StarredContentsResponse,
-        crate::drive::filesystem::dto::DriveView,
         crate::drive::filesystem::dto::DriveFileType,
     )),
     tags((name = "filesystem", description = "File system organization endpoints")),

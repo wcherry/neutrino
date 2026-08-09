@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { SaveAsDialog as SaveAsDialogUI, type SaveAsOptions, type SaveAsBreadcrumb, type SaveAsDriveFolder } from '@neutrino/ui';
-import { filesystemApi } from '@/lib/api';
+import { filesystemApi, useUser } from '@/lib/api';
 
 export type { SaveAsOptions };
 
@@ -14,6 +14,7 @@ interface SaveAsDialogProps {
 }
 
 export function SaveAsDialog({ defaultFilename, format, onSave, onClose }: SaveAsDialogProps) {
+  const currentUser = useUser();
   const [breadcrumbs, setBreadcrumbs] = useState<SaveAsBreadcrumb[]>([{ id: null, name: 'My Drive' }]);
   const [folders, setFolders] = useState<SaveAsDriveFolder[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,17 +25,15 @@ export function SaveAsDialog({ defaultFilename, format, onSave, onClose }: SaveA
   // Fetch whenever the browsed folder changes. The dialog is only mounted when open,
   // so this also covers the initial load for the Drive tab.
   useEffect(() => {
+    if (!currentFolderId && !currentUser) return;
     let cancelled = false;
     setLoading(true);
     setFetchError(false);
-    const req = currentFolderId
-      ? filesystemApi.getFolderContents(currentFolderId)
-      : filesystemApi.getRootContents();
-    req
+    filesystemApi.getFolderContents(currentFolderId ?? currentUser!.id)
       .then(data => { if (!cancelled) { setFolders(data.folders); setLoading(false); } })
       .catch(() => { if (!cancelled) { setFetchError(true); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [currentFolderId]);
+  }, [currentFolderId, currentUser]);
 
   function handleFolderClick(folder: SaveAsDriveFolder) {
     setBreadcrumbs(prev => [...prev, { id: folder.id, name: folder.name }]);

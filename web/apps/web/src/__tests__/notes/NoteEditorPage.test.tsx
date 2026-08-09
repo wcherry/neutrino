@@ -8,11 +8,12 @@
  *     param, for permission-checked metadata (not `getFileMetadata`, which is
  *     owner-scoped only and would 404 for a shared note).
  *   - `linksApi.getBacklinks` is called with the same id.
- *   - `filesystemApi.getRootContents({ type: 'note' })` (no `orderBy`/
- *     `direction`, unlike the list page's call) is adapted into a
- *     `{ id, title }[]` shape for `BlockEditor.allNotes` — Drive-only fields
- *     (size, mime type, timestamps, etc.) must not leak through, since that's
- *     all the wiki-link autocomplete needs.
+ *   - `listAllNotes` (`@/lib/noteFiles`) — the whole-drive helper, since
+ *     `filesystemApi.getRootContents`'s whole-drive `type=` filter was
+ *     removed with the root listing route — feeds `BlockEditor.allNotes`
+ *     directly; Drive-only fields (size, mime type, folder, content
+ *     version) must not leak through, since that's all the wiki-link
+ *     autocomplete needs.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -31,7 +32,6 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
-const getRootContentsMock = vi.fn();
 const getFileInfoMock = vi.fn();
 const downloadFileMock = vi.fn();
 const driveReadContentMock = vi.fn();
@@ -40,7 +40,6 @@ const updateFileMock = vi.fn();
 
 vi.mock('@neutrino/api-drive', () => ({
   filesystemApi: {
-    getRootContents: (...args: unknown[]) => getRootContentsMock(...args),
     updateFile: (...args: unknown[]) => updateFileMock(...args),
   },
   storageApi: {
@@ -50,6 +49,14 @@ vi.mock('@neutrino/api-drive', () => ({
   driveReadContent: (...args: unknown[]) => driveReadContentMock(...args),
   driveAutosaveContent: (...args: unknown[]) => driveAutosaveContentMock(...args),
   driveAutosaveEncryptedContent: vi.fn(),
+}));
+
+const listAllNotesMock = vi.fn();
+const extractNoteTextMock = vi.fn((raw: string) => raw);
+
+vi.mock('@/lib/noteFiles', () => ({
+  listAllNotes: (...args: unknown[]) => listAllNotesMock(...args),
+  extractNoteText: (...args: unknown[]) => extractNoteTextMock(...args),
 }));
 
 const getBacklinksMock = vi.fn();
@@ -122,19 +129,12 @@ vi.mock('../../app/(apps)/notes/editor/page.module.css', () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeFileItem(overrides: Partial<Record<string, unknown>> = {}) {
+function makeNoteMeta(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'note-2',
-    name: 'Other Note',
-    sizeBytes: 0,
-    mimeType: 'text/plain',
-    folderId: null,
-    isStarred: false,
+    title: 'Other Note',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
-    coverThumbnail: null,
-    coverThumbnailMimeType: null,
-    contentVersion: 1,
     ...overrides,
   };
 }
@@ -164,7 +164,8 @@ function latestBlockEditorProps() {
 beforeEach(() => {
   vi.clearAllMocks();
   blockEditorProps.length = 0;
-  getRootContentsMock.mockResolvedValue({ folder: null, folders: [], files: [], shortcuts: [] });
+  listAllNotesMock.mockResolvedValue([]);
+  extractNoteTextMock.mockImplementation((raw: string) => raw);
   getFileInfoMock.mockResolvedValue({
     id: NOTE_ID,
     name: 'Current Note',
@@ -199,22 +200,15 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('NoteEditorPage — "all notes" query', () => {
-  it('calls filesystemApi.getRootContents with exactly { type: "note" } (no orderBy/direction)', async () => {
+  it('calls listAllNotes to populate the wiki-link autocomplete source', async () => {
     await renderEditorPage();
 
-    await waitFor(() => expect(getRootContentsMock).toHaveBeenCalled());
-
-    expect(getRootContentsMock).toHaveBeenCalledTimes(1);
-    expect(getRootContentsMock).toHaveBeenCalledWith({ type: 'note' });
+    await waitFor(() => expect(listAllNotesMock).toHaveBeenCalled());
+    expect(listAllNotesMock).toHaveBeenCalledTimes(1);
   });
 
-  it('adapts the Drive FileItem[] response into { id, title }[] for BlockEditor.allNotes', async () => {
-    getRootContentsMock.mockResolvedValue({
-      folder: null,
-      folders: [],
-      files: [makeFileItem({ id: 'note-2', name: 'Other Note' })],
-      shortcuts: [],
-    });
+  it('feeds listAllNotes results into BlockEditor.allNotes with id/title intact', async () => {
+    listAllNotesMock.mockResolvedValue([makeNoteMeta({ id: 'note-2', title: 'Other Note' })]);
 
     await renderEditorPage();
 
@@ -223,9 +217,10 @@ describe('NoteEditorPage — "all notes" query', () => {
     });
 
     const allNotes = latestBlockEditorProps().allNotes;
-    expect(allNotes).toEqual([{ id: 'note-2', title: 'Other Note' }]);
+    expect(allNotes[0]).toMatchObject({ id: 'note-2', title: 'Other Note' });
 
-    // Drive-only fields must not leak into the wiki-link-autocomplete shape.
+    // Drive-only fields (never part of NoteMeta) must not leak into the
+    // wiki-link-autocomplete shape.
     expect(allNotes[0]).not.toHaveProperty('sizeBytes');
     expect(allNotes[0]).not.toHaveProperty('mimeType');
     expect(allNotes[0]).not.toHaveProperty('folderId');

@@ -4,9 +4,13 @@
  * gone; a note is a plain Drive file).
  *
  * Covers:
- *   - `filesystemApi.getRootContents` is called with exactly
- *     `{ type: 'note', orderBy: 'createdAt', direction: 'desc' }`.
- *   - `FileGrid` receives grid items whose `name` comes from `FileItem.name`.
+ *   - `listAllNotes` (`@/lib/noteFiles`) is called to populate the listing —
+ *     the whole-drive `type=` filter it used to reach via
+ *     `filesystemApi.getRootContents` was removed with the root listing
+ *     route (folder listings are folder-scoped only now), so the page
+ *     switched to the same whole-drive helper the note editor's backlink
+ *     picker already used.
+ *   - `FileGrid` receives grid items whose `name` comes from `NoteMeta.title`.
  *   - `isLoading` / `isError` pass through to `FileGrid` correctly.
  *   - Create goes through `createNote` (`@/lib/noteFiles`); rename through
  *     `filesystemApi.updateFile`; delete through `storageApi.deleteFile`
@@ -27,18 +31,18 @@ vi.mock('next/navigation', () => ({
 }));
 
 const createNoteMock = vi.fn();
+const listAllNotesMock = vi.fn();
 
 vi.mock('@/lib/noteFiles', () => ({
   createNote: (...args: unknown[]) => createNoteMock(...args),
+  listAllNotes: (...args: unknown[]) => listAllNotesMock(...args),
 }));
 
-const getRootContentsMock = vi.fn();
 const updateFileMock = vi.fn();
 const deleteFileMock = vi.fn();
 
 vi.mock('@neutrino/api-drive', () => ({
   filesystemApi: {
-    getRootContents: (...args: unknown[]) => getRootContentsMock(...args),
     updateFile: (...args: unknown[]) => updateFileMock(...args),
   },
   storageApi: {
@@ -93,19 +97,12 @@ vi.mock('../../app/(apps)/drive/FileContextMenu.module.css', () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeFileItem(overrides: Partial<Record<string, unknown>> = {}) {
+function makeNoteMeta(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: '1',
-    name: 'My Note',
-    sizeBytes: 0,
-    mimeType: 'text/plain',
-    folderId: null,
-    isStarred: false,
+    title: 'My Note',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
-    coverThumbnail: null,
-    coverThumbnailMimeType: null,
-    contentVersion: 1,
     ...overrides,
   };
 }
@@ -147,7 +144,7 @@ function fakeMenuEvent() {
 beforeEach(() => {
   vi.clearAllMocks();
   fileGridProps.length = 0;
-  getRootContentsMock.mockResolvedValue({ folder: null, folders: [], files: [], shortcuts: [] });
+  listAllNotesMock.mockResolvedValue([]);
   createNoteMock.mockResolvedValue({
     id: 'new-note',
     name: 'Untitled note',
@@ -171,26 +168,17 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('NotesPage — listing query', () => {
-  it('calls filesystemApi.getRootContents with exactly { type: "note", orderBy: "createdAt", direction: "desc" }', async () => {
+  it('calls listAllNotes to populate the listing', async () => {
     await renderNotesPage();
 
-    await waitFor(() => expect(getRootContentsMock).toHaveBeenCalled());
-
-    expect(getRootContentsMock).toHaveBeenCalledTimes(1);
-    expect(getRootContentsMock).toHaveBeenCalledWith({
-      type: 'note',
-      orderBy: 'createdAt',
-      direction: 'desc',
-    });
+    await waitFor(() => expect(listAllNotesMock).toHaveBeenCalled());
+    expect(listAllNotesMock).toHaveBeenCalledTimes(1);
   });
 
-  it('maps FileItem.name onto the grid item name', async () => {
-    getRootContentsMock.mockResolvedValue({
-      folder: null,
-      folders: [],
-      files: [makeFileItem({ id: '1', name: 'My Note', updatedAt: '2026-01-01T00:00:00Z' })],
-      shortcuts: [],
-    });
+  it('maps NoteMeta.title onto the grid item name', async () => {
+    listAllNotesMock.mockResolvedValue([
+      makeNoteMeta({ id: '1', title: 'My Note', updatedAt: '2026-01-01T00:00:00Z' }),
+    ]);
 
     await renderNotesPage();
 
@@ -205,7 +193,7 @@ describe('NotesPage — listing query', () => {
   });
 
   it('passes isLoading=true to FileGrid while the query is pending', async () => {
-    getRootContentsMock.mockReturnValue(new Promise(() => {})); // never resolves
+    listAllNotesMock.mockReturnValue(new Promise(() => {})); // never resolves
 
     await renderNotesPage();
 
@@ -214,7 +202,7 @@ describe('NotesPage — listing query', () => {
   });
 
   it('passes isError=true to FileGrid when the query rejects', async () => {
-    getRootContentsMock.mockRejectedValue(new Error('network error'));
+    listAllNotesMock.mockRejectedValue(new Error('network error'));
 
     await renderNotesPage();
 

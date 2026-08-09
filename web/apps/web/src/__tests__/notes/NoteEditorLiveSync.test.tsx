@@ -29,14 +29,12 @@ vi.mock('next/navigation', () => ({
 }));
 
 const getFileInfoMock = vi.fn();
-const getRootContentsMock = vi.fn();
 const updateFileMock = vi.fn();
 const driveReadContentMock = vi.fn();
 const driveAutosaveContentMock = vi.fn();
 
 vi.mock('@neutrino/api-drive', () => ({
   filesystemApi: {
-    getRootContents: (...args: unknown[]) => getRootContentsMock(...args),
     updateFile: (...args: unknown[]) => updateFileMock(...args),
   },
   storageApi: {
@@ -46,6 +44,13 @@ vi.mock('@neutrino/api-drive', () => ({
   driveReadContent: (...args: unknown[]) => driveReadContentMock(...args),
   driveAutosaveContent: (...args: unknown[]) => driveAutosaveContentMock(...args),
   driveAutosaveEncryptedContent: vi.fn(),
+}));
+
+const listAllNotesMock = vi.fn();
+
+vi.mock('@/lib/noteFiles', () => ({
+  listAllNotes: (...args: unknown[]) => listAllNotesMock(...args),
+  extractNoteText: (raw: string) => raw,
 }));
 
 const getBacklinksMock = vi.fn();
@@ -217,7 +222,7 @@ beforeEach(() => {
   blockEditorProps.length = 0;
   syncConnected = true;
   remoteUpdateRef = { current: null };
-  getRootContentsMock.mockResolvedValue({ folder: null, folders: [], files: [], shortcuts: [] });
+  listAllNotesMock.mockResolvedValue([]);
   getFileInfoMock.mockResolvedValue(noteInfo());
   driveReadContentMock.mockResolvedValue(CONTENT_V1);
   getBacklinksMock.mockResolvedValue({ backlinks: [] });

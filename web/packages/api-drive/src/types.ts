@@ -53,8 +53,6 @@ export interface CreateFileRequest {
   folderId?: string | null;
 }
 
-export type DriveView = 'recent' | 'starred' | 'trash';
-
 /** Filter drive contents to a single kind of file, matched by MIME type. */
 export type DriveFileType =
   | 'photo'
@@ -73,8 +71,7 @@ export interface FileListQuery {
   offset?: number;
   orderBy?: 'name' | 'size' | 'createdAt' | 'updatedAt';
   direction?: 'asc' | 'desc';
-  view?: DriveView;
-  /** List only files of this type across the whole drive. */
+  /** List only files of this type within the folder being listed. */
   type?: DriveFileType;
 }
 
@@ -138,7 +135,6 @@ export interface FolderContentsResponse {
   folder: Folder | null;
   folders: Folder[];
   files: FileItem[];
-  shortcuts: unknown[];
 }
 
 export interface StarredContentsResponse {
@@ -177,17 +173,19 @@ export interface BulkDeleteRequest {
 
 export interface Shortcut {
   id: string;
-  userId: string;
-  name: string;
-  targetId: string;
-  targetType: 'file' | 'folder';
+  targetFileId: string;
+  /** Containing folder; null for a shortcut at the drive root. */
+  folderId: string | null;
   createdAt: string;
 }
 
 export interface ShortcutCreateRequest {
-  targetId: string;
-  targetType: 'file' | 'folder';
-  name?: string;
+  targetFileId: string;
+  folderId?: string;
+}
+
+export interface ShortcutListResponse {
+  shortcuts: Shortcut[];
 }
 
 // ---------------------------------------------------------------------------
