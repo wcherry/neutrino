@@ -86,6 +86,15 @@ export interface CreateNoteRequest {
 export interface SaveNoteRequest {
   /** Omit for a pure rename (title-only save) — content/links stay untouched. */
   content?: string;
+  /**
+   * How `content` is encoded. Omit for plain text. E2EE notes must set this
+   * to `'base64url'` — the server decodes it back to raw ciphertext bytes
+   * before writing to storage, matching the format every reader (mobile,
+   * version history, this app's own content query) expects on disk. Without
+   * it, the base64url text itself would be written verbatim and nothing
+   * could decrypt the note again.
+   */
+  contentEncoding?: 'base64url';
   title?: string;
   /**
    * Wiki-link target titles extracted client-side from the plaintext content.

@@ -19,6 +19,16 @@ pub struct SaveNoteRequest {
     /// markdown, so the server can no longer parse it for `[[wiki links]]`
     /// — see `linked_titles`.
     pub content: Option<String>,
+    /// How `content` is encoded on the wire. Defaults to `"utf8"` (plain
+    /// text, written to storage as-is). E2EE notes must set this to
+    /// `"base64url"` — the client encrypts the body and base64url-encodes
+    /// the ciphertext to fit it into this JSON request, but storage must
+    /// hold the *raw* ciphertext bytes (matching the `[24-byte header]` +
+    /// ciphertext format every other reader — mobile, version history, the
+    /// web app's own content query — expects). Without this the base64url
+    /// text itself would be written to disk verbatim, and every reader
+    /// downstream would fail to decrypt it.
+    pub content_encoding: Option<String>,
     /// Optional new title (renames the backing drive file).
     pub title: Option<String>,
     /// Wiki-link target titles extracted client-side from the plaintext

@@ -219,10 +219,12 @@ export default function NoteEditorPage() {
       savingRef.current = true;
       try {
         let contentToSend = serialized;
+        let contentEncoding: 'base64url' | undefined;
         if (dekRef.current) {
           await initSodium();
           const cipherBytes = encryptFile(new TextEncoder().encode(serialized), dekRef.current);
           contentToSend = toBase64url(cipherBytes);
+          contentEncoding = 'base64url';
         }
         // Wiki links must be extracted from the plaintext here — once
         // encrypted, the server can no longer read `[[links]]` out of `content`.
@@ -231,6 +233,7 @@ export default function NoteEditorPage() {
           noteId,
           {
             content: contentToSend,
+            contentEncoding,
             title: nextTitle !== lastSavedRef.current.title ? nextTitle : undefined,
             linkedTitles,
           },

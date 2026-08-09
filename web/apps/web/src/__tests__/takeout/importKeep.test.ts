@@ -111,6 +111,10 @@ describe('runKeepImport', () => {
     // has to be the base64url text and not raw bytes.
     expect(body.content).toMatch(/^b64:/);
     expect(JSON.parse(body.content.slice(4))[0]).toMatchObject({ type: 'paragraph', content: 'first' });
+    // contentEncoding tells the server to decode this back to raw ciphertext
+    // bytes before writing to storage — without it the base64url text itself
+    // gets written verbatim and no reader can decrypt the note again.
+    expect(body.contentEncoding).toBe('base64url');
   });
 
   it('sends an empty link list, since the server cannot read ciphertext', async () => {
@@ -125,6 +129,7 @@ describe('runKeepImport', () => {
     expect(summary.unencrypted).toBe(true);
     expect(encryptionApi.setFileKey).not.toHaveBeenCalled();
     expect(notesApi.saveNote.mock.calls[0][1].content).not.toMatch(/^b64:/);
+    expect(notesApi.saveNote.mock.calls[0][1].contentEncoding).toBeUndefined();
   });
 
   it('adds each imported note to the search index', async () => {
