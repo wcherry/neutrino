@@ -4,17 +4,23 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToast } from '@neutrino/ui';
-import { notesApi } from '@/lib/api';
-import { filesystemApi, storageApi, driveReadContent } from '@neutrino/api-drive';
-import { extractNoteText, type NoteMetaResponse } from '@neutrino/api-notes';
-import { initSodium, encryptFile, decryptFile, toBase64url, fromBase64url } from '@neutrino/e2e-crypto';
+import {
+  filesystemApi,
+  storageApi,
+  driveReadContent,
+  driveAutosaveContent,
+  driveAutosaveEncryptedContent,
+} from '@neutrino/api-drive';
+import { linksApi } from '@neutrino/api-links';
+import { extractNoteText } from '@/lib/noteFiles';
+import { initSodium, decryptFile, fromBase64url } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { useFileSync } from '@/hooks/useFileSync';
 import BlockEditor, { Block, parseBlocks, serializeBlocks } from './BlockEditor';
-import { extractWikiLinkTitles } from './blockEditorHelpers';
+import { extractWikiLinkTitles, type NoteLinkTarget } from './blockEditorHelpers';
 import styles from './page.module.css';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -77,7 +83,7 @@ export default function NoteEditorPage() {
 
   const { data: note, isLoading: metaLoading } = useQuery({
     queryKey: ['note', noteId],
-    queryFn: () => notesApi.getNote(noteId),
+    queryFn: () => storageApi.getFileInfo(noteId),
     enabled: !!noteId,
     // Metadata is the change detector for remote edits: always refetch on
     // focus, and poll as a fallback whenever the socket is unavailable.
@@ -86,22 +92,20 @@ export default function NoteEditorPage() {
     refetchInterval: connected ? false : OFFLINE_POLL_MS,
   });
 
-  // Content is fetched directly from the drive API (note.contentUrl), the
-  // same pattern docs/sheets/slides use, rather than embedded in the notes
-  // API's JSON response.
+  // Content is fetched directly from the drive API, the same pattern
+  // docs/sheets/slides use, rather than embedded in a notes-specific response.
   const { data: noteContent, isLoading: contentLoading } = useQuery({
-    queryKey: ['note-content', noteId, dekResolved, note?.contentUrl ?? ''],
+    queryKey: ['note-content', noteId, dekResolved],
     queryFn: async () => {
-      if (!note?.contentUrl) return '';
       if (dekRef.current && !isNewEncryption) {
         try {
           await initSodium();
           const blob = await storageApi.downloadFile(noteId);
           const stored = new Uint8Array(await blob.arrayBuffer());
-          // The save path sends `toBase64url(cipherBytes)`, so what comes back
-          // is the *text* of that encoding, not the raw ciphertext. Decode it
-          // before decrypting; older content written as raw bytes still works
-          // through the fallback.
+          // Saves write raw ciphertext bytes. A note saved by the old
+          // notes-CRUD API before it was fixed wrote the base64url *text* of
+          // the ciphertext instead — decode that first, and fall back to the
+          // raw bytes for everything saved since.
           let plainBytes: Uint8Array;
           try {
             plainBytes = decryptFile(
@@ -117,9 +121,9 @@ export default function NoteEditorPage() {
           // raw content rather than crashing the editor.
         }
       }
-      return driveReadContent(note.contentUrl);
+      return driveReadContent(`/api/v1/drive/files/${noteId}`);
     },
-    enabled: !!note?.contentUrl && dekResolved,
+    enabled: !!note && dekResolved,
   });
 
   const isLoading = metaLoading || contentLoading;
@@ -131,17 +135,13 @@ export default function NoteEditorPage() {
 
   const { data: backlinksData } = useQuery({
     queryKey: ['note-backlinks', noteId],
-    queryFn: () => notesApi.getBacklinks(noteId),
+    queryFn: () => linksApi.getBacklinks(noteId),
     enabled: !!noteId,
   });
 
-  const allNotes: NoteMetaResponse[] = (allNotesData?.files ?? []).map((f) => ({
+  const allNotes: NoteLinkTarget[] = (allNotesData?.files ?? []).map((f) => ({
     id: f.id,
     title: f.name,
-    folderId: f.folderId,
-    createdAt: f.createdAt,
-    updatedAt: f.updatedAt,
-    contentVersion: f.contentVersion,
   }));
   const backlinks = backlinksData?.backlinks ?? [];
 
@@ -175,8 +175,8 @@ export default function NoteEditorPage() {
 
     const apply = () => {
       setBlocks(parseBlocks(noteContent));
-      setTitle(note.title);
-      lastSavedRef.current = { content: noteContent, title: note.title };
+      setTitle(note.name);
+      lastSavedRef.current = { content: noteContent, title: note.name };
       appliedUpdatedAtRef.current = note.updatedAt;
       seededRef.current = true;
     };
@@ -193,7 +193,7 @@ export default function NoteEditorPage() {
     if (dirtyRef.current || savingRef.current) return;
 
     // Echo of our own save — nothing to apply, but the revision is now current.
-    if (noteContent === lastSavedRef.current.content && note.title === lastSavedRef.current.title) {
+    if (noteContent === lastSavedRef.current.content && note.name === lastSavedRef.current.title) {
       appliedUpdatedAtRef.current = note.updatedAt;
       return;
     }
@@ -218,32 +218,35 @@ export default function NoteEditorPage() {
       setSaveStatus('saving');
       savingRef.current = true;
       try {
-        let contentToSend = serialized;
-        let contentEncoding: 'base64url' | undefined;
-        if (dekRef.current) {
-          await initSodium();
-          const cipherBytes = encryptFile(new TextEncoder().encode(serialized), dekRef.current);
-          contentToSend = toBase64url(cipherBytes);
-          contentEncoding = 'base64url';
-        }
-        // Wiki links must be extracted from the plaintext here — once
-        // encrypted, the server can no longer read `[[links]]` out of `content`.
-        const linkedTitles = extractWikiLinkTitles(JSON.parse(serialized) as Block[]);
-        const meta = await notesApi.saveNote(
-          noteId,
-          {
-            content: contentToSend,
-            contentEncoding,
-            title: nextTitle !== lastSavedRef.current.title ? nextTitle : undefined,
-            linkedTitles,
-          },
-          versionGuard.check(),
-        );
+        const titleChanged = nextTitle !== lastSavedRef.current.title;
+        const meta = dekRef.current
+          ? await driveAutosaveEncryptedContent(
+              noteId,
+              serialized,
+              'note.json',
+              dekRef.current,
+              versionGuard.check(),
+            )
+          : await driveAutosaveContent(noteId, serialized, 'note.json', versionGuard.check());
         versionGuard.observe(meta.contentVersion);
         lastSavedRef.current = { content: serialized, title: nextTitle };
         appliedUpdatedAtRef.current = meta.updatedAt;
         clearDirtyIfSettled();
         setSaveStatus('saved');
+
+        // Title and the link graph are metadata, saved best-effort alongside
+        // the (version-guarded) content write above — a failure here doesn't
+        // roll back a content save that already succeeded.
+        // Wiki links must be extracted from the plaintext here — once
+        // encrypted, the server can no longer read `[[links]]` out of `content`.
+        const linkedTitles = extractWikiLinkTitles(JSON.parse(serialized) as Block[]);
+        Promise.all([
+          titleChanged ? filesystemApi.updateFile(noteId, { name: nextTitle }) : Promise.resolve(),
+          linksApi.updateLinks(noteId, { linkedTitles }),
+        ]).catch(() => {
+          toast.error('Note saved, but the title or linked notes failed to update.');
+        });
+
         queryClient.invalidateQueries({ queryKey: ['notes'] });
         queryClient.invalidateQueries({ queryKey: ['note-backlinks', noteId] });
         indexOnSave(currentUser?.id, {

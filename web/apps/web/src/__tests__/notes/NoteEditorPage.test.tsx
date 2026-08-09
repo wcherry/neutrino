@@ -1,29 +1,22 @@
 /**
- * Tests for the Note Editor page's TARGET post-refactor behavior (in-progress
- * refactor: dedicated `notesApi.listNotes()` -> generic Drive API's typed
- * listing `filesystemApi.getRootContents({ type: 'note' })`, then adapted back
- * into the existing `NoteMetaResponse[]` shape so the deeper component tree
- * — `BlockEditor` and friends — stays untouched).
- *
- * RED PHASE: the implementation on disk
- * (apps/web/src/app/(apps)/notes/editor/page.tsx) still calls
- * `notesApi.listNotes()` and passes its `.notes` straight through, so these
- * tests are expected to FAIL until a follow-up change swaps the query over to
- * `filesystemApi` and adds the adapter.
+ * Tests for the Note Editor page's Drive-native data flow (post Phase 3 of
+ * `agent_docs/notes-links-roadmap.md` — the notes CRUD API is gone; the editor
+ * reads/writes the note as a plain Drive file plus the generic links service).
  *
  * Covers:
- *   - `filesystemApi.getRootContents` is called with exactly `{ type: 'note' }`
- *     (no `orderBy`/`direction` — unlike the list page's call).
- *   - The old `notesApi.listNotes` is NOT called.
- *   - The Drive `FileItem[]` response is adapted into `NoteMetaResponse[]`
- *     (`.name` -> `.title`, Drive-only fields dropped) before being passed to
- *     `BlockEditor` as `allNotes`.
- *   - `notesApi.getNote` / `notesApi.getBacklinks` are still called with the
- *     note id taken from the URL search param.
+ *   - `storageApi.getFileInfo` is called with the note id from the URL search
+ *     param, for permission-checked metadata (not `getFileMetadata`, which is
+ *     owner-scoped only and would 404 for a shared note).
+ *   - `linksApi.getBacklinks` is called with the same id.
+ *   - `filesystemApi.getRootContents({ type: 'note' })` (no `orderBy`/
+ *     `direction`, unlike the list page's call) is adapted into a
+ *     `{ id, title }[]` shape for `BlockEditor.allNotes` — Drive-only fields
+ *     (size, mime type, timestamps, etc.) must not leak through, since that's
+ *     all the wiki-link autocomplete needs.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
@@ -38,36 +31,35 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
-// `@/lib/api` — `notesApi.getNote` / `getBacklinks` / `saveNote` stay untouched.
-const listNotesMock = vi.fn();
-const getNoteMock = vi.fn();
-const getBacklinksMock = vi.fn();
-const saveNoteMock = vi.fn();
-
-vi.mock('@/lib/api', () => ({
-  notesApi: {
-    listNotes: (...args: unknown[]) => listNotesMock(...args),
-    getNote: (...args: unknown[]) => getNoteMock(...args),
-    getBacklinks: (...args: unknown[]) => getBacklinksMock(...args),
-    saveNote: (...args: unknown[]) => saveNoteMock(...args),
-  },
-}));
-
-// `@neutrino/api-drive` — separate module specifier; the refactor imports
-// `filesystemApi` directly from here for the "all notes" listing. Content is
-// now fetched via `driveReadContent`/`storageApi` (note.contentUrl) rather
-// than embedded in notesApi.getNote's response.
 const getRootContentsMock = vi.fn();
+const getFileInfoMock = vi.fn();
+const downloadFileMock = vi.fn();
 const driveReadContentMock = vi.fn();
+const driveAutosaveContentMock = vi.fn();
+const updateFileMock = vi.fn();
 
 vi.mock('@neutrino/api-drive', () => ({
   filesystemApi: {
     getRootContents: (...args: unknown[]) => getRootContentsMock(...args),
+    updateFile: (...args: unknown[]) => updateFileMock(...args),
   },
   storageApi: {
-    downloadFile: vi.fn(),
+    getFileInfo: (...args: unknown[]) => getFileInfoMock(...args),
+    downloadFile: (...args: unknown[]) => downloadFileMock(...args),
   },
   driveReadContent: (...args: unknown[]) => driveReadContentMock(...args),
+  driveAutosaveContent: (...args: unknown[]) => driveAutosaveContentMock(...args),
+  driveAutosaveEncryptedContent: vi.fn(),
+}));
+
+const getBacklinksMock = vi.fn();
+const updateLinksMock = vi.fn();
+
+vi.mock('@neutrino/api-links', () => ({
+  linksApi: {
+    getBacklinks: (...args: unknown[]) => getBacklinksMock(...args),
+    updateLinks: (...args: unknown[]) => updateLinksMock(...args),
+  },
 }));
 
 // DEK resolution is exercised separately (see notes/note-encryption e2e specs)
@@ -173,31 +165,40 @@ beforeEach(() => {
   vi.clearAllMocks();
   blockEditorProps.length = 0;
   getRootContentsMock.mockResolvedValue({ folder: null, folders: [], files: [], shortcuts: [] });
-  listNotesMock.mockResolvedValue({ notes: [] });
-  getNoteMock.mockResolvedValue({
+  getFileInfoMock.mockResolvedValue({
     id: NOTE_ID,
-    title: 'Current Note',
-    contentUrl: `/api/v1/drive/files/${NOTE_ID}`,
+    name: 'Current Note',
     folderId: null,
+    deletedAt: null,
+    yourRole: 'owner',
+    storagePath: '/some/path',
+    mimeType: 'application/x-neutrino-note',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    coverThumbnail: null,
+    coverThumbnailMimeType: null,
+    tags: [],
+    encryptedMetadata: null,
+    contentVersion: 1,
   });
   driveReadContentMock.mockResolvedValue('body');
   getBacklinksMock.mockResolvedValue({ backlinks: [] });
-  saveNoteMock.mockResolvedValue({
+  driveAutosaveContentMock.mockResolvedValue({
     id: NOTE_ID,
-    title: 'Current Note',
+    name: 'Current Note',
     folderId: null,
-    createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    contentVersion: 2,
   });
+  updateFileMock.mockResolvedValue({});
+  updateLinksMock.mockResolvedValue({ backlinks: [] });
 });
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('NoteEditorPage — "all notes" query (Drive API refactor)', () => {
+describe('NoteEditorPage — "all notes" query', () => {
   it('calls filesystemApi.getRootContents with exactly { type: "note" } (no orderBy/direction)', async () => {
     await renderEditorPage();
 
@@ -207,27 +208,11 @@ describe('NoteEditorPage — "all notes" query (Drive API refactor)', () => {
     expect(getRootContentsMock).toHaveBeenCalledWith({ type: 'note' });
   });
 
-  it('does NOT call the old notesApi.listNotes', async () => {
-    await renderEditorPage();
-
-    await waitFor(() => expect(getRootContentsMock).toHaveBeenCalled());
-
-    expect(listNotesMock).not.toHaveBeenCalled();
-  });
-
-  it('adapts the Drive FileItem[] response into NoteMetaResponse[] for BlockEditor.allNotes', async () => {
+  it('adapts the Drive FileItem[] response into { id, title }[] for BlockEditor.allNotes', async () => {
     getRootContentsMock.mockResolvedValue({
       folder: null,
       folders: [],
-      files: [
-        makeFileItem({
-          id: 'note-2',
-          name: 'Other Note',
-          folderId: null,
-          createdAt: '2026-01-01T00:00:00Z',
-          updatedAt: '2026-01-02T00:00:00Z',
-        }),
-      ],
+      files: [makeFileItem({ id: 'note-2', name: 'Other Note' })],
       shortcuts: [],
     });
 
@@ -238,37 +223,25 @@ describe('NoteEditorPage — "all notes" query (Drive API refactor)', () => {
     });
 
     const allNotes = latestBlockEditorProps().allNotes;
-    expect(allNotes).toEqual([
-      {
-        id: 'note-2',
-        title: 'Other Note',
-        folderId: null,
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-02T00:00:00Z',
-        // Carried through deliberately: the editor guards saves against it,
-        // so it is part of NoteMetaResponse rather than a Drive-only field.
-        contentVersion: 1,
-      },
-    ]);
+    expect(allNotes).toEqual([{ id: 'note-2', title: 'Other Note' }]);
 
-    // Drive-only fields must not leak into the NoteMetaResponse-shaped array.
+    // Drive-only fields must not leak into the wiki-link-autocomplete shape.
     expect(allNotes[0]).not.toHaveProperty('sizeBytes');
     expect(allNotes[0]).not.toHaveProperty('mimeType');
-    expect(allNotes[0]).not.toHaveProperty('isStarred');
-    expect(allNotes[0]).not.toHaveProperty('coverThumbnail');
-    expect(allNotes[0]).not.toHaveProperty('coverThumbnailMimeType');
+    expect(allNotes[0]).not.toHaveProperty('folderId');
+    expect(allNotes[0]).not.toHaveProperty('contentVersion');
     expect(allNotes[0]).not.toHaveProperty('name');
   });
 });
 
-describe('NoteEditorPage — current-note operations (untouched by the listing refactor)', () => {
-  it('still calls notesApi.getNote with the note id from the URL search param', async () => {
+describe('NoteEditorPage — current-note operations', () => {
+  it('calls storageApi.getFileInfo (permission-checked) with the note id from the URL', async () => {
     await renderEditorPage();
 
-    await waitFor(() => expect(getNoteMock).toHaveBeenCalledWith(NOTE_ID));
+    await waitFor(() => expect(getFileInfoMock).toHaveBeenCalledWith(NOTE_ID));
   });
 
-  it('still calls notesApi.getBacklinks with the note id from the URL search param', async () => {
+  it('calls linksApi.getBacklinks with the note id from the URL', async () => {
     await renderEditorPage();
 
     await waitFor(() => expect(getBacklinksMock).toHaveBeenCalledWith(NOTE_ID));

@@ -28,25 +28,34 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
-const getNoteMock = vi.fn();
-const getBacklinksMock = vi.fn();
-const saveNoteMock = vi.fn();
-
-vi.mock('@/lib/api', () => ({
-  notesApi: {
-    getNote: (...args: unknown[]) => getNoteMock(...args),
-    getBacklinks: (...args: unknown[]) => getBacklinksMock(...args),
-    saveNote: (...args: unknown[]) => saveNoteMock(...args),
-  },
-}));
-
+const getFileInfoMock = vi.fn();
 const getRootContentsMock = vi.fn();
+const updateFileMock = vi.fn();
 const driveReadContentMock = vi.fn();
+const driveAutosaveContentMock = vi.fn();
 
 vi.mock('@neutrino/api-drive', () => ({
-  filesystemApi: { getRootContents: (...args: unknown[]) => getRootContentsMock(...args) },
-  storageApi: { downloadFile: vi.fn() },
+  filesystemApi: {
+    getRootContents: (...args: unknown[]) => getRootContentsMock(...args),
+    updateFile: (...args: unknown[]) => updateFileMock(...args),
+  },
+  storageApi: {
+    getFileInfo: (...args: unknown[]) => getFileInfoMock(...args),
+    downloadFile: vi.fn(),
+  },
   driveReadContent: (...args: unknown[]) => driveReadContentMock(...args),
+  driveAutosaveContent: (...args: unknown[]) => driveAutosaveContentMock(...args),
+  driveAutosaveEncryptedContent: vi.fn(),
+}));
+
+const getBacklinksMock = vi.fn();
+const updateLinksMock = vi.fn();
+
+vi.mock('@neutrino/api-links', () => ({
+  linksApi: {
+    getBacklinks: (...args: unknown[]) => getBacklinksMock(...args),
+    updateLinks: (...args: unknown[]) => updateLinksMock(...args),
+  },
 }));
 
 // Unencrypted path — E2EE is covered by the notes/note-encryption e2e specs.
@@ -129,14 +138,32 @@ const CONTENT_V2 = JSON.stringify([{ id: 'b1', type: 'text', content: 'second' }
 const LOCAL_EDIT = [{ id: 'b1', type: 'text', content: 'my local edit' }];
 const LATER_LOCAL_EDIT = [{ id: 'b1', type: 'text', content: 'still typing' }];
 
-function noteMeta(overrides: Record<string, unknown> = {}) {
+function noteInfo(overrides: Record<string, unknown> = {}) {
   return {
     id: NOTE_ID,
-    title: 'Current Note',
-    contentUrl: `/api/v1/drive/files/${NOTE_ID}`,
+    name: 'Current Note',
     folderId: null,
+    deletedAt: null,
+    yourRole: 'owner',
+    storagePath: '/some/path',
+    mimeType: 'application/x-neutrino-note',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    coverThumbnail: null,
+    coverThumbnailMimeType: null,
+    tags: [],
+    encryptedMetadata: null,
+    contentVersion: 1,
+    ...overrides,
+  };
+}
+
+function autosaveMeta(overrides: Record<string, unknown> = {}) {
+  return {
+    id: NOTE_ID,
+    name: 'Current Note',
+    updatedAt: '2026-01-01T00:05:00Z',
+    contentVersion: 2,
     ...overrides,
   };
 }
@@ -191,10 +218,12 @@ beforeEach(() => {
   syncConnected = true;
   remoteUpdateRef = { current: null };
   getRootContentsMock.mockResolvedValue({ folder: null, folders: [], files: [], shortcuts: [] });
-  getNoteMock.mockResolvedValue(noteMeta());
+  getFileInfoMock.mockResolvedValue(noteInfo());
   driveReadContentMock.mockResolvedValue(CONTENT_V1);
   getBacklinksMock.mockResolvedValue({ backlinks: [] });
-  saveNoteMock.mockResolvedValue(noteMeta({ updatedAt: '2026-01-01T00:05:00Z' }));
+  updateLinksMock.mockResolvedValue({ backlinks: [] });
+  updateFileMock.mockResolvedValue({});
+  driveAutosaveContentMock.mockResolvedValue(autosaveMeta());
 });
 
 afterEach(() => {
@@ -211,8 +240,8 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     await waitForInitialLoad();
 
     // Someone else saves the note.
-    getNoteMock.mockResolvedValue(
-      noteMeta({ title: 'Renamed elsewhere', updatedAt: '2026-01-01T00:10:00Z' })
+    getFileInfoMock.mockResolvedValue(
+      noteInfo({ name: 'Renamed elsewhere', updatedAt: '2026-01-01T00:10:00Z' })
     );
     driveReadContentMock.mockResolvedValue(CONTENT_V2);
 
@@ -231,7 +260,7 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     const readsAfterLoad = driveReadContentMock.mock.calls.length;
 
     // No signal — only fresher metadata, as an interval/focus refetch produces.
-    getNoteMock.mockResolvedValue(noteMeta({ updatedAt: '2026-01-01T00:10:00Z' }));
+    getFileInfoMock.mockResolvedValue(noteInfo({ updatedAt: '2026-01-01T00:10:00Z' }));
     driveReadContentMock.mockResolvedValue(CONTENT_V2);
 
     await act(async () => {
@@ -255,7 +284,7 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     expect(latestProps().blocks).toEqual(LOCAL_EDIT);
 
     // A remote edit lands mid-typing.
-    getNoteMock.mockResolvedValue(noteMeta({ updatedAt: '2026-01-01T00:10:00Z' }));
+    getFileInfoMock.mockResolvedValue(noteInfo({ updatedAt: '2026-01-01T00:10:00Z' }));
     driveReadContentMock.mockResolvedValue(CONTENT_V2);
 
     await deliverRemoteSignal();
@@ -277,14 +306,14 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
     await settle();
 
-    expect(saveNoteMock).toHaveBeenCalledTimes(1);
+    expect(driveAutosaveContentMock).toHaveBeenCalledTimes(1);
     expect(broadcastFileUpdateMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps keystrokes typed while a save was in flight', async () => {
     vi.useFakeTimers();
     let resolveSave: (meta: unknown) => void = () => {};
-    saveNoteMock.mockImplementation(
+    driveAutosaveContentMock.mockImplementation(
       () => new Promise((resolve) => { resolveSave = resolve; })
     );
 
@@ -293,17 +322,17 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
 
     act(() => latestProps().onChange(LOCAL_EDIT));
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
-    expect(saveNoteMock).toHaveBeenCalledTimes(1);
+    expect(driveAutosaveContentMock).toHaveBeenCalledTimes(1);
 
     // The user keeps typing before that save comes back.
     act(() => latestProps().onChange(LATER_LOCAL_EDIT));
     await act(async () => {
-      resolveSave(noteMeta({ updatedAt: '2026-01-01T00:05:00Z' }));
+      resolveSave(autosaveMeta({ updatedAt: '2026-01-01T00:05:00Z' }));
     });
     await settle();
 
     // A remote revision lands in the window before the newer keystrokes are saved.
-    getNoteMock.mockResolvedValue(noteMeta({ updatedAt: '2026-01-01T00:10:00Z' }));
+    getFileInfoMock.mockResolvedValue(noteInfo({ updatedAt: '2026-01-01T00:10:00Z' }));
     driveReadContentMock.mockResolvedValue(CONTENT_V2);
     await act(async () => { remoteUpdateRef.current?.(); });
     await settle();
@@ -317,12 +346,12 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     await renderEditorPage();
     await settle();
 
-    const callsAfterLoad = getNoteMock.mock.calls.length;
+    const callsAfterLoad = getFileInfoMock.mock.calls.length;
     expect(callsAfterLoad).toBeGreaterThan(0);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(16_000); });
 
-    expect(getNoteMock.mock.calls.length).toBeGreaterThan(callsAfterLoad);
+    expect(getFileInfoMock.mock.calls.length).toBeGreaterThan(callsAfterLoad);
   });
 
   it('does not poll while the socket is connected', async () => {
@@ -330,11 +359,11 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     await renderEditorPage();
     await settle();
 
-    const callsAfterLoad = getNoteMock.mock.calls.length;
+    const callsAfterLoad = getFileInfoMock.mock.calls.length;
     expect(callsAfterLoad).toBeGreaterThan(0);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
 
-    expect(getNoteMock.mock.calls.length).toBe(callsAfterLoad);
+    expect(getFileInfoMock.mock.calls.length).toBe(callsAfterLoad);
   });
 });

@@ -41,7 +41,7 @@ const nextConfig: NextConfig = {
     '@neutrino/api-calendar',
     '@neutrino/api-drive',
     '@neutrino/api-docs',
-    '@neutrino/api-notes',
+    '@neutrino/api-links',
     '@neutrino/api-sheets',
     '@neutrino/api-slides',
     '@neutrino/api-photos',

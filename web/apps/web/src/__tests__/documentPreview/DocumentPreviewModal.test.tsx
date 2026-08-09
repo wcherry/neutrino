@@ -50,7 +50,7 @@ vi.mock('../../app/(apps)/sheets/editor/utils', () => ({
 const mockGetDoc = vi.fn();
 const mockGetSheet = vi.fn();
 const mockGetSlide = vi.fn();
-const mockGetNote = vi.fn();
+const mockGetFileInfo = vi.fn();
 const mockGetDiagram = vi.fn();
 const mockGetDrawing = vi.fn();
 const mockDriveReadContent = vi.fn();
@@ -60,10 +60,12 @@ vi.mock('../../lib/api', () => ({
   docsApi: { getDoc: (...args: unknown[]) => mockGetDoc(...args) },
   sheetsApi: { getSheet: (...args: unknown[]) => mockGetSheet(...args) },
   slidesApi: { getSlide: (...args: unknown[]) => mockGetSlide(...args) },
-  notesApi: { getNote: (...args: unknown[]) => mockGetNote(...args) },
   diagramsApi: { getDiagram: (...args: unknown[]) => mockGetDiagram(...args) },
   drawingApi: { getDrawing: (...args: unknown[]) => mockGetDrawing(...args) },
-  storageApi: { downloadFile: (...args: unknown[]) => mockDownloadFile(...args) },
+  storageApi: {
+    getFileInfo: (...args: unknown[]) => mockGetFileInfo(...args),
+    downloadFile: (...args: unknown[]) => mockDownloadFile(...args),
+  },
   driveReadContent: (...args: unknown[]) => mockDriveReadContent(...args),
 }));
 
@@ -281,7 +283,7 @@ function setupSlideQueries() {
 function setupNoteQuery() {
   mockUseQuery
     .mockReturnValueOnce({
-      data: { id: 'note-1', title: 'My Note', contentUrl: '/api/v1/drive/files/note-1' },
+      data: { id: 'note-1', name: 'My Note' },
       isLoading: false,
       isError: false,
     })
@@ -512,7 +514,7 @@ describe('DocPreview', () => {
 // Regression coverage for https://github.com/wcherry/neutrino/issues/81:
 // previewing an E2EE file must decrypt content via storageApi.downloadFile +
 // decryptFile, not render the raw (still-encrypted) bytes returned by
-// driveReadContent. These drive the real `docsApi`/`notesApi` + `useQuery`
+// driveReadContent. These drive the real `docsApi`/`storageApi.getFileInfo` + `useQuery`
 // implementations (rather than short-circuiting via mockReturnValueOnce) so
 // the preview's actual queryFn — and its decrypt branch — executes.
 describe('DocumentPreviewModal — encrypted content', () => {
@@ -563,7 +565,7 @@ describe('DocumentPreviewModal — encrypted content', () => {
       autosaveError: null,
       createVersionError: null,
     });
-    mockGetNote.mockResolvedValue({ id: 'note-1', title: 'My Note', contentUrl: '/api/v1/drive/files/note-1' });
+    mockGetFileInfo.mockResolvedValue({ id: 'note-1', name: 'My Note' });
     mockDownloadFile.mockResolvedValue({
       arrayBuffer: () => Promise.resolve(new TextEncoder().encode('ciphertext').buffer),
     });

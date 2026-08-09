@@ -19,6 +19,40 @@ export interface FileItem {
   contentVersion: number;
 }
 
+/**
+ * File metadata with the caller's permission role, returned by
+ * `GET /files/{id}/info`. Unlike `FileItem` (which `storageApi.listFiles`/
+ * `getFileMetadata` return, owner-scoped only), this endpoint is
+ * permission-checked — it works for any file the caller has been granted a
+ * role on, not just ones they own.
+ */
+export interface FileInfo {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  folderId: string | null;
+  deletedAt: string | null;
+  yourRole: string;
+  storagePath: string | null;
+  mimeType: string | null;
+  createdAt: string;
+  updatedAt: string;
+  coverThumbnail: string | null;
+  coverThumbnailMimeType: string | null;
+  tags: string[];
+  encryptedMetadata: string | null;
+  /** Server-side content revision counter, incremented on every autosave/version save. */
+  contentVersion: number;
+}
+
+export interface CreateFileRequest {
+  /** Client-generated id (e.g. `crypto.randomUUID()`) for the new file. */
+  id: string;
+  name: string;
+  mimeType: string;
+  folderId?: string | null;
+}
+
 export type DriveView = 'recent' | 'starred' | 'trash';
 
 /** Filter drive contents to a single kind of file, matched by MIME type. */

@@ -3,7 +3,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { Plus, Minus } from 'lucide-react';
-import type { NoteMetaResponse } from '@/lib/api';
 import type { TableBlockProps, TableData, TableStyle } from './blockEditorTypes';
 import { TABLE_PRESETS, TABLE_STRUCTURE_OPTIONS } from './blockEditorConstants';
 import { genId, renderInline } from './blockEditorHelpers';

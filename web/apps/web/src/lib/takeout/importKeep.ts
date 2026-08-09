@@ -17,12 +17,11 @@ import {
   loadKeyPair,
   generateFileKey,
   encryptFileKey,
-  encryptFile,
-  toBase64url,
   type KeyPair,
 } from '@neutrino/e2e-crypto';
-import { extractNoteText } from '@neutrino/api-notes';
-import { notesApi, encryptionApi } from '@/lib/api';
+import { driveAutosaveContent, driveAutosaveEncryptedContent } from '@neutrino/api-drive';
+import { encryptionApi } from '@/lib/api';
+import { createNote, extractNoteText, listAllNotes } from '@/lib/noteFiles';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import type { TakeoutArchive, TakeoutEntry } from './archive';
 import { createFolderResolver } from './folders';
@@ -114,16 +113,13 @@ export async function findKeepNotes(archive: TakeoutArchive): Promise<KeepSource
 // ── The import ────────────────────────────────────────────────────────────────
 
 /**
- * Encrypt a note's content the way the editor's first save does, and register
+ * Encrypt a note's content the way the editor's autosave does, and register
  * the DEK so the editor can decrypt it later.
- *
- * The editor reads content back with `fromBase64url` before decrypting, so the
- * ciphertext has to be base64url text rather than raw bytes.
  */
-async function encryptForNote(noteId: string, content: string, keyPair: KeyPair): Promise<string> {
+async function saveEncryptedBody(noteId: string, content: string, keyPair: KeyPair): Promise<void> {
   const dek = generateFileKey();
   await encryptionApi.setFileKey(noteId, { encryptedFileKey: encryptFileKey(dek, keyPair.publicKey) });
-  return toBase64url(encryptFile(new TextEncoder().encode(content), dek));
+  await driveAutosaveEncryptedContent(noteId, content, 'note.json', dek);
 }
 
 /** Why this note is being skipped, or `null` to import it. */
@@ -174,8 +170,8 @@ export async function runKeepImport({
   // two Keep notes that genuinely share a title should both come across.
   const existingTitles = new Set<string>();
   if (options.skipExisting) {
-    const notes = await notesApi.listNotes();
-    for (const note of notes.notes) existingTitles.add(note.title.trim().toLowerCase());
+    const notes = await listAllNotes();
+    for (const note of notes) existingTitles.add(note.title.trim().toLowerCase());
   }
 
   for (const entry of entries) {
@@ -213,29 +209,23 @@ export async function runKeepImport({
       }
 
       step = 'creating the note';
-      const created = await notesApi.createNote({ title, folderId });
-
-      step = keyPair ? 'encrypting the body' : 'preparing the body';
-      const content = keyPair
-        ? await encryptForNote(created.id, converted.content, keyPair)
-        : converted.content;
+      const created = await createNote(title, folderId);
 
       logStep('keep', `saving ${title}`, {
         id: created.id,
         blocks: converted.blocks.length,
-        body: formatBytes(content.length),
+        body: formatBytes(converted.content.length),
         encrypted: !!keyPair,
       });
 
-      // Keep notes contain no `[[wiki links]]`, so there is nothing for the
-      // server to link up — send the empty list explicitly rather than let it
-      // try to parse ciphertext.
-      step = 'saving the body';
-      await notesApi.saveNote(created.id, {
-        content,
-        contentEncoding: keyPair ? 'base64url' : undefined,
-        linkedTitles: [],
-      });
+      // Keep notes contain no `[[wiki links]]`, so there is nothing to link up
+      // — this never calls linksApi.updateLinks, unlike the editor's save path.
+      step = keyPair ? 'encrypting the body' : 'saving the body';
+      if (keyPair) {
+        await saveEncryptedBody(created.id, converted.content, keyPair);
+      } else {
+        await driveAutosaveContent(created.id, converted.content, 'note.json');
+      }
 
       step = 'indexing it for search';
       indexOnSave(userId, {

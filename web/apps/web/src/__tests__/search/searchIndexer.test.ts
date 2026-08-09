@@ -5,7 +5,6 @@ const {
   removeDocument,
   listDocuments,
   clearSearchIndex,
-  notesApi,
   docsApi,
   sheetsApi,
   slidesApi,
@@ -19,7 +18,6 @@ const {
   removeDocument: vi.fn(),
   listDocuments: vi.fn(),
   clearSearchIndex: vi.fn(),
-  notesApi: { listNotes: vi.fn() },
   docsApi: { listDocs: vi.fn() },
   sheetsApi: { listSheets: vi.fn() },
   slidesApi: { listSlides: vi.fn() },
@@ -44,8 +42,7 @@ vi.mock('@neutrino/search', () => ({
 // stubbing them is what hid the bug where every encrypted document indexed as
 // empty content.
 vi.mock('@/lib/api', async () => {
-  const [notes, docs, sheets, slides, diagrams, drawing] = await Promise.all([
-    import('@neutrino/api-notes'),
+  const [docs, sheets, slides, diagrams, drawing] = await Promise.all([
     import('@neutrino/api-docs'),
     import('@neutrino/api-sheets'),
     import('@neutrino/api-slides'),
@@ -53,7 +50,6 @@ vi.mock('@/lib/api', async () => {
     import('@neutrino/api-drawing'),
   ]);
   return {
-    notesApi,
     docsApi,
     sheetsApi,
     slidesApi,
@@ -61,7 +57,6 @@ vi.mock('@/lib/api', async () => {
     drawingApi,
     calendarApi,
     storageApi,
-    extractNoteText: notes.extractNoteText,
     extractDocText: docs.extractDocText,
     extractSheetText: sheets.extractSheetText,
     extractSlideText: slides.extractSlideText,
@@ -69,6 +64,12 @@ vi.mock('@/lib/api', async () => {
     extractDrawingText: drawing.extractDrawingText,
   };
 });
+
+// `@/lib/noteFiles` (real implementation, per the "extractors are real"
+// comment above) imports `storageApi` directly from `@neutrino/api-drive`
+// rather than through the `@/lib/api` barrel — mock that specifier too, with
+// the same double, so both import paths see the same mocked listing.
+vi.mock('@neutrino/api-drive', () => ({ storageApi }));
 
 vi.mock('@/lib/documentContent', () => ({ readDocumentText }));
 
@@ -88,10 +89,23 @@ function withCurrentIndexVersion() {
   localStorage.setItem(CONTENT_VERSION_KEY, '4');
 }
 
-/** A note whose decrypted body is one paragraph block reading "body text". */
+/**
+ * A note whose decrypted body is one paragraph block reading "body text".
+ *
+ * `listAllNotes` (the real implementation, per the comment above) lists notes
+ * by paging `storageApi.listFiles` and filtering by MIME type client-side —
+ * there is no dedicated notes-listing endpoint any more (a note is a plain
+ * Drive file). The same mocked call also backs the generic "file" bucket in
+ * `collectIndexJobs`, but `APP_OWNED_MIMES` excludes note-mime items from it,
+ * so this item only ever produces one job.
+ */
 function withOneNote() {
-  notesApi.listNotes.mockResolvedValue({
-    notes: [{ id: 'note-1', title: 'Flamingo notes', updatedAt: NOTE_UPDATED }],
+  storageApi.listFiles.mockResolvedValue({
+    items: [{ id: 'note-1', name: 'Flamingo notes', mimeType: 'application/x-neutrino-note', updatedAt: NOTE_UPDATED }],
+    total: 1,
+    page: 1,
+    pageSize: 200,
+    totalPages: 1,
   });
   readDocumentText.mockResolvedValue(
     JSON.stringify([{ id: 'b1', type: 'paragraph', content: 'body text' }]),
@@ -102,7 +116,6 @@ describe('searchIndexer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    notesApi.listNotes.mockResolvedValue({ notes: [] });
     docsApi.listDocs.mockResolvedValue({ docs: [] });
     sheetsApi.listSheets.mockResolvedValue({ sheets: [] });
     slidesApi.listSlides.mockResolvedValue({ slides: [] });
@@ -313,8 +326,12 @@ describe('searchIndexer', () => {
 
     it('does not let one failing item abort the run', async () => {
       docsApi.listDocs.mockResolvedValue({ docs: [{ id: 'doc-1', title: 'Doc', updatedAt: NOTE_UPDATED }] });
-      notesApi.listNotes.mockResolvedValue({
-        notes: [{ id: 'note-1', title: 'Flamingo notes', updatedAt: NOTE_UPDATED }],
+      storageApi.listFiles.mockResolvedValue({
+        items: [{ id: 'note-1', name: 'Flamingo notes', mimeType: 'application/x-neutrino-note', updatedAt: NOTE_UPDATED }],
+        total: 1,
+        page: 1,
+        pageSize: 200,
+        totalPages: 1,
       });
       readDocumentText.mockImplementation((_userId: string, id: string) =>
         id === 'doc-1'

@@ -86,9 +86,6 @@ importers:
       '@neutrino/api-links':
         specifier: workspace:*
         version: link:../../packages/api-links
-      '@neutrino/api-notes':
-        specifier: workspace:*
-        version: link:../../packages/api-notes
       '@neutrino/api-photos':
         specifier: workspace:*
         version: link:../../packages/api-photos
@@ -386,16 +383,6 @@ importers:
         version: 5.9.3
 
   packages/api-links:
-    dependencies:
-      '@neutrino/api-core':
-        specifier: workspace:*
-        version: link:../api-core
-    devDependencies:
-      typescript:
-        specifier: ^5.4.0
-        version: 5.9.3
-
-  packages/api-notes:
     dependencies:
       '@neutrino/api-core':
         specifier: workspace:*

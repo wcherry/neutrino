@@ -5,6 +5,8 @@ import { request, buildQuery, ApiClientError, BASE_URL,
 import type { PaginatedResponse } from '@neutrino/api-core';
 import type {
   FileItem,
+  FileInfo,
+  CreateFileRequest,
   FileListQuery,
   QuotaInfo,
   FileVersionItem,
@@ -111,6 +113,19 @@ export const storageApi = {
 
   async getFileMetadata(fileId: string): Promise<FileItem> {
     return request<FileItem>(`/api/v1/drive/files/${fileId}/metadata`);
+  },
+
+  /** Permission-checked file metadata — works for any file the caller can access, not just ones they own. */
+  async getFileInfo(fileId: string): Promise<FileInfo> {
+    return request<FileInfo>(`/api/v1/drive/files/${fileId}/info`);
+  },
+
+  /** Create an empty file record (no content yet) with a client-generated id. */
+  async createFile(body: CreateFileRequest): Promise<FileInfo> {
+    return request<FileInfo>('/api/v1/drive/files', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   },
 
   getFileDownloadUrl(fileId: string): string {

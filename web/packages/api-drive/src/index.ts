@@ -31,6 +31,8 @@ export {
 
 export type {
   FileItem,
+  FileInfo,
+  CreateFileRequest,
   FileListQuery,
   DriveView,
   DriveFileType,

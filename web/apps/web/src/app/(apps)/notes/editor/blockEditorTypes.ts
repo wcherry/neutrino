@@ -58,7 +58,7 @@ export interface TableBlockProps {
   block: Block;
   onTableChange: (patch: Partial<Block>) => void;
   onDeleteTable: () => void;
-  allNotes: import('@/lib/api').NoteMetaResponse[];
+  allNotes: import('./blockEditorHelpers').NoteLinkTarget[];
   onLinkClick: (id: string) => void;
 }
 
@@ -76,7 +76,7 @@ export interface BlockRowProps {
   onSplitBlock: (id: string, before: string, after: string) => void;
   onDeleteBlock: (id: string) => void;
   onMoveFocus: (id: string, direction: 'up' | 'down', column: number) => void;
-  allNotes: import('@/lib/api').NoteMetaResponse[];
+  allNotes: import('./blockEditorHelpers').NoteLinkTarget[];
   currentNoteId: string;
   onLinkClick: (noteId: string) => void;
   onDragStart: (index: number) => void;
@@ -88,7 +88,7 @@ export interface BlockRowProps {
 export interface BlockEditorProps {
   blocks: Block[];
   onChange: (blocks: Block[]) => void;
-  allNotes: import('@/lib/api').NoteMetaResponse[];
+  allNotes: import('./blockEditorHelpers').NoteLinkTarget[];
   currentNoteId: string;
   onLinkClick: (noteId: string) => void;
 }

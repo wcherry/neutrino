@@ -1,8 +1,13 @@
 import React from 'react';
-import type { NoteMetaResponse } from '@/lib/api';
 import type { Block } from './blockEditorTypes';
 import { INLINE_PATTERN } from './blockEditorConstants';
 import styles from './BlockEditor.module.css';
+
+/** The subset of a note's identity the editor needs for wiki-link autocomplete/rendering. */
+export interface NoteLinkTarget {
+  id: string;
+  title: string;
+}
 
 export function genId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -140,7 +145,7 @@ export function isSoftWrapped(ta: HTMLTextAreaElement): boolean {
 
 export function renderInline(
   text: string,
-  allNotes: NoteMetaResponse[],
+  allNotes: NoteLinkTarget[],
   onLinkClick: (id: string) => void
 ): React.ReactNode[] {
   const titleToId = new Map(allNotes.map((n) => [n.title.toLowerCase(), n.id]));

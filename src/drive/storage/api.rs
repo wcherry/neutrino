@@ -253,6 +253,7 @@ pub async fn create_file_record(
         cover_thumbnail_mime_type: file.cover_thumbnail_mime_type,
         tags: vec![],
         encrypted_metadata: file.encrypted_metadata,
+        content_version: file.content_version,
     };
     Ok(HttpResponse::Created().json(response))
 }
@@ -309,6 +310,7 @@ pub async fn get_file_info(
         cover_thumbnail_mime_type: file.cover_thumbnail_mime_type,
         tags,
         encrypted_metadata: file.encrypted_metadata,
+        content_version: file.content_version,
     }))
 }
 

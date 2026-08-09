@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import type { NoteMetaResponse } from '@/lib/api';
+import type { NoteLinkTarget } from './blockEditorHelpers';
 import type { Block, BlockType, BlockRowProps, FocusRequest } from './blockEditorTypes';
 import { SLASH_COMMANDS } from './blockEditorConstants';
 import {
@@ -220,7 +220,7 @@ export default function BlockRow({
     }
   }
 
-  function applyAutocomplete(note: NoteMetaResponse) {
+  function applyAutocomplete(note: NoteLinkTarget) {
     const ta = taRef.current;
     if (!ta) return;
     const cursor = ta.selectionStart ?? block.content.length;
