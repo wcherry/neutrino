@@ -16,6 +16,14 @@
   padding: 1px 0;
   position: relative;
   border-top: 2px solid transparent;
+  /* Chromium implicitly applies user-select: none to draggable="true"
+     elements (this row is one, for drag-to-reorder) and that inherits to
+     every descendant. A Selection whose range touches even one such node
+     serializes to an empty string from Selection.toString() for the
+     *entire* selection (confirmed empirically) — which silently broke
+     whole-note Select-all, since the range starts at the very first block
+     row. Force it back so the row's own text stays selectable. */
+  user-select: text;
 }
 
 .blockRow:hover .dragHandle {
@@ -34,7 +42,9 @@
   color: var(--color-text-tertiary);
   font-size: 14px;
   padding-top: 3px;
-  user-select: none;
+  /* Deliberately not user-select: none — see .blockRow above. Means a drag
+     handle glyph can end up in a copied selection; a much smaller cost than
+     Select-all silently selecting nothing. */
   flex-shrink: 0;
   width: 16px;
   transition: opacity 0.1s;
@@ -56,9 +66,7 @@
   font-size: var(--font-size-sm);
   line-height: 1.7;
   padding-top: 1px;
-  /* Bullet/number glyphs are decoration, not note content — keep them out of
-     a whole-note selection's copied text (matches .dragHandle). */
-  user-select: none;
+  /* Deliberately not user-select: none — see .blockRow above. */
 }
 
 /* ── Input wrapper ───────────────────────────────────────────────────────────── */
