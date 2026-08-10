@@ -390,6 +390,26 @@ export default function NoteEditorPage() {
     printNote(title, blocks);
   }, [title, blocks]);
 
+  // Cut/copy/paste/undo/redo/select-all are native browser behaviour on the
+  // blocks' <textarea> elements and need no wiring here. Save and Print are
+  // the two the browser would otherwise intercept itself (Save Page As / a
+  // print of the raw DOM instead of `printNote`'s formatted layout).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
+        e.preventDefault();
+        handleManualSave();
+      } else if (key === 'p') {
+        e.preventDefault();
+        handlePrint();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [handleManualSave, handlePrint]);
+
   if (!noteId) return <div className={styles.message}>No note ID provided.</div>;
   if (isLoading) return <Spinner size="lg" overlay />;
 
