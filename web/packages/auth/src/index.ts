@@ -1,6 +1,21 @@
 export { authApi } from './client';
 export { AuthProvider, useAuth, useUser } from './context';
-export { ensureE2EKeys } from './e2e-keys';
+export {
+  getVaultState,
+  provisionVault,
+  unlockWithPassword,
+  unlockWithPasskey,
+  unlockWithRecoveryCode,
+  enrollPasskey,
+  changeVaultPassword,
+  regenerateRecoveryCode,
+  revokeUnlockMethod,
+  replaceIdentity,
+  listUnlockMethods,
+  ensurePublicKeyRegistered,
+  type VaultState,
+  type ProvisionResult,
+} from './e2e-keys';
 export { AUTH_COOKIE_NAME, SIGN_IN_PATH, PROTECTED_PATHS } from './middleware';
 export { decodeJwtAdmin, isCurrentUserAdmin } from './adminUtils';
 
@@ -17,4 +32,8 @@ export type {
   UpdateProfileRequest,
   PublicKeyResponse,
   SetPublicKeyRequest,
+  VaultResponse,
+  PutVaultRequest,
+  UnlockMethodInput,
+  UnlockMethodResponse,
 } from './types';

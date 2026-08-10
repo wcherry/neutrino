@@ -18,7 +18,6 @@ import {
 } from '@neutrino/ui';
 import {
   authApi,
-  ensureE2EKeys,
   storageApi,
   tagsApi,
   type UserProfile,
@@ -26,6 +25,7 @@ import {
 } from '@/lib/api';
 import { getNavSections, withActiveItem } from './navSections';
 import { NewItemFAB } from './NewItemFAB';
+import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
@@ -170,7 +170,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             ? quotaFromInfo(quotaInfo)
             : { usedBytes: 0, totalBytes: DEFAULT_QUOTA_BYTES },
         });
-        ensureE2EKeys(user.id).catch(() => {});
+        // The E2EE key is provisioned or unlocked by `E2EEUnlockGate` below —
+        // it needs an unlock secret from the user, so it cannot happen here.
       } catch {
         // Not authenticated or refresh failed — redirect to sign-in, carrying where the user was
         // headed. Shared links (`/open/note/<id>`, a document URL in an email) routinely arrive
@@ -277,6 +278,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AppShell sidebar={sidebar} topbar={topbar}>
       {children}
+      {/* Overlays the shell when the identity key is missing or locked. Renders
+          nothing once unlocked, and is dismissable — see the component notes. */}
+      <E2EEUnlockGate userId={auth.user.id} userName={auth.user.email} />
     </AppShell>
   );
 }

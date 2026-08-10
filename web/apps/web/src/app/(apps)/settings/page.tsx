@@ -7,7 +7,9 @@ import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, QrCode,
 import QRCode from 'react-qr-code';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
 import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest } from '@/lib/api';
-import { initSodium, generateKeyPair, loadKeyPair, saveKeyPair, hasKeyPair, encryptKeysWithPin, toBase64url, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
+import { initSodium, generateKeyPair, loadKeyPair, hasKeyPair, encryptKeysWithPin, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
+import { replaceIdentity } from '@neutrino/auth';
+import { UnlockMethodsPanel } from './UnlockMethodsPanel';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
 import { getOfficeFileMode, OFFICE_FILE_MODE_KEY, type OfficeFileMode } from '@/hooks/useOfficeFileMode';
@@ -334,8 +336,10 @@ const qc = useQueryClient();
       if (publicKey.length !== 32 || secretKey.length !== 32) {
         throw new Error('Key has wrong length — make sure you pasted the complete key');
       }
-      saveKeyPair(user.id, publicKey, secretKey);
-      await authApi.setPublicKey({ publicKey: toBase64url(publicKey) });
+      // Writes the imported key into the vault under the session's master key,
+      // so it survives a reload and reaches the user's other devices. Storing
+      // it in memory alone (as this used to) lost it on the next refresh.
+      await replaceIdentity(user.id, publicKey, secretKey);
       setKeyStatus('set');
       setImportKeyValue('');
       setImportKeySaved(true);
@@ -356,13 +360,14 @@ const qc = useQueryClient();
     try {
       await initSodium();
       const { publicKey, secretKey } = generateKeyPair();
-      saveKeyPair(user.id, publicKey, secretKey);
-      await authApi.setPublicKey({ publicKey: toBase64url(publicKey) });
+      await replaceIdentity(user.id, publicKey, secretKey);
       setKeyStatus('set');
       setShowRegenerateDialog(false);
       setShowExportKey(false);
-    } catch {
-      toastError('Failed to generate key. Please try again.');
+    } catch (err) {
+      toastError(
+        err instanceof Error ? err.message : 'Failed to generate key. Please try again.',
+      );
     } finally {
       setGeneratingKey(false);
     }
@@ -917,6 +922,14 @@ const qc = useQueryClient();
                 </button>
               </div>
             )}
+
+            {/* ── How the key is protected ─────────────────────────── */}
+            <h3 className={styles.sectionTitle}>Unlock methods</h3>
+            <p className={styles.hint}>
+              Your encryption key is stored encrypted. Each method below can unlock it — none of
+              them is ever sent to the server.
+            </p>
+            {user && <UnlockMethodsPanel userId={user.id} userEmail={user.email} />}
 
             {showExportKey && (
               <div className={styles.formGroup}>
