@@ -18,7 +18,7 @@ COPY web/packages/api-calendar/package.json packages/api-calendar/package.json
 COPY web/packages/api-core/package.json packages/api-core/package.json
 COPY web/packages/api-docs/package.json packages/api-docs/package.json
 COPY web/packages/api-drive/package.json packages/api-drive/package.json
-COPY web/packages/api-notes/package.json packages/api-notes/package.json
+COPY web/packages/api-links/package.json packages/api-links/package.json
 COPY web/packages/api-photos/package.json packages/api-photos/package.json
 COPY web/packages/api-sheets/package.json packages/api-sheets/package.json
 COPY web/packages/api-slides/package.json packages/api-slides/package.json
@@ -34,6 +34,7 @@ COPY web/packages/layout/package.json packages/layout/package.json
 COPY web/packages/tokens/package.json packages/tokens/package.json
 COPY web/packages/ui/package.json packages/ui/package.json
 COPY web/packages/utils/package.json packages/utils/package.json
+COPY web/packages/markdown/package.json packages/markdown/package.json
 COPY web/packages/search/package.json packages/search/package.json
 COPY web/packages/collab-core/package.json packages/collab-core/package.json
 RUN pnpm install --prod=false
