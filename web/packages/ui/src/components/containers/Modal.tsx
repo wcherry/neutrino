@@ -36,6 +36,17 @@ export function Modal({
   const modalRef = useRef<HTMLDivElement | null>(null);
   const titleId = React.useId();
 
+  // Read through refs inside the effect below. Callers routinely pass an inline
+  // `onClose`, so depending on it directly would re-run the effect on every
+  // parent render — and the initial `focusable[0].focus()` would yank focus back
+  // to the first field after each keystroke typed into any later one.
+  const onCloseRef = useRef(onClose);
+  const closeOnEscRef = useRef(closeOnEsc);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    closeOnEscRef.current = closeOnEsc;
+  });
+
   useEffect(() => {
     if (!open) return;
 
@@ -53,8 +64,8 @@ export function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!modalRef.current) return;
 
-      if (e.key === 'Escape' && closeOnEsc) {
-        onClose();
+      if (e.key === 'Escape' && closeOnEscRef.current) {
+        onCloseRef.current();
         return;
       }
 
@@ -87,7 +98,7 @@ export function Modal({
       document.body.style.overflow = '';
       previouslyFocused?.focus();
     };
-  }, [open, closeOnEsc, onClose]);
+  }, [open]);
 
   if (typeof window === 'undefined') return null;
 
