@@ -78,6 +78,7 @@ COPY src src
 COPY xtask/src xtask/src
 COPY worker/src worker/src
 COPY migrations migrations
+COPY static static
 RUN touch src/main.rs xtask/src/main.rs worker/src/main.rs && cargo build --release -p neutrino -p worker
 
 # ── Runtime Stage ─────────────────────────────────────────────────────────────
