@@ -25,6 +25,7 @@ export default function BlockRow({
   isFirst,
   focusRequest,
   onFocusHandled,
+  exitEditSignal,
   onContentChange,
   onTypeChange,
   onBlockPatch,
@@ -61,6 +62,20 @@ export default function BlockRow({
     setFocusNonce((n) => n + 1);
     onFocusHandled();
   }, [focusRequest, block.id, onFocusHandled]);
+
+  // Drop out of edit mode immediately (no blur/timeout round-trip) when the
+  // parent signals it — used before a whole-note selection, which needs
+  // every block rendered as plain, selectable text rather than a <textarea>.
+  const lastExitSignalRef = useRef(exitEditSignal);
+  useEffect(() => {
+    if (exitEditSignal === lastExitSignalRef.current) return;
+    lastExitSignalRef.current = exitEditSignal;
+    if (isEditing) {
+      setIsEditing(false);
+      setAcQuery(null);
+      setSlashQuery(null);
+    }
+  }, [exitEditSignal, isEditing]);
 
   // Once isEditing becomes true, apply any pending cursor position
   useEffect(() => {

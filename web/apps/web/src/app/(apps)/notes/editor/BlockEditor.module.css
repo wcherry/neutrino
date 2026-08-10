@@ -56,6 +56,9 @@
   font-size: var(--font-size-sm);
   line-height: 1.7;
   padding-top: 1px;
+  /* Bullet/number glyphs are decoration, not note content — keep them out of
+     a whole-note selection's copied text (matches .dragHandle). */
+  user-select: none;
 }
 
 /* ── Input wrapper ───────────────────────────────────────────────────────────── */

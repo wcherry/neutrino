@@ -111,12 +111,18 @@ vi.mock('@/hooks/useFileSync', () => ({
 // entire block-editing tree.
 const blockEditorProps: Array<Record<string, unknown>> = [];
 
+const MockBlockEditor = React.forwardRef(function MockBlockEditor(
+  props: Record<string, unknown>,
+  ref: React.Ref<{ selectAll: () => void }>
+) {
+  blockEditorProps.push(props);
+  React.useImperativeHandle(ref, () => ({ selectAll: vi.fn() }));
+  return <div data-testid="block-editor" />;
+});
+
 vi.mock('../../app/(apps)/notes/editor/BlockEditor', () => ({
   __esModule: true,
-  default: (props: Record<string, unknown>) => {
-    blockEditorProps.push(props);
-    return <div data-testid="block-editor" />;
-  },
+  default: MockBlockEditor,
   parseBlocks: vi.fn(() => []),
   serializeBlocks: vi.fn(() => ''),
 }));

@@ -69,6 +69,10 @@ export interface BlockRowProps {
   isFirst: boolean;
   focusRequest: FocusRequest | null;
   onFocusHandled: () => void;
+  /** Bumped whenever the parent needs every block back in (non-editable) view
+   * mode right now — e.g. before building a native selection that spans the
+   * whole note, which can't include a block still rendered as a <textarea>. */
+  exitEditSignal: number;
   onContentChange: (id: string, content: string) => void;
   onTypeChange: (id: string, type: BlockType) => void;
   onBlockPatch: (id: string, patch: Partial<Block>) => void;

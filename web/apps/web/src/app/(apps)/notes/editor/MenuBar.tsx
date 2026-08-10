@@ -82,6 +82,7 @@ export interface HamburgerMenuProps {
   onDelete: () => void;
   onExport: (format: 'md' | 'txt') => void;
   onPrint: () => void;
+  onSelectAll: () => void;
   showBacklinks: boolean;
   onToggleBacklinks: () => void;
 }
@@ -94,16 +95,12 @@ export function HamburgerMenu({
   onDelete,
   onExport,
   onPrint,
+  onSelectAll,
   showBacklinks,
   onToggleBacklinks,
 }: HamburgerMenuProps) {
   const router = useRouter();
   const [showHelp, setShowHelp] = useState(false);
-
-  const selectFocusedField = () => {
-    const el = document.activeElement;
-    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) el.select();
-  };
 
   const items: HamburgerMenuItem[] = [
     {
@@ -139,7 +136,7 @@ export function HamburgerMenu({
         { kind: 'action', label: 'Copy',       shortcut: 'Ctrl+C',       action: () => document.execCommand('copy') },
         { kind: 'action', label: 'Paste',      shortcut: 'Ctrl+V',       action: () => document.execCommand('paste') },
         { kind: 'separator' },
-        { kind: 'action', label: 'Select all', shortcut: 'Ctrl+A',       action: selectFocusedField },
+        { kind: 'action', label: 'Select all', shortcut: 'Ctrl+A',       action: () => onSelectAll() },
       ],
     },
     {
