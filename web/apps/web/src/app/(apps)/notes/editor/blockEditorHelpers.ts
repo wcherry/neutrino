@@ -214,39 +214,50 @@ export function numberedIndexInGroup(blocks: Block[], blockIndex: number): numbe
 
 // ── Export ──────────────────────────────────────────────────────────────────
 
-/** Render a note's blocks as Markdown — block content is already stored using
- * the same `**bold**` / `[[wiki link]]` markdown-ish syntax shown in the
- * editor, so blocks only need their type-specific prefix. */
+/**
+ * Render a single block as Markdown lines — block content is already stored
+ * using the same `**bold**` / `[[wiki link]]` markdown-ish syntax shown in
+ * the editor, so blocks only need their type-specific prefix. `blocks` and
+ * `index` are the block's position in the *full* note, not just whatever
+ * subset is being rendered (e.g. a copied selection) — a numbered item's
+ * number depends on the unbroken run of numbered blocks before it there.
+ */
+export function blockToMarkdownLines(block: Block, blocks: Block[], index: number): string[] {
+  switch (block.type) {
+    case 'bullet':
+      return [`- ${block.content}`];
+    case 'numbered':
+      return [`${numberedIndexInGroup(blocks, index)}. ${block.content}`];
+    case 'task':
+      return [`- [${block.checked ? 'x' : ' '}] ${block.content}`];
+    case 'blockquote':
+      return [`> ${block.content}`];
+    case 'code':
+      return ['```', block.content, '```'];
+    case 'table': {
+      const rows = block.tableData?.rows ?? [];
+      const lines: string[] = [];
+      rows.forEach((row, i) => {
+        lines.push(`| ${row.cells.map((c) => c.content).join(' | ')} |`);
+        if (i === 0) lines.push(`| ${row.cells.map(() => '---').join(' | ')} |`);
+      });
+      return lines;
+    }
+    default:
+      return [block.content];
+  }
+}
+
+/** A single block's Markdown, e.g. for copying just that block to the clipboard. */
+export function blockToMarkdown(block: Block, blocks: Block[], index: number): string {
+  return blockToMarkdownLines(block, blocks, index).join('\n');
+}
+
+/** Render a note's blocks as Markdown. */
 export function blocksToMarkdown(blocks: Block[]): string {
   const lines: string[] = [];
   blocks.forEach((block, index) => {
-    switch (block.type) {
-      case 'bullet':
-        lines.push(`- ${block.content}`);
-        break;
-      case 'numbered':
-        lines.push(`${numberedIndexInGroup(blocks, index)}. ${block.content}`);
-        break;
-      case 'task':
-        lines.push(`- [${block.checked ? 'x' : ' '}] ${block.content}`);
-        break;
-      case 'blockquote':
-        lines.push(`> ${block.content}`);
-        break;
-      case 'code':
-        lines.push('```', block.content, '```');
-        break;
-      case 'table': {
-        const rows = block.tableData?.rows ?? [];
-        rows.forEach((row, i) => {
-          lines.push(`| ${row.cells.map((c) => c.content).join(' | ')} |`);
-          if (i === 0) lines.push(`| ${row.cells.map(() => '---').join(' | ')} |`);
-        });
-        break;
-      }
-      default:
-        lines.push(block.content);
-    }
+    lines.push(...blockToMarkdownLines(block, blocks, index));
     lines.push('');
   });
   return lines.join('\n').trim() + '\n';

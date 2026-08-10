@@ -110,12 +110,18 @@ vi.mock('@neutrino/ui', () => ({
 // which is what the editor's "did this actually change?" comparisons rely on.
 const blockEditorProps: Array<Record<string, unknown>> = [];
 
+const MockBlockEditor = React.forwardRef(function MockBlockEditor(
+  props: Record<string, unknown>,
+  ref: React.Ref<{ selectAll: () => void }>
+) {
+  blockEditorProps.push(props);
+  React.useImperativeHandle(ref, () => ({ selectAll: vi.fn() }));
+  return <div data-testid="block-editor" />;
+});
+
 vi.mock('../../app/(apps)/notes/editor/BlockEditor', () => ({
   __esModule: true,
-  default: (props: Record<string, unknown>) => {
-    blockEditorProps.push(props);
-    return <div data-testid="block-editor" />;
-  },
+  default: MockBlockEditor,
   parseBlocks: (s: string) => {
     try {
       return JSON.parse(s);

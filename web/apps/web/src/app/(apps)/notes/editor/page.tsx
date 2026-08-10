@@ -21,7 +21,7 @@ import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { useFileSync } from '@/hooks/useFileSync';
-import BlockEditor, { Block, parseBlocks, serializeBlocks } from './BlockEditor';
+import BlockEditor, { Block, type BlockEditorHandle, parseBlocks, serializeBlocks } from './BlockEditor';
 import { extractWikiLinkTitles, blocksToMarkdown, blocksToHtml, type NoteLinkTarget } from './blockEditorHelpers';
 import { HamburgerMenu } from './MenuBar';
 import styles from './page.module.css';
@@ -83,6 +83,7 @@ export default function NoteEditorPage() {
   const [showBacklinks, setShowBacklinks] = useState(true);
 
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const blockEditorRef = useRef<BlockEditorHandle>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef({ content: '', title: '' });
   /** Editor holds edits that have not reached the server yet. */
@@ -390,6 +391,38 @@ export default function NoteEditorPage() {
     printNote(title, blocks);
   }, [title, blocks]);
 
+  // Select-all needs to span every block, not just whichever one is being
+  // edited — see BlockEditor's `selectAll` for why that has to go through an
+  // imperative handle rather than plain browser/execCommand behaviour.
+  const handleSelectAll = useCallback(() => {
+    blockEditorRef.current?.selectAll();
+  }, []);
+
+  // Cut/copy/paste/undo/redo already work natively while a block is actively
+  // focused. Save, Print and Select-all don't: Save/Print are the ones the
+  // browser would otherwise intercept itself (Save Page As / a print of the
+  // raw DOM instead of `printNote`'s formatted layout), and Select-all's
+  // native Ctrl+A only ever reaches the one block currently in edit mode.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
+        e.preventDefault();
+        handleManualSave();
+      } else if (key === 'p') {
+        e.preventDefault();
+        handlePrint();
+      } else if (key === 'a' && document.activeElement !== titleInputRef.current) {
+        // Leave the title field's own native select-all alone.
+        e.preventDefault();
+        handleSelectAll();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [handleManualSave, handlePrint, handleSelectAll]);
+
   if (!noteId) return <div className={styles.message}>No note ID provided.</div>;
   if (isLoading) return <Spinner size="lg" overlay />;
 
@@ -405,6 +438,7 @@ export default function NoteEditorPage() {
           onDelete={handleDelete}
           onExport={handleExport}
           onPrint={handlePrint}
+          onSelectAll={handleSelectAll}
           showBacklinks={showBacklinks}
           onToggleBacklinks={() => setShowBacklinks((v) => !v)}
         />
@@ -433,6 +467,7 @@ export default function NoteEditorPage() {
       <div className={styles.body}>
         <div className={styles.editorArea}>
           <BlockEditor
+            ref={blockEditorRef}
             blocks={blocks}
             onChange={handleBlocksChange}
             allNotes={allNotes}
