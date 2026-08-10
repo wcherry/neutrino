@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft } from 'lucide-react';
 import { Spinner, useToast } from '@neutrino/ui';
 import {
   filesystemApi,
@@ -12,15 +13,17 @@ import {
   driveAutosaveEncryptedContent,
 } from '@neutrino/api-drive';
 import { linksApi } from '@neutrino/api-links';
-import { extractNoteText, listAllNotes } from '@/lib/noteFiles';
-import { initSodium, decryptFile, fromBase64url } from '@neutrino/e2e-crypto';
+import { createNote, extractNoteText, listAllNotes } from '@/lib/noteFiles';
+import { initSodium, decryptFile, fromBase64url, loadKeyPair, generateFileKey, encryptFileKey } from '@neutrino/e2e-crypto';
+import { encryptionApi } from '@neutrino/api-drive';
 import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { useFileSync } from '@/hooks/useFileSync';
 import BlockEditor, { Block, parseBlocks, serializeBlocks } from './BlockEditor';
-import { extractWikiLinkTitles, type NoteLinkTarget } from './blockEditorHelpers';
+import { extractWikiLinkTitles, blocksToMarkdown, blocksToHtml, type NoteLinkTarget } from './blockEditorHelpers';
+import { HamburgerMenu } from './MenuBar';
 import styles from './page.module.css';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -28,6 +31,40 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 const AUTOSAVE_DELAY_MS = 2000;
 /** Fallback poll used only while the live-update socket is down. */
 const OFFLINE_POLL_MS = 15000;
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function printNote(title: string, blocks: Block[]) {
+  const pw = window.open('', '_blank');
+  if (!pw) return;
+  pw.document.write(`<!DOCTYPE html><html><head>
+<meta charset="UTF-8"><title>${title || 'Untitled note'}</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 40px auto; max-width: 700px; font-family: Arial, sans-serif; font-size: 11pt; color: #000; }
+h1 { font-size: 20pt; margin: 0 0 16pt; }
+p, li { line-height: 1.5; margin: 0 0 8pt; }
+blockquote { border-left: 3px solid #ccc; margin: 0 0 8pt; padding-left: 12pt; color: #555; }
+pre { background: #f5f5f5; padding: 8pt; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; }
+table { border-collapse: collapse; margin-bottom: 8pt; }
+td { border: 1px solid #ccc; padding: 4pt 8pt; }
+</style></head><body>
+<h1>${title || 'Untitled note'}</h1>
+${blocksToHtml(blocks)}
+</body></html>`);
+  pw.document.close();
+  pw.focus();
+  pw.print();
+}
 
 export default function NoteEditorPage() {
   const searchParams = useSearchParams();
@@ -43,7 +80,9 @@ export default function NoteEditorPage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [title, setTitle] = useState('');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [showBacklinks, setShowBacklinks] = useState(true);
 
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef({ content: '', title: '' });
   /** Editor holds edits that have not reached the server yet. */
@@ -296,6 +335,61 @@ export default function NoteEditorPage() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, []);
 
+  const handleManualSave = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    save(serializeBlocks(blocks), title);
+  }, [blocks, title, save]);
+
+  const handleBack = useCallback(async () => {
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    await save(serializeBlocks(blocks), title);
+    router.push('/drive');
+  }, [blocks, title, save, router]);
+
+  const handleNewNote = useCallback(async () => {
+    const newNote = await createNote('Untitled note');
+    router.push(`/notes/editor?id=${newNote.id}`);
+  }, [router]);
+
+  const handleDuplicate = useCallback(async () => {
+    const serialized = serializeBlocks(blocks);
+    const newNote = await createNote(`${title || 'Untitled note'} (copy)`);
+    try {
+      await initSodium();
+      const kp = currentUser ? loadKeyPair(currentUser.id) : null;
+      if (kp) {
+        const dek = generateFileKey();
+        await encryptionApi.setFileKey(newNote.id, { encryptedFileKey: encryptFileKey(dek, kp.publicKey) });
+        await driveAutosaveEncryptedContent(newNote.id, serialized, 'note.json', dek);
+      } else {
+        await driveAutosaveContent(newNote.id, serialized, 'note.json');
+      }
+      await linksApi.updateLinks(newNote.id, { linkedTitles: extractWikiLinkTitles(blocks) });
+    } catch {
+      toast.error('Note duplicated, but its content failed to copy.');
+    }
+    queryClient.invalidateQueries({ queryKey: ['notes'] });
+    router.push(`/notes/editor?id=${newNote.id}`);
+  }, [blocks, title, currentUser, queryClient, router, toast]);
+
+  const handleDelete = useCallback(async () => {
+    await storageApi.deleteFile(noteId);
+    queryClient.invalidateQueries({ queryKey: ['notes'] });
+    toast.success('Note moved to trash');
+    router.push('/notes');
+  }, [noteId, queryClient, router, toast]);
+
+  const handleExport = useCallback((format: 'md' | 'txt') => {
+    const name = title || 'Untitled note';
+    const text = format === 'md' ? blocksToMarkdown(blocks) : extractNoteText(serializeBlocks(blocks));
+    const blob = new Blob([text], { type: format === 'md' ? 'text/markdown' : 'text/plain' });
+    downloadBlob(blob, `${name}.${format}`);
+  }, [blocks, title]);
+
+  const handlePrint = useCallback(() => {
+    printNote(title, blocks);
+  }, [title, blocks]);
+
   if (!noteId) return <div className={styles.message}>No note ID provided.</div>;
   if (isLoading) return <Spinner size="lg" overlay />;
 
@@ -303,7 +397,23 @@ export default function NoteEditorPage() {
     <div className={styles.editor}>
       {/* ── Toolbar ── */}
       <div className={styles.toolbar}>
+        <HamburgerMenu
+          titleInputRef={titleInputRef}
+          onSave={handleManualSave}
+          onNewNote={handleNewNote}
+          onDuplicate={handleDuplicate}
+          onDelete={handleDelete}
+          onExport={handleExport}
+          onPrint={handlePrint}
+          showBacklinks={showBacklinks}
+          onToggleBacklinks={() => setShowBacklinks((v) => !v)}
+        />
+        <button className={styles.backBtn} onClick={handleBack}>
+          <ArrowLeft size={16} />
+          Notes
+        </button>
         <input
+          ref={titleInputRef}
           className={styles.titleInput}
           value={title}
           onChange={handleTitleChange}
@@ -332,7 +442,7 @@ export default function NoteEditorPage() {
         </div>
 
         {/* ── Backlinks panel ── */}
-        {backlinks.length > 0 && (
+        {showBacklinks && backlinks.length > 0 && (
           <aside className={styles.backlinks}>
             <p className={styles.backlinksHeading}>Linked from</p>
             <ul className={styles.backlinksList}>

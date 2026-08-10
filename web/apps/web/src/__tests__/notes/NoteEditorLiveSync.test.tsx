@@ -128,7 +128,11 @@ vi.mock('../../app/(apps)/notes/editor/BlockEditor', () => ({
 
 vi.mock('../../app/(apps)/notes/editor/blockEditorHelpers', () => ({
   extractWikiLinkTitles: () => [],
+  blocksToMarkdown: () => '',
+  blocksToHtml: () => '',
 }));
+
+vi.mock('../../app/(apps)/notes/editor/MenuBar', () => ({ HamburgerMenu: () => null }));
 
 vi.mock('../../app/(apps)/notes/editor/page.module.css', () => ({
   default: new Proxy({}, { get: (_t, key) => String(key) }),
