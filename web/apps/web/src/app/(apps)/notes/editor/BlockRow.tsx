@@ -271,9 +271,9 @@ export default function BlockRow({
         onDragOver={(e) => { e.preventDefault(); onDragOver(blockIndex); }}
         onDrop={onDrop}
       >
-        <div className={styles.dragHandle} aria-hidden="true">⠿</div>
+        <div className={styles.dragHandle} aria-hidden="true" />
         <div className={styles.blockPrefix} />
-        <div className={styles.blockInputWrapper}>
+        <div className={styles.blockInputWrapper} data-block-id={block.id}>
           {block.tableData && (
             <TableBlock
               block={block}
@@ -367,11 +367,11 @@ export default function BlockRow({
       onDragOver={(e) => { e.preventDefault(); onDragOver(blockIndex); }}
       onDrop={onDrop}
     >
-      <div className={styles.dragHandle} aria-hidden="true">⠿</div>
+      <div className={styles.dragHandle} aria-hidden="true" />
 
       <div className={styles.blockPrefix}>
-        {block.type === 'bullet' && <span>•</span>}
-        {block.type === 'numbered' && <span>{numIdx}.</span>}
+        {block.type === 'bullet' && <span className={styles.prefixBullet} aria-hidden="true" />}
+        {block.type === 'numbered' && <span className={styles.prefixNumber} data-num={numIdx} aria-hidden="true" />}
         {block.type === 'task' && (
           <input
             type="checkbox"
@@ -382,7 +382,7 @@ export default function BlockRow({
         )}
       </div>
 
-      <div className={styles.blockInputWrapper}>
+      <div className={styles.blockInputWrapper} data-block-id={block.id}>
         {isEditing ? (
           <>
             <textarea

@@ -22,7 +22,9 @@
      serializes to an empty string from Selection.toString() for the
      *entire* selection (confirmed empirically) — which silently broke
      whole-note Select-all, since the range starts at the very first block
-     row. Force it back so the row's own text stays selectable. */
+     row. Force it back so the row's actual text (.blockInputWrapper) stays
+     selectable — the drag handle and bullet/number glyphs are generated
+     content below and are never part of any Selection regardless. */
   user-select: text;
 }
 
@@ -42,12 +44,17 @@
   color: var(--color-text-tertiary);
   font-size: 14px;
   padding-top: 3px;
-  /* Deliberately not user-select: none — see .blockRow above. Means a drag
-     handle glyph can end up in a copied selection; a much smaller cost than
-     Select-all silently selecting nothing. */
   flex-shrink: 0;
   width: 16px;
   transition: opacity 0.1s;
+}
+
+/* Generated content, not a text node — excluded from any Selection/copy by
+   definition, so it can't end up in a whole-note selection highlight or its
+   copied text, and (unlike user-select: none on a real node) can't trip the
+   Chromium quirk described on .blockRow either. */
+.dragHandle::before {
+  content: '⠿';
 }
 
 .dragHandle:active {
@@ -66,7 +73,16 @@
   font-size: var(--font-size-sm);
   line-height: 1.7;
   padding-top: 1px;
-  /* Deliberately not user-select: none — see .blockRow above. */
+}
+
+/* Same reasoning as .dragHandle::before — generated content stays out of
+   the selection/copy entirely. */
+.prefixBullet::before {
+  content: '•';
+}
+
+.prefixNumber::before {
+  content: attr(data-num) '.';
 }
 
 /* ── Input wrapper ───────────────────────────────────────────────────────────── */

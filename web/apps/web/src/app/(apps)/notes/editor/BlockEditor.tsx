@@ -3,7 +3,7 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import type { Block, BlockType, BlockEditorProps, FocusRequest } from './blockEditorTypes';
-import { caretIndexForColumn, genId } from './blockEditorHelpers';
+import { caretIndexForColumn, genId, blockToMarkdown } from './blockEditorHelpers';
 import BlockRow from './BlockRow';
 import styles from './BlockEditor.module.css';
 
@@ -143,8 +143,61 @@ function BlockEditor({
     onChange(next);
   }
 
+  /**
+   * Copying a selection that spans multiple blocks writes their Markdown
+   * source (`- `, `1. `, `> `, table syntax, …) to the clipboard instead of
+   * the rendered plain text — that's what the editor already stores, `**bold**`
+   * and all, just normally shown as actual bold rather than literal asterisks.
+   * A selection inside a single block is left to the browser's default copy:
+   * there's no block-level prefix to add for a same-block substring, and
+   * mapping a partial rendered selection back to raw inline-markdown offsets
+   * (asterisks aren't visible in the rendered text) isn't reliable.
+   */
+  function handleCopy(e: React.ClipboardEvent<HTMLDivElement>) {
+    const selection = window.getSelection();
+    const container = containerRef.current;
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed || !container || !e.clipboardData) return;
+    const range = selection.getRangeAt(0);
+
+    const wrappers = Array.from(container.querySelectorAll<HTMLElement>('[data-block-id]')).filter(
+      (el) => range.intersectsNode(el)
+    );
+    if (wrappers.length < 2) return;
+
+    const parts = wrappers.map((el) => {
+      const index = blocks.findIndex((b) => b.id === el.dataset.blockId);
+      if (index === -1) return '';
+      const block = blocks[index];
+
+      const elRange = document.createRange();
+      elRange.selectNodeContents(el);
+      const fullyContained =
+        range.compareBoundaryPoints(Range.START_TO_START, elRange) <= 0 &&
+        range.compareBoundaryPoints(Range.END_TO_END, elRange) >= 0;
+      if (fullyContained) return blockToMarkdown(block, blocks, index);
+
+      // A boundary block only partly covered by the selection — its plain
+      // selected substring (see the note above on why not markdown here).
+      const clipped = document.createRange();
+      if (range.compareBoundaryPoints(Range.START_TO_START, elRange) > 0) {
+        clipped.setStart(range.startContainer, range.startOffset);
+      } else {
+        clipped.setStart(elRange.startContainer, elRange.startOffset);
+      }
+      if (range.compareBoundaryPoints(Range.END_TO_END, elRange) < 0) {
+        clipped.setEnd(range.endContainer, range.endOffset);
+      } else {
+        clipped.setEnd(elRange.endContainer, elRange.endOffset);
+      }
+      return clipped.toString();
+    });
+
+    e.clipboardData.setData('text/plain', parts.filter(Boolean).join('\n\n'));
+    e.preventDefault();
+  }
+
   return (
-    <div className={styles.editor} ref={containerRef}>
+    <div className={styles.editor} ref={containerRef} onCopy={handleCopy}>
       {blocks.map((block, index) => (
         <BlockRow
           key={block.id}
