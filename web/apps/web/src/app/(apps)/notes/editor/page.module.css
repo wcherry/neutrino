@@ -17,6 +17,26 @@
   flex-shrink: 0;
 }
 
+.backBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.backBtn:hover {
+  background: var(--color-surface-raised);
+  color: var(--color-primary);
+}
+
 .titleInput {
   flex: 1;
   font-size: var(--font-size-xl);

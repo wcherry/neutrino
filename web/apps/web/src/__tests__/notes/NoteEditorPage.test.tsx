@@ -121,6 +121,8 @@ vi.mock('../../app/(apps)/notes/editor/BlockEditor', () => ({
   serializeBlocks: vi.fn(() => ''),
 }));
 
+vi.mock('../../app/(apps)/notes/editor/MenuBar', () => ({ HamburgerMenu: () => null }));
+
 vi.mock('../../app/(apps)/notes/editor/page.module.css', () => ({
   default: new Proxy({}, { get: (_t, key) => String(key) }),
 }));

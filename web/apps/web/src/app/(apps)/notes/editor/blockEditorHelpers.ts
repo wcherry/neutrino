@@ -211,3 +211,100 @@ export function numberedIndexInGroup(blocks: Block[], blockIndex: number): numbe
   }
   return count;
 }
+
+// ── Export ──────────────────────────────────────────────────────────────────
+
+/** Render a note's blocks as Markdown — block content is already stored using
+ * the same `**bold**` / `[[wiki link]]` markdown-ish syntax shown in the
+ * editor, so blocks only need their type-specific prefix. */
+export function blocksToMarkdown(blocks: Block[]): string {
+  const lines: string[] = [];
+  blocks.forEach((block, index) => {
+    switch (block.type) {
+      case 'bullet':
+        lines.push(`- ${block.content}`);
+        break;
+      case 'numbered':
+        lines.push(`${numberedIndexInGroup(blocks, index)}. ${block.content}`);
+        break;
+      case 'task':
+        lines.push(`- [${block.checked ? 'x' : ' '}] ${block.content}`);
+        break;
+      case 'blockquote':
+        lines.push(`> ${block.content}`);
+        break;
+      case 'code':
+        lines.push('```', block.content, '```');
+        break;
+      case 'table': {
+        const rows = block.tableData?.rows ?? [];
+        rows.forEach((row, i) => {
+          lines.push(`| ${row.cells.map((c) => c.content).join(' | ')} |`);
+          if (i === 0) lines.push(`| ${row.cells.map(() => '---').join(' | ')} |`);
+        });
+        break;
+      }
+      default:
+        lines.push(block.content);
+    }
+    lines.push('');
+  });
+  return lines.join('\n').trim() + '\n';
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function inlineToHtml(text: string): string {
+  return escapeHtml(text).replace(INLINE_PATTERN, (full) => {
+    if (full.startsWith('[[')) return `<strong>${full.slice(2, -2)}</strong>`;
+    if (full.startsWith('`')) return `<code>${full.slice(1, -1)}</code>`;
+    if (full.startsWith('**')) return `<strong>${full.slice(2, -2)}</strong>`;
+    if (full.startsWith('~~')) return `<s>${full.slice(2, -2)}</s>`;
+    if (full.startsWith('*')) return `<em>${full.slice(1, -1)}</em>`;
+    return full;
+  });
+}
+
+/** Render a note's blocks as printable HTML — used for Print and the HTML export. */
+export function blocksToHtml(blocks: Block[]): string {
+  const parts: string[] = [];
+  let listOpen: 'ul' | 'ol' | null = null;
+  const closeList = () => {
+    if (listOpen) { parts.push(`</${listOpen}>`); listOpen = null; }
+  };
+
+  for (const block of blocks) {
+    if (block.type === 'bullet' || block.type === 'numbered') {
+      const tag = block.type === 'bullet' ? 'ul' : 'ol';
+      if (listOpen !== tag) { closeList(); parts.push(`<${tag}>`); listOpen = tag; }
+      parts.push(`<li>${inlineToHtml(block.content)}</li>`);
+      continue;
+    }
+    closeList();
+    switch (block.type) {
+      case 'task':
+        parts.push(`<p>${block.checked ? '☑' : '☐'} ${inlineToHtml(block.content)}</p>`);
+        break;
+      case 'blockquote':
+        parts.push(`<blockquote>${inlineToHtml(block.content)}</blockquote>`);
+        break;
+      case 'code':
+        parts.push(`<pre><code>${escapeHtml(block.content)}</code></pre>`);
+        break;
+      case 'table': {
+        const rows = block.tableData?.rows ?? [];
+        const rowsHtml = rows
+          .map((row) => `<tr>${row.cells.map((c) => `<td>${inlineToHtml(c.content)}</td>`).join('')}</tr>`)
+          .join('');
+        parts.push(`<table>${rowsHtml}</table>`);
+        break;
+      }
+      default:
+        parts.push(block.content.trim() ? `<p>${inlineToHtml(block.content)}</p>` : '<p><br></p>');
+    }
+  }
+  closeList();
+  return parts.join('\n');
+}
