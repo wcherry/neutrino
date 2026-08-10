@@ -44,13 +44,6 @@ function PanelItem({ item, onClose }: { item: HamburgerMenuItem; onClose: () => 
     <button
       className={`${styles.item}${item.danger ? ` ${styles.danger}` : ''}`}
       disabled={item.disabled}
-      // Clicking a menu item normally steals focus from whatever the user had
-      // focused before opening the menu (a text field's selection, an
-      // editable region). Actions like Cut/Copy/Paste/Undo/Redo/Select-all
-      // need that focus and selection to still be live when `item.action()`
-      // runs `document.execCommand(...)` — so keep focus exactly where it
-      // was; the click still fires normally without the default focus shift.
-      onMouseDown={(e) => e.preventDefault()}
       onClick={() => { item.action(); onClose(); }}
     >
       <span>{item.label}</span>
@@ -86,10 +79,6 @@ export function HamburgerMenu({ items }: HamburgerMenuProps) {
     <div ref={wrapperRef} className={styles.wrapper}>
       <button
         className={`${styles.btn}${open ? ` ${styles.btnOpen}` : ''}`}
-        // See the matching comment in PanelItem — preserves whatever was
-        // focused before the menu was opened, all the way through to the
-        // item click.
-        onMouseDown={(e) => e.preventDefault()}
         onClick={() => setOpen(v => !v)}
         title="Menu"
         aria-label="Open menu"
