@@ -1,17 +1,27 @@
 'use client';
 
 /**
- * Persistent key storage using localStorage.
+ * Access to the user's Curve25519 identity key.
  *
- * The Curve25519 secret key is stored as base64url in localStorage under
- * a per-user key.  In Phase 1 the secret key is stored *plaintext* so that
- * signup → login → decrypt works without re-entering a password.
+ * This module used to persist the secret key as plaintext base64url in
+ * localStorage. It now reads from the in-memory session established by an
+ * unlock (see `session.ts`), with the durable copy living server-side as a
+ * wrapped blob (see `vault.ts`). Nothing secret touches disk.
  *
- * Phase 2 upgrade path: replace `saveKeyPair` / `loadKeyPair` with versions
- * that encrypt the secret key with an Argon2id-derived KEK before persisting.
+ * `loadKeyPair` and `hasKeyPair` keep their original synchronous signatures on
+ * purpose: a dozen call sites across Drive, Docs, Notes, Photos and search
+ * depend on them, and unlocking is gated at the app shell so by the time those
+ * run the key is already in memory. A locked session returns null, which is the
+ * same "no key" branch those call sites already handled.
  */
 
-const STORAGE_PREFIX = 'neutrino_e2e_';
+import sodium from 'libsodium-wrappers';
+import {
+  clearSession,
+  getSessionKeyPair,
+  setSessionKeyPair,
+  type SessionKeyPair,
+} from './session';
 
 export interface StoredKeyPair {
   /** Base64url-encoded Curve25519 public key (32 bytes). */
@@ -20,13 +30,8 @@ export interface StoredKeyPair {
   secretKey: string;
 }
 
-function toBase64url(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
+/** Key under which the pre-vault build kept the plaintext secret key. */
+const LEGACY_STORAGE_PREFIX = 'neutrino_e2e_';
 
 export function fromBase64url(s: string): Uint8Array {
   const padded = s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=');
@@ -47,58 +52,73 @@ export function fromBase64(s: string): Uint8Array {
   return bytes;
 }
 
-function storageKey(userId: string): string {
-  return `${STORAGE_PREFIX}${userId}`;
+/**
+ * Put a keypair into the unlocked session.
+ *
+ * Does *not* persist — call `createVault` from `@neutrino/auth` to store a
+ * wrapped copy the user's other devices can open.
+ */
+export function saveKeyPair(userId: string, publicKey: Uint8Array, secretKey: Uint8Array): void {
+  setSessionKeyPair(userId, { publicKey, secretKey });
 }
 
-/**
- * Persist a keypair for `userId`.
- */
-export function saveKeyPair(
-  userId: string,
-  publicKey: Uint8Array,
-  secretKey: Uint8Array,
-): void {
-  if (typeof window === 'undefined') return;
-  const stored: StoredKeyPair = {
-    publicKey: toBase64url(publicKey),
-    secretKey: toBase64url(secretKey),
-  };
-  localStorage.setItem(storageKey(userId), JSON.stringify(stored));
+/** The unlocked keypair for `userId`, or null while locked. */
+export function loadKeyPair(userId: string): SessionKeyPair | null {
+  return getSessionKeyPair(userId);
 }
 
+/** True when the session is unlocked for `userId`. */
+export function hasKeyPair(userId: string): boolean {
+  return getSessionKeyPair(userId) !== null;
+}
+
+/** Lock the session, wiping the key from memory. */
+export function clearKeyPair(_userId?: string): void {
+  clearSession();
+}
+
+// ── Migration off the plaintext localStorage keystore ─────────────────────────
+
 /**
- * Load the stored keypair for `userId`, or return `null` if none exists.
+ * Read a plaintext keypair left by the pre-vault build, if one is there.
+ *
+ * Used once at login to move an existing key into a vault instead of stranding
+ * the user's files behind a key format that is going away. Returns null when
+ * there is nothing to migrate.
  */
-export function loadKeyPair(
-  userId: string,
-): { publicKey: Uint8Array; secretKey: Uint8Array } | null {
+export function readLegacyKeyPair(userId: string): SessionKeyPair | null {
   if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(storageKey(userId));
+  const raw = localStorage.getItem(`${LEGACY_STORAGE_PREFIX}${userId}`);
   if (!raw) return null;
   try {
     const stored = JSON.parse(raw) as StoredKeyPair;
-    return {
-      publicKey: fromBase64url(stored.publicKey),
-      secretKey: fromBase64url(stored.secretKey),
-    };
+    const publicKey = fromBase64url(stored.publicKey);
+    const secretKey = fromBase64url(stored.secretKey);
+    if (
+      publicKey.length !== sodium.crypto_box_PUBLICKEYBYTES ||
+      secretKey.length !== sodium.crypto_box_SECRETKEYBYTES
+    ) {
+      return null;
+    }
+    return { publicKey, secretKey };
   } catch {
     return null;
   }
 }
 
-/**
- * Remove the stored keypair for `userId` (e.g. on logout).
- */
-export function clearKeyPair(userId: string): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(storageKey(userId));
+/** True if a plaintext key from the old build is still on disk. */
+export function hasLegacyKeyPair(userId: string): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(`${LEGACY_STORAGE_PREFIX}${userId}`) !== null;
 }
 
 /**
- * Returns true if a keypair for `userId` is stored.
+ * Delete the plaintext key.
+ *
+ * Only call this once the wrapped vault is confirmed stored — it is the last
+ * copy of the key until then.
  */
-export function hasKeyPair(userId: string): boolean {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem(storageKey(userId)) !== null;
+export function clearLegacyKeyPair(userId: string): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(`${LEGACY_STORAGE_PREFIX}${userId}`);
 }

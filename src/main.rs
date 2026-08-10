@@ -172,6 +172,17 @@ async fn main() -> std::io::Result<()> {
         auth_service: auth_service.clone(),
     });
 
+    // ── Key vault (wrapped E2EE identity keys) ───────────────────────────────
+
+    use auth::keyvault::repository::KeyVaultRepository;
+    use auth::keyvault::service::KeyVaultService;
+
+    let key_vault_repo = Arc::new(KeyVaultRepository::new(pool.clone()));
+    let key_vault_service = Arc::new(KeyVaultService::new(key_vault_repo, auth_repo.clone()));
+    let key_vault_state = web::Data::new(auth::keyvault::api::KeyVaultApiState {
+        key_vault_service: key_vault_service.clone(),
+    });
+
     // ── OAuth service ─────────────────────────────────────────────────────────
 
     use oauth::repository::OauthRepository;
@@ -888,6 +899,7 @@ async fn main() -> std::io::Result<()> {
     let openapi = {
         let mut doc = NeutrinoApiDoc::openapi();
         doc.merge(auth::api::AuthApiDoc::openapi());
+        doc.merge(auth::keyvault::api::KeyVaultApiDoc::openapi());
         doc.merge(calendar::events::api::EventsApiDoc::openapi());
         doc.merge(calendar::reminders::api::RemindersApiDoc::openapi());
         doc.merge(calendar::attachments::api::AttachmentsApiDoc::openapi());
@@ -955,6 +967,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(token_service_data.clone())
             // Auth
             .app_data(auth_state.clone())
+            .app_data(key_vault_state.clone())
             // OAuth
             .app_data(oauth_state.clone())
             // Calendar

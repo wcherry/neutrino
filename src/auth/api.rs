@@ -640,7 +640,9 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .service(revoke_session)
             .service(revoke_all_sessions)
             .service(set_public_key)
-            .service(get_user_public_key),
+            .service(get_user_public_key)
+            // Wrapped identity-key storage — /auth/keyvault*
+            .configure(crate::auth::keyvault::api::configure),
     )
     .service(admin_list_users)
     .service(admin_get_user)

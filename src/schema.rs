@@ -928,10 +928,42 @@ diesel::table! {
     }
 }
 
+// ── Key vault (added in migration 105) ───────────────────────────────────────
+
+diesel::table! {
+    user_key_vaults (user_id) {
+        user_id -> Text,
+        // The Curve25519 secret key encrypted under the user's master key.
+        encrypted_identity -> Text,
+        public_key -> Text,
+        version -> Integer,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    user_key_unlocks (id) {
+        id -> Text,
+        user_id -> Text,
+        // 'password' | 'passkey' | 'recovery'
+        method -> Text,
+        label -> Text,
+        // The master key wrapped under this method's key-encryption key.
+        encrypted_master_key -> Text,
+        // Method-specific JSON: KDF parameters, or passkey credential + PRF salt.
+        params -> Text,
+        created_at -> Timestamp,
+        last_used_at -> Nullable<Timestamp>,
+    }
+}
+
 // ── Joinable relationships ────────────────────────────────────────────────────
 
 // Auth
 diesel::joinable!(refresh_tokens -> users (user_id));
+diesel::joinable!(user_key_vaults -> users (user_id));
+diesel::joinable!(user_key_unlocks -> users (user_id));
 
 // Themes
 diesel::joinable!(custom_themes -> users (user_id));
@@ -1048,4 +1080,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     custom_fonts,
     // Themes
     custom_themes,
+    // Key vault
+    user_key_vaults,
+    user_key_unlocks,
 );
