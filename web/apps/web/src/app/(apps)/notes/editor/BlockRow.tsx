@@ -120,6 +120,15 @@ export default function BlockRow({
   }
 
   function handleViewClick() {
+    // A drag-to-select gesture ends with a native `click` on mouseup too
+    // (same target for mousedown and mouseup), which would otherwise
+    // immediately blow the just-made selection away by swapping this view
+    // for a fresh, collapsed-cursor <textarea>. A plain click without a
+    // preceding drag leaves the selection collapsed (mousedown alone already
+    // clears/collapses whatever was selected before), so this only skips
+    // entering edit mode for the drag-select case.
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && selection.toString() !== '') return;
     enterEditMode('end');
   }
 
@@ -266,12 +275,10 @@ export default function BlockRow({
     return (
       <div
         className={`${styles.blockRow} ${isDragOver ? styles.blockRowDragOver : ''}`}
-        draggable
-        onDragStart={() => onDragStart(blockIndex)}
         onDragOver={(e) => { e.preventDefault(); onDragOver(blockIndex); }}
         onDrop={onDrop}
       >
-        <div className={styles.dragHandle} aria-hidden="true" />
+        <div className={styles.dragHandle} aria-hidden="true" draggable onDragStart={() => onDragStart(blockIndex)} />
         <div className={styles.blockPrefix} />
         <div className={styles.blockInputWrapper} data-block-id={block.id}>
           {block.tableData && (
@@ -362,12 +369,10 @@ export default function BlockRow({
   return (
     <div
       className={`${styles.blockRow} ${isDragOver ? styles.blockRowDragOver : ''}`}
-      draggable
-      onDragStart={() => onDragStart(blockIndex)}
       onDragOver={(e) => { e.preventDefault(); onDragOver(blockIndex); }}
       onDrop={onDrop}
     >
-      <div className={styles.dragHandle} aria-hidden="true" />
+      <div className={styles.dragHandle} aria-hidden="true" draggable onDragStart={() => onDragStart(blockIndex)} />
 
       <div className={styles.blockPrefix}>
         {block.type === 'bullet' && <span className={styles.prefixBullet} aria-hidden="true" />}
