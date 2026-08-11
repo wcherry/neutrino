@@ -400,14 +400,15 @@ async fn main() -> std::io::Result<()> {
         tags_service: drive_tags_service.clone(),
     });
 
+    let drive_fs_repo = Arc::new(FilesystemRepository::new(pool.clone()));
+
     let drive_storage_state = web::Data::new(drive::storage::api::StorageApiState {
         storage_service: drive_storage_service.clone(),
         irm_service: drive_irm_service.clone(),
         permissions_service: drive_permissions_service.clone(),
         tags_service: drive_tags_service.clone(),
+        filesystem_repo: drive_fs_repo.clone(),
     });
-
-    let drive_fs_repo = Arc::new(FilesystemRepository::new(pool.clone()));
     let drive_fs_service = Arc::new(FilesystemService::new(
         drive_fs_repo.clone(),
         file_store,
@@ -729,25 +730,16 @@ async fn main() -> std::io::Result<()> {
 
     use sheets::named_ranges::repository::NamedRangesRepository;
     use sheets::named_ranges::service::NamedRangesService;
-    use sheets::sheets::repository::SheetsRepository;
-    use sheets::sheets::service::SheetsService;
 
     let drive_client_for_sheets = Arc::new(DriveClient::new(
         drive_storage_service.clone(),
         drive_permissions_service.clone(),
         drive_fs_repo.clone(),
     ));
-    let sheets_repo = Arc::new(SheetsRepository::new(pool.clone()));
-    let sheets_service = Arc::new(SheetsService::new(
-        sheets_repo.clone(),
-        drive_client_for_sheets.clone(),
-    ));
-    let sheets_state = web::Data::new(sheets::sheets::api::SheetsApiState { sheets_service });
 
     let sheets_named_ranges_repo = Arc::new(NamedRangesRepository::new(pool.clone()));
     let sheets_named_ranges_service = Arc::new(NamedRangesService::new(
         sheets_named_ranges_repo,
-        sheets_repo,
         drive_client_for_sheets,
     ));
     let sheets_named_ranges_state =
@@ -942,7 +934,6 @@ async fn main() -> std::io::Result<()> {
         doc.merge(photos::suggestions::api::SuggestionsApiDoc::openapi());
         doc.merge(drawing::drawing::api::DrawingApiDoc::openapi());
         doc.merge(sheets::named_ranges::api::NamedRangesApiDoc::openapi());
-        doc.merge(sheets::sheets::api::SheetsApiDoc::openapi());
         doc.merge(sheets::ai::api::SheetsAIApiDoc::openapi());
         doc.merge(sheets::presence::api::SheetsPresenceApiDoc::openapi());
         doc.merge(slides::slides::api::SlidesApiDoc::openapi());
@@ -1023,7 +1014,6 @@ async fn main() -> std::io::Result<()> {
             // Drawing
             .app_data(drawing_state.clone())
             // Sheets
-            .app_data(sheets_state.clone())
             .app_data(sheets_named_ranges_state.clone())
             .app_data(sheets_ai_state.clone())
             .app_data(sheets_presence_state.clone())
@@ -1099,7 +1089,6 @@ async fn main() -> std::io::Result<()> {
                     // Drawing
                     .configure(drawing::drawing::api::configure)
                     // Sheets
-                    .configure(sheets::sheets::api::configure)
                     .configure(sheets::named_ranges::api::configure)
                     .configure(sheets::ai::api::configure)
                     .configure(sheets::presence::api::configure)

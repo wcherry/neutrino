@@ -1,18 +1,20 @@
+use crate::drive::filesystem::repository::FilesystemRepository;
 use crate::drive::irm::service::IrmService;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
-        CreateFileRequest, DocFileMetadataResponse, FileMetadataResponse, FileOrderField,
-        FileVersionResponse, ListFilesResponse, ListVersionsResponse, QuotaResponse,
-        SaveVersionRequest, UpdateVersionLabelRequest, VersionOrderField, ZipContentsResponse,
-        ZipEntry, ZipEntryOrderField,
+        AutosaveMetadata, ConvertFileRequest, CreateFileRequest, DocFileMetadataResponse,
+        FileMetadataResponse, FileOrderField, FileVersionResponse, ListFilesResponse,
+        ListVersionsResponse, QuotaResponse, SaveVersionRequest, UpdateVersionLabelRequest,
+        VersionOrderField, ZipContentsResponse, ZipEntry, ZipEntryOrderField,
     },
+    native_types,
     service::StorageService,
 };
 use crate::drive::tags::service::TagsService;
 use crate::shared::{
-    apply_list_query, ApiError, AuthenticatedUser, ContentVersionQuery, ListQuery, ListQueryParams,
-    OrderDirection,
+    apply_list_query, ApiError, AuthenticatedUser, ContentVersionCheck, ContentVersionQuery,
+    ListQuery, ListQueryParams, OrderDirection,
 };
 use actix_files::NamedFile;
 use actix_multipart::Multipart;
@@ -28,6 +30,63 @@ pub struct StorageApiState {
     pub irm_service: Arc<IrmService>,
     pub permissions_service: Arc<PermissionsService>,
     pub tags_service: Arc<TagsService>,
+    /// Used by autosave to apply a rename carried in the multipart `metadata`
+    /// part; renames are filesystem metadata, which this repo owns.
+    pub filesystem_repo: Arc<FilesystemRepository>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/drive/files/{id}/convert",
+    params(("id" = String, Path, description = "File ID")),
+    request_body = ConvertFileRequest,
+    responses(
+        (status = 200, description = "File converted to a native Neutrino document", body = DocFileMetadataResponse),
+        (status = 400, description = "Source or target type cannot be converted"),
+        (status = 403, description = "Edit access required"),
+        (status = 404, description = "File not found"),
+        (status = 409, description = "File has already been converted"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "storage"
+)]
+#[post("/files/{id}/convert")]
+pub async fn convert_file(
+    state: web::Data<StorageApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<ConvertFileRequest>,
+) -> Result<web::Json<DocFileMetadataResponse>, ApiError> {
+    let file_id = path.into_inner();
+    let req = body.into_inner();
+    let file = state
+        .storage_service
+        .convert_to_native(&user, &file_id, &req.target_mime_type, &req.content)
+        .await?;
+    let tags = state
+        .tags_service
+        .get_tag_names_for_file(&file_id, &user.user_id)
+        .unwrap_or_default();
+    Ok(web::Json(DocFileMetadataResponse {
+        id: file.id,
+        name: file.name,
+        size_bytes: file.size_bytes,
+        folder_id: file.folder_id,
+        deleted_at: file.deleted_at,
+        your_role: state
+            .permissions_service
+            .get_effective_role(&user.user_id, "file", &file_id)?
+            .unwrap_or_else(|| "owner".to_string()),
+        storage_path: (!file.storage_path.is_empty()).then_some(file.storage_path),
+        mime_type: (!file.mime_type.is_empty()).then_some(file.mime_type),
+        created_at: file.created_at,
+        updated_at: file.updated_at,
+        cover_thumbnail: file.cover_thumbnail,
+        cover_thumbnail_mime_type: file.cover_thumbnail_mime_type,
+        tags,
+        encrypted_metadata: file.encrypted_metadata,
+        content_version: file.content_version,
+    }))
 }
 
 #[utoipa::path(
@@ -222,7 +281,7 @@ pub async fn create_file_record(
     if name.is_empty() {
         return Err(ApiError::bad_request("File name cannot be empty"));
     }
-    let file = state
+    let mut file = state
         .storage_service
         .save_file(
             &user,
@@ -232,6 +291,27 @@ pub async fn create_file_record(
             req.folder_id.as_deref(),
         )
         .await?;
+
+    // Seed the body in the same request that creates the record. An explicit
+    // `initialContent` wins; otherwise a native type falls back to its
+    // registered default so a new document is never a zero-byte read.
+    let seed = req.initial_content.as_deref().or_else(|| {
+        native_types::lookup(&req.mime_type).map(|t| t.default_content)
+    });
+    if let Some(content) = seed.filter(|c| !c.is_empty()) {
+        state.storage_service.write_text_content(
+            &file.id,
+            content,
+            ContentVersionCheck::UNCHECKED,
+        )?;
+        // Re-read so the response carries the post-write size and version
+        // rather than the empty record we inserted a moment ago.
+        file = state
+            .storage_service
+            .find_file_any_user(&file.id)?
+            .ok_or_else(|| ApiError::internal("File vanished after creation"))?;
+    }
+
     let response = DocFileMetadataResponse {
         id: file.id,
         name: file.name,
@@ -623,6 +703,20 @@ pub async fn autosave_file(
         return Err(ApiError::new(403, "FORBIDDEN", "Edit access required"));
     }
 
+    let existing = state
+        .storage_service
+        .find_file_any_user(&file_id)?
+        .ok_or_else(|| ApiError::not_found("File not found"))?;
+    if existing.deleted_at.is_some() {
+        return Err(ApiError::not_found("File is in trash"));
+    }
+
+    // A rename arriving with the content write is applied only after the
+    // content lands, so a rejected save (stale version, quota) can't leave the
+    // file renamed to match a body that was never written.
+    let mut new_title: Option<String> = None;
+    let mut staged: Option<(std::path::PathBuf, i64)> = None;
+
     while let Some(field) = payload.next().await {
         let mut field = field.map_err(|e| {
             tracing::error!("Multipart error: {:?}", e);
@@ -634,6 +728,24 @@ pub async fn autosave_file(
             .and_then(|cd| cd.get_filename())
             .is_none()
         {
+            let is_metadata = field
+                .content_disposition()
+                .and_then(|cd| cd.get_name())
+                .is_some_and(|n| n == "metadata");
+            if !is_metadata {
+                continue;
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = field.next().await {
+                let data = chunk.map_err(|_| ApiError::bad_request("Upload interrupted"))?;
+                bytes.extend_from_slice(&data);
+            }
+            if let Ok(parsed) = serde_json::from_slice::<AutosaveMetadata>(&bytes) {
+                new_title = parsed
+                    .title
+                    .map(|t| t.trim().to_string())
+                    .filter(|t| !t.is_empty());
+            }
             continue;
         }
 
@@ -674,22 +786,38 @@ pub async fn autosave_file(
         })?;
         drop(file);
 
-        let response = state
-            .storage_service
-            .autosave(
-                &file_id,
-                &temp_path,
-                size,
-                version_check.into_inner().into(),
-            )
-            .inspect_err(|_| {
-                let _ = std::fs::remove_file(&temp_path);
-            })?;
-
-        return Ok(web::Json(response));
+        // Don't commit yet — the `metadata` part carrying a rename may still
+        // be ahead of us in the body, and clients append it after the file.
+        staged = Some((temp_path, size));
     }
 
-    Err(ApiError::bad_request("No file provided in multipart body"))
+    let (temp_path, size) =
+        staged.ok_or_else(|| ApiError::bad_request("No file provided in multipart body"))?;
+
+    let mut response = state
+        .storage_service
+        .autosave(&file_id, &temp_path, size, version_check.into_inner().into())
+        .inspect_err(|_| {
+            let _ = std::fs::remove_file(&temp_path);
+        })?;
+
+    if let Some(title) = new_title.filter(|t| *t != response.name) {
+        // Scoped to the owner's id, not the caller's: an editor on a shared
+        // file may rename it, and the `files` row is always keyed by owner.
+        state
+            .filesystem_repo
+            .update_file(&file_id, &existing.user_id, Some(&title), None, None)
+            .inspect_err(|e| {
+                // The content is already committed and is what the client
+                // cares about; report the save as successful rather than
+                // failing a landed write over its label.
+                tracing::error!("Autosave rename of {} failed: {:?}", file_id, e);
+            })
+            .ok();
+        response.name = title;
+    }
+
+    Ok(web::Json(response))
 }
 
 #[utoipa::path(
@@ -1016,6 +1144,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         .service(download_file)
         .service(get_quota)
         .service(autosave_file)
+        .service(convert_file)
         .service(save_version)
         .service(list_versions)
         .service(get_version)
@@ -1029,7 +1158,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
 #[openapi(
     paths(
         upload_file, create_file_record, get_file_info, list_files, get_file_metadata,
-        preview_file, zip_contents, download_file, get_quota, autosave_file, save_version,
+        preview_file, zip_contents, download_file, get_quota, autosave_file, convert_file, save_version,
         list_versions, get_version, update_version_label, restore_version, download_version, delete_version,
     ),
     components(schemas(
@@ -1046,6 +1175,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         UpdateVersionLabelRequest,
         SaveVersionRequest,
         CreateFileRequest,
+        ConvertFileRequest,
         DocFileMetadataResponse,
     )),
     tags(

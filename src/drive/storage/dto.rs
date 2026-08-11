@@ -152,6 +152,33 @@ pub struct CreateFileRequest {
     pub name: String,
     pub mime_type: String,
     pub folder_id: Option<String>,
+    /// Body to write at creation time. Omit and a native Neutrino type
+    /// (see `native_types`) is seeded with its default content instead, so a
+    /// new spreadsheet opens as a valid empty workbook rather than a
+    /// zero-byte read every editor has to special-case. Non-native types
+    /// stay empty, as before.
+    pub initial_content: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConvertFileRequest {
+    /// The native Neutrino mime type to convert into, e.g.
+    /// `application/x-neutrino-sheet`.
+    pub target_mime_type: String,
+    /// The file's new body, already converted to the native format.
+    /// Conversion from OOXML happens client-side; the backend never parses
+    /// office bytes.
+    pub content: String,
+}
+
+/// Optional metadata part of an autosave multipart body. Editors send it
+/// alongside the file part so a rename lands in the same request as the
+/// content write instead of racing a separate PATCH.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutosaveMetadata {
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

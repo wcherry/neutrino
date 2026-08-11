@@ -5,29 +5,18 @@ use crate::sheets::named_ranges::{
     model::NewNamedRangeRecord,
     repository::NamedRangesRepository,
 };
-use crate::sheets::sheets::repository::SheetsRepository;
 use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[allow(dead_code)]
 pub struct NamedRangesService {
     repo: Arc<NamedRangesRepository>,
-    sheets_repo: Arc<SheetsRepository>,
     drive: Arc<DriveClient>,
 }
 
 impl NamedRangesService {
-    pub fn new(
-        repo: Arc<NamedRangesRepository>,
-        sheets_repo: Arc<SheetsRepository>,
-        drive: Arc<DriveClient>,
-    ) -> Self {
-        NamedRangesService {
-            repo,
-            sheets_repo,
-            drive,
-        }
+    pub fn new(repo: Arc<NamedRangesRepository>, drive: Arc<DriveClient>) -> Self {
+        NamedRangesService { repo, drive }
     }
 
     /// Create a named range for the given spreadsheet.

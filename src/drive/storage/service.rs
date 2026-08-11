@@ -573,6 +573,93 @@ impl StorageService {
             .update_file_mime_type(file_id, &file.user_id, mime_type)
     }
 
+    /// Write text over a file's current content, returning the new content version.
+    ///
+    /// Used for the two server-originated writes that aren't a client upload:
+    /// seeding a newly created native file with its default content, and
+    /// rewriting an office file's body during `convert`. Both pass
+    /// `ContentVersionCheck::UNCHECKED` — there is no client-held version to
+    /// guard against at those points.
+    pub fn write_text_content(
+        &self,
+        file_id: &str,
+        content: &str,
+        check: ContentVersionCheck,
+    ) -> Result<i32, ApiError> {
+        let file = self
+            .repo
+            .find_file_by_id(file_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
+
+        self.store.ensure_user_dir(&file.user_id).map_err(|e| {
+            tracing::error!("write_text_content dir error: {:?}", e);
+            ApiError::internal("Failed to prepare storage directory")
+        })?;
+
+        let temp_path = self.store.temp_path(&file.user_id, &Uuid::new_v4().to_string());
+        std::fs::write(&temp_path, content.as_bytes()).map_err(|e| {
+            tracing::error!("write_text_content write error: {:?}", e);
+            ApiError::internal("Failed to write file content")
+        })?;
+
+        let saved = self
+            .autosave(file_id, &temp_path, content.len() as i64, check)
+            .inspect_err(|_| {
+                let _ = std::fs::remove_file(&temp_path);
+            })?;
+        Ok(saved.content_version)
+    }
+
+    /// Convert a raw office file in place into the native Neutrino type that
+    /// can edit it — same file id, mime type flipped, body replaced with
+    /// `content` (already converted to the native format by the client; the
+    /// backend never parses OOXML).
+    ///
+    /// Order matters for safety: content is written first while the mime type
+    /// is still the office type, so a failure there leaves the file exactly as
+    /// it was. Only once the body is native does the mime type flip to match.
+    /// Doing it the other way round would leave a file that claims to be a
+    /// native sheet but still holds xlsx bytes — unopenable by either editor.
+    pub async fn convert_to_native(
+        &self,
+        user: &AuthenticatedUser,
+        file_id: &str,
+        target_mime: &str,
+        content: &str,
+    ) -> Result<FileRecord, ApiError> {
+        let file = self
+            .repo
+            .find_file_by_id(file_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
+
+        let role = self
+            .permissions
+            .get_effective_role(&user.user_id, "file", file_id)?
+            .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
+        if role != "owner" && role != "editor" {
+            return Err(ApiError::new(403, "FORBIDDEN", "Edit access required"));
+        }
+        if file.deleted_at.is_some() {
+            return Err(ApiError::not_found("File is in trash"));
+        }
+        if super::native_types::lookup(target_mime).is_none() {
+            return Err(ApiError::bad_request(
+                "Target type is not a native Neutrino document type",
+            ));
+        }
+        if super::native_types::lookup(&file.mime_type).is_some() {
+            return Err(ApiError::conflict("File has already been converted"));
+        }
+        if !super::native_types::can_convert(&file.mime_type, target_mime) {
+            return Err(ApiError::bad_request(
+                "File type cannot be converted into the requested type",
+            ));
+        }
+
+        self.write_text_content(file_id, content, ContentVersionCheck::UNCHECKED)?;
+        self.update_mime_type(file_id, target_mime)
+    }
+
     /// Decode an image file, resize it to fit within 512×512, and return base64 JPEG + MIME type.
     /// Returns None if the file cannot be decoded (e.g. unsupported format or encrypted).
     #[allow(dead_code)]
@@ -814,6 +901,257 @@ mod tests {
 
         assert_eq!(err.status, 409);
         assert_eq!(err.code, "CONTENT_MISSING");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    // ── convert_to_native ────────────────────────────────────────────────────
+    //
+    // These replace the four per-app `promote` suites (docs/sheets/slides) that
+    // each re-tested the same contract against their own service. The contract
+    // is unchanged: validate access, source mime and prior-conversion state,
+    // then write content *before* flipping the mime type so a failure can't
+    // leave a file whose declared type and body disagree.
+
+    const XLSX_MIME: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    const NATIVE_SHEET_MIME: &str = "application/x-neutrino-sheet";
+    const SHEET_CONTENT: &str = r#"[{"index":"0","name":"Sheet1","celldata":[]}]"#;
+
+    /// Same wiring as `test_storage_service`, but also hands back the
+    /// permissions repository so a test can grant the roles `convert_to_native`
+    /// checks.
+    fn test_service_with_permissions(
+    ) -> (StorageService, StorageRepository, PermissionsRepository, DbPool, PathBuf) {
+        let pool = test_pool();
+        let base = std::env::temp_dir()
+            .join(format!("neutrino_convert_test_{}", uuid::Uuid::new_v4()));
+        let store = Arc::new(LocalFileStore::new(&base).expect("create store"));
+
+        let workspace_repo = Arc::new(WorkspaceRepository::new(pool.clone()));
+        let workspace_service = Arc::new(WorkspaceService::new(workspace_repo));
+        let encryption_repo = Arc::new(EncryptionRepository::new(pool.clone()));
+        let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
+        let token_service = Arc::new(TokenService::new("test-secret".to_string()));
+        let auth_service = Arc::new(AuthService::new(auth_repo, token_service));
+        let perms_for_assertions = PermissionsRepository::new(pool.clone());
+        let permissions_repo = Arc::new(PermissionsRepository::new(pool.clone()));
+        let permissions_service = Arc::new(PermissionsService::new(
+            permissions_repo,
+            workspace_service,
+            encryption_repo,
+            auth_service,
+        ));
+
+        let repo_for_assertions = StorageRepository::new(pool.clone());
+        let pool_for_assertions = pool.clone();
+        let repo = Arc::new(StorageRepository::new(pool));
+        let service = StorageService::new(repo, store, permissions_service);
+        (service, repo_for_assertions, perms_for_assertions, pool_for_assertions, base)
+    }
+
+    fn convert_test_user(user_id: &str) -> AuthenticatedUser {
+        AuthenticatedUser {
+            user_id: user_id.to_string(),
+            email: format!("{user_id}@example.com"),
+            token: String::new(),
+            is_admin: false,
+        }
+    }
+
+    fn grant_role(repo: &PermissionsRepository, resource_id: &str, user_id: &str, role: &str) {
+        use crate::drive::permissions::model::NewPermissionRecord;
+        repo.upsert_permission(&NewPermissionRecord {
+            id: &uuid::Uuid::new_v4().to_string(),
+            resource_type: "file",
+            resource_id,
+            user_id,
+            role,
+            granted_by: user_id,
+            user_email: &format!("{user_id}@example.com"),
+            user_name: user_id,
+        })
+        .expect("grant role");
+    }
+
+    #[tokio::test]
+    async fn convert_succeeds_for_the_owner_of_a_raw_xlsx_file() {
+        let (service, repo, perms, _pool, base) = test_service_with_permissions();
+        let owner = convert_test_user("owner-1");
+        insert_test_file(&repo, "sheet-1", &owner.user_id, XLSX_MIME);
+        grant_role(&perms, "sheet-1", &owner.user_id, "owner");
+
+        let result = service
+            .convert_to_native(&owner, "sheet-1", NATIVE_SHEET_MIME, SHEET_CONTENT)
+            .await
+            .expect("convert should succeed for the owner of a raw xlsx file");
+
+        assert_eq!(result.id, "sheet-1");
+        assert_eq!(result.mime_type, NATIVE_SHEET_MIME);
+        let stored = repo.find_file_by_id("sheet-1").unwrap().unwrap();
+        assert_eq!(stored.mime_type, NATIVE_SHEET_MIME);
+        assert!(stored.content_version > 0, "content write must bump the version");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn convert_succeeds_for_a_non_owner_with_edit_access() {
+        let (service, repo, perms, _pool, base) = test_service_with_permissions();
+        insert_test_file(&repo, "sheet-2", "owner-1", XLSX_MIME);
+        grant_role(&perms, "sheet-2", "owner-1", "owner");
+        let editor = convert_test_user("editor-1");
+        grant_role(&perms, "sheet-2", &editor.user_id, "editor");
+
+        let result = service
+            .convert_to_native(&editor, "sheet-2", NATIVE_SHEET_MIME, SHEET_CONTENT)
+            .await;
+
+        assert!(
+            result.is_ok(),
+            "a non-owner editor should be able to convert the file: {:?}",
+            result.err()
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn convert_rejects_a_file_that_is_already_native() {
+        let (service, repo, perms, _pool, base) = test_service_with_permissions();
+        let owner = convert_test_user("owner-1");
+        insert_test_file(&repo, "sheet-3", &owner.user_id, NATIVE_SHEET_MIME);
+        grant_role(&perms, "sheet-3", &owner.user_id, "owner");
+
+        let err = service
+            .convert_to_native(&owner, "sheet-3", NATIVE_SHEET_MIME, SHEET_CONTENT)
+            .await
+            .expect_err("converting an already-native file must be rejected");
+
+        assert_eq!(err.status, 409);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn convert_rejects_a_file_with_the_wrong_source_mime_type() {
+        let (service, repo, perms, _pool, base) = test_service_with_permissions();
+        let owner = convert_test_user("owner-1");
+        insert_test_file(&repo, "sheet-4", &owner.user_id, "text/plain");
+        grant_role(&perms, "sheet-4", &owner.user_id, "owner");
+
+        let err = service
+            .convert_to_native(&owner, "sheet-4", NATIVE_SHEET_MIME, SHEET_CONTENT)
+            .await
+            .expect_err("a text/plain file is not convertible into a spreadsheet");
+
+        assert_eq!(err.status, 400);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// An .xlsx is convertible — but only into a spreadsheet. Targeting a
+    /// different native type has to fail, or the registry's per-type source
+    /// list would be decorative.
+    #[tokio::test]
+    async fn convert_rejects_a_source_that_does_not_match_the_target_type() {
+        let (service, repo, perms, _pool, base) = test_service_with_permissions();
+        let owner = convert_test_user("owner-1");
+        insert_test_file(&repo, "sheet-5", &owner.user_id, XLSX_MIME);
+        grant_role(&perms, "sheet-5", &owner.user_id, "owner");
+
+        let err = service
+            .convert_to_native(&owner, "sheet-5", NATIVE_DOC_MIME, SHEET_CONTENT)
+            .await
+            .expect_err("an xlsx must not convert into a native doc");
+
+        assert_eq!(err.status, 400);
+        let stored = repo.find_file_by_id("sheet-5").unwrap().unwrap();
+        assert_eq!(stored.mime_type, XLSX_MIME);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn convert_rejects_an_unknown_target_type() {
+        let (service, repo, perms, _pool, base) = test_service_with_permissions();
+        let owner = convert_test_user("owner-1");
+        insert_test_file(&repo, "sheet-6", &owner.user_id, XLSX_MIME);
+        grant_role(&perms, "sheet-6", &owner.user_id, "owner");
+
+        let err = service
+            .convert_to_native(&owner, "sheet-6", "application/zip", SHEET_CONTENT)
+            .await
+            .expect_err("a non-native target type must be rejected");
+
+        assert_eq!(err.status, 400);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn convert_gives_a_viewer_a_clean_403_not_a_corrupted_write() {
+        let (service, repo, perms, _pool, base) = test_service_with_permissions();
+        insert_test_file(&repo, "sheet-7", "owner-1", XLSX_MIME);
+        grant_role(&perms, "sheet-7", "owner-1", "owner");
+        let viewer = convert_test_user("viewer-1");
+        grant_role(&perms, "sheet-7", &viewer.user_id, "viewer");
+        let before = repo.find_file_by_id("sheet-7").unwrap().unwrap();
+
+        let err = service
+            .convert_to_native(&viewer, "sheet-7", NATIVE_SHEET_MIME, SHEET_CONTENT)
+            .await
+            .expect_err("a viewer must not be able to convert the file");
+
+        assert_eq!(err.status, 403);
+        let stored = repo.find_file_by_id("sheet-7").unwrap().unwrap();
+        assert_eq!(stored.mime_type, XLSX_MIME);
+        assert_eq!(
+            stored.content_version, before.content_version,
+            "a rejected convert must not write content"
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn convert_rejects_a_trashed_file() {
+        let (service, repo, perms, pool, base) = test_service_with_permissions();
+        let owner = convert_test_user("owner-1");
+        insert_test_file(&repo, "sheet-8", &owner.user_id, XLSX_MIME);
+        grant_role(&perms, "sheet-8", &owner.user_id, "owner");
+        crate::drive::filesystem::repository::FilesystemRepository::new(pool)
+            .trash_file("sheet-8", &owner.user_id)
+            .expect("trash the file");
+
+        let err = service
+            .convert_to_native(&owner, "sheet-8", NATIVE_SHEET_MIME, SHEET_CONTENT)
+            .await
+            .expect_err("a trashed file must not be convertible");
+
+        assert_eq!(err.status, 404);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    // ── write_text_content ───────────────────────────────────────────────────
+
+    #[test]
+    fn write_text_content_persists_the_body_and_bumps_the_version() {
+        let (service, repo, base) = test_storage_service();
+        insert_test_file(&repo, "file-9", "user-1", NATIVE_SHEET_MIME);
+
+        let version = service
+            .write_text_content("file-9", SHEET_CONTENT, ContentVersionCheck::UNCHECKED)
+            .expect("write content");
+
+        let stored = repo.find_file_by_id("file-9").unwrap().unwrap();
+        assert_eq!(stored.content_version, version);
+        assert_eq!(stored.size_bytes, SHEET_CONTENT.len() as i64);
+        let on_disk = std::fs::read_to_string(base.join(&stored.storage_path)).expect("read blob");
+        assert_eq!(on_disk, SHEET_CONTENT);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn write_text_content_on_unknown_file_returns_not_found() {
+        let (service, _repo, base) = test_storage_service();
+
+        let err = service
+            .write_text_content("nope", SHEET_CONTENT, ContentVersionCheck::UNCHECKED)
+            .expect_err("unknown file");
+
+        assert_eq!(err.status, 404);
         let _ = std::fs::remove_dir_all(base);
     }
 }

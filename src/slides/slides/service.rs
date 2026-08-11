@@ -41,8 +41,9 @@ mod tests {
     // ── promote (issue #43 — in-place editing of MS Office docs) ─────────────
     //
     // `SlidesService::promote` does not exist yet (TDD red phase). Mirrors
-    // the contract tested for docs::docs::service::promote and
-    // sheets::sheets::service::promote: validates file existence/edit-access/
+    // the contract tested for docs::docs::service::promote (and, until sheets
+    // moved onto the generic drive convert endpoint, for sheets too):
+    // validates file existence/edit-access/
     // mime type, rejects an already-promoted file, uploads content + flips
     // mime type + inserts the slides row on success, and gives a viewer a
     // clean 403. These tests reference `promote` directly, so this file (and

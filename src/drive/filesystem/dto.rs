@@ -74,6 +74,10 @@ pub struct FileResponse {
     pub cover_thumbnail: Option<String>,
     pub cover_thumbnail_mime_type: Option<String>,
     pub encrypted_metadata: Option<String>,
+    /// Server-side content revision. Present here too so a rename response can
+    /// be used to refresh a client's optimistic-concurrency guard without a
+    /// second round trip — every other file DTO already carries it.
+    pub content_version: i32,
 }
 
 impl From<FileRecord> for FileResponse {
@@ -90,6 +94,7 @@ impl From<FileRecord> for FileResponse {
             cover_thumbnail: f.cover_thumbnail,
             cover_thumbnail_mime_type: f.cover_thumbnail_mime_type,
             encrypted_metadata: f.encrypted_metadata,
+            content_version: f.content_version,
         }
     }
 }

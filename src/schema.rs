@@ -338,14 +338,10 @@ diesel::table! {
 }
 
 // ── Sheets ───────────────────────────────────────────────────────────────────
-
-diesel::table! {
-    sheets (file_id) {
-        file_id -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
+//
+// There is no `sheets` table: a file is a spreadsheet because its mime type
+// says so (see `drive::storage::native_types`). `named_ranges` is the only
+// spreadsheet-specific state, and it hangs off `files` directly.
 
 diesel::table! {
     named_ranges (id) {
@@ -982,7 +978,7 @@ diesel::joinable!(task_list_memberships -> tasks (task_id));
 diesel::joinable!(task_list_memberships -> task_lists (list_id));
 
 // Sheets
-diesel::joinable!(named_ranges -> sheets (sheet_db_id));
+diesel::joinable!(named_ranges -> files (sheet_db_id));
 
 // Photos
 diesel::joinable!(faces -> photos (photo_id));
@@ -1036,7 +1032,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     // Drawing
     drawings,
     // Sheets
-    sheets,
     named_ranges,
     // Slides
     slides,
