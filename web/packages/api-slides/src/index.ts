@@ -1,4 +1,10 @@
-import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
+import { request, ApiClientError } from '@neutrino/api-core';
+
+/**
+ * A file is a native Neutrino presentation because it carries this mime type.
+ * Mirrors `src/drive/storage/native_types.rs` on the backend.
+ */
+export const SLIDE_MIME_TYPE = 'application/x-neutrino-slide';
 
 // ---------------------------------------------------------------------------
 // Slide text extraction helpers
@@ -131,30 +137,101 @@ export interface ListThemesResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Slides API
+// Slides API — drive adapters
 // ---------------------------------------------------------------------------
+//
+// Presentation CRUD is served by the generic drive file endpoints; a
+// presentation is a Drive file whose mime type is
+// `application/x-neutrino-slide`. These functions keep the slide-shaped
+// contract their callers were written against and translate it to and from
+// drive's file DTOs. Themes below are user-owned records rather than files, so
+// they keep their own endpoints.
+
+/** The subset of drive's file DTOs these adapters read. */
+interface DriveFileDto {
+  id: string;
+  name: string;
+  folderId: string | null;
+  mimeType?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contentVersion: number;
+}
+
+/**
+ * Drive serialises timestamps as naive datetimes (`2026-08-10T12:00:00`) — no
+ * offset — which `new Date()` would read as local time and shift by the
+ * viewer's UTC offset. The values are UTC, so say so.
+ */
+function toIsoUtc(timestamp: string): string {
+  if (!timestamp) return timestamp;
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(timestamp) ? timestamp : `${timestamp}Z`;
+}
+
+function toSlideMeta(file: DriveFileDto): SlideMetaResponse {
+  return {
+    id: file.id,
+    title: file.name,
+    folderId: file.folderId ?? null,
+    createdAt: toIsoUtc(file.createdAt),
+    updatedAt: toIsoUtc(file.updatedAt),
+    contentVersion: file.contentVersion,
+  };
+}
+
+function toSlide(file: DriveFileDto): SlideResponse {
+  return {
+    ...toSlideMeta(file),
+    contentUrl: `/api/v1/drive/files/${file.id}`,
+    contentWriteUrl: `/api/v1/drive/files/${file.id}/versions`,
+  };
+}
 
 export const slidesApi = {
   async listSlides(): Promise<ListSlidesResponse> {
-    return request<ListSlidesResponse>('/api/v1/slides');
+    const params = new URLSearchParams({ mimeType: SLIDE_MIME_TYPE, limit: '200' });
+    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
+    return { slides: (raw.files ?? []).map(toSlideMeta) };
   },
 
   async createSlide(body: CreateSlideRequest): Promise<SlideResponse> {
-    return request<SlideResponse>('/api/v1/slides', {
+    const title = body.title.trim();
+    if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Presentation title cannot be empty');
+    // Drive takes a client-supplied id and seeds the empty-deck body from the
+    // mime type, so create and first content write are one request.
+    const file = await request<DriveFileDto>('/api/v1/drive/files', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        name: title,
+        mimeType: SLIDE_MIME_TYPE,
+        folderId: body.folderId ?? null,
+      }),
     });
+    return toSlide(file);
   },
 
+  /**
+   * Fetch a file as a native presentation.
+   *
+   * Throws 404 for a file that exists but isn't one — a raw .pptx, say. That
+   * is load-bearing: the editor's office-mode fallback keys off this 404 to
+   * decide it must download and parse the file as pptx instead.
+   */
   async getSlide(slideId: string): Promise<SlideResponse> {
-    return request<SlideResponse>(`/api/v1/slides/${slideId}`);
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}/info`);
+    if (file.mimeType !== SLIDE_MIME_TYPE) {
+      throw new ApiClientError(404, 'NOT_FOUND', 'Presentation not found');
+    }
+    return toSlide(file);
   },
 
   async saveSlide(slideId: string, body: SaveSlideRequest): Promise<SlideMetaResponse> {
-    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}`, {
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}`, {
       method: 'PATCH',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ name: body.title }),
     });
+    return toSlideMeta(file);
   },
 
   /**
@@ -164,44 +241,12 @@ export const slidesApi = {
    * afterwards.
    */
   async promoteSlide(slideId: string, content: string): Promise<SlideResponse> {
-    return request<SlideResponse>(`/api/v1/slides/${slideId}/promote`, {
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}/convert`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ targetMimeType: SLIDE_MIME_TYPE, content }),
     });
+    return toSlide(file);
   },
-
-  async autosaveContent(
-    slideId: string,
-    content: string,
-    filename: string,
-    metadata?: { title?: string },
-    versionCheck?: ContentVersionCheck,
-  ): Promise<SlideMetaResponse> {
-    const formData = new FormData();
-    formData.append('file', new Blob([content], { type: 'application/json' }), filename);
-    if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
-  },
-
-  async autosaveEncryptedContent(
-    slideId: string,
-    content: string,
-    filename: string,
-    dek: Uint8Array,
-    metadata?: { title?: string },
-    versionCheck?: ContentVersionCheck,
-  ): Promise<SlideMetaResponse> {
-    const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
-    await initSodium();
-    const plainBytes = new TextEncoder().encode(content);
-    const cipherBytes = encryptFile(plainBytes, dek);
-    const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-    const formData = new FormData();
-    formData.append('file', blob, filename);
-    if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<SlideMetaResponse>(`/api/v1/slides/${slideId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
-  },
-
 
   // ── Themes ────────────────────────────────────────────────────────────────
 

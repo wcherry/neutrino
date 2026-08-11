@@ -368,14 +368,6 @@ diesel::table! {
 // ── Slides ───────────────────────────────────────────────────────────────────
 
 diesel::table! {
-    slides (file_id) {
-        file_id -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     slide_themes (id) {
         id -> Text,
         user_id -> Text,
@@ -1032,7 +1024,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     // Sheets
     named_ranges,
     // Slides
-    slides,
     slide_themes,
     // Drive
     folders,

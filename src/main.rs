@@ -779,16 +779,8 @@ async fn main() -> std::io::Result<()> {
     use slides::slides::repository::SlidesRepository;
     use slides::slides::service::SlidesService;
 
-    let drive_client_for_slides = Arc::new(DriveClient::new(
-        drive_storage_service.clone(),
-        drive_permissions_service.clone(),
-        drive_fs_repo.clone(),
-    ));
     let slides_slides_repo = Arc::new(SlidesRepository::new(pool.clone()));
-    let slides_service = Arc::new(SlidesService::new(
-        slides_slides_repo,
-        drive_client_for_slides,
-    ));
+    let slides_service = Arc::new(SlidesService::new(slides_slides_repo));
     let slides_state = web::Data::new(slides::slides::api::SlidesApiState { slides_service });
 
     let slides_claude_client = slides::ai::claude_client::ClaudeClient::from_env();
