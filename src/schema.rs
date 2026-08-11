@@ -389,14 +389,6 @@ diesel::table! {
 // ── Diagrams ─────────────────────────────────────────────────────────────────
 
 diesel::table! {
-    diagrams (file_id) {
-        file_id -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     diagram_yjs_state (file_id) {
         file_id -> Text,
         state -> Binary,

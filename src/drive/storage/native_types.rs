@@ -34,8 +34,34 @@ const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.
 const DOCX: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX: &str = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
+// Default bodies written when a file of each type is created, so a new
+// document opens in a valid state rather than as a zero-byte read every
+// editor would have to special-case. These are the same constants the
+// per-app create paths used before they were collapsed into drive.
+
 /// Default empty FortuneSheet workbook: one sheet named "Sheet1".
 const EMPTY_SHEET_CONTENT: &str = r#"[{"index":"0","name":"Sheet1","celldata":[],"row":100,"column":26,"order":0,"status":1,"config":{}}]"#;
+
+/// Default empty Tiptap/ProseMirror document.
+const EMPTY_DOC_CONTENT: &str = r#"{"type":"doc","content":[]}"#;
+
+/// Default deck: one title slide plus the default theme.
+///
+/// Note the `r##"…"##` delimiter. A `"#` sequence closes an `r#"…"#` raw
+/// string, and this JSON is full of them (`"value":"#ffffff"`). The per-app
+/// constant this replaced worked around that by writing `\#ffffff`, which
+/// parses as an invalid JSON escape — so every deck created since has been
+/// seeded with a body no parser accepts, and the editor silently fell back to
+/// a blank deck instead of the title slide. Widening the delimiter keeps the
+/// JSON intact; `every_default_content_is_valid_json` below stops the whole
+/// class of mistake coming back.
+const EMPTY_SLIDES_CONTENT: &str = r##"{"slides":[{"id":"s1","background":{"type":"color","value":"#ffffff"},"elements":[{"id":"e1","type":"text","x":10,"y":30,"w":80,"h":20,"content":"Click to add title","style":{"fontSize":40,"bold":true,"italic":false,"underline":false,"color":"#1f2937","align":"center","fontFamily":"Inter"}},{"id":"e2","type":"text","x":15,"y":55,"w":70,"h":15,"content":"Click to add subtitle","style":{"fontSize":24,"bold":false,"italic":false,"underline":false,"color":"#6b7280","align":"center","fontFamily":"Inter"}}],"notes":"","transition":"fade"}],"theme":{"name":"default","primaryColor":"#4f46e5","backgroundColor":"#ffffff","textColor":"#1f2937","accentColor":"#818cf8","fontFamily":"Inter","defaultTransition":"fade"}}"##;
+
+/// Default drawing: one empty canvas.
+const EMPTY_DRAWING_CONTENT: &str = r#"{"version":1,"shapes":[]}"#;
+
+/// Default diagram: one blank page.
+const EMPTY_DIAGRAM_CONTENT: &str = r#"{"version":1,"pages":[{"id":"page-1","name":"Page 1","shapes":[],"connectors":[]}],"viewport":{"x":0,"y":0,"zoom":1}}"#;
 
 pub const NATIVE_TYPES: &[NativeType] = &[
     NativeType {
@@ -45,22 +71,22 @@ pub const NATIVE_TYPES: &[NativeType] = &[
     },
     NativeType {
         mime_type: DOC,
-        default_content: "",
+        default_content: EMPTY_DOC_CONTENT,
         promotable_from: &[DOCX],
     },
     NativeType {
         mime_type: SLIDE,
-        default_content: "",
+        default_content: EMPTY_SLIDES_CONTENT,
         promotable_from: &[PPTX],
     },
     NativeType {
         mime_type: DRAWING,
-        default_content: "",
+        default_content: EMPTY_DRAWING_CONTENT,
         promotable_from: &[],
     },
     NativeType {
         mime_type: DIAGRAM,
-        default_content: "",
+        default_content: EMPTY_DIAGRAM_CONTENT,
         promotable_from: &[],
     },
 ];
@@ -88,6 +114,17 @@ mod tests {
         assert_eq!(parsed.as_array().unwrap().len(), 1);
         assert!(parsed[0]["name"].is_string());
         assert!(parsed[0]["celldata"].is_array());
+    }
+
+    /// Every default body is written verbatim into a newly created file, so an
+    /// unparseable one hands the editor a document it cannot open. This caught
+    /// a real instance: the slides default escaped its `#` colour prefixes.
+    #[test]
+    fn every_default_content_is_valid_json() {
+        for t in NATIVE_TYPES {
+            serde_json::from_str::<serde_json::Value>(t.default_content)
+                .unwrap_or_else(|e| panic!("default content for {} is not valid JSON: {e}", t.mime_type));
+        }
     }
 
     #[test]

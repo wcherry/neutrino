@@ -1,221 +1,23 @@
+//! Diagram comment endpoints.
+//!
+//! Diagram CRUD is served by the generic drive file endpoints now — a diagram
+//! is a Drive file with `application/x-neutrino-diagram` as its mime type.
+//! Comments hang off the file and have no Drive equivalent, so they stay here.
+
 use crate::diagrams::diagrams::{
     dto::{
-        CreateCommentRequest, CreateDiagramRequest, DiagramCommentResponse, DiagramMetaResponse,
-        DiagramResponse, ListCommentsResponse, ListDiagramsResponse, SaveDiagramRequest,
-        UpdateCommentRequest,
+        CreateCommentRequest, DiagramCommentResponse, ListCommentsResponse, UpdateCommentRequest,
     },
     service::DiagramsService,
 };
-use crate::shared::{ApiError, AuthenticatedUser, ContentVersionQuery};
-use actix_multipart::Multipart;
-use actix_web::{delete, get, patch, post, put, web, HttpResponse};
-use futures_util::StreamExt;
+use crate::shared::{ApiError, AuthenticatedUser};
+use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
 
 pub struct DiagramsApiState {
     pub diagrams_service: Arc<DiagramsService>,
 }
-
-// ── Diagram CRUD ──────────────────────────────────────────────────────────────
-
-#[utoipa::path(
-    get,
-    path = "/api/v1/diagrams",
-    responses(
-        (status = 200, description = "List of diagrams", body = ListDiagramsResponse),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "diagrams"
-)]
-#[get("/diagrams")]
-pub async fn list_diagrams(
-    state: web::Data<DiagramsApiState>,
-    user: AuthenticatedUser,
-) -> Result<web::Json<ListDiagramsResponse>, ApiError> {
-    let result = state.diagrams_service.list_diagrams(&user).await?;
-    Ok(web::Json(result))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/v1/diagrams",
-    request_body = CreateDiagramRequest,
-    responses(
-        (status = 201, description = "Diagram created", body = DiagramResponse),
-        (status = 400, description = "Invalid request"),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "diagrams"
-)]
-#[post("/diagrams")]
-pub async fn create_diagram(
-    state: web::Data<DiagramsApiState>,
-    user: AuthenticatedUser,
-    body: web::Json<CreateDiagramRequest>,
-) -> Result<HttpResponse, ApiError> {
-    let diagram = state
-        .diagrams_service
-        .create_diagram(&user, body.into_inner())
-        .await?;
-    Ok(HttpResponse::Created().json(diagram))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/v1/diagrams/{id}",
-    params(
-        ("id" = String, Path, description = "Diagram ID")
-    ),
-    responses(
-        (status = 200, description = "Diagram content URLs", body = DiagramResponse),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Not found"),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "diagrams"
-)]
-#[get("/diagrams/{id}")]
-pub async fn get_diagram(
-    state: web::Data<DiagramsApiState>,
-    user: AuthenticatedUser,
-    path: web::Path<String>,
-) -> Result<web::Json<DiagramResponse>, ApiError> {
-    let diagram_id = path.into_inner();
-    let diagram = state
-        .diagrams_service
-        .get_diagram(&user, &diagram_id)
-        .await?;
-    Ok(web::Json(diagram))
-}
-
-#[utoipa::path(
-    patch,
-    path = "/api/v1/diagrams/{id}",
-    params(
-        ("id" = String, Path, description = "Diagram ID")
-    ),
-    request_body = SaveDiagramRequest,
-    responses(
-        (status = 200, description = "Diagram saved", body = DiagramMetaResponse),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Not found"),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "diagrams"
-)]
-#[patch("/diagrams/{id}")]
-pub async fn save_diagram(
-    state: web::Data<DiagramsApiState>,
-    user: AuthenticatedUser,
-    path: web::Path<String>,
-    body: web::Json<SaveDiagramRequest>,
-) -> Result<web::Json<DiagramMetaResponse>, ApiError> {
-    let diagram_id = path.into_inner();
-    let meta = state
-        .diagrams_service
-        .save_diagram(&user, &diagram_id, body.into_inner())
-        .await?;
-    Ok(web::Json(meta))
-}
-
-#[utoipa::path(
-    delete,
-    path = "/api/v1/diagrams/{id}",
-    params(
-        ("id" = String, Path, description = "Diagram ID")
-    ),
-    responses(
-        (status = 204, description = "Diagram deleted"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Not found"),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "diagrams"
-)]
-#[delete("/diagrams/{id}")]
-pub async fn delete_diagram(
-    state: web::Data<DiagramsApiState>,
-    user: AuthenticatedUser,
-    path: web::Path<String>,
-) -> Result<HttpResponse, ApiError> {
-    let diagram_id = path.into_inner();
-    state
-        .diagrams_service
-        .delete_diagram(&user, &diagram_id)
-        .await?;
-    Ok(HttpResponse::NoContent().finish())
-}
-
-#[utoipa::path(
-    put,
-    path = "/api/v1/diagrams/{id}/autosave",
-    params(("id" = String, Path, description = "Diagram ID")),
-    responses(
-        (status = 200, description = "Diagram autosaved", body = DiagramMetaResponse),
-        (status = 403, description = "Edit access required"),
-        (status = 404, description = "Not found"),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "diagrams"
-)]
-#[put("/diagrams/{id}/autosave")]
-pub async fn autosave_diagram(
-    state: web::Data<DiagramsApiState>,
-    user: AuthenticatedUser,
-    path: web::Path<String>,
-    version_check: web::Query<ContentVersionQuery>,
-    mut payload: Multipart,
-) -> Result<web::Json<DiagramMetaResponse>, ApiError> {
-    let diagram_id = path.into_inner();
-    let mut file_bytes: Option<Vec<u8>> = None;
-    let mut title: Option<String> = None;
-
-    while let Some(field) = payload.next().await {
-        let mut field = field.map_err(|_| ApiError::bad_request("Invalid multipart data"))?;
-        let content_disposition = field.content_disposition().cloned();
-        let field_name = content_disposition
-            .as_ref()
-            .and_then(|cd| cd.get_name())
-            .unwrap_or("")
-            .to_string();
-        let has_filename = content_disposition
-            .as_ref()
-            .and_then(|cd| cd.get_filename())
-            .is_some();
-
-        let mut bytes = Vec::new();
-        while let Some(chunk) = field.next().await {
-            let data = chunk.map_err(|_| ApiError::bad_request("Upload interrupted"))?;
-            bytes.extend_from_slice(&data);
-        }
-
-        if has_filename || field_name == "file" {
-            file_bytes = Some(bytes);
-        } else if field_name == "metadata" {
-            if let Ok(s) = String::from_utf8(bytes) {
-                if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&s) {
-                    title = meta.get("title").and_then(|v| v.as_str()).map(String::from);
-                }
-            }
-        }
-    }
-
-    let bytes = file_bytes.ok_or_else(|| ApiError::bad_request("No file provided"))?;
-    let meta = state
-        .diagrams_service
-        .autosave(
-            &user,
-            &diagram_id,
-            &bytes,
-            title.as_deref(),
-            version_check.into_inner().into(),
-        )
-        .await?;
-    Ok(web::Json(meta))
-}
-
-// ── Comments ──────────────────────────────────────────────────────────────────
 
 #[utoipa::path(
     get,
@@ -331,14 +133,7 @@ pub async fn delete_comment(
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    // Literal-segment routes must come before /{id} routes.
-    cfg.service(list_diagrams)
-        .service(create_diagram)
-        .service(get_diagram)
-        .service(save_diagram)
-        .service(delete_diagram)
-        .service(autosave_diagram)
-        .service(list_comments)
+    cfg.service(list_comments)
         .service(create_comment)
         .service(update_comment)
         .service(delete_comment);
@@ -346,22 +141,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(
-        list_diagrams, create_diagram, get_diagram, save_diagram, delete_diagram, autosave_diagram,
-        list_comments, create_comment, update_comment, delete_comment,
-    ),
+    paths(list_comments, create_comment, update_comment, delete_comment),
     components(schemas(
-        CreateDiagramRequest,
-        SaveDiagramRequest,
-        DiagramResponse,
-        DiagramMetaResponse,
-        ListDiagramsResponse,
         CreateCommentRequest,
         UpdateCommentRequest,
         DiagramCommentResponse,
         ListCommentsResponse,
     )),
-    tags((name = "diagrams", description = "Neutrino diagramming editor")),
+    tags((name = "diagrams", description = "Diagram comments")),
     security(("bearer_auth" = []))
 )]
 pub struct DiagramsApiDoc;
