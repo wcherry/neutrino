@@ -18,10 +18,6 @@ use chrono::Utc;
 use std::sync::Arc;
 use uuid::Uuid;
 
-/// MIME type that identifies Neutrino diagram files in drive. Mirrors
-/// `drive::storage::native_types::DIAGRAM`.
-pub const MIME_TYPE: &str = "application/x-neutrino-diagram";
-
 pub struct DiagramsService {
     repo: Arc<DiagramsRepository>,
     drive: Arc<DriveClient>,
@@ -136,20 +132,5 @@ fn comment_record_to_response(
         resolved: r.resolved,
         created_at: r.created_at.and_utc().to_rfc3339(),
         updated_at: r.updated_at.and_utc().to_rfc3339(),
-    }
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The editor and the drive registry have to agree on what marks a file as
-    /// a diagram; they are declared in two places, so pin them together.
-    #[test]
-    fn mime_type_matches_the_drive_registry() {
-        assert_eq!(MIME_TYPE, crate::drive::storage::native_types::DIAGRAM);
-        assert!(crate::drive::storage::native_types::lookup(MIME_TYPE).is_some());
     }
 }

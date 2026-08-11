@@ -19,7 +19,6 @@ mod calendar;
 mod config;
 mod diagrams;
 mod docs;
-mod drawing;
 mod drive;
 mod jobs;
 mod links;
@@ -760,19 +759,9 @@ async fn main() -> std::io::Result<()> {
         sheets::presence::state::SheetPresenceState::new(),
     ));
 
-    // ── Drawing service ───────────────────────────────────────────────────────
-
-    use drawing::drawing::repository::DrawingRepository;
-    use drawing::drawing::service::DrawingService;
-
-    let drive_client_for_drawing = Arc::new(DriveClient::new(
-        drive_storage_service.clone(),
-        drive_permissions_service.clone(),
-        drive_fs_repo.clone(),
-    ));
-    let drawing_repo = Arc::new(DrawingRepository::new(pool.clone()));
-    let drawing_service = Arc::new(DrawingService::new(drawing_repo, drive_client_for_drawing));
-    let drawing_state = web::Data::new(drawing::drawing::api::DrawingApiState { drawing_service });
+    // Drawings have no service of their own: a drawing is a Drive file with
+    // `application/x-neutrino-drawing` as its mime type, served entirely by the
+    // generic drive endpoints.
 
     // ── Slides service ────────────────────────────────────────────────────────
 
@@ -925,7 +914,6 @@ async fn main() -> std::io::Result<()> {
         doc.merge(photos::persons::api::PersonsApiDoc::openapi());
         doc.merge(photos::photos::api::PhotosApiDoc::openapi());
         doc.merge(photos::suggestions::api::SuggestionsApiDoc::openapi());
-        doc.merge(drawing::drawing::api::DrawingApiDoc::openapi());
         doc.merge(sheets::named_ranges::api::NamedRangesApiDoc::openapi());
         doc.merge(sheets::ai::api::SheetsAIApiDoc::openapi());
         doc.merge(sheets::presence::api::SheetsPresenceApiDoc::openapi());
@@ -1005,7 +993,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(photos_learning_state.clone())
             .app_data(photos_ai_state.clone())
             // Drawing
-            .app_data(drawing_state.clone())
             // Sheets
             .app_data(sheets_named_ranges_state.clone())
             .app_data(sheets_ai_state.clone())
@@ -1080,7 +1067,6 @@ async fn main() -> std::io::Result<()> {
                     .configure(photos::learning::api::configure_learning)
                     .configure(photos::ai::api::configure)
                     // Drawing
-                    .configure(drawing::drawing::api::configure)
                     // Sheets
                     .configure(sheets::named_ranges::api::configure)
                     .configure(sheets::ai::api::configure)

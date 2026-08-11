@@ -357,14 +357,6 @@ diesel::table! {
 
 // ── Drawing ──────────────────────────────────────────────────────────────────
 
-diesel::table! {
-    drawings (file_id) {
-        file_id -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
 // ── Slides ───────────────────────────────────────────────────────────────────
 
 diesel::table! {
@@ -1011,8 +1003,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     training_signals,
     user_recognition_thresholds,
     persons,
-    // Drawing
-    drawings,
     // Sheets
     named_ranges,
     // Slides
