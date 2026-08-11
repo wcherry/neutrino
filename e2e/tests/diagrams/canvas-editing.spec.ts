@@ -1,5 +1,6 @@
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -33,9 +34,9 @@ async function createDiagramAndOpenEditor(
   page: Page,
 ): Promise<void> {
   const token = await getAuthToken(page);
-  const res = await request.post(`${BASE_URL}/api/v1/diagrams`, {
+  const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title: 'Canvas Test Diagram' },
+    data: { id: randomUUID(), name: 'Canvas Test Diagram', mimeType: 'application/x-neutrino-diagram', folderId: null },
   });
   expect(res.ok(), `create failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const { id } = await res.json() as { id: string };

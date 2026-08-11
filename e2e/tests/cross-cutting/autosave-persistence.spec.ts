@@ -87,7 +87,7 @@ test.describe('Autosave persistence — slides', () => {
     // autosave to /api/v1/drive/files/, and waiting for one only ever timed out.
     await page.waitForResponse(
       (r) =>
-        r.url().includes('/api/v1/slides/') && r.request().method() === 'PATCH',
+        r.url().includes('/api/v1/drive/files/') && r.request().method() === 'PATCH',
       { timeout: 10_000 },
     );
 

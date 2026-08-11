@@ -1,5 +1,6 @@
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -25,9 +26,9 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
 async function openEditor(request: APIRequestContext, page: Page): Promise<void> {
   const token = await page.evaluate(() => localStorage.getItem('access_token'));
   if (!token) throw new Error('access_token not found');
-  const res = await request.post(`${BASE_URL}/api/v1/drawing`, {
+  const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title: 'Canvas Test Drawing' },
+    data: { id: randomUUID(), name: 'Canvas Test Drawing', mimeType: 'application/x-neutrino-drawing', folderId: null },
   });
   expect(res.ok(), `create failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const { id } = await res.json() as { id: string };
@@ -77,7 +78,7 @@ test.describe('Canvas tools', () => {
 
     // Draw a rectangle by dragging
     const autosaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/drawing/') && r.url().includes('/autosave'),
+      (r) => r.url().includes('/api/v1/drive/files/') && r.url().includes('/autosave'),
       { timeout: 15_000 },
     );
     await page.mouse.move(box.x + 100, box.y + 100);
@@ -107,7 +108,7 @@ test.describe('Canvas tools', () => {
 
     // Undo — the autosave for the empty state fires
     const autosaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/drawing/') && r.url().includes('/autosave'),
+      (r) => r.url().includes('/api/v1/drive/files/') && r.url().includes('/autosave'),
       { timeout: 15_000 },
     );
     await page.keyboard.press('Control+z');
@@ -134,7 +135,7 @@ test.describe('Canvas tools', () => {
     await page.keyboard.press('Control+z');
     await page.waitForTimeout(1_100);
     const autosaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/drawing/') && r.url().includes('/autosave'),
+      (r) => r.url().includes('/api/v1/drive/files/') && r.url().includes('/autosave'),
       { timeout: 15_000 },
     );
     await page.keyboard.press('Control+Shift+z');

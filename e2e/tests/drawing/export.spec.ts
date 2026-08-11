@@ -1,5 +1,6 @@
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -25,9 +26,9 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
 async function openEditorWithShape(request: APIRequestContext, page: Page): Promise<void> {
   const token = await page.evaluate(() => localStorage.getItem('access_token'));
   if (!token) throw new Error('access_token not found');
-  const res = await request.post(`${BASE_URL}/api/v1/drawing`, {
+  const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title: 'Export Test Drawing' },
+    data: { id: randomUUID(), name: 'Export Test Drawing', mimeType: 'application/x-neutrino-drawing', folderId: null },
   });
   expect(res.ok(), `create failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const { id } = await res.json() as { id: string };
@@ -148,9 +149,9 @@ test.describe('Export flow', () => {
     await registerAndLogin(request, page);
     const token = await page.evaluate(() => localStorage.getItem('access_token'));
     if (!token) throw new Error('access_token not found');
-    const res = await request.post(`${BASE_URL}/api/v1/drawing`, {
+    const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      data: { title: 'Empty Drawing' },
+      data: { id: randomUUID(), name: 'Empty Drawing', mimeType: 'application/x-neutrino-drawing', folderId: null },
     });
     const { id } = await res.json() as { id: string };
     await page.goto(`/drawing/editor?id=${id}`);
