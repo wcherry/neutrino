@@ -574,10 +574,11 @@ async fn main() -> std::io::Result<()> {
         drive_fs_repo.clone(),
     ));
     let docs_repo = Arc::new(DocsRepository::new(pool.clone()));
-    let docs_service = Arc::new(DocsService::new(docs_repo, drive_client_for_docs));
-    let docs_state = web::Data::new(docs::docs::api::DocsApiState {
-        docs_service: docs_service.clone(),
-    });
+    let docs_service = Arc::new(DocsService::new(
+        docs_repo,
+        drive_client_for_docs.clone(),
+    ));
+    let docs_state = web::Data::new(docs::docs::api::DocsApiState { docs_service });
 
     let docs_ai_service = Arc::new(DocsAIService::new());
     let docs_ai_state = web::Data::new(docs::ai::api::DocsAIState {
@@ -585,7 +586,7 @@ async fn main() -> std::io::Result<()> {
     });
 
     let templates_repo = Arc::new(TemplatesRepository::new(pool.clone()));
-    let templates_service = Arc::new(TemplatesService::new(templates_repo, docs_service));
+    let templates_service = Arc::new(TemplatesService::new(templates_repo, drive_client_for_docs));
     templates_service
         .seed_system_templates()
         .unwrap_or_else(|e| {

@@ -1,4 +1,20 @@
-import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
+import { request, ApiClientError } from '@neutrino/api-core';
+
+/**
+ * A file is a native Neutrino document because it carries this mime type.
+ * Mirrors `src/drive/storage/native_types.rs` on the backend.
+ */
+export const DOC_MIME_TYPE = 'application/x-neutrino-doc';
+
+/** Matches `default_page_setup()` in `src/docs/docs/service.rs`. */
+export const DEFAULT_PAGE_SETUP: PageSetup = {
+  marginTop: 72,
+  marginBottom: 72,
+  marginLeft: 72,
+  marginRight: 72,
+  orientation: 'portrait',
+  pageSize: 'letter',
+};
 
 // ---------------------------------------------------------------------------
 // Tiptap text extraction (client-side, no tiptap dependency required)
@@ -108,62 +124,122 @@ export interface ListDocsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Docs API
+// Docs API — drive adapters
 // ---------------------------------------------------------------------------
+//
+// Document CRUD is served by the generic drive file endpoints; a document is a
+// Drive file whose mime type is `application/x-neutrino-doc`. These functions
+// keep the doc-shaped contract their callers were written against and
+// translate it to and from drive's file DTOs.
+//
+// Page setup is the exception: it is real per-document state Drive has no
+// notion of, so it keeps its own endpoint under /api/v1/docs and is stitched
+// in here. A document that has never had its margins changed has no stored row
+// and the endpoint answers with the defaults.
+
+/** The subset of drive's file DTOs these adapters read. */
+interface DriveFileDto {
+  id: string;
+  name: string;
+  folderId: string | null;
+  mimeType?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contentVersion: number;
+}
+
+/**
+ * Drive serialises timestamps as naive datetimes (`2026-08-10T12:00:00`) — no
+ * offset — which `new Date()` would read as local time and shift by the
+ * viewer's UTC offset. The values are UTC, so say so.
+ */
+function toIsoUtc(timestamp: string): string {
+  if (!timestamp) return timestamp;
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(timestamp) ? timestamp : `${timestamp}Z`;
+}
+
+function toDocMeta(file: DriveFileDto): DocMetaResponse {
+  return {
+    id: file.id,
+    title: file.name,
+    folderId: file.folderId ?? null,
+    createdAt: toIsoUtc(file.createdAt),
+    updatedAt: toIsoUtc(file.updatedAt),
+    contentVersion: file.contentVersion,
+  };
+}
+
+function toDoc(file: DriveFileDto, pageSetup: PageSetup): DocResponse {
+  return {
+    ...toDocMeta(file),
+    contentUrl: `/api/v1/drive/files/${file.id}`,
+    contentWriteUrl: `/api/v1/drive/files/${file.id}/versions`,
+    pageSetup,
+  };
+}
 
 export const docsApi = {
   async listDocs(): Promise<ListDocsResponse> {
-    return request<ListDocsResponse>('/api/v1/docs');
+    const params = new URLSearchParams({ mimeType: DOC_MIME_TYPE, limit: '200' });
+    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
+    return { docs: (raw.files ?? []).map(toDocMeta) };
   },
 
   async createDoc(body: CreateDocRequest): Promise<DocResponse> {
-    return request<DocResponse>('/api/v1/docs', {
+    const title = body.title.trim();
+    if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Document title cannot be empty');
+    // Drive takes a client-supplied id and seeds the empty-document body from
+    // the mime type, so create and first content write are one request.
+    const file = await request<DriveFileDto>('/api/v1/drive/files', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        name: title,
+        mimeType: DOC_MIME_TYPE,
+        folderId: body.folderId ?? null,
+      }),
     });
+    // A brand-new document has no stored page setup, so skip the round trip.
+    return toDoc(file, DEFAULT_PAGE_SETUP);
   },
 
+  /**
+   * Fetch a file as a native document.
+   *
+   * Throws 404 for a file that exists but isn't one — a raw .docx, say. That
+   * is load-bearing: the editor's office-mode fallback keys off this 404 to
+   * decide it must download and parse the file as docx instead.
+   */
   async getDoc(docId: string): Promise<DocResponse> {
-    return request<DocResponse>(`/api/v1/docs/${docId}`);
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`);
+    if (file.mimeType !== DOC_MIME_TYPE) {
+      throw new ApiClientError(404, 'NOT_FOUND', 'Document not found');
+    }
+    const pageSetup = await request<PageSetup>(`/api/v1/docs/${docId}/page-setup`);
+    return toDoc(file, pageSetup);
   },
 
+  /**
+   * Rename and/or restyle. The two halves live in different places now — the
+   * name on the Drive file, the page setup in the docs table — so this issues
+   * up to two requests, and only for the fields actually supplied.
+   */
   async saveDoc(docId: string, body: SaveDocRequest): Promise<DocMetaResponse> {
-    return request<DocMetaResponse>(`/api/v1/docs/${docId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    });
-  },
-
-  async autosaveContent(
-    docId: string,
-    content: string,
-    filename: string,
-    metadata?: { title?: string; pageSetup?: PageSetup },
-    versionCheck?: ContentVersionCheck,
-  ): Promise<DocMetaResponse> {
-    const formData = new FormData();
-    formData.append('file', new Blob([content], { type: 'application/json' }), filename);
-    if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
-  },
-
-  async autosaveEncryptedContent(
-    docId: string,
-    content: string,
-    filename: string,
-    dek: Uint8Array,
-    metadata?: { title?: string; pageSetup?: PageSetup },
-    versionCheck?: ContentVersionCheck,
-  ): Promise<DocMetaResponse> {
-    const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
-    await initSodium();
-    const plainBytes = new TextEncoder().encode(content);
-    const cipherBytes = encryptFile(plainBytes, dek);
-    const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-    const formData = new FormData();
-    formData.append('file', blob, filename);
-    if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DocMetaResponse>(`/api/v1/docs/${docId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
+    const [file] = await Promise.all([
+      body.title !== undefined
+        ? request<DriveFileDto>(`/api/v1/drive/files/${docId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ name: body.title }),
+          })
+        : request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`),
+      body.pageSetup !== undefined
+        ? request<PageSetup>(`/api/v1/docs/${docId}/page-setup`, {
+            method: 'PUT',
+            body: JSON.stringify(body.pageSetup),
+          })
+        : Promise.resolve(null),
+    ]);
+    return toDocMeta(file);
   },
 
   /**
@@ -172,17 +248,16 @@ export const docsApi = {
    * and flips the file's mime type server-side. Same file id afterwards.
    */
   async promoteDoc(docId: string, content: string): Promise<DocResponse> {
-    return request<DocResponse>(`/api/v1/docs/${docId}/promote`, {
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${docId}/convert`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ targetMimeType: DOC_MIME_TYPE, content }),
     });
+    return toDoc(file, DEFAULT_PAGE_SETUP);
   },
 
   async exportText(docId: string): Promise<ExportTextResponse> {
-    console.log("Exporting text...");
     return request<ExportTextResponse>(`/api/v1/docs/${docId}/export/text`);
   },
-
 };
 
 // ---------------------------------------------------------------------------

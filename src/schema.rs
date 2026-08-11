@@ -170,8 +170,6 @@ diesel::table! {
     docs (file_id) {
         file_id -> Text,
         page_setup -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
     }
 }
 

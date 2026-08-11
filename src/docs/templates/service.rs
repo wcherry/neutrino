@@ -3,8 +3,8 @@ use std::sync::Arc;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::docs::docs::dto::CreateDocRequest;
-use crate::docs::docs::service::DocsService;
+use crate::shared::drive_client::DriveClient;
+use crate::shared::ContentVersionCheck;
 use crate::docs::templates::{
     dto::{
         CreateTemplateRequest, ListTemplatesResponse, TemplateResponse, UpdateTemplateRequest,
@@ -15,14 +15,18 @@ use crate::docs::templates::{
 };
 use crate::shared::{ApiError, AuthenticatedUser};
 
+/// The native mime type a template instantiates into. Mirrors
+/// `drive::storage::native_types::DOC`.
+const DOC_MIME_TYPE: &str = "application/x-neutrino-doc";
+
 pub struct TemplatesService {
     repo: Arc<TemplatesRepository>,
-    docs_service: Arc<DocsService>,
+    drive: Arc<DriveClient>,
 }
 
 impl TemplatesService {
-    pub fn new(repo: Arc<TemplatesRepository>, docs_service: Arc<DocsService>) -> Self {
-        TemplatesService { repo, docs_service }
+    pub fn new(repo: Arc<TemplatesRepository>, drive: Arc<DriveClient>) -> Self {
+        TemplatesService { repo, drive }
     }
 
     /// Seeds built-in system templates if they do not exist yet.
@@ -175,19 +179,27 @@ impl TemplatesService {
             .ok_or_else(|| ApiError::not_found("Template not found"))?;
 
         let doc_title = title.unwrap_or_else(|| format!("New {}", template.name));
-        let req = CreateDocRequest {
-            title: doc_title,
-            folder_id: None,
-        };
 
-        let doc = self.docs_service.create_doc(user, req).await?;
+        // A document is a Drive file with the native doc mime type — there is
+        // no docs-specific create path any more.
+        let doc_id = Uuid::new_v4().to_string();
+        let doc = self
+            .drive
+            .create_file(user, &doc_id, &doc_title, DOC_MIME_TYPE, None)
+            .await?;
 
-        // If the template has non-empty content, write it to the doc's drive storage
+        // Drive seeds an empty document body from the mime type, so only a
+        // template with real content needs a write of its own.
         if template.content_json != r#"{"type":"doc","content":[]}"#
             && !template.content_json.is_empty()
         {
-            self.docs_service
-                .write_content(user, &doc.id, &template.content_json)
+            self.drive
+                .upload_content(
+                    &doc.id,
+                    &template.content_json,
+                    "write_template_content",
+                    ContentVersionCheck::UNCHECKED,
+                )
                 .await?;
         }
 

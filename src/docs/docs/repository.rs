@@ -1,4 +1,4 @@
-use crate::docs::docs::model::{DocRecord, NewDocRecord, UpdateDocRecord};
+use crate::docs::docs::model::{DocRecord, NewDocRecord};
 use crate::schema::docs;
 use crate::shared::ApiError;
 use diesel::prelude::*;
@@ -6,6 +6,14 @@ use diesel::r2d2::{ConnectionManager, Pool};
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
+/// Page setup — the one piece of document state Drive has no notion of.
+/// Everything else about a document (name, folder, content, versions,
+/// permissions) lives on its `files` row.
+///
+/// A row here is optional: a document that has never had its page setup
+/// changed simply has none, and reads fall back to the default. That means
+/// nothing has to create a row at document-creation time, which is what lets
+/// documents be created through the generic drive endpoint.
 pub struct DocsRepository {
     pool: DbPool,
 }
@@ -24,53 +32,37 @@ impl DocsRepository {
         })
     }
 
-    pub fn insert_doc(&self, new_doc: NewDocRecord) -> Result<DocRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-        diesel::insert_into(docs::table)
-            .values(&new_doc)
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB insert doc error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-        docs::table
-            .filter(docs::file_id.eq(new_doc.file_id))
-            .select(DocRecord::as_select())
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB query after doc insert error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
-    pub fn get_doc(&self, file_id: &str) -> Result<DocRecord, ApiError> {
+    /// `None` when the document has no stored page setup — the caller
+    /// substitutes the default rather than treating it as a missing document.
+    pub fn find_page_setup(&self, file_id: &str) -> Result<Option<DocRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         docs::table
             .filter(docs::file_id.eq(file_id))
             .select(DocRecord::as_select())
             .first(&mut conn)
-            .map_err(|e| match e {
-                diesel::result::Error::NotFound => ApiError::not_found("Document not found"),
-                _ => {
-                    tracing::error!("DB get doc error: {:?}", e);
-                    ApiError::internal("Database error")
-                }
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB get doc page setup error: {:?}", e);
+                ApiError::internal("Database error")
             })
     }
 
-    pub fn update_doc(
-        &self,
-        file_id: &str,
-        changes: UpdateDocRecord,
-    ) -> Result<DocRecord, ApiError> {
+    pub fn upsert_page_setup(&self, file_id: &str, page_setup: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
-        diesel::update(docs::table.filter(docs::file_id.eq(file_id)))
-            .set(&changes)
+        let record = NewDocRecord {
+            file_id,
+            page_setup,
+        };
+        diesel::insert_into(docs::table)
+            .values(&record)
+            .on_conflict(docs::file_id)
+            .do_update()
+            .set(docs::page_setup.eq(page_setup))
             .execute(&mut conn)
             .map_err(|e| {
-                tracing::error!("DB update doc error: {:?}", e);
+                tracing::error!("DB upsert doc page setup error: {:?}", e);
                 ApiError::internal("Database error")
             })?;
-        self.get_doc(file_id)
+        Ok(())
     }
 }
