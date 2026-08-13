@@ -125,8 +125,11 @@ export interface HamburgerMenuProps {
   onHeaderFooter?: () => void;
   onWatermark?: () => void;
   onTheme?: () => void;
+  /** Opens the shared image picker (Drive / local file / URL). */
+  onInsertImage?: () => void;
   // Advanced formatting feature callbacks (only used when docsAdvancedFormatting flag is on)
   onStylesPalette?: () => void;
+  /** Opens the shared image picker on its Local File tab. */
   onInsertLocalImage?: () => void;
   // Editing tools feature callbacks (only used when docsEditingTools flag is on)
   onOpenFindReplace?: () => void;
@@ -166,6 +169,7 @@ export function HamburgerMenu({
   onHeaderFooter,
   onWatermark,
   onTheme,
+  onInsertImage,
   onStylesPalette,
   onInsertLocalImage,
   onOpenFindReplace,
@@ -304,9 +308,10 @@ export function HamburgerMenu({
       label: 'Insert',
       items: [
         { kind: 'action', label: 'Link…',           shortcut: 'Ctrl+K', action: () => { const url = window.prompt('Enter URL:', 'https://'); if (url) editor?.chain().focus().setLink({ href: url }).run(); } },
-        flags.docsAdvancedFormatting
-          ? { kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() }
-          : { kind: 'action' as const, label: 'Image…',           action: () => { const url = window.prompt('Enter image URL:'); if (url) editor?.chain().focus().setImage({ src: url }).run(); } },
+        { kind: 'action' as const, label: 'Image…',             action: () => onInsertImage?.() },
+        ...(flags.docsAdvancedFormatting
+          ? [{ kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() }]
+          : []),
         { kind: 'separator' },
         { kind: 'action', label: 'Table',                               action: () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
         { kind: 'action', label: 'Horizontal rule',                     action: () => editor?.chain().focus().setHorizontalRule().run() },

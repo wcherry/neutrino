@@ -82,6 +82,33 @@ export function usePresence({
   // Whether we should broadcast the next Y.Doc update (guards against echo)
   const shouldBroadcastRef = useRef(true);
 
+  // Content sync is suppressed while nobody else is in the room — see
+  // flushPendingUpdates. Presence (awareness) keeps running regardless; it is
+  // what tells us a peer has arrived.
+  const hasPeersRef = useRef(false);
+  const pendingUpdatesRef = useRef(false);
+  const seedSentRef = useRef(false);
+
+  /**
+   * Push the whole local Y.Doc to the server.
+   *
+   * Local edits are not broadcast while this client is alone in the room:
+   * there is nobody to receive them, and the file itself is persisted by the
+   * editor's own encrypted autosave, not by this socket. The server does keep
+   * the room's Y.Doc — it is what the next session is seeded from, and
+   * DocEditor prefers it over the stored file when it is non-empty — so the
+   * held-back edits have to land before they can matter: when a peer arrives,
+   * and when this session ends. Sending full state rather than the individual
+   * updates is idempotent on the server, so flushing twice is harmless.
+   */
+  const flushPendingUpdates = useCallback(() => {
+    if (!pendingUpdatesRef.current) return;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    pendingUpdatesRef.current = false;
+    ws.send(encodeUpdate(Y.encodeStateAsUpdate(ydoc)));
+  }, [ydoc]);
+
   const sendAwareness = useCallback(
     (cursor: { anchor: number; head: number } | null, disconnecting = false) => {
       const ws = wsRef.current;
@@ -109,6 +136,8 @@ export function usePresence({
 
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/api/v1/docs/${docId}/ws?token=${encodeURIComponent(authToken)}`;
     console.log('[collab] connecting to WS for doc', docId);
+    seedSentRef.current = false;
+    pendingUpdatesRef.current = false;
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
@@ -228,6 +257,17 @@ export function usePresence({
       if (!shouldBroadcastRef.current) return;
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      // Alone in the room — hold this back until someone else shows up (or the
+      // session ends). The exception is the first update of the session, which
+      // is the editor seeding the Y.Doc from the stored file: the server needs
+      // that one, or a client that connects later finds the room empty and
+      // seeds a second, divergent copy of the same content.
+      if (!hasPeersRef.current && seedSentRef.current) {
+        pendingUpdatesRef.current = true;
+        return;
+      }
+      seedSentRef.current = true;
       console.log('[collab] local Y.Doc update, sending to server, size:', update.length, 'bytes');
       ws.send(encodeUpdate(update));
     };
@@ -235,6 +275,7 @@ export function usePresence({
 
     return () => {
       ydoc.off('update', onYDocUpdate);
+      flushPendingUpdates();
 
       if (ws.readyState === WebSocket.OPEN) {
         const leavePayload: AwarenessPayload = {
@@ -286,12 +327,35 @@ export function usePresence({
     return () => clearInterval(id);
   }, [enabled]);
 
-  // Announce departure on tab close
+  // Track whether anyone else is here, and hand over everything typed while
+  // alone the moment someone joins.
   useEffect(() => {
-    const handleBeforeUnload = () => sendAwarenessRef.current(null, true);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, []);
+    const hadPeers = hasPeersRef.current;
+    hasPeersRef.current = remoteUsers.length > 0;
+    if (!hadPeers && hasPeersRef.current) flushPendingUpdates();
+  }, [remoteUsers, flushPendingUpdates]);
+
+  // Announce departure on tab close, flushing held-back edits first. `pagehide`
+  // covers what `beforeunload` misses (mobile Safari, bfcache); a tab merely
+  // going hidden flushes too, so a session that is killed rather than closed
+  // still leaves the server's copy of the room current.
+  useEffect(() => {
+    const handleUnload = () => {
+      flushPendingUpdates();
+      sendAwarenessRef.current(null, true);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') flushPendingUpdates();
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [flushPendingUpdates]);
 
   // Broadcast cursor position on selection change
   useEffect(() => {

@@ -5,20 +5,6 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct CreateDiagramRequest {
-    pub title: String,
-    pub folder_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveDiagramRequest {
-    /// Optional new title (renames the backing drive file record).
-    pub title: Option<String>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateCommentRequest {
     pub content: String,
     /// ID of parent comment for threading.
@@ -35,45 +21,6 @@ pub struct UpdateCommentRequest {
 }
 
 // ── Response types ─────────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DiagramResponse {
-    pub id: String,
-    pub title: String,
-    /// Path to read diagram content directly from the drive API (GET).
-    pub content_url: String,
-    /// Path to write diagram content directly to the drive API (multipart PUT).
-    pub content_write_url: String,
-    pub folder_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    /// Server-side content revision at the time of this read. The editor sends
-    /// it back as `expectedContentVersion` on its first save, so a document
-    /// changed by another device since it was opened is caught immediately
-    /// rather than on the second save.
-    pub content_version: i32,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DiagramMetaResponse {
-    pub id: String,
-    pub title: String,
-    pub folder_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    /// Server-side content revision, bumped on every content write. Send it back
-    /// as `expectedContentVersion` on the next save so a stale write is rejected
-    /// instead of silently overwriting a newer revision.
-    pub content_version: i32,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListDiagramsResponse {
-    pub diagrams: Vec<DiagramMetaResponse>,
-}
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

@@ -1,5 +1,6 @@
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -33,9 +34,9 @@ async function createDiagramViaApi(
   token: string,
   title: string,
 ): Promise<string> {
-  const res = await request.post(`${BASE_URL}/api/v1/diagrams`, {
+  const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
+    data: { id: randomUUID(), name: title, mimeType: 'application/x-neutrino-diagram', folderId: null },
   });
   expect(res.ok(), `create diagram failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const data = await res.json() as { id: string };
@@ -47,9 +48,9 @@ async function createDocViaApi(
   token: string,
   title: string,
 ): Promise<string> {
-  const res = await request.post(`${BASE_URL}/api/v1/docs`, {
+  const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
+    data: { id: randomUUID(), name: title, mimeType: 'application/x-neutrino-doc', folderId: null },
   });
   expect(res.ok(), `create doc failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const data = await res.json() as { id: string };

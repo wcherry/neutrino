@@ -1,5 +1,6 @@
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -33,9 +34,9 @@ async function createDrawingViaApi(
   token: string,
   title: string,
 ): Promise<string> {
-  const res = await request.post(`${BASE_URL}/api/v1/drawing`, {
+  const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
+    data: { id: randomUUID(), name: title, mimeType: 'application/x-neutrino-drawing', folderId: null },
   });
   expect(res.ok(), `create drawing failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const data = await res.json() as { id: string };
@@ -75,7 +76,7 @@ test.describe('Drawing lifecycle', () => {
     await expect(titleInput).toBeVisible({ timeout: 15_000 });
 
     const titleSaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/drawing/') && r.request().method() === 'PATCH',
+      (r) => r.url().includes('/api/v1/drive/files/') && r.request().method() === 'PATCH',
       { timeout: 10_000 },
     );
     await titleInput.fill('My New Drawing');
@@ -129,7 +130,7 @@ test.describe('Drawing lifecycle', () => {
     await page.goto(`/drawing/editor?id=${id}`);
     await expect(page.getByLabel('Drawing title')).toBeVisible({ timeout: 15_000 });
 
-    const delRes = await request.delete(`${BASE_URL}/api/v1/drawing/${id}`, {
+    const delRes = await request.delete(`${BASE_URL}/api/v1/drive/files/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(delRes.ok(), `delete failed: ${delRes.status()}`).toBeTruthy();

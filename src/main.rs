@@ -19,7 +19,6 @@ mod calendar;
 mod config;
 mod diagrams;
 mod docs;
-mod drawing;
 mod drive;
 mod jobs;
 mod links;
@@ -168,9 +167,8 @@ async fn main() -> std::io::Result<()> {
 
     let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
     let auth_service = Arc::new(AuthService::new(auth_repo.clone(), token_service.clone()));
-    let auth_state = web::Data::new(auth::api::AuthApiState {
-        auth_service: auth_service.clone(),
-    });
+    // `auth_state` is built further down, once the Drive filesystem service it
+    // needs to seed a new account's folders exists.
 
     // ── Key vault (wrapped E2EE identity keys) ───────────────────────────────
 
@@ -400,23 +398,32 @@ async fn main() -> std::io::Result<()> {
         tags_service: drive_tags_service.clone(),
     });
 
+    let drive_fs_repo = Arc::new(FilesystemRepository::new(pool.clone()));
+
     let drive_storage_state = web::Data::new(drive::storage::api::StorageApiState {
         storage_service: drive_storage_service.clone(),
         irm_service: drive_irm_service.clone(),
         permissions_service: drive_permissions_service.clone(),
         tags_service: drive_tags_service.clone(),
+        filesystem_repo: drive_fs_repo.clone(),
     });
-
-    let drive_fs_repo = Arc::new(FilesystemRepository::new(pool.clone()));
     let drive_fs_service = Arc::new(FilesystemService::new(
         drive_fs_repo.clone(),
         file_store,
         drive_permissions_service.clone(),
     ));
     let drive_fs_state = web::Data::new(drive::filesystem::api::FilesystemApiState {
-        filesystem_service: drive_fs_service,
+        filesystem_service: drive_fs_service.clone(),
         filesystem_repo: drive_fs_repo.clone(),
         permissions_repo: drive_permissions_repo.clone(),
+    });
+
+    // Registration seeds the new account's default folders, so auth needs the
+    // filesystem service — hence this sitting below it rather than beside the
+    // other auth wiring above.
+    let auth_state = web::Data::new(auth::api::AuthApiState {
+        auth_service: auth_service.clone(),
+        filesystem_service: drive_fs_service,
     });
 
     let drive_sharing_repo = Arc::new(SharingRepository::new(pool.clone()));
@@ -573,10 +580,11 @@ async fn main() -> std::io::Result<()> {
         drive_fs_repo.clone(),
     ));
     let docs_repo = Arc::new(DocsRepository::new(pool.clone()));
-    let docs_service = Arc::new(DocsService::new(docs_repo, drive_client_for_docs));
-    let docs_state = web::Data::new(docs::docs::api::DocsApiState {
-        docs_service: docs_service.clone(),
-    });
+    let docs_service = Arc::new(DocsService::new(
+        docs_repo,
+        drive_client_for_docs.clone(),
+    ));
+    let docs_state = web::Data::new(docs::docs::api::DocsApiState { docs_service });
 
     let docs_ai_service = Arc::new(DocsAIService::new());
     let docs_ai_state = web::Data::new(docs::ai::api::DocsAIState {
@@ -584,7 +592,7 @@ async fn main() -> std::io::Result<()> {
     });
 
     let templates_repo = Arc::new(TemplatesRepository::new(pool.clone()));
-    let templates_service = Arc::new(TemplatesService::new(templates_repo, docs_service));
+    let templates_service = Arc::new(TemplatesService::new(templates_repo, drive_client_for_docs));
     templates_service
         .seed_system_templates()
         .unwrap_or_else(|e| {
@@ -729,25 +737,16 @@ async fn main() -> std::io::Result<()> {
 
     use sheets::named_ranges::repository::NamedRangesRepository;
     use sheets::named_ranges::service::NamedRangesService;
-    use sheets::sheets::repository::SheetsRepository;
-    use sheets::sheets::service::SheetsService;
 
     let drive_client_for_sheets = Arc::new(DriveClient::new(
         drive_storage_service.clone(),
         drive_permissions_service.clone(),
         drive_fs_repo.clone(),
     ));
-    let sheets_repo = Arc::new(SheetsRepository::new(pool.clone()));
-    let sheets_service = Arc::new(SheetsService::new(
-        sheets_repo.clone(),
-        drive_client_for_sheets.clone(),
-    ));
-    let sheets_state = web::Data::new(sheets::sheets::api::SheetsApiState { sheets_service });
 
     let sheets_named_ranges_repo = Arc::new(NamedRangesRepository::new(pool.clone()));
     let sheets_named_ranges_service = Arc::new(NamedRangesService::new(
         sheets_named_ranges_repo,
-        sheets_repo,
         drive_client_for_sheets,
     ));
     let sheets_named_ranges_state =
@@ -767,35 +766,17 @@ async fn main() -> std::io::Result<()> {
         sheets::presence::state::SheetPresenceState::new(),
     ));
 
-    // ── Drawing service ───────────────────────────────────────────────────────
-
-    use drawing::drawing::repository::DrawingRepository;
-    use drawing::drawing::service::DrawingService;
-
-    let drive_client_for_drawing = Arc::new(DriveClient::new(
-        drive_storage_service.clone(),
-        drive_permissions_service.clone(),
-        drive_fs_repo.clone(),
-    ));
-    let drawing_repo = Arc::new(DrawingRepository::new(pool.clone()));
-    let drawing_service = Arc::new(DrawingService::new(drawing_repo, drive_client_for_drawing));
-    let drawing_state = web::Data::new(drawing::drawing::api::DrawingApiState { drawing_service });
+    // Drawings have no service of their own: a drawing is a Drive file with
+    // `application/x-neutrino-drawing` as its mime type, served entirely by the
+    // generic drive endpoints.
 
     // ── Slides service ────────────────────────────────────────────────────────
 
     use slides::slides::repository::SlidesRepository;
     use slides::slides::service::SlidesService;
 
-    let drive_client_for_slides = Arc::new(DriveClient::new(
-        drive_storage_service.clone(),
-        drive_permissions_service.clone(),
-        drive_fs_repo.clone(),
-    ));
     let slides_slides_repo = Arc::new(SlidesRepository::new(pool.clone()));
-    let slides_service = Arc::new(SlidesService::new(
-        slides_slides_repo,
-        drive_client_for_slides,
-    ));
+    let slides_service = Arc::new(SlidesService::new(slides_slides_repo));
     let slides_state = web::Data::new(slides::slides::api::SlidesApiState { slides_service });
 
     let slides_claude_client = slides::ai::claude_client::ClaudeClient::from_env();
@@ -940,9 +921,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(photos::persons::api::PersonsApiDoc::openapi());
         doc.merge(photos::photos::api::PhotosApiDoc::openapi());
         doc.merge(photos::suggestions::api::SuggestionsApiDoc::openapi());
-        doc.merge(drawing::drawing::api::DrawingApiDoc::openapi());
         doc.merge(sheets::named_ranges::api::NamedRangesApiDoc::openapi());
-        doc.merge(sheets::sheets::api::SheetsApiDoc::openapi());
         doc.merge(sheets::ai::api::SheetsAIApiDoc::openapi());
         doc.merge(sheets::presence::api::SheetsPresenceApiDoc::openapi());
         doc.merge(slides::slides::api::SlidesApiDoc::openapi());
@@ -1021,9 +1000,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(photos_learning_state.clone())
             .app_data(photos_ai_state.clone())
             // Drawing
-            .app_data(drawing_state.clone())
             // Sheets
-            .app_data(sheets_state.clone())
             .app_data(sheets_named_ranges_state.clone())
             .app_data(sheets_ai_state.clone())
             .app_data(sheets_presence_state.clone())
@@ -1097,9 +1074,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(photos::learning::api::configure_learning)
                     .configure(photos::ai::api::configure)
                     // Drawing
-                    .configure(drawing::drawing::api::configure)
                     // Sheets
-                    .configure(sheets::sheets::api::configure)
                     .configure(sheets::named_ranges::api::configure)
                     .configure(sheets::ai::api::configure)
                     .configure(sheets::presence::api::configure)

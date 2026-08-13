@@ -52,7 +52,7 @@ export { ColorPickerPopover } from './components/inputs/ColorPickerPopover';
 export type { ColorPickerPopoverProps } from './components/inputs/ColorPickerPopover';
 
 export { FillPicker } from './components/inputs/FillPicker';
-export type { FillPickerProps, Background, BackgroundTheme, DriveImageItem } from './components/inputs/FillPicker';
+export type { FillPickerProps, Background, BackgroundTheme, DriveImageItem, FillImageChoice } from './components/inputs/FillPicker';
 
 export { DropZone } from './components/inputs/DropZone';
 export type { DropZoneProps } from './components/inputs/DropZone';
@@ -185,6 +185,9 @@ export type { VersionHistoryPanelProps, VersionItem } from './components/panels/
 
 export { SaveAsDialog } from './components/panels/SaveAsDialog';
 export type { SaveAsDialogProps, SaveAsOptions, SaveAsDriveFolder, SaveAsBreadcrumb } from './components/panels/SaveAsDialog';
+
+export { ImagePickerDialog } from './components/panels/ImagePickerDialog';
+export type { ImagePickerDialogProps, ImagePickerDriveItem, ImagePickerResult, ImageSource } from './components/panels/ImagePickerDialog';
 
 export { ShareDialog } from './components/panels/ShareDialog';
 export type { ShareDialogProps, SharePermission, ShareLinkData, SharePermissionRole, ShareUserSuggestion } from './components/panels/ShareDialog';

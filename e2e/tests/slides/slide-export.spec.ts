@@ -57,7 +57,7 @@ test.describe('Presentation export', () => {
     const titleInput = page.getByPlaceholder('Untitled presentation');
     await titleInput.fill('Q4 Review');
     const titleSaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/slides/') && r.request().method() === 'PATCH',
+      (r) => r.url().includes('/api/v1/drive/files/') && r.request().method() === 'PATCH',
       { timeout: 10_000 },
     );
     await titleInput.blur();

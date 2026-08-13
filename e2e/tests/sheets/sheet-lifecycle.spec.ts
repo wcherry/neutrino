@@ -74,9 +74,11 @@ test.describe('Spreadsheets lifecycle', () => {
     await titleInput.click({ clickCount: 3 });
     await page.keyboard.type('Q1 Budget');
 
-    // Set up the response listener before triggering the blur, then blur to save
+    // Set up the response listener before triggering the blur, then blur to save.
+    // A rename is a Drive file rename — spreadsheets have no endpoints of their
+    // own beyond named ranges, AI and presence.
     const titleSaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/sheets/') && r.request().method() === 'PATCH',
+      (r) => r.url().includes('/api/v1/drive/files/') && r.request().method() === 'PATCH',
       { timeout: 10_000 },
     );
     await titleInput.blur();

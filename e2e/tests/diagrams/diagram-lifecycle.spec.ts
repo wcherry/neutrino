@@ -1,5 +1,6 @@
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -33,9 +34,9 @@ async function createDiagramViaApi(
   token: string,
   title: string,
 ): Promise<string> {
-  const res = await request.post(`${BASE_URL}/api/v1/diagrams`, {
+  const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
+    data: { id: randomUUID(), name: title, mimeType: 'application/x-neutrino-diagram', folderId: null },
   });
   expect(res.ok(), `create diagram failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const data = await res.json() as { id: string };
@@ -100,7 +101,7 @@ test.describe('Diagram lifecycle', () => {
 
     // Blur triggers the PATCH to save the title
     const titleSaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/diagrams/') && r.request().method() === 'PATCH',
+      (r) => r.url().includes('/api/v1/drive/files/') && r.request().method() === 'PATCH',
       { timeout: 10_000 },
     );
     await titleInput.press('Enter');
@@ -142,7 +143,7 @@ test.describe('Diagram lifecycle', () => {
     await page.goto('/diagrams');
     await expect(page.getByText('Diagram To Delete')).toBeVisible({ timeout: 10_000 });
 
-    const delRes = await request.delete(`${BASE_URL}/api/v1/diagrams/${id}`, {
+    const delRes = await request.delete(`${BASE_URL}/api/v1/drive/files/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(delRes.ok(), `delete failed: ${delRes.status()}`).toBeTruthy();

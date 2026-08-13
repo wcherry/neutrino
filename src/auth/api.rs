@@ -18,7 +18,15 @@ use tracing::error;
 
 pub struct AuthApiState {
     pub auth_service: Arc<AuthService>,
+    /// Used to give every new account its default folders (see `register`).
+    pub filesystem_service: Arc<crate::drive::filesystem::service::FilesystemService>,
 }
+
+/// Folder that editors upload pasted, linked and locally-chosen images into, so
+/// a document can reference an image by id instead of carrying its bytes. Kept
+/// in step with `ATTACHMENTS_FOLDER_NAME` in `web/apps/web/src/lib/driveImages.ts`,
+/// which falls back to creating it for accounts that predate this.
+const ATTACHMENTS_FOLDER_NAME: &str = "Attachments";
 
 // ── Register ──────────────────────────────────────────────────────────────────
 
@@ -40,11 +48,48 @@ pub async fn register(
 ) -> Result<web::Json<RegisterResponse>, ApiError> {
     let result = state.auth_service.register(body.into_inner());
     match result {
-        Ok(response) => Ok(web::Json(response)),
+        Ok(response) => {
+            create_default_folders(&state, &response).await;
+            Ok(web::Json(response))
+        }
         Err(e) => {
             error!("Error {}", e);
             Err(e)
         }
+    }
+}
+
+/// Seeds a brand-new account's Drive with the folders the apps expect.
+///
+/// Deliberately best-effort: the account exists and is usable by the time this
+/// runs, so a folder that fails to create must not turn a successful
+/// registration into an error the caller sees. Clients treat the folder as
+/// get-or-create anyway, which is also what covers accounts made before this.
+async fn create_default_folders(state: &AuthApiState, user: &RegisterResponse) {
+    // `create_folder` records ownership through the permissions service, which
+    // wants the caller as an `AuthenticatedUser`; at registration there is no
+    // request identity yet, so stand one up for the user just created.
+    let owner = AuthenticatedUser {
+        user_id: user.id.clone(),
+        email: user.email.clone(),
+        token: String::new(),
+        is_admin: false,
+    };
+
+    let request = crate::drive::filesystem::dto::CreateFolderRequest {
+        name: ATTACHMENTS_FOLDER_NAME.to_string(),
+        parent_id: None,
+    };
+
+    if let Err(e) = state
+        .filesystem_service
+        .create_folder(&owner, request)
+        .await
+    {
+        error!(
+            "Could not create the {} folder for user {}: {}",
+            ATTACHMENTS_FOLDER_NAME, user.id, e
+        );
     }
 }
 

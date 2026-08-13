@@ -1,4 +1,10 @@
-import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
+import { request, contentVersionQuery, ApiClientError, type ContentVersionCheck } from '@neutrino/api-core';
+
+/**
+ * A file is a native Neutrino diagram because it carries this mime type.
+ * Mirrors `src/drive/storage/native_types.rs` on the backend.
+ */
+export const DIAGRAM_MIME_TYPE = 'application/x-neutrino-diagram';
 
 // ---------------------------------------------------------------------------
 // Diagram text extraction helpers
@@ -122,34 +128,97 @@ export interface ListCommentsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Diagrams API
+// Diagrams API — drive adapters
 // ---------------------------------------------------------------------------
+//
+// Diagram CRUD is served by the generic drive file endpoints; a diagram is a
+// Drive file whose mime type is `application/x-neutrino-diagram`. These
+// functions keep the diagram-shaped contract their callers were written
+// against and translate it to and from drive's file DTOs. Comments below hang
+// off the file and have no Drive equivalent, so they keep their own endpoints.
+
+/** The subset of drive's file DTOs these adapters read. */
+interface DriveFileDto {
+  id: string;
+  name: string;
+  folderId: string | null;
+  mimeType?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contentVersion: number;
+}
+
+/**
+ * Drive serialises timestamps as naive datetimes (`2026-08-10T12:00:00`) — no
+ * offset — which `new Date()` would read as local time and shift by the
+ * viewer's UTC offset. The values are UTC, so say so.
+ */
+function toIsoUtc(timestamp: string): string {
+  if (!timestamp) return timestamp;
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(timestamp) ? timestamp : `${timestamp}Z`;
+}
+
+function toDiagramMeta(file: DriveFileDto): DiagramMetaResponse {
+  return {
+    id: file.id,
+    title: file.name,
+    folderId: file.folderId ?? null,
+    createdAt: toIsoUtc(file.createdAt),
+    updatedAt: toIsoUtc(file.updatedAt),
+    contentVersion: file.contentVersion,
+  };
+}
+
+function toDiagram(file: DriveFileDto): DiagramResponse {
+  return {
+    ...toDiagramMeta(file),
+    contentUrl: `/api/v1/drive/files/${file.id}`,
+    contentWriteUrl: `/api/v1/drive/files/${file.id}/versions`,
+  };
+}
 
 export const diagramsApi = {
   async listDiagrams(): Promise<ListDiagramsResponse> {
-    return request<ListDiagramsResponse>('/api/v1/diagrams');
+    const params = new URLSearchParams({ mimeType: DIAGRAM_MIME_TYPE, limit: '200' });
+    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
+    return { diagrams: (raw.files ?? []).map(toDiagramMeta) };
   },
 
   async createDiagram(body: CreateDiagramRequest): Promise<DiagramResponse> {
-    return request<DiagramResponse>('/api/v1/diagrams', {
+    const title = body.title.trim();
+    if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Diagram title cannot be empty');
+    // Drive takes a client-supplied id and seeds the blank-page body from the
+    // mime type, so create and first content write are one request.
+    const file = await request<DriveFileDto>('/api/v1/drive/files', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        name: title,
+        mimeType: DIAGRAM_MIME_TYPE,
+        folderId: body.folderId ?? null,
+      }),
     });
+    return toDiagram(file);
   },
 
   async getDiagram(diagramId: string): Promise<DiagramResponse> {
-    return request<DiagramResponse>(`/api/v1/diagrams/${diagramId}`);
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${diagramId}/info`);
+    if (file.mimeType !== DIAGRAM_MIME_TYPE) {
+      throw new ApiClientError(404, 'NOT_FOUND', 'Diagram not found');
+    }
+    return toDiagram(file);
   },
 
   async saveDiagram(diagramId: string, body: SaveDiagramRequest): Promise<DiagramMetaResponse> {
-    return request<DiagramMetaResponse>(`/api/v1/diagrams/${diagramId}`, {
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${diagramId}`, {
       method: 'PATCH',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ name: body.title }),
     });
+    return toDiagramMeta(file);
   },
 
   async deleteDiagram(diagramId: string): Promise<void> {
-    await request<void>(`/api/v1/diagrams/${diagramId}`, { method: 'DELETE' });
+    await request<void>(`/api/v1/drive/files/${diagramId}`, { method: 'DELETE' });
   },
 
   async autosaveContent(
@@ -162,10 +231,11 @@ export const diagramsApi = {
     const formData = new FormData();
     formData.append('file', new Blob([content], { type: 'application/json' }), filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DiagramMetaResponse>(`/api/v1/diagrams/${diagramId}/autosave${contentVersionQuery(versionCheck)}`, {
-      method: 'PUT',
-      body: formData,
-    });
+    const file = await request<DriveFileDto>(
+      `/api/v1/drive/files/${diagramId}/autosave${contentVersionQuery(versionCheck)}`,
+      { method: 'PUT', body: formData },
+    );
+    return toDiagramMeta(file);
   },
 
   async autosaveEncryptedContent(
@@ -184,10 +254,11 @@ export const diagramsApi = {
     const formData = new FormData();
     formData.append('file', blob, filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DiagramMetaResponse>(`/api/v1/diagrams/${diagramId}/autosave${contentVersionQuery(versionCheck)}`, {
-      method: 'PUT',
-      body: formData,
-    });
+    const file = await request<DriveFileDto>(
+      `/api/v1/drive/files/${diagramId}/autosave${contentVersionQuery(versionCheck)}`,
+      { method: 'PUT', body: formData },
+    );
+    return toDiagramMeta(file);
   },
 
   // ── Comments ───────────────────────────────────────────────────────────────

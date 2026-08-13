@@ -97,9 +97,13 @@ export function useDiagramCollab({
     [userName, myColor],
   );
 
-  const broadcastDocument = useCallback((doc: DiagramDocument) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  // Document sync is suppressed while nobody else is in the room — see
+  // flushPendingDocument. Cursor awareness keeps running: it is how we learn a
+  // peer arrived.
+  const hasPeersRef = useRef(false);
+  const pendingDocRef = useRef<DiagramDocument | null>(null);
+
+  const writeToYDoc = useCallback((doc: DiagramDocument) => {
     // Write the new JSON into the Y.Text — Yjs computes an incremental update
     const ydoc = ydocRef.current;
     const ytext = ydoc.getText('content');
@@ -110,6 +114,33 @@ export function useDiagramCollab({
     });
     // The ydoc 'update' observer (registered in the WS effect) sends the update
   }, []);
+
+  /**
+   * Send the newest document held back while this client was alone.
+   *
+   * The server keeps this room's Y.Doc and a later session is seeded from it —
+   * `onRemoteDocument` applies whatever SyncStep2 carries — so held-back edits
+   * must land before they can matter: when a peer arrives, and when the session
+   * ends. The diagram file itself is persisted by the editor's own autosave.
+   */
+  const flushPendingDocument = useCallback(() => {
+    const pending = pendingDocRef.current;
+    if (!pending) return;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    pendingDocRef.current = null;
+    writeToYDoc(pending);
+  }, [writeToYDoc]);
+
+  const broadcastDocument = useCallback((doc: DiagramDocument) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!hasPeersRef.current) {
+      pendingDocRef.current = doc;
+      return;
+    }
+    writeToYDoc(doc);
+  }, [writeToYDoc]);
 
   useEffect(() => {
     if (!enabled || !diagramId || !authToken) return;
@@ -208,6 +239,7 @@ export function useDiagramCollab({
     ydoc.on('update', onYDocUpdate);
 
     return () => {
+      flushPendingDocument();
       ydoc.off('update', onYDocUpdate);
       ws.close();
       wsRef.current = null;
@@ -216,6 +248,31 @@ export function useDiagramCollab({
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, diagramId, authToken]);
+
+  // Track whether anyone else is here, and hand over the diagram as it stands
+  // the moment someone joins.
+  useEffect(() => {
+    const hadPeers = hasPeersRef.current;
+    hasPeersRef.current = remoteUsers.length > 0;
+    if (!hadPeers && hasPeersRef.current) flushPendingDocument();
+  }, [remoteUsers, flushPendingDocument]);
+
+  // A session that is killed rather than closed still leaves the server's copy
+  // of the room current. `pagehide` covers what `beforeunload` misses.
+  useEffect(() => {
+    const handleHide = () => flushPendingDocument();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') flushPendingDocument();
+    };
+    window.addEventListener('beforeunload', handleHide);
+    window.addEventListener('pagehide', handleHide);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', handleHide);
+      window.removeEventListener('pagehide', handleHide);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [flushPendingDocument]);
 
   useEffect(() => {
     return () => {

@@ -61,7 +61,7 @@ test.describe('Documents lifecycle', () => {
 
     // Set up the response listener before triggering the blur, then blur to save
     const titleSaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/docs/') && r.request().method() === 'PATCH',
+      (r) => r.url().includes('/api/v1/drive/files/') && r.request().method() === 'PATCH',
       { timeout: 10_000 },
     );
     await titleInput.blur();

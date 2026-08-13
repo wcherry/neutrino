@@ -1,5 +1,6 @@
 import { test, expect } from '../../fixtures/base';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -28,9 +29,9 @@ async function createDiagramAndOpenEditor(
 ): Promise<string> {
   const token = await page.evaluate(() => localStorage.getItem('access_token'));
   if (!token) throw new Error('access_token not found');
-  const res = await request.post(`${BASE_URL}/api/v1/diagrams`, {
+  const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title: 'IO Test Diagram' },
+    data: { id: randomUUID(), name: 'IO Test Diagram', mimeType: 'application/x-neutrino-diagram', folderId: null },
   });
   expect(res.ok(), `create failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const { id } = await res.json() as { id: string };

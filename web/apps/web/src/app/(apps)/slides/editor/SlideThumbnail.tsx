@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { Slide } from './slideEditorTypes';
-import { slideBackgroundStyle } from './slideEditorHelpers';
+import { useSlideBackgroundStyle } from './useSlideBackgroundStyle';
 import { SlideRenderer } from './SlideRenderer';
 import styles from './page.module.css';
 
@@ -15,9 +15,11 @@ const SLIDE_H = 720;
 const SCALE = 160 / SLIDE_W;
 
 export default function SlideThumbnail({ slide }: { slide: Slide }) {
+  const backgroundStyle = useSlideBackgroundStyle(slide.background);
+
   return (
     // Background applied here so it's always visible at the correct thumbnail size.
-    <div className={styles.thumbnailPreview} style={slideBackgroundStyle(slide.background)}>
+    <div className={styles.thumbnailPreview} style={backgroundStyle}>
       <div
         style={{
           position: 'absolute',

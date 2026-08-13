@@ -3,28 +3,6 @@ use utoipa::ToSchema;
 
 // ── Request types ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateSlideRequest {
-    pub title: String,
-    pub folder_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PromoteSlideRequest {
-    /// Already-converted native Neutrino slide JSON content (conversion from
-    /// OOXML happens client-side; the backend never parses office bytes).
-    pub content: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveSlideRequest {
-    /// Optional new title (renames the backing file record).
-    pub title: Option<String>,
-}
-
 // ── Theme request types ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -60,45 +38,6 @@ pub struct UpdateThemeRequest {
 }
 
 // ── Response types ─────────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SlideResponse {
-    pub id: String,
-    pub title: String,
-    /// Path to read presentation content directly from the drive API.
-    pub content_url: String,
-    /// Path to write presentation content directly to the drive API (multipart POST).
-    pub content_write_url: String,
-    pub folder_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    /// Server-side content revision at the time of this read. The editor sends
-    /// it back as `expectedContentVersion` on its first save, so a document
-    /// changed by another device since it was opened is caught immediately
-    /// rather than on the second save.
-    pub content_version: i32,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SlideMetaResponse {
-    pub id: String,
-    pub title: String,
-    pub folder_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    /// Server-side content revision, bumped on every content write. Send it back
-    /// as `expectedContentVersion` on the next save so a stale write is rejected
-    /// instead of silently overwriting a newer revision.
-    pub content_version: i32,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListSlidesResponse {
-    pub slides: Vec<SlideMetaResponse>,
-}
 
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]

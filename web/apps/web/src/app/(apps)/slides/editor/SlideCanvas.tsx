@@ -5,13 +5,15 @@
 import React, { useEffect, useState as useStateHook, useRef, useState } from 'react';
 import type { Slide, SlideElement, TextElement, ShapeElement, LineElement, SheetEmbedElement, VideoElement, ImageElement, DiagramElement } from './slideEditorTypes';
 import { SHAPE_CATALOG, RESIZE_HANDLES } from './slideEditorConstants';
-import { slideBackgroundStyle, getVideoEmbedInfo } from './slideEditorHelpers';
+import { getVideoEmbedInfo } from './slideEditorHelpers';
+import { useSlideBackgroundStyle } from './useSlideBackgroundStyle';
 import { SheetEmbedRenderer } from '@neutrino/sheet-embed';
 import type { CellValue } from '@neutrino/sheet-embed';
 import { EmbeddedDiagramView } from '@/app/(apps)/diagrams/editor/EmbeddedDiagramView';
 import { diagramsApi } from '@neutrino/api-diagrams';
 import type { DiagramDocument, DiagramPage } from '@/app/(apps)/diagrams/types';
 import styles from './page.module.css';
+import { DriveImage } from '@/components/DriveImage';
 
 function DiagramSlideElement({ el }: { el: DiagramElement }) {
   const [page, setPage] = useStateHook<DiagramPage | null>(null);
@@ -350,11 +352,13 @@ export default function SlideCanvas({
     onInsertDrop?.(payload.kind, payload.shape ?? null, pctX, pctY);
   }
 
+  const backgroundStyle = useSlideBackgroundStyle(slide.background);
+
   return (
     <div
       ref={canvasRef}
       className={`${styles.slideCanvas} ${isDragOver ? styles.slideCanvasDragOver : ''}`}
-      style={slideBackgroundStyle(slide.background)}
+      style={backgroundStyle}
       onClick={onClickBackground}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -725,8 +729,7 @@ export default function SlideCanvas({
               onMouseDown={(e) => handleMouseDown(e, el.id, el)}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <DriveImage
                 src={imgEl.src}
                 alt=""
                 draggable={false}

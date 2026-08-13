@@ -1,4 +1,10 @@
-import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
+import { request, contentVersionQuery, ApiClientError, type ContentVersionCheck } from '@neutrino/api-core';
+
+/**
+ * A file is a native Neutrino drawing because it carries this mime type.
+ * Mirrors `src/drive/storage/native_types.rs` on the backend.
+ */
+export const DRAWING_MIME_TYPE = 'application/x-neutrino-drawing';
 
 // ---------------------------------------------------------------------------
 // Drawing text extraction helpers
@@ -72,27 +78,94 @@ export interface ListDrawingsResponse {
   drawings: DrawingMetaResponse[];
 }
 
+// ---------------------------------------------------------------------------
+// Drawing API — drive adapters
+// ---------------------------------------------------------------------------
+//
+// A drawing is nothing but a Drive file whose mime type is
+// `application/x-neutrino-drawing` — it has no state of its own, so unlike the
+// other editors there is no drawing module left on the backend at all. These
+// functions keep the drawing-shaped contract their callers were written
+// against and translate it to and from drive's file DTOs.
+
+/** The subset of drive's file DTOs these adapters read. */
+interface DriveFileDto {
+  id: string;
+  name: string;
+  folderId: string | null;
+  mimeType?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contentVersion: number;
+}
+
+/**
+ * Drive serialises timestamps as naive datetimes (`2026-08-10T12:00:00`) — no
+ * offset — which `new Date()` would read as local time and shift by the
+ * viewer's UTC offset. The values are UTC, so say so.
+ */
+function toIsoUtc(timestamp: string): string {
+  if (!timestamp) return timestamp;
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(timestamp) ? timestamp : `${timestamp}Z`;
+}
+
+function toDrawingMeta(file: DriveFileDto): DrawingMetaResponse {
+  return {
+    id: file.id,
+    title: file.name,
+    folderId: file.folderId ?? null,
+    createdAt: toIsoUtc(file.createdAt),
+    updatedAt: toIsoUtc(file.updatedAt),
+    contentVersion: file.contentVersion,
+  };
+}
+
+function toDrawing(file: DriveFileDto): DrawingResponse {
+  return {
+    ...toDrawingMeta(file),
+    contentUrl: `/api/v1/drive/files/${file.id}`,
+    contentWriteUrl: `/api/v1/drive/files/${file.id}/versions`,
+  };
+}
+
 export const drawingApi = {
   async listDrawings(): Promise<ListDrawingsResponse> {
-    return request<ListDrawingsResponse>('/api/v1/drawing');
+    const params = new URLSearchParams({ mimeType: DRAWING_MIME_TYPE, limit: '200' });
+    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
+    return { drawings: (raw.files ?? []).map(toDrawingMeta) };
   },
 
   async createDrawing(body: CreateDrawingRequest): Promise<DrawingResponse> {
-    return request<DrawingResponse>('/api/v1/drawing', {
+    const title = body.title.trim();
+    if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Drawing title cannot be empty');
+    // Drive takes a client-supplied id and seeds the empty-canvas body from the
+    // mime type, so create and first content write are one request.
+    const file = await request<DriveFileDto>('/api/v1/drive/files', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        name: title,
+        mimeType: DRAWING_MIME_TYPE,
+        folderId: body.folderId ?? null,
+      }),
     });
+    return toDrawing(file);
   },
 
   async getDrawing(drawingId: string): Promise<DrawingResponse> {
-    return request<DrawingResponse>(`/api/v1/drawing/${drawingId}`);
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${drawingId}/info`);
+    if (file.mimeType !== DRAWING_MIME_TYPE) {
+      throw new ApiClientError(404, 'NOT_FOUND', 'Drawing not found');
+    }
+    return toDrawing(file);
   },
 
   async saveDrawing(drawingId: string, body: SaveDrawingRequest): Promise<DrawingMetaResponse> {
-    return request<DrawingMetaResponse>(`/api/v1/drawing/${drawingId}`, {
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${drawingId}`, {
       method: 'PATCH',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ name: body.title }),
     });
+    return toDrawingMeta(file);
   },
 
   async autosaveContent(
@@ -105,9 +178,10 @@ export const drawingApi = {
     const formData = new FormData();
     formData.append('file', new Blob([content], { type: 'application/json' }), filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<DrawingMetaResponse>(`/api/v1/drawing/${drawingId}/autosave${contentVersionQuery(versionCheck)}`, {
-      method: 'PUT',
-      body: formData,
-    });
+    const file = await request<DriveFileDto>(
+      `/api/v1/drive/files/${drawingId}/autosave${contentVersionQuery(versionCheck)}`,
+      { method: 'PUT', body: formData },
+    );
+    return toDrawingMeta(file);
   },
 };

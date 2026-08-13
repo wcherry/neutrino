@@ -1,8 +1,6 @@
-use crate::schema::{slide_themes, slides};
+use crate::schema::slide_themes;
 use crate::shared::ApiError;
-use crate::slides::slides::model::{
-    NewSlideRecord, NewThemeRecord, SlideRecord, ThemeRecord, UpdateSlideRecord, UpdateThemeRecord,
-};
+use crate::slides::slides::model::{NewThemeRecord, ThemeRecord, UpdateThemeRecord};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
@@ -24,56 +22,6 @@ impl SlidesRepository {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection unavailable")
         })
-    }
-
-    pub fn insert_slide(&self, new_slide: NewSlideRecord) -> Result<SlideRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-        diesel::insert_into(slides::table)
-            .values(&new_slide)
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB insert slide error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-        slides::table
-            .filter(slides::file_id.eq(new_slide.file_id))
-            .select(SlideRecord::as_select())
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB query after slide insert error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
-    pub fn get_slide(&self, file_id: &str) -> Result<SlideRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-        slides::table
-            .filter(slides::file_id.eq(file_id))
-            .select(SlideRecord::as_select())
-            .first(&mut conn)
-            .map_err(|e| match e {
-                diesel::result::Error::NotFound => ApiError::not_found("Presentation not found"),
-                _ => {
-                    tracing::error!("DB get slide error: {:?}", e);
-                    ApiError::internal("Database error")
-                }
-            })
-    }
-
-    pub fn update_slide(
-        &self,
-        file_id: &str,
-        changes: UpdateSlideRecord,
-    ) -> Result<SlideRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-        diesel::update(slides::table.filter(slides::file_id.eq(file_id)))
-            .set(&changes)
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB update slide error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-        self.get_slide(file_id)
     }
 
     // ── Theme methods ───────────────────────────────────────────────────────

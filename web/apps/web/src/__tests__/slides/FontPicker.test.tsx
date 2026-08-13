@@ -143,7 +143,7 @@ vi.mock('@neutrino/sheet-embed', () => ({
 }));
 
 vi.mock('../../app/(apps)/slides/editor/InsertSheetDialog', () => ({ InsertSheetDialog: () => null }));
-vi.mock('../../app/(apps)/slides/editor/InsertImageDialog', () => ({ InsertImageDialog: () => null }));
+vi.mock('@/components/InsertImageDialog', () => ({ InsertImageDialog: () => null }));
 vi.mock('../../app/(apps)/slides/editor/InsertDiagramDialog', () => ({ InsertDiagramDialog: () => null }));
 
 // Stub the canvas: render one button per element so a test can "select" the

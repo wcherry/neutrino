@@ -9,7 +9,8 @@ import { useAuth } from '@neutrino/auth';
 import { storageApi, filesystemApi, encryptionApi } from '@neutrino/api-drive';
 import { photosAiApi, type DetectedObject } from '@neutrino/api-photos';
 import type { SmartEraseTarget } from '@neutrino/api-photos';
-import { initSodium, loadKeyPair, decryptFileKey, decryptFile } from '@neutrino/e2e-crypto';
+import { initSodium, decryptFileKey, decryptFile } from '@neutrino/e2e-crypto';
+import { useSessionKeyPair } from '@/hooks/useSessionKeyPair';
 import { toRenderableImageBlob } from '@/lib/heic';
 import { PhotoTopBar } from './PhotoTopBar';
 import { PhotoToolbar } from './PhotoToolbar';
@@ -156,6 +157,7 @@ export function PhotoEditor() {
   const router = useRouter();
   const { success: toastSuccess, error: toastError } = useToast();
   const { user: currentUser } = useAuth();
+  const keyPair = useSessionKeyPair(currentUser?.id);
 
   const fileId = searchParams.get('fileId');
 
@@ -234,13 +236,12 @@ export function PhotoEditor() {
         const mimeType = meta.mimeType?.startsWith('image/') ? meta.mimeType : 'image/png';
 
         let imageBlob: Blob;
-        const kp = currentUser?.id ? loadKeyPair(currentUser.id) : null;
-        if (kp) {
+        if (keyPair) {
           try {
             const keyRef = await encryptionApi.getFileKey(fileId!);
             if (cancelled) return;
             if (keyRef) {
-              const dek = decryptFileKey(keyRef.encryptedFileKey, kp.publicKey, kp.secretKey);
+              const dek = decryptFileKey(keyRef.encryptedFileKey, keyPair.publicKey, keyPair.secretKey);
               const cipherBytes = new Uint8Array(await blob.arrayBuffer());
               const plainBytes = decryptFile(cipherBytes, dek);
               imageBlob = new Blob([plainBytes.buffer as ArrayBuffer], { type: mimeType });
@@ -290,7 +291,10 @@ export function PhotoEditor() {
     return () => {
       cancelled = true;
     };
-  }, [fileId, currentUser?.id]);
+    // keyPair belongs in the deps: this editor is routinely mounted while the
+    // vault is still locked, and without a re-run on unlock the ciphertext
+    // fetched on the first pass stays on screen as a broken image.
+  }, [fileId, currentUser?.id, keyPair]);
 
   type EditorSnapshot = {
     imageDataUrl: string | null;

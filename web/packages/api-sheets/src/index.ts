@@ -1,4 +1,16 @@
-import { request, contentVersionQuery, type ContentVersionCheck } from '@neutrino/api-core';
+import {
+  request,
+  contentVersionQuery,
+  ApiClientError,
+  type ContentVersionCheck,
+} from '@neutrino/api-core';
+
+/**
+ * A file is a native Neutrino spreadsheet because it carries this mime type —
+ * there is no `sheets` table behind it any more. Mirrors
+ * `src/drive/storage/native_types.rs` on the backend.
+ */
+export const SHEET_MIME_TYPE = 'application/x-neutrino-sheet';
 
 // ---------------------------------------------------------------------------
 // Sheet text extraction helpers
@@ -132,27 +144,110 @@ export interface SheetEmbedResponse {
   fetchedAt: string;
 }
 
+// ---------------------------------------------------------------------------
+// Drive adapters
+// ---------------------------------------------------------------------------
+//
+// Spreadsheet CRUD is served by the generic drive file endpoints — there is no
+// `/api/v1/sheets` resource any more. These functions keep the sheet-shaped
+// request/response contract their callers were written against and translate
+// it to and from drive's file DTOs, so the editor doesn't have to care that a
+// spreadsheet is just a Drive file with a particular mime type. What stays on
+// `/api/v1/sheets` below (named ranges, AI, presence) is the part drive has no
+// notion of.
+
+/** The subset of drive's file DTOs these adapters read. */
+interface DriveFileDto {
+  id: string;
+  name: string;
+  folderId: string | null;
+  mimeType?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  yourRole?: string;
+  contentVersion: number;
+}
+
+/**
+ * Drive serialises timestamps as naive datetimes (`2026-08-10T12:00:00`) —
+ * no offset. `new Date()` reads those as *local* time, so passing one straight
+ * through would shift every displayed "Modified" time by the viewer's UTC
+ * offset. The values are UTC, so say so.
+ */
+function toIsoUtc(timestamp: string): string {
+  if (!timestamp) return timestamp;
+  return /(?:Z|[+-]\d{2}:?\d{2})$/.test(timestamp) ? timestamp : `${timestamp}Z`;
+}
+
+function toSheetMeta(file: DriveFileDto): SheetMetaResponse {
+  return {
+    id: file.id,
+    title: file.name,
+    folderId: file.folderId ?? null,
+    createdAt: toIsoUtc(file.createdAt),
+    updatedAt: toIsoUtc(file.updatedAt),
+    contentVersion: file.contentVersion,
+  };
+}
+
+function toSheet(file: DriveFileDto): SheetResponse {
+  return {
+    ...toSheetMeta(file),
+    contentUrl: `/api/v1/drive/files/${file.id}`,
+    contentWriteUrl: `/api/v1/drive/files/${file.id}/versions`,
+    yourRole: file.yourRole ?? 'owner',
+  };
+}
+
 export const sheetsApi = {
   async listSheets(): Promise<ListSheetsResponse> {
-    return request<ListSheetsResponse>('/api/v1/sheets');
+    const params = new URLSearchParams({ mimeType: SHEET_MIME_TYPE, limit: '200' });
+    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
+    return { sheets: (raw.files ?? []).map(toSheetMeta) };
   },
 
   async createSheet(body: CreateSheetRequest): Promise<SheetResponse> {
-    return request<SheetResponse>('/api/v1/sheets', {
+    const title = body.title.trim();
+    if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Spreadsheet title cannot be empty');
+    // Drive takes a client-supplied id so the caller can navigate to the
+    // editor without waiting for the response, and seeds the empty-workbook
+    // body itself from the mime type — the create and the first content write
+    // are one request rather than two.
+    const file = await request<DriveFileDto>('/api/v1/drive/files', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        name: title,
+        mimeType: SHEET_MIME_TYPE,
+        folderId: body.folderId ?? null,
+      }),
     });
+    return toSheet(file);
   },
 
+  /**
+   * Fetch a file as a native spreadsheet.
+   *
+   * Throws 404 for a file that exists but isn't one — a raw .xlsx, say. That
+   * is load-bearing, not incidental: the editor's office-mode fallback keys
+   * off this 404 to decide it must download and parse the file as xlsx
+   * instead. Drive's `/info` answers for any file type, so the type check
+   * lives here.
+   */
   async getSheet(sheetId: string): Promise<SheetResponse> {
-    return request<SheetResponse>(`/api/v1/sheets/${sheetId}`);
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}/info`);
+    if (file.mimeType !== SHEET_MIME_TYPE) {
+      throw new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found');
+    }
+    return toSheet(file);
   },
 
   async saveSheet(sheetId: string, body: SaveSheetRequest): Promise<SheetMetaResponse> {
-    return request<SheetMetaResponse>(`/api/v1/sheets/${sheetId}`, {
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}`, {
       method: 'PATCH',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ name: body.title }),
     });
+    return toSheetMeta(file);
   },
 
   async autosaveContent(
@@ -165,7 +260,11 @@ export const sheetsApi = {
     const formData = new FormData();
     formData.append('file', new Blob([content], { type: 'application/json' }), filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<SheetMetaResponse>(`/api/v1/sheets/${sheetId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
+    const file = await request<DriveFileDto>(
+      `/api/v1/drive/files/${sheetId}/autosave${contentVersionQuery(versionCheck)}`,
+      { method: 'PUT', body: formData },
+    );
+    return toSheetMeta(file);
   },
 
   async autosaveEncryptedContent(
@@ -184,9 +283,12 @@ export const sheetsApi = {
     const formData = new FormData();
     formData.append('file', blob, filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    return request<SheetMetaResponse>(`/api/v1/sheets/${sheetId}/autosave${contentVersionQuery(versionCheck)}`, { method: 'PUT', body: formData });
+    const file = await request<DriveFileDto>(
+      `/api/v1/drive/files/${sheetId}/autosave${contentVersionQuery(versionCheck)}`,
+      { method: 'PUT', body: formData },
+    );
+    return toSheetMeta(file);
   },
-
 
   /**
    * Promote a raw Office (.xlsx) Drive file in-place into a native Neutrino
@@ -195,10 +297,11 @@ export const sheetsApi = {
    * afterwards.
    */
   async promoteSheet(sheetId: string, content: string): Promise<SheetResponse> {
-    return request<SheetResponse>(`/api/v1/sheets/${sheetId}/promote`, {
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}/convert`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ targetMimeType: SHEET_MIME_TYPE, content }),
     });
+    return toSheet(file);
   },
 
   /** Create a named range for a cell selection, returning a stable GUID.

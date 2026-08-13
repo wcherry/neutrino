@@ -1,31 +1,8 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-// ── Request types ──────────────────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateDocRequest {
-    pub title: String,
-    pub folder_id: Option<String>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct PromoteDocRequest {
-    /// Already-converted native Neutrino doc JSON content (conversion from
-    /// OOXML happens client-side; the backend never parses office bytes).
-    pub content: String,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveDocRequest {
-    pub page_setup: Option<PageSetup>,
-    /// Optional new title for the document (renames the backing file record).
-    pub title: Option<String>,
-}
-
+/// Per-document page layout. The one piece of document state that isn't a
+/// property of the underlying Drive file.
 #[derive(Debug, Deserialize, Serialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PageSetup {
@@ -35,48 +12,6 @@ pub struct PageSetup {
     pub margin_right: f64,
     pub orientation: String,
     pub page_size: String,
-}
-
-// ── Response types ─────────────────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DocResponse {
-    pub id: String,
-    pub title: String,
-    /// Path to read document content directly from the drive API.
-    pub content_url: String,
-    /// Path to write document content directly to the drive API (multipart POST).
-    pub content_write_url: String,
-    pub page_setup: PageSetup,
-    pub folder_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    /// Server-side content revision at the time of this read. The editor sends
-    /// it back as `expectedContentVersion` on its first save, so a document
-    /// changed by another device since it was opened is caught immediately
-    /// rather than on the second save.
-    pub content_version: i32,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DocMetaResponse {
-    pub id: String,
-    pub title: String,
-    pub folder_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
-    /// Server-side content revision, bumped on every content write. Send it back
-    /// as `expectedContentVersion` on the next save so a stale write is rejected
-    /// instead of silently overwriting a newer revision.
-    pub content_version: i32,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ListDocsResponse {
-    pub docs: Vec<DocMetaResponse>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

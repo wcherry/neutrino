@@ -589,7 +589,7 @@ export function usePersistence({
         }
 
         // The server holds plaintext initial content for brand-new encrypted sheets
-        // (written as plaintext by POST /api/v1/sheets on creation); for existing
+        // (seeded as plaintext by POST /api/v1/drive/files on creation); for existing
         // encrypted sheets decryptFile succeeds and serverHasPlaintextContent stays
         // false. Routed through queueSave (not called directly) so this request can
         // never overlap a save triggered moments later by a fast edit-then-navigate —
@@ -604,9 +604,9 @@ export function usePersistence({
         const newTitle = (event.currentTarget as HTMLElement).innerHTML;
         setTitle(newTitle);
         if (officeMode) {
-            // No `sheets` row to PATCH — office-mode renames go through the
-            // generic Drive rename call (same one FileContextMenu's rename
-            // action uses).
+            // Both branches land on the same Drive rename endpoint; they differ
+            // only in the local state they keep in step — office mode tracks the
+            // raw file's metadata, native mode the loaded sheet.
             if (officeFileMetaRef.current && newTitle !== officeFileMetaRef.current.name) {
                 officeFileMetaRef.current = { ...officeFileMetaRef.current, name: newTitle };
                 await filesystemApi.updateFile(sheetId, { name: newTitle });
