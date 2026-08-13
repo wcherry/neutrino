@@ -5,37 +5,42 @@
  *
  * A three-stage page: pick the zip, choose what comes across, watch it run.
  * The archive is opened in the browser and never uploaded — the imports write
- * through the ordinary notes and docs APIs, one item at a time, because both
- * kinds of content are E2EE and only this device can encrypt them (see
- * `lib/takeout/importKeep.ts` and `lib/takeout/importDocs.ts`).
+ * through the ordinary notes, docs and sheets APIs, one item at a time,
+ * because every kind of content is E2EE and only this device can encrypt it
+ * (see `lib/takeout/importKeep.ts`, `importDocs.ts` and `importSheets.ts`).
  *
- * Two products are supported, and either can be run on its own: Keep → Notes
- * and the documents in Drive → Docs. The two runs are sequential and share one
- * progress bar and one result screen.
+ * Three products are supported and any of them can be run on its own: Keep →
+ * Notes, and the documents and spreadsheets in Drive → Docs and Sheets. The
+ * runs are sequential and share one progress bar and one result screen.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, FileJson, FileText, Package, X } from 'lucide-react';
+import { ArrowLeft, Check, FileJson, FileSpreadsheet, FileText, Package, X } from 'lucide-react';
 import { Alert, Button, Checkbox, DropZone, ProgressBar, Spinner, TextInput } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
 import {
   DEFAULT_DOCS_IMPORT_OPTIONS,
   DEFAULT_KEEP_IMPORT_OPTIONS,
+  DEFAULT_SHEETS_IMPORT_OPTIONS,
   findDriveDocs,
+  findDriveSheets,
   findKeepNotes,
   openTakeout,
   runDocsImport,
   runKeepImport,
+  runSheetsImport,
   TakeoutError,
   type DocsImportOptions,
   type DriveDocsSource,
+  type DriveSheetsSource,
   type ImportItem,
   type ImportProgress,
   type ImportSummary,
   type KeepImportOptions,
   type KeepSource,
+  type SheetsImportOptions,
   type TakeoutArchive,
 } from '@/lib/takeout';
 import { describeError, logFail, logStep } from '@/lib/takeout/log';
@@ -48,6 +53,7 @@ interface LoadedArchive {
   archive: TakeoutArchive;
   keep: KeepSource | null;
   docs: DriveDocsSource | null;
+  sheets: DriveSheetsSource | null;
 }
 
 /** One product's result, labelled so a combined list says where a row came from. */
@@ -67,8 +73,10 @@ export default function ImportPage() {
   const [loaded, setLoaded] = useState<LoadedArchive | null>(null);
   const [includeKeep, setIncludeKeep] = useState(true);
   const [includeDocs, setIncludeDocs] = useState(true);
+  const [includeSheets, setIncludeSheets] = useState(true);
   const [keepOptions, setKeepOptions] = useState<KeepImportOptions>(DEFAULT_KEEP_IMPORT_OPTIONS);
   const [docOptions, setDocOptions] = useState<DocsImportOptions>(DEFAULT_DOCS_IMPORT_OPTIONS);
+  const [sheetOptions, setSheetOptions] = useState<SheetsImportOptions>(DEFAULT_SHEETS_IMPORT_OPTIONS);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [results, setResults] = useState<ProductResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +103,7 @@ export default function ImportPage() {
     setError(null);
     setIncludeKeep(true);
     setIncludeDocs(true);
+    setIncludeSheets(true);
   };
 
   const handleFiles = useCallback(async (files: File[]) => {
@@ -109,12 +118,15 @@ export default function ImportPage() {
       archiveRef.current = archive;
       const keep = await findKeepNotes(archive);
       const docs = findDriveDocs(archive);
+      const sheets = findDriveSheets(archive);
       logStep('page', `read ${file.name}`, {
         notes: keep?.entries.length ?? 0,
         documents: docs?.docs.length ?? 0,
         unsupportedDocuments: docs?.unsupported.length ?? 0,
+        spreadsheets: sheets?.sheets.length ?? 0,
+        unsupportedSpreadsheets: sheets?.unsupported.length ?? 0,
       });
-      setLoaded({ fileName: file.name, archive, keep, docs });
+      setLoaded({ fileName: file.name, archive, keep, docs, sheets });
       setStage('configure');
     } catch (err) {
       logFail('page', `could not read ${file.name}`, err);
@@ -130,7 +142,8 @@ export default function ImportPage() {
 
   const noteCount = includeKeep ? loaded?.keep?.entries.length ?? 0 : 0;
   const docCount = includeDocs ? loaded?.docs?.docs.length ?? 0 : 0;
-  const selectedCount = noteCount + docCount;
+  const sheetCount = includeSheets ? loaded?.sheets?.sheets.length ?? 0 : 0;
+  const selectedCount = noteCount + docCount + sheetCount;
 
   const startImport = async () => {
     if (!loaded || selectedCount === 0) return;
@@ -138,7 +151,12 @@ export default function ImportPage() {
     abortRef.current = controller;
     setStage('running');
     setProgress({ done: 0, total: selectedCount, current: '' });
-    logStep('page', 'starting run', { notes: noteCount, documents: docCount, archive: loaded.fileName });
+    logStep('page', 'starting run', {
+      notes: noteCount,
+      documents: docCount,
+      spreadsheets: sheetCount,
+      archive: loaded.fileName,
+    });
 
     const done: ProductResult[] = [];
     try {
@@ -153,10 +171,10 @@ export default function ImportPage() {
         done.push({ product: 'Notes', summary });
       }
 
-      // A stopped Keep run means the user stopped the whole import, not just
-      // its first half.
-      const stopped = done.some((r) => r.summary.cancelled);
-      if (docCount > 0 && loaded.docs && !stopped) {
+      // A stopped run means the user stopped the whole import, not just the
+      // product that was running at the time.
+      const stopped = () => done.some((r) => r.summary.cancelled);
+      if (docCount > 0 && loaded.docs && !stopped()) {
         const summary = await runDocsImport({
           docs: loaded.docs.docs,
           options: docOptions,
@@ -166,6 +184,22 @@ export default function ImportPage() {
           signal: controller.signal,
         });
         done.push({ product: 'Documents', summary });
+      }
+
+      if (sheetCount > 0 && loaded.sheets && !stopped()) {
+        const summary = await runSheetsImport({
+          sheets: loaded.sheets.sheets,
+          options: sheetOptions,
+          userId: user?.id,
+          onProgress: (p) =>
+            setProgress({
+              done: noteCount + docCount + p.done,
+              total: selectedCount,
+              current: p.current,
+            }),
+          signal: controller.signal,
+        });
+        done.push({ product: 'Spreadsheets', summary });
       }
 
       // The per-item detail is in each runner's log; this is the one place the
@@ -185,9 +219,10 @@ export default function ImportPage() {
 
       setResults(done);
       setStage('done');
-      // The notes list, the docs list and the drive tree all gained files.
+      // The notes, docs and sheets lists and the drive tree all gained files.
       queryClient.invalidateQueries({ queryKey: ['notes'] });
       queryClient.invalidateQueries({ queryKey: ['docs'] });
+      queryClient.invalidateQueries({ queryKey: ['sheets'] });
       queryClient.invalidateQueries({ queryKey: ['drive'] });
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
     } catch (err) {
@@ -224,6 +259,7 @@ export default function ImportPage() {
   const unencrypted = (results ?? []).some((r) => r.summary.unencrypted);
   const ranNotes = (results ?? []).some((r) => r.product === 'Notes');
   const ranDocs = (results ?? []).some((r) => r.product === 'Documents');
+  const ranSheets = (results ?? []).some((r) => r.product === 'Spreadsheets');
 
   return (
     <div className={styles.page}>
@@ -268,17 +304,19 @@ export default function ImportPage() {
                 </li>
                 <li>
                   Select <strong>Keep</strong> for your notes and <strong>Drive</strong> for your
-                  documents, then create the export.
+                  documents and spreadsheets, then create the export.
                 </li>
                 <li>
-                  Leave Drive&rsquo;s format for Google Docs set to <strong>Word (.docx)</strong> —
-                  that is the default, and the format that converts best.
+                  Leave Drive&rsquo;s formats set to <strong>Word (.docx)</strong> for Google Docs
+                  and <strong>Excel (.xlsx)</strong> for Google Sheets — those are the defaults, and
+                  the formats that convert best.
                 </li>
                 <li>Download the .zip Google emails you and drop it above.</li>
               </ol>
               <p className={styles.helpNote}>
-                Keep notes become Neutrino notes and Google Docs documents become Neutrino
-                documents. Other products in the archive are recognised but cannot be imported yet.
+                Keep notes become Neutrino notes, Google Docs documents become Neutrino documents
+                and Google Sheets spreadsheets become Neutrino spreadsheets. Other products in the
+                archive are recognised but cannot be imported yet.
               </p>
             </div>
           </section>
@@ -430,7 +468,7 @@ export default function ImportPage() {
                     <p className={styles.caveat}>
                       Comments, suggestions and revision history are not in the export, so they
                       cannot come across; neither is sharing, so an imported document starts out
-                      private to you. Spreadsheets and presentations in the archive are left alone.
+                      private to you. Presentations in the archive are left alone.
                     </p>
                   </>
                 )}
@@ -446,7 +484,90 @@ export default function ImportPage() {
               </div>
             )}
 
-            {loaded.keep || loaded.docs ? (
+            {loaded.sheets && (
+              <div className={styles.product}>
+                <div className={`${styles.productRow} ${includeSheets ? '' : styles.productRowOff}`}>
+                  <FileSpreadsheet size={18} className={styles.productIcon} aria-hidden="true" />
+                  <div className={styles.productText}>
+                    <div className={styles.productName}>
+                      {plural(loaded.sheets.sheets.length, 'spreadsheet')} in {loaded.sheets.directory}
+                    </div>
+                    <div className={styles.productDest}>→ Sheets</div>
+                  </div>
+                  <div className={styles.productToggle}>
+                    <Checkbox
+                      label="Import"
+                      checked={includeSheets}
+                      disabled={loaded.sheets.sheets.length === 0}
+                      onChange={(e) => setIncludeSheets(e.target.checked)}
+                    />
+                  </div>
+                </div>
+
+                {includeSheets && loaded.sheets.sheets.length > 0 && (
+                  <>
+                    <div className={styles.options}>
+                      <Checkbox
+                        label="Bring formulas across"
+                        description="Otherwise cells keep the values Google last calculated. A formula Neutrino cannot work out shows as its own text."
+                        checked={sheetOptions.importFormulas}
+                        onChange={(e) => setSheetOptions((o) => ({ ...o, importFormulas: e.target.checked }))}
+                      />
+                      <Checkbox
+                        label="Recreate the folders they were in"
+                        description="Otherwise every spreadsheet lands in one folder."
+                        checked={sheetOptions.preserveFolders}
+                        onChange={(e) => setSheetOptions((o) => ({ ...o, preserveFolders: e.target.checked }))}
+                      />
+                      <Checkbox
+                        label="Skip spreadsheets whose title already exists"
+                        description="Lets you re-run the import without creating duplicates."
+                        checked={sheetOptions.skipExisting}
+                        onChange={(e) => setSheetOptions((o) => ({ ...o, skipExisting: e.target.checked }))}
+                      />
+                      <Checkbox
+                        label="Put imported spreadsheets in a folder"
+                        checked={sheetOptions.folderName !== null}
+                        onChange={(e) =>
+                          setSheetOptions((o) => ({
+                            ...o,
+                            folderName: e.target.checked ? DEFAULT_SHEETS_IMPORT_OPTIONS.folderName : null,
+                          }))
+                        }
+                      />
+                      {sheetOptions.folderName !== null && (
+                        <div className={styles.folderInput}>
+                          <TextInput
+                            value={sheetOptions.folderName}
+                            onChange={(e) => setSheetOptions((o) => ({ ...o, folderName: e.target.value }))}
+                            placeholder="Folder name"
+                            aria-label="Spreadsheets folder name"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <p className={styles.caveat}>
+                      Cell values, number formats, merged cells and column sizes come across. Cell
+                      colours and fonts, charts, pivot tables, filters and conditional formatting do
+                      not, and neither does sharing, so an imported spreadsheet starts out private to
+                      you.
+                    </p>
+                  </>
+                )}
+
+                {loaded.sheets.unsupported.length > 0 && (
+                  <Alert
+                    variant="warning"
+                    message={`${plural(loaded.sheets.unsupported.length, 'file')} in ${
+                      loaded.sheets.directory
+                    } (${[...new Set(loaded.sheets.unsupported.map((u) => u.format))].join(', ')}) cannot be converted in the browser. Re-run the export with the Google Sheets format set to Excel (.xlsx) to bring those across.`}
+                  />
+                )}
+              </div>
+            )}
+
+            {loaded.keep || loaded.docs || loaded.sheets ? (
               <div className={styles.actions}>
                 <Button onClick={startImport} disabled={selectedCount === 0}>
                   Import {plural(selectedCount, 'item')}
@@ -536,6 +657,14 @@ export default function ImportPage() {
               {ranDocs && (
                 <Button variant={ranNotes ? 'secondary' : 'primary'} onClick={() => router.push('/docs')}>
                   Go to Docs
+                </Button>
+              )}
+              {ranSheets && (
+                <Button
+                  variant={ranNotes || ranDocs ? 'secondary' : 'primary'}
+                  onClick={() => router.push('/sheets')}
+                >
+                  Go to Sheets
                 </Button>
               )}
               <Button variant="secondary" onClick={reset}>

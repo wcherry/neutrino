@@ -1,10 +1,10 @@
 /**
  * The import page (`app/(apps)/import/page.tsx`).
  *
- * The conversion and the two runners have their own tests; what this covers is
- * the page's job of putting two products in one run — which of them takes
- * part, that one progress bar counts both, that stopping the first stops the
- * whole thing, and that the result screen adds the two summaries up.
+ * The conversions and the three runners have their own tests; what this covers
+ * is the page's job of putting several products in one run — which of them
+ * take part, that one progress bar counts them all, that stopping one stops
+ * the rest, and that the result screen adds the summaries up.
  */
 
 import React from 'react';
@@ -18,8 +18,10 @@ const { pushMock, takeout } = vi.hoisted(() => ({
     openTakeout: vi.fn(),
     findKeepNotes: vi.fn(),
     findDriveDocs: vi.fn(),
+    findDriveSheets: vi.fn(),
     runKeepImport: vi.fn(),
     runDocsImport: vi.fn(),
+    runSheetsImport: vi.fn(),
   },
 }));
 
@@ -39,6 +41,12 @@ vi.mock('@/lib/takeout', () => ({
     folderName: 'Google Keep',
   },
   DEFAULT_DOCS_IMPORT_OPTIONS: { preserveFolders: true, skipExisting: true, folderName: 'Google Docs' },
+  DEFAULT_SHEETS_IMPORT_OPTIONS: {
+    preserveFolders: true,
+    skipExisting: true,
+    folderName: 'Google Sheets',
+    importFormulas: true,
+  },
 }));
 
 import ImportPage from '@/app/(apps)/import/page';
@@ -87,14 +95,23 @@ const docsSource = {
   docs: [{ entry: { path: 'a.docx' } }, { entry: { path: 'b.docx' } }],
   unsupported: [],
 };
+const sheetsSource = {
+  directory: 'Drive',
+  sheets: [{ entry: { path: 'a.xlsx' } }, { entry: { path: 'b.xlsx' } }],
+  unsupported: [],
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
   takeout.openTakeout.mockResolvedValue(archive);
   takeout.findKeepNotes.mockResolvedValue(keepSource);
   takeout.findDriveDocs.mockReturnValue(docsSource);
+  // Off by default so each test opts into the products it is about; the
+  // spreadsheet cases below turn it on.
+  takeout.findDriveSheets.mockReturnValue(null);
   takeout.runKeepImport.mockResolvedValue(summary(2));
   takeout.runDocsImport.mockResolvedValue(summary(2));
+  takeout.runSheetsImport.mockResolvedValue(summary(2));
 });
 
 describe('ImportPage', () => {
@@ -188,6 +205,79 @@ describe('ImportPage', () => {
     expect(screen.getByText('Skipped (1)')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Go to Notes' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Go to Docs' })).toBeTruthy();
+  });
+
+  it('runs the spreadsheets after the notes and the documents', async () => {
+    takeout.findDriveSheets.mockReturnValue(sheetsSource);
+    const { container } = renderPage();
+    await dropArchive(container);
+
+    expect(screen.getByText('2 spreadsheets in Drive')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 6 items' }));
+    });
+
+    expect(takeout.runSheetsImport).toHaveBeenCalledTimes(1);
+    expect(takeout.runDocsImport.mock.invocationCallOrder[0]).toBeLessThan(
+      takeout.runSheetsImport.mock.invocationCallOrder[0],
+    );
+    await waitFor(() => expect(screen.getByText(/6 imported/)).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Go to Sheets' })).toBeTruthy();
+  });
+
+  it('counts the earlier products in the spreadsheets run’s progress', async () => {
+    takeout.findDriveSheets.mockReturnValue(sheetsSource);
+    let release: () => void = () => {};
+    takeout.runSheetsImport.mockImplementation(
+      ({ onProgress }: { onProgress: (p: unknown) => void }) =>
+        new Promise((resolve) => {
+          onProgress({ done: 1, total: 2, current: 'a.xlsx' });
+          release = () => resolve(summary(2));
+        }),
+    );
+
+    const { container } = renderPage();
+    await dropArchive(container);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 6 items' }));
+    });
+
+    // Two notes and two documents are already done, so the first spreadsheet
+    // is the fifth of six.
+    expect(screen.getByText('Importing 5 of 6')).toBeTruthy();
+    await act(async () => {
+      release();
+    });
+  });
+
+  it('does not start the spreadsheets when an earlier run was stopped', async () => {
+    takeout.findDriveSheets.mockReturnValue(sheetsSource);
+    takeout.runDocsImport.mockResolvedValue(summary(1, { cancelled: true }));
+    const { container } = renderPage();
+    await dropArchive(container);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 6 items' }));
+    });
+
+    expect(takeout.runSheetsImport).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText('Import stopped')).toBeTruthy());
+  });
+
+  it('leaves the spreadsheets out when the user unchecks them', async () => {
+    takeout.findDriveSheets.mockReturnValue(sheetsSource);
+    const { container } = renderPage();
+    await dropArchive(container);
+
+    // Each product row has its own "Import" checkbox; the third is Sheets.
+    await act(async () => {
+      fireEvent.click(screen.getAllByLabelText('Import')[2]);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 4 items' }));
+    });
+    expect(takeout.runSheetsImport).not.toHaveBeenCalled();
   });
 
   it('shows only the documents section for a Drive-only archive', async () => {
