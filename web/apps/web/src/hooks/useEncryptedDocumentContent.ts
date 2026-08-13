@@ -32,10 +32,18 @@
  *   });
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useAuth } from '@neutrino/auth';
-import { initSodium, loadKeyPair, decryptFileKey, generateFileKey, encryptFileKey } from '@neutrino/e2e-crypto';
+import {
+  initSodium,
+  loadKeyPair,
+  decryptFileKey,
+  generateFileKey,
+  encryptFileKey,
+  isUnlocked,
+  subscribeToLockState,
+} from '@neutrino/e2e-crypto';
 import {
   encryptionApi,
   driveAutosaveContent,
@@ -73,6 +81,13 @@ export interface UseEncryptedDocumentContentResult {
    * the caller should NOT overwrite server content.
    */
   isNewEncryption: boolean;
+  /**
+   * The DEK once resolution has settled — `dekRef.current` without the race.
+   * Reading `dekRef` directly reports "no key" for a save that lands while the
+   * key is still being fetched; awaiting this reports it only when the session
+   * is genuinely locked.
+   */
+  awaitDek: () => Promise<Uint8Array | null>;
   /** Write an autosave revision (no version-history entry). */
   autosave: (content: string) => void;
   /** Create a named version snapshot in version history. */
@@ -97,6 +112,18 @@ export function useEncryptedDocumentContent({
   const dekRef = useRef<Uint8Array | null>(null);
   const [dekResolved, setDekResolved] = useState(false);
   const [isNewEncryption, setIsNewEncryption] = useState(false);
+  /** The in-flight resolution, so `awaitDek` can wait on it instead of racing. */
+  const resolutionRef = useRef<Promise<void> | null>(null);
+  /** Which `<file, user>` the key in `dekRef` belongs to. */
+  const dekOwnerRef = useRef<string | null>(null);
+
+  // The unlock gate is an overlay, not a hard gate (see `E2EEUnlockGate`), so an
+  // editor routinely mounts while the vault is still locked — a page reload on
+  // /docs/editor does it every time.  Without re-resolving on unlock the DEK
+  // stays null for the life of the page and every autosave warns that changes
+  // were not saved, even though the user unlocked seconds later.
+  const [lockEpoch, setLockEpoch] = useState(0);
+  useEffect(() => subscribeToLockState(() => setLockEpoch((n) => n + 1)), []);
 
   // ── Step 1: Resolve the DEK ───────────────────────────────────────────────
   useEffect(() => {
@@ -108,6 +135,25 @@ export function useEncryptedDocumentContent({
       setDekResolved(true);
       return;
     }
+
+    const owner = `${currentUser.id}:${id}`;
+
+    // Locked: no key to resolve.  Callers fall back to plaintext, exactly as
+    // before; the subscription above brings us back here when that changes.
+    if (!isUnlocked(currentUser.id)) {
+      dekRef.current = null;
+      dekOwnerRef.current = null;
+      resolutionRef.current = null;
+      setDekResolved(true);
+      return;
+    }
+
+    // Unlocked and already holding this file's key — a re-run from an unrelated
+    // lock notification must not re-fetch it.  The owner check matters after a
+    // user switch: the key in hand belongs to whoever was signed in when it was
+    // resolved, and re-sealing DEKs to the wrong identity is unrecoverable.
+    if (dekRef.current && dekOwnerRef.current === owner) return;
+    dekRef.current = null;
 
     let cancelled = false;
 
@@ -123,12 +169,14 @@ export function useEncryptedDocumentContent({
               kp.publicKey,
               kp.secretKey,
             );
+            dekOwnerRef.current = owner;
           } else if (!cancelled && !keyRef) {
             // New file: generate a DEK, encrypt it with the user's public key, and store it.
             const newDek = generateFileKey();
             const encryptedFileKey = encryptFileKey(newDek, kp.publicKey);
             await encryptionApi.setFileKey(id, { encryptedFileKey });
             dekRef.current = newDek;
+            dekOwnerRef.current = owner;
             setIsNewEncryption(true);
           }
         }
@@ -139,24 +187,35 @@ export function useEncryptedDocumentContent({
       }
     }
 
-    resolve();
+    // Re-resolving after an unlock has to flip `dekResolved` back to false:
+    // callers key their content query on it, and the copy on screen was read as
+    // plaintext (or failed) while we had no key.
+    setDekResolved(false);
+    resolutionRef.current = resolve();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, authLoading, currentUser?.id]);
+  }, [id, authLoading, currentUser?.id, lockEpoch]);
+
+  const awaitDek = useCallback(async () => {
+    await resolutionRef.current;
+    return dekRef.current;
+  }, []);
 
   // ── Step 2: Autosave mutation ─────────────────────────────────────────────
   const autosaveMutation = useMutation({
     mutationFn: async (content: string) => {
-      if (!dekRef.current) throw new Error('no-dek');
-      return driveAutosaveEncryptedContent(id, content, filename, dekRef.current);
+      const dek = await awaitDek();
+      if (!dek) throw new Error('no-dek');
+      return driveAutosaveEncryptedContent(id, content, filename, dek);
     },
   });
 
   // ── Step 3: Create-version mutation ──────────────────────────────────────
   const createVersionMutation = useMutation({
     mutationFn: async (content: string) => {
-      if (!dekRef.current) throw new Error('no-dek');
-      return driveCreateEncryptedVersion(id, content, filename, dekRef.current);
+      const dek = await awaitDek();
+      if (!dek) throw new Error('no-dek');
+      return driveCreateEncryptedVersion(id, content, filename, dek);
     },
   });
 
@@ -164,6 +223,7 @@ export function useEncryptedDocumentContent({
     dekRef,
     dekResolved,
     isNewEncryption,
+    awaitDek,
     autosave: autosaveMutation.mutate,
     createVersion: createVersionMutation.mutate,
     isAutosaving: autosaveMutation.isPending,
