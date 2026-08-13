@@ -5,6 +5,7 @@ import type { Slide, TextElement, ShapeElement, LineElement, ImageElement, Video
 import { getAnimationStyle, getVideoEmbedInfo } from './slideEditorHelpers';
 import { ShapeRenderer, LineRenderer } from './SlideCanvas';
 import styles from './page.module.css';
+import { DriveImage } from '@/components/DriveImage';
 
 export function SlideRenderer({
   slide,
@@ -137,8 +138,7 @@ export function SlideRenderer({
                 ...animStyle,
               }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <DriveImage
                 src={imgEl.src}
                 alt=""
                 style={{

@@ -167,9 +167,8 @@ async fn main() -> std::io::Result<()> {
 
     let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
     let auth_service = Arc::new(AuthService::new(auth_repo.clone(), token_service.clone()));
-    let auth_state = web::Data::new(auth::api::AuthApiState {
-        auth_service: auth_service.clone(),
-    });
+    // `auth_state` is built further down, once the Drive filesystem service it
+    // needs to seed a new account's folders exists.
 
     // ── Key vault (wrapped E2EE identity keys) ───────────────────────────────
 
@@ -414,9 +413,17 @@ async fn main() -> std::io::Result<()> {
         drive_permissions_service.clone(),
     ));
     let drive_fs_state = web::Data::new(drive::filesystem::api::FilesystemApiState {
-        filesystem_service: drive_fs_service,
+        filesystem_service: drive_fs_service.clone(),
         filesystem_repo: drive_fs_repo.clone(),
         permissions_repo: drive_permissions_repo.clone(),
+    });
+
+    // Registration seeds the new account's default folders, so auth needs the
+    // filesystem service — hence this sitting below it rather than beside the
+    // other auth wiring above.
+    let auth_state = web::Data::new(auth::api::AuthApiState {
+        auth_service: auth_service.clone(),
+        filesystem_service: drive_fs_service,
     });
 
     let drive_sharing_repo = Arc::new(SharingRepository::new(pool.clone()));

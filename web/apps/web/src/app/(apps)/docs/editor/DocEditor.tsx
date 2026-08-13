@@ -11,6 +11,7 @@ import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
 import { DiagramEmbedExtension } from '@/lib/extensions/DiagramEmbedExtension';
 import { InsertDiagramDialog as InsertDiagramDocDialog } from './InsertDiagramDialog';
+import { InsertImageDialog, type ImageSource } from '@/components/InsertImageDialog';
 import { FootnoteExtension, getFootnoteItems, FootnoteRegistry } from '@/lib/extensions/FootnoteExtension';
 import { CrossRefExtension } from '@/lib/extensions/CrossRefExtension';
 import { TableOfContentsExtension } from '@/lib/extensions/TableOfContentsExtension';
@@ -24,6 +25,8 @@ import { IndentExtension } from '@/lib/extensions/IndentExtension';
 import { ListStyleExtension } from '@/lib/extensions/ListStyleExtension';
 import { AdvancedTableCell } from '@/lib/extensions/AdvancedTableCellExtension';
 import { AdvancedImage } from '@/lib/extensions/AdvancedImageExtension';
+import { DriveImageExtension } from '@/lib/extensions/DriveImageExtension';
+import { driveImageRef, inlineDriveImagesInHtml } from '@/lib/driveImages';
 import { useSheetPasteInterceptor, PasteChoiceDialog, type SheetEmbedAttrsShape, type CellValue } from '@neutrino/sheet-embed';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -621,7 +624,7 @@ export function DocEditor() {
   const nspell = useNspell();
   const { getProviderOptions } = useAiSettings();
 
-  const { dekRef, dekResolved, isNewEncryption } =
+  const { dekRef, dekResolved, isNewEncryption, awaitDek } =
     useEncryptedDocumentContent({ id: docId, filename: 'doc.json' });
   const toast = useToast();
 
@@ -661,7 +664,6 @@ export function DocEditor() {
   const [showStylesPalette, setShowStylesPalette] = useState(false);
   const [showImageProps, setShowImageProps] = useState(false);
   const [showTableCellModal, setShowTableCellModal] = useState(false);
-  const localImageInputRef = useRef<HTMLInputElement>(null);
 
   // ── Editing tools state (gated by flags.docsEditingTools) ──
   const [showFindReplace, setShowFindReplace] = useState(false);
@@ -703,6 +705,9 @@ export function DocEditor() {
 
   // ── Diagram embed ──────────────────────────────────────────────────────────
   const [showInsertDiagram, setShowInsertDiagram] = useState(false);
+  // Which tab the shared image picker opens on — the toolbar has both a generic
+  // "Insert image" button and an "Upload local image" one.
+  const [insertImageSource, setInsertImageSource] = useState<ImageSource | null>(null);
 
   // ── Rulers, zoom & single page mode ───────────────────────────────────────
   const [showRulers, setShowRulers] = useState(true);
@@ -803,12 +808,16 @@ export function DocEditor() {
 
   const contentMutation = useMutation({
     mutationFn: async ({ content }: { content: string }) => {
-      if (!dekRef.current) throw new Error('no-dek');
+      // Await resolution rather than reading dekRef: the first autosave often
+      // fires while the key is still being fetched, and reading the ref there
+      // reports "no key" for a document that is perfectly encryptable.
+      const dek = await awaitDek();
+      if (!dek) throw new Error('no-dek');
       return driveAutosaveEncryptedContent(
         docId,
         content,
         'doc.json',
-        dekRef.current,
+        dek,
         versionGuard.check(),
       );
     },
@@ -843,10 +852,15 @@ export function DocEditor() {
   });
 
   const versionMutation = useMutation({
-    mutationFn: (content: string) =>
-      dekRef.current
-        ? driveCreateEncryptedVersion(docId, content, 'doc.json', dekRef.current)
-        : driveCreateVersion(docId, content, 'doc.json'),
+    mutationFn: async (content: string) => {
+      // Same race as the autosave, with a sharper edge: reading dekRef before
+      // resolution settles would take the plaintext branch and write an
+      // unencrypted version of an encrypted document.
+      const dek = await awaitDek();
+      return dek
+        ? driveCreateEncryptedVersion(docId, content, 'doc.json', dek)
+        : driveCreateVersion(docId, content, 'doc.json');
+    },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
       setSaveStatus('saved');
@@ -1005,6 +1019,10 @@ export function DocEditor() {
       flags.docsAdvancedFormatting
         ? AdvancedImage.configure({ inline: true, allowBase64: true })
         : Image.configure({ inline: true, allowBase64: true }),
+      // Paints the real image over nodes whose src is a `neutrino-drive:` id.
+      // `allowBase64` stays on above so documents written before references
+      // (and pasted data URLs) still parse.
+      DriveImageExtension,
       Link.configure({ openOnClick: false }),
       Placeholder.configure({ placeholder: 'Start typing…' }),
       CharacterCount,
@@ -1439,40 +1457,11 @@ export function DocEditor() {
     }
   };
 
-  const handleInsertImage = () => {
-    const url = window.prompt('Enter image URL:');
-    if (url && editor) {
-      editor.chain().focus().setImage({ src: url }).run();
-    }
-  };
+  const handleInsertImage = useCallback(() => setInsertImageSource('drive'), []);
 
   // ── Advanced formatting handlers ───────────────────────────────────────────
 
-  const handleInsertLocalImage = useCallback(() => {
-    localImageInputRef.current?.click();
-  }, []);
-
-  const handleLocalImageFileChange = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file || !editor) return;
-      // Read as data URL for inline base64 storage.
-      // TODO: Replace with a backend file upload API for large images to avoid
-      //       bloating the document JSON. For now, base64 inline is used since
-      //       the editor already supports allowBase64: true on the image extension.
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const src = ev.target?.result as string;
-        if (src) {
-          editor.chain().focus().setImage({ src }).run();
-        }
-      };
-      reader.readAsDataURL(file);
-      // Reset the input so the same file can be uploaded again if needed.
-      e.target.value = '';
-    },
-    [editor],
-  );
+  const handleInsertLocalImage = useCallback(() => setInsertImageSource('local'), []);
 
   const handleInsertLink = () => {
     const url = window.prompt('Enter URL:');
@@ -1848,14 +1837,16 @@ export function DocEditor() {
     editor.commands.setContent(html, true);
   };
 
-  const handlePrint = useCallback(() => {
+  const handlePrint = useCallback(async () => {
     if (!editor) return;
-    printDoc(title, editor.getHTML(), pageSetup);
+    printDoc(title, await inlineDriveImagesInHtml(editor.getHTML()), pageSetup);
   }, [editor, title, pageSetup]);
 
-  const handleExport = (format: string) => {
+  const handleExport = async (format: string) => {
     if (!editor) return;
-    pendingExportHtmlRef.current = editor.getHTML();
+    // PDF/DOCX/HTML all build from this HTML somewhere that has no access to
+    // Drive, so referenced images are inlined on the way out.
+    pendingExportHtmlRef.current = await inlineDriveImagesInHtml(editor.getHTML());
     setSaveAsFormat(format);
     setShowSaveAs(true);
   };
@@ -2010,6 +2001,7 @@ export function DocEditor() {
           onToggleSinglePage={() => { setSinglePageMode(v => !v); setCurrentPage(1); }}
           officeMode={officeMode}
           onConvertToNative={handleConvertToNative}
+          onInsertImage={handleInsertImage}
           {...(flags.docsLayoutStructure ? {
             onInsertFootnote: handleInsertFootnote,
             onInsertCrossRef: handleInsertCrossRef,
@@ -2081,17 +2073,6 @@ export function DocEditor() {
             className={styles.hiddenInput}
             onChange={handleImport}
           />
-
-          {/* Local image upload input — only needed when advanced formatting flag is on */}
-          {flags.docsAdvancedFormatting && (
-            <input
-              ref={localImageInputRef}
-              type="file"
-              accept="image/*"
-              className={styles.hiddenInput}
-              onChange={handleLocalImageFileChange}
-            />
-          )}
 
         </div>
 
@@ -2482,6 +2463,21 @@ export function DocEditor() {
             setShowInsertDiagram(false);
           }}
           onClose={() => setShowInsertDiagram(false)}
+        />
+      )}
+
+      {insertImageSource && (
+        <InsertImageDialog
+          defaultSource={insertImageSource}
+          onInsert={({ src, driveFileId }) => {
+            // Store a reference to the Drive file; the bytes never enter the
+            // document. `src` is only the fallback for an image the picker
+            // could not store (no `driveFileId`), which keeps old behaviour
+            // rather than dropping the insert.
+            editor?.chain().focus().setImage({ src: driveFileId ? driveImageRef(driveFileId) : src }).run();
+            setInsertImageSource(null);
+          }}
+          onClose={() => setInsertImageSource(null)}
         />
       )}
     </div>

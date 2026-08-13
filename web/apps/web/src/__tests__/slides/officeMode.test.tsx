@@ -108,7 +108,7 @@ vi.mock('@neutrino/sheet-embed', () => ({
 }));
 
 vi.mock('../../app/(apps)/slides/editor/InsertSheetDialog', () => ({ InsertSheetDialog: () => null }));
-vi.mock('../../app/(apps)/slides/editor/InsertImageDialog', () => ({ InsertImageDialog: () => null }));
+vi.mock('@/components/InsertImageDialog', () => ({ InsertImageDialog: () => null }));
 vi.mock('../../app/(apps)/slides/editor/InsertDiagramDialog', () => ({ InsertDiagramDialog: () => null }));
 
 // pptxImport is dynamically imported (`await import('./pptxImport')`) by the

@@ -26,6 +26,12 @@ export interface DriveImageItem {
   thumbnailUrl?: string;
 }
 
+/** An image the user picked, before it has been turned into a stored value. */
+export type FillImageChoice =
+  | { kind: 'drive'; item: DriveImageItem }
+  | { kind: 'file'; file: File }
+  | { kind: 'url'; url: string };
+
 export interface FillPickerProps {
   background: Background;
   onChange: (bg: Background) => void;
@@ -36,6 +42,25 @@ export interface FillPickerProps {
   triggerLabel?: string;
   /** If provided, a Drive source tab appears in the image picker. Called when the Drive tab is first opened. */
   onFetchDriveImages?: () => Promise<DriveImageItem[]>;
+  /**
+   * Turns a picked image into the value stored on the background, for callers
+   * that persist images by reference rather than by value — it is where an
+   * upload happens, so it may be slow and may fail.
+   *
+   * Without it the picker stores what it has directly: a data URL for a local
+   * file, the address as typed for a URL, the file's URL for a Drive image.
+   */
+  onStoreImage?: (choice: FillImageChoice) => Promise<string>;
+  /**
+   * Resolves a stored value for display. Needed when `onStoreImage` returns
+   * something that isn't itself loadable by the browser.
+   */
+  onResolveImageValue?: (value: string) => Promise<string>;
+}
+
+/** True for a value the browser can put straight in a `url()`. */
+function isDisplayableUrl(value: string): boolean {
+  return /^(https?:|data:|blob:)/.test(value);
 }
 
 // ── Gradient model ────────────────────────────────────────────────────────────
@@ -155,8 +180,11 @@ const PRESET_GRADIENTS = [
 
 // ── Preview helper ────────────────────────────────────────────────────────────
 
-function bgPreviewStyle(bg: Background): React.CSSProperties {
-  if (bg.type === 'image') return { backgroundImage: `url(${bg.value})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+function bgPreviewStyle(bg: Background, resolvedImage?: string | null): React.CSSProperties {
+  if (bg.type === 'image') {
+    const src = resolvedImage ?? bg.value;
+    return { backgroundImage: `url(${src})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+  }
   return { background: bg.value };
 }
 
@@ -186,6 +214,8 @@ export function FillPicker({
   presetsKey,
   triggerLabel,
   onFetchDriveImages,
+  onStoreImage,
+  onResolveImageValue,
 }: FillPickerProps) {
   const resolvedPresetsKey = presetsKey ?? 'neutrino:bg:gradientPresets';
 
@@ -194,7 +224,16 @@ export function FillPicker({
     background.type === 'gradient' ? 'gradient' : background.type === 'image' ? 'image' : 'color',
   );
   const [imageSource, setImageSource] = useState<'url' | 'local' | 'drive'>('url');
-  const [imageUrl, setImageUrl] = useState(background.type === 'image' ? background.value : '');
+  const [imageUrl, setImageUrl] = useState(
+    background.type === 'image' && isDisplayableUrl(background.value) ? background.value : '',
+  );
+  // Which Drive image is highlighted. Tracked rather than derived from
+  // `background.value`, which is no longer the file's URL when the caller
+  // stores images by reference.
+  const [selectedDriveId, setSelectedDriveId] = useState<string | null>(null);
+  const [storing, setStoring] = useState(false);
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [resolvedImage, setResolvedImage] = useState<string | null>(null);
   const [driveFiles, setDriveFiles] = useState<DriveImageItem[]>([]);
   const [driveLoading, setDriveLoading] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
@@ -208,6 +247,21 @@ export function FillPicker({
   const wrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setUserPresets(loadUserPresets(resolvedPresetsKey)); }, [resolvedPresetsKey]);
+
+  // A stored image value isn't necessarily loadable — a caller that persists
+  // references hands back something only it can resolve.
+  useEffect(() => {
+    if (background.type !== 'image') { setResolvedImage(null); return; }
+    if (isDisplayableUrl(background.value) || !onResolveImageValue) {
+      setResolvedImage(null);
+      return;
+    }
+    let cancelled = false;
+    onResolveImageValue(background.value)
+      .then((url) => { if (!cancelled) setResolvedImage(url); })
+      .catch(() => { if (!cancelled) setResolvedImage(null); });
+    return () => { cancelled = true; };
+  }, [background, onResolveImageValue]);
 
   useEffect(() => {
     if (!open) { setPopoverStyle({ visibility: 'hidden' }); return; }
@@ -257,6 +311,22 @@ export function FillPicker({
     }
   }
 
+  async function applyImage(choice: FillImageChoice, directValue: string) {
+    if (!onStoreImage) {
+      onChange({ type: 'image', value: directValue, objectFit: 'cover' });
+      return;
+    }
+    setStoring(true);
+    setStoreError(null);
+    try {
+      onChange({ type: 'image', value: await onStoreImage(choice), objectFit: 'cover' });
+    } catch (e) {
+      setStoreError(e instanceof Error ? e.message : 'Could not save that image.');
+    } finally {
+      setStoring(false);
+    }
+  }
+
   function applyConfig(cfg: GradientConfig) {
     const css = buildGradient(cfg);
     lastCssRef.current = css;
@@ -274,6 +344,15 @@ export function FillPicker({
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Reset so the same file can be re-uploaded if needed
+    e.target.value = '';
+
+    if (onStoreImage) {
+      setSelectedDriveId(null);
+      void applyImage({ kind: 'file', file }, '');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
@@ -282,9 +361,8 @@ export function FillPicker({
       onChange({ type: 'image', value: dataUrl, objectFit: 'cover' });
     };
     reader.readAsDataURL(file);
-    // Reset so the same file can be re-uploaded if needed
-    e.target.value = '';
-  }, [onChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onChange, onStoreImage]);
 
   function savePreset() {
     const css = buildGradient(gradConfig);
@@ -332,13 +410,13 @@ export function FillPicker({
     <div ref={wrapRef} className={styles.bgPickerWrap}>
       <button
         className={isCompact ? styles.bgPickerTriggerCompact : styles.bgPickerTrigger}
-        style={isCompact ? bgPreviewStyle(background) : undefined}
+        style={isCompact ? bgPreviewStyle(background, resolvedImage) : undefined}
         onClick={() => setOpen((v) => !v)}
         title="Fill"
       >
         {!isCompact && (
           <>
-            <span className={styles.bgPickerSwatch} style={bgPreviewStyle(background)} />
+            <span className={styles.bgPickerSwatch} style={bgPreviewStyle(background, resolvedImage)} />
             {triggerLabel ?? 'BG'}
           </>
         )}
@@ -511,6 +589,9 @@ export function FillPicker({
 
             {tab === 'image' && (
               <>
+                {storing && <span className={styles.driveNote}>Saving image…</span>}
+                {storeError && <span className={styles.driveNote}>{storeError}</span>}
+
                 {/* ── Source switcher ──────────────────────────────────── */}
                 <div className={styles.imgSourceRow}>
                   <button
@@ -545,8 +626,10 @@ export function FillPicker({
                       value={imageUrl}
                       onChange={(e) => setImageUrl(e.target.value)}
                       onBlur={() => {
-                        if (imageUrl.trim()) onChange({ type: 'image', value: imageUrl.trim(), objectFit: 'cover' });
-                        else onChange({ type: 'color', value: '#ffffff' });
+                        const url = imageUrl.trim();
+                        if (!url) { onChange({ type: 'color', value: '#ffffff' }); return; }
+                        setSelectedDriveId(null);
+                        void applyImage({ kind: 'url', url }, url);
                       }}
                     />
                   </div>
@@ -584,9 +667,16 @@ export function FillPicker({
                     {driveFiles.map((f) => (
                       <button
                         key={f.id}
-                        className={`${styles.driveThumb} ${background.type === 'image' && background.value === f.url ? styles.driveThumbActive : ''}`}
+                        className={`${styles.driveThumb} ${
+                          selectedDriveId === f.id || (background.type === 'image' && background.value === f.url)
+                            ? styles.driveThumbActive
+                            : ''
+                        }`}
                         title={f.name}
-                        onClick={() => onChange({ type: 'image', value: f.url, objectFit: 'cover' })}
+                        onClick={() => {
+                          setSelectedDriveId(f.id);
+                          void applyImage({ kind: 'drive', item: f }, f.url);
+                        }}
                       >
                         {f.thumbnailUrl ? (
                           <img src={f.thumbnailUrl} alt={f.name} className={styles.driveThumbImg} />

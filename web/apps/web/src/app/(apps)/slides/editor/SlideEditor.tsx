@@ -88,7 +88,8 @@ import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-embed';
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
 import { InsertSheetDialog } from './InsertSheetDialog';
-import { InsertImageDialog } from './InsertImageDialog';
+import { InsertImageDialog } from '@/components/InsertImageDialog';
+import { driveImageRef } from '@/lib/driveImages';
 import { InsertDiagramDialog } from './InsertDiagramDialog';
 
 // ── Domain modules ────────────────────────────────────────────────────────────
@@ -2386,7 +2387,12 @@ export function SlideEditor() {
 
       {imageDialogOpen && (
         <InsertImageDialog
-          onInsert={(src, driveFileId) => { addImage(src, driveFileId); setImageDialogOpen(false); }}
+          onInsert={({ src, driveFileId }) => {
+            // Reference the Drive file rather than storing the image; `src` is
+            // the fallback for an image the picker could not store.
+            addImage(driveFileId ? driveImageRef(driveFileId) : src, driveFileId);
+            setImageDialogOpen(false);
+          }}
           onClose={() => setImageDialogOpen(false)}
         />
       )}

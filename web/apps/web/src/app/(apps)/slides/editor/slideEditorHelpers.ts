@@ -2,10 +2,19 @@ import type React from 'react';
 import type { SlideBackground, ElementAnimation, Theme } from './slideEditorTypes';
 import type { SlideTheme } from '@neutrino/api-slides';
 
-export function slideBackgroundStyle(bg: SlideBackground): React.CSSProperties {
+/**
+ * `resolvedImage` is the displayable src for an image background, which is not
+ * the stored value when the background references a Drive file. Callers inside
+ * React should use `useSlideBackgroundStyle`, which resolves it for them.
+ */
+export function slideBackgroundStyle(
+  bg: SlideBackground,
+  resolvedImage?: string | null,
+): React.CSSProperties {
   if (bg.type === 'image') {
     const size = bg.objectFit === 'contain' ? 'contain' : bg.objectFit === 'fill' ? '100% 100%' : 'cover';
-    return { backgroundImage: `url(${bg.value})`, backgroundSize: size, backgroundPosition: 'center', backgroundRepeat: 'no-repeat' };
+    const src = resolvedImage ?? bg.value;
+    return { backgroundImage: `url(${src})`, backgroundSize: size, backgroundPosition: 'center', backgroundRepeat: 'no-repeat' };
   }
   return { background: bg.value };
 }

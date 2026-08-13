@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import type { SlidePresentation } from './slideEditorTypes';
-import { slideBackgroundStyle } from './slideEditorHelpers';
+import { useSlideBackgroundStyle } from './useSlideBackgroundStyle';
 import { SlideRenderer } from './SlideRenderer';
 import styles from './page.module.css';
 
@@ -139,6 +139,13 @@ export default function PresenterView({ presentation, onExit }: PresenterViewPro
 
   const nextSlide = presentation.slides[idx + 1];
 
+  // Both resolved unconditionally: the next-slide panel only renders when there
+  // is one, but a hook cannot live inside that condition.
+  const backgroundStyle = useSlideBackgroundStyle(slide.background);
+  const nextBackgroundStyle = useSlideBackgroundStyle(
+    nextSlide?.background ?? { type: 'color', value: 'transparent' },
+  );
+
   return (
     <div className={styles.presenterWrapper}>
       {showMirrorPrompt && (
@@ -167,7 +174,7 @@ export default function PresenterView({ presentation, onExit }: PresenterViewPro
             slide.transition === 'wipe'        ? styles.presenterTransWipe       :
             slide.transition === 'zoom'        ? styles.presenterTransZoom       : ''
           }`}
-          style={slideBackgroundStyle(slide.background)}
+          style={backgroundStyle}
         >
           <SlideRenderer slide={slide} scale={0.75} animKey={animKey} />
         </div>
@@ -187,7 +194,7 @@ export default function PresenterView({ presentation, onExit }: PresenterViewPro
             <div className={styles.presenterSideLabel}>Next slide</div>
             <div
               className={styles.presenterNextSlide}
-              style={slideBackgroundStyle(nextSlide.background)}
+              style={nextBackgroundStyle}
             >
               <SlideRenderer slide={nextSlide} scale={0.3} />
             </div>

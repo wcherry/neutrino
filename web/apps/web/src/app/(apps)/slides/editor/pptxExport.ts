@@ -1,4 +1,5 @@
 import type { SlidePresentation, TextElement, ShapeElement } from './slideEditorTypes';
+import { parseDriveImageRef, resolveDriveImageDataUrl } from '@/lib/driveImages';
 
 async function buildPptx(presentation: SlidePresentation) {
   const pptxgen = (await import('pptxgenjs')).default;
@@ -8,7 +9,12 @@ async function buildPptx(presentation: SlidePresentation) {
   for (const slide of presentation.slides) {
     const pSlide = prs.addSlide();
     if (slide.background.type === 'image') {
-      pSlide.background = { path: slide.background.value };
+      // A .pptx is opened somewhere with no access to this Drive, so a
+      // referenced background has to travel as bytes.
+      const fileId = parseDriveImageRef(slide.background.value);
+      pSlide.background = fileId
+        ? { data: await resolveDriveImageDataUrl(fileId) }
+        : { path: slide.background.value };
     } else if (slide.background.type === 'color') {
       pSlide.background = { color: slide.background.value.replace('#', '') };
     } else {

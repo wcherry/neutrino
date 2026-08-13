@@ -33,6 +33,7 @@ import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import { driveSearchHref } from './drive/searchParams';
 import { bugReportHref } from '@/lib/bugReport';
 import { signInHref } from '@/lib/signInRedirect';
+import { clearDriveImageCache } from '@/lib/driveImages';
 
 /** Search hits carry an icon *component* so Drive can size it its own way. */
 function toTopbarResult(hit: SearchHit): TopbarSearchResult {
@@ -231,6 +232,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   async function handleSignOut() {
     await authApi.logout().catch(() => {});
+    // Decrypted image bytes and this account's Attachments folder id are held
+    // in module state, which outlives the route change.
+    clearDriveImageCache();
     router.replace('/sign-in');
   }
 
