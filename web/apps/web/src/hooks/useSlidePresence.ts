@@ -74,7 +74,16 @@ export function useSlidePresence({
     [userName, myColor]
   );
 
-  const broadcastPresentation = useCallback((presentation: unknown) => {
+  // Content sync is suppressed while nobody else is in the room. The socket
+  // carries no persistence — the server relays presentation updates and stores
+  // nothing — so an edit made alone only has to reach a peer that turns up
+  // later, and the whole presentation is sent each time anyway. Holding the
+  // latest one back and sending it on arrival is therefore lossless.
+  // Awareness keeps running: it is how we learn a peer arrived.
+  const hasPeersRef = useRef(false);
+  const pendingPresentationRef = useRef<unknown>(null);
+
+  const sendPresentation = useCallback((presentation: unknown) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const payload: PresentationUpdatePayload = {
@@ -84,6 +93,14 @@ export function useSlidePresence({
     const payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
     ws.send(encodeMessage(2, payloadBytes));
   }, []);
+
+  const broadcastPresentation = useCallback((presentation: unknown) => {
+    if (!hasPeersRef.current) {
+      pendingPresentationRef.current = presentation;
+      return;
+    }
+    sendPresentation(presentation);
+  }, [sendPresentation]);
 
   const sendAwarenessRef = useRef(sendAwareness);
   useEffect(() => { sendAwarenessRef.current = sendAwareness; }, [sendAwareness]);
@@ -193,6 +210,17 @@ export function useSlidePresence({
     sendAwarenessRef.current();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSlideIndex]);
+
+  // Track whether anyone else is here, and hand over the presentation as it
+  // stands the moment someone joins.
+  useEffect(() => {
+    const hadPeers = hasPeersRef.current;
+    hasPeersRef.current = remoteUsers.length > 0;
+    if (!hadPeers && hasPeersRef.current && pendingPresentationRef.current !== null) {
+      sendPresentation(pendingPresentationRef.current);
+      pendingPresentationRef.current = null;
+    }
+  }, [remoteUsers, sendPresentation]);
 
   // Stale cleanup: remove peers not heard from in 30s
   useEffect(() => {

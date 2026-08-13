@@ -66,6 +66,12 @@ export function useSheetPresence({
   const selectedCellIdRef = useRef<string | null>(selectedCellId ?? null);
   useEffect(() => { selectedCellIdRef.current = selectedCellId ?? null; }, [selectedCellId]);
 
+  // Cell sync is suppressed while nobody else is in the room; changes made
+  // alone are held here, keyed by sheet index then cell id. Awareness keeps
+  // running — it is how we learn a peer arrived.
+  const hasPeersRef = useRef(false);
+  const pendingCellsRef = useRef<Map<number, Map<string, CellSyncItem>>>(new Map());
+
   const sendAwareness = useCallback(
     (disconnecting = false) => {
       const ws = wsRef.current;
@@ -119,7 +125,6 @@ export function useSheetPresence({
         try {
           const parsed = JSON.parse(new TextDecoder().decode(payload)) as CellUpdatePayload;
           if (parsed.clientId === clientIdRef.current) return;
-          console.log('[sheets-sync] recv', { from: parsed.clientId.slice(0, 6), sheetIndex: parsed.sheetIndex, cells: parsed.cells.length, ids: parsed.cells.map(c => c.id) });
           onRemoteCellsRef?.current?.(parsed.sheetIndex, parsed.cells);
         } catch {
           // ignore malformed cell update messages
@@ -219,16 +224,41 @@ export function useSheetPresence({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
-  const broadcastCells = useCallback((sheetIndex: number, cells: CellSyncItem[]) => {
+  const sendCells = useCallback((sheetIndex: number, cells: CellSyncItem[]) => {
     const ws = wsRef.current;
-    const wsState = ws ? ['CONNECTING','OPEN','CLOSING','CLOSED'][ws.readyState] : 'NO_WS';
-    console.log('[sheets-sync] send attempt', { sheetIndex, cells: cells.length, ids: cells.map(c => c.id), wsState });
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const cellPayload: CellUpdatePayload = { clientId: clientIdRef.current, sheetIndex, cells };
     const payloadBytes = new TextEncoder().encode(JSON.stringify(cellPayload));
     ws.send(encodeMessage(2, payloadBytes));
-    console.log('[sheets-sync] sent', { sheetIndex, cells: cells.length, ids: cells.map(c => c.id) });
   }, []);
+
+  const broadcastCells = useCallback((sheetIndex: number, cells: CellSyncItem[]) => {
+    // Alone in the room: keep the changes, latest value per cell, and send them
+    // when a peer turns up. The socket stores nothing — the file is persisted by
+    // the editor's own autosave — so nothing is lost by waiting.
+    if (!hasPeersRef.current) {
+      let sheetPending = pendingCellsRef.current.get(sheetIndex);
+      if (!sheetPending) {
+        sheetPending = new Map();
+        pendingCellsRef.current.set(sheetIndex, sheetPending);
+      }
+      for (const cell of cells) sheetPending.set(cell.id, cell);
+      return;
+    }
+    sendCells(sheetIndex, cells);
+  }, [sendCells]);
+
+  // Track whether anyone else is here, and hand over everything edited while
+  // alone the moment someone joins.
+  useEffect(() => {
+    const hadPeers = hasPeersRef.current;
+    hasPeersRef.current = remoteUsers.length > 0;
+    if (hadPeers || !hasPeersRef.current) return;
+    for (const [sheetIndex, cells] of pendingCellsRef.current) {
+      if (cells.size > 0) sendCells(sheetIndex, [...cells.values()]);
+    }
+    pendingCellsRef.current.clear();
+  }, [remoteUsers, sendCells]);
 
   return { remoteUsers, broadcastCells };
 }
