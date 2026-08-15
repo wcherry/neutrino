@@ -308,6 +308,43 @@ async fn main() -> std::io::Result<()> {
         }),
     );
 
+    // Reap upload staging files that never committed. `TempUpload` cleans up
+    // every abort the process survives; this catches what it can't — a crash
+    // or a kill mid-upload — so orphans can't accumulate indefinitely. Runs
+    // once at boot and then on an interval.
+    {
+        let sweep_store = file_store.clone();
+        let max_age = std::time::Duration::from_secs(config.temp_max_age_secs);
+        let interval_secs = config.temp_sweep_interval_secs;
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            loop {
+                // First tick is immediate, so boot gets a sweep.
+                interval.tick().await;
+                let store = sweep_store.clone();
+                // Blocking directory walk over potentially thousands of files
+                // — keep it off the async worker threads.
+                let report = match tokio::task::spawn_blocking(move || {
+                    store.sweep_temp_files(max_age)
+                })
+                .await
+                {
+                    Ok(report) => report,
+                    Err(e) => {
+                        error!("Temp sweep task failed: {:?}", e);
+                        continue;
+                    }
+                };
+                if report.removed > 0 || report.failed > 0 {
+                    info!(
+                        "Temp sweep: removed {} staging files ({} bytes), {} in flight, {} failed",
+                        report.removed, report.bytes_freed, report.skipped, report.failed
+                    );
+                }
+            }
+        });
+    }
+
     let drive_fonts_repo = Arc::new(drive::fonts::repository::FontsRepository::new(pool.clone()));
     let drive_fonts_service = Arc::new(drive::fonts::service::FontsService::new(
         drive_fonts_repo,

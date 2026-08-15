@@ -297,7 +297,7 @@ const features = [
     icon: <IconImport />,
     title: 'Bring your data with you',
     description:
-      'Import a Google Takeout archive straight from the browser — Keep becomes Notes, Drive documents and spreadsheets become Docs and Sheets, folder tree intact.',
+      'Import a Google Takeout archive straight from the browser — Keep becomes Notes, Drive documents and spreadsheets become Docs and Sheets, Google Photos becomes Photos, folder tree intact.',
   },
   {
     icon: <IconZap />,
@@ -380,7 +380,7 @@ const roadmapShipped = [
   { label: 'Diagrams & Drawings', desc: 'Flowchart, UML, BPMN, ERD and cloud shape libraries, plus a freehand canvas' },
   { label: 'End-to-end encryption', desc: 'Client-side keys across Docs, Sheets, Slides and Notes, with key rotation' },
   { label: 'Search & offline', desc: 'Local encrypted index across every app, offline editing and a cross-device snapshot' },
-  { label: 'Google Takeout import', desc: 'Keep to Notes, Drive documents and spreadsheets to Docs and Sheets, entirely in the browser' },
+  { label: 'Google Takeout import', desc: 'Keep, Drive documents and spreadsheets, and Google Photos — entirely in the browser' },
   { label: 'macOS desktop client', desc: 'Menu-bar app with a File Provider extension and a background sync agent' },
   { label: 'iOS — Notes & Docs', desc: 'Native SwiftUI apps with offline editing, version history and Face ID lock' },
 ];

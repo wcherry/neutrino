@@ -59,3 +59,9 @@ export {
   UNTITLED_SHEET,
 } from './importSheets';
 export type { SheetsImportOptions } from './importSheets';
+
+export { captureDateOf, findTakeoutPhotos, readPhotoInfo } from './photos';
+export type { MediaKind, PhotoInfo, PhotosSource, TakeoutAlbum, TakeoutPhoto } from './photos';
+
+export { runPhotosImport, DEFAULT_PHOTOS_IMPORT_OPTIONS } from './importPhotos';
+export type { PhotosImportOptions } from './importPhotos';

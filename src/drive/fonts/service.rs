@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::model::{CustomFontRecord, NewCustomFontRecord};
 use super::repository::FontsRepository;
-use crate::drive::storage::store::LocalFileStore;
+use crate::drive::storage::store::{LocalFileStore, TempUpload};
 use crate::shared::ApiError;
 
 /// Maximum allowed custom font upload size (50 MB), enforced by the caller
@@ -48,10 +48,11 @@ impl FontsService {
         self.store.ensure_user_dir("fonts")
     }
 
-    /// Absolute path for a temp file used while streaming an in-progress
-    /// upload, before it is validated/moved into permanent storage.
-    pub fn temp_path(&self, temp_id: &str) -> PathBuf {
-        self.store.temp_path("fonts", temp_id)
+    /// Guarded staging file for an in-progress upload, before it is
+    /// validated/moved into permanent storage. Dropping the returned guard
+    /// without committing removes the partial font.
+    pub fn temp_upload(&self, temp_id: &str) -> TempUpload {
+        self.store.temp_upload("fonts", temp_id)
     }
 
     /// Validate a candidate upload's filename + declared MIME type against

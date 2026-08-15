@@ -19,6 +19,7 @@ import {
   type UnlockMethodResponse,
 } from '@neutrino/auth';
 import { isPasskeySupported, isUnlocked } from '@neutrino/e2e-crypto';
+import { defaultPasskeyLabel } from '@/lib/passkeyLabel';
 import styles from './UnlockMethodsPanel.module.css';
 
 interface UnlockMethodsPanelProps {
@@ -233,15 +234,4 @@ export function UnlockMethodsPanel({ userId, userEmail }: UnlockMethodsPanelProp
       )}
     </div>
   );
-}
-
-/** A label the user will recognise in a list months later. */
-function defaultPasskeyLabel(): string {
-  if (typeof navigator === 'undefined') return 'Passkey';
-  const ua = navigator.userAgent;
-  if (/iPhone|iPad/.test(ua)) return 'iOS passkey';
-  if (/Macintosh/.test(ua)) return 'Mac passkey';
-  if (/Windows/.test(ua)) return 'Windows passkey';
-  if (/Android/.test(ua)) return 'Android passkey';
-  return 'Passkey';
 }

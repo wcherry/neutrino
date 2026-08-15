@@ -152,6 +152,21 @@ async function applyBackgroundFill(
   });
 }
 
+/**
+ * What to put in the dialog when a photo will not open.
+ *
+ * Three unrelated things fail into the same catch — the download, the
+ * decryption, and the browser's own decode of the bytes — and which one it was
+ * is the difference between "try it again" and "this file will never open
+ * here". So the underlying message is kept rather than flattened to the bare
+ * "Failed to load image" this used to show.
+ */
+function loadFailureMessage(err: unknown): string {
+  const base = 'The file could not be downloaded, decrypted, or decoded by this browser.';
+  const detail = err instanceof Error ? err.message.trim() : '';
+  return detail ? `${base} (${detail})` : base;
+}
+
 export function PhotoEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -278,9 +293,10 @@ export function PhotoEditor() {
           photoFilter: 'none',
           markupStrokes: [],
         };
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          setLoadError('Failed to load image');
+          console.error('[photos:editor] failed to load image', { fileId, err });
+          setLoadError(loadFailureMessage(err));
           setLoading(false);
           // DO NOT autosave — leave state empty on error
         }
@@ -843,13 +859,21 @@ export function PhotoEditor() {
     );
   }
 
+  // A photo that will not open leaves nothing to edit, so the failure is a
+  // dialog over an empty editor rather than a line of text on it: dismissing it
+  // — by its button, by Escape, or by the backdrop — goes back to where the
+  // photo was opened from, since staying here would be staring at nothing.
   if (loadError) {
     return (
       <div className={styles.errorState}>
-        <p>{loadError}</p>
-        <button onClick={() => router.back()} className={styles.backLink}>
-          Go back
-        </button>
+        <AlertDialog
+          open
+          onClose={() => router.back()}
+          variant="error"
+          title={fileName ? `Couldn’t open ${fileName}` : 'Couldn’t open this photo'}
+          description={loadError}
+          cancelLabel="Go back"
+        />
       </div>
     );
   }

@@ -97,7 +97,13 @@ impl StorageService {
         };
 
         if let Some(limit) = quota.quota_bytes {
-            if quota.used_bytes + size_bytes > limit {
+            // Derived, not read off the row: the stored counter only ever
+            // counted uploaded file bytes, so it under-reported by every
+            // version snapshot and never shrank on delete.
+            let used_bytes = self
+                .repo
+                .refresh_used_bytes(&user.user_id, quota.used_bytes)?;
+            if used_bytes + size_bytes > limit {
                 return Err(ApiError::new(
                     413,
                     "QUOTA_EXCEEDED",
@@ -148,10 +154,9 @@ impl StorageService {
             return Err(e);
         }
 
-        if let Err(e) = self.repo.update_quota_after_upload(
+        if let Err(e) = self.repo.record_daily_upload(
             &user.user_id,
             size_bytes,
-            quota.used_bytes,
             quota.daily_upload_bytes,
             now,
             reset_daily,
@@ -517,10 +522,16 @@ impl StorageService {
         Ok((path, file.mime_type, file.name))
     }
 
+    /// Current occupancy and limits for a user.
+    ///
+    /// `used_bytes` is recomputed from the file and version rows on every read
+    /// rather than trusted from the quota row, which self-heals stores whose
+    /// counter drifted while it was maintained by hand (#101).
     pub fn get_quota(&self, user_id: &str) -> Result<QuotaResponse, ApiError> {
         let quota = self.repo.get_or_create_quota(user_id)?;
+        let used_bytes = self.repo.refresh_used_bytes(user_id, quota.used_bytes)?;
         Ok(QuotaResponse {
-            used_bytes: quota.used_bytes,
+            used_bytes,
             daily_upload_bytes: quota.daily_upload_bytes,
             quota_bytes: quota.quota_bytes,
             daily_cap_bytes: quota.daily_cap_bytes,
@@ -596,17 +607,16 @@ impl StorageService {
             ApiError::internal("Failed to prepare storage directory")
         })?;
 
-        let temp_path = self.store.temp_path(&file.user_id, &Uuid::new_v4().to_string());
-        std::fs::write(&temp_path, content.as_bytes()).map_err(|e| {
+        let temp = self
+            .store
+            .temp_upload(&file.user_id, &Uuid::new_v4().to_string());
+        std::fs::write(temp.path(), content.as_bytes()).map_err(|e| {
             tracing::error!("write_text_content write error: {:?}", e);
             ApiError::internal("Failed to write file content")
         })?;
 
-        let saved = self
-            .autosave(file_id, &temp_path, content.len() as i64, check)
-            .inspect_err(|_| {
-                let _ = std::fs::remove_file(&temp_path);
-            })?;
+        let saved = self.autosave(file_id, temp.path(), content.len() as i64, check)?;
+        temp.commit();
         Ok(saved.content_version)
     }
 
@@ -773,6 +783,7 @@ mod tests {
     use crate::drive::workspace::{repository::WorkspaceRepository, service::WorkspaceService};
     use crate::drive::storage::repository::DbPool;
     use crate::shared::TokenService;
+    use diesel::prelude::*;
     use diesel::r2d2::{ConnectionManager, Pool};
     use diesel::SqliteConnection;
     use diesel_migrations::MigrationHarness;
@@ -1152,6 +1163,199 @@ mod tests {
             .expect_err("unknown file");
 
         assert_eq!(err.status, 404);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    // ── Quota accounting (issue #101) ────────────────────────────────────────
+    //
+    // The reported usage has to match what the store actually holds. It didn't:
+    // `used_bytes` was a counter incremented by one call site (`finalize_upload`)
+    // with the uploaded size, while `finalize_upload` also writes a full v1
+    // snapshot, so a store of freshly uploaded files reported half its real
+    // footprint. These tests measure the scratch directory on disk and compare.
+
+    /// Total bytes of every regular file under `dir`, versions included.
+    fn bytes_on_disk(dir: &Path) -> i64 {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return 0;
+        };
+        entries.flatten().fold(0, |total, entry| {
+            let path = entry.path();
+            if path.is_dir() {
+                total + bytes_on_disk(&path)
+            } else {
+                total + entry.metadata().map(|m| m.len() as i64).unwrap_or(0)
+            }
+        })
+    }
+
+    /// Stage `content` as an upload and commit it through `finalize_upload`.
+    async fn upload(
+        service: &StorageService,
+        user: &AuthenticatedUser,
+        name: &str,
+        content: &[u8],
+    ) -> FileMetadataResponse {
+        service.store().ensure_user_dir(&user.user_id).expect("mkdir");
+        let temp = service
+            .store()
+            .temp_upload(&user.user_id, &uuid::Uuid::new_v4().to_string());
+        std::fs::write(temp.path(), content).expect("stage upload");
+        let saved = service
+            .finalize_upload(
+                user,
+                temp.path(),
+                name,
+                "image/jpeg",
+                content.len() as i64,
+                None,
+                None,
+            )
+            .await
+            .expect("finalize upload");
+        temp.commit();
+        saved
+    }
+
+    #[tokio::test]
+    async fn reported_usage_counts_the_version_snapshot_written_by_every_upload() {
+        let (service, _repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = convert_test_user("user-1");
+        let content = vec![7u8; 4096];
+
+        upload(&service, &user, "photo.jpg", &content).await;
+
+        let quota = service.get_quota(&user.user_id).expect("quota");
+        assert_eq!(
+            quota.used_bytes,
+            bytes_on_disk(&base),
+            "reported usage must match the bytes the upload actually wrote"
+        );
+        assert_eq!(
+            quota.used_bytes,
+            content.len() as i64 * 2,
+            "an upload stores the content plus its v1 snapshot"
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// The takeout-import shape from the issue: many uploads in one run, where
+    /// the old counter drifted further from the truth with every file.
+    #[tokio::test]
+    async fn reported_usage_tracks_disk_across_many_uploads() {
+        let (service, _repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = convert_test_user("user-1");
+
+        for i in 0..10 {
+            upload(&service, &user, &format!("photo-{i}.jpg"), &vec![3u8; 1000 + i]).await;
+        }
+
+        let quota = service.get_quota(&user.user_id).expect("quota");
+        assert_eq!(quota.used_bytes, bytes_on_disk(&base));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// Usage is derived, so freeing bytes lowers it. The old counter only ever
+    /// went up: deleting a version left its bytes charged to the user forever.
+    #[tokio::test]
+    async fn deleting_a_version_releases_its_bytes() {
+        let (service, _repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = convert_test_user("user-1");
+        let content = vec![7u8; 4096];
+
+        let file = upload(&service, &user, "photo.jpg", &content).await;
+        let before = service.get_quota(&user.user_id).expect("quota").used_bytes;
+
+        let versions = service
+            .list_versions(
+                &user.user_id,
+                &file.id,
+                &ListQueryParams {
+                    limit: None,
+                    offset: None,
+                    order_by: None,
+                    direction: None,
+                },
+            )
+            .expect("list versions");
+        let version_id = versions.versions.first().expect("v1 exists").id.clone();
+        service
+            .delete_version(&user.user_id, &file.id, &version_id)
+            .expect("delete version");
+
+        let after = service.get_quota(&user.user_id).expect("quota").used_bytes;
+        assert_eq!(after, before - content.len() as i64);
+        assert_eq!(after, bytes_on_disk(&base));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A store whose counter drifted while it was hand-maintained heals on the
+    /// next read rather than needing a migration or a manual reset.
+    #[tokio::test]
+    async fn a_stale_stored_counter_is_corrected_on_read() {
+        let (service, repo, _perms, pool, base) = test_service_with_permissions();
+        let user = convert_test_user("user-1");
+        let content = vec![7u8; 4096];
+        upload(&service, &user, "photo.jpg", &content).await;
+
+        // Rewind the column to the pre-fix value: content bytes only, with the
+        // snapshot unaccounted for. This is the state every existing store is
+        // in on upgrade.
+        let stale = content.len() as i64;
+        diesel::update(crate::schema::user_quotas::table)
+            .set(crate::schema::user_quotas::used_bytes.eq(stale))
+            .execute(&mut pool.get().expect("conn"))
+            .expect("rewind the counter");
+
+        let quota = service.get_quota(&user.user_id).expect("quota");
+        assert_eq!(quota.used_bytes, bytes_on_disk(&base));
+        assert_ne!(quota.used_bytes, stale);
+
+        // ...and the correction is written back, not just returned.
+        assert_eq!(
+            repo.get_or_create_quota(&user.user_id)
+                .expect("quota row")
+                .used_bytes,
+            quota.used_bytes
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// The limit has to be checked against real occupancy, or a user whose
+    /// snapshots already fill the store keeps uploading past their quota.
+    #[tokio::test]
+    async fn the_quota_limit_is_enforced_against_real_occupancy() {
+        let (service, _repo, _perms, pool, base) = test_service_with_permissions();
+        let user = convert_test_user("user-1");
+        let content = vec![7u8; 4096];
+        upload(&service, &user, "photo.jpg", &content).await;
+
+        // Room for one more copy of the content, but not for the copy *and*
+        // the snapshot the first upload already wrote.
+        let limit = content.len() as i64 * 2 + 1;
+        diesel::update(crate::schema::user_quotas::table)
+            .set(crate::schema::user_quotas::quota_bytes.eq(Some(limit)))
+            .execute(&mut pool.get().expect("conn"))
+            .expect("set limit");
+
+        service.store().ensure_user_dir(&user.user_id).expect("mkdir");
+        let temp = service.store().temp_upload(&user.user_id, "second");
+        std::fs::write(temp.path(), &content).expect("stage");
+        let err = service
+            .finalize_upload(
+                &user,
+                temp.path(),
+                "photo-2.jpg",
+                "image/jpeg",
+                content.len() as i64,
+                None,
+                None,
+            )
+            .await
+            .expect_err("the snapshot bytes must count against the limit");
+
+        assert_eq!(err.status, 413);
+        assert_eq!(err.code, "QUOTA_EXCEEDED");
         let _ = std::fs::remove_dir_all(base);
     }
 }

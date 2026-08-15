@@ -21,6 +21,13 @@ pub struct Config {
     // Drive storage
     pub storage_path: String,
     pub max_upload_bytes: u64,
+    /// How often to sweep upload staging files that never committed.
+    pub temp_sweep_interval_secs: u64,
+    /// How long a staging file must have gone untouched before a sweep will
+    /// remove it. Generous by design — the in-process guard already handles
+    /// aborts, so this only has to catch what a crash leaves behind, and the
+    /// cost of being wrong is deleting a live upload.
+    pub temp_max_age_secs: u64,
     pub worker_secret: String,
     pub jobs_per_worker: usize,
 
@@ -77,6 +84,17 @@ impl Config {
             .parse::<u64>()
             .map_err(|e| format!("Invalid MAX_UPLOAD_BYTES: {}", e))?;
 
+        let temp_sweep_interval_secs = env::var("TEMP_SWEEP_INTERVAL_SECS")
+            .unwrap_or_else(|_| "3600".to_string())
+            .parse::<u64>()
+            .map_err(|e| format!("Invalid TEMP_SWEEP_INTERVAL_SECS: {}", e))?
+            .max(60);
+
+        let temp_max_age_secs = env::var("TEMP_MAX_AGE_SECS")
+            .unwrap_or_else(|_| "21600".to_string())
+            .parse::<u64>()
+            .map_err(|e| format!("Invalid TEMP_MAX_AGE_SECS: {}", e))?;
+
         let worker_secret = get_env_or_secret("WORKER_SECRET")
             .map_err(|_| "WORKER_SECRET environment variable is required")?;
         if worker_secret.is_empty() {
@@ -117,6 +135,8 @@ impl Config {
             database_url,
             storage_path,
             max_upload_bytes,
+            temp_sweep_interval_secs,
+            temp_max_age_secs,
             worker_secret,
             jobs_per_worker,
             drive_base_url,

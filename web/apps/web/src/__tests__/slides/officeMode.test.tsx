@@ -43,6 +43,10 @@ vi.mock('@neutrino/ui', () => ({
   ColorPickerPopover: () => null,
   ZoomSlider: () => null,
   ShareButton: () => null,
+  HamburgerMenu: () => null,
+  Modal: () => null,
+  ModalHeader: () => null,
+  ModalBody: () => null,
   useToast: () => ({ warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }));
 

@@ -435,15 +435,6 @@
   background: #0d0d0d;
 }
 
-.backLink {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--color-primary, #3b82f6);
-  font-size: 14px;
-  text-decoration: underline;
-}
-
 
 /* ── Before/after comparison slider ─────────────────────────────────────── */
 

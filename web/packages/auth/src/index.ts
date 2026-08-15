@@ -1,5 +1,6 @@
 export { authApi } from './client';
 export { AuthProvider, useAuth, useUser } from './context';
+export { emitAuthChanged, subscribeToAuthChanged } from './authEvents';
 export {
   getVaultState,
   provisionVault,

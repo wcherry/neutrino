@@ -173,7 +173,7 @@ describe('usePersistence — encryption warning toast', () => {
 
     const message = mockWarning.mock.calls[0][0] as React.ReactNode;
     const { getByRole } = render(React.createElement(React.Fragment, null, message));
-    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=advanced');
+    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=account');
   });
 
   it('updateTitle() renames without warning, since the title is not encrypted', async () => {

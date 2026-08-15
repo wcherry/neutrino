@@ -27,6 +27,7 @@ import {
   type VaultState,
 } from '@neutrino/auth';
 import { isPasskeySupported, type VaultBundle } from '@neutrino/e2e-crypto';
+import { subscribeToGateRequests } from './gateEvents';
 import styles from './E2EEUnlockGate.module.css';
 
 interface E2EEUnlockGateProps {
@@ -54,25 +55,26 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
 
   const hasPasskey = vault?.unlocks.some((u) => u.method === 'passkey') ?? false;
 
-  useEffect(() => {
-    let cancelled = false;
-    async function check() {
-      try {
-        const { state, vault: bundle } = await getVaultState(userId);
-        if (cancelled) return;
-        setVault(bundle);
-        setPhase(phaseFor(state));
-      } catch {
-        // A vault lookup that fails (offline, server down) must not trap the
-        // user behind a modal — leave the app usable and try again next load.
-        if (!cancelled) setPhase('dismissed');
-      }
+  const check = useCallback(async () => {
+    setPhase('checking');
+    try {
+      const { state, vault: bundle } = await getVaultState(userId);
+      setVault(bundle);
+      setPhase(phaseFor(state));
+    } catch {
+      // A vault lookup that fails (offline, server down) must not trap the
+      // user behind a modal — leave the app usable and try again next load.
+      setPhase('dismissed');
     }
-    check();
-    return () => {
-      cancelled = true;
-    };
   }, [userId]);
+
+  useEffect(() => {
+    void check();
+  }, [check]);
+
+  // Dismissing this is not final: Settings (and anything else that finds the
+  // session locked) can ask for it back rather than telling the user to reload.
+  useEffect(() => subscribeToGateRequests(() => void check()), [check]);
 
   const runGuarded = useCallback(async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -240,6 +242,7 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
         <div className={styles.body}>
           <p className={styles.intro}>
             Your files are encrypted. Unlock to read and edit them on this device.
+            {!useRecovery && ' Use your account password, unless you set a separate encryption password in Settings.'}
           </p>
           {error && <Alert variant="error" message={error} />}
 
@@ -260,7 +263,7 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
             <div className={styles.form}>
               <TextInput
                 type={useRecovery ? 'text' : 'password'}
-                label={useRecovery ? 'Recovery code' : 'Encryption password'}
+                label={useRecovery ? 'Recovery code' : 'Password'}
                 autoComplete={useRecovery ? 'off' : 'current-password'}
                 value={unlockSecret}
                 onChange={(e) => setUnlockSecret(e.target.value)}

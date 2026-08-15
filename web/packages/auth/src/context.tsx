@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authApi } from './client';
+import { subscribeToAuthChanged } from './authEvents';
 import { clearSession } from '@neutrino/e2e-crypto';
 import type { UserProfile } from './types';
 
@@ -59,6 +60,11 @@ export function AuthProvider({ children, onUnauthenticated }: AuthProviderProps)
   useEffect(() => {
     loadUser();
   }, [loadUser]);
+
+  // A sign-in or sign-out that happens under a mounted provider — which is
+  // every one of them, since `/sign-in` and `/register` hand off with
+  // `router.push` — has to reach the context. See `authEvents`.
+  useEffect(() => subscribeToAuthChanged(() => void loadUser()), [loadUser]);
 
   const refresh = useCallback(async () => {
     await loadUser();

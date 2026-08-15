@@ -1,7 +1,7 @@
 /**
  * The import page (`app/(apps)/import/page.tsx`).
  *
- * The conversions and the three runners have their own tests; what this covers
+ * The conversions and the four runners have their own tests; what this covers
  * is the page's job of putting several products in one run — which of them
  * take part, that one progress bar counts them all, that stopping one stops
  * the rest, and that the result screen adds the summaries up.
@@ -11,6 +11,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ImportRunProvider } from '@/components/ImportRun';
 
 const { pushMock, takeout } = vi.hoisted(() => ({
   pushMock: vi.fn(),
@@ -19,14 +20,18 @@ const { pushMock, takeout } = vi.hoisted(() => ({
     findKeepNotes: vi.fn(),
     findDriveDocs: vi.fn(),
     findDriveSheets: vi.fn(),
+    findTakeoutPhotos: vi.fn(),
     runKeepImport: vi.fn(),
     runDocsImport: vi.fn(),
     runSheetsImport: vi.fn(),
+    runPhotosImport: vi.fn(),
   },
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, back: vi.fn(), replace: vi.fn() }),
+  // The provider hides its floating indicator on /import itself.
+  usePathname: () => '/import',
 }));
 
 vi.mock('@neutrino/auth', () => ({ useUser: () => ({ id: 'user-1' }) }));
@@ -46,6 +51,13 @@ vi.mock('@/lib/takeout', () => ({
     skipExisting: true,
     folderName: 'Google Sheets',
     importFormulas: true,
+  },
+  DEFAULT_PHOTOS_IMPORT_OPTIONS: {
+    importAlbums: true,
+    includeArchived: true,
+    includeTrashed: false,
+    skipExisting: true,
+    folderName: 'Google Photos',
   },
 }));
 
@@ -67,7 +79,11 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <ImportPage />
+      {/* The run lives above the route in the real app, so the page is tested
+          the way it is mounted — without the provider it has nothing to run in. */}
+      <ImportRunProvider>
+        <ImportPage />
+      </ImportRunProvider>
     </QueryClientProvider>,
   );
 }
@@ -95,6 +111,15 @@ const docsSource = {
   docs: [{ entry: { path: 'a.docx' } }, { entry: { path: 'b.docx' } }],
   unsupported: [],
 };
+const photosSource = {
+  directory: 'Google Photos',
+  photos: [
+    { entry: { path: 'a.jpg' }, kind: 'image' },
+    { entry: { path: 'b.jpg' }, kind: 'image' },
+  ],
+  albums: [{ folder: 'Rome', title: 'Rome', count: 1 }],
+  duplicates: 0,
+};
 const sheetsSource = {
   directory: 'Drive',
   sheets: [{ entry: { path: 'a.xlsx' } }, { entry: { path: 'b.xlsx' } }],
@@ -107,11 +132,13 @@ beforeEach(() => {
   takeout.findKeepNotes.mockResolvedValue(keepSource);
   takeout.findDriveDocs.mockReturnValue(docsSource);
   // Off by default so each test opts into the products it is about; the
-  // spreadsheet cases below turn it on.
+  // spreadsheet and photo cases below turn them on.
   takeout.findDriveSheets.mockReturnValue(null);
+  takeout.findTakeoutPhotos.mockResolvedValue(null);
   takeout.runKeepImport.mockResolvedValue(summary(2));
   takeout.runDocsImport.mockResolvedValue(summary(2));
   takeout.runSheetsImport.mockResolvedValue(summary(2));
+  takeout.runPhotosImport.mockResolvedValue(summary(2));
 });
 
 describe('ImportPage', () => {
@@ -278,6 +305,64 @@ describe('ImportPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Import 4 items' }));
     });
     expect(takeout.runSheetsImport).not.toHaveBeenCalled();
+  });
+
+  it('runs the photos last of all and offers Photos as a destination', async () => {
+    takeout.findTakeoutPhotos.mockResolvedValue(photosSource);
+    const { container } = renderPage();
+    await dropArchive(container);
+
+    expect(screen.getByText('2 photos in Google Photos')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 6 items' }));
+    });
+
+    expect(takeout.runPhotosImport).toHaveBeenCalledTimes(1);
+    expect(takeout.runDocsImport.mock.invocationCallOrder[0]).toBeLessThan(
+      takeout.runPhotosImport.mock.invocationCallOrder[0],
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Go to Photos' })).toBeTruthy());
+  });
+
+  it('counts the earlier products in the photos run’s progress', async () => {
+    takeout.findTakeoutPhotos.mockResolvedValue(photosSource);
+    let release: () => void = () => {};
+    takeout.runPhotosImport.mockImplementation(
+      ({ onProgress }: { onProgress: (p: unknown) => void }) =>
+        new Promise((resolve) => {
+          onProgress({ done: 1, total: 2, current: 'a.jpg' });
+          release = () => resolve(summary(2));
+        }),
+    );
+
+    const { container } = renderPage();
+    await dropArchive(container);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 6 items' }));
+    });
+
+    // Two notes and two documents are already done, so the first photo is the
+    // fifth of six.
+    expect(screen.getByText('Importing 5 of 6')).toBeTruthy();
+    await act(async () => {
+      release();
+    });
+  });
+
+  it('imports a Photos-only archive on its own', async () => {
+    takeout.findKeepNotes.mockResolvedValue(null);
+    takeout.findDriveDocs.mockReturnValue(null);
+    takeout.findTakeoutPhotos.mockResolvedValue(photosSource);
+
+    const { container } = renderPage();
+    await dropArchive(container);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 2 items' }));
+    });
+
+    expect(takeout.runPhotosImport).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Go to Photos' })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'Go to Notes' })).toBeNull();
   });
 
   it('shows only the documents section for a Drive-only archive', async () => {
