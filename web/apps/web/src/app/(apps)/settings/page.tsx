@@ -3,12 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, QrCode, RefreshCw, ShieldCheck, ShieldX, Upload } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, QrCode, RefreshCw, ShieldAlert, ShieldCheck, ShieldX, Upload } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
 import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest } from '@/lib/api';
-import { initSodium, generateKeyPair, loadKeyPair, hasKeyPair, encryptKeysWithPin, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
-import { replaceIdentity } from '@neutrino/auth';
+import { initSodium, generateKeyPair, loadKeyPair, hasKeyPair, subscribeToLockState, encryptKeysWithPin, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
+import { getVaultState, replaceIdentity } from '@neutrino/auth';
+import { requestEncryptionGate } from '@/components/E2EEUnlockGate';
 import { UnlockMethodsPanel } from './UnlockMethodsPanel';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
@@ -237,7 +238,7 @@ const qc = useQueryClient();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // ── Encryption key state ───────────────────────────────────────────────────
-  const [keyStatus, setKeyStatus] = useState<'loading' | 'set' | 'unset'>('loading');
+  const [keyStatus, setKeyStatus] = useState<'loading' | 'unlocked' | 'locked' | 'none'>('loading');
   const [showExportKey, setShowExportKey] = useState(false);
   const [exportedKeyJson, setExportedKeyJson] = useState('');
   const [keyCopied, setKeyCopied] = useState(false);
@@ -265,9 +266,36 @@ const qc = useQueryClient();
   // ── Drive state ─────────────────────────────────────────────────────────
   const [officeFileMode, setOfficeFileModeState] = useState<OfficeFileMode>('native-roundtrip');
 
+  /**
+   * Whether a key *exists* is a server question — `hasKeyPair` only answers
+   * whether this tab has it in memory, which reads as "no encryption key found"
+   * to someone who simply reloaded the page. Ask the vault, and re-ask on every
+   * lock/unlock transition so the panel follows an unlock done in the gate
+   * instead of going stale the moment it mounted.
+   */
   useEffect(() => {
     if (!user) return;
-    setKeyStatus(hasKeyPair(user.id) ? 'set' : 'unset');
+    const userId = user.id;
+    let cancelled = false;
+
+    async function refresh() {
+      try {
+        const { state } = await getVaultState(userId);
+        if (cancelled) return;
+        setKeyStatus(state === 'unlocked' ? 'unlocked' : state === 'locked' ? 'locked' : 'none');
+      } catch {
+        // Offline or the server is down — the local session is still the truth
+        // about what this tab can decrypt right now.
+        if (!cancelled) setKeyStatus(hasKeyPair(userId) ? 'unlocked' : 'loading');
+      }
+    }
+
+    void refresh();
+    const unsubscribe = subscribeToLockState(() => void refresh());
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [user]);
 
   useEffect(() => {
@@ -340,7 +368,7 @@ const qc = useQueryClient();
       // so it survives a reload and reaches the user's other devices. Storing
       // it in memory alone (as this used to) lost it on the next refresh.
       await replaceIdentity(user.id, publicKey, secretKey);
-      setKeyStatus('set');
+      setKeyStatus('unlocked');
       setImportKeyValue('');
       setImportKeySaved(true);
       setTimeout(() => setImportKeySaved(false), 2500);
@@ -361,7 +389,7 @@ const qc = useQueryClient();
       await initSodium();
       const { publicKey, secretKey } = generateKeyPair();
       await replaceIdentity(user.id, publicKey, secretKey);
-      setKeyStatus('set');
+      setKeyStatus('unlocked');
       setShowRegenerateDialog(false);
       setShowExportKey(false);
     } catch (err) {
@@ -890,18 +918,21 @@ const qc = useQueryClient();
               <div className={styles.settingInfo}>
                 <div className={styles.settingName}>End-to-end encryption</div>
                 <div className={styles.settingDesc}>
-                  {keyStatus === 'set'
-                    ? 'Your encryption key is set up on this device'
-                    : keyStatus === 'unset'
-                      ? 'No encryption key found — files uploaded here will not be end-to-end encrypted'
-                      : 'Checking…'}
+                  {keyStatus === 'unlocked'
+                    ? 'Your encryption key is set up and unlocked on this device'
+                    : keyStatus === 'locked'
+                      ? 'Your encryption key is set up but locked on this device — unlock it to read and edit encrypted files'
+                      : keyStatus === 'none'
+                        ? 'No encryption key yet — files uploaded here will not be end-to-end encrypted'
+                        : 'Checking…'}
                 </div>
               </div>
-              {keyStatus === 'set' && <ShieldCheck size={20} color="var(--color-success, #16a34a)" />}
-              {keyStatus === 'unset' && <ShieldX size={20} color="var(--color-warning, #d97706)" />}
+              {keyStatus === 'unlocked' && <ShieldCheck size={20} color="var(--color-success, #16a34a)" />}
+              {keyStatus === 'locked' && <ShieldAlert size={20} color="var(--color-warning, #d97706)" />}
+              {keyStatus === 'none' && <ShieldX size={20} color="var(--color-warning, #d97706)" />}
             </div>
 
-            {keyStatus === 'set' && (
+            {keyStatus === 'unlocked' && (
               <div className={styles.keyActions}>
                 <button type="button" className={styles.outlineBtn} onClick={handleExportKey}>
                   Export key
@@ -915,10 +946,22 @@ const qc = useQueryClient();
               </div>
             )}
 
-            {keyStatus === 'unset' && (
+            {/* Both of these hand off to `E2EEUnlockGate`, which owns every way
+                a key gets made or opened. Generating one here would mint an
+                identity with nothing to wrap it, and the user's existing files
+                are sealed to the key the vault already holds. */}
+            {keyStatus === 'locked' && (
               <div className={styles.keyActions}>
-                <button type="button" className={styles.saveBtn} onClick={handleGenerateKey} disabled={generatingKey}>
-                  {generatingKey ? <><Loader2 size={14} className={styles.spinner} /> Generating…</> : 'Generate key'}
+                <button type="button" className={styles.saveBtn} onClick={requestEncryptionGate}>
+                  Unlock key
+                </button>
+              </div>
+            )}
+
+            {keyStatus === 'none' && (
+              <div className={styles.keyActions}>
+                <button type="button" className={styles.saveBtn} onClick={requestEncryptionGate}>
+                  Set up encryption
                 </button>
               </div>
             )}

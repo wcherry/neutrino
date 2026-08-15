@@ -5,18 +5,11 @@ CREATE TABLE oauth_clients (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Seed a default desktop client for development
+-- Seed a client ids
 INSERT INTO oauth_clients (id, name, redirect_uris)
-VALUES (
-  'neutrino-desktop',
-  'Neutrino Desktop App',
-  '["neutrino://oauth/callback","http://localhost:8080/callback"]'
-);
-
--- Seed a default desktop client for development
-INSERT INTO oauth_clients (id, name, redirect_uris)
-VALUES (
-  'neutrino-notes-ios',
-  'Neutrino Notes iOS',
-  '["neutrino://oauth/callback","http://localhost:8080/callback"]'
-);
+VALUES 
+  ('neutrino-desktop','Neutrino Desktop App','["neutrino://oauth/callback"]'),
+  ('neutrino-ios','Neutrino Drive iOS','["neutrino://oauth/callback"]'),
+  ('neutrino-notes-ios','Neutrino Notes iOS','["neutrino://oauth/callback"]'),
+  ('neutrino-docs-ios','Neutrino Docs iOS','["neutrino://oauth/callback"]'),
+  ('neutrino-sheets-ios','Neutrino Sheets iOS','["neutrino://oauth/callback"]');

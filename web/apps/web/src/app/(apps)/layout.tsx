@@ -26,6 +26,7 @@ import {
 import { getNavSections, withActiveItem } from './navSections';
 import { NewItemFAB } from './NewItemFAB';
 import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
+import { ImportRunProvider } from '@/components/ImportRun';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
@@ -280,11 +281,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <AppShell sidebar={sidebar} topbar={topbar}>
-      {children}
-      {/* Overlays the shell when the identity key is missing or locked. Renders
-          nothing once unlocked, and is dismissable — see the component notes. */}
-      <E2EEUnlockGate userId={auth.user.id} userName={auth.user.email} />
-    </AppShell>
+    // Above the route: a Takeout import runs for as long as it runs, and this
+    // is what keeps it — and its progress bar — alive across an app switch.
+    <ImportRunProvider>
+      <AppShell sidebar={sidebar} topbar={topbar}>
+        {children}
+        {/* Overlays the shell when the identity key is missing or locked. Renders
+            nothing once unlocked, and is dismissable — see the component notes. */}
+        <E2EEUnlockGate userId={auth.user.id} userName={auth.user.email} />
+      </AppShell>
+    </ImportRunProvider>
   );
 }

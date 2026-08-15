@@ -160,11 +160,81 @@ impl StorageRepository {
             })
     }
 
-    pub fn update_quota_after_upload(
+    /// The bytes this user actually occupies in the store, derived from the
+    /// rows that own those bytes rather than from a running total.
+    ///
+    /// Two things are summed because two things sit on disk: each file's
+    /// current content, and every version snapshot, which is a full copy of the
+    /// content rather than a delta (see
+    /// `StorageService::create_version_snapshot_record`). Every upload creates a
+    /// v1 snapshot immediately, so a store holding only freshly uploaded files
+    /// occupies twice the sum of `files.size_bytes` — the gap reported in #101.
+    ///
+    /// Trashed files are included: trashing sets `deleted_at` and leaves the
+    /// blob alone, so those bytes are still spent until the trash is emptied.
+    pub fn calculate_used_bytes(&self, user_id: &str) -> Result<i64, ApiError> {
+        let mut conn = self.get_conn()?;
+
+        // `diesel::dsl::sum` over a BigInt column comes back as Numeric, which
+        // sqlite hands out as a float — the wrong shape for byte counts, which
+        // must stay exact past 2^53. COALESCE'd raw SQL keeps it an i64.
+        let total_bytes = diesel::dsl::sql::<diesel::sql_types::BigInt>;
+
+        let file_bytes: i64 = files::table
+            .filter(files::user_id.eq(user_id))
+            .select(total_bytes("COALESCE(SUM(size_bytes), 0)"))
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB sum file sizes error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        let version_bytes: i64 = file_versions::table
+            .filter(file_versions::user_id.eq(user_id))
+            .select(total_bytes("COALESCE(SUM(size_bytes), 0)"))
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB sum version sizes error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(file_bytes + version_bytes)
+    }
+
+    /// Recompute `used_bytes` and write it back when it has drifted, returning
+    /// the true figure.
+    ///
+    /// The column is a cache, not the source of truth. Keeping it current means
+    /// anything reading the row directly (and the value an operator sees in the
+    /// database) agrees with what quota checks and the UI report.
+    pub fn refresh_used_bytes(&self, user_id: &str, cached: i64) -> Result<i64, ApiError> {
+        let actual = self.calculate_used_bytes(user_id)?;
+        if actual == cached {
+            return Ok(actual);
+        }
+
+        let mut conn = self.get_conn()?;
+        diesel::update(user_quotas::table.filter(user_quotas::user_id.eq(user_id)))
+            .set(user_quotas::used_bytes.eq(actual))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB refresh used_bytes error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(actual)
+    }
+
+    /// Advance the daily upload counter after a committed upload.
+    ///
+    /// `used_bytes` is deliberately not touched here — it is derived from the
+    /// file and version rows by [`Self::calculate_used_bytes`]. The daily
+    /// counter genuinely is cumulative (it measures upload traffic, not
+    /// occupancy) so it stays an incremented column.
+    pub fn record_daily_upload(
         &self,
         user_id: &str,
         file_size: i64,
-        prev_used: i64,
         prev_daily: i64,
         new_daily_reset: NaiveDateTime,
         reset_daily: bool,
@@ -179,7 +249,6 @@ impl StorageRepository {
 
         diesel::update(user_quotas::table.filter(user_quotas::user_id.eq(user_id)))
             .set((
-                user_quotas::used_bytes.eq(prev_used + file_size),
                 user_quotas::daily_upload_bytes.eq(new_daily),
                 user_quotas::daily_reset_at.eq(new_daily_reset),
             ))
@@ -820,6 +889,152 @@ mod tests {
             )
             .expect_err("wrong owner");
         assert_eq!(err.status, 404);
+    }
+
+    // ── Derived quota usage (issue #101) ─────────────────────────────────────
+
+    fn insert_sized_file(repo: &StorageRepository, id: &str, user_id: &str, size_bytes: i64) {
+        repo.insert_file(NewFileRecord {
+            id,
+            user_id,
+            name: "photo.jpg",
+            size_bytes,
+            mime_type: "image/jpeg",
+            storage_path: "",
+            folder_id: None,
+            encrypted_metadata: None,
+        })
+        .expect("insert file");
+    }
+
+    fn insert_sized_version(
+        repo: &StorageRepository,
+        id: &str,
+        file_id: &str,
+        user_id: &str,
+        version_number: i32,
+        size_bytes: i64,
+    ) {
+        repo.insert_version(NewFileVersionRecord {
+            id,
+            file_id,
+            user_id,
+            version_number,
+            size_bytes,
+            storage_path: "",
+            label: None,
+            is_named: false,
+        })
+        .expect("insert version");
+    }
+
+    #[test]
+    fn calculate_used_bytes_is_zero_for_a_user_with_nothing_stored() {
+        let repo = StorageRepository::new(test_pool());
+        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 0);
+    }
+
+    /// The core of the bug: version snapshots are full copies on disk, so they
+    /// have to be summed alongside the file content.
+    #[test]
+    fn calculate_used_bytes_sums_file_content_and_version_snapshots() {
+        let repo = StorageRepository::new(test_pool());
+        insert_sized_file(&repo, "file-q1", "user-1", 1000);
+        insert_sized_version(&repo, "ver-q1", "file-q1", "user-1", 1, 1000);
+        insert_sized_version(&repo, "ver-q2", "file-q1", "user-1", 2, 250);
+
+        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 2250);
+    }
+
+    #[test]
+    fn calculate_used_bytes_is_scoped_to_one_user() {
+        let repo = StorageRepository::new(test_pool());
+        insert_sized_file(&repo, "file-q2", "user-1", 1000);
+        insert_sized_version(&repo, "ver-q3", "file-q2", "user-1", 1, 1000);
+        insert_sized_file(&repo, "file-q3", "user-2", 9999);
+        insert_sized_version(&repo, "ver-q4", "file-q3", "user-2", 1, 9999);
+
+        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 2000);
+    }
+
+    /// Trashing sets `deleted_at` and leaves the blob in place, so the bytes
+    /// are still spent — reporting them as free would let a user overshoot
+    /// their quota by filling the trash.
+    #[test]
+    fn calculate_used_bytes_still_counts_trashed_files() {
+        let repo = StorageRepository::new(test_pool());
+        insert_sized_file(&repo, "file-q4", "user-1", 1000);
+        diesel::update(files::table.filter(files::id.eq("file-q4")))
+            .set(files::deleted_at.eq(Some(Utc::now().naive_utc())))
+            .execute(&mut repo.get_conn().expect("conn"))
+            .expect("trash");
+
+        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 1000);
+    }
+
+    #[test]
+    fn refresh_used_bytes_writes_the_corrected_total_back() {
+        let repo = StorageRepository::new(test_pool());
+        repo.get_or_create_quota("user-1").expect("quota row");
+        insert_sized_file(&repo, "file-q5", "user-1", 1000);
+        insert_sized_version(&repo, "ver-q5", "file-q5", "user-1", 1, 1000);
+
+        let refreshed = repo.refresh_used_bytes("user-1", 1000).expect("refresh");
+
+        assert_eq!(refreshed, 2000);
+        assert_eq!(
+            repo.get_or_create_quota("user-1").expect("quota").used_bytes,
+            2000
+        );
+    }
+
+    /// The refresh runs on every quota read, so an unchanged total must not
+    /// cost a write.
+    #[test]
+    fn refresh_used_bytes_returns_an_unchanged_total_without_writing() {
+        let repo = StorageRepository::new(test_pool());
+        repo.get_or_create_quota("user-1").expect("quota row");
+        insert_sized_file(&repo, "file-q6", "user-1", 1000);
+
+        assert_eq!(repo.refresh_used_bytes("user-1", 1000).expect("refresh"), 1000);
+        assert_eq!(
+            repo.get_or_create_quota("user-1").expect("quota").used_bytes,
+            0,
+            "an in-sync value must not trigger an UPDATE"
+        );
+    }
+
+    /// `record_daily_upload` owns the rate-limit counters only; occupancy is
+    /// derived, so it must leave `used_bytes` alone.
+    #[test]
+    fn record_daily_upload_advances_the_daily_counter_only() {
+        let repo = StorageRepository::new(test_pool());
+        repo.get_or_create_quota("user-1").expect("quota row");
+        let now = Utc::now().naive_utc();
+
+        repo.record_daily_upload("user-1", 500, 200, now, false)
+            .expect("record upload");
+
+        let quota = repo.get_or_create_quota("user-1").expect("quota");
+        assert_eq!(quota.daily_upload_bytes, 700);
+        assert_eq!(quota.used_bytes, 0);
+    }
+
+    #[test]
+    fn record_daily_upload_restarts_the_counter_on_a_new_day() {
+        let repo = StorageRepository::new(test_pool());
+        repo.get_or_create_quota("user-1").expect("quota row");
+        let now = Utc::now().naive_utc();
+
+        repo.record_daily_upload("user-1", 500, 9_000, now, true)
+            .expect("record upload");
+
+        assert_eq!(
+            repo.get_or_create_quota("user-1")
+                .expect("quota")
+                .daily_upload_bytes,
+            500
+        );
     }
 
     #[test]

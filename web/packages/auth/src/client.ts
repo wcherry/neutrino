@@ -1,4 +1,5 @@
 import { request, ApiClientError, refreshTokens } from '@neutrino/api-core';
+import { emitAuthChanged } from './authEvents';
 import type {
   RegisterRequest,
   LoginRequest,
@@ -35,6 +36,9 @@ export const authApi = {
     if (typeof window !== 'undefined') {
       localStorage.setItem('access_token', tokens.accessToken);
       localStorage.setItem('refresh_token', tokens.refreshToken);
+      // `AuthProvider` mounted before this token existed — tell it to load the
+      // profile, or every `useAuth()` consumer stays signed-out until a reload.
+      emitAuthChanged();
     }
     return tokens;
   },
@@ -60,6 +64,7 @@ export const authApi = {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
+        emitAuthChanged();
       }
     }
   },

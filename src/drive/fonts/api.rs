@@ -195,9 +195,9 @@ async fn upload_font(
             .map_err(ApiError::internal)?;
 
         let temp_id = Uuid::new_v4().to_string();
-        let temp_path = state.service.temp_path(&temp_id);
+        let temp = state.service.temp_upload(&temp_id);
 
-        let raw_file = tokio::fs::File::create(&temp_path).await.map_err(|e| {
+        let raw_file = tokio::fs::File::create(temp.path()).await.map_err(|e| {
             tracing::error!("Failed to create temp file: {:?}", e);
             ApiError::internal("Failed to initialize upload")
         })?;
@@ -211,8 +211,9 @@ async fn upload_font(
             })?;
             size += data.len() as u64;
             if size > MAX_FONT_SIZE_BYTES {
+                // Close the handle before `temp`'s guard unlinks the partial
+                // font on the way out of this function.
                 drop(file);
-                let _ = std::fs::remove_file(&temp_path);
                 return Err(ApiError::new(
                     413,
                     "PAYLOAD_TOO_LARGE",
@@ -231,12 +232,14 @@ async fn upload_font(
         })?;
         drop(file);
 
-        let record = state
-            .service
-            .finalize_upload(&admin.user_id, &display_name, &file_name, &format, &temp_path)
-            .inspect_err(|_| {
-                let _ = std::fs::remove_file(&temp_path);
-            })?;
+        let record = state.service.finalize_upload(
+            &admin.user_id,
+            &display_name,
+            &file_name,
+            &format,
+            temp.path(),
+        )?;
+        temp.commit();
 
         return Ok(HttpResponse::Created().json(CustomFontDto::from(record)));
     }

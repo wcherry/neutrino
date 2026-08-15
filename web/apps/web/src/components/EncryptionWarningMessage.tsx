@@ -3,6 +3,8 @@ import React from 'react';
 export const ENCRYPTION_WARNING_MESSAGE: React.ReactNode = (
   <>
     Changes not saved — encryption key unavailable.{' '}
-    <a href="/settings?tab=advanced">Set up encryption</a>
+    {/* Account, not Advanced: the Encryption key panel — and the buttons that
+        unlock or provision the key — live there. */}
+    <a href="/settings?tab=account">Set up encryption</a>
   </>
 );

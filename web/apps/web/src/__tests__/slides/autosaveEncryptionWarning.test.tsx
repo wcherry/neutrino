@@ -50,7 +50,7 @@ describe('SlideEditor — contentMutation encryption warning toast', () => {
     const { getByRole } = render(
       React.createElement(React.Fragment, null, ENCRYPTION_WARNING_MESSAGE)
     );
-    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=advanced');
+    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=account');
   });
 
   /**
@@ -73,7 +73,7 @@ describe('SlideEditor — contentMutation encryption warning toast', () => {
 
     const message = mockWarning.mock.calls[0][0] as React.ReactNode;
     const { getByRole } = render(React.createElement(React.Fragment, null, message));
-    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=advanced');
+    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=account');
   });
 
   it('onError does NOT call toast.warning for unrelated errors', async () => {

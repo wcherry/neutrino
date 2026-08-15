@@ -1,30 +1,49 @@
 'use client';
 
+import { Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { authApi } from '@/lib/api';
+import { EncryptionSetupDialog } from '@/components/EncryptionSetupDialog';
 import styles from '../sign-in/page.module.css';
 
 export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Set once the account exists and is signed in; the encryption setup dialog
+  // mints the key here rather than after the redirect so it exists before the
+  // user has anything to encrypt.
+  const [newUser, setNewUser] = useState<{ id: string; email: string } | null>(null);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Only flagged once the user has typed something to compare against, so the field
+  // is not red the moment it gains focus.
+  const mismatch = confirmPassword.length > 0 && password !== confirmPassword;
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
     setLoading(true);
 
     const form = e.currentTarget;
     const name = (form.elements.namedItem('name') as HTMLInputElement).value;
     const email = (form.elements.namedItem('email') as HTMLInputElement).value;
-    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
 
     try {
-      await authApi.register({ name, email, password });
+      const profile = await authApi.register({ name, email, password });
       await authApi.login({ email, password });
-      router.push('/drive');
+      setNewUser({ id: profile.id, email: profile.email });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
@@ -69,19 +88,65 @@ export default function RegisterPage() {
           </div>
           <div className={styles.field}>
             <label htmlFor="password" className={styles.label}>Password</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              className={styles.input}
-              placeholder="At least 8 characters"
-            />
+            <div className={styles.passwordWrap}>
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                minLength={8}
+                className={styles.input}
+                placeholder="At least 8 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className={styles.reveal}
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+          <div className={styles.field}>
+            <label htmlFor="confirmPassword" className={styles.label}>Confirm password</label>
+            <div className={styles.passwordWrap}>
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                minLength={8}
+                className={`${styles.input} ${mismatch ? styles.inputInvalid : ''}`}
+                placeholder="Re-enter your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                aria-invalid={mismatch}
+                aria-describedby={mismatch ? 'confirmPassword-error' : undefined}
+              />
+              <button
+                type="button"
+                className={styles.reveal}
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showConfirmPassword}
+              >
+                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            {mismatch && (
+              <p id="confirmPassword-error" className={styles.fieldError}>
+                Passwords do not match
+              </p>
+            )}
           </div>
           {error && <p className={styles.error}>{error}</p>}
-          <button type="submit" className={styles.submit} disabled={loading}>
+          <button type="submit" className={styles.submit} disabled={loading || mismatch}>
             {loading ? 'Creating account…' : 'Create free account'}
           </button>
         </form>
@@ -98,6 +163,15 @@ export default function RegisterPage() {
           </Link>
         </p>
       </div>
+
+      {newUser && (
+        <EncryptionSetupDialog
+          userId={newUser.id}
+          userEmail={newUser.email}
+          accountPassword={password}
+          onDone={() => router.push('/drive')}
+        />
+      )}
     </div>
   );
 }

@@ -101,6 +101,55 @@
   color: var(--color-text-muted);
 }
 
+.inputInvalid {
+  border-color: var(--color-error);
+}
+
+.inputInvalid:focus {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 3px rgb(220 38 38 / 0.12);
+}
+
+/* Wraps a password input so the reveal button can sit inside its right edge. */
+.passwordWrap {
+  position: relative;
+  display: block;
+}
+
+.passwordWrap .input {
+  padding-right: calc(var(--space-4) + 24px);
+}
+
+.reveal {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  padding: var(--space-1);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-default);
+}
+
+.reveal:hover {
+  color: var(--color-text-primary);
+}
+
+.reveal:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.fieldError {
+  font-size: var(--text-xs);
+  color: var(--color-error);
+}
+
 .submit {
   width: 100%;
   padding: var(--space-3) var(--space-4);

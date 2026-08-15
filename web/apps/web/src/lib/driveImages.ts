@@ -16,8 +16,17 @@
  * through untouched, so documents written before this keep rendering.
  */
 
-import { storageApi, filesystemApi, encryptionApi } from '@/lib/api';
-import { initSodium, loadKeyPair, decryptFileKey, decryptFile } from '@neutrino/e2e-crypto';
+import { storageApi, filesystemApi, encryptionApi, uploadEncryptedFile } from '@/lib/api';
+import {
+  initSodium,
+  loadKeyPair,
+  decryptFileKey,
+  decryptFile,
+  generateFileKey,
+  encryptFileKey,
+  encryptMetadata,
+} from '@neutrino/e2e-crypto';
+import { generateThumbnail } from '@neutrino/api-photos';
 import type { FileItem } from '@neutrino/api-drive';
 
 /**
@@ -106,13 +115,47 @@ async function findOrCreateAttachmentsFolder(): Promise<string> {
 
 // ── Getting images into Drive ───────────────────────────────────────────────
 
-/** Uploads a local file into Attachments and returns the stored Drive file. */
+/**
+ * Uploads a local file into Attachments and returns the stored Drive file.
+ *
+ * An image inserted into a document is a Drive file like any other, so it is
+ * encrypted like any other: same rule as `UploadZone`, encrypt whenever this
+ * browser holds the user's keypair and fall back to a plaintext upload only
+ * when it doesn't (a locked or key-less session, where the alternative is
+ * failing the insert). Nothing on the read side has to change — a reference
+ * resolves through `fetchDriveImageBlob`, which decrypts when the file is
+ * encrypted and passes the bytes through when it isn't.
+ */
 export async function uploadAttachment(
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<FileItem> {
   const folderId = await ensureAttachmentsFolder();
-  return storageApi.uploadFile(file, onProgress, folderId);
+
+  const userId = currentUserId();
+  const keyPair = userId ? loadKeyPair(userId) : null;
+  if (!keyPair) return storageApi.uploadFile(file, onProgress, folderId);
+
+  await initSodium();
+  const dek = generateFileKey();
+  const encryptedFileKey = encryptFileKey(dek, keyPair.publicKey);
+  const encryptedMetadata = encryptMetadata(
+    { name: file.name, mimeType: file.type || 'application/octet-stream' },
+    dek,
+  );
+  // The server cannot make a preview of a file it cannot decrypt, so the
+  // thumbnail the picker grid and the Drive grid browse off is made here.
+  const thumbnailB64 = await generateThumbnail(file);
+
+  return uploadEncryptedFile(
+    file,
+    dek,
+    encryptedFileKey,
+    encryptedMetadata,
+    onProgress,
+    folderId,
+    thumbnailB64,
+  );
 }
 
 /** Derives a sensible file name for an image linked by URL. */

@@ -211,21 +211,16 @@ impl DriveClient {
         })?;
 
         let temp_id = Uuid::new_v4().to_string();
-        let temp_path = store.temp_path(&file.user_id, &temp_id);
+        let temp = store.temp_upload(&file.user_id, &temp_id);
 
-        std::fs::write(&temp_path, content.as_bytes()).map_err(|e| {
+        std::fs::write(temp.path(), content.as_bytes()).map_err(|e| {
             tracing::error!("Drive client {} write error: {:?}", label, e);
             ApiError::internal("Failed to write file content")
         })?;
 
         let size_bytes = content.len() as i64;
-        let saved = self
-            .storage
-            .autosave(file_id, &temp_path, size_bytes, check)
-            .map_err(|e| {
-                let _ = std::fs::remove_file(&temp_path);
-                e
-            })?;
+        let saved = self.storage.autosave(file_id, temp.path(), size_bytes, check)?;
+        temp.commit();
 
         Ok(saved.content_version)
     }
@@ -295,19 +290,14 @@ impl DriveClient {
             ApiError::internal("Failed to prepare storage directory")
         })?;
         let temp_id = Uuid::new_v4().to_string();
-        let temp_path = store.temp_path(&file.user_id, &temp_id);
-        std::fs::write(&temp_path, bytes).map_err(|e| {
+        let temp = store.temp_upload(&file.user_id, &temp_id);
+        std::fs::write(temp.path(), bytes).map_err(|e| {
             tracing::error!("upload_content_bytes write error: {:?}", e);
             ApiError::internal("Failed to write content")
         })?;
         let size_bytes = bytes.len() as i64;
-        let saved = self
-            .storage
-            .autosave(file_id, &temp_path, size_bytes, check)
-            .map_err(|e| {
-                let _ = std::fs::remove_file(&temp_path);
-                e
-            })?;
+        let saved = self.storage.autosave(file_id, temp.path(), size_bytes, check)?;
+        temp.commit();
         Ok(saved.content_version)
     }
 }

@@ -68,7 +68,7 @@ import {
 import { useUser } from '@neutrino/auth';
 import {
   slidesApi, driveReadContent, driveAutosaveEncryptedContent,
-  driveAutosaveBytes, extractSlideText,
+  driveAutosaveBytes, driveCreateVersion, encryptionApi, extractSlideText,
   storageApi, filesystemApi, ApiClientError, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
@@ -78,7 +78,9 @@ import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeF
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
-import { decryptFile } from '@neutrino/e2e-crypto';
+import {
+  decryptFile, initSodium, loadKeyPair, generateFileKey, encryptFileKey,
+} from '@neutrino/e2e-crypto';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme, CreateThemeRequest, UpdateThemeRequest } from '@neutrino/api-slides';
 import { ThemeEditorDialog, type ThemeEditorMode } from './ThemeEditorDialog';
@@ -91,6 +93,7 @@ import { InsertSheetDialog } from './InsertSheetDialog';
 import { InsertImageDialog } from '@/components/InsertImageDialog';
 import { driveImageRef } from '@/lib/driveImages';
 import { InsertDiagramDialog } from './InsertDiagramDialog';
+import { HamburgerMenu } from './MenuBar';
 
 // ── Domain modules ────────────────────────────────────────────────────────────
 import type {
@@ -373,6 +376,7 @@ export function SlideEditor() {
   const lastSavedRef = useRef('');
   const exportRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const dragSrcIdx = useRef<number | null>(null);
   const initialSaveDoneRef = useRef(false);
   // Forward-ref to the promote mutation trigger (issue #43) — set once
@@ -704,6 +708,40 @@ export function SlideEditor() {
     queryClient.invalidateQueries({ queryKey: ['slides'] });
     router.push('/drive');
   }
+
+  /** Menu / Ctrl+S: skip the autosave debounce and write the deck now. */
+  const handleManualSave = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    contentMutation.mutate({ content: JSON.stringify(presentationRef.current) });
+  }, [contentMutation]);
+
+  const handleNewPresentation = useCallback(async () => {
+    const created = await slidesApi.createSlide({ title: 'Untitled presentation' });
+    router.push(`/slides/editor?id=${created.id}`);
+  }, [router]);
+
+  const handleDuplicate = useCallback(async () => {
+    const content = JSON.stringify(presentationRef.current);
+    const copy = await slidesApi.createSlide({ title: `${title || 'Untitled presentation'} (copy)` });
+    // The copy is a new Drive file with no key of its own, so mint a DEK and
+    // register it the way an editor's first save does. Without a key pair on
+    // this device there is nothing to encrypt with — fall back to plaintext,
+    // which the editor still reads back.
+    await initSodium();
+    const keyPair = currentUser?.id ? loadKeyPair(currentUser.id) : null;
+    if (keyPair) {
+      const dek = generateFileKey();
+      await encryptionApi.setFileKey(copy.id, { encryptedFileKey: encryptFileKey(dek, keyPair.publicKey) });
+      await driveAutosaveEncryptedContent(copy.id, content, 'slide.json', dek);
+    } else {
+      await driveCreateVersion(copy.id, content, 'slide.json');
+    }
+    queryClient.invalidateQueries({ queryKey: ['slides'] });
+    router.push(`/slides/editor?id=${copy.id}`);
+  }, [title, currentUser?.id, queryClient, router]);
 
   function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
@@ -1319,6 +1357,46 @@ export function SlideEditor() {
 
       {/* Top bar */}
       <div className={styles.topBar}>
+        <HamburgerMenu
+          titleInputRef={titleInputRef}
+          onSave={handleManualSave}
+          onNewPresentation={handleNewPresentation}
+          onDuplicate={handleDuplicate}
+          onImport={() => importInputRef.current?.click()}
+          onExportPptx={() => { void exportAsPptx(title || 'presentation', presentationRef.current); }}
+          onShare={() => setShowShareDialog(true)}
+          officeMode={officeMode}
+          onConvertToNative={handleConvertToNative}
+          onNewSlide={addSlide}
+          onDuplicateSlide={duplicateSlide}
+          onDeleteSlide={deleteSlide}
+          onMoveSlide={moveSlide}
+          canMoveSlideUp={selectedSlideIdx > 0}
+          canMoveSlideDown={selectedSlideIdx < presentation.slides.length - 1}
+          canDeleteSlide={presentation.slides.length > 1}
+          onApplyLayout={applyLayout}
+          onInsertTextBox={addTextBox}
+          onInsertShape={addShape}
+          onInsertLine={addLine}
+          onInsertImage={() => setImageDialogOpen(true)}
+          onInsertVideo={() => { setVideoUrlInput(''); setVideoDialogOpen(true); }}
+          onInsertSheet={() => setSheetDialogOpen(true)}
+          onInsertDiagram={() => setDiagramDialogOpen(true)}
+          hasSelection={!!selectedElement}
+          onBringToFront={bringElementToFront}
+          onMoveForward={moveElementForward}
+          onMoveBackward={moveElementBackward}
+          onSendToBack={sendElementToBack}
+          onDeleteElement={() => { if (selectedElementId) deleteElement(selectedElementId); }}
+          rightPanelTab={rightPanelTab}
+          onSelectPanel={setRightPanelTab}
+          masterMode={masterMode}
+          onToggleMaster={() => { setMasterMode((v) => !v); setSelectedElementId(null); }}
+          zoom={zoom}
+          onZoomChange={setZoom}
+          onPresent={() => setPresenterMode(true)}
+        />
+
         <Button variant="ghost" icon={<ArrowLeft size={16} />} onClick={handleBack} className={styles.backBtn}>
           Slides
         </Button>
@@ -1326,6 +1404,7 @@ export function SlideEditor() {
         <div className={styles.titleArea}>
           <Presentation size={18} color="var(--color-rose, #e11d48)" />
           <input
+            ref={titleInputRef}
             className={styles.titleInput}
             value={title}
             onChange={handleTitleChange}

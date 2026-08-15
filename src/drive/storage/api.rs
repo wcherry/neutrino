@@ -10,6 +10,7 @@ use crate::drive::storage::{
     },
     native_types,
     service::StorageService,
+    store::TempUpload,
 };
 use crate::drive::tags::service::TagsService;
 use crate::shared::{
@@ -182,12 +183,15 @@ pub async fn upload_file(
             .ensure_user_dir(&user.user_id)
             .map_err(ApiError::internal)?;
 
-        let temp_path = state
+        // Guarded: every exit from here on removes the staged bytes unless the
+        // upload commits, including a client disconnect that drops this future
+        // outright.
+        let temp = state
             .storage_service
             .store()
-            .temp_path(&user.user_id, &temp_id);
+            .temp_upload(&user.user_id, &temp_id);
 
-        let raw_file = tokio::fs::File::create(&temp_path).await.map_err(|e| {
+        let raw_file = tokio::fs::File::create(temp.path()).await.map_err(|e| {
             tracing::error!("Failed to create temp file: {:?}", e);
             ApiError::internal("Failed to initialize upload")
         })?;
@@ -219,17 +223,15 @@ pub async fn upload_file(
             .storage_service
             .finalize_upload(
                 &user,
-                &temp_path,
+                temp.path(),
                 &file_name,
                 &mime_type,
                 size,
                 folder_id.as_deref(),
                 encrypted_metadata.as_deref(),
             )
-            .await
-            .inspect_err(|_| {
-                let _ = std::fs::remove_file(&temp_path);
-            })?;
+            .await?;
+        temp.commit();
 
         // Save client-generated thumbnail if provided.
         if let Some(b64) = thumbnail_b64.take() {
@@ -715,7 +717,7 @@ pub async fn autosave_file(
     // content lands, so a rejected save (stale version, quota) can't leave the
     // file renamed to match a body that was never written.
     let mut new_title: Option<String> = None;
-    let mut staged: Option<(std::path::PathBuf, i64)> = None;
+    let mut staged: Option<(TempUpload, i64)> = None;
 
     while let Some(field) = payload.next().await {
         let mut field = field.map_err(|e| {
@@ -756,12 +758,12 @@ pub async fn autosave_file(
             .ensure_user_dir(&user.user_id)
             .map_err(ApiError::internal)?;
 
-        let temp_path = state
+        let temp = state
             .storage_service
             .store()
-            .temp_path(&user.user_id, &temp_id);
+            .temp_upload(&user.user_id, &temp_id);
 
-        let raw_file = tokio::fs::File::create(&temp_path).await.map_err(|e| {
+        let raw_file = tokio::fs::File::create(temp.path()).await.map_err(|e| {
             tracing::error!("Failed to create temp file: {:?}", e);
             ApiError::internal("Failed to initialize autosave")
         })?;
@@ -788,18 +790,18 @@ pub async fn autosave_file(
 
         // Don't commit yet — the `metadata` part carrying a rename may still
         // be ahead of us in the body, and clients append it after the file.
-        staged = Some((temp_path, size));
+        // The guard rides along in `staged`, so abandoning the request between
+        // here and the autosave below still cleans up.
+        staged = Some((temp, size));
     }
 
-    let (temp_path, size) =
+    let (temp, size) =
         staged.ok_or_else(|| ApiError::bad_request("No file provided in multipart body"))?;
 
     let mut response = state
         .storage_service
-        .autosave(&file_id, &temp_path, size, version_check.into_inner().into())
-        .inspect_err(|_| {
-            let _ = std::fs::remove_file(&temp_path);
-        })?;
+        .autosave(&file_id, temp.path(), size, version_check.into_inner().into())?;
+    temp.commit();
 
     if let Some(title) = new_title.filter(|t| *t != response.name) {
         // Scoped to the owner's id, not the caller's: an editor on a shared
@@ -892,12 +894,12 @@ pub async fn save_version(
             .ensure_user_dir(&user.user_id)
             .map_err(ApiError::internal)?;
 
-        let temp_path = state
+        let temp = state
             .storage_service
             .store()
-            .temp_path(&user.user_id, &temp_id);
+            .temp_upload(&user.user_id, &temp_id);
 
-        let raw_file = tokio::fs::File::create(&temp_path).await.map_err(|e| {
+        let raw_file = tokio::fs::File::create(temp.path()).await.map_err(|e| {
             tracing::error!("Failed to create temp file: {:?}", e);
             ApiError::internal("Failed to initialize version save")
         })?;
@@ -922,12 +924,11 @@ pub async fn save_version(
         })?;
         drop(file);
 
-        let response = state
-            .storage_service
-            .save_named_version(&file_id, &temp_path, size, label.as_deref())
-            .inspect_err(|_| {
-                let _ = std::fs::remove_file(&temp_path);
-            })?;
+        let response =
+            state
+                .storage_service
+                .save_named_version(&file_id, temp.path(), size, label.as_deref())?;
+        temp.commit();
 
         return Ok(web::Json(response));
     }

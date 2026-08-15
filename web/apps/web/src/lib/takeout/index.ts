@@ -40,3 +40,28 @@ export {
   UNTITLED_DOC,
 } from './importDocs';
 export type { DocsImportOptions } from './importDocs';
+
+export { findDriveSheets, readSheetInfo } from './driveSheets';
+export type {
+  DriveSheetEntry,
+  DriveSheetsSource,
+  SheetFormat,
+  UnsupportedSheet,
+} from './driveSheets';
+
+export { delimitedToSheetFile, xlsxToSheetFile } from './sheetXlsx';
+export type { SheetConversionOptions } from './sheetXlsx';
+
+export {
+  convertDriveSheet,
+  runSheetsImport,
+  DEFAULT_SHEETS_IMPORT_OPTIONS,
+  UNTITLED_SHEET,
+} from './importSheets';
+export type { SheetsImportOptions } from './importSheets';
+
+export { captureDateOf, findTakeoutPhotos, readPhotoInfo } from './photos';
+export type { MediaKind, PhotoInfo, PhotosSource, TakeoutAlbum, TakeoutPhoto } from './photos';
+
+export { runPhotosImport, DEFAULT_PHOTOS_IMPORT_OPTIONS } from './importPhotos';
+export type { PhotosImportOptions } from './importPhotos';
