@@ -2,8 +2,15 @@ use crate::shared::{init_logging, DbPool};
 use actix_cors::Cors;
 use actix_files;
 use actix_web::{
-    get, middleware::Logger, middleware::NormalizePath, middleware::TrailingSlash, web, App,
-    HttpResponse, HttpServer, Responder,
+    body::MessageBody,
+    dev::{ServiceRequest, ServiceResponse},
+    get,
+    http::{
+        header::{HeaderValue, CACHE_CONTROL},
+        StatusCode,
+    },
+    middleware::{from_fn, Compress, Logger, Next, NormalizePath, TrailingSlash},
+    web, App, Error, HttpResponse, HttpServer, Responder,
 };
 use diesel::r2d2::{ConnectionManager, CustomizeConnection, Error as R2D2Error, Pool};
 use diesel::{RunQueryDsl, SqliteConnection};
@@ -116,6 +123,77 @@ async fn health(pool: web::Data<DbPool>) -> impl Responder {
                 "error": { "code": "DB_UNHEALTHY", "message": "Database health check failed" }
             }))
         }
+    }
+}
+
+// ── Static web app ───────────────────────────────────────────────────────────
+
+/// A year, and `immutable` so browsers skip revalidation entirely.
+///
+/// Only safe on URLs whose contents can never change. Next's `/_next/static/*` filenames embed a
+/// hash of the file (or the build id), so a rebuild produces new URLs rather than new bytes at the
+/// old ones — which is exactly the property this header requires.
+const IMMUTABLE_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
+
+/// Stamps [`IMMUTABLE_CACHE_CONTROL`] onto whatever it wraps.
+///
+/// Deliberately not `DefaultHeaders`: that would also stamp error responses, and a 404 cached for a
+/// year is unrecoverable without a URL change. A missing asset during a rolling deploy is exactly
+/// when that happens, so the status check is the point of this middleware, not incidental to it.
+/// 304s are included because a cache that revalidates needs the freshness lifetime back.
+async fn immutable_cache_control(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, Error> {
+    let mut res = next.call(req).await?;
+    if res.status().is_success() || res.status() == StatusCode::NOT_MODIFIED {
+        res.headers_mut().insert(
+            CACHE_CONTROL,
+            HeaderValue::from_static(IMMUTABLE_CACHE_CONTROL),
+        );
+    }
+    Ok(res)
+}
+
+/// Serves the statically exported Next.js app out of `web_dir`.
+///
+/// Two mounts, because they want opposite caching. `/_next/static` is content-hashed and cached
+/// forever; everything else (`index.html` above all) must be revalidated every time, or a deploy
+/// never reaches a returning visitor. The hashed mount is registered first so it wins, and it has
+/// no SPA fallback: a missing asset must 404 rather than be answered with `index.html`, both
+/// because HTML in a `<script>` tag is a confusing failure and because the fallback's 200 would
+/// otherwise be cached for a year under a URL that will never hold anything else.
+///
+/// Returns a closure because `App` is rebuilt per worker thread and `configure` takes `FnOnce`.
+fn configure_web_app(web_dir: &str) -> impl FnOnce(&mut web::ServiceConfig) {
+    let hashed_assets_dir = format!("{}/_next/static", web_dir);
+    let index = format!("{}/index.html", web_dir);
+    let web_dir = web_dir.to_owned();
+
+    move |cfg: &mut web::ServiceConfig| {
+        cfg.service(
+            web::scope("/_next/static")
+                .wrap(from_fn(immutable_cache_control))
+                .service(
+                    actix_files::Files::new("", hashed_assets_dir)
+                        .use_last_modified(true)
+                        .use_etag(true),
+                ),
+        )
+        .service(
+            actix_files::Files::new("/", web_dir)
+                .index_file("index.html")
+                .use_last_modified(true)
+                .use_etag(true)
+                // Client-side routing: unknown paths are app routes, not missing files.
+                .default_handler(web::get().to(move || {
+                    let index = index.clone();
+                    async move {
+                        actix_files::NamedFile::open(&index)
+                            .map_err(actix_web::error::ErrorNotFound)
+                    }
+                })),
+        );
     }
 }
 
@@ -1054,7 +1132,10 @@ async fn main() -> std::io::Result<()> {
             .app_data(themes_state.clone())
             // Search
             .app_data(search_state.clone())
-            // Middleware
+            // Middleware — actix runs these in reverse registration order, so `Compress` sits
+            // innermost. That is on purpose: `Cors` still decorates the 406 it returns for an
+            // unsupported `Accept-Encoding`, and `Logger` reports bytes actually put on the wire.
+            .wrap(Compress::default())
             .wrap(NormalizePath::new(TrailingSlash::MergeOnly))
             .wrap(Logger::default())
             .wrap(Cors::permissive())
@@ -1123,23 +1204,7 @@ async fn main() -> std::io::Result<()> {
                     .configure(diagrams::configure),
             )
             // Static web app — registered last so API routes take priority.
-            // Falls back to index.html for client-side navigation.
-            .service(
-                actix_files::Files::new("/", &web_dir)
-                    .index_file("index.html")
-                    .use_last_modified(true)
-                    .use_etag(true)
-                    .default_handler({
-                        let index = format!("{}/index.html", web_dir);
-                        web::get().to(move || {
-                            let index = index.clone();
-                            async move {
-                                actix_files::NamedFile::open(&index)
-                                    .map_err(actix_web::error::ErrorNotFound)
-                            }
-                        })
-                    }),
-            )
+            .configure(configure_web_app(&web_dir))
     })
     .bind(&bind_addr)?
     .run()
@@ -1247,5 +1312,159 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Asset delivery is invisible when it regresses: the app still works, it just gets slower for
+    /// everyone, and nothing fails. These assertions are the only thing standing between a
+    /// refactor of the service registration and a silent return to uncompressed, uncached assets.
+    mod static_web_app {
+        use super::*;
+        use actix_web::http::header;
+
+        /// Scratch web root that removes itself; the project has no `tempfile` dependency.
+        struct TestWebDir(std::path::PathBuf);
+
+        impl TestWebDir {
+            /// A miniature Next.js static export: one hashed chunk, one index.
+            fn new() -> Self {
+                let path =
+                    std::env::temp_dir().join(format!("neutrino-web-dir-{}", uuid::Uuid::new_v4()));
+                let hashed = path.join("_next/static/chunks");
+                std::fs::create_dir_all(&hashed).expect("temp dir");
+                // Long enough that compression has something to work with.
+                std::fs::write(
+                    hashed.join("main-abc123.js"),
+                    "console.log('x');\n".repeat(200),
+                )
+                .expect("chunk");
+                std::fs::write(path.join("index.html"), "<!doctype html><title>app</title>")
+                    .expect("index");
+                TestWebDir(path)
+            }
+
+            fn as_str(&self) -> &str {
+                self.0.to_str().expect("utf-8 temp path")
+            }
+        }
+
+        impl Drop for TestWebDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        macro_rules! get {
+            ($dir:expr, $uri:expr $(, $header:expr)*) => {{
+                let app = test::init_service(
+                    App::new()
+                        .wrap(Compress::default())
+                        .configure(configure_web_app($dir.as_str())),
+                )
+                .await;
+                let req = test::TestRequest::get()
+                    .uri($uri)
+                    $(.insert_header($header))*
+                    .to_request();
+                test::call_service(&app, req).await
+            }};
+        }
+
+        fn header_of<B>(resp: &ServiceResponse<B>, name: header::HeaderName) -> String {
+            resp.headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_owned()
+        }
+
+        #[actix_web::test]
+        async fn serves_hashed_assets() {
+            let dir = TestWebDir::new();
+            let resp = get!(dir, "/_next/static/chunks/main-abc123.js");
+            assert_eq!(resp.status(), 200);
+        }
+
+        #[actix_web::test]
+        async fn caches_hashed_assets_forever() {
+            let dir = TestWebDir::new();
+            let resp = get!(dir, "/_next/static/chunks/main-abc123.js");
+            assert_eq!(
+                header_of(&resp, header::CACHE_CONTROL),
+                IMMUTABLE_CACHE_CONTROL
+            );
+        }
+
+        /// `index.html` holds the URLs of every hashed asset. Cache it and a deploy never reaches
+        /// anyone who has visited before.
+        #[actix_web::test]
+        async fn does_not_cache_the_app_shell() {
+            let dir = TestWebDir::new();
+            for uri in ["/", "/index.html", "/some/client/route"] {
+                let resp = get!(dir, uri);
+                assert_eq!(resp.status(), 200, "{uri}");
+                assert_eq!(header_of(&resp, header::CACHE_CONTROL), "", "{uri}");
+            }
+        }
+
+        /// A missing hashed asset must not be answered with the SPA fallback: the 200 would be
+        /// cached for a year, and HTML in a `<script>` tag is a baffling way to fail.
+        #[actix_web::test]
+        async fn missing_hashed_asset_is_a_404() {
+            let dir = TestWebDir::new();
+            let resp = get!(dir, "/_next/static/chunks/never-built.js");
+            assert_eq!(resp.status(), 404);
+            assert_eq!(header_of(&resp, header::CACHE_CONTROL), "");
+        }
+
+        #[actix_web::test]
+        async fn compresses_assets_when_the_client_asks() {
+            let dir = TestWebDir::new();
+            let resp = get!(
+                dir,
+                "/_next/static/chunks/main-abc123.js",
+                (header::ACCEPT_ENCODING, "gzip")
+            );
+            assert_eq!(header_of(&resp, header::CONTENT_ENCODING), "gzip");
+            // Without this, a shared cache may serve the compressed bytes to a client that
+            // cannot read them.
+            assert_eq!(
+                header_of(&resp, header::VARY).to_lowercase(),
+                "accept-encoding"
+            );
+        }
+
+        #[actix_web::test]
+        async fn leaves_responses_alone_when_the_client_cannot_decompress() {
+            let dir = TestWebDir::new();
+            let resp = get!(dir, "/_next/static/chunks/main-abc123.js");
+            assert_eq!(header_of(&resp, header::CONTENT_ENCODING), "");
+        }
+    }
+
+    /// Six endpoints upgrade to WebSocket, and browsers send `Accept-Encoding` on the handshake
+    /// like any other request. Compressing a 101 would break all of them at once, in a way no
+    /// unit test of those handlers would notice — the app-wide `Compress` is not visible from
+    /// there. Pins the guarantee so an actix upgrade cannot quietly withdraw it.
+    #[actix_web::test]
+    async fn compress_leaves_protocol_upgrades_alone() {
+        use actix_web::http::header;
+
+        let app = test::init_service(App::new().wrap(Compress::default()).route(
+            "/ws",
+            web::get().to(|| async {
+                HttpResponse::SwitchingProtocols()
+                    .insert_header(("upgrade", "websocket"))
+                    .body("frame bytes, not a payload to encode")
+            }),
+        ))
+        .await;
+        let req = test::TestRequest::get()
+            .uri("/ws")
+            .insert_header((header::ACCEPT_ENCODING, "gzip, deflate, br"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::SWITCHING_PROTOCOLS);
+        assert!(resp.headers().get(header::CONTENT_ENCODING).is_none());
     }
 }
