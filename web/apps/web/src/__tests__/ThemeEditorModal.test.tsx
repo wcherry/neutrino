@@ -248,4 +248,23 @@ describe('ThemeEditorModal', () => {
     renderModal({ mode: 'create' });
     expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
   });
+
+  // ── Color picker (issue #97) ─────────────────────────────────────────
+
+  it('lets a colour be typed into the picker opened from a swatch', async () => {
+    renderModal({ mode: 'create' });
+    const user = userEvent.setup();
+
+    // The picker renders into its own portal, outside the modal's focus trap.
+    await user.click(screen.getByTitle('Background'));
+    await user.click(screen.getByRole('button', { name: 'Values' }));
+
+    const hex = screen.getByDisplayValue(/^#[0-9a-f]{6}$/i);
+    await user.click(hex);
+    expect(hex).toHaveFocus();
+
+    await user.clear(hex);
+    await user.type(hex, '#abcdef');
+    expect(hex).toHaveValue('#abcdef');
+  });
 });
