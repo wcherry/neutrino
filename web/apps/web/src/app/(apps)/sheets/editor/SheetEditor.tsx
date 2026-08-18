@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { flushSync } from 'react-dom';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,7 +14,6 @@ import type { CellProps, ClipboardCFRule, CFRule, SheetFile, TableRegion } from 
 import type { SheetTemplate } from './templates/sheetTemplates';
 import { sheetFileToSheetsData } from './hooks/sheetFileUtils';
 import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, getCellBounds, type ArrowNavigationKey } from './utils';
-import { MAX_ROWS, MAX_COLS } from './constants';
 import { useHistory } from './hooks/useHistory';
 import { useClipboard } from './hooks/useClipboard';
 import { useSheets } from './hooks/useSheets';
@@ -24,6 +23,11 @@ import { useCellEditing } from './hooks/useCellEditing';
 import { useConditionalFormatting } from './hooks/useConditionalFormatting';
 import { useTableRegions } from './hooks/useTableRegions';
 import { computeStructuralShift } from './structuralShift';
+import {
+    selectHeader, extendHeaderSelection, headerRuns, headerSelectionLabel,
+    headerSelectionCellBounds, headerSelectionCells,
+    type HeaderAxis, type HeaderClickModifiers, type HeaderSelection,
+} from './headerSelection';
 import type { TableStyle } from './styles/tableStyles';
 import { ConditionalFormattingDialog } from './ConditionalFormattingDialog';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
@@ -204,9 +208,12 @@ export function SheetEditor() {
     // so React never overwrites user-typed content during re-renders.
     const titleInputRef = useRef<HTMLDivElement | null>(null);
 
-    const [headerSelectionLabel, setHeaderSelectionLabel] = useState<string | null>(null);
-    const [highlightedCol, setHighlightedCol] = useState<number | null>(null);
-    const [highlightedRow, setHighlightedRow] = useState<number | null>(null);
+    // The selected row / column headers, or null when the selection is cell-based.
+    const [headerSelection, setHeaderSelection] = useState<HeaderSelection | null>(null);
+    // Read by the header mouse handlers, which are called back-to-back during a
+    // drag and must each see the selection the previous one produced.
+    const headerSelectionRef = useRef<HeaderSelection | null>(null);
+    headerSelectionRef.current = headerSelection;
 
     const [hamburgerDialog, setHamburgerDialog] = useState<string | null>(null);
     const [hamburgerDeleteConfirm, setHamburgerDeleteConfirm] = useState(false);
@@ -458,10 +465,76 @@ export function SheetEditor() {
         formulaInputRef,
     });
 
+    // ── Selected cells ───────────────────────────────────────────────────────
+    // A header selection is not a rectangle (Cmd+click can leave gaps), so it
+    // cannot be expressed as the anchor/active pair `editing.selectedCells` is
+    // built from. Everything downstream — clear, styling, the table gallery —
+    // reads this instead, so it acts on exactly the highlighted cells.
+    //
+    // Deferred, because materialising it is the one expensive part of a header
+    // selection — a column is MAX_ROWS cell ids — and dragging across headers
+    // produces a new selection on every mousemove. The highlight is painted from
+    // the header indices instead (see `gridHeaderSelection`), so nothing on
+    // screen waits for this; React discards the intermediate drag steps and only
+    // builds the set once the drag settles, well before any menu or toolbar
+    // click can read it.
+    // Deferring only applies while a header selection stands: clearing one must
+    // take effect at once, or the deferred value would keep the departed columns
+    // in the set for a frame after a cell has been clicked.
+    const deferredHeaderSelection = useDeferredValue(headerSelection);
+    const settledHeaderSelection = headerSelection ? deferredHeaderSelection : null;
+    const selectedCells = useMemo(
+        () => settledHeaderSelection ? headerSelectionCells(settledHeaderSelection) : editing.selectedCells,
+        [settledHeaderSelection, editing.selectedCells],
+    );
+
+    // What SheetGrid needs to paint the header selection: O(1) membership for
+    // the highlight and one box per contiguous block for the outline.
+    const gridHeaderSelection = useMemo(
+        () => headerSelection
+            ? {
+                axis: headerSelection.axis,
+                indices: new Set(headerSelection.indices),
+                runs: headerRuns(headerSelection.indices),
+            }
+            : null,
+        [headerSelection],
+    );
+
+    // The two exact readers of the selection. They go through the live ref
+    // rather than the deferred `selectedCells` above, so an operation always
+    // acts on what is highlighted right now.
+    const getSelectedCells = useCallback(() => {
+        const selection = headerSelectionRef.current;
+        return selection ? headerSelectionCells(selection) : editing.selectedCells;
+    }, [editing.selectedCells]);
+
+    const isCellSelected = useCallback((cellId: string) => {
+        const selection = headerSelectionRef.current;
+        if (!selection) return editing.selectedCells.has(cellId);
+        const parsed = parseCellId(cellId);
+        if (!parsed) return false;
+        return selection.indices.includes((selection.axis === 'col' ? parsed.col : parsed.row) - 1);
+    }, [editing.selectedCells]);
+
+    // `editing.applyStyle` derives its target from the anchor/active rectangle,
+    // which over-covers a non-contiguous header selection — route those through
+    // the per-cell path so the gaps are left alone.
+    const applyStyleToSelection = useCallback((style: Partial<CellStyle>) => {
+        if (!headerSelectionRef.current) {
+            editing.applyStyle(style);
+            return;
+        }
+        const patches = new Map<string, Partial<CellStyle>>();
+        for (const id of getSelectedCells()) patches.set(id, style);
+        editing.applyStyleMap(patches);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editing.applyStyle, editing.applyStyleMap, getSelectedCells]);
+
     // Stable refs for document-level keyboard handler; updated every render so
     // the effect with empty deps always reads the latest values without re-registering.
-    const applyStyleRef = useRef(editing.applyStyle);
-    applyStyleRef.current = editing.applyStyle;
+    const applyStyleRef = useRef(applyStyleToSelection);
+    applyStyleRef.current = applyStyleToSelection;
     const selectedCellStyleRef = useRef(editing.selectedCellStyle);
     selectedCellStyleRef.current = editing.selectedCellStyle;
 
@@ -685,7 +758,7 @@ export function SheetEditor() {
 
     const handleCellContextMenu = useCallback((cellId: string, x: number, y: number) => {
         if (isViewer) return;
-        if (!editing.selectedCells.has(cellId)) {
+        if (!isCellSelected(cellId)) {
             editing.stableOnCellActivate(cellId);
         }
 
@@ -711,7 +784,7 @@ export function SheetEditor() {
         }
 
         setContextMenu({ cellId, x, y });
-    }, [editing.selectedCells, editing.stableOnCellActivate, spellCheck, nspell, dataRef]);
+    }, [isCellSelected, editing.stableOnCellActivate, spellCheck, nspell, dataRef]);
 
     const handleApplySuggestion = useCallback((word: string) => {
         if (!contextMenu || !spellWord) return;
@@ -869,17 +942,24 @@ export function SheetEditor() {
     // in this file, e.g. handleTextChange/contextMenu) and calling setData with
     // a plain value instead sidesteps that entirely — everything here runs
     // exactly once per click.
-    const runStructuralShift = useCallback((axis: 'row' | 'col', op: 'insert' | 'delete', index: number) => {
+    // Applies one shift per entry in `indices` (1-based), chaining each result
+    // into the next so a multi-header operation lands as a single undo step.
+    // Callers pass the indices in whatever order keeps them valid across the
+    // chain: descending for delete, so removing one doesn't renumber the rest.
+    const runStructuralShifts = useCallback((axis: 'row' | 'col', op: 'insert' | 'delete', indices: number[]) => {
+        if (indices.length === 0) return;
         const prev = dataRef.current;
         history.pushToUndo(new Map(prev));
-        const result = computeStructuralShift({
+        let result = {
             cells: prev,
             colWidths: colWidthsRef.current,
             rowHeights: rowHeightsRef.current,
             conditionalFormats: cf.conditionalFormatsRef.current,
             tableRegions: tableRegions.tableRegionsRef.current,
-            axis, op, index,
-        });
+        };
+        for (const index of indices) {
+            result = computeStructuralShift({ ...result, axis, op, index });
+        }
         setData(result.cells);
         setColWidths(result.colWidths);
         setRowHeights(result.rowHeights);
@@ -887,6 +967,10 @@ export function SheetEditor() {
         tableRegions.updateTableRegions(result.tableRegions);
         dirtyRef.current = true;
     }, [dataRef, setData, history, cf, tableRegions, setColWidths, setRowHeights, dirtyRef]);
+
+    const runStructuralShift = useCallback((axis: 'row' | 'col', op: 'insert' | 'delete', index: number) => {
+        runStructuralShifts(axis, op, [index]);
+    }, [runStructuralShifts]);
 
     const handleInsertRowAbove = useCallback(() => {
         if (!contextMenu) return;
@@ -931,7 +1015,7 @@ export function SheetEditor() {
     }, [contextMenu, parseContextCellId, runStructuralShift]);
 
     const handleClearCells = useCallback(() => {
-        const cells = editing.selectedCells;
+        const cells = getSelectedCells();
         if (cells.size === 0) return;
         const allSheets = getAllSheets();
         setData(prev => {
@@ -948,7 +1032,7 @@ export function SheetEditor() {
             return next;
         });
         dirtyRef.current = true;
-    }, [editing.selectedCells, setData, history, dirtyRef, getAllSheets]);
+    }, [getSelectedCells, setData, history, dirtyRef, getAllSheets]);
 
     // Keep the delete-key ref up-to-date with the latest version of handleClearCells.
     handleClearCellsNavRef.current = handleClearCells;
@@ -1103,25 +1187,49 @@ export function SheetEditor() {
         });
     }, [tableRegions]);
 
-    // ── Header context menu: row operations ──────────────────────────────────
-    const handleHeaderInsertRowAbove = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
-        runStructuralShift('row', 'insert', headerContextMenu.index + 1);
-    }, [headerContextMenu, runStructuralShift]);
+    // ── Header context menu operations ───────────────────────────────────────
+    // Each of these acts on every selected header, which is what the menu's
+    // pluralised labels ("Delete 3 columns") promise. The right-clicked header
+    // alone is the target when it sits outside the current selection — the
+    // same rule `openHeaderContextMenu` applies to the selection itself.
+    const headerContextTarget = useCallback((): { axis: HeaderAxis; indices: number[] } | null => {
+        if (!headerContextMenu) return null;
+        const axis = headerContextMenu.type;
+        const selection = headerSelectionRef.current;
+        const indices = selection && selection.axis === axis && selection.indices.includes(headerContextMenu.index)
+            ? selection.indices
+            : [headerContextMenu.index];
+        return { axis, indices };
+    }, [headerContextMenu]);
 
-    const handleHeaderInsertRowBelow = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
-        runStructuralShift('row', 'insert', headerContextMenu.index + 2);
-    }, [headerContextMenu, runStructuralShift]);
+    const handleHeaderInsertBefore = useCallback(() => {
+        const target = headerContextTarget();
+        if (!target) return;
+        // Repeating the same 1-based index inserts the whole block in front of
+        // the first selected header, matching "Insert N columns left".
+        const at = target.indices[0] + 1;
+        runStructuralShifts(target.axis, 'insert', target.indices.map(() => at));
+    }, [headerContextTarget, runStructuralShifts]);
 
-    const handleHeaderDeleteRow = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
-        runStructuralShift('row', 'delete', headerContextMenu.index + 1);
-    }, [headerContextMenu, runStructuralShift]);
+    const handleHeaderInsertAfter = useCallback(() => {
+        const target = headerContextTarget();
+        if (!target) return;
+        const at = target.indices[target.indices.length - 1] + 2;
+        runStructuralShifts(target.axis, 'insert', target.indices.map(() => at));
+    }, [headerContextTarget, runStructuralShifts]);
 
-    const handleHeaderClearRow = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
-        const rowN = headerContextMenu.index + 1;
+    const handleHeaderDelete = useCallback(() => {
+        const target = headerContextTarget();
+        if (!target) return;
+        // Descending, so removing one header never renumbers those still to go.
+        const indices = [...target.indices].sort((a, b) => b - a).map(i => i + 1);
+        runStructuralShifts(target.axis, 'delete', indices);
+    }, [headerContextTarget, runStructuralShifts]);
+
+    const handleHeaderClear = useCallback(() => {
+        const target = headerContextTarget();
+        if (!target) return;
+        const cleared = new Set(target.indices.map(i => i + 1));
         const allSheets = getAllSheets();
         setData(prev => {
             history.pushToUndo(new Map(prev));
@@ -1129,7 +1237,9 @@ export function SheetEditor() {
             const toClear: string[] = [];
             for (const id of prev.keys()) {
                 const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (m && parseInt(m[2]) === rowN) toClear.push(id);
+                if (!m) continue;
+                const coord = target.axis === 'col' ? alphaToNum(m[1]) : parseInt(m[2]);
+                if (cleared.has(coord)) toClear.push(id);
             }
             for (const id of toClear) {
                 const cell = next.get(id)!;
@@ -1142,62 +1252,19 @@ export function SheetEditor() {
             return next;
         });
         dirtyRef.current = true;
-    }, [headerContextMenu, setData, history, dirtyRef, getAllSheets]);
+    }, [headerContextTarget, setData, history, dirtyRef, getAllSheets]);
 
-    const handleHeaderHideRow = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'row') return;
-        const idx = headerContextMenu.index;
-        setRowHeights(prev => { const next = new Map(prev); next.set(idx, 0); return next; });
-        dirtyRef.current = true;
-    }, [headerContextMenu, setRowHeights, dirtyRef]);
-
-    // ── Header context menu: column operations ───────────────────────────────
-    const handleHeaderInsertColLeft = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
-        runStructuralShift('col', 'insert', headerContextMenu.index + 1);
-    }, [headerContextMenu, runStructuralShift]);
-
-    const handleHeaderInsertColRight = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
-        runStructuralShift('col', 'insert', headerContextMenu.index + 2);
-    }, [headerContextMenu, runStructuralShift]);
-
-    const handleHeaderDeleteCol = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
-        runStructuralShift('col', 'delete', headerContextMenu.index + 1);
-    }, [headerContextMenu, runStructuralShift]);
-
-    const handleHeaderClearCol = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
-        const colN = headerContextMenu.index + 1;
-        const allSheets = getAllSheets();
-        setData(prev => {
-            history.pushToUndo(new Map(prev));
+    const handleHeaderHide = useCallback(() => {
+        const target = headerContextTarget();
+        if (!target) return;
+        const setSizes = target.axis === 'col' ? setColWidths : setRowHeights;
+        setSizes(prev => {
             const next = new Map(prev);
-            const toClear: string[] = [];
-            for (const id of prev.keys()) {
-                const m = id.match(/^([A-Z]+)(\d+)$/);
-                if (m && alphaToNum(m[1]) === colN) toClear.push(id);
-            }
-            for (const id of toClear) {
-                const cell = next.get(id)!;
-                const { value, deps } = computeCell('', next, allSheets);
-                next.set(id, { ...cell, raw: '', value, deps, edit: false });
-            }
-            for (const id of toClear) {
-                propagateDeps(id, next, new Set([id]), allSheets);
-            }
+            for (const i of target.indices) next.set(i, 0);
             return next;
         });
         dirtyRef.current = true;
-    }, [headerContextMenu, setData, history, dirtyRef, getAllSheets]);
-
-    const handleHeaderHideCol = useCallback(() => {
-        if (!headerContextMenu || headerContextMenu.type !== 'col') return;
-        const idx = headerContextMenu.index;
-        setColWidths(prev => { const next = new Map(prev); next.set(idx, 0); return next; });
-        dirtyRef.current = true;
-    }, [headerContextMenu, setColWidths, dirtyRef]);
+    }, [headerContextTarget, setColWidths, setRowHeights, dirtyRef]);
 
     // ── Find & Replace handlers ──────────────────────────────────────────────
     const handleFindReplaceOne = useCallback((cellId: string, newRaw: string) => {
@@ -1420,9 +1487,8 @@ export function SheetEditor() {
 
     // ── Header click handlers ────────────────────────────────────────────────
     const clearHeaderSelection = useCallback(() => {
-        setHeaderSelectionLabel(null);
-        setHighlightedCol(null);
-        setHighlightedRow(null);
+        headerSelectionRef.current = null;
+        setHeaderSelection(null);
     }, []);
     // Keep the arrow-nav ref up-to-date with the stable version of this callback.
     clearHeaderSelectionNavRef.current = clearHeaderSelection;
@@ -1433,47 +1499,81 @@ export function SheetEditor() {
         handleFormulaBarFocus: onFormulaBarFocus,
     } = editing;
 
-    const handleColHeaderClick = useCallback((c: number) => {
+    // Commits a header selection: the anchor/active pair follows its bounding
+    // range so the name box, presence and arrow-key navigation stay meaningful,
+    // while `selectedCells` (above) carries the exact set.
+    const commitHeaderSelection = useCallback((next: HeaderSelection) => {
         setKeyboardMode('movement');
-        const colLetter = numToAlpha(c + 1);
-        const anchor = `${colLetter}1`;
-        const active = `${colLetter}${MAX_ROWS}`;
+        headerSelectionRef.current = next;
+        setHeaderSelection(next);
+        const { anchor, active } = headerSelectionCellBounds(next);
         selectionAnchorRef.current = anchor;
         selectionActiveRef.current = active;
         setSelectionAnchor(anchor);
         setSelectionActive(active);
         setCurrentCell(undefined);
-        setHeaderSelectionLabel(colLetter);
-        setHighlightedCol(c);
-        setHighlightedRow(null);
     }, [setSelectionAnchor, setSelectionActive]);
 
-    const handleRowHeaderClick = useCallback((r: number) => {
-        setKeyboardMode('movement');
-        const anchor = `A${r + 1}`;
-        const active = `${numToAlpha(MAX_COLS)}${r + 1}`;
-        selectionAnchorRef.current = anchor;
-        selectionActiveRef.current = active;
-        setSelectionAnchor(anchor);
-        setSelectionActive(active);
-        setCurrentCell(undefined);
-        setHeaderSelectionLabel(`${r + 1}`);
-        setHighlightedRow(r);
-        setHighlightedCol(null);
-    }, [setSelectionAnchor, setSelectionActive]);
+    // Anything that moves the selection without going through the header
+    // handlers — undo/redo, Select all, Find — leaves the headers no longer
+    // describing what is selected, so the header selection drops away.
+    // `commitHeaderSelection` sets both in one batch, so its own writes match.
+    useEffect(() => {
+        const selection = headerSelectionRef.current;
+        if (!selection) return;
+        const bounds = headerSelectionCellBounds(selection);
+        if (selectionAnchor !== bounds.anchor || selectionActive !== bounds.active) {
+            clearHeaderSelection();
+        }
+    }, [selectionAnchor, selectionActive, clearHeaderSelection]);
+
+    const handleHeaderSelect = useCallback((axis: HeaderAxis, index: number, mods: HeaderClickModifiers) => {
+        commitHeaderSelection(selectHeader(headerSelectionRef.current, axis, index, mods));
+    }, [commitHeaderSelection]);
+
+    const handleColHeaderSelect = useCallback(
+        (c: number, mods: HeaderClickModifiers) => handleHeaderSelect('col', c, mods),
+        [handleHeaderSelect]);
+
+    const handleRowHeaderSelect = useCallback(
+        (r: number, mods: HeaderClickModifiers) => handleHeaderSelect('row', r, mods),
+        [handleHeaderSelect]);
+
+    // Fired for every mousemove a header drag makes. Re-committing an unchanged
+    // selection would rebuild the (large) selected-cell set on each one, so a
+    // move that stays within the same header is dropped.
+    const handleHeaderExtendTo = useCallback((axis: HeaderAxis, index: number) => {
+        const current = headerSelectionRef.current;
+        if (!current || current.axis !== axis) return;
+        const next = extendHeaderSelection(current, index);
+        if (next.indices.length === current.indices.length
+            && next.indices.every((v, i) => v === current.indices[i])) return;
+        commitHeaderSelection(next);
+    }, [commitHeaderSelection]);
+
+    const handleColHeaderExtendTo = useCallback((c: number) => handleHeaderExtendTo('col', c), [handleHeaderExtendTo]);
+    const handleRowHeaderExtendTo = useCallback((r: number) => handleHeaderExtendTo('row', r), [handleHeaderExtendTo]);
 
     // ── Header context menu handlers ─────────────────────────────────────────
-    const handleColHeaderContextMenu = useCallback((colIndex: number, x: number, y: number) => {
+    // Right-clicking inside an existing multi-header selection keeps it, so the
+    // menu acts on every selected row/column; right-clicking outside selects
+    // just the header under the cursor first.
+    const openHeaderContextMenu = useCallback((axis: HeaderAxis, index: number, x: number, y: number) => {
         if (isViewer) return;
-        handleColHeaderClick(colIndex);
-        setHeaderContextMenu({ type: 'col', index: colIndex, x, y });
-    }, [isViewer, handleColHeaderClick]);
+        const current = headerSelectionRef.current;
+        if (!current || current.axis !== axis || !current.indices.includes(index)) {
+            handleHeaderSelect(axis, index, {});
+        }
+        setHeaderContextMenu({ type: axis, index, x, y });
+    }, [isViewer, handleHeaderSelect]);
 
-    const handleRowHeaderContextMenu = useCallback((rowIndex: number, x: number, y: number) => {
-        if (isViewer) return;
-        handleRowHeaderClick(rowIndex);
-        setHeaderContextMenu({ type: 'row', index: rowIndex, x, y });
-    }, [isViewer, handleRowHeaderClick]);
+    const handleColHeaderContextMenu = useCallback(
+        (colIndex: number, x: number, y: number) => openHeaderContextMenu('col', colIndex, x, y),
+        [openHeaderContextMenu]);
+
+    const handleRowHeaderContextMenu = useCallback(
+        (rowIndex: number, x: number, y: number) => openHeaderContextMenu('row', rowIndex, x, y),
+        [openHeaderContextMenu]);
 
     const closeHeaderContextMenu = useCallback(() => setHeaderContextMenu(null), []);
 
@@ -1545,7 +1645,7 @@ export function SheetEditor() {
     };
 
     // ── Derived display ──────────────────────────────────────────────────────
-    const addressDisplay = headerSelectionLabel
+    const addressDisplay = (headerSelection ? headerSelectionLabel(headerSelection) : null)
         ?? (selectionAnchor
             ? rangeAddress(selectionAnchor, selectionActive ?? selectionAnchor)
             : (currentCell?.id ?? ''));
@@ -1578,7 +1678,7 @@ export function SheetEditor() {
                     onSelectAll={history.selectAll}
                     onOpenFindReplace={() => setFindReplaceMode('replace')}
                     cellStyle={editing.selectedCellStyle}
-                    onStyleChange={editing.applyStyle}
+                    onStyleChange={applyStyleToSelection}
                     formatDisabled={!selectionAnchor || isViewer}
                     isMerged={editing.isMerged}
                     onMergeCells={editing.mergeCells}
@@ -1652,7 +1752,7 @@ export function SheetEditor() {
 
             <StyleToolbar
                 cellStyle={editing.selectedCellStyle}
-                onStyleChange={editing.applyStyle}
+                onStyleChange={applyStyleToSelection}
                 disabled={!selectionAnchor || isViewer}
                 onUndo={history.undo}
                 onRedo={history.redo}
@@ -1665,10 +1765,10 @@ export function SheetEditor() {
                 onConditionalFormat={flags.sheetsConditionalFormatting ? () => setShowCFDialog(v => !v) : undefined}
                 isFormatPainterActive={!!formatPainterSource}
                 onFormatPainterClick={handleFormatPainterClick}
-                selectedCells={editing.selectedCells}
+                selectedCells={selectedCells}
                 onApplyStyleMap={editing.applyStyleMap}
                 onRegisterTableRegion={handleRegisterTableStyle}
-                onApplyStyle={editing.applyStyle}
+                onApplyStyle={applyStyleToSelection}
                 onClearTableRegions={handleClearTableRegionsForSelection}
             />
 
@@ -1693,7 +1793,7 @@ export function SheetEditor() {
                 >
                     <SheetGrid
                         data={data}
-                        selectedCells={editing.selectedCells}
+                        selectedCells={selectedCells}
                         cutCells={clipboard.cutCells}
                         onCellActivate={handleCellActivate}
                         onSelectionExtend={handleSelectionExtend}
@@ -1701,14 +1801,15 @@ export function SheetEditor() {
                         rowHeights={rowHeights}
                         onColResize={handleColResize}
                         onRowResize={handleRowResize}
-                        onColHeaderClick={handleColHeaderClick}
-                        onRowHeaderClick={handleRowHeaderClick}
-                        highlightedCol={highlightedCol}
-                        highlightedRow={highlightedRow}
+                        onColHeaderSelect={handleColHeaderSelect}
+                        onRowHeaderSelect={handleRowHeaderSelect}
+                        onColHeaderExtendTo={handleColHeaderExtendTo}
+                        onRowHeaderExtendTo={handleRowHeaderExtendTo}
+                        headerSelection={gridHeaderSelection}
                         formulaPickMode={editing.formulaPickMode}
                         onFormulaPickMouseDown={editing.handleFormulaPickMouseDown}
                         onFormulaPickMouseMove={editing.handleFormulaPickMouseMove}
-                        formulaPickCells={editing.formulaPickMode ? editing.selectedCells : undefined}
+                        formulaPickCells={editing.formulaPickMode ? selectedCells : undefined}
                         formulaRefHighlights={editing.formulaRefHighlights}
                         onCellContextMenu={handleCellContextMenu}
                         onColHeaderContextMenu={handleColHeaderContextMenu}
@@ -1828,7 +1929,7 @@ export function SheetEditor() {
                     x={contextMenu.x}
                     y={contextMenu.y}
                     cellId={contextMenu.cellId}
-                    selectedCells={editing.selectedCells}
+                    selectedCells={selectedCells}
                     cellValue={dataRef.current.get(contextMenu.cellId)?.raw ?? ''}
                     spellWord={spellWord}
                     spellSuggestions={spellSuggestions}
@@ -1852,6 +1953,10 @@ export function SheetEditor() {
                     x={headerContextMenu.x}
                     y={headerContextMenu.y}
                     type={headerContextMenu.type}
+                    count={headerSelection?.axis === headerContextMenu.type
+                        && headerSelection.indices.includes(headerContextMenu.index)
+                        ? headerSelection.indices.length
+                        : 1}
                     hasFilter={headerContextMenu.type === 'col' && columnFilters.has(headerContextMenu.index)}
                     onSortAsc={() => {
                         if (headerContextMenu.type === 'col') handleSortByCol(headerContextMenu.index, true);
@@ -1863,11 +1968,11 @@ export function SheetEditor() {
                     }}
                     onFilter={headerContextMenu.type === 'col' ? () => setFilterDialogCol(headerContextMenu.index) : undefined}
                     onClearFilter={headerContextMenu.type === 'col' ? () => handleApplyFilter(headerContextMenu.index, null) : undefined}
-                    onInsertBefore={headerContextMenu.type === 'col' ? handleHeaderInsertColLeft : handleHeaderInsertRowAbove}
-                    onInsertAfter={headerContextMenu.type === 'col' ? handleHeaderInsertColRight : handleHeaderInsertRowBelow}
-                    onDelete={headerContextMenu.type === 'col' ? handleHeaderDeleteCol : handleHeaderDeleteRow}
-                    onClear={headerContextMenu.type === 'col' ? handleHeaderClearCol : handleHeaderClearRow}
-                    onHide={headerContextMenu.type === 'col' ? handleHeaderHideCol : handleHeaderHideRow}
+                    onInsertBefore={handleHeaderInsertBefore}
+                    onInsertAfter={handleHeaderInsertAfter}
+                    onDelete={handleHeaderDelete}
+                    onClear={handleHeaderClear}
+                    onHide={handleHeaderHide}
                     onClose={closeHeaderContextMenu}
                 />
             )}
