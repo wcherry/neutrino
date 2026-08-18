@@ -7,6 +7,7 @@ import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { applyTextCase } from '@/lib/textCase';
+import { FIELD_DEFS } from '@/lib/docFields';
 import styles from './MenuBar.module.css';
 
 // ── Help modal ────────────────────────────────────────────────────────────
@@ -30,6 +31,9 @@ const SHORTCUTS = [
   { action: 'Normal text',      keys: ['Ctrl', 'Alt', '0'] },
   { action: 'Bullet list',      keys: ['Ctrl', 'Shift', '8'] },
   { action: 'Numbered list',    keys: ['Ctrl', 'Shift', '7'] },
+  { action: 'Refresh all fields', keys: ['F9'] },
+  { action: 'Show this field as its code', keys: ['Shift', 'F9'] },
+  { action: 'Show all field codes', keys: ['Alt', 'F9'] },
 ];
 
 function HelpModal({ onClose }: { onClose: () => void }) {
@@ -75,6 +79,11 @@ function HelpModal({ onClose }: { onClose: () => void }) {
             <li>Version History lets you restore any previous save.</li>
             <li>Comments let you annotate specific sections.</li>
             <li>Import a Word (.docx) file to convert it to a Neutrino Doc.</li>
+            <li>
+              Type a field code — <code>{'{{title}}'}</code>, <code>{'{{page}}'}</code>,{' '}
+              <code>{'{{author:My Self}}'}</code> — to drop in a value that keeps itself up to
+              date. Double-click one to switch between the code and its value.
+            </li>
           </ul>
         </section>
 
@@ -115,6 +124,8 @@ export interface HamburgerMenuProps {
   onToggleRulers: () => void;
   singlePageMode: boolean;
   onToggleSinglePage: () => void;
+  splitParagraphs: boolean;
+  onToggleSplitParagraphs: () => void;
   // Office mode (issue #43) — true when this file is a raw .docx being edited
   // in place rather than a native Neutrino doc.
   officeMode?: boolean;
@@ -138,6 +149,15 @@ export interface HamburgerMenuProps {
   onAiSuggestions?: () => void;
   onAiSummarize?: () => void;
   onAiChangeTone?: () => void;
+  // Field codes — `{{title}}`, `{{page}}`, `{{author:My Self}}` and friends.
+  /** Opens the picker for a field with a fallback or a custom property. */
+  onInsertFieldDialog?: () => void;
+  /** Opens the dialog holding the values the metadata fields read. */
+  onDocProperties?: () => void;
+  /** Whether every field is currently showing its code rather than its value. */
+  showFieldCodes?: boolean;
+  onToggleFieldCodes?: () => void;
+  onRefreshFields?: () => void;
 }
 
 export function HamburgerMenu({
@@ -162,6 +182,8 @@ export function HamburgerMenu({
   onToggleRulers,
   singlePageMode,
   onToggleSinglePage,
+  splitParagraphs,
+  onToggleSplitParagraphs,
   officeMode,
   onConvertToNative,
   onInsertFootnote,
@@ -178,6 +200,11 @@ export function HamburgerMenu({
   onAiSuggestions,
   onAiSummarize,
   onAiChangeTone,
+  onInsertFieldDialog,
+  onDocProperties,
+  showFieldCodes,
+  onToggleFieldCodes,
+  onRefreshFields,
 }: HamburgerMenuProps) {
   const flags = useFeatureFlags();
   const router = useRouter();
@@ -221,6 +248,7 @@ export function HamburgerMenu({
           ],
         },
         { kind: 'separator' },
+        { kind: 'action', label: 'Document properties…',               action: () => onDocProperties?.() },
         { kind: 'action', label: 'Page setup…',                        action: () => onPageSetup() },
         { kind: 'action', label: 'Print…',          shortcut: 'Ctrl+P', action: () => onPrint() },
       ],
@@ -274,9 +302,9 @@ export function HamburgerMenu({
             { kind: 'action', label: 'Double (2.0)',       action: () => {} },
           ],
         },
+        { kind: 'separator' as const },
+        { kind: 'action' as const, label: 'Header & footer…',  action: () => onHeaderFooter?.() },
         ...(flags.docsLayoutStructure ? [
-          { kind: 'separator' as const },
-          { kind: 'action' as const, label: 'Header & footer…',  action: () => onHeaderFooter?.() },
           { kind: 'action' as const, label: 'Watermark…',         action: () => onWatermark?.() },
           { kind: 'action' as const, label: 'Document theme…',    action: () => onTheme?.() },
         ] : []),
@@ -312,6 +340,30 @@ export function HamburgerMenu({
         ...(flags.docsAdvancedFormatting
           ? [{ kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() }]
           : []),
+        { kind: 'separator' },
+        {
+          // Field codes. The plain cases insert straight from here; a fallback
+          // or a custom property needs the dialog. Refresh and the code/value
+          // switch live in the same submenu because they are what you reach for
+          // right after inserting one.
+          kind: 'submenu', label: 'Field', items: [
+            ...FIELD_DEFS.map(def => ({
+              kind: 'action' as const,
+              label: def.label,
+              action: () => editor?.chain().focus().insertDocField({ code: def.code }).run(),
+            })),
+            { kind: 'separator' as const },
+            { kind: 'action' as const, label: 'Field with fallback…', action: () => onInsertFieldDialog?.() },
+            { kind: 'separator' as const },
+            { kind: 'action' as const, label: 'Refresh all fields', shortcut: 'F9', action: () => onRefreshFields?.() },
+            {
+              kind: 'action' as const,
+              label: showFieldCodes ? 'Show field codes ✓' : 'Show field codes',
+              shortcut: 'Alt+F9',
+              action: () => onToggleFieldCodes?.(),
+            },
+          ],
+        },
         { kind: 'separator' },
         { kind: 'action', label: 'Table',                               action: () => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run() },
         { kind: 'action', label: 'Horizontal rule',                     action: () => editor?.chain().focus().setHorizontalRule().run() },
@@ -350,6 +402,11 @@ export function HamburgerMenu({
         { kind: 'separator' as const },
         { kind: 'action' as const, label: showRulers ? 'Rulers ✓' : 'Rulers', action: () => onToggleRulers() },
         { kind: 'action' as const, label: singlePageMode ? 'Single page ✓' : 'Single page', action: () => onToggleSinglePage() },
+        {
+          kind: 'action' as const,
+          label: splitParagraphs ? 'Split paragraphs across pages ✓' : 'Split paragraphs across pages',
+          action: () => onToggleSplitParagraphs(),
+        },
         ...(flags.docsDistractionFree ? [
           { kind: 'separator' as const },
           { kind: 'action' as const, label: distractionFree ? 'Focus mode ✓' : 'Focus mode', shortcut: 'Ctrl+Shift+F', action: () => onToggleFocus?.() },
