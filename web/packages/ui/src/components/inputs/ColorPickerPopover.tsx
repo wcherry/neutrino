@@ -83,6 +83,17 @@ export function ColorPickerPopover({ color, onChange, onOpen, disabled, title, c
         el.style.left = `${left}px`;
     }, [open, pos]);
 
+    // Swallowing the default of a mousedown inside the popover is what keeps the
+    // caller's selection alive while a color is picked — the docs editor's text
+    // selection would otherwise be gone by the time onChange fires. But that
+    // default is also how the browser moves focus and starts a drag, so form
+    // controls have to be exempt: prevent it on an <input> and the hex/RGB/LCH
+    // fields never take the caret and the V/A sliders never move.
+    function handlePopoverMouseDown(e: React.MouseEvent) {
+        if ((e.target as HTMLElement).closest?.('input, textarea, select')) return;
+        e.preventDefault();
+    }
+
     function handleOpen() {
         if (disabled) return;
         if (!open) onOpen?.();
@@ -108,7 +119,7 @@ export function ColorPickerPopover({ color, onChange, onOpen, disabled, title, c
                 </ToolbarButton>
             </div>
             {open && createPortal(
-                <div ref={popoverRef} data-color-picker-portal="" onMouseDown={(e) => e.preventDefault()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}>
+                <div ref={popoverRef} data-color-picker-portal="" onMouseDown={handlePopoverMouseDown} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}>
                     <ColorPicker value={color} onChange={(hex) => { onChange(hex); }} showAlpha={showAlpha} onClose={() => setOpen(false)} />
                 </div>,
                 document.body
