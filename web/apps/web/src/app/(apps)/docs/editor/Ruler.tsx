@@ -78,12 +78,15 @@ export interface VerticalRulerProps {
   pageHeightPx: number;
   marginTopPx: number;
   marginBottomPx: number;
+  /** Blank space between two sheets — the ruler skips it, as the page does. */
+  gapPx?: number;
   totalPages: number;
 }
 
-export function VerticalRuler({ pageHeightPx, marginTopPx, marginBottomPx, totalPages }: VerticalRulerProps) {
+export function VerticalRuler({ pageHeightPx, marginTopPx, marginBottomPx, gapPx = 0, totalPages }: VerticalRulerProps) {
   const contentHeightPx = pageHeightPx - marginTopPx - marginBottomPx;
-  const totalHeight = totalPages * pageHeightPx;
+  const stride = pageHeightPx + gapPx;
+  const totalHeight = totalPages * stride - gapPx;
   const ticks: React.ReactNode[] = [];
   const segments: React.ReactNode[] = [];
 
@@ -91,7 +94,7 @@ export function VerticalRuler({ pageHeightPx, marginTopPx, marginBottomPx, total
   const TEXT_X = 10;
 
   for (let p = 0; p < totalPages; p++) {
-    const top = p * pageHeightPx;
+    const top = p * stride;
     segments.push(
       <rect key={`tm${p}`} x={0} y={top}                              width={V_RULER_THICKNESS} height={marginTopPx}    fill="#e8eaed" />,
       <rect key={`ct${p}`} x={0} y={top + marginTopPx}                width={V_RULER_THICKNESS} height={contentHeightPx} fill="#ffffff" />,
@@ -104,8 +107,10 @@ export function VerticalRuler({ pageHeightPx, marginTopPx, marginBottomPx, total
     const y = i * TICK_SPACING;
     if (y > totalHeight) break;
 
-    const pageIdx = Math.floor(y / pageHeightPx);
-    const posInPage = y - pageIdx * pageHeightPx;
+    const pageIdx = Math.floor(y / stride);
+    const posInPage = y - pageIdx * stride;
+    // Inside the gap between two sheets there is no page to measure against.
+    if (posInPage > pageHeightPx) continue;
     const tickInPage = Math.round(posInPage / TICK_SPACING);
 
     let w: number;

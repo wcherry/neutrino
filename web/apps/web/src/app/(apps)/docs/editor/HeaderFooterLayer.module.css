@@ -1,0 +1,138 @@
+/* ── Header / footer bands ────────────────────────────────────────────────── */
+
+/* Spans the whole page stack; only the bands themselves take pointer events,
+   so the sheet under them stays clickable. */
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.band,
+.hitZone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  pointer-events: auto;
+  font-size: 9pt;
+  line-height: 1.3;
+  color: #5f6368;
+}
+
+/* An empty band outside edit mode: invisible, but still the target that opens
+   the editor on a double-click. */
+.hitZone {
+  cursor: text;
+}
+
+.header {
+  border-bottom: 1px dashed transparent;
+}
+
+.footer {
+  border-top: 1px dashed transparent;
+}
+
+.band:hover {
+  cursor: text;
+}
+
+.bandEditing {
+  color: #202124;
+  background: rgba(26, 115, 232, 0.04);
+}
+
+.bandEditing.header {
+  border-bottom-color: #dadce0;
+}
+
+.bandEditing.footer {
+  border-top-color: #dadce0;
+}
+
+.bandActive {
+  background: rgba(26, 115, 232, 0.08);
+}
+
+.bandActive.header {
+  border-bottom-color: #1a73e8;
+}
+
+.bandActive.footer {
+  border-top-color: #1a73e8;
+}
+
+/* Names the variant being edited, so "different odd & even" is visible on the
+   page rather than only in the toolbar. */
+.bandLabel {
+  position: absolute;
+  top: -15px;
+  left: 0;
+  padding: 1px 6px;
+  border-radius: 3px 3px 0 0;
+  background: #1a73e8;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.footer .bandLabel {
+  top: auto;
+  bottom: -15px;
+  border-radius: 0 0 3px 3px;
+}
+
+/* Three equal columns, so the centre slot is centred on the page rather than
+   on whatever the left slot left over. */
+.slot {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.left { text-align: left; }
+.center { text-align: center; }
+.right { text-align: right; }
+
+/* The input is the band: no chrome of its own, so the text sits exactly where
+   it will print. */
+.slotInput {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  outline: none;
+}
+
+.slotInput::placeholder {
+  color: #9aa0a6;
+  font-style: italic;
+}
+
+/* ── Print ────────────────────────────────────────────────────────────────── */
+@media print {
+  .bandEditing,
+  .bandActive,
+  .bandLabel,
+  .hitZone {
+    display: none;
+  }
+
+  .band {
+    background: none;
+    border-color: transparent;
+  }
+}

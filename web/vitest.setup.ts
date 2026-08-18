@@ -40,3 +40,15 @@ if (typeof URL !== 'undefined' && typeof URL.createObjectURL !== 'function') {
 if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL !== 'function') {
   URL.revokeObjectURL = () => {};
 }
+
+// jsdom does not implement ResizeObserver, which components construct during
+// render/mount (e.g. the docs editor measures its page div through one). An
+// inert stub keeps `new ResizeObserver(...)` from throwing; tests that need to
+// drive the callback replace globalThis.ResizeObserver with their own fake.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}

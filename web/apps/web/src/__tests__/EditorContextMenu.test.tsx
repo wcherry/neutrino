@@ -27,6 +27,13 @@ vi.mock(
 function makeEditor(overrides: Record<string, unknown> = {}) {
   return {
     isActive: vi.fn(() => false),
+    // The menu reads the document to decide whether the pointer is on a field
+    // code; an empty document with the caret at the start is the "no field
+    // here" case every test below is in.
+    state: {
+      doc: { content: { size: 0 }, nodeAt: () => null },
+      selection: { from: 0, to: 0 },
+    },
     chain: vi.fn(() => ({
       focus: vi.fn(() => ({
         toggleBold: vi.fn(() => ({ run: vi.fn() })),

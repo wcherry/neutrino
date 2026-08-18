@@ -5,7 +5,9 @@ import { type Editor } from '@tiptap/react';
 import {
   Bold, Italic, Underline, Strikethrough, Link,
   Eraser, MessageSquare, CheckSquare, AlignLeft, Sparkles, ImageIcon,
+  Braces, RefreshCw,
 } from 'lucide-react';
+import { fieldPosNearSelection } from '@/lib/extensions/DocFieldExtension';
 import styles from './EditorContextMenu.module.css';
 
 const MAX_SUGGESTIONS = 5;
@@ -104,7 +106,29 @@ export function EditorContextMenu({
 
   const visibleSuggestions = spellSuggestions?.slice(0, MAX_SUGGESTIONS) ?? [];
 
+  // Right-clicking an atom selects it, so this is the field under the pointer.
+  const fieldPos = fieldPosNearSelection(editor);
+  const fieldShowsCode =
+    fieldPos !== null && editor.state.doc.nodeAt(fieldPos)?.attrs.showCode === true;
+
   const items: Item[] = [
+    ...(fieldPos !== null ? [
+      {
+        kind: 'action' as const,
+        icon: <Braces size={14} />,
+        label: fieldShowsCode ? 'Show field value' : 'Show field code',
+        shortcut: '⇧F9',
+        action: () => run(() => editor.chain().focus().toggleDocFieldCode().run()),
+      },
+      {
+        kind: 'action' as const,
+        icon: <RefreshCw size={14} />,
+        label: 'Refresh all fields',
+        shortcut: 'F9',
+        action: () => run(() => editor.chain().focus().refreshDocFields().run()),
+      },
+      { kind: 'separator' as const },
+    ] : []),
     ...(isImageActive && onImageProperties ? [
       {
         kind: 'action' as const,

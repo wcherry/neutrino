@@ -319,12 +319,14 @@
   font-size: 11pt;
   line-height: 1.6;
   color: #202124;
-  min-height: 912px; /* one Letter-portrait content column */
+  /* One content column tall; the editor sets the variable from the live page
+     setup, and the fallback is one Letter-portrait column. */
+  min-height: var(--doc-content-min-height, 912px);
 }
 
 .editorContent :global(.ProseMirror) {
   outline: none;
-  min-height: 912px;
+  min-height: var(--doc-content-min-height, 912px);
 }
 
 .editorContent :global(.ProseMirror p.is-editor-empty:first-child::before) {
@@ -532,6 +534,88 @@
   margin-top: 20px;
 }
 
+/* ── Field codes ──────────────────────────────────────────────────────────
+   Shared by the document-properties and insert-field dialogs, and by the
+   fields themselves once they are in the text.
+─────────────────────────────────────────────────────────────────────────── */
+
+/* A row whose control is taller than one line — a list of custom properties,
+   a paragraph of help — so the label sits above it rather than beside it. */
+.formRowStack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.propertyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fieldHelp {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted, #5f6368);
+}
+
+.fieldHelp code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--color-bg-secondary, #f1f3f4);
+  font-size: 11px;
+}
+
+/* The field as it sits in the text. Tinted rather than bordered so a line of
+   prose with three fields in it still reads as a line of prose, and printed
+   without the tint so a field is invisible on paper — it is the value that
+   matters there, not the fact that it came from a code. */
+.editorContent :global(.doc-field) {
+  border-radius: 3px;
+  background: rgba(26, 115, 232, 0.1);
+  box-shadow: 0 0 0 1px rgba(26, 115, 232, 0.18);
+  cursor: default;
+  white-space: pre-wrap;
+}
+
+/* Showing its code, or resolving to nothing: both are states the writer has to
+   act on, so neither is allowed to look like settled text. */
+.editorContent :global(.doc-field[data-state='code']),
+.editorContent :global(.doc-field[data-state='unresolved']) {
+  background: rgba(234, 67, 53, 0.08);
+  box-shadow: 0 0 0 1px rgba(234, 67, 53, 0.25);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.9em;
+}
+
+/* A fallback is a real value standing in for a missing one — legible, but not
+   claiming to be the thing it stands for. */
+.editorContent :global(.doc-field[data-state='fallback']) {
+  background: rgba(251, 188, 4, 0.16);
+  box-shadow: 0 0 0 1px rgba(251, 188, 4, 0.4);
+}
+
+.editorContent :global(.doc-field-selected) {
+  box-shadow: 0 0 0 2px #1a73e8;
+}
+
+/* The `{{…` still being typed, while the autocomplete is open — so it is
+   obvious which characters the menu is matching against. */
+.editorContent :global(.doc-field-typing) {
+  border-radius: 3px;
+  background: rgba(26, 115, 232, 0.1);
+}
+
+@media print {
+  .editorContent :global(.doc-field) {
+    background: none;
+    box-shadow: none;
+  }
+}
+
 .imagePropsSection {
   font-size: 11px;
   font-weight: 600;
@@ -630,43 +714,16 @@
   margin: 4px 0;
 }
 
-/* ── Header / footer zones ───────────────────────────────────────────────── */
-.pageHeader {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 72px;
-  font-size: 9pt;
-  color: #5f6368;
-  border-bottom: 1px dashed #e0e0e0;
-  box-sizing: border-box;
-  pointer-events: none;
-  z-index: 4;
-  white-space: pre;
-  overflow: hidden;
-}
+/* Header and footer bands are drawn by HeaderFooterLayer (one pair per page),
+   which owns their positioning and styling — see HeaderFooterLayer.module.css. */
 
-.pageFooter {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 72px;
-  font-size: 9pt;
-  color: #5f6368;
-  border-top: 1px dashed #e0e0e0;
-  box-sizing: border-box;
+/* While a band is being edited the body text steps back: dimmed so the bands
+   read as the active surface, and inert so a click lands on the page rather
+   than putting the caret back in the document behind them. */
+.editorContentDimmed {
+  opacity: 0.4;
   pointer-events: none;
-  z-index: 4;
-  white-space: pre;
-  overflow: hidden;
+  transition: opacity 0.15s;
 }
 
 /* ── Watermark ────────────────────────────────────────────────────────────── */

@@ -26,7 +26,16 @@ import { ListStyleExtension } from '@/lib/extensions/ListStyleExtension';
 import { AdvancedTableCell } from '@/lib/extensions/AdvancedTableCellExtension';
 import { AdvancedImage } from '@/lib/extensions/AdvancedImageExtension';
 import { DriveImageExtension } from '@/lib/extensions/DriveImageExtension';
+import { PaginationExtension, setPageMetrics } from '@/lib/extensions/PaginationExtension';
+import { DocFieldExtension, setDocFieldContext } from '@/lib/extensions/DocFieldExtension';
+import {
+  emptyDocProperties,
+  hasDocProperties,
+  normalizeDocProperties,
+  type DocProperties,
+} from '@/lib/docFields';
 import { driveImageRef, inlineDriveImagesInHtml } from '@/lib/driveImages';
+import { normalizeImagesForPdf } from '@/lib/pdfImages';
 import { useSheetPasteInterceptor, PasteChoiceDialog, type SheetEmbedAttrsShape, type CellValue } from '@neutrino/sheet-embed';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -67,8 +76,10 @@ import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeF
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
 import { DocOutline } from './DocOutline';
-import { HeaderFooterModal } from './HeaderFooterModal';
 import { WatermarkModal } from './WatermarkModal';
+import { DocPropertiesModal } from './DocPropertiesModal';
+import { InsertFieldDialog } from './InsertFieldDialog';
+import { FieldSuggestionMenu } from './FieldSuggestionMenu';
 import { ThemeModal, type DocTheme } from './ThemeModal';
 // Advanced formatting modals
 import { ParagraphStylesModal } from './ParagraphStylesModal';
@@ -108,6 +119,27 @@ import { DocComparePanel } from './DocComparePanel';
 import type { FileVersionItem } from '@neutrino/api-drive';
 import { HorizontalRuler, VerticalRuler } from './Ruler';
 import { useAccessRevocation } from '@/hooks/useAccessRevocation';
+// Headers & footers — per-page bands with first-page / odd / even variants.
+import { HeaderFooterLayer, type HeaderFooterFocus, type HeaderFooterLayerHandle } from './HeaderFooterLayer';
+import { HeaderFooterToolbar } from './HeaderFooterToolbar';
+import {
+  FIELDS,
+  clearBand,
+  defaultHeaderFooterConfig,
+  hasAnyContent,
+  hasBandContent,
+  legacyFieldsFor,
+  migrateLegacyHeaderFooter,
+  normalizeHeaderFooterConfig,
+  resolveFields,
+  setSlot,
+  variantForPage,
+  type FieldContext,
+  type FieldName,
+  type HeaderFooterBand,
+  type HeaderFooterConfig,
+  type HeaderFooterSlots,
+} from '@/lib/docHeaderFooter';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
 // Dimensions in inches; rendered at 96 dpi for screen display.
@@ -135,6 +167,11 @@ function pageDimensions(ps: PageSetup): { widthPx: number; heightPx: number } {
 
 // 0.5 in gap between pages (rendered via backgroundImage on the page div, behind text)
 const PAGE_GAP_PX = 48;
+
+// Whether a paragraph may be broken across a page boundary instead of moving
+// to the next page whole. A user preference, stored per browser like the theme
+// and the calendar week start.
+const SPLIT_PARAGRAPHS_KEY = 'neutrino:docs:splitParagraphs';
 
 // ── Print ──────────────────────────────────────────────────────────────────
 
@@ -225,10 +262,37 @@ function stripInheritFont(node: unknown): unknown {
   return node;
 }
 
+/**
+ * The header or footer band for one PDF page, as pdfmake content.
+ *
+ * pdfmake resolves `header`/`footer` per page and hands in the page number and
+ * the final page count, which is the whole reason the export can honour the
+ * variants at all: the browser's own print pipeline cannot vary content by page
+ * parity, and `{{pages}}` is not knowable until the document has been laid out.
+ */
+function pdfBand(
+  slots: HeaderFooterSlots,
+  ctx: FieldContext,
+  margin: [number, number, number, number],
+): object | undefined {
+  if (!hasBandContent(slots)) return undefined;
+  return {
+    margin,
+    fontSize: 9,
+    color: '#5f6368',
+    columns: (['left', 'center', 'right'] as const).map(slot => ({
+      text: resolveFields(slots[slot], ctx),
+      alignment: slot,
+      width: '*',
+    })),
+  };
+}
+
 async function buildPdfBlob(
   html: string,
   ps: PageSetup,
   opts?: Pick<SaveAsOptions, 'password' | 'allowPrinting' | 'allowCopying' | 'allowModifying'>,
+  bands?: { config: HeaderFooterConfig; title: string; properties: DocProperties },
 ): Promise<Blob> {
   console.log('[buildPdfBlob] start — html length:', html.length, 'pageSetup:', ps);
   const pdfMake = (await import('pdfmake/build/pdfmake')).default;
@@ -266,6 +330,24 @@ async function buildPdfBlob(
     pageMargins: [ps.marginLeft, ps.marginTop, ps.marginRight, ps.marginBottom],
   };
 
+  if (bands) {
+    const ctxFor = (page: number, pages: number): FieldContext => ({
+      page, pages, title: bands.title, properties: bands.properties,
+    });
+    docDef.header = (page: number, pages: number) =>
+      pdfBand(
+        bands.config.variants[variantForPage(page, bands.config)].header,
+        ctxFor(page, pages),
+        [ps.marginLeft, bands.config.headerMargin, ps.marginRight, 0],
+      ) as never;
+    docDef.footer = (page: number, pages: number) =>
+      pdfBand(
+        bands.config.variants[variantForPage(page, bands.config)].footer,
+        ctxFor(page, pages),
+        [ps.marginLeft, 0, ps.marginRight, bands.config.footerMargin],
+      ) as never;
+  }
+
   if (opts?.password) {
     (docDef as Record<string, unknown>).userPassword = opts.password;
     (docDef as Record<string, unknown>).permissions = {
@@ -282,8 +364,22 @@ async function buildPdfBlob(
   // pdfmake 0.3.x changed getBlob() from callback-based (0.2.x) to Promise-based.
   // The type stubs still declare the old callback signature, so cast through any.
   console.log('[buildPdfBlob] calling pdfMake.createPdf');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const blob: Blob = await (pdfMake as any).createPdf(docDef).getBlob();
+  let blob: Blob;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    blob = await (pdfMake as any).createPdf(docDef).getBlob();
+  } catch (err) {
+    // pdfmake reports an image it cannot embed as a raw "Unknown image format"
+    // out of its PDF writer, which says nothing about what to do next.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/Unknown image format|Invalid image/i.test(message)) {
+      throw new Error(
+        'This document contains an image that could not be added to the PDF. ' +
+        'Remove or replace it, or export as HTML or Word instead.',
+      );
+    }
+    throw err;
+  }
   console.log('[buildPdfBlob] getBlob resolved', { size: blob?.size });
   if (!blob) throw new Error('pdfmake returned no data.');
   return blob;
@@ -555,18 +651,45 @@ function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
 }
 
 // ── Content serialisation helpers ────────────────────────────────────────────
-// When the layout feature flag is on, content is stored as a wrapper object
-// { doc: TiptapJSON, _meta: LayoutMeta } so metadata survives save/load.
-// When the flag is off (or the document was created without the flag), we fall
-// back to plain Tiptap JSON for backward compatibility.
+// Content is stored as a wrapper object { doc: TiptapJSON, _meta: LayoutMeta }
+// whenever there is metadata to keep, and as plain Tiptap JSON when there is
+// not — which is what a document with no header, footer, watermark or theme has
+// always been stored as. Headers and footers are not behind a feature flag, so
+// the wrapper can no longer be conditioned on one: a header typed into a
+// document must survive its next save whatever the flags say.
 
 interface LayoutMeta {
+  /**
+   * The header and footer model. `headerText` / `footerText` /
+   * `showPageNumbers` beside it are the flattened legacy view of the default
+   * variant, still written so a build without this feature opens the document
+   * showing something rather than nothing — see `legacyFieldsFor`.
+   */
+  headerFooter: HeaderFooterConfig;
   headerText: string;
   footerText: string;
   showPageNumbers: boolean;
   watermarkText: string;
   bgColor: string;
   docTheme: DocTheme;
+  /**
+   * Author, subject, company and the rest — the values `{{author}}` and the
+   * other metadata field codes read. Part of the document rather than of the
+   * account, because on a shared document the person who opened it is routinely
+   * not the person who wrote it.
+   */
+  properties: DocProperties;
+}
+
+/** Whether `meta` holds anything worth the wrapper. */
+function hasLayoutMeta(meta: LayoutMeta): boolean {
+  return (
+    hasAnyContent(meta.headerFooter) ||
+    Boolean(meta.watermarkText) ||
+    Boolean(meta.bgColor) ||
+    meta.docTheme !== 'default' ||
+    hasDocProperties(meta.properties)
+  );
 }
 
 function serializeContent(
@@ -574,7 +697,9 @@ function serializeContent(
   meta: LayoutMeta,
   layoutStructure: boolean,
 ): string {
-  if (layoutStructure) {
+  // The flag still forces the wrapper on, so documents that have been stored
+  // that way keep their shape even after their metadata is cleared out.
+  if (layoutStructure || hasLayoutMeta(meta)) {
     return JSON.stringify({ doc: docJson, _meta: meta });
   }
   return JSON.stringify(docJson);
@@ -645,13 +770,26 @@ export function DocEditor() {
   const [commentInitialText, setCommentInitialText] = useState('');
 
   // ── Layout & structure state (gated by flags.docsLayoutStructure) ──
-  const [headerText, setHeaderText] = useState('');
-  const [footerText, setFooterText] = useState('');
-  const [showPageNumbers, setShowPageNumbers] = useState(false);
+  const [headerFooter, setHeaderFooter] = useState<HeaderFooterConfig>(defaultHeaderFooterConfig);
   const [watermarkText, setWatermarkText] = useState('');
   const [bgColor, setBgColor] = useState('');
   const [docTheme, setDocTheme] = useState<DocTheme>('default');
-  const [showHeaderFooterModal, setShowHeaderFooterModal] = useState(false);
+  // ── Field codes ──
+  const [docProperties, setDocProperties] = useState<DocProperties>(emptyDocProperties);
+  const [showDocProperties, setShowDocProperties] = useState(false);
+  const [showInsertField, setShowInsertField] = useState(false);
+  // A view setting, not a document one: it shows every field as its code
+  // without touching what any individual field is set to.
+  const [showFieldCodes, setShowFieldCodes] = useState(false);
+  // Header/footer edit mode: the document toolbar is replaced by the band
+  // toolbar, the bands become editable and the body text is dimmed out of the
+  // way. `headerFooterFocus` is the field the caret is in — what the toolbar
+  // inserts into and which variant it names.
+  const [headerFooterEditing, setHeaderFooterEditing] = useState(false);
+  const [headerFooterFocus, setHeaderFooterFocus] = useState<HeaderFooterFocus>({
+    page: 1, band: 'header', slot: 'left',
+  });
+  const headerFooterLayerRef = useRef<HeaderFooterLayerHandle>(null);
   const [showWatermarkModal, setShowWatermarkModal] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
   // Track editor state version to force footnote list re-render on each transaction
@@ -712,6 +850,10 @@ export function DocEditor() {
   // ── Rulers, zoom & single page mode ───────────────────────────────────────
   const [showRulers, setShowRulers] = useState(true);
   const [singlePageMode, setSinglePageMode] = useState(false);
+  // Off by default: a paragraph kept whole never strands a line by itself at a
+  // page break. Persisted like the other user preferences, so the choice
+  // survives a reload and reaches the other tabs.
+  const [splitParagraphs, setSplitParagraphs] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageScrollHeight, setPageScrollHeight] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
@@ -722,14 +864,17 @@ export function DocEditor() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingContent = useRef<string | null>(null);
-  const pageRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const pageResizeObsRef = useRef<ResizeObserver | null>(null);
   const initialSaveDoneRef = useRef(false);
   // Stable ref to latest layout metadata — read inside the useEditor onUpdate
   // closure so we always serialise the most recent values without needing to
   // re-create the editor.
   const layoutMetaRef = useRef<LayoutMeta>({
+    headerFooter: defaultHeaderFooterConfig(),
     headerText: '', footerText: '', showPageNumbers: false,
     watermarkText: '', bgColor: '', docTheme: 'default',
+    properties: emptyDocProperties(),
   });
   // Stable refs for title and pageSetup so the onUpdate closure can include
   // current metadata in each autosave without re-creating the editor.
@@ -1023,6 +1168,13 @@ export function DocEditor() {
       // `allowBase64` stays on above so documents written before references
       // (and pasted data URLs) still parse.
       DriveImageExtension,
+      // Pushes any block that would straddle a page boundary onto the next
+      // page, so nothing renders in the margins or the gap between sheets.
+      PaginationExtension,
+      // `{{title}}`, `{{page}}`, `{{author:My Self}}` — codes that stand for a
+      // value resolved when they are drawn. Registered after pagination
+      // because `{{page}}` is measured against the pages pagination decides.
+      DocFieldExtension,
       Link.configure({ openOnClick: false }),
       Placeholder.configure({ placeholder: 'Start typing…' }),
       CharacterCount,
@@ -1147,8 +1299,11 @@ export function DocEditor() {
   // Keep layoutMetaRef in sync with state so the stable onUpdate closure has
   // fresh values without re-creating the editor.
   useEffect(() => {
-    layoutMetaRef.current = { headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme };
-  }, [headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
+    layoutMetaRef.current = {
+      headerFooter, ...legacyFieldsFor(headerFooter), watermarkText, bgColor, docTheme,
+      properties: docProperties,
+    };
+  }, [headerFooter, watermarkText, bgColor, docTheme, docProperties]);
 
   useEffect(() => { titleRef.current = title; }, [title]);
   useEffect(() => { pageSetupRef.current = pageSetup; }, [pageSetup]);
@@ -1229,15 +1384,28 @@ export function DocEditor() {
     console.log('[collab] Y.Doc is empty after sync — loading content from REST');
     try {
       const parsed = JSON.parse(docContent);
-      // Detect wrapper format { doc, _meta } written when the layout flag was on
-      if (flags.docsLayoutStructure && parsed._meta) {
+      // Detect the wrapper format { doc, _meta }. Not conditioned on the layout
+      // flag: a document saved with a header in it is a wrapper whatever the
+      // flags are now, and reading it as a bare Tiptap doc would load the
+      // wrapper object itself as the content — an empty document on screen and,
+      // on the next autosave, an empty document on disk.
+      if (parsed._meta) {
         editor.commands.setContent(parsed.doc, false);
-        setHeaderText(parsed._meta.headerText ?? '');
-        setFooterText(parsed._meta.footerText ?? '');
-        setShowPageNumbers(parsed._meta.showPageNumbers ?? false);
+        // Documents written before the header/footer variants existed carry
+        // only the two flat strings; migrate them rather than dropping them.
+        setHeaderFooter(
+          parsed._meta.headerFooter
+            ? normalizeHeaderFooterConfig(parsed._meta.headerFooter)
+            : migrateLegacyHeaderFooter(
+                parsed._meta.headerText ?? '',
+                parsed._meta.footerText ?? '',
+                parsed._meta.showPageNumbers ?? false,
+              ),
+        );
         setWatermarkText(parsed._meta.watermarkText ?? '');
         setBgColor(parsed._meta.bgColor ?? '');
         setDocTheme(parsed._meta.docTheme ?? 'default');
+        setDocProperties(normalizeDocProperties(parsed._meta.properties));
       } else {
         editor.commands.setContent(parsed, false);
       }
@@ -1363,10 +1531,11 @@ export function DocEditor() {
       return;
     }
     const content = serializeContent(editor.getJSON(), {
-      headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme,
+      headerFooter, ...legacyFieldsFor(headerFooter), watermarkText, bgColor, docTheme,
+      properties: docProperties,
     }, flags.docsLayoutStructure);
     versionMutation.mutate(content);
-  }, [editor, versionMutation, officeMode, officeVersionMutation, headerText, footerText, showPageNumbers, watermarkText, bgColor, docTheme]);
+  }, [editor, versionMutation, officeMode, officeVersionMutation, headerFooter, watermarkText, bgColor, docTheme, docProperties]);
 
   const handleConvertToNative = useCallback(() => {
     promoteMutation.mutate();
@@ -1510,20 +1679,108 @@ export function DocEditor() {
     });
   }, [editor]);
 
-  const handleHeaderFooterSave = useCallback((h: string, f: string, spn: boolean) => {
-    setHeaderText(h);
-    setFooterText(f);
-    setShowPageNumbers(spn);
-    if (editor) {
-      const content = serializeContent(editor.getJSON(), {
-        ...layoutMetaRef.current, headerText: h, footerText: f, showPageNumbers: spn,
-      }, flags.docsLayoutStructure);
-      pendingContent.current = content;
-      setSaveStatus('unsaved');
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
+  /**
+   * Apply a header/footer change and schedule the same debounced autosave a
+   * keystroke in the body would. Typing in a band is editing the document, so
+   * it has to persist on its own — nothing else marks the content dirty.
+   */
+  const commitHeaderFooter = useCallback((next: HeaderFooterConfig) => {
+    setHeaderFooter(next);
+    // Written through synchronously, not left to the sync effect: the toolbar
+    // and the band inputs both read the current config back out of this ref to
+    // build their next change, and an effect has not run yet when a second
+    // change lands in the same tick.
+    const meta: LayoutMeta = {
+      ...layoutMetaRef.current, headerFooter: next, ...legacyFieldsFor(next),
+    };
+    layoutMetaRef.current = meta;
+    if (!editor) return;
+    const content = serializeContent(editor.getJSON(), meta, flags.docsLayoutStructure);
+    pendingContent.current = content;
+    setSaveStatus('unsaved');
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
+  }, [editor, triggerSave, flags.docsLayoutStructure]);
+
+  /** Open the bands for editing, with the caret in the one that was clicked. */
+  const enterHeaderFooterEdit = useCallback((focus?: HeaderFooterFocus) => {
+    const target = focus ?? { page: currentPage, band: 'header' as const, slot: 'left' as const };
+    setHeaderFooterFocus(target);
+    setHeaderFooterEditing(true);
+    // Take the caret out of the body first: ProseMirror keeps handling keys
+    // while it holds focus, and the band inputs are not part of the document.
+    editor?.commands.blur();
+    // The layer mounts its inputs in this render; ask for the focus afterwards.
+    requestAnimationFrame(() => headerFooterLayerRef.current?.focusField(target));
+  }, [editor, currentPage]);
+
+  const exitHeaderFooterEdit = useCallback(() => {
+    setHeaderFooterEditing(false);
+    editor?.commands.focus();
+  }, [editor]);
+
+  const handleHeaderFooterSlotChange = useCallback(
+    (variant: Parameters<typeof setSlot>[1], band: HeaderFooterBand, slot: Parameters<typeof setSlot>[3], value: string) => {
+      commitHeaderFooter(setSlot(layoutMetaRef.current.headerFooter, variant, band, slot, value));
+    },
+    [commitHeaderFooter],
+  );
+
+  /**
+   * Insert a field token at the caret of the band the toolbar is acting on.
+   * The button suppressed its own focus, so the input still holds the caret and
+   * its selection is where the token belongs.
+   */
+  const handleInsertHeaderFooterField = useCallback((field: FieldName) => {
+    const input = headerFooterLayerRef.current?.activeInput();
+    const token = FIELDS[field];
+    const config = layoutMetaRef.current.headerFooter;
+    const { page, band, slot } = headerFooterFocus;
+    const variant = variantForPage(page, config);
+    const current = config.variants[variant][band][slot];
+
+    const at = input && input.selectionStart !== null ? input.selectionStart : current.length;
+    const end = input && input.selectionEnd !== null ? input.selectionEnd : at;
+    const next = current.slice(0, at) + token + current.slice(end);
+    commitHeaderFooter(setSlot(config, variant, band, slot, next));
+
+    if (input) {
+      // Restore the caret after the token; React resets it to the end of the
+      // value when a controlled input is re-rendered.
+      const caret = at + token.length;
+      requestAnimationFrame(() => {
+        input.focus();
+        input.setSelectionRange(caret, caret);
+      });
     }
-  }, [editor, triggerSave]);
+  }, [commitHeaderFooter, headerFooterFocus]);
+
+  const handleClearHeaderFooterBand = useCallback(() => {
+    const config = layoutMetaRef.current.headerFooter;
+    const variant = variantForPage(headerFooterFocus.page, config);
+    commitHeaderFooter(clearBand(config, variant, headerFooterFocus.band));
+  }, [commitHeaderFooter, headerFooterFocus]);
+
+  const handleHeaderFooterMargin = useCallback((band: HeaderFooterBand, px: number) => {
+    const config = layoutMetaRef.current.headerFooter;
+    commitHeaderFooter(
+      band === 'header' ? { ...config, headerMargin: px } : { ...config, footerMargin: px },
+    );
+  }, [commitHeaderFooter]);
+
+  const handleGoToBand = useCallback((band: HeaderFooterBand) => {
+    headerFooterLayerRef.current?.focusField({ ...headerFooterFocus, band });
+  }, [headerFooterFocus]);
+
+  // Esc leaves the bands from anywhere in edit mode, including the toolbar.
+  useEffect(() => {
+    if (!headerFooterEditing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitHeaderFooterEdit();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [headerFooterEditing, exitHeaderFooterEdit]);
 
   const handleWatermarkSave = useCallback((wt: string, bg: string) => {
     setWatermarkText(wt);
@@ -1861,7 +2118,21 @@ export function DocEditor() {
 
     if (saveAsFormat === 'pdf') {
       console.log('[handleSaveAs] building PDF blob');
-      blob = await buildPdfBlob(html, pageSetup, opts);
+      // pdfmake only embeds PNG and JPEG bytes, so anything else in the
+      // document (WebP, GIF, SVG, AVIF) is re-encoded first — otherwise one
+      // such image fails the entire export.
+      const { html: pdfHtml, dropped } = await normalizeImagesForPdf(html);
+      if (dropped.length > 0) {
+        console.warn('[handleSaveAs] images left out of the PDF:', dropped);
+        toast.warning(
+          dropped.length === 1
+            ? 'One image could not be added to the PDF and was left out.'
+            : `${dropped.length} images could not be added to the PDF and were left out.`,
+        );
+      }
+      blob = await buildPdfBlob(pdfHtml, pageSetup, opts, {
+        config: headerFooter, title, properties: docProperties,
+      });
       console.log('[handleSaveAs] PDF blob built, size:', blob.size);
     } else if (saveAsFormat === 'docx') {
       blob = await buildDocxBlob(html);
@@ -1900,17 +2171,23 @@ export function DocEditor() {
     ...(flags.docsLayoutStructure && bgColor ? { backgroundColor: bgColor } : {}),
   };
 
-  const totalPages = Math.max(1, Math.ceil(pageScrollHeight / heightPx));
+  // One page occupies a full sheet followed by the gap before the next sheet,
+  // so page k starts at k * pageStride. PaginationExtension breaks content on
+  // the same stride — the two must agree or text lands in the gap.
+  const pageStride = heightPx + PAGE_GAP_PX;
+  const totalPages = Math.max(1, Math.ceil((pageScrollHeight + PAGE_GAP_PX) / pageStride));
+  // Height of the whole stack of sheets: N pages with N-1 gaps between them.
+  const pageStackHeight = totalPages * pageStride - PAGE_GAP_PX;
 
-  // Gradient that renders 0.5-in gray gaps between pages as backgroundImage on
-  // the page div, so text always renders on top and is never obscured.
+  // Gradient that renders the 0.5-in gray gaps between pages as backgroundImage
+  // on the page div, so text always renders on top and is never obscured.
   const pageGapBackground = useMemo(() => {
     if (totalPages <= 1) return undefined;
     const gapColor = 'var(--color-bg-secondary, #f1f3f4)';
     const stops: string[] = [];
     for (let i = 0; i < totalPages - 1; i++) {
-      const g0 = (i + 1) * heightPx - PAGE_GAP_PX / 2;
-      const g1 = (i + 1) * heightPx + PAGE_GAP_PX / 2;
+      const g0 = i * pageStride + heightPx;
+      const g1 = g0 + PAGE_GAP_PX;
       stops.push(
         `transparent ${g0}px`,
         `${gapColor} ${g0}px`,
@@ -1919,22 +2196,126 @@ export function DocEditor() {
       );
     }
     return `linear-gradient(to bottom, transparent 0px, ${stops.join(', ')}, transparent 100%)`;
-  }, [totalPages, heightPx]);
+  }, [totalPages, heightPx, pageStride]);
 
-  // Track page div scroll height for total page count
+  // Feed the page geometry to the pagination plugin, which pushes any block
+  // that would straddle a boundary down to the next page's content area.
   useEffect(() => {
-    const el = pageRef.current;
+    if (!editor) return;
+    setPageMetrics(editor, {
+      pageHeight: heightPx,
+      marginTop: pageSetup.marginTop,
+      marginBottom: pageSetup.marginBottom,
+      gap: PAGE_GAP_PX,
+      splitParagraphs,
+    });
+  }, [editor, heightPx, pageSetup.marginTop, pageSetup.marginBottom, splitParagraphs]);
+
+  // Feed the field codes what they resolve against. `page` is not in here —
+  // it is a property of where each individual field landed, which only the
+  // layout knows, so the extension measures it against `pageStride`.
+  useEffect(() => {
+    if (!editor) return;
+    setDocFieldContext(editor, {
+      title,
+      pages: totalPages,
+      properties: docProperties,
+      pageStride,
+    });
+  }, [editor, title, totalPages, docProperties, pageStride]);
+
+  const handleRefreshFields = useCallback(() => {
+    editor?.commands.refreshDocFields();
+  }, [editor]);
+
+  const handleToggleFieldCodes = useCallback(() => {
+    if (!editor) return;
+    setShowFieldCodes(prev => {
+      const next = !prev;
+      editor.commands.setAllDocFieldCodes(next);
+      return next;
+    });
+  }, [editor]);
+
+  const handleInsertField = useCallback(
+    (code: string, arg: string | null) => {
+      editor?.chain().focus().insertDocField({ code, arg }).run();
+    },
+    [editor],
+  );
+
+  const handleSaveDocProperties = useCallback(
+    (properties: DocProperties) => {
+      setDocProperties(properties);
+      if (!editor) return;
+      // Properties live in `_meta`, not in the Tiptap doc, so editing them
+      // fires no `onUpdate` and would otherwise sit unsaved until the next
+      // keystroke — and every field reading them would keep showing the old
+      // value until something else forced a repaint.
+      const meta: LayoutMeta = { ...layoutMetaRef.current, properties };
+      layoutMetaRef.current = meta;
+      setDocFieldContext(editor, { properties });
+      const content = serializeContent(editor.getJSON(), meta, flags.docsLayoutStructure);
+      pendingContent.current = content;
+      setSaveStatus('unsaved');
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = setTimeout(
+        () => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }),
+        AUTO_SAVE_DELAY_MS,
+      );
+    },
+    [editor, flags.docsLayoutStructure, triggerSave],
+  );
+
+  // Read the split-paragraphs preference back on mount, and follow it when
+  // another tab changes it.
+  useEffect(() => {
+    const read = () => setSplitParagraphs(localStorage.getItem(SPLIT_PARAGRAPHS_KEY) === 'true');
+    read();
+    window.addEventListener('storage', read);
+    return () => window.removeEventListener('storage', read);
+  }, []);
+
+  const handleToggleSplitParagraphs = useCallback(() => {
+    setSplitParagraphs(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SPLIT_PARAGRAPHS_KEY, String(next));
+      } catch {
+        // Storage can be unavailable (private mode, blocked cookies); the
+        // setting still applies to this session.
+      }
+      return next;
+    });
+  }, []);
+
+  // Track page div scroll height for total page count.
+  // Attached via a callback ref rather than an effect: the page div does not
+  // exist on first render (the loading spinner is returned instead), so a
+  // mount-time effect would find a null ref, never observe anything, and leave
+  // pageScrollHeight at 0 — which sizes pageZoomWrap to a single page and clips
+  // everything past page 1.
+  const attachPageRef = useCallback((el: HTMLDivElement | null) => {
+    pageRef.current = el;
+    pageResizeObsRef.current?.disconnect();
+    pageResizeObsRef.current = null;
     if (!el) return;
+    setPageScrollHeight(el.scrollHeight);
     const obs = new ResizeObserver(() => setPageScrollHeight(el.scrollHeight));
     obs.observe(el);
-    return () => obs.disconnect();
+    pageResizeObsRef.current = obs;
+  }, []);
+
+  useEffect(() => () => {
+    pageResizeObsRef.current?.disconnect();
+    pageResizeObsRef.current = null;
   }, []);
 
   // Snap scroll position when single page mode, current page, or zoom changes
   useEffect(() => {
     if (!singlePageMode || !editorScrollRef.current) return;
-    editorScrollRef.current.scrollTop = (currentPage - 1) * heightPx * zoomLevel / 100;
-  }, [singlePageMode, currentPage, heightPx, zoomLevel]);
+    editorScrollRef.current.scrollTop = (currentPage - 1) * pageStride * zoomLevel / 100;
+  }, [singlePageMode, currentPage, pageStride, zoomLevel]);
 
   const handleEditorScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (sideRulerColRef.current) {
@@ -1999,13 +2380,20 @@ export function DocEditor() {
           onToggleRulers={() => setShowRulers(v => !v)}
           singlePageMode={singlePageMode}
           onToggleSinglePage={() => { setSinglePageMode(v => !v); setCurrentPage(1); }}
+          splitParagraphs={splitParagraphs}
+          onToggleSplitParagraphs={handleToggleSplitParagraphs}
           officeMode={officeMode}
           onConvertToNative={handleConvertToNative}
           onInsertImage={handleInsertImage}
+          onHeaderFooter={() => enterHeaderFooterEdit()}
+          onInsertFieldDialog={() => setShowInsertField(true)}
+          onDocProperties={() => setShowDocProperties(true)}
+          showFieldCodes={showFieldCodes}
+          onToggleFieldCodes={handleToggleFieldCodes}
+          onRefreshFields={handleRefreshFields}
           {...(flags.docsLayoutStructure ? {
             onInsertFootnote: handleInsertFootnote,
             onInsertCrossRef: handleInsertCrossRef,
-            onHeaderFooter: () => setShowHeaderFooterModal(true),
             onWatermark: () => setShowWatermarkModal(true),
             onTheme: () => setShowThemeModal(true),
           } : {})}
@@ -2078,8 +2466,24 @@ export function DocEditor() {
 
       </div>)}
 
-      {/* ── Toolbar ── */}
-      {!distractionFree && (<Toolbar
+      {/* ── Toolbar ──
+          Editing a band swaps the document toolbar for the band one: the slots
+          are plain text with field tokens, so none of the character and
+          paragraph formatting below would apply to what the caret is in. */}
+      {!distractionFree && headerFooterEditing && (
+        <HeaderFooterToolbar
+          config={headerFooter}
+          focus={headerFooterFocus}
+          onToggleDifferentFirstPage={v => commitHeaderFooter({ ...layoutMetaRef.current.headerFooter, differentFirstPage: v })}
+          onToggleDifferentEvenOdd={v => commitHeaderFooter({ ...layoutMetaRef.current.headerFooter, differentEvenOdd: v })}
+          onMarginChange={handleHeaderFooterMargin}
+          onInsertField={handleInsertHeaderFooterField}
+          onGoToBand={handleGoToBand}
+          onClearBand={handleClearHeaderFooterBand}
+          onClose={exitHeaderFooterEdit}
+        />
+      )}
+      {!distractionFree && !headerFooterEditing && (<Toolbar
         editor={editor}
         onInsertImage={handleInsertImage}
         onInsertDiagram={() => setShowInsertDiagram(true)}
@@ -2143,6 +2547,7 @@ export function DocEditor() {
                   pageHeightPx={heightPx}
                   marginTopPx={pageSetup.marginTop}
                   marginBottomPx={pageSetup.marginBottom}
+                  gapPx={PAGE_GAP_PX}
                   totalPages={totalPages}
                 />
               </div>
@@ -2158,41 +2563,62 @@ export function DocEditor() {
                 className={styles.pageZoomWrap}
                 style={{
                   width: widthPx * zoomLevel / 100,
-                  height: (pageScrollHeight || heightPx) * zoomLevel / 100,
+                  height: Math.max(pageScrollHeight, pageStackHeight) * zoomLevel / 100,
                 }}
               >
               <div
-                ref={pageRef}
+                ref={attachPageRef}
                 className={styles.page}
                 style={{
                   ...pageStyle,
                   margin: 0,
+                  // Paint the last sheet full height rather than stopping where
+                  // its text happens to end.
+                  minHeight: pageStackHeight,
                   ...(pageGapBackground ? { backgroundImage: pageGapBackground } : {}),
                   ...(zoomLevel !== 100 ? { transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top left' } : {}),
                 }}
+                // Double-click into a band to edit it, double-click the body to
+                // come back out — the way out has to be as findable as the way in.
+                onDoubleClick={headerFooterEditing ? exitHeaderFooterEdit : undefined}
                 {...(flags.docsLayoutStructure && docTheme !== 'default'
                   ? { 'data-doc-theme': docTheme }
                   : {})}
               >
-                {/* ── Header ── */}
-                {flags.docsLayoutStructure && headerText && (
-                  <div className={styles.pageHeader}>
-                    {showPageNumbers ? headerText.replace('{{page}}', '1') : headerText}
-                  </div>
-                )}
+                {/* ── Headers & footers (one band pair per page) ── */}
+                {/* Rendered even when empty: the blank bands are the
+                    double-click target that opens the editor, as in Word. */}
+                <HeaderFooterLayer
+                  ref={headerFooterLayerRef}
+                  config={headerFooter}
+                  totalPages={totalPages}
+                  pageHeight={heightPx}
+                  gap={PAGE_GAP_PX}
+                  marginLeft={pageSetup.marginLeft}
+                  marginRight={pageSetup.marginRight}
+                  title={title}
+                  properties={docProperties}
+                  editing={headerFooterEditing}
+                  focus={headerFooterFocus}
+                  onFocusChange={setHeaderFooterFocus}
+                  onSlotChange={handleHeaderFooterSlotChange}
+                  onRequestEdit={enterHeaderFooterEdit}
+                  onExitEdit={exitHeaderFooterEdit}
+                />
                 {/* ── Watermark ── */}
                 {flags.docsLayoutStructure && watermarkText && (
                   <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
                 )}
-                <div className={styles.editorContent} onClick={flags.docsLayoutStructure ? handleCrossRefClick : undefined}>
+                <div
+                  className={`${styles.editorContent}${headerFooterEditing ? ` ${styles.editorContentDimmed}` : ''}`}
+                  // One content band tall at minimum, whatever the paper size —
+                  // an empty document should be exactly one page, not one page
+                  // plus whatever a hardcoded Letter column left over.
+                  style={{ '--doc-content-min-height': `${contentHeightPx}px` } as React.CSSProperties}
+                  onClick={flags.docsLayoutStructure ? handleCrossRefClick : undefined}
+                >
                   <EditorContent editor={editor} />
                 </div>
-                {/* ── Footer ── */}
-                {flags.docsLayoutStructure && footerText && (
-                  <div className={styles.pageFooter}>
-                    {showPageNumbers ? footerText.replace('{{page}}', '1') : footerText}
-                  </div>
-                )}
                 {/* ── Footnote list ── */}
                 {flags.docsLayoutStructure && editor && (() => {
                   void editorVersion;
@@ -2306,6 +2732,10 @@ export function DocEditor() {
         <PageSetupModal pageSetup={pageSetup} onSave={handlePageSetupSave} onClose={() => setShowPageSetup(false)} />
       )}
 
+      {/* Opens itself when a `{{` token is being typed; draws nothing otherwise. */}
+      <FieldSuggestionMenu editor={editor} />
+
+
       {contextMenu && editor && (
         <EditorContextMenu
           editor={editor}
@@ -2353,15 +2783,6 @@ export function DocEditor() {
       )}
 
       {/* ── Layout & structure modals ── */}
-      {flags.docsLayoutStructure && showHeaderFooterModal && (
-        <HeaderFooterModal
-          headerText={headerText}
-          footerText={footerText}
-          showPageNumbers={showPageNumbers}
-          onSave={handleHeaderFooterSave}
-          onClose={() => setShowHeaderFooterModal(false)}
-        />
-      )}
       {flags.docsLayoutStructure && showWatermarkModal && (
         <WatermarkModal
           watermarkText={watermarkText}
@@ -2375,6 +2796,21 @@ export function DocEditor() {
           currentTheme={docTheme}
           onSave={handleThemeSave}
           onClose={() => setShowThemeModal(false)}
+        />
+      )}
+
+      {/* ── Field codes ── */}
+      {showDocProperties && (
+        <DocPropertiesModal
+          properties={docProperties}
+          onSave={handleSaveDocProperties}
+          onClose={() => setShowDocProperties(false)}
+        />
+      )}
+      {showInsertField && (
+        <InsertFieldDialog
+          onInsert={handleInsertField}
+          onClose={() => setShowInsertField(false)}
         />
       )}
 
