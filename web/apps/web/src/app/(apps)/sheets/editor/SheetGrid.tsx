@@ -5,6 +5,7 @@ import { Filter } from 'lucide-react';
 import type { CellProps } from './types';
 import { CELL_W, CELL_H, ROW_HDR_W, COL_HDR_H, MAX_ROWS, MAX_COLS, V_BUF, H_BUF } from './constants';
 import { numToAlpha, alphaToNum } from './utils';
+import type { HeaderAxis, HeaderClickModifiers, HeaderRun } from './headerSelection';
 import { Cell } from './Cell';
 import { evaluateConditionalFormats } from './conditionalFormatting';
 import type { CFRule, CFVariable } from './types';
@@ -20,10 +21,19 @@ export type SheetGridProps = {
     rowHeights: Map<number, number>;
     onColResize: (colIndex: number, width: number) => void;
     onRowResize: (rowIndex: number, height: number) => void;
-    onColHeaderClick?: (colIndex: number) => void;
-    onRowHeaderClick?: (rowIndex: number) => void;
-    highlightedCol?: number | null;
-    highlightedRow?: number | null;
+    // Header selection. `mods` carries the Cmd/Ctrl (toggle) and Shift (extend)
+    // state of the click; `ExtendTo` fires as a header drag passes over a header.
+    onColHeaderSelect?: (colIndex: number, mods: HeaderClickModifiers) => void;
+    onRowHeaderSelect?: (rowIndex: number, mods: HeaderClickModifiers) => void;
+    onColHeaderExtendTo?: (colIndex: number) => void;
+    onRowHeaderExtendTo?: (rowIndex: number) => void;
+    /**
+     * The selected headers. `indices` drives the header highlight and the cell
+     * tint; `runs` draws one selection box per contiguous block — cheaper and
+     * more accurate than deriving a single bounding box from `selectedCells`,
+     * which for a whole column holds MAX_ROWS entries.
+     */
+    headerSelection?: { axis: HeaderAxis; indices: Set<number>; runs: HeaderRun[] } | null;
     // Formula pick mode
     formulaPickMode?: boolean;
     onFormulaPickMouseDown?: (cellId: string) => void;
@@ -175,7 +185,7 @@ function computeViewport(
 export const SheetGrid = React.memo(function SheetGrid({
     data, selectedCells, cutCells, onCellActivate, onSelectionExtend,
     colWidths, rowHeights, onColResize, onRowResize,
-    onColHeaderClick, onRowHeaderClick, highlightedCol, highlightedRow,
+    onColHeaderSelect, onRowHeaderSelect, onColHeaderExtendTo, onRowHeaderExtendTo, headerSelection,
     formulaPickMode, onFormulaPickMouseDown, onFormulaPickMouseMove, formulaPickCells,
     onCellContextMenu, onColHeaderContextMenu, onRowHeaderContextMenu,
     columnFilters, scrollBodyRef, overlay, formulaRefHighlights, conditionalFormats, cfVariables,
@@ -374,6 +384,55 @@ export const SheetGrid = React.memo(function SheetGrid({
         document.addEventListener('mouseup', onMouseUp);
     }, [rowHeights, onRowResize]);
 
+    // ── Header selection drag ─────────────────────────────────────────────────
+    // Selection starts on mousedown (not click) so that dragging across headers
+    // can extend it; the resize handles stopPropagation on their own mousedown,
+    // so grabbing one never starts a selection drag.
+    const headerDragRef = useRef<HeaderAxis | null>(null);
+
+    useEffect(() => {
+        const stop = () => { headerDragRef.current = null; };
+        document.addEventListener('mouseup', stop);
+        return () => document.removeEventListener('mouseup', stop);
+    }, []);
+
+    const headerIndexFromEvent = useCallback((e: React.MouseEvent<HTMLDivElement>, attr: string) => {
+        const el = (e.target as HTMLElement).closest(`[${attr}]`) as HTMLElement | null;
+        if (!el) return null;
+        const value = parseInt(el.getAttribute(attr) ?? '', 10);
+        return Number.isNaN(value) ? null : value;
+    }, []);
+
+    const handleColHeaderMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return;
+        const c = headerIndexFromEvent(e, 'data-col-header');
+        if (c === null) return;
+        e.preventDefault(); // no text selection while dragging across headers
+        headerDragRef.current = 'col';
+        onColHeaderSelect?.(c, { toggle: e.metaKey || e.ctrlKey, extend: e.shiftKey });
+    }, [headerIndexFromEvent, onColHeaderSelect]);
+
+    const handleColHeaderMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (headerDragRef.current !== 'col' || e.buttons === 0) return;
+        const c = headerIndexFromEvent(e, 'data-col-header');
+        if (c !== null) onColHeaderExtendTo?.(c);
+    }, [headerIndexFromEvent, onColHeaderExtendTo]);
+
+    const handleRowHeaderMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return;
+        const r = headerIndexFromEvent(e, 'data-row-header');
+        if (r === null) return;
+        e.preventDefault();
+        headerDragRef.current = 'row';
+        onRowHeaderSelect?.(r, { toggle: e.metaKey || e.ctrlKey, extend: e.shiftKey });
+    }, [headerIndexFromEvent, onRowHeaderSelect]);
+
+    const handleRowHeaderMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (headerDragRef.current !== 'row' || e.buttons === 0) return;
+        const r = headerIndexFromEvent(e, 'data-row-header');
+        if (r !== null) onRowHeaderExtendTo?.(r);
+    }, [headerIndexFromEvent, onRowHeaderExtendTo]);
+
     const cellFromEvent = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         const el = (e.target as HTMLElement).closest('[data-type="cell"]') as HTMLElement | null;
         return el?.id ?? null;
@@ -452,6 +511,8 @@ export const SheetGrid = React.memo(function SheetGrid({
     }, [data, colPrefix, rowPrefix]);
 
     const selectionOverlay = useMemo(() => {
+        // Header selections draw their own per-run boxes below.
+        if (headerSelection) return null;
         const box = computeRangeBox(selectedCells);
         if (!box) return null;
         return (
@@ -460,7 +521,31 @@ export const SheetGrid = React.memo(function SheetGrid({
                 border: '2px solid var(--color-accent, #1a73e8)', pointerEvents: 'none', zIndex: 1,
             }} />
         );
-    }, [selectedCells, computeRangeBox]);
+    }, [headerSelection, selectedCells, computeRangeBox]);
+
+    // One box per contiguous block of selected headers, so a non-contiguous
+    // selection (Cmd+click) is outlined as the separate blocks it actually is.
+    const headerSelectionOverlay = useMemo(() => {
+        if (!headerSelection) return null;
+        return headerSelection.runs.map(({ start, end }) => {
+            const border = '2px solid var(--color-accent, #1a73e8)';
+            const box = headerSelection.axis === 'col'
+                ? (() => {
+                    const left = colOffset(colPrefix, start);
+                    return { left, top: 0, width: colOffset(colPrefix, end + 1) - left, height: totalHeight };
+                })()
+                : (() => {
+                    const top = rowOffset(rowPrefix, start);
+                    return { top, left: 0, height: rowOffset(rowPrefix, end + 1) - top, width: totalWidth };
+                })();
+            return (
+                <div
+                    key={`header-sel-${headerSelection.axis}-${start}`}
+                    style={{ position: 'absolute', ...box, border, pointerEvents: 'none', zIndex: 1 }}
+                />
+            );
+        });
+    }, [headerSelection, colPrefix, rowPrefix, totalWidth, totalHeight]);
 
     const cutOverlay = useMemo(() => {
         if (!cutCells || cutCells.size === 0) return null;
@@ -551,14 +636,14 @@ export const SheetGrid = React.memo(function SheetGrid({
     for (let c = sc; c < ec; c++) {
         const left = colLeftArr[c - sc];
         const width = getColWidth(c);
-        const isColHighlighted = highlightedCol === c;
+        const isColHighlighted = headerSelection?.axis === 'col' && headerSelection.indices.has(c);
         const isFiltered = columnFilters?.has(c) ?? false;
         colHeaders.push(
             <div
                 key={c}
+                data-col-header={c}
                 className={`${styles.headerRowCell}${isColHighlighted ? ` ${styles.headerRowCellSelected}` : ''}`}
                 style={{ position: 'absolute', left, top: 0, width, height: COL_HDR_H, minWidth: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                onClick={() => onColHeaderClick?.(c)}
                 onContextMenu={e => { e.preventDefault(); onColHeaderContextMenu?.(c, e.clientX, e.clientY); }}
             >
                 <span className={styles.center} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
@@ -575,13 +660,13 @@ export const SheetGrid = React.memo(function SheetGrid({
         const top = rowTopArr[r - sr];
         const height = getRowHeight(r);
         if (height === 0) continue;
-        const isRowHighlighted = highlightedRow === r;
+        const isRowHighlighted = headerSelection?.axis === 'row' && headerSelection.indices.has(r);
         rowHeaders.push(
             <div
                 key={r}
+                data-row-header={r}
                 className={`${styles.headerColumnCell}${isRowHighlighted ? ` ${styles.headerColumnCellSelected}` : ''}`}
                 style={{ position: 'absolute', top, left: 0, width: ROW_HDR_W, height, minWidth: 'unset', maxHeight: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                onClick={() => onRowHeaderClick?.(r)}
                 onContextMenu={e => { e.preventDefault(); onRowHeaderContextMenu?.(r, e.clientX, e.clientY); }}
             >
                 <span className={styles.center}>{r + 1}</span>
@@ -618,7 +703,9 @@ export const SheetGrid = React.memo(function SheetGrid({
                     value={cell.edit ? cell.raw : cell.value}
                     raw={cell.raw}
                     edit={false}
-                    selected={selectedCells.has(id)}
+                    selected={headerSelection
+                        ? headerSelection.indices.has(headerSelection.axis === 'col' ? c : r)
+                        : selectedCells.has(id)}
                     cellStyle={cell.cellStyle}
                     cfResult={cfMap?.get(id)}
                     style={{ position: 'absolute', top: rowTopArr[r - sr], left: colLeftArr[c - sc], width: cellWidth, height: cellHeight, minWidth: 'unset', maxWidth: 'unset', zIndex: colSpan > 1 || rowSpan > 1 ? 1 : undefined, ...(transparentBg ? { backgroundColor: 'transparent' } : {}) }}
@@ -630,12 +717,20 @@ export const SheetGrid = React.memo(function SheetGrid({
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <div className={styles.headerCorner} style={{ position: 'absolute', top: 0, left: 0, width: ROW_HDR_W, height: COL_HDR_H, zIndex: 3 }} />
-            <div style={{ position: 'absolute', top: 0, left: ROW_HDR_W, right: 0, height: COL_HDR_H, overflow: 'hidden', zIndex: 2 }}>
+            <div
+                style={{ position: 'absolute', top: 0, left: ROW_HDR_W, right: 0, height: COL_HDR_H, overflow: 'hidden', zIndex: 2 }}
+                onMouseDown={handleColHeaderMouseDown}
+                onMouseMove={handleColHeaderMouseMove}
+            >
                 <div ref={colHdrTrackRef} style={{ position: 'relative', width: totalWidth, height: '100%' }}>
                     {colHeaders}
                 </div>
             </div>
-            <div style={{ position: 'absolute', top: COL_HDR_H, left: 0, width: ROW_HDR_W, bottom: 0, overflow: 'hidden', zIndex: 2 }}>
+            <div
+                style={{ position: 'absolute', top: COL_HDR_H, left: 0, width: ROW_HDR_W, bottom: 0, overflow: 'hidden', zIndex: 2 }}
+                onMouseDown={handleRowHeaderMouseDown}
+                onMouseMove={handleRowHeaderMouseMove}
+            >
                 <div ref={rowHdrTrackRef} style={{ position: 'relative', width: '100%', height: totalHeight }}>
                     {rowHeaders}
                 </div>
@@ -652,6 +747,7 @@ export const SheetGrid = React.memo(function SheetGrid({
                 <div style={{ position: 'relative', width: totalWidth, height: totalHeight, backgroundColor: '#ffffff' }}>
                     {cells}
                     {selectionOverlay}
+                    {headerSelectionOverlay}
                     {cutOverlay}
                     {formulaRefOverlays}
                     {formulaPickOverlay}

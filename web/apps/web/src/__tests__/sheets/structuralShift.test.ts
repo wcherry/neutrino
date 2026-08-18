@@ -631,3 +631,56 @@ describe('computeStructuralShift', () => {
         expect(result.tableRegions[0]).toEqual({ id: 't1', styleId: 'blue-banded', minR: 6, maxR: 11, minC: 1, maxC: 2 });
     });
 });
+
+// ── Chained shifts (multi-header operations, issue #63) ──────────────────────
+//
+// SheetEditor's `runStructuralShifts` feeds each result straight into the next
+// call so a multi-column/row menu action lands as one undo step. These pin the
+// two orderings it relies on.
+
+describe('chained computeStructuralShift (multi-header operations)', () => {
+    function chain(
+        cells: Map<string, CellProps>,
+        axis: 'row' | 'col',
+        op: 'insert' | 'delete',
+        indices: number[],
+    ): Map<string, CellProps> {
+        let state = {
+            cells,
+            colWidths: new Map<number, number>(),
+            rowHeights: new Map<number, number>(),
+            conditionalFormats: [] as CFRule[],
+            tableRegions: [] as TableRegion[],
+        };
+        for (const index of indices) {
+            state = computeStructuralShift({ ...state, axis, op, index });
+        }
+        return state.cells;
+    }
+
+    it('deletes a non-contiguous set of columns when applied highest-first', () => {
+        const cells = new Map<string, CellProps>([
+            ['A1', cell('A1', { raw: 'a' })],
+            ['B1', cell('B1', { raw: 'b' })],
+            ['C1', cell('C1', { raw: 'c' })],
+            ['D1', cell('D1', { raw: 'd' })],
+        ]);
+        // Columns A and C selected → 1-based [1, 3], applied descending.
+        const result = chain(cells, 'col', 'delete', [3, 1]);
+        expect([...result.keys()].sort()).toEqual(['A1', 'B1']);
+        expect(result.get('A1')?.raw).toBe('b');
+        expect(result.get('B1')?.raw).toBe('d');
+    });
+
+    it('inserts a block of rows by repeating the same index', () => {
+        const cells = new Map<string, CellProps>([
+            ['A1', cell('A1', { raw: 'first' })],
+            ['A2', cell('A2', { raw: 'second' })],
+        ]);
+        // Three rows selected starting at row 2 → three inserts at index 2.
+        const result = chain(cells, 'row', 'insert', [2, 2, 2]);
+        expect(result.get('A1')?.raw).toBe('first');
+        expect(result.get('A5')?.raw).toBe('second');
+        expect(result.has('A2')).toBe(false);
+    });
+});
