@@ -1,0 +1,82 @@
+name: 🏗️ Epic / Initiative
+description: "Maintainers: track a large project made up of multiple issues."
+title: "[Epic]: "
+labels: ["epic"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For multi-issue initiatives such as "Add shared team spaces" or "Implement Neutrino Photos". If you're a contributor with a large idea, file a **Feature Request** instead and a maintainer will promote it to an epic.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What are we trying to accomplish?
+    validations:
+      required: true
+
+  - type: textarea
+    id: background
+    attributes:
+      label: Background
+      description: Why now? What prompted this?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included?
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What is explicitly not included? Being specific here prevents the epic from sprawling.
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Proposed architecture
+      description: Data model, API surface, crate/package layout, migrations.
+
+  - type: textarea
+    id: milestones
+    attributes:
+      label: Milestones
+      value: |
+        - [ ] Phase 1 —
+        - [ ] Phase 2 —
+        - [ ] Phase 3 —
+    validations:
+      required: true
+
+  - type: textarea
+    id: children
+    attributes:
+      label: Child issues
+      value: |
+        - [ ] #
+        - [ ] #
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Other epics, external services, or upstream work this blocks on.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true

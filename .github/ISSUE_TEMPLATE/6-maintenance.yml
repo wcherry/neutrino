@@ -1,0 +1,58 @@
+name: 🧹 Maintenance / Technical Debt
+description: Refactoring, dependencies, CI/CD, cleanup, or infrastructure work.
+title: "[Maint]: "
+labels: ["maintenance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Primarily for maintainers and contributors. Examples: upgrade Next.js, replace a deprecated API, refactor authentication, improve test coverage, remove dead code, optimize CI.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type of work
+      multiple: true
+      options:
+        - Refactoring
+        - Dependency update
+        - CI/CD
+        - Testing
+        - Performance
+        - Infrastructure
+        - Database / migrations
+        - Code cleanup
+        - Developer experience
+        - Security hardening
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this needed?
+      description: What's the cost of leaving it alone?
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: Rough plan, or the specific files/crates/packages involved.
+    validations:
+      required: true
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Breaking changes, migration requirements, areas likely to regress.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      value: |
+        - [ ]
+        - [ ]

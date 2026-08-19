@@ -1,0 +1,72 @@
+name: 🔧 Improvement
+description: Something already works, but it could be substantially better.
+title: "[Improvement]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Feature vs. Improvement:** if Neutrino *can't* do X, file a Feature Request. If Neutrino *does* X but it's slow, awkward, or confusing, you're in the right place.
+
+        Good examples: faster photo browsing, better spreadsheet keyboard navigation, clearer error messages, lower memory usage.
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: What does Neutrino do today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed improvement
+      description: What should it do instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: What's the concrete impact — time lost, confusion caused, workflow blocked?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: application
+    attributes:
+      label: Affected application
+      multiple: true
+      options:
+        - Calendar
+        - Diagrams
+        - Docs
+        - Drive
+        - Notes
+        - Photos
+        - Sheets
+        - Slides
+        - Authentication / OAuth
+        - Search
+        - Sharing / Links
+        - Encryption
+        - API
+        - Web UI
+        - Docker / Deployment
+        - Other / Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Screenshots or examples
+      description: Optional. Before/after sketches, examples from other tools, timing measurements.
+
+  - type: input
+    id: related
+    attributes:
+      label: Related issues
+      placeholder: "#123, #456"

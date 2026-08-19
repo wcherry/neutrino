@@ -1,0 +1,91 @@
+name: ✨ Feature Request
+description: Suggest new functionality for Neutrino.
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for functionality Neutrino doesn't have yet. If Neutrino already does the thing but does it badly, use the **Improvement** template instead.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checks
+      options:
+        - label: I searched existing issues and this hasn't been requested yet.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the underlying need rather than jumping straight to a solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like Neutrino to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: How are you solving this today? What other approaches did you think about?
+
+  - type: dropdown
+    id: application
+    attributes:
+      label: Affected application
+      multiple: true
+      options:
+        - Calendar
+        - Diagrams
+        - Docs
+        - Drive
+        - Notes
+        - Photos
+        - Sheets
+        - Slides
+        - Authentication / OAuth
+        - Search
+        - Sharing / Links
+        - Encryption
+        - API
+        - Web UI
+        - Docker / Deployment
+        - Other / Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: beneficiaries
+    attributes:
+      label: Who would benefit?
+      multiple: true
+      options:
+        - Individual users
+        - Families
+        - Teams
+        - Administrators
+        - Developers
+        - Self-hosters
+        - Other
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups, examples, or prior art
+      description: Optional. Screenshots of how other tools solve this, sketches, links.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd be willing to help implement this.

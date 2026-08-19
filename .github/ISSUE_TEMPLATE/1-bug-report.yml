@@ -1,0 +1,143 @@
+name: 🐛 Bug Report
+description: Something isn't working correctly.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        ⚠️ **Do not use this form for security vulnerabilities.** Please report those privately — see the Security Vulnerability option on the new-issue chooser.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checks
+      options:
+        - label: I searched existing issues and this hasn't been reported yet.
+          required: true
+        - label: I'm running a recent version of Neutrino.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: application
+    attributes:
+      label: Affected application
+      description: Which part of Neutrino is affected?
+      multiple: true
+      options:
+        - Calendar
+        - Diagrams
+        - Docs
+        - Drive
+        - Notes
+        - Photos
+        - Sheets
+        - Slides
+        - Authentication / OAuth
+        - Search
+        - Sharing / Links
+        - Encryption
+        - API
+        - Web UI
+        - Docker / Deployment
+        - Other / Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Can you reproduce this consistently?
+      options:
+        - Always
+        - Sometimes
+        - Only happened once
+        - Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Neutrino version
+      placeholder: "e.g. 0.4.2, or the commit SHA you built from"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Installation method
+      options:
+        - Docker
+        - Built from source
+        - Hosted instance
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, OS, and Docker image/tag if applicable.
+      placeholder: |
+        - Browser: Firefox 128
+        - OS: macOS 15.1 (Apple Silicon)
+        - Docker image: ghcr.io/wcherry/neutrino:0.4.2
+      value: |
+        - Browser:
+        - OS:
+        - Docker image/tag:
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error messages
+      description: Server logs, browser console output, or stack traces. This is automatically formatted as code, so no backticks needed.
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / recordings
+      description: Optional. Drag and drop images or video here.
