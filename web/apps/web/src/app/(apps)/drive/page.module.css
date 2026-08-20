@@ -1,8 +1,8 @@
 .page {
+  composes: container from '../pageContainer.module.css';
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-  max-width: 1200px;
   flex: 1;
   min-height: 0;
 }
