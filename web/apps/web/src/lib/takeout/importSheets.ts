@@ -15,10 +15,11 @@
  * carries them, but the styling SheetJS's community build reads back is too
  * partial to be worth half-applying), charts, pivot tables, filters,
  * conditional formatting, data validation, notes and comments, protected
- * ranges, and the original created and modified dates — the API sets those to
- * the time of the import. Number formats, merged cells, column widths and row
- * heights do come across (`sheetXlsx.ts`). Spreadsheets are imported into the
- * folder tree the export recorded, but sharing is not reapplied, so an
+ * ranges. Number formats, merged cells, column widths and row heights do come
+ * across (`sheetXlsx.ts`), as do the created and modified dates the file had
+ * in Drive — written after the body, since saving it is what stamps the file
+ * with the current time (`importMetadata.ts`). Spreadsheets are imported into
+ * the folder tree the export recorded, but sharing is not reapplied, so an
  * imported copy is private to the importer.
  */
 
@@ -38,8 +39,9 @@ import {
 } from '@/lib/api';
 import type { SheetFile } from '@/app/(apps)/sheets/editor/types';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
-import { readSheetInfo, type DriveSheetEntry } from './driveSheets';
+import { readSheetInfo, type DriveSheetEntry, type DriveSheetInfo } from './driveSheets';
 import { createFolderResolver } from './folders';
+import { applyImportMetadata, datesFor } from './importMetadata';
 import { delimitedToSheetFile, xlsxToSheetFile, type SheetConversionOptions } from './sheetXlsx';
 import { describeError, formatBytes, logFail, logStep, logWarn } from './log';
 import { sanitiseTitle } from './titles';
@@ -115,8 +117,7 @@ export async function convertDriveSheet(
  * `(1)` is appended to disambiguate — while the sidecar records what the
  * spreadsheet was really called.
  */
-async function titleFor(sheet: DriveSheetEntry): Promise<string> {
-  const info = await readSheetInfo(sheet.info);
+function titleFor(sheet: DriveSheetEntry, info: DriveSheetInfo | null): string {
   return sanitiseTitle(info?.title ?? '') || sanitiseTitle(sheet.title) || UNTITLED_SHEET;
 }
 
@@ -195,7 +196,10 @@ export async function runSheetsImport({
     // rather than only what went wrong.
     let step = 'reading the title';
     try {
-      title = await titleFor(sheet);
+      // One read of the sidecar: it holds the real title and the dates Drive
+      // had for the file, and it is a separate entry to inflate out of the zip.
+      const info = await readSheetInfo(sheet.info);
+      title = titleFor(sheet, info);
 
       if (existingTitles.has(title.trim().toLowerCase())) {
         logStep('sheets', `skipping ${file}`, { title, reason: 'title already exists' });
@@ -226,6 +230,16 @@ export async function runSheetsImport({
       step = keyPair ? 'saving the encrypted body' : 'saving the body';
       if (keyPair) await saveEncrypted(created.id, content, keyPair);
       else await driveAutosaveContent(created.id, content, CONTENT_FILENAME);
+
+      // After the body, not before: saving it is what stamps the file with the
+      // current time, so dates written any earlier would be overwritten here.
+      step = 'recording the dates it had in Drive';
+      await applyImportMetadata({
+        fileId: created.id,
+        scope: 'sheets',
+        source: sheet.entry.fullPath,
+        dates: datesFor(sheet.entry, { createdAt: info?.createdAt, updatedAt: info?.modifiedAt }),
+      });
 
       step = 'indexing it for search';
       indexOnSave(userId, {

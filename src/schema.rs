@@ -458,6 +458,9 @@ diesel::table! {
         encrypted_metadata -> Nullable<Text>,
         // Added in migration 100
         content_version -> Integer,
+        // Added in migration 111
+        imported_at -> Nullable<Timestamp>,
+        import_source -> Nullable<Text>,
     }
 }
 

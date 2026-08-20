@@ -17,6 +17,34 @@ export interface FileItem {
   encryptedMetadata?: string | null;
   /** Server-side content revision counter, incremented on every autosave/version save. */
   contentVersion: number;
+  /**
+   * When an import run wrote this file; absent for a file created here. On an
+   * imported file `createdAt`/`updatedAt` are the source file's own dates, so
+   * this is the only field that says when it actually arrived.
+   */
+  importedAt?: string | null;
+  /** Where in the imported archive this file came from, e.g. `Takeout/Drive/Work/Q3 plan.docx`. */
+  importSource?: string | null;
+}
+
+/**
+ * The dates an imported file had before it was imported, plus the record of
+ * where they came from.
+ *
+ * Sent once per file, after its content is written: the content write is what
+ * stamps `updatedAt` with the current time, so dates set any earlier would not
+ * survive it. `importSource` is required — this rewrites a file's history, and
+ * the row keeping a note of where the dates came from is what justifies it.
+ */
+export interface SetImportMetadataRequest {
+  /** The file's path inside the archive, e.g. `Takeout/Drive/Work/Q3 plan.docx`. */
+  importSource: string;
+  /** ISO 8601. Omit to leave the file's current created date alone. */
+  createdAt?: string;
+  /** ISO 8601. Omit to leave the file's current modified date alone. */
+  updatedAt?: string;
+  /** ISO 8601; defaults to the moment the server handles the request. */
+  importedAt?: string;
 }
 
 /**

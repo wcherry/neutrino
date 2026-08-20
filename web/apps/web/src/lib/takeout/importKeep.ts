@@ -9,7 +9,10 @@
  *
  * Per note the sequence mirrors what the editor does on a first save:
  * create the note, mint a DEK and register it, upload the ciphertext, and
- * hand the plaintext to the local search index.
+ * hand the plaintext to the local search index. The note's created and edited
+ * dates then go on in a final call — Keep records both, in microseconds — for
+ * the reason `importMetadata.ts` explains: writing the body is what stamps the
+ * file with the current time, so the dates cannot be set any earlier.
  */
 
 import {
@@ -25,6 +28,7 @@ import { createNote, extractNoteText, listAllNotes } from '@/lib/noteFiles';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import type { TakeoutArchive, TakeoutEntry } from './archive';
 import { createFolderResolver } from './folders';
+import { applyImportMetadata, datesFor, isoFromEpoch } from './importMetadata';
 import { convertKeepNote, looksLikeKeepNote, parseKeepNote, type KeepNote } from './keep';
 import { describeError, formatBytes, logFail, logStep, logWarn } from './log';
 import type { ImportItem, ImportProgress, ImportSummary } from './types';
@@ -226,6 +230,21 @@ export async function runKeepImport({
       } else {
         await driveAutosaveContent(created.id, converted.content, 'note.json');
       }
+
+      // After the body, not before: saving it is what stamps the file with the
+      // current time, so dates written any earlier would be overwritten here.
+      step = 'recording the dates it had in Keep';
+      await applyImportMetadata({
+        fileId: created.id,
+        scope: 'keep',
+        source: entry.fullPath,
+        dates: datesFor(entry, {
+          // Keep writes both in microseconds, on every note including empty
+          // ones — the most complete dates of any product in the export.
+          createdAt: isoFromEpoch(note.createdTimestampUsec, 'microseconds'),
+          updatedAt: isoFromEpoch(note.userEditedTimestampUsec, 'microseconds'),
+        }),
+      });
 
       step = 'indexing it for search';
       indexOnSave(userId, {

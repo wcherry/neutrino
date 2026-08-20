@@ -4,9 +4,10 @@ use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
         AutosaveMetadata, ConvertFileRequest, CreateFileRequest, DocFileMetadataResponse,
-        FileMetadataResponse, FileOrderField, FileVersionResponse, ListFilesResponse,
-        ListVersionsResponse, QuotaResponse, SaveVersionRequest, UpdateVersionLabelRequest,
-        VersionOrderField, ZipContentsResponse, ZipEntry, ZipEntryOrderField,
+        FileMetadataResponse, FileOrderField, FileVersionResponse, ImportMetadataRequest,
+        ListFilesResponse, ListVersionsResponse, QuotaResponse, SaveVersionRequest,
+        UpdateVersionLabelRequest, VersionOrderField, ZipContentsResponse, ZipEntry,
+        ZipEntryOrderField,
     },
     native_types,
     service::StorageService,
@@ -338,6 +339,34 @@ pub async fn create_file_record(
         content_version: file.content_version,
     };
     Ok(HttpResponse::Created().json(response))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v1/drive/files/{id}/import-metadata",
+    params(("id" = String, Path, description = "File ID")),
+    request_body = ImportMetadataRequest,
+    responses(
+        (status = 200, description = "Dates and provenance recorded", body = FileMetadataResponse),
+        (status = 400, description = "Missing importSource, or a timestamp that could not be read"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "storage"
+)]
+#[patch("/files/{id}/import-metadata")]
+pub async fn set_import_metadata(
+    state: web::Data<StorageApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<ImportMetadataRequest>,
+) -> Result<web::Json<FileMetadataResponse>, ApiError> {
+    let response = state.storage_service.apply_import_metadata(
+        &user.user_id,
+        &path.into_inner(),
+        body.into_inner(),
+    )?;
+    Ok(web::Json(response))
 }
 
 #[utoipa::path(
@@ -1137,6 +1166,7 @@ pub async fn delete_version(
 pub fn configure(conf: &mut web::ServiceConfig) {
     conf.service(upload_file)
         .service(create_file_record)
+        .service(set_import_metadata)
         .service(get_file_info)
         .service(list_files)
         .service(get_file_metadata)
@@ -1158,7 +1188,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        upload_file, create_file_record, get_file_info, list_files, get_file_metadata,
+        upload_file, create_file_record, set_import_metadata, get_file_info, list_files, get_file_metadata,
         preview_file, zip_contents, download_file, get_quota, autosave_file, convert_file, save_version,
         list_versions, get_version, update_version_label, restore_version, download_version, delete_version,
     ),
@@ -1177,6 +1207,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         SaveVersionRequest,
         CreateFileRequest,
         ConvertFileRequest,
+        ImportMetadataRequest,
         DocFileMetadataResponse,
     )),
     tags(

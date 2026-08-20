@@ -1,7 +1,7 @@
 use crate::drive::storage::dto::FileOrderField;
 use crate::drive::storage::model::{
-    AutosaveFileContent, FileRecord, FileVersionRecord, NewFileRecord, NewFileVersionRecord,
-    NewUserQuota, UpdateFileContent, UserQuota,
+    AutosaveFileContent, FileRecord, FileVersionRecord, ImportProvenance, NewFileRecord,
+    NewFileVersionRecord, NewUserQuota, UpdateFileContent, UserQuota,
 };
 use crate::schema::{file_versions, files, user_quotas};
 use crate::shared::{ApiError, ContentVersionCheck, ListQuery, OrderDirection};
@@ -37,6 +37,47 @@ impl StorageRepository {
             .first(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB query after insert error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// Stamp a file with the dates it had before it was imported, plus the
+    /// record of where those dates came from.
+    ///
+    /// Scoped to `user_id` like every other update here, and to a file that is
+    /// not in the trash: a trashed row's dates are what the Trash view sorts
+    /// on, and an import has no business reaching into it.
+    pub fn apply_import_provenance(
+        &self,
+        file_id: &str,
+        user_id: &str,
+        provenance: ImportProvenance,
+    ) -> Result<FileRecord, ApiError> {
+        let mut conn = self.get_conn()?;
+
+        let updated = diesel::update(
+            files::table
+                .filter(files::id.eq(file_id))
+                .filter(files::user_id.eq(user_id))
+                .filter(files::deleted_at.is_null()),
+        )
+        .set(provenance)
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB import provenance error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+
+        if updated == 0 {
+            return Err(ApiError::not_found("File not found"));
+        }
+
+        files::table
+            .filter(files::id.eq(file_id))
+            .select(FileRecord::as_select())
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB query after import provenance error: {:?}", e);
                 ApiError::internal("Database error")
             })
     }

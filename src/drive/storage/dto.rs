@@ -1,5 +1,6 @@
 use crate::drive::storage::model::{FileRecord, FileVersionRecord};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use crate::shared::ApiError;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -52,6 +53,13 @@ pub struct FileMetadataResponse {
     /// content write (autosave and named-version save). Used by clients to detect
     /// "server changed since I last saw it" for offline-conflict handling.
     pub content_version: i32,
+    /// When an import run wrote this file; null for a file created here. On an
+    /// imported file `created_at` is the source file's own date, so this is the
+    /// only thing that says when it actually arrived.
+    pub imported_at: Option<NaiveDateTime>,
+    /// Where in the imported archive this file came from, e.g.
+    /// `Takeout/Drive/Work/Q3 plan.docx`. Null unless `imported_at` is set.
+    pub import_source: Option<String>,
 }
 
 impl From<FileRecord> for FileMetadataResponse {
@@ -70,6 +78,8 @@ impl From<FileRecord> for FileMetadataResponse {
             tags: vec![],
             encrypted_metadata: f.encrypted_metadata,
             content_version: f.content_version,
+            imported_at: f.imported_at,
+            import_source: f.import_source,
         }
     }
 }
@@ -170,6 +180,62 @@ pub struct ConvertFileRequest {
     /// Conversion from OOXML happens client-side; the backend never parses
     /// office bytes.
     pub content: String,
+}
+
+/// What an importer says about a file it has just finished writing.
+///
+/// Sent once per file, after its content is in place, because the write is
+/// what stamps `updated_at` with the current time — setting the dates at
+/// creation would only have them overwritten a moment later.
+///
+/// `importSource` is required. Rewriting a file's dates is a history rewrite,
+/// and this is the endpoint's whole justification for allowing one: the row
+/// keeps a record of where the dates came from.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportMetadataRequest {
+    /// Where the file came from inside the archive, e.g.
+    /// `Takeout/Drive/Work/Q3 plan.docx`.
+    pub import_source: String,
+    /// The source file's creation date. Omit to leave the existing one alone.
+    pub created_at: Option<String>,
+    /// The source file's last-modified date. Omit to leave the existing one alone.
+    pub updated_at: Option<String>,
+    /// When the import ran. Defaults to now, which is what a live import
+    /// wants; an importer replaying an interrupted run can pin it instead.
+    pub imported_at: Option<String>,
+}
+
+/// Parse a timestamp an importer sent, in UTC.
+///
+/// Deliberately lenient about the shape and deliberately strict about failure.
+/// Lenient because the dates come from three sources that format them
+/// differently — an offset (`2014-03-01T12:00:00+02:00`), a `Z` and
+/// milliseconds from `toISOString`, or neither — and a caller should not have
+/// to know which. Strict because the alternative, the `.ok()` that
+/// `register_photo` uses on its capture date, turns a format we don't
+/// recognise into a file silently keeping the wrong date, which is the exact
+/// failure issue #110 was about. A rejected request is visible; a dropped date
+/// is not.
+pub fn parse_import_timestamp(value: &str) -> Result<NaiveDateTime, ApiError> {
+    let text = value.trim();
+    // An offset or a `Z` means the instant is unambiguous — convert to UTC
+    // rather than keeping the local wall clock, which would shift the date.
+    if let Ok(fixed) = DateTime::parse_from_rfc3339(text) {
+        return Ok(fixed.with_timezone(&Utc).naive_utc());
+    }
+    for format in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(text, format) {
+            return Ok(naive);
+        }
+    }
+    // A bare date carries no time, so it cannot go through the loop above.
+    if let Ok(date) = NaiveDate::parse_from_str(text, "%Y-%m-%d") {
+        return Ok(date.and_hms_opt(0, 0, 0).expect("midnight is a valid time"));
+    }
+    Err(ApiError::bad_request(format!(
+        "Could not read the timestamp {text:?}; expected an ISO 8601 date such as 2014-03-01T12:00:00Z"
+    )))
 }
 
 /// Optional metadata part of an autosave multipart body. Editors send it

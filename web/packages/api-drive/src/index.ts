@@ -33,6 +33,7 @@ export type {
   FileItem,
   FileInfo,
   CreateFileRequest,
+  SetImportMetadataRequest,
   FileListQuery,
   DriveFileType,
   QuotaInfo,

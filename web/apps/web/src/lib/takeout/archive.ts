@@ -64,6 +64,18 @@ export interface TakeoutEntry {
   /** Uncompressed size in bytes. */
   size: number;
   /**
+   * The entry's own last-modified date, out of the zip's central directory,
+   * or `null` when the archive did not record one.
+   *
+   * The last resort for dating an imported file (`importMetadata.ts`), and the
+   * only one for the products that export no metadata at all — the pictures
+   * that reached Drive rather than Photos have no sidecar, so this is all
+   * there is. It is a weaker signal than a sidecar: a zip stores local time
+   * with no zone, and the date it carries is whatever the file had when the
+   * export was built, which for some products is the export's own date.
+   */
+  lastModified: Date | null;
+  /**
    * Read and inflate this entry. Nothing is read until called, and nothing is
    * retained afterwards, so an entry may be read more than once — the Keep
    * importer sniffs a note to identify the directory and then reads it again
@@ -134,6 +146,19 @@ function detectRoot(paths: string[]): string {
  */
 function configureWorkers(): void {
   configure({ useWebWorkers: typeof Worker !== 'undefined' });
+}
+
+/**
+ * A zip entry's date, or `null` if there isn't a usable one.
+ *
+ * A zip stores the DOS timestamp in a field that is legal to leave at zero, so
+ * zip.js can hand back an Invalid Date or a date in 1980. Both would be worse
+ * than no date at all, since the import writes what it is given straight onto
+ * the file — an "imported" 1980 is indistinguishable from a real one.
+ */
+function validDate(value: Date | undefined): Date | null {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+  return value.getUTCFullYear() > 1980 ? value : null;
 }
 
 /** zip.js only offers `getData` on file entries; directories have no content. */
@@ -214,6 +239,7 @@ export async function openTakeout(file: Blob): Promise<TakeoutArchive> {
       fullPath: zipEntry.filename,
       ext: extensionOf(path),
       size: zipEntry.uncompressedSize ?? 0,
+      lastModified: validDate(zipEntry.lastModDate),
       text: () => zipEntry.getData(new TextWriter()),
       blob: () => zipEntry.getData(new BlobWriter()),
     };
