@@ -231,6 +231,32 @@ pub async fn empty_trash(
     Ok(HttpResponse::NoContent().finish())
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/photos/{id}/permanent",
+    params(("id" = String, Path, description = "Photo ID")),
+    responses(
+        (status = 204, description = "Photo permanently deleted"),
+        (status = 400, description = "Photo is not in the trash"),
+        (status = 403, description = "Access denied"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "photos"
+)]
+#[delete("/photos/{id}/permanent")]
+pub async fn delete_photo_permanently(
+    state: web::Data<PhotosApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let photo_id = path.into_inner();
+    state
+        .photos_service
+        .delete_photo_permanently(&user, &photo_id)?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
 /// Worker endpoint — stores extracted image metadata for a photo.
 /// Accepts a JSON body. No user auth required (worker-to-service call).
 #[utoipa::path(
@@ -563,6 +589,7 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
         .service(update_photo)
         .service(trash_photo)
         .service(restore_photo)
+        .service(delete_photo_permanently)
         .service(put_metadata)
         .service(put_photo_edits)
         .service(get_photo_edits)
@@ -581,6 +608,7 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
         update_photo,
         trash_photo,
         restore_photo,
+        delete_photo_permanently,
         list_trash,
         empty_trash,
         put_metadata,

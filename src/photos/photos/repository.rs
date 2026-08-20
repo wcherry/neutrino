@@ -2,7 +2,7 @@ use crate::photos::photos::model::{
     LockedFolderSettings, NewLockedFolderSettings, NewPhotoEdit, NewPhotoRecord, PhotoEdit,
     PhotoRecord, UpdatePhotoRecord,
 };
-use crate::schema::{locked_folder_settings, photo_edits, photos};
+use crate::schema::{album_photos, locked_folder_settings, photo_edits, photos};
 use crate::shared::ApiError;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
@@ -152,15 +152,41 @@ impl PhotosRepository {
         Ok(())
     }
 
-    #[allow(dead_code)]
+    /// The photos whose retention window has closed — trashed at or before `before`.
+    ///
+    /// Returned rather than deleted so the caller can take each one's Drive file with it. Deleting
+    /// the rows first would strand the bytes: nothing would be left pointing at them.
+    pub fn list_expired_trash(&self, before: NaiveDateTime) -> Result<Vec<PhotoRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        photos::table
+            .filter(photos::deleted_at.is_not_null())
+            .filter(photos::deleted_at.le(before))
+            .select(PhotoRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list expired trash error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
     pub fn delete_expired_trash(&self, before: NaiveDateTime) -> Result<usize, ApiError> {
         let mut conn = self.get_conn()?;
-        diesel::delete(
-            photos::table
+        conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+            let doomed: Vec<String> = photos::table
                 .filter(photos::deleted_at.is_not_null())
-                .filter(photos::deleted_at.le(before)),
-        )
-        .execute(&mut conn)
+                .filter(photos::deleted_at.le(before))
+                .select(photos::id)
+                .load(conn)?;
+            // Same reason as `delete_photo_record`: no foreign key, so nothing cascades.
+            diesel::delete(album_photos::table.filter(album_photos::photo_id.eq_any(&doomed)))
+                .execute(conn)?;
+            diesel::delete(
+                photos::table
+                    .filter(photos::deleted_at.is_not_null())
+                    .filter(photos::deleted_at.le(before)),
+            )
+            .execute(conn)
+        })
         .map_err(|e| {
             tracing::error!("DB delete expired trash error: {:?}", e);
             ApiError::internal("Database error")
@@ -189,14 +215,41 @@ impl PhotosRepository {
             })
     }
 
+    /// Removes one photo row outright, and its album membership with it.
+    ///
+    /// `album_photos` has no foreign key onto `photos` (see the `create_albums` migration), so
+    /// nothing cascades — a row left behind here is a membership pointing at a photo that no longer
+    /// exists, which every album read then has to filter around forever.
+    pub fn delete_photo_record(&self, photo_id: &str) -> Result<usize, ApiError> {
+        let mut conn = self.get_conn()?;
+        conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+            diesel::delete(album_photos::table.filter(album_photos::photo_id.eq(photo_id)))
+                .execute(conn)?;
+            diesel::delete(photos::table.filter(photos::id.eq(photo_id))).execute(conn)
+        })
+        .map_err(|e| {
+            tracing::error!("DB delete photo error: {:?}", e);
+            ApiError::internal("Database error")
+        })
+    }
+
     pub fn empty_trash(&self, user_id: &str) -> Result<usize, ApiError> {
         let mut conn = self.get_conn()?;
-        diesel::delete(
-            photos::table
+        conn.transaction::<usize, diesel::result::Error, _>(|conn| {
+            let doomed: Vec<String> = photos::table
                 .filter(photos::user_id.eq(user_id))
-                .filter(photos::deleted_at.is_not_null()),
-        )
-        .execute(&mut conn)
+                .filter(photos::deleted_at.is_not_null())
+                .select(photos::id)
+                .load(conn)?;
+            diesel::delete(album_photos::table.filter(album_photos::photo_id.eq_any(&doomed)))
+                .execute(conn)?;
+            diesel::delete(
+                photos::table
+                    .filter(photos::user_id.eq(user_id))
+                    .filter(photos::deleted_at.is_not_null()),
+            )
+            .execute(conn)
+        })
         .map_err(|e| {
             tracing::error!("DB empty trash error: {:?}", e);
             ApiError::internal("Database error")
@@ -429,5 +482,162 @@ impl PhotosRepository {
                 tracing::error!("DB get locked folder settings after upsert error: {:?}", e);
                 ApiError::internal("Database error")
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_pool() -> DbPool {
+        use crate::MIGRATIONS;
+        use diesel_migrations::MigrationHarness;
+
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder().max_size(1).build(manager).expect("test pool");
+        pool.get()
+            .expect("conn")
+            .run_pending_migrations(MIGRATIONS)
+            .expect("migrations");
+        pool
+    }
+
+    fn insert_photo(pool: &DbPool, id: &str, user_id: &str, trashed: bool) {
+        let mut conn = pool.get().expect("conn");
+        let deleted = if trashed { "datetime('now')" } else { "NULL" };
+        diesel::sql_query(format!(
+            "INSERT INTO photos (id, user_id, file_id, is_starred, is_archived, deleted_at, \
+             created_at, updated_at) VALUES (?, ?, ?, 0, 0, {}, datetime('now'), datetime('now'))",
+            deleted
+        ))
+        .bind::<diesel::sql_types::Text, _>(id)
+        .bind::<diesel::sql_types::Text, _>(user_id)
+        .bind::<diesel::sql_types::Text, _>(format!("file-{}", id))
+        .execute(&mut conn)
+        .expect("insert photo");
+    }
+
+    fn add_to_album(pool: &DbPool, album_id: &str, photo_id: &str) {
+        let mut conn = pool.get().expect("conn");
+        diesel::sql_query("INSERT INTO album_photos (album_id, photo_id) VALUES (?, ?)")
+            .bind::<diesel::sql_types::Text, _>(album_id)
+            .bind::<diesel::sql_types::Text, _>(photo_id)
+            .execute(&mut conn)
+            .expect("add to album");
+    }
+
+    fn membership_count(pool: &DbPool) -> i64 {
+        let mut conn = pool.get().expect("conn");
+        album_photos::table
+            .count()
+            .get_result(&mut conn)
+            .expect("count memberships")
+    }
+
+    #[test]
+    fn deleting_a_photo_record_takes_its_album_memberships_with_it() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo(&pool, "p1", "u1", true);
+        add_to_album(&pool, "album-a", "p1");
+        add_to_album(&pool, "album-b", "p1");
+        assert_eq!(membership_count(&pool), 2);
+
+        repo.delete_photo_record("p1").expect("delete");
+
+        // `album_photos` has no foreign key onto `photos`, so nothing cascades on its own. A row
+        // left behind is a membership pointing at a photo that no longer exists — which every
+        // album read would then have to filter around forever.
+        assert_eq!(membership_count(&pool), 0);
+    }
+
+    #[test]
+    fn emptying_the_trash_drops_memberships_for_trashed_photos_only() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo(&pool, "live", "u1", false);
+        insert_photo(&pool, "trashed", "u1", true);
+        add_to_album(&pool, "album-a", "live");
+        add_to_album(&pool, "album-a", "trashed");
+
+        repo.empty_trash("u1").expect("empty");
+
+        assert_eq!(membership_count(&pool), 1);
+        let mut conn = pool.get().expect("conn");
+        let remaining: Vec<String> = album_photos::table
+            .select(album_photos::photo_id)
+            .load(&mut conn)
+            .expect("load");
+        assert_eq!(remaining, vec!["live"]);
+    }
+
+    /// Inserts a photo trashed a given number of days ago.
+    fn insert_trashed_days_ago(pool: &DbPool, id: &str, user_id: &str, days: i64) {
+        let mut conn = pool.get().expect("conn");
+        diesel::sql_query(
+            "INSERT INTO photos (id, user_id, file_id, is_starred, is_archived, deleted_at, \
+             created_at, updated_at) VALUES (?, ?, ?, 0, 0, datetime('now', ?), \
+             datetime('now'), datetime('now'))",
+        )
+        .bind::<diesel::sql_types::Text, _>(id)
+        .bind::<diesel::sql_types::Text, _>(user_id)
+        .bind::<diesel::sql_types::Text, _>(format!("file-{}", id))
+        .bind::<diesel::sql_types::Text, _>(format!("-{} days", days))
+        .execute(&mut conn)
+        .expect("insert trashed photo");
+    }
+
+    #[test]
+    fn expired_trash_is_the_set_past_the_cutoff_and_nothing_younger() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_trashed_days_ago(&pool, "ancient", "u1", 40);
+        insert_trashed_days_ago(&pool, "just-expired", "u1", 31);
+        insert_trashed_days_ago(&pool, "still-waiting", "u1", 29);
+        insert_photo(&pool, "live", "u1", false);
+
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(30)).naive_utc();
+        let expired = repo.list_expired_trash(cutoff).expect("list");
+
+        let mut ids: Vec<&str> = expired.iter().map(|p| p.id.as_str()).collect();
+        ids.sort_unstable();
+        // A live photo has no `deleted_at` at all and must never be swept, whatever the cutoff.
+        assert_eq!(ids, vec!["ancient", "just-expired"]);
+    }
+
+    #[test]
+    fn purging_expired_trash_takes_album_memberships_with_it() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_trashed_days_ago(&pool, "expired", "u1", 40);
+        insert_trashed_days_ago(&pool, "waiting", "u1", 5);
+        add_to_album(&pool, "album-a", "expired");
+        add_to_album(&pool, "album-a", "waiting");
+
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(30)).naive_utc();
+        let removed = repo.delete_expired_trash(cutoff).expect("purge");
+
+        assert_eq!(removed, 1);
+        let mut conn = pool.get().expect("conn");
+        let remaining: Vec<String> = album_photos::table
+            .select(album_photos::photo_id)
+            .load(&mut conn)
+            .expect("load");
+        assert_eq!(remaining, vec!["waiting"]);
+    }
+
+    #[test]
+    fn emptying_the_trash_leaves_another_users_trash_alone() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo(&pool, "mine", "u1", true);
+        insert_photo(&pool, "theirs", "u2", true);
+        add_to_album(&pool, "album-a", "theirs");
+
+        repo.empty_trash("u1").expect("empty");
+
+        assert!(repo.get_photo_including_deleted("theirs").is_ok());
+        assert!(repo.get_photo_including_deleted("mine").is_err());
+        assert_eq!(membership_count(&pool), 1);
     }
 }

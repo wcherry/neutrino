@@ -781,6 +781,31 @@ async fn main() -> std::io::Result<()> {
         config.drive_base_url.clone(),
         config.worker_secret.clone(),
     ));
+    // Empty the photo trash on the schedule the clients promise the user.
+    //
+    // Neutrino Photos counts down to `PhotosService::TRASH_RETENTION_DAYS` on every trashed
+    // thumbnail; without this the count reached zero and the item stayed, which made the countdown
+    // a statement nothing in the system made true. Hourly rather than on a timer per item: the
+    // window is measured in days, so an hour of slack is invisible, and a sweep is one indexed
+    // query when there is nothing to do.
+    {
+        let purge_service = photos_service.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                // First tick is immediate, so a restart catches up on anything that expired while
+                // the process was down.
+                interval.tick().await;
+                let service = purge_service.clone();
+                match tokio::task::spawn_blocking(move || service.purge_expired_trash()).await {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(e)) => error!("Trash purge failed: {:?}", e),
+                    Err(e) => error!("Trash purge task failed: {:?}", e),
+                }
+            }
+        });
+    }
+
     let photos_albums_service = Arc::new(AlbumsService::new(
         photos_albums_repo,
         photos_photos_repo.clone(),
@@ -811,6 +836,7 @@ async fn main() -> std::io::Result<()> {
     });
     let photos_albums_state = web::Data::new(photos::albums::api::AlbumsApiState {
         albums_service: photos_albums_service.clone(),
+        photos_service: photos_service.clone(),
     });
     let photos_faces_state = web::Data::new(photos::faces::api::FacesApiState {
         faces_service: photos_faces_service,

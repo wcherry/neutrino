@@ -261,12 +261,41 @@ impl DriveClient {
         Ok(())
     }
 
+    /// Moves a file to Drive's trash. Reversible, and the bytes stay on the user's quota.
     pub fn delete_file(&self, file_id: &str) -> Result<(), ApiError> {
         let file = self
             .storage
             .find_file_any_user(file_id)?
             .ok_or_else(|| ApiError::not_found("File not found"))?;
         self.fs_repo.trash_file(file_id, &file.user_id)?;
+        Ok(())
+    }
+
+    /// Removes a file for good — the row and the bytes on disk.
+    ///
+    /// What a permanently deleted photograph needs, and what ``delete_file`` deliberately is not:
+    /// that one only trashes, so a photo purged from the Photos trash would leave its blob sitting
+    /// on the user's quota with nothing left pointing at it. Trashing first is not a formality —
+    /// `permanently_delete_file` only matches a row whose `deleted_at` is set, so a file that was
+    /// still live would otherwise be a silent no-op.
+    ///
+    /// Idempotent: a file already gone is `Ok(())`, since the caller's goal is that it not exist.
+    pub fn delete_file_permanently(&self, file_id: &str) -> Result<(), ApiError> {
+        let Some(file) = self.storage.find_file_any_user(file_id)? else {
+            return Ok(());
+        };
+        let user_id = file.user_id.clone();
+        self.fs_repo.trash_file(file_id, &user_id)?;
+
+        if let Some(record) = self.fs_repo.permanently_delete_file(file_id, &user_id)? {
+            let path = self.storage.store().resolve(&record.storage_path);
+            if let Err(e) = std::fs::remove_file(&path) {
+                // The row is already gone, so the file is unreachable either way. Logged rather
+                // than returned: failing here would leave the caller believing the delete did not
+                // happen, and retrying it would find nothing to delete.
+                tracing::warn!("Failed to remove file from disk {:?}: {:?}", path, e);
+            }
+        }
         Ok(())
     }
 

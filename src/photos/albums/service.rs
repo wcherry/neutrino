@@ -3,7 +3,7 @@ use crate::photos::albums::{
         AddPhotoToAlbumRequest, AlbumResponse, CreateAlbumRequest, ListAlbumsResponse,
         UpdateAlbumRequest,
     },
-    model::{NewAlbumRecord, UpdateAlbumRecord},
+    model::{AlbumRecord, NewAlbumRecord, UpdateAlbumRecord},
     repository::AlbumsRepository,
 };
 use crate::photos::photos::repository::PhotosRepository;
@@ -26,24 +26,29 @@ impl AlbumsService {
         }
     }
 
+    /// Builds the wire shape for one album, answering the count and the cover from a single read of
+    /// its membership so the two cannot disagree.
+    fn to_response(&self, album: AlbumRecord) -> Result<AlbumResponse, ApiError> {
+        let photo_ids = self.albums_repo.list_live_album_photo_ids(&album.id)?;
+        Ok(AlbumResponse {
+            id: album.id,
+            title: album.title,
+            description: album.description,
+            is_auto: album.is_auto,
+            person_id: album.person_id,
+            photo_count: photo_ids.len(),
+            cover_photo_id: photo_ids.first().cloned(),
+            created_at: album.created_at.and_utc().to_rfc3339(),
+            updated_at: album.updated_at.and_utc().to_rfc3339(),
+        })
+    }
+
     pub fn list_albums(&self, user: &AuthenticatedUser) -> Result<ListAlbumsResponse, ApiError> {
         let records = self.albums_repo.list_albums(&user.user_id)?;
         let albums = records
             .into_iter()
-            .map(|r| {
-                let count = self.albums_repo.count_album_photos(&r.id).unwrap_or(0);
-                AlbumResponse {
-                    id: r.id,
-                    title: r.title,
-                    description: r.description,
-                    is_auto: r.is_auto,
-                    person_id: r.person_id,
-                    photo_count: count,
-                    created_at: r.created_at.and_utc().to_rfc3339(),
-                    updated_at: r.updated_at.and_utc().to_rfc3339(),
-                }
-            })
-            .collect();
+            .map(|r| self.to_response(r))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(ListAlbumsResponse { albums })
     }
 
@@ -66,16 +71,7 @@ impl AlbumsService {
             person_id: None,
         };
         let album = self.albums_repo.insert_album(new_album)?;
-        Ok(AlbumResponse {
-            id: album.id,
-            title: album.title,
-            description: album.description,
-            is_auto: album.is_auto,
-            person_id: album.person_id,
-            photo_count: 0,
-            created_at: album.created_at.and_utc().to_rfc3339(),
-            updated_at: album.updated_at.and_utc().to_rfc3339(),
-        })
+        self.to_response(album)
     }
 
     /// Create or refresh the smart album for a named person.
@@ -109,17 +105,7 @@ impl AlbumsService {
         self.albums_repo.sync_album_photos(&album_id, photo_ids)?;
 
         let album = self.albums_repo.get_album(&album_id)?;
-        let count = self.albums_repo.count_album_photos(&album_id)?;
-        Ok(AlbumResponse {
-            id: album.id,
-            title: album.title,
-            description: album.description,
-            is_auto: album.is_auto,
-            person_id: album.person_id,
-            photo_count: count,
-            created_at: album.created_at.and_utc().to_rfc3339(),
-            updated_at: album.updated_at.and_utc().to_rfc3339(),
-        })
+        self.to_response(album)
     }
 
     pub fn get_album(
@@ -131,17 +117,7 @@ impl AlbumsService {
         if album.user_id != user.user_id {
             return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
         }
-        let count = self.albums_repo.count_album_photos(album_id)?;
-        Ok(AlbumResponse {
-            id: album.id,
-            title: album.title,
-            description: album.description,
-            is_auto: album.is_auto,
-            person_id: album.person_id,
-            photo_count: count,
-            created_at: album.created_at.and_utc().to_rfc3339(),
-            updated_at: album.updated_at.and_utc().to_rfc3339(),
-        })
+        self.to_response(album)
     }
 
     pub fn update_album(
@@ -163,17 +139,7 @@ impl AlbumsService {
             updated_at: Utc::now().naive_utc(),
         };
         let updated = self.albums_repo.update_album(album_id, changes)?;
-        let count = self.albums_repo.count_album_photos(album_id)?;
-        Ok(AlbumResponse {
-            id: updated.id,
-            title: updated.title,
-            description: updated.description,
-            is_auto: updated.is_auto,
-            person_id: updated.person_id,
-            photo_count: count,
-            created_at: updated.created_at.and_utc().to_rfc3339(),
-            updated_at: updated.updated_at.and_utc().to_rfc3339(),
-        })
+        self.to_response(updated)
     }
 
     pub fn delete_album(&self, user: &AuthenticatedUser, album_id: &str) -> Result<(), ApiError> {
@@ -200,6 +166,25 @@ impl AlbumsService {
             return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
         }
         self.albums_repo.add_photo_to_album(album_id, &req.photo_id)
+    }
+
+    /// The photo IDs in an album, most recently added first.
+    ///
+    /// Returns IDs rather than photos because turning one into a `PhotoResponse` needs the Drive
+    /// file behind it, and this service holds only the photos *repository*. The API layer joins the
+    /// two through `PhotosService::list_photos_by_ids`, exactly as the persons endpoints do — which
+    /// also means a trashed photo drops out of its albums on its own: `get_photo` filters on
+    /// `deleted_at`, so nothing here has to remember to.
+    pub fn photo_ids_in_album(
+        &self,
+        user: &AuthenticatedUser,
+        album_id: &str,
+    ) -> Result<Vec<String>, ApiError> {
+        let album = self.albums_repo.get_album(album_id)?;
+        if album.user_id != user.user_id {
+            return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
+        }
+        self.albums_repo.list_live_album_photo_ids(album_id)
     }
 
     pub fn remove_photo_from_album(

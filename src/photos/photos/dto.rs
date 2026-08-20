@@ -34,6 +34,9 @@ pub struct PhotoResponse {
     pub capture_date: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// When the photo was moved to the trash, or null if it is live. Clients read this to show how
+    /// long a deleted item has left before its retention window closes.
+    pub deleted_at: Option<String>,
     /// Extracted image metadata (dimensions, EXIF), null until the worker has processed it.
     pub metadata: Option<Value>,
 }
