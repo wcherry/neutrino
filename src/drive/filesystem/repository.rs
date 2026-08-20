@@ -101,27 +101,84 @@ impl FilesystemRepository {
             .ok_or_else(|| ApiError::not_found("Folder not found"))
     }
 
+    /// Moves a folder to the trash, together with every descendant folder and every file
+    /// inside any of them, all stamped with the SAME `deleted_at`.
+    ///
+    /// The cascade is the point: `deleted_at` is what every listing query filters on, so a
+    /// folder-only update left the contained files marked live. They then kept being served by
+    /// `list_files_in_folder` and re-downloaded by the desktop client on each poll, even though
+    /// the user had put the folder in the trash. Sharing one timestamp across the whole cascade
+    /// is what lets `restore_folder` put back exactly what this operation took.
     pub fn trash_folder(&self, folder_id: &str, user_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         let now = Utc::now().naive_utc();
 
-        diesel::update(
-            folders::table
-                .filter(folders::id.eq(folder_id))
-                .filter(folders::user_id.eq(user_id))
-                .filter(folders::deleted_at.is_null()),
-        )
-        .set(TrashFolderRecord {
-            deleted_at: Some(now),
-            updated_at: now,
+        conn.transaction(|conn| {
+            let ids = Self::folder_subtree_ids(conn, folder_id, user_id)?;
+
+            diesel::update(
+                folders::table
+                    .filter(folders::id.eq_any(&ids))
+                    .filter(folders::user_id.eq(user_id))
+                    .filter(folders::deleted_at.is_null()),
+            )
+            .set(TrashFolderRecord {
+                deleted_at: Some(now),
+                updated_at: now,
+            })
+            .execute(conn)?;
+
+            // Files already in the trash keep their original `deleted_at` so restoring this
+            // folder does not resurrect something the user trashed separately beforehand.
+            diesel::update(
+                files::table
+                    .filter(files::folder_id.eq_any(&ids))
+                    .filter(files::user_id.eq(user_id))
+                    .filter(files::deleted_at.is_null()),
+            )
+            .set((files::deleted_at.eq(now), files::updated_at.eq(now)))
+            .execute(conn)?;
+
+            Ok::<_, diesel::result::Error>(())
         })
-        .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB trash folder error: {:?}", e);
             ApiError::internal("Database error")
         })?;
 
         Ok(())
+    }
+
+    /// The folder's own id plus the ids of all its descendants, breadth-first.
+    ///
+    /// Diesel has no portable recursive-CTE support here, so the tree is walked one level at a
+    /// time. Already-trashed descendants are included so a cascade over a partially-trashed
+    /// subtree still reaches the live files beneath them.
+    fn folder_subtree_ids(
+        conn: &mut SqliteConnection,
+        folder_id: &str,
+        user_id: &str,
+    ) -> Result<Vec<String>, diesel::result::Error> {
+        let mut ids = vec![folder_id.to_string()];
+        let mut frontier = vec![folder_id.to_string()];
+
+        while !frontier.is_empty() {
+            let children: Vec<String> = folders::table
+                .filter(folders::parent_id.eq_any(&frontier))
+                .filter(folders::user_id.eq(user_id))
+                .select(folders::id)
+                .load(conn)?;
+
+            // Guards against a cycle introduced by a bad move: a folder already seen is never
+            // expanded again, so the walk always terminates.
+            frontier = children
+                .into_iter()
+                .filter(|id| !ids.contains(id))
+                .collect();
+            ids.extend(frontier.iter().cloned());
+        }
+
+        Ok(ids)
     }
 
     pub fn list_subfolders(
@@ -301,21 +358,58 @@ impl FilesystemRepository {
         Ok(())
     }
 
+    /// Restores a trashed folder and undoes exactly the cascade `trash_folder` performed.
+    ///
+    /// Descendants are restored ONLY when their `deleted_at` matches the folder's, i.e. they
+    /// went into the trash as part of the same operation. Anything the user trashed separately
+    /// (before or after) carries a different timestamp and stays in the trash.
     pub fn restore_folder(&self, folder_id: &str, user_id: &str) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         let now = Utc::now().naive_utc();
 
-        diesel::update(
-            folders::table
+        conn.transaction(|conn| {
+            // Read the trash stamp BEFORE clearing it — it identifies the cascade to undo.
+            let trashed_at: Option<NaiveDateTime> = folders::table
                 .filter(folders::id.eq(folder_id))
                 .filter(folders::user_id.eq(user_id))
-                .filter(folders::deleted_at.is_not_null()),
-        )
-        .set((
-            folders::deleted_at.eq(None::<NaiveDateTime>),
-            folders::updated_at.eq(now),
-        ))
-        .execute(&mut conn)
+                .filter(folders::deleted_at.is_not_null())
+                .select(folders::deleted_at)
+                .first(conn)
+                .optional()?
+                .flatten();
+
+            let Some(trashed_at) = trashed_at else {
+                return Ok(());  // Not in the trash; nothing to restore.
+            };
+
+            let ids = Self::folder_subtree_ids(conn, folder_id, user_id)?;
+
+            diesel::update(
+                folders::table
+                    .filter(folders::id.eq_any(&ids))
+                    .filter(folders::user_id.eq(user_id))
+                    .filter(folders::deleted_at.eq(trashed_at)),
+            )
+            .set((
+                folders::deleted_at.eq(None::<NaiveDateTime>),
+                folders::updated_at.eq(now),
+            ))
+            .execute(conn)?;
+
+            diesel::update(
+                files::table
+                    .filter(files::folder_id.eq_any(&ids))
+                    .filter(files::user_id.eq(user_id))
+                    .filter(files::deleted_at.eq(trashed_at)),
+            )
+            .set((
+                files::deleted_at.eq(None::<NaiveDateTime>),
+                files::updated_at.eq(now),
+            ))
+            .execute(conn)?;
+
+            Ok::<_, diesel::result::Error>(())
+        })
         .map_err(|e| {
             tracing::error!("DB restore folder error: {:?}", e);
             ApiError::internal("Database error")
@@ -535,6 +629,9 @@ impl FilesystemRepository {
         Ok(count)
     }
 
+    /// Bulk equivalent of `trash_folder`, cascading to descendants and contained files for the
+    /// same reason (see `trash_folder`). The returned count is folders trashed, as before —
+    /// cascaded files are not counted, so the number still means "items the caller selected".
     pub fn bulk_trash_folders(
         &self,
         folder_ids: &[String],
@@ -543,21 +640,57 @@ impl FilesystemRepository {
         let mut conn = self.get_conn()?;
         let now = Utc::now().naive_utc();
 
-        let count = diesel::update(
-            folders::table
-                .filter(folders::id.eq_any(folder_ids))
-                .filter(folders::user_id.eq(user_id))
-                .filter(folders::deleted_at.is_null()),
-        )
-        .set(TrashFolderRecord {
-            deleted_at: Some(now),
-            updated_at: now,
-        })
-        .execute(&mut conn)
-        .map_err(|e| {
-            tracing::error!("DB bulk trash folders error: {:?}", e);
-            ApiError::internal("Database error")
-        })?;
+        let count = conn
+            .transaction(|conn| {
+                let mut ids: Vec<String> = Vec::new();
+                for folder_id in folder_ids {
+                    for id in Self::folder_subtree_ids(conn, folder_id, user_id)? {
+                        if !ids.contains(&id) {
+                            ids.push(id);
+                        }
+                    }
+                }
+
+                let count = diesel::update(
+                    folders::table
+                        .filter(folders::id.eq_any(folder_ids))
+                        .filter(folders::user_id.eq(user_id))
+                        .filter(folders::deleted_at.is_null()),
+                )
+                .set(TrashFolderRecord {
+                    deleted_at: Some(now),
+                    updated_at: now,
+                })
+                .execute(conn)?;
+
+                // Descendant folders, then every live file anywhere in the selected subtrees.
+                diesel::update(
+                    folders::table
+                        .filter(folders::id.eq_any(&ids))
+                        .filter(folders::user_id.eq(user_id))
+                        .filter(folders::deleted_at.is_null()),
+                )
+                .set(TrashFolderRecord {
+                    deleted_at: Some(now),
+                    updated_at: now,
+                })
+                .execute(conn)?;
+
+                diesel::update(
+                    files::table
+                        .filter(files::folder_id.eq_any(&ids))
+                        .filter(files::user_id.eq(user_id))
+                        .filter(files::deleted_at.is_null()),
+                )
+                .set((files::deleted_at.eq(now), files::updated_at.eq(now)))
+                .execute(conn)?;
+
+                Ok::<_, diesel::result::Error>(count)
+            })
+            .map_err(|e| {
+                tracing::error!("DB bulk trash folders error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
 
         Ok(count)
     }
@@ -1059,5 +1192,150 @@ mod tests {
             .list_recent_files("user-1", 100, Some(DriveFileType::Doc.mime_patterns()))
             .unwrap();
         assert!(files.is_empty());
+    }
+
+    // ── Folder trash cascade ──────────────────────────────────────────────────
+
+    fn insert_folder(repo: &FilesystemRepository, id: &str, user: &str, parent: Option<&str>) {
+        repo.create_folder(NewFolderRecord {
+            id,
+            user_id: user,
+            parent_id: parent,
+            name: id,
+        })
+        .expect("failed to insert test folder");
+    }
+
+    fn insert_file_in(
+        repo: &FilesystemRepository,
+        id: &str,
+        user: &str,
+        folder_id: Option<&str>,
+    ) {
+        let mut conn = repo.get_conn().unwrap();
+        diesel::insert_into(files::table)
+            .values(NewFileRecord {
+                id,
+                user_id: user,
+                name: id,
+                size_bytes: 1,
+                mime_type: "text/plain",
+                storage_path: id,
+                folder_id,
+                encrypted_metadata: None,
+            })
+            .execute(&mut conn)
+            .expect("failed to insert test file");
+    }
+
+    fn is_trashed(repo: &FilesystemRepository, file_id: &str) -> bool {
+        let mut conn = repo.get_conn().unwrap();
+        files::table
+            .filter(files::id.eq(file_id))
+            .select(files::deleted_at)
+            .first::<Option<NaiveDateTime>>(&mut conn)
+            .unwrap()
+            .is_some()
+    }
+
+    /// The regression this cascade exists for: a folder-only trash left the contained files
+    /// marked live, so they kept being listed (and re-downloaded by the desktop client).
+    #[test]
+    fn trashing_a_folder_trashes_the_files_inside_it() {
+        let repo = test_repo();
+        insert_folder(&repo, "docs", "user-1", None);
+        insert_file_in(&repo, "inside", "user-1", Some("docs"));
+        insert_file_in(&repo, "elsewhere", "user-1", None);
+
+        repo.trash_folder("docs", "user-1").unwrap();
+
+        assert!(is_trashed(&repo, "inside"));
+        assert!(!is_trashed(&repo, "elsewhere"));
+        assert!(repo
+            .list_files_in_folder("user-1", Some("docs"))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn trashing_a_folder_cascades_through_nested_subfolders() {
+        let repo = test_repo();
+        insert_folder(&repo, "top", "user-1", None);
+        insert_folder(&repo, "mid", "user-1", Some("top"));
+        insert_folder(&repo, "deep", "user-1", Some("mid"));
+        insert_file_in(&repo, "deep-file", "user-1", Some("deep"));
+
+        repo.trash_folder("top", "user-1").unwrap();
+
+        assert!(is_trashed(&repo, "deep-file"));
+        assert!(repo.list_subfolders("user-1", Some("top")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn cascade_does_not_touch_another_users_files() {
+        let repo = test_repo();
+        insert_folder(&repo, "shared-name", "user-1", None);
+        insert_folder(&repo, "other", "user-2", None);
+        insert_file_in(&repo, "theirs", "user-2", Some("other"));
+
+        repo.trash_folder("shared-name", "user-1").unwrap();
+
+        assert!(!is_trashed(&repo, "theirs"));
+    }
+
+    #[test]
+    fn restoring_a_folder_restores_the_files_it_took_to_the_trash() {
+        let repo = test_repo();
+        insert_folder(&repo, "docs", "user-1", None);
+        insert_folder(&repo, "nested", "user-1", Some("docs"));
+        insert_file_in(&repo, "inside", "user-1", Some("docs"));
+        insert_file_in(&repo, "nested-file", "user-1", Some("nested"));
+
+        repo.trash_folder("docs", "user-1").unwrap();
+        repo.restore_folder("docs", "user-1").unwrap();
+
+        assert!(!is_trashed(&repo, "inside"));
+        assert!(!is_trashed(&repo, "nested-file"));
+        assert_eq!(
+            names(&repo.list_files_in_folder("user-1", Some("docs")).unwrap()),
+            vec!["inside"]
+        );
+    }
+
+    /// A file the user trashed on its own carries a different `deleted_at`, so restoring the
+    /// folder around it must leave it in the trash.
+    #[test]
+    fn restoring_a_folder_leaves_separately_trashed_files_in_the_trash() {
+        let repo = test_repo();
+        insert_folder(&repo, "docs", "user-1", None);
+        insert_file_in(&repo, "kept", "user-1", Some("docs"));
+        insert_file_in(&repo, "already-gone", "user-1", Some("docs"));
+
+        repo.trash_file("already-gone", "user-1").unwrap();
+        repo.trash_folder("docs", "user-1").unwrap();
+        repo.restore_folder("docs", "user-1").unwrap();
+
+        assert!(!is_trashed(&repo, "kept"));
+        assert!(is_trashed(&repo, "already-gone"));
+    }
+
+    #[test]
+    fn bulk_trash_folders_cascades_and_counts_only_selected_folders() {
+        let repo = test_repo();
+        insert_folder(&repo, "one", "user-1", None);
+        insert_folder(&repo, "two", "user-1", None);
+        insert_folder(&repo, "one-child", "user-1", Some("one"));
+        insert_file_in(&repo, "one-file", "user-1", Some("one"));
+        insert_file_in(&repo, "child-file", "user-1", Some("one-child"));
+        insert_file_in(&repo, "two-file", "user-1", Some("two"));
+
+        let count = repo
+            .bulk_trash_folders(&["one".to_string(), "two".to_string()], "user-1")
+            .unwrap();
+
+        assert_eq!(count, 2, "count reports selected folders, not cascaded files");
+        assert!(is_trashed(&repo, "one-file"));
+        assert!(is_trashed(&repo, "child-file"));
+        assert!(is_trashed(&repo, "two-file"));
     }
 }
