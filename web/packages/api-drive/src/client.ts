@@ -7,6 +7,7 @@ import type {
   FileItem,
   FileInfo,
   CreateFileRequest,
+  SetImportMetadataRequest,
   FileListQuery,
   DriveFileType,
   QuotaInfo,
@@ -126,6 +127,21 @@ export const storageApi = {
   async createFile(body: CreateFileRequest): Promise<FileInfo> {
     return request<FileInfo>('/api/v1/drive/files', {
       method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * Give an imported file back the dates its source file had, and record where
+   * they came from.
+   *
+   * Called by the Takeout import after each file's content is in place —
+   * writing the content is what stamps `updatedAt` with the current time, so
+   * this cannot be folded into the create call.
+   */
+  async setImportMetadata(fileId: string, body: SetImportMetadataRequest): Promise<FileItem> {
+    return request<FileItem>(`/api/v1/drive/files/${fileId}/import-metadata`, {
+      method: 'PATCH',
       body: JSON.stringify(body),
     });
   },

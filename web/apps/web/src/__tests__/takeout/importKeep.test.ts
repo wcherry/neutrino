@@ -34,10 +34,14 @@ const filesystemApi = {
 const encryptionApi = {
   setFileKey: vi.fn(),
 };
+const storageApi = {
+  setImportMetadata: vi.fn(),
+};
 
 vi.mock('@/lib/api', () => ({
   get filesystemApi() { return filesystemApi; },
   get encryptionApi() { return encryptionApi; },
+  get storageApi() { return storageApi; },
   // The folder resolver (`lib/takeout/folders.ts`) uses this to address the
   // drive root — a user's root folder id is their own user id.
   getCurrentUserId: () => 'user-1',
@@ -60,12 +64,13 @@ import type { KeepNote } from '@/lib/takeout/keep';
 
 const KEY_PAIR = { publicKey: new Uint8Array([9]), secretKey: new Uint8Array([8]) };
 
-function entry(path: string, note: KeepNote | string): TakeoutEntry {
+function entry(path: string, note: KeepNote | string, lastModified: Date | null = null): TakeoutEntry {
   return {
     path,
     fullPath: `Takeout/Keep/${path}`,
     ext: path.slice(path.lastIndexOf('.') + 1),
     size: 0,
+    lastModified,
     text: async () => (typeof note === 'string' ? note : JSON.stringify(note)),
     blob: async () => new Blob([]),
   };
@@ -99,6 +104,7 @@ beforeEach(() => {
   driveAutosaveContent.mockResolvedValue({ updatedAt: '2026-01-01T00:00:00Z' });
   driveAutosaveEncryptedContent.mockResolvedValue({ updatedAt: '2026-01-01T00:00:00Z' });
   filesystemApi.getFolderContents.mockResolvedValue({ folders: [], files: [] });
+  storageApi.setImportMetadata.mockResolvedValue({});
 });
 
 describe('runKeepImport', () => {
@@ -112,6 +118,59 @@ describe('runKeepImport', () => {
     expect(createNote).toHaveBeenCalledTimes(2);
     expect(createNote).toHaveBeenCalledWith('A', null);
     expect(driveAutosaveEncryptedContent).toHaveBeenCalledTimes(2);
+  });
+
+  // ── Dates (issue #110) ──────────────────────────────────────────────────
+
+  /**
+   * Keep records both timestamps on every note, in microseconds — the most
+   * complete dates of any product in the export, and the reason a Keep note
+   * should never end up dated to the day it was imported.
+   */
+  it('gives a note the created and edited dates Keep recorded', async () => {
+    await run([
+      entry('a.json', {
+        title: 'A',
+        textContent: 'first',
+        createdTimestampUsec: 1393675200000000,
+        userEditedTimestampUsec: 1467624600000000,
+      }),
+    ]);
+
+    expect(storageApi.setImportMetadata).toHaveBeenCalledWith('id-A', {
+      importSource: 'Takeout/Keep/a.json',
+      createdAt: '2014-03-01T12:00:00.000Z',
+      updatedAt: '2016-07-04T09:30:00.000Z',
+    });
+  });
+
+  /**
+   * Microseconds read as seconds would date the note to the year 46,138 —
+   * `isoFromEpoch` takes the unit as a parameter for exactly this reason.
+   */
+  it('does not mistake Keep’s microseconds for seconds', async () => {
+    await run([entry('a.json', { title: 'A', textContent: 'x', createdTimestampUsec: 1393675200000000 })]);
+
+    const { createdAt } = storageApi.setImportMetadata.mock.calls[0][1];
+    expect(new Date(createdAt).getUTCFullYear()).toBe(2014);
+  });
+
+  it('falls back to the zip entry’s date for a note with no timestamps', async () => {
+    await run([entry('a.json', { title: 'A', textContent: 'x' }, new Date('2014-03-01T12:00:00Z'))]);
+
+    expect(storageApi.setImportMetadata).toHaveBeenCalledWith('id-A', {
+      importSource: 'Takeout/Keep/a.json',
+      createdAt: '2014-03-01T12:00:00.000Z',
+      updatedAt: '2014-03-01T12:00:00.000Z',
+    });
+  });
+
+  it('still counts the note as imported when its dates cannot be recorded', async () => {
+    storageApi.setImportMetadata.mockRejectedValue(new Error('nope'));
+
+    const summary = await run([entry('a.json', { title: 'A', textContent: 'x' })]);
+
+    expect(summary).toMatchObject({ imported: 1, failed: 0 });
   });
 
   it('registers a DEK for each note and uploads the plaintext content encrypted', async () => {

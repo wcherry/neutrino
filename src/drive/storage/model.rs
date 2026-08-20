@@ -28,6 +28,13 @@ pub struct FileRecord {
     /// content write (autosave and named-version save). Used by clients to detect
     /// "server changed since I last saw it" for offline-conflict handling.
     pub content_version: i32,
+    /// When an import run wrote this file. Null for anything created in
+    /// Neutrino itself — which is what distinguishes the two, now that
+    /// `created_at` on an imported file is the source file's own date.
+    pub imported_at: Option<NaiveDateTime>,
+    /// The file's path inside the archive it was imported from, e.g.
+    /// `Takeout/Drive/Work/Q3 plan.docx`. Null unless `imported_at` is set.
+    pub import_source: Option<String>,
 }
 
 #[derive(Debug, Insertable)]
@@ -99,6 +106,23 @@ pub struct AutosaveFileContent {
     pub size_bytes: i64,
     pub storage_path: String,
     pub updated_at: NaiveDateTime,
+}
+
+/// What an import run records about a file it just wrote.
+///
+/// `created_at`/`updated_at` are `Option` because Diesel skips a `None` field
+/// in an `AsChangeset`, which is the behaviour wanted here: an export that
+/// records only a modified date must not have its created date overwritten
+/// with anything — least of all the import's own clock, which is the bug this
+/// exists to fix. The provenance pair is not optional: a caller rewriting a
+/// file's history always says who did it and what it came from.
+#[derive(Debug, AsChangeset)]
+#[diesel(table_name = crate::schema::files)]
+pub struct ImportProvenance {
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
+    pub imported_at: NaiveDateTime,
+    pub import_source: String,
 }
 
 #[derive(Debug, AsChangeset)]

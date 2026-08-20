@@ -22,6 +22,7 @@
  */
 
 import type { TakeoutArchive, TakeoutEntry, TakeoutProductDir } from './archive';
+import { isoFromText } from './importMetadata';
 import { describeError, logStep, logWarn } from './log';
 
 // ── Locating the directory ────────────────────────────────────────────────────
@@ -116,12 +117,33 @@ export function sidecarFor(path: string, byPath: Map<string, TakeoutEntry>): Tak
 export interface DriveFileInfo {
   title?: string;
   description?: string;
+  /** When the file was created in Drive, ISO 8601. */
+  createdAt?: string;
+  /** When it was last modified in Drive, ISO 8601. */
+  modifiedAt?: string;
 }
 
 function stringField(record: Record<string, unknown>, ...keys: string[]): string | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+/**
+ * A date field, under whichever of `keys` the export happened to use.
+ *
+ * Same leniency as `stringField` and for the same reason — the exact spelling
+ * has moved between Takeout versions (`created_date`, `creation_time`,
+ * `createdTime`) and an export using a name we don't know about should fall
+ * back to the zip entry's date rather than fail. Anything unparseable is
+ * dropped by `isoFromText` rather than written onto the file.
+ */
+function dateField(record: Record<string, unknown>, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const iso = isoFromText(record[key]);
+    if (iso) return iso;
   }
   return undefined;
 }
@@ -149,6 +171,15 @@ export async function readDriveInfo(
     return {
       title: stringField(record, 'title', 'name'),
       description: stringField(record, 'description'),
+      createdAt: dateField(record, 'created_date', 'creation_time', 'createdTime', 'created'),
+      modifiedAt: dateField(
+        record,
+        'modified_date',
+        'last_modified_date',
+        'modification_time',
+        'modifiedTime',
+        'modified',
+      ),
     };
   } catch (err) {
     // Not fatal — the filename is a perfectly good title — but worth a line,

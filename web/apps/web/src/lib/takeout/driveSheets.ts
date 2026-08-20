@@ -34,6 +34,9 @@ import {
 } from './drive';
 import { logStep, logWarn } from './log';
 
+/** What a spreadsheet's `-info.json` holds; the same shape for every Drive file. */
+export type DriveSheetInfo = DriveFileInfo;
+
 /** How a spreadsheet's bytes have to be read to get at its cells. */
 export type SheetFormat = 'xlsx' | 'csv' | 'tsv';
 

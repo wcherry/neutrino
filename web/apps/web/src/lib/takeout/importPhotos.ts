@@ -11,7 +11,14 @@
  *
  * Per photo: read the bytes out of the zip, make a thumbnail, upload the
  * original encrypted, register it with the capture date from Google's sidecar,
- * star and archive it to match, and add it to the albums it was in.
+ * star and archive it to match, add it to the albums it was in, and stamp the
+ * Drive file with the dates it had rather than the dates of the import.
+ *
+ * The capture date is the one that matters most here: the library is sorted by
+ * it, so a run that left every photo dated today produced a timeline with one
+ * day in it (issue #110). A photo with no sidecar — which is every picture
+ * that reached Drive rather than Photos — falls back to the zip entry's own
+ * date, since the alternative is no date at all.
  *
  * What does not come across: Google's people tags and face groupings (Neutrino
  * detects its own), memories, comments on shared albums, and the edits Google
@@ -39,6 +46,12 @@ import {
   getCurrentUserId,
 } from '@/lib/api';
 import { createFolderResolver } from './folders';
+import {
+  applyImportMetadata,
+  captureDateFromIso,
+  datesFor,
+  isoFromDate,
+} from './importMetadata';
 import { readPhotoInfo, type TakeoutPhoto } from './photos';
 import { describeError, formatBytes, logFail, logStep, logWarn } from './log';
 import type { ImportItem, ImportProgress, ImportSummary } from './types';
@@ -284,7 +297,12 @@ export async function runPhotosImport({
 
       step = 'registering it in Photos';
       const info = await readPhotoInfo(photo.info);
-      const registered = await photosApi.registerPhoto({ fileId, captureDate: info?.takenAt ?? null });
+      // Without a sidecar there is no `takenAt`, and the zip entry's date is
+      // the only thing left standing between this photo and a library sorted
+      // by the date of the import. The server may still find something better
+      // in the file's own EXIF — the original bytes are what was uploaded.
+      const captureDate = info?.takenAt ?? captureDateFromIso(isoFromDate(photo.entry.lastModified));
+      const registered = await photosApi.registerPhoto({ fileId, captureDate: captureDate ?? null });
 
       // Registering always starts a photo unstarred and unarchived, so both
       // flags are a second call — made only when there is something to say.
@@ -304,6 +322,22 @@ export async function runPhotosImport({
           await albumsApi.addPhoto(await albums.albumFor(album), registered.id);
         }
       }
+
+      // The Drive row behind the photo gets the same treatment, so the file
+      // sorts by its real date in Drive as well as in the timeline.
+      //
+      // Both dates are the capture date. For a photo they are one event — the
+      // shutter — and the export carries nothing that means "modified": the
+      // zip entry's date is when Google built the archive, which as a modified
+      // date is the import's date wearing a disguise.
+      step = 'recording the dates it was taken and imported';
+      const takenIso = captureDate ? `${captureDate}Z` : undefined;
+      await applyImportMetadata({
+        fileId,
+        scope: 'photos',
+        source: photo.entry.fullPath,
+        dates: datesFor(photo.entry, { createdAt: takenIso, updatedAt: takenIso }),
+      });
 
       items.push({ file, title, status: 'imported' });
     } catch (err) {

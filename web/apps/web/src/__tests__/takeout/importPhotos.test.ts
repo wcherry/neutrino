@@ -25,6 +25,7 @@ const filesystemApi = {
 };
 const storageApi = {
   uploadFile: vi.fn(),
+  setImportMetadata: vi.fn(),
 };
 const uploadEncryptedFile = vi.fn();
 
@@ -61,12 +62,13 @@ const KEY_PAIR = { publicKey: new Uint8Array([9]), secretKey: new Uint8Array([8]
 
 const TAKEN = Date.UTC(2019, 7, 13, 12, 0, 0) / 1000;
 
-function takeoutEntry(path: string, text = ''): TakeoutEntry {
+function takeoutEntry(path: string, text = '', lastModified: Date | null = null): TakeoutEntry {
   return {
     path,
     fullPath: `Takeout/Google Photos/${path}`,
     ext: path.slice(path.lastIndexOf('.') + 1).toLowerCase(),
     size: 1024,
+    lastModified,
     text: async () => text,
     blob: async () => new Blob(['bytes']),
   };
@@ -113,6 +115,7 @@ beforeEach(() => {
     title,
   }));
   filesystemApi.getFolderContents.mockResolvedValue({ folders: [], files: [] });
+  storageApi.setImportMetadata.mockResolvedValue({});
 });
 
 describe('runPhotosImport', () => {
@@ -144,6 +147,61 @@ describe('runPhotosImport', () => {
       // Naive UTC, which is the only shape the endpoint parses.
       captureDate: '2019-08-13T12:00:00',
     });
+  });
+
+  // ── Dates (issue #110) ──────────────────────────────────────────────────
+
+  /**
+   * A photo with no sidecar is every picture that reached Drive rather than
+   * Photos, and there are a lot of them. Registering those with no capture
+   * date is what made the timeline one long undated block.
+   */
+  it('dates a photo with no sidecar from the zip entry', async () => {
+    await run([photo('a.jpg', { entry: takeoutEntry('a.jpg', '', new Date('2019-08-13T12:00:00Z')) })]);
+
+    expect(photosApi.registerPhoto).toHaveBeenCalledWith({
+      fileId: 'file-a.jpg',
+      captureDate: '2019-08-13T12:00:00',
+    });
+  });
+
+  /**
+   * `photoTakenTime` is when the shutter went; the zip entry's date is when
+   * the export was built, at best. The sidecar has to win.
+   */
+  it('prefers the sidecar’s capture date over the zip entry’s', async () => {
+    await run([
+      withInfo('a.jpg', { photoTakenTime: { timestamp: String(TAKEN) } }, {
+        entry: takeoutEntry('a.jpg', '', new Date('2024-01-01T00:00:00Z')),
+      }),
+    ]);
+
+    expect(photosApi.registerPhoto).toHaveBeenCalledWith({
+      fileId: 'file-a.jpg',
+      captureDate: '2019-08-13T12:00:00',
+    });
+  });
+
+  /**
+   * The Drive row behind the photo is dated too, so the file sorts by when it
+   * was taken in Drive as well as in the timeline.
+   */
+  it('dates the Drive file from when the photo was taken', async () => {
+    await run([withInfo('a.jpg', { photoTakenTime: { timestamp: String(TAKEN) } })]);
+
+    expect(storageApi.setImportMetadata).toHaveBeenCalledWith('file-a.jpg', {
+      importSource: 'Takeout/Google Photos/a.jpg',
+      createdAt: '2019-08-13T12:00:00Z',
+      updatedAt: '2019-08-13T12:00:00Z',
+    });
+  });
+
+  it('still counts the photo as imported when its dates cannot be recorded', async () => {
+    storageApi.setImportMetadata.mockRejectedValue(new Error('nope'));
+
+    const summary = await run([photo('a.jpg')]);
+
+    expect(summary).toMatchObject({ imported: 1, failed: 0 });
   });
 
   it('makes a preview for a picture but not for a video', async () => {

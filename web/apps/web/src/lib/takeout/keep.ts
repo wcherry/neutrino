@@ -18,11 +18,12 @@
  * | `labels[]`                  | trailing "Labels" line                      |
  * | `isTrashed` / `isArchived`  | import filters, not stored                  |
  *
- * Keep concepts with no home in Neutrino notes — pin state, note colour,
- * sharees, and the original created/edited timestamps — are dropped; a note
- * gets the timestamps of the import. Attachments are listed by filename rather
- * than dropped silently, because the bytes stay in the user's zip and the
- * filename is what lets them find them.
+ * Keep concepts with no home in Neutrino notes — pin state, note colour and
+ * sharees — are dropped. The created and edited timestamps are not converted
+ * here but are not lost either: they are on the parsed note in microseconds,
+ * and `importKeep.ts` writes them onto the file after its body is saved.
+ * Attachments are listed by filename rather than dropped silently, because the
+ * bytes stay in the user's zip and the filename is what lets them find them.
  */
 
 import type { Block, BlockType } from '@/app/(apps)/notes/editor/blockEditorTypes';

@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import { captureDateOf, findTakeoutPhotos, readPhotoInfo } from '@/lib/takeout/photos';
 import type { TakeoutArchive, TakeoutEntry } from '@/lib/takeout/archive';
 
-function entry(path: string, { text = '', size = 100 } = {}): TakeoutEntry {
+function entry(path: string, { text = '', size = 100, lastModified = null as Date | null } = {}): TakeoutEntry {
   const base = path.slice(path.lastIndexOf('/') + 1);
   const dot = base.lastIndexOf('.');
   return {
@@ -19,6 +19,7 @@ function entry(path: string, { text = '', size = 100 } = {}): TakeoutEntry {
     fullPath: `Takeout/${path}`,
     ext: dot > 0 ? base.slice(dot + 1).toLowerCase() : '',
     size,
+    lastModified,
     text: async () => text,
     blob: async () => new Blob([]),
   };

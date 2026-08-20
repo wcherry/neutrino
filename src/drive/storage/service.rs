@@ -1,11 +1,13 @@
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
-        FileMetadataResponse, FileOrderField, FileVersionResponse, ListFilesResponse,
-        ListVersionsResponse, QuotaResponse, VersionOrderField,
+        parse_import_timestamp, FileMetadataResponse, FileOrderField, FileVersionResponse,
+        ImportMetadataRequest, ListFilesResponse, ListVersionsResponse, QuotaResponse,
+        VersionOrderField,
     },
     model::{
-        AutosaveFileContent, FileRecord, NewFileRecord, NewFileVersionRecord, UpdateFileContent,
+        AutosaveFileContent, FileRecord, ImportProvenance, NewFileRecord, NewFileVersionRecord,
+        UpdateFileContent,
     },
     repository::StorageRepository,
     store::{LocalFileStore, ServeResolveError},
@@ -410,6 +412,56 @@ impl StorageService {
                 size_bytes: version.size_bytes,
                 storage_path: self.store.file_key(user_id, file_id),
                 updated_at: now,
+            },
+        )?;
+
+        Ok(FileMetadataResponse::from(updated))
+    }
+
+    /// Give an imported file back the dates its source file had, and record
+    /// where they came from.
+    ///
+    /// Called once per file by an import run, after the content write — the
+    /// write is what stamps `updated_at` with the current time, so anything
+    /// set before it would not survive.
+    ///
+    /// Scoped to the owner rather than to any role that can edit the file: a
+    /// date rewrite is not an edit, and an importer only ever writes files it
+    /// has just created itself.
+    pub fn apply_import_metadata(
+        &self,
+        user_id: &str,
+        file_id: &str,
+        request: ImportMetadataRequest,
+    ) -> Result<FileMetadataResponse, ApiError> {
+        let import_source = request.import_source.trim().to_string();
+        if import_source.is_empty() {
+            return Err(ApiError::bad_request("importSource cannot be empty"));
+        }
+
+        let created_at = request
+            .created_at
+            .as_deref()
+            .map(parse_import_timestamp)
+            .transpose()?;
+        let updated_at = request
+            .updated_at
+            .as_deref()
+            .map(parse_import_timestamp)
+            .transpose()?;
+        let imported_at = match request.imported_at.as_deref() {
+            Some(value) => parse_import_timestamp(value)?,
+            None => Utc::now().naive_utc(),
+        };
+
+        let updated = self.repo.apply_import_provenance(
+            file_id,
+            user_id,
+            ImportProvenance {
+                created_at,
+                updated_at,
+                imported_at,
+                import_source,
             },
         )?;
 
@@ -855,6 +907,163 @@ mod tests {
 
         assert_eq!(updated.mime_type, NATIVE_DOC_MIME);
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    // ── Import provenance (issue #110) ────────────────────────────────────────
+
+    fn import_request(source: &str) -> ImportMetadataRequest {
+        ImportMetadataRequest {
+            import_source: source.to_string(),
+            created_at: Some("2014-03-01T12:00:00Z".to_string()),
+            updated_at: Some("2016-07-04T09:30:00Z".to_string()),
+            imported_at: None,
+        }
+    }
+
+    /// The bug: an imported file used to carry the date of the import run in
+    /// every date field, so a library imported in one afternoon sorted as
+    /// though every file in it was written that afternoon.
+    #[test]
+    fn import_metadata_gives_a_file_back_the_dates_of_its_source() {
+        let (service, repo, base) = test_storage_service();
+        let before = insert_test_file(&repo, "file-1", "user-1", DOCX_MIME);
+
+        let updated = service
+            .apply_import_metadata("user-1", "file-1", import_request("Takeout/Drive/Q3.docx"))
+            .expect("apply import metadata");
+
+        assert_eq!(updated.created_at.to_string(), "2014-03-01 12:00:00");
+        assert_eq!(updated.updated_at.to_string(), "2016-07-04 09:30:00");
+        assert_ne!(updated.created_at, before.created_at);
+        // The import's own moment is not lost — it moves to `imported_at`,
+        // which is now the only way to tell an imported file from a native one.
+        assert_eq!(
+            updated.import_source.as_deref(),
+            Some("Takeout/Drive/Q3.docx")
+        );
+        assert!(updated.imported_at.is_some());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// An export that records only one of the two dates must not have the
+    /// other one rewritten — least of all with the import's clock.
+    #[test]
+    fn import_metadata_leaves_out_a_date_the_export_did_not_have() {
+        let (service, repo, base) = test_storage_service();
+        let before = insert_test_file(&repo, "file-1", "user-1", DOCX_MIME);
+
+        let updated = service
+            .apply_import_metadata(
+                "user-1",
+                "file-1",
+                ImportMetadataRequest {
+                    import_source: "Takeout/Drive/Q3.docx".to_string(),
+                    created_at: None,
+                    updated_at: Some("2016-07-04T09:30:00Z".to_string()),
+                    imported_at: None,
+                },
+            )
+            .expect("apply import metadata");
+
+        assert_eq!(updated.created_at, before.created_at);
+        assert_eq!(updated.updated_at.to_string(), "2016-07-04 09:30:00");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// Silently dropping an unreadable date is the failure mode issue #110 was
+    /// about, so the request is rejected rather than half-applied.
+    #[test]
+    fn import_metadata_rejects_a_timestamp_it_cannot_read() {
+        let (service, repo, base) = test_storage_service();
+        let before = insert_test_file(&repo, "file-1", "user-1", DOCX_MIME);
+
+        let err = service
+            .apply_import_metadata(
+                "user-1",
+                "file-1",
+                ImportMetadataRequest {
+                    import_source: "Takeout/Drive/Q3.docx".to_string(),
+                    created_at: Some("last Tuesday".to_string()),
+                    updated_at: None,
+                    imported_at: None,
+                },
+            )
+            .expect_err("an unreadable timestamp must not be accepted");
+
+        assert_eq!(err.status, 400);
+        let after = repo
+            .find_file_by_id("file-1")
+            .expect("find file")
+            .expect("file still there");
+        assert_eq!(after.created_at, before.created_at);
+        assert!(after.import_source.is_none(), "nothing was written");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn import_metadata_will_not_rewrite_another_users_file() {
+        let (service, repo, base) = test_storage_service();
+        let before = insert_test_file(&repo, "file-1", "user-1", DOCX_MIME);
+
+        let err = service
+            .apply_import_metadata("user-2", "file-1", import_request("Takeout/Drive/Q3.docx"))
+            .expect_err("a file belonging to someone else must not be touched");
+
+        assert_eq!(err.status, 404);
+        let after = repo
+            .find_file_by_id("file-1")
+            .expect("find file")
+            .expect("file still there");
+        assert_eq!(after.created_at, before.created_at);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn import_metadata_requires_a_source_to_justify_the_rewrite() {
+        let (service, repo, base) = test_storage_service();
+        insert_test_file(&repo, "file-1", "user-1", DOCX_MIME);
+
+        let err = service
+            .apply_import_metadata("user-1", "file-1", import_request("   "))
+            .expect_err("an empty importSource must not be accepted");
+
+        assert_eq!(err.status, 400);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// The three sources the importer reads dates from format them
+    /// differently, and none of them should have to know what the others do.
+    #[test]
+    fn import_timestamps_are_read_in_every_shape_the_importer_sends() {
+        // `toISOString()` output: UTC with milliseconds.
+        assert_eq!(
+            parse_import_timestamp("2014-03-01T12:00:00.123Z")
+                .expect("iso with millis")
+                .to_string(),
+            "2014-03-01 12:00:00.123"
+        );
+        // An offset is converted rather than kept as a wall clock — 23:30+02:00
+        // is the 1st in UTC, and keeping the local time would move the date.
+        assert_eq!(
+            parse_import_timestamp("2014-03-01T23:30:00+02:00")
+                .expect("offset")
+                .to_string(),
+            "2014-03-01 21:30:00"
+        );
+        // The naive shape the photos endpoint accepts.
+        assert_eq!(
+            parse_import_timestamp("2014-03-01T12:00:00")
+                .expect("naive")
+                .to_string(),
+            "2014-03-01 12:00:00"
+        );
+        // A bare date, which some Drive sidecars carry.
+        assert_eq!(
+            parse_import_timestamp("2014-03-01").expect("date").to_string(),
+            "2014-03-01 00:00:00"
+        );
+        assert!(parse_import_timestamp("not a date").is_err());
+        assert!(parse_import_timestamp("").is_err());
     }
 
     #[test]

@@ -12,7 +12,7 @@ import { findDriveSheets, readSheetInfo } from '@/lib/takeout/driveSheets';
 import { findDriveDocs } from '@/lib/takeout/driveDocs';
 import type { TakeoutArchive, TakeoutEntry } from '@/lib/takeout/archive';
 
-function entry(path: string, text = ''): TakeoutEntry {
+function entry(path: string, text = '', lastModified: Date | null = null): TakeoutEntry {
   const base = path.slice(path.lastIndexOf('/') + 1);
   const dot = base.lastIndexOf('.');
   return {
@@ -20,6 +20,7 @@ function entry(path: string, text = ''): TakeoutEntry {
     fullPath: `Takeout/${path}`,
     ext: dot > 0 ? base.slice(dot + 1).toLowerCase() : '',
     size: 0,
+    lastModified,
     text: async () => text,
     blob: async () => new Blob([]),
   };

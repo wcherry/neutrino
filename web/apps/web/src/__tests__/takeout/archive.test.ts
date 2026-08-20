@@ -17,6 +17,13 @@ async function zipOf(files: Record<string, string | Uint8Array>): Promise<Blob> 
   return zip.generateAsync({ type: 'blob' });
 }
 
+/** A zip whose entries carry the dates given, rather than the moment it was built. */
+async function zipDated(files: Record<string, Date>): Promise<Blob> {
+  const zip = new JSZip();
+  for (const [path, date] of Object.entries(files)) zip.file(path, 'x', { date });
+  return zip.generateAsync({ type: 'blob' });
+}
+
 /** Bytes that will not compress away, so the archive is as big as it looks. */
 function incompressible(bytes: number): Uint8Array {
   const out = new Uint8Array(bytes);
@@ -60,6 +67,38 @@ describe('openTakeout', () => {
       'Note one.html',
       'Note one.json',
     ]);
+  });
+
+  // ── Entry dates (issue #110) ────────────────────────────────────────────
+
+  /**
+   * The last resort for dating an imported file, and the only source for the
+   * pictures that reached Drive rather than Photos — those have no sidecar at
+   * all. Without it the import falls back to its own clock, which is the bug.
+   */
+  it('carries each entry’s own last-modified date', async () => {
+    const archive = await openTakeout(
+      await zipDated({ 'Takeout/Keep/a.json': new Date('2014-03-01T12:00:00Z') }),
+    );
+
+    const [entry] = archive.product('Keep')!.entries;
+    // A zip stores local time with no zone, so the wall clock is what
+    // survives the round trip; the date is what the import reads off it.
+    expect(entry.lastModified!.getFullYear()).toBe(2014);
+    expect(entry.lastModified!.getMonth()).toBe(2);
+  });
+
+  /**
+   * A zip may legally leave the timestamp unset, which reads back as 1980 (or
+   * an Invalid Date). Written onto a file that is indistinguishable from a
+   * real 1980, so it has to be dropped instead.
+   */
+  it('reports no date rather than the 1980 an unset timestamp reads back as', async () => {
+    const archive = await openTakeout(
+      await zipDated({ 'Takeout/Keep/a.json': new Date('1980-01-01T00:00:00Z') }),
+    );
+
+    expect(archive.product('Keep')!.entries[0].lastModified).toBeNull();
   });
 
   it('drops files sitting directly in the archive root', async () => {

@@ -22,6 +22,9 @@ const filesystemApi = {
 const encryptionApi = {
   setFileKey: vi.fn(),
 };
+const storageApi = {
+  setImportMetadata: vi.fn(),
+};
 const driveAutosaveContent = vi.fn();
 const driveAutosaveEncryptedContent = vi.fn();
 
@@ -29,6 +32,7 @@ vi.mock('@/lib/api', () => ({
   get sheetsApi() { return sheetsApi; },
   get filesystemApi() { return filesystemApi; },
   get encryptionApi() { return encryptionApi; },
+  get storageApi() { return storageApi; },
   driveAutosaveContent: (...args: unknown[]) => driveAutosaveContent(...args),
   driveAutosaveEncryptedContent: (...args: unknown[]) => driveAutosaveEncryptedContent(...args),
   // The folder resolver (`lib/takeout/folders.ts`) uses this to address the
@@ -62,12 +66,18 @@ function workbookBytes(value: string): ArrayBuffer {
   return XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
 }
 
-function takeoutEntry(path: string, text = '', bytes?: ArrayBuffer): TakeoutEntry {
+function takeoutEntry(
+  path: string,
+  text = '',
+  bytes?: ArrayBuffer,
+  lastModified: Date | null = null,
+): TakeoutEntry {
   return {
     path,
     fullPath: `Takeout/Drive/${path}`,
     ext: path.slice(path.lastIndexOf('.') + 1),
     size: 0,
+    lastModified,
     text: async () => text,
     // jsdom's Blob has no arrayBuffer() in this environment, and the runner
     // only ever asks for the bytes.
@@ -104,9 +114,63 @@ beforeEach(() => {
   sheetsApi.listSheets.mockResolvedValue({ sheets: [] });
   sheetsApi.createSheet.mockImplementation(async ({ title }: { title: string }) => ({ id: `id-${title}`, title }));
   filesystemApi.getFolderContents.mockResolvedValue({ folders: [], files: [] });
+  storageApi.setImportMetadata.mockResolvedValue({});
 });
 
 describe('runSheetsImport', () => {
+  // ── Dates (issue #110) ──────────────────────────────────────────────────
+
+  it('gives a spreadsheet the dates its sidecar recorded', async () => {
+    const withSidecar = sheet('A.csv', {
+      info: takeoutEntry(
+        'A.csv-info.json',
+        JSON.stringify({ created_date: '2014-03-01T12:00:00Z', modified_date: '2016-07-04T09:30:00Z' }),
+      ),
+    });
+
+    await run([withSidecar]);
+
+    expect(storageApi.setImportMetadata).toHaveBeenCalledWith('id-A', {
+      importSource: 'Takeout/Drive/A.csv',
+      createdAt: '2014-03-01T12:00:00.000Z',
+      updatedAt: '2016-07-04T09:30:00.000Z',
+    });
+  });
+
+  it('falls back to the zip entry’s own date when there is no sidecar', async () => {
+    await run([
+      sheet('A.csv', {
+        entry: takeoutEntry('A.csv', 'Name,Qty\nWidget,2\n', undefined, new Date('2014-03-01T12:00:00Z')),
+      }),
+    ]);
+
+    expect(storageApi.setImportMetadata).toHaveBeenCalledWith('id-A', {
+      importSource: 'Takeout/Drive/A.csv',
+      createdAt: '2014-03-01T12:00:00.000Z',
+      updatedAt: '2014-03-01T12:00:00.000Z',
+    });
+  });
+
+  /**
+   * Saving the body is what stamps the file with the current time, so dates
+   * written before it would not survive their own workbook being saved.
+   */
+  it('records the dates after the body, not before', async () => {
+    await run([sheet('A.csv')]);
+
+    expect(storageApi.setImportMetadata.mock.invocationCallOrder[0]).toBeGreaterThan(
+      driveAutosaveEncryptedContent.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('still counts the spreadsheet as imported when its dates cannot be recorded', async () => {
+    storageApi.setImportMetadata.mockRejectedValue(new Error('nope'));
+
+    const summary = await run([sheet('A.csv')]);
+
+    expect(summary).toMatchObject({ imported: 1, failed: 0 });
+  });
+
   it('creates a spreadsheet per file and saves its converted content', async () => {
     const summary = await run([sheet('A.csv'), sheet('B.csv')]);
 

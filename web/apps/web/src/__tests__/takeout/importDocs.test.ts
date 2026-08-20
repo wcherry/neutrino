@@ -21,6 +21,9 @@ const filesystemApi = {
 const encryptionApi = {
   setFileKey: vi.fn(),
 };
+const storageApi = {
+  setImportMetadata: vi.fn(),
+};
 const driveAutosaveContent = vi.fn();
 const driveAutosaveEncryptedContent = vi.fn();
 
@@ -28,6 +31,7 @@ vi.mock('@/lib/api', () => ({
   get docsApi() { return docsApi; },
   get filesystemApi() { return filesystemApi; },
   get encryptionApi() { return encryptionApi; },
+  get storageApi() { return storageApi; },
   driveAutosaveContent: (...args: unknown[]) => driveAutosaveContent(...args),
   driveAutosaveEncryptedContent: (...args: unknown[]) => driveAutosaveEncryptedContent(...args),
   // The folder resolver (`lib/takeout/folders.ts`) uses this to address the
@@ -57,12 +61,13 @@ import type { TakeoutEntry } from '@/lib/takeout/archive';
 
 const KEY_PAIR = { publicKey: new Uint8Array([9]), secretKey: new Uint8Array([8]) };
 
-function takeoutEntry(path: string, text = ''): TakeoutEntry {
+function takeoutEntry(path: string, text = '', lastModified: Date | null = null): TakeoutEntry {
   return {
     path,
     fullPath: `Takeout/Drive/${path}`,
     ext: path.slice(path.lastIndexOf('.') + 1),
     size: 0,
+    lastModified,
     text: async () => text,
     // jsdom's Blob has no arrayBuffer() in this environment, and the runner
     // only ever asks for the bytes.
@@ -99,6 +104,7 @@ beforeEach(() => {
   docsApi.createDoc.mockImplementation(async ({ title }: { title: string }) => ({ id: `id-${title}`, title }));
   filesystemApi.getFolderContents.mockResolvedValue({ folders: [], files: [] });
   convertToHtml.mockResolvedValue({ value: '<p>Hello</p>' });
+  storageApi.setImportMetadata.mockResolvedValue({});
 });
 
 describe('runDocsImport', () => {
@@ -133,6 +139,63 @@ describe('runDocsImport', () => {
     expect(encryptionApi.setFileKey).not.toHaveBeenCalled();
     expect(driveAutosaveEncryptedContent).not.toHaveBeenCalled();
     expect(driveAutosaveContent).toHaveBeenCalledWith('id-A', expect.any(String), 'doc.json');
+  });
+
+  // ── Dates (issue #110) ──────────────────────────────────────────────────
+
+  /**
+   * The sidecar is the best source: it is what Drive itself recorded, and the
+   * zip entry beside it can be dated when the export was built.
+   */
+  it('gives a document the dates its sidecar recorded', async () => {
+    const withSidecar = doc('A.docx', {
+      info: takeoutEntry(
+        'A.docx-info.json',
+        JSON.stringify({ created_date: '2014-03-01T12:00:00Z', modified_date: '2016-07-04T09:30:00Z' }),
+      ),
+    });
+
+    await run([withSidecar]);
+
+    expect(storageApi.setImportMetadata).toHaveBeenCalledWith('id-A', {
+      importSource: 'Takeout/Drive/A.docx',
+      createdAt: '2014-03-01T12:00:00.000Z',
+      updatedAt: '2016-07-04T09:30:00.000Z',
+    });
+  });
+
+  it('falls back to the zip entry’s own date when there is no sidecar', async () => {
+    await run([doc('A.docx', { entry: takeoutEntry('A.docx', '', new Date('2014-03-01T12:00:00Z')) })]);
+
+    expect(storageApi.setImportMetadata).toHaveBeenCalledWith('id-A', {
+      importSource: 'Takeout/Drive/A.docx',
+      createdAt: '2014-03-01T12:00:00.000Z',
+      updatedAt: '2014-03-01T12:00:00.000Z',
+    });
+  });
+
+  /**
+   * Saving the body is what stamps the file with the current time, so dates
+   * written before it would not survive their own document being saved.
+   */
+  it('records the dates after the body, not before', async () => {
+    await run([doc('A.docx')]);
+
+    expect(storageApi.setImportMetadata.mock.invocationCallOrder[0]).toBeGreaterThan(
+      driveAutosaveEncryptedContent.mock.invocationCallOrder[0],
+    );
+  });
+
+  /**
+   * The content is already saved by then: a rejection here means a document
+   * with the wrong dates, not one that failed to import.
+   */
+  it('still counts the document as imported when its dates cannot be recorded', async () => {
+    storageApi.setImportMetadata.mockRejectedValue(new Error('nope'));
+
+    const summary = await run([doc('A.docx')]);
+
+    expect(summary).toMatchObject({ imported: 1, failed: 0 });
   });
 
   it('adds each imported document to the search index', async () => {

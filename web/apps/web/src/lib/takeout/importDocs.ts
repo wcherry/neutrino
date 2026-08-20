@@ -11,11 +11,14 @@
  * register it, upload the ciphertext as `doc.json`, and hand the flattened
  * text to the local search index.
  *
+ * The document's created and modified dates come across too, in a call made
+ * after the body is saved — saving is what stamps the file with the current
+ * time, so the dates cannot be set any earlier (`importMetadata.ts`).
+ *
  * What does not come across: comments and suggestions (Takeout does not put
- * them in the exported file), revision history, and the original created and
- * modified dates — the API sets those to the time of the import. Documents are
- * imported into the folder tree the export recorded, but sharing is not
- * reapplied, so an imported copy is private to the importer.
+ * them in the exported file) and revision history. Documents are imported into
+ * the folder tree the export recorded, but sharing is not reapplied, so an
+ * imported copy is private to the importer.
  */
 
 import {
@@ -34,8 +37,9 @@ import {
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { htmlToDocJson, textToDocJson, type PmNode } from './docHtml';
-import { readDocInfo, type DriveDocEntry } from './driveDocs';
+import { readDocInfo, type DriveDocEntry, type DriveDocInfo } from './driveDocs';
 import { createFolderResolver } from './folders';
+import { applyImportMetadata, datesFor } from './importMetadata';
 import { describeError, formatBytes, logFail, logStep, logWarn } from './log';
 import { sanitiseTitle } from './titles';
 import type { ImportItem, ImportProgress, ImportSummary } from './types';
@@ -119,8 +123,7 @@ export async function convertDriveDoc(doc: DriveDocEntry): Promise<PmNode> {
  * filenames — characters it cannot store are replaced and `(1)` is appended to
  * disambiguate — while the sidecar records what the document was really called.
  */
-async function titleFor(doc: DriveDocEntry): Promise<string> {
-  const info = await readDocInfo(doc.info);
+function titleFor(doc: DriveDocEntry, info: DriveDocInfo | null): string {
   return sanitiseTitle(info?.title ?? '') || sanitiseTitle(doc.title) || UNTITLED_DOC;
 }
 
@@ -196,7 +199,10 @@ export async function runDocsImport({
     // rather than only what went wrong.
     let step = 'reading the title';
     try {
-      title = await titleFor(doc);
+      // One read of the sidecar: it holds the real title and the dates Drive
+      // had for the file, and it is a separate entry to inflate out of the zip.
+      const info = await readDocInfo(doc.info);
+      title = titleFor(doc, info);
 
       if (existingTitles.has(title.trim().toLowerCase())) {
         logStep('docs', `skipping ${file}`, { title, reason: 'title already exists' });
@@ -225,6 +231,16 @@ export async function runDocsImport({
       step = keyPair ? 'saving the encrypted body' : 'saving the body';
       if (keyPair) await saveEncrypted(created.id, content, keyPair);
       else await driveAutosaveContent(created.id, content, CONTENT_FILENAME);
+
+      // After the body, not before: saving it is what stamps the file with the
+      // current time, so dates written any earlier would be overwritten here.
+      step = 'recording the dates it had in Drive';
+      await applyImportMetadata({
+        fileId: created.id,
+        scope: 'docs',
+        source: doc.entry.fullPath,
+        dates: datesFor(doc.entry, { createdAt: info?.createdAt, updatedAt: info?.modifiedAt }),
+      });
 
       step = 'indexing it for search';
       indexOnSave(userId, {
