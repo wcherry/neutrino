@@ -1,0 +1,14 @@
+/* The frame every content route sits in: the gutter around the page and the
+   width it centres on inside the shell's main area.
+   `AppShell` deliberately has no padding of its own — full-bleed routes (the
+   docs/sheets/slides/photos editors, settings, admin, calendar…) fill the area
+   and draw their own chrome — so a page that wants the gutter composes this
+   class into its root rule rather than repeating the three declarations.
+   Override the width with `--page-max-width` on the composing class; a plain
+   `max-width` there would be a specificity tie decided by stylesheet order. */
+.container {
+  width: 100%;
+  max-width: var(--page-max-width, 1200px);
+  margin-inline: auto;
+  padding: var(--space-6);
+}

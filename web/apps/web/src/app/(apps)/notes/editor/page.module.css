@@ -1,4 +1,5 @@
 .editor {
+  composes: container from '../../pageContainer.module.css';
   display: flex;
   flex-direction: column;
   height: 100%;

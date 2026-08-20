@@ -1,9 +1,9 @@
 .page {
+  composes: container from '../../pageContainer.module.css';
+  --page-max-width: 900px;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  padding: var(--space-6);
-  max-width: 900px;
 }
 
 .header {
