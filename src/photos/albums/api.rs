@@ -5,6 +5,8 @@ use crate::photos::albums::{
     },
     service::AlbumsService,
 };
+use crate::photos::photos::dto::ListPhotosResponse;
+use crate::photos::photos::service::PhotosService;
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::ApiError;
 use actix_web::{delete, get, patch, post, web, HttpResponse};
@@ -13,6 +15,8 @@ use utoipa::OpenApi;
 
 pub struct AlbumsApiState {
     pub albums_service: Arc<AlbumsService>,
+    /// Needed to turn an album's photo IDs into full photo records — see `list_album_photos`.
+    pub photos_service: Arc<PhotosService>,
 }
 
 #[utoipa::path(
@@ -130,6 +134,35 @@ pub async fn delete_album(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/v1/albums/{id}/items",
+    params(("id" = String, Path, description = "Album ID")),
+    responses(
+        (status = 200, description = "Photos in the album", body = ListPhotosResponse),
+        (status = 403, description = "Access denied"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "albums"
+)]
+#[get("/albums/{id}/items")]
+pub async fn list_album_photos(
+    state: web::Data<AlbumsApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<web::Json<ListPhotosResponse>, ApiError> {
+    let album_id = path.into_inner();
+    let photo_ids = state
+        .albums_service
+        .photo_ids_in_album(&user, &album_id)?;
+    let result = state
+        .photos_service
+        .list_photos_by_ids(&user, &photo_ids)
+        .await?;
+    Ok(web::Json(result))
+}
+
+#[utoipa::path(
     post,
     path = "/api/v1/albums/{id}/items",
     params(("id" = String, Path, description = "Album ID")),
@@ -190,6 +223,7 @@ pub fn configure_albums(cfg: &mut web::ServiceConfig) {
         .service(get_album)
         .service(update_album)
         .service(delete_album)
+        .service(list_album_photos)
         .service(add_photo_to_album)
         .service(remove_photo_from_album);
 }
@@ -202,6 +236,7 @@ pub fn configure_albums(cfg: &mut web::ServiceConfig) {
         get_album,
         update_album,
         delete_album,
+        list_album_photos,
         add_photo_to_album,
         remove_photo_from_album
     ),

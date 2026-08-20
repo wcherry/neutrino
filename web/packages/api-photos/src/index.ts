@@ -41,6 +41,8 @@ export interface PhotoResponse {
   captureDate: string | null;
   createdAt: string;
   updatedAt: string;
+  /** When the photo was moved to the trash, null while it is live */
+  deletedAt: string | null;
   /** Extracted image metadata; null until the worker has processed the photo */
   metadata: PhotoMetadata | null;
 }
@@ -119,6 +121,8 @@ export interface AlbumResponse {
   isAuto: boolean;
   personId: string | null;
   photoCount: number;
+  /** The album's cover photo — the most recently added live one, null when the album is empty */
+  coverPhotoId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -324,6 +328,9 @@ function fileToPhoto(file: FileItem): PhotoResponse {
     isStarred: file.isStarred,
     isArchived: false,
     captureDate: null,
+    // A Drive listing only returns live files, so anything adapted here is
+    // by definition not in the trash.
+    deletedAt: null,
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
     metadata: null,
@@ -388,6 +395,11 @@ export const photosApi = {
 
   async restorePhoto(photoId: string): Promise<PhotoResponse> {
     return request<PhotoResponse>(`/api/v1/photos/${photoId}/restore`, { method: 'POST' });
+  },
+
+  /** Permanently deletes one trashed photo, and the Drive file behind it. Trash-only. */
+  async deletePhotoPermanently(photoId: string): Promise<void> {
+    return request<void>(`/api/v1/photos/${photoId}/permanent`, { method: 'DELETE' });
   },
 
   async listTrash(): Promise<ListPhotosResponse> {
@@ -583,6 +595,10 @@ export const albumsApi = {
 
   async deleteAlbum(albumId: string): Promise<void> {
     return request<void>(`/api/v1/albums/${albumId}`, { method: 'DELETE' });
+  },
+
+  async listAlbumPhotos(albumId: string): Promise<ListPhotosResponse> {
+    return request<ListPhotosResponse>(`/api/v1/albums/${albumId}/items`);
   },
 
   async addPhoto(albumId: string, photoId: string): Promise<void> {

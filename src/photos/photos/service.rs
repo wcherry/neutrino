@@ -326,7 +326,68 @@ impl PhotosService {
     }
 
     pub fn empty_trash(&self, user: &AuthenticatedUser) -> Result<(), ApiError> {
+        // Take the Drive files with the records. Dropping only the rows left the bytes on disk and
+        // on the user's quota forever, with nothing left pointing at them to find them by.
+        for record in self.repo.list_trash(&user.user_id)? {
+            if let Err(e) = self.drive.delete_file_permanently(&record.file_id) {
+                tracing::warn!("empty_trash: drive file {} not deleted: {:?}", record.file_id, e);
+            }
+        }
         self.repo.empty_trash(&user.user_id)?;
+        Ok(())
+    }
+
+    /// How long a trashed photo is kept before it is purged.
+    ///
+    /// The clients state this number to the user — Neutrino Photos counts down to it on every
+    /// trashed thumbnail — so it is a promise rather than a detail. Changing it here changes what
+    /// that countdown means, and the two have to be changed together.
+    pub const TRASH_RETENTION_DAYS: i64 = 30;
+
+    /// Purges every trashed photo past its retention window, Drive files included.
+    ///
+    /// Answers how many were removed. Run periodically from `main`; before this existed the trash
+    /// was kept forever and "deleted photos are kept for 30 days" was a statement no code made true.
+    pub fn purge_expired_trash(&self) -> Result<usize, ApiError> {
+        let cutoff = (Utc::now() - chrono::Duration::days(Self::TRASH_RETENTION_DAYS)).naive_utc();
+        let expired = self.repo.list_expired_trash(cutoff)?;
+        if expired.is_empty() {
+            return Ok(0);
+        }
+        // Files first, then rows: deleting the rows first would strand the bytes with nothing left
+        // pointing at them. A file that will not delete is logged and its row still goes — a
+        // permanent orphan is better than a trash that never empties and grows without bound.
+        for photo in &expired {
+            if let Err(e) = self.drive.delete_file_permanently(&photo.file_id) {
+                tracing::warn!("purge: drive file {} not deleted: {:?}", photo.file_id, e);
+            }
+        }
+        let removed = self.repo.delete_expired_trash(cutoff)?;
+        tracing::info!("purged {} expired trashed photo(s)", removed);
+        Ok(removed)
+    }
+
+    /// Permanently deletes one trashed photo — the record and the Drive file behind it.
+    ///
+    /// Refuses an item that is still live: reaching this from the timeline rather than from the
+    /// trash would be an unrecoverable delete one tap deep, and the two-step path through the trash
+    /// is the whole point of having one.
+    pub fn delete_photo_permanently(
+        &self,
+        user: &AuthenticatedUser,
+        photo_id: &str,
+    ) -> Result<(), ApiError> {
+        let photo = self.repo.get_photo_including_deleted(photo_id)?;
+        if photo.user_id != user.user_id {
+            return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
+        }
+        if photo.deleted_at.is_none() {
+            return Err(ApiError::bad_request("Photo must be in the trash first"));
+        }
+        if let Err(e) = self.drive.delete_file_permanently(&photo.file_id) {
+            tracing::warn!("permanent delete: drive file {} not deleted: {:?}", photo.file_id, e);
+        }
+        self.repo.delete_photo_record(photo_id)?;
         Ok(())
     }
 
@@ -390,6 +451,7 @@ impl PhotosService {
             capture_date: photo.capture_date.map(|d| d.and_utc().to_rfc3339()),
             created_at: photo.created_at.and_utc().to_rfc3339(),
             updated_at: photo.updated_at.and_utc().to_rfc3339(),
+            deleted_at: photo.deleted_at.map(|d| d.and_utc().to_rfc3339()),
             metadata,
         }
     }
