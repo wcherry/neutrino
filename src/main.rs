@@ -351,8 +351,6 @@ async fn main() -> std::io::Result<()> {
     use drive::feature_flags::repository::FeatureFlagsRepository;
     use drive::filesystem::repository::FilesystemRepository;
     use drive::filesystem::service::FilesystemService;
-    use drive::irm::repository::IrmRepository;
-    use drive::irm::service::IrmService;
     use jobs::repository::JobsRepository;
     use jobs::service::JobsService;
     use drive::notifications::hub::NotificationHub;
@@ -478,15 +476,6 @@ async fn main() -> std::io::Result<()> {
         fs_repo: Arc::new(FilesystemRepository::new(pool.clone())),
     });
 
-    let drive_irm_repo = Arc::new(IrmRepository::new(pool.clone()));
-    let drive_irm_service = Arc::new(IrmService::new(
-        drive_irm_repo,
-        drive_permissions_service.clone(),
-    ));
-    let drive_irm_state = web::Data::new(drive::irm::api::IrmApiState {
-        irm_service: drive_irm_service.clone(),
-    });
-
     let drive_jobs_repo = Arc::new(JobsRepository::new(pool.clone()));
     let drive_jobs_service = Arc::new(JobsService::new(
         drive_jobs_repo,
@@ -517,7 +506,6 @@ async fn main() -> std::io::Result<()> {
 
     let drive_storage_state = web::Data::new(drive::storage::api::StorageApiState {
         storage_service: drive_storage_service.clone(),
-        irm_service: drive_irm_service.clone(),
         permissions_service: drive_permissions_service.clone(),
         tags_service: drive_tags_service.clone(),
         filesystem_repo: drive_fs_repo.clone(),
@@ -550,7 +538,6 @@ async fn main() -> std::io::Result<()> {
     ));
     let drive_sharing_state = web::Data::new(drive::sharing::api::SharingApiState {
         sharing_service: drive_sharing_service,
-        irm_service: drive_irm_service,
         token_service: guest_token_service.clone(),
     });
 
@@ -1041,7 +1028,6 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::compliance::api::ComplianceApiDoc::openapi());
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
         doc.merge(drive::filesystem::api::FilesystemApiDoc::openapi());
-        doc.merge(drive::irm::api::IrmApiDoc::openapi());
         doc.merge(jobs::api::JobsApiDoc::openapi());
         doc.merge(drive::notifications::api::NotificationsApiDoc::openapi());
         doc.merge(drive::permissions::api::PermissionsApiDoc::openapi());
@@ -1108,7 +1094,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_permissions_state.clone())
             .app_data(drive_sharing_state.clone())
             .app_data(drive_access_requests_state.clone())
-            .app_data(drive_irm_state.clone())
             .app_data(drive_workspace_state.clone())
             .app_data(drive_jobs_state.clone())
             .app_data(drive_worker_secret_data.clone())

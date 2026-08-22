@@ -8,7 +8,6 @@ pub mod encryption;
 pub mod feature_flags;
 pub mod filesystem;
 pub mod fonts;
-pub mod irm;
 pub mod notifications;
 pub mod permissions;
 pub mod priority;
@@ -32,7 +31,6 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .configure(permissions::api::configure)
             .configure(sharing::api::configure_drive)
             .configure(access_requests::api::configure)
-            .configure(irm::api::configure)
             .configure(comments::api::configure)
             .configure(suggestions::api::configure)
             .configure(activity::api::configure)
