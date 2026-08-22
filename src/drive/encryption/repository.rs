@@ -30,12 +30,20 @@ impl EncryptionRepository {
     pub fn upsert_file_key(&self, new_ref: NewFileKeyRef) -> Result<FileKeyRef, ApiError> {
         let mut conn = self.get_conn()?;
 
-        // SQLite REPLACE INTO / INSERT OR REPLACE
+        // SQLite REPLACE INTO / INSERT OR REPLACE.
+        //
+        // `key_version` is updated alongside the ciphertext, never separately:
+        // the two describe each other, and a row carrying a new sealed DEK with
+        // the old version number points the client at a secret key that cannot
+        // open it.
         diesel::insert_into(file_key_refs::table)
             .values(&new_ref)
             .on_conflict((file_key_refs::file_id, file_key_refs::user_id))
             .do_update()
-            .set(file_key_refs::encrypted_file_key.eq(new_ref.encrypted_file_key))
+            .set((
+                file_key_refs::encrypted_file_key.eq(new_ref.encrypted_file_key),
+                file_key_refs::key_version.eq(new_ref.key_version),
+            ))
             .execute(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB upsert file_key_ref error: {:?}", e);

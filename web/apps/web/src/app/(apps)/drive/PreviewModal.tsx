@@ -73,7 +73,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
         await initSodium();
         const kp = loadKeyPair(userId);
         if (!kp) throw new Error('No local keypair — cannot decrypt file');
-        const bytes = await downloadAndDecryptFile(file.id, kp.publicKey, kp.secretKey);
+        const bytes = await downloadAndDecryptFile(file.id, userId);
         if (!bytes) throw new Error('Failed to decrypt file');
         const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mimeType });
         return URL.createObjectURL(blob);
@@ -87,7 +87,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
         await initSodium();
         const kp = loadKeyPair(userId);
         if (!kp) throw new Error('No local keypair — cannot decrypt file');
-        const bytes = await downloadAndDecryptFile(file.id, kp.publicKey, kp.secretKey);
+        const bytes = await downloadAndDecryptFile(file.id, userId);
         if (!bytes) throw new Error('Failed to decrypt file');
         return new TextDecoder().decode(bytes);
       }

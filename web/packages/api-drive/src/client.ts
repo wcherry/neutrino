@@ -641,6 +641,11 @@ export async function uploadEncryptedFile(
   onProgress?: (percent: number) => void,
   folderId?: string | null,
   thumbnailB64?: string | null,
+  /**
+   * Which of the uploader's key versions `encryptedFileKey` is sealed to.
+   * Omitted by callers that predate rotation; the server defaults it to 1.
+   */
+  keyVersion?: number,
 ): Promise<FileItem> {
   // Encrypt the file bytes.
   const { encryptFile } = await import('@neutrino/e2e-crypto');
@@ -673,7 +678,7 @@ export async function uploadEncryptedFile(
   // Store the encrypted DEK on the server.
   await request<FileKeyResponse>(`/api/v1/drive/files/${item.id}/key`, {
     method: 'PUT',
-    body: JSON.stringify({ encryptedFileKey }),
+    body: JSON.stringify({ encryptedFileKey, keyVersion }),
   });
 
   return item;
@@ -682,17 +687,20 @@ export async function uploadEncryptedFile(
 /**
  * Download an E2EE file and decrypt it client-side.
  *
- * @param fileId   The file to download.
- * @param publicKey The user's Curve25519 public key.
- * @param secretKey The user's Curve25519 secret key.
- * @returns        The decrypted plaintext as a Uint8Array, or null if no key ref exists.
+ * Takes a user id rather than a keypair: which key opens the file depends on the
+ * version its DEK was sealed to, and only the session's keyring can resolve
+ * that. Passing a fixed pair would silently fail on anything sealed before a
+ * rotation.
+ *
+ * @param fileId  The file to download.
+ * @param userId  Whose keyring to resolve the file's key version against.
+ * @returns       The decrypted plaintext, or null if no key ref exists.
  */
 export async function downloadAndDecryptFile(
   fileId: string,
-  publicKey: Uint8Array,
-  secretKey: Uint8Array,
+  userId: string,
 ): Promise<Uint8Array | null> {
-  const { initSodium, decryptFileKey, decryptFile } = await import('@neutrino/e2e-crypto');
+  const { initSodium, openSealedFileKey, decryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
 
   // Fetch the encrypted DEK.
@@ -704,7 +712,7 @@ export async function downloadAndDecryptFile(
   );
   if (!keyRef) return null;
 
-  const dek = decryptFileKey(keyRef.encryptedFileKey, publicKey, secretKey);
+  const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
 
   // Download the encrypted blob.
   const cipherBlob = await request<Blob>(

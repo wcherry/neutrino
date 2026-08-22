@@ -29,7 +29,8 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   loadKeyPair: vi.fn(() =>
     unlocked ? { publicKey: new Uint8Array([1]), secretKey: new Uint8Array([2]) } : null,
   ),
-  decryptFileKey: vi.fn(() => new Uint8Array([9, 9, 9])),
+  openSealedFileKey: vi.fn(() => new Uint8Array([9, 9, 9])),
+  activeKeyVersion: vi.fn(() => 1),
   generateFileKey: vi.fn(() => new Uint8Array([7])),
   encryptFileKey: vi.fn(() => 'sealed'),
   isUnlocked: () => unlocked,

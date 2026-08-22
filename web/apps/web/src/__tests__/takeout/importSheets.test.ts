@@ -49,6 +49,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   loadKeyPair: (...args: unknown[]) => loadKeyPair(...args),
   generateFileKey: () => new Uint8Array([1, 2, 3]),
   encryptFileKey: () => 'encrypted-dek',
+  activeKeyVersion: () => 1,
 }));
 
 vi.mock('@neutrino/api-sheets', () => ({ extractSheetText: (raw: string) => `text:${raw.length}` }));
@@ -191,7 +192,7 @@ describe('runSheetsImport', () => {
   it('registers a DEK before uploading the ciphertext, as the editor does', async () => {
     await run([sheet('A.csv')]);
 
-    expect(encryptionApi.setFileKey).toHaveBeenCalledWith('id-A', { encryptedFileKey: 'encrypted-dek' });
+    expect(encryptionApi.setFileKey).toHaveBeenCalledWith('id-A', { encryptedFileKey: 'encrypted-dek', keyVersion: 1 });
     expect(encryptionApi.setFileKey.mock.invocationCallOrder[0]).toBeLessThan(
       driveAutosaveEncryptedContent.mock.invocationCallOrder[0],
     );

@@ -56,6 +56,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   loadKeyPair: (...args: unknown[]) => loadKeyPair(...args),
   generateFileKey: () => new Uint8Array([1, 2, 3]),
   encryptFileKey: () => 'encrypted-dek',
+  activeKeyVersion: () => 1,
 }));
 
 import { runKeepImport, findKeepNotes, DEFAULT_KEEP_IMPORT_OPTIONS } from '@/lib/takeout/importKeep';
@@ -176,7 +177,7 @@ describe('runKeepImport', () => {
   it('registers a DEK for each note and uploads the plaintext content encrypted', async () => {
     await run([entry('a.json', { title: 'A', textContent: 'first' })]);
 
-    expect(encryptionApi.setFileKey).toHaveBeenCalledWith('id-A', { encryptedFileKey: 'encrypted-dek' });
+    expect(encryptionApi.setFileKey).toHaveBeenCalledWith('id-A', { encryptedFileKey: 'encrypted-dek', keyVersion: 1 });
     expect(driveAutosaveEncryptedContent).toHaveBeenCalledTimes(1);
     const [noteId, content, filename, dek] = driveAutosaveEncryptedContent.mock.calls[0];
     expect(noteId).toBe('id-A');

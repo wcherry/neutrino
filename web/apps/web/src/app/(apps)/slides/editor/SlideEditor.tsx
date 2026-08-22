@@ -79,7 +79,7 @@ import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import {
-  decryptFile, initSodium, loadKeyPair, generateFileKey, encryptFileKey,
+  decryptFile, initSodium, loadKeyPair, activeKeyVersion, generateFileKey, encryptFileKey,
 } from '@neutrino/e2e-crypto';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme, CreateThemeRequest, UpdateThemeRequest } from '@neutrino/api-slides';
@@ -734,7 +734,10 @@ export function SlideEditor() {
     const keyPair = currentUser?.id ? loadKeyPair(currentUser.id) : null;
     if (keyPair) {
       const dek = generateFileKey();
-      await encryptionApi.setFileKey(copy.id, { encryptedFileKey: encryptFileKey(dek, keyPair.publicKey) });
+      await encryptionApi.setFileKey(copy.id, {
+        encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
+        keyVersion: activeKeyVersion(currentUser!.id) ?? undefined,
+      });
       await driveAutosaveEncryptedContent(copy.id, content, 'slide.json', dek);
     } else {
       await driveCreateVersion(copy.id, content, 'slide.json');

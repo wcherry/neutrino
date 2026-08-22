@@ -51,6 +51,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   loadKeyPair: (...args: unknown[]) => loadKeyPair(...args),
   generateFileKey: () => new Uint8Array([1, 2, 3]),
   encryptFileKey: () => 'encrypted-dek',
+  activeKeyVersion: () => 1,
   encryptMetadata: (metadata: unknown) => `encrypted:${JSON.stringify(metadata)}`,
 }));
 

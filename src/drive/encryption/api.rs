@@ -17,6 +17,16 @@ pub struct SetFileKeyRequest {
     /// Base64url-encoded sealed-box ciphertext of the DEK,
     /// sealed to the caller's own Curve25519 public key.
     pub encrypted_file_key: String,
+    /// Which version of the caller's keyring the DEK was sealed to. Omitted by
+    /// clients that predate key rotation, which only ever had version 1.
+    #[serde(default = "default_key_version")]
+    pub key_version: i32,
+}
+
+/// Clients written before rotation existed send no version, and everything they
+/// sealed used the single identity that is now version 1.
+fn default_key_version() -> i32 {
+    1
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -25,6 +35,8 @@ pub struct FileKeyResponse {
     pub file_id: String,
     pub user_id: String,
     pub encrypted_file_key: String,
+    /// Which version of `user_id`'s keyring opens `encrypted_file_key`.
+    pub key_version: i32,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -34,6 +46,9 @@ pub struct ShareFileKeyRequest {
     pub recipient_id: String,
     /// DEK sealed to the recipient's Curve25519 public key (base64url).
     pub encrypted_file_key: String,
+    /// Which version of *the recipient's* keyring the DEK was sealed to.
+    #[serde(default = "default_key_version")]
+    pub key_version: i32,
 }
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
@@ -66,6 +81,7 @@ pub async fn get_file_key(
         file_id: key_ref.file_id,
         user_id: key_ref.user_id,
         encrypted_file_key: key_ref.encrypted_file_key,
+        key_version: key_ref.key_version,
     }))
 }
 
@@ -96,15 +112,22 @@ pub async fn set_file_key(
         return Err(ApiError::bad_request("encrypted_file_key cannot be empty"));
     }
 
-    let key_ref =
-        state
-            .encryption_service
-            .set_file_key(&user.user_id, &file_id, &req.encrypted_file_key)?;
+    if req.key_version < 1 {
+        return Err(ApiError::bad_request("key_version must be 1 or greater"));
+    }
+
+    let key_ref = state.encryption_service.set_file_key(
+        &user.user_id,
+        &file_id,
+        &req.encrypted_file_key,
+        req.key_version,
+    )?;
 
     Ok(web::Json(FileKeyResponse {
         file_id: key_ref.file_id,
         user_id: key_ref.user_id,
         encrypted_file_key: key_ref.encrypted_file_key,
+        key_version: key_ref.key_version,
     }))
 }
 
@@ -138,17 +161,23 @@ pub async fn share_file_key(
         ));
     }
 
+    if req.key_version < 1 {
+        return Err(ApiError::bad_request("key_version must be 1 or greater"));
+    }
+
     let key_ref = state.encryption_service.share_file_key(
         &user.user_id,
         &file_id,
         &req.recipient_id,
         &req.encrypted_file_key,
+        req.key_version,
     )?;
 
     Ok(web::Json(FileKeyResponse {
         file_id: key_ref.file_id,
         user_id: key_ref.user_id,
         encrypted_file_key: key_ref.encrypted_file_key,
+        key_version: key_ref.key_version,
     }))
 }
 

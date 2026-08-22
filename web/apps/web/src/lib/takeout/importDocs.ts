@@ -24,6 +24,7 @@
 import {
   initSodium,
   loadKeyPair,
+  activeKeyVersion,
   generateFileKey,
   encryptFileKey,
   type KeyPair,
@@ -133,9 +134,17 @@ function titleFor(doc: DriveDocEntry, info: DriveDocInfo | null): string {
  * Encrypt a document's content the way the editor's first save does, and
  * register the DEK so the editor can decrypt it later.
  */
-async function saveEncrypted(docId: string, content: string, keyPair: KeyPair): Promise<void> {
+async function saveEncrypted(
+  docId: string,
+  content: string,
+  keyPair: KeyPair,
+  userId: string,
+): Promise<void> {
   const dek = generateFileKey();
-  await encryptionApi.setFileKey(docId, { encryptedFileKey: encryptFileKey(dek, keyPair.publicKey) });
+  await encryptionApi.setFileKey(docId, {
+    encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
+    keyVersion: activeKeyVersion(userId) ?? undefined,
+  });
   await driveAutosaveEncryptedContent(docId, content, CONTENT_FILENAME, dek);
 }
 
@@ -155,6 +164,8 @@ export async function runDocsImport({
 
   await initSodium();
   const keyPair = userId ? loadKeyPair(userId) : null;
+  // Narrowed together: a key pair exists only if a user id did.
+  const encrypting = keyPair && userId ? { keyPair, userId } : null;
   if (!keyPair) {
     logWarn('docs', 'no key pair on this device — documents will be saved as plaintext', { userId });
   }
@@ -229,7 +240,7 @@ export async function runDocsImport({
       logStep('docs', `saving ${title}`, { id: created.id, body: formatBytes(content.length), encrypted: !!keyPair });
 
       step = keyPair ? 'saving the encrypted body' : 'saving the body';
-      if (keyPair) await saveEncrypted(created.id, content, keyPair);
+      if (encrypting) await saveEncrypted(created.id, content, encrypting.keyPair, encrypting.userId);
       else await driveAutosaveContent(created.id, content, CONTENT_FILENAME);
 
       // After the body, not before: saving it is what stamps the file with the

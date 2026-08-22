@@ -715,3 +715,18 @@
 .spinner {
   animation: spin 0.8s linear infinite;
 }
+
+/*
+ * The account's own key fingerprint. Monospaced and letter-spaced because it
+ * exists to be read aloud and compared character by character against what the
+ * other party sees; the groups arrive pre-hyphenated from `fingerprintFor`.
+ */
+.fingerprint {
+  margin-top: 8px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-primary, #111827);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}

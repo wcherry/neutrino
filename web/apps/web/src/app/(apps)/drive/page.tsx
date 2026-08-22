@@ -471,7 +471,7 @@ function DriveContent() {
         await initSodium();
         const kp = loadKeyPair(userId);
         if (!kp) { toast.error('Encryption keys not found'); return; }
-        const plaintext = await downloadAndDecryptFile(file.id, kp.publicKey, kp.secretKey);
+        const plaintext = await downloadAndDecryptFile(file.id, userId);
         if (!plaintext) { toast.error('Failed to decrypt file'); return; }
         triggerBlobDownload(new Blob([plaintext.slice(0)]), file.name);
       } else {

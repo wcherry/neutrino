@@ -1,323 +1,290 @@
 'use client';
 
 /**
- * E2EE key lifecycle — provisioning, unlocking, and managing unlock methods.
+ * E2EE key lifecycle — provisioning, unlocking, rotation and device transfer.
  *
- * The identity key lives in one place on disk: the server, wrapped, as a blob
- * nothing on the server can open. Locally it exists only in memory, for as long
- * as the session is unlocked.
+ * The identity lives in one place: this device. There is no server copy, wrapped
+ * or otherwise. What the server holds is the *public* half of every version the
+ * user has published, which is the directory collaborators consult to seal a DEK
+ * to someone.
  *
- *   provisionVault()  first ever login — mint an identity, wrap it, enrol
- *                     a password and a recovery code
- *   unlockWith*()     later logins and reloads — recover the master key, open
- *                     the identity, install it in the session
- *   enrollPasskey()   add a method; requires an already-unlocked session
+ *   provisionKeyring()   first run on an account — mint a keyring, wrap it to
+ *                        this device, publish the public half, show the kit
+ *   unlockKeyring()      later loads — open this device's stored copy
+ *   adoptKeyring()       a keyring arriving from elsewhere: a recovery kit, or
+ *                        a paired device
+ *   rotateIdentity()     mint a new version, publish it, keep the old ones
  *
- * Nothing here ever sends a password, a recovery code, or a PRF output to the
- * server — only the ciphertext they produce.
+ * The consequence of having no server copy, which the UI must state plainly:
+ * losing every enrolled device *and* the printed recovery kit means the data is
+ * gone. Nothing here can undo that, and no support process can either.
+ *
+ * See `agent_docs/client-only-key-architecture.md`.
  */
 
 import {
   initSodium,
-  generateKeyPair,
-  generateMasterKey,
-  wrapIdentity,
-  openVault,
-  buildSecretUnlock,
-  buildPasskeyUnlock,
-  unwrapWithSecret,
-  unwrapWithPasskey,
-  saveKeyPair,
-  setSessionMasterKey,
-  getSessionMasterKey,
+  createKeyring,
+  keyringFromKeyPair,
+  rotateKeyring,
+  activeEntry,
+  exportRecoveryKit,
+  importRecoveryKit,
+  storeUnderPasskey,
+  storeUnderPassphrase,
+  rewrapExisting,
+  unlockWithPasskey as openWithPasskey,
+  unlockWithPassphrase as openWithPassphrase,
+  getLocalKeystoreInfo,
+  hasLocalKeyring,
+  clearLocalKeyring,
+  setSessionKeyring,
+  getSessionKeyring,
+  getSessionWrappingKey,
   isUnlocked,
-  generateRecoveryCode,
-  normalizeRecoveryCode,
-  readLegacyKeyPair,
-  clearLegacyKeyPair,
+  clearPins,
   toBase64url,
-  toBase64urlBytes,
-  type UnlockMethodBlob,
-  type VaultBundle,
+  type Keyring,
+  type LocalKeystoreInfo,
+  type WrapMethod,
 } from '@neutrino/e2e-crypto';
 import { authApi } from './client';
-import type { UnlockMethodResponse, VaultResponse } from './types';
 
-/** Where the user stands with respect to their vault. */
-export type VaultState =
-  /** No vault yet — first login, or a fresh account. */
+/** Where the user stands on this device. */
+export type KeyringState =
+  /** This device holds no key and the account has published none — first run. */
   | 'none'
-  /** Vault exists, session is locked. */
+  /** The account has a published key, but this device holds no copy of it. */
+  | 'needs-device'
+  /** This device holds the keyring, locked. */
   | 'locked'
-  /** Key is in memory and ready to use. */
+  /** The keyring is in memory and ready to use. */
   | 'unlocked';
 
+export interface KeyringStatus {
+  state: KeyringState;
+  /** How this device wraps its copy. Null unless `state` is 'locked'. */
+  local: LocalKeystoreInfo | null;
+}
+
 export interface ProvisionResult {
-  /** Shown once, then never recoverable. */
-  recoveryCode: string;
-}
-
-function toBundle(v: VaultResponse): VaultBundle {
-  return {
-    encryptedIdentity: v.encryptedIdentity,
-    publicKey: v.publicKey,
-    version: v.version,
-    unlocks: v.unlocks.map((u) => ({
-      id: u.id,
-      method: u.method,
-      label: u.label,
-      encryptedMasterKey: u.encryptedMasterKey,
-      params: u.params,
-      createdAt: u.createdAt,
-      lastUsedAt: u.lastUsedAt,
-    })),
-  };
+  /** Shown once. The only copy that survives losing every device. */
+  recoveryKit: string;
 }
 
 /**
- * Determine what the app should do next for `userId`.
+ * Work out what the app should do next for `userId`.
  *
- * Returns the vault alongside the state so the unlock UI can show which methods
- * are enrolled without a second round-trip.
+ * The distinction that matters is 'none' versus 'needs-device'. Both mean "this
+ * browser cannot decrypt anything", but the first is a new account that should
+ * be offered key creation, and the second is an existing account whose files
+ * would be orphaned by creating one — that user needs their recovery kit or a
+ * paired device, and must not be shown a "set up encryption" button.
  */
-export async function getVaultState(
-  userId: string,
-): Promise<{ state: VaultState; vault: VaultBundle | null }> {
+export async function getKeyringState(userId: string): Promise<KeyringStatus> {
   await initSodium();
-  if (isUnlocked(userId)) return { state: 'unlocked', vault: null };
+  if (isUnlocked(userId)) return { state: 'unlocked', local: null };
 
-  const vault = await authApi.getVault();
-  if (!vault) return { state: 'none', vault: null };
-  return { state: 'locked', vault: toBundle(vault) };
+  const local = await getLocalKeystoreInfo(userId);
+  if (local) return { state: 'locked', local };
+
+  const published = await authApi.getUserPublicKey(userId).catch(() => null);
+  return { state: published ? 'needs-device' : 'none', local: null };
 }
 
+// ── Provisioning ──────────────────────────────────────────────────────────────
+
 /**
- * Create a vault for a user who has none.
+ * Create a keyring for an account that has none, and wrap it to this device.
  *
- * If the pre-vault build left a plaintext key in localStorage it is adopted
- * rather than replaced — the user's existing files are sealed to it, and
- * minting a fresh identity here would orphan every one of them. The plaintext
- * copy is deleted only after the wrapped vault is confirmed stored.
+ * Returns the recovery kit, which the caller must show before continuing — it
+ * is not recoverable afterwards.
  */
-export async function provisionVault(
+export async function provisionKeyring(
   userId: string,
   userName: string,
-  password: string,
+  wrap: { method: 'passkey'; label: string } | { method: 'passphrase'; passphrase: string },
 ): Promise<ProvisionResult> {
   await initSodium();
-
-  const legacy = readLegacyKeyPair(userId);
-  const { publicKey, secretKey } = legacy ?? generateKeyPair();
-
-  const masterKey = generateMasterKey();
-  const recoveryCode = generateRecoveryCode();
-
-  const [passwordUnlock, recoveryUnlock] = await Promise.all([
-    buildSecretUnlock(masterKey, password, 'password', 'Password'),
-    buildSecretUnlock(masterKey, normalizeRecoveryCode(recoveryCode), 'recovery', 'Recovery code'),
-  ]);
-
-  await authApi.putVault({
-    encryptedIdentity: wrapIdentity(secretKey, masterKey),
-    publicKey: toBase64urlBytes(publicKey),
-    unlocks: [passwordUnlock, recoveryUnlock].map(toUnlockInput),
-  });
-
-  saveKeyPair(userId, publicKey, secretKey);
-  setSessionMasterKey(userId, masterKey);
-
-  if (legacy) clearLegacyKeyPair(userId);
-
-  return { recoveryCode };
+  const keyring = createKeyring(userId);
+  await installAndPublish(keyring, userName, wrap);
+  return { recoveryKit: exportRecoveryKit(keyring) };
 }
 
-function toUnlockInput(u: UnlockMethodBlob) {
-  return {
-    method: u.method,
-    label: u.label,
-    encryptedMasterKey: u.encryptedMasterKey,
-    params: u.params,
-  };
+/**
+ * Adopt a keyring that arrived from somewhere else and wrap it to this device.
+ *
+ * Used by the recovery-kit and pairing paths. The public half is republished:
+ * it is append-only and idempotent server-side, so a keyring whose active
+ * version is already published costs nothing, while one restored onto an
+ * account whose directory has fallen behind is brought back into step.
+ */
+export async function adoptKeyring(
+  keyring: Keyring,
+  userName: string,
+  wrap: { method: 'passkey'; label: string } | { method: 'passphrase'; passphrase: string },
+): Promise<void> {
+  await initSodium();
+  await installAndPublish(keyring, userName, wrap);
+}
+
+async function installAndPublish(
+  keyring: Keyring,
+  userName: string,
+  wrap: { method: 'passkey'; label: string } | { method: 'passphrase'; passphrase: string },
+): Promise<void> {
+  if (wrap.method === 'passkey') {
+    await storeUnderPasskey(keyring, userName, wrap.label);
+  } else {
+    await storeUnderPassphrase(keyring, wrap.passphrase);
+  }
+
+  // Only after the keyring is safely wrapped on disk — publishing first would
+  // advertise a key that a failed write means this device cannot use.
+  await publishActive(keyring);
+
+  const unlocked = await reopenAfterWrite(keyring, wrap);
+  setSessionKeyring(unlocked.keyring, unlocked.wrappingKey);
+}
+
+/**
+ * Re-open what we just wrote, to hold the wrapping key for later rotations.
+ *
+ * A passphrase can be re-derived silently. A passkey cannot — it would mean a
+ * second Touch ID prompt immediately after the first — so that path installs the
+ * keyring with no wrapping key and lets the next rotation prompt instead.
+ */
+async function reopenAfterWrite(
+  keyring: Keyring,
+  wrap: { method: 'passkey'; label: string } | { method: 'passphrase'; passphrase: string },
+): Promise<{ keyring: Keyring; wrappingKey?: Uint8Array }> {
+  if (wrap.method === 'passphrase') {
+    return openWithPassphrase(keyring.userId, wrap.passphrase);
+  }
+  return { keyring };
+}
+
+/** Publish the keyring's active public half to the server's directory. */
+async function publishActive(keyring: Keyring): Promise<void> {
+  const active = activeEntry(keyring);
+  await authApi.setPublicKey({ publicKey: toBase64url(active.publicKey) });
 }
 
 // ── Unlocking ─────────────────────────────────────────────────────────────────
 
-function installUnlocked(userId: string, vault: VaultBundle, masterKey: Uint8Array): void {
-  const { publicKey, secretKey } = openVault(vault, masterKey);
-  saveKeyPair(userId, publicKey, secretKey);
-  setSessionMasterKey(userId, masterKey);
-}
-
-function findMethod(vault: VaultBundle, method: string): UnlockMethodBlob | undefined {
-  return vault.unlocks.find((u) => u.method === method);
-}
-
-/** Unlock with the account's vault password. Throws if it is wrong. */
-export async function unlockWithPassword(
+export async function unlockKeyring(
   userId: string,
-  vault: VaultBundle,
-  password: string,
+  secret: { method: 'passkey' } | { method: 'passphrase'; passphrase: string },
 ): Promise<void> {
   await initSodium();
-  const unlock = findMethod(vault, 'password');
-  if (!unlock) throw new Error('No password is enrolled for this account');
-
-  const masterKey = await unwrapWithSecret(unlock, password);
-  installUnlocked(userId, vault, masterKey);
-  if (unlock.id) void authApi.markUnlockMethodUsed(unlock.id);
+  const opened =
+    secret.method === 'passkey'
+      ? await openWithPasskey(userId)
+      : await openWithPassphrase(userId, secret.passphrase);
+  setSessionKeyring(opened.keyring, opened.wrappingKey);
 }
 
-/**
- * Unlock with an enrolled passkey.
- *
- * Tries each enrolled passkey in turn: the vault may list one per device, and
- * only the authenticator physically present can answer.
- */
-export async function unlockWithPasskey(userId: string, vault: VaultBundle): Promise<void> {
-  await initSodium();
-  const passkeys = vault.unlocks.filter((u) => u.method === 'passkey');
-  if (passkeys.length === 0) throw new Error('No passkey is enrolled for this account');
-
-  let lastError: unknown = null;
-  for (const unlock of passkeys) {
-    try {
-      const masterKey = await unwrapWithPasskey(unlock);
-      installUnlocked(userId, vault, masterKey);
-      if (unlock.id) void authApi.markUnlockMethodUsed(unlock.id);
-      return;
-    } catch (e) {
-      lastError = e;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error('Passkey unlock failed');
-}
-
-/** Unlock with the recovery code shown at provisioning. */
-export async function unlockWithRecoveryCode(
-  userId: string,
-  vault: VaultBundle,
-  code: string,
-): Promise<void> {
-  await initSodium();
-  const unlock = findMethod(vault, 'recovery');
-  if (!unlock) throw new Error('No recovery code is enrolled for this account');
-
-  const masterKey = await unwrapWithSecret(unlock, normalizeRecoveryCode(code));
-  installUnlocked(userId, vault, masterKey);
-  if (unlock.id) void authApi.markUnlockMethodUsed(unlock.id);
-}
-
-// ── Managing unlock methods (session must already be unlocked) ────────────────
-
-function requireMasterKey(userId: string): Uint8Array {
-  const masterKey = getSessionMasterKey(userId);
-  if (!masterKey) {
-    throw new Error('Unlock your encryption key before changing how it is protected');
-  }
-  return masterKey;
-}
-
-/** Enrol a passkey against the current vault. */
-export async function enrollPasskey(
+/** Restore from the printed kit. `wrap` decides how this device stores it. */
+export async function restoreFromRecoveryKit(
   userId: string,
   userName: string,
-  label: string,
-): Promise<UnlockMethodResponse> {
-  await initSodium();
-  const masterKey = requireMasterKey(userId);
-  const unlock = await buildPasskeyUnlock(masterKey, userId, userName, label);
-  return authApi.addUnlockMethod(toUnlockInput(unlock));
-}
-
-/** Replace the vault password. Does not touch the login password. */
-export async function changeVaultPassword(
-  userId: string,
-  newPassword: string,
-): Promise<UnlockMethodResponse> {
-  await initSodium();
-  const masterKey = requireMasterKey(userId);
-  const unlock = await buildSecretUnlock(masterKey, newPassword, 'password', 'Password');
-  return authApi.addUnlockMethod(toUnlockInput(unlock));
-}
-
-/** Issue a fresh recovery code, invalidating the previous one. */
-export async function regenerateRecoveryCode(userId: string): Promise<string> {
-  await initSodium();
-  const masterKey = requireMasterKey(userId);
-  const recoveryCode = generateRecoveryCode();
-  const unlock = await buildSecretUnlock(
-    masterKey,
-    normalizeRecoveryCode(recoveryCode),
-    'recovery',
-    'Recovery code',
-  );
-  await authApi.addUnlockMethod(toUnlockInput(unlock));
-  return recoveryCode;
-}
-
-/** Revoke an unlock method, e.g. a passkey on a lost device. */
-export async function revokeUnlockMethod(id: string): Promise<void> {
-  await authApi.removeUnlockMethod(id);
-}
-
-/**
- * Swap in a different identity key — importing one from another device, or
- * minting a fresh one.
- *
- * Reuses the session's master key, which lets the existing unlock methods carry
- * over verbatim: their wrapped copies of MK are still correct, since only the
- * thing MK protects has changed. Without that they would all have to be
- * re-enrolled, and every passkey re-registered.
- *
- * Note this does not re-key existing files. Anything sealed to the previous
- * public key stops being readable, which is why the callers confirm first.
- */
-export async function replaceIdentity(
-  userId: string,
-  publicKey: Uint8Array,
-  secretKey: Uint8Array,
+  kitText: string,
+  wrap: { method: 'passkey'; label: string } | { method: 'passphrase'; passphrase: string },
 ): Promise<void> {
   await initSodium();
-  const masterKey = requireMasterKey(userId);
-
-  const existing = await authApi.getVault();
-  const unlocks = (existing?.unlocks ?? []).map((u) => ({
-    method: u.method,
-    label: u.label,
-    encryptedMasterKey: u.encryptedMasterKey,
-    params: u.params,
-  }));
-  if (unlocks.length === 0) {
-    throw new Error('No unlock methods are enrolled — set up encryption first');
-  }
-
-  await authApi.putVault({
-    encryptedIdentity: wrapIdentity(secretKey, masterKey),
-    publicKey: toBase64urlBytes(publicKey),
-    unlocks,
-  });
-
-  saveKeyPair(userId, publicKey, secretKey);
-  setSessionMasterKey(userId, masterKey);
+  const keyring = importRecoveryKit(kitText, userId);
+  await adoptKeyring(keyring, userName, wrap);
 }
 
-export async function listUnlockMethods(): Promise<UnlockMethodResponse[]> {
-  const vault = await authApi.getVault();
-  return vault?.unlocks ?? [];
+// ── Rotation ──────────────────────────────────────────────────────────────────
+
+export interface RotationResult {
+  newVersion: number;
+  /** Must be shown: the previous kit cannot contain the key just minted. */
+  recoveryKit: string;
 }
 
 /**
- * Publish the caller's public key if the server has not got it.
+ * Mint a new identity version and publish it.
  *
- * `putVault` already writes it, so this only covers accounts provisioned before
- * the vault existed.
+ * Existing files are untouched and stay readable: their DEKs are still sealed to
+ * the versions that made them, and those versions remain in the keyring. New
+ * work seals to the version this creates.
+ *
+ * The caller **must** present the returned kit. Because versions are
+ * independently random, a kit printed before this rotation cannot restore the
+ * key it created — a user who skips this has silently made their backup partial.
  */
-export async function ensurePublicKeyRegistered(userId: string): Promise<void> {
-  const existing = await authApi.getUserPublicKey(userId);
-  if (existing) return;
-  const { getSessionKeyPair } = await import('@neutrino/e2e-crypto');
-  const kp = getSessionKeyPair(userId);
-  if (kp) {
-    await authApi.setPublicKey({ publicKey: toBase64url(kp.publicKey) });
+export async function rotateIdentity(userId: string): Promise<RotationResult> {
+  await initSodium();
+  const current = getSessionKeyring(userId);
+  if (!current) {
+    throw new Error('Unlock your encryption key before rotating it');
   }
+
+  const wrappingKey = getSessionWrappingKey(userId);
+  if (!wrappingKey) {
+    throw new Error(
+      'Unlock this device’s key again before rotating — the new key has to be saved here.',
+    );
+  }
+
+  const rotated = rotateKeyring(current);
+
+  // Disk first. Publishing a key this device could not save would leave
+  // collaborators sealing DEKs to something nobody can open.
+  await rewrapExisting(rotated, wrappingKey);
+  await publishActive(rotated);
+  setSessionKeyring(rotated, wrappingKey);
+
+  return {
+    newVersion: activeEntry(rotated).version,
+    recoveryKit: exportRecoveryKit(rotated),
+  };
 }
+
+/** Re-render the kit for an already-unlocked keyring, without rotating. */
+export function currentRecoveryKit(userId: string): string {
+  const keyring = getSessionKeyring(userId);
+  if (!keyring) throw new Error('Unlock your encryption key first');
+  return exportRecoveryKit(keyring);
+}
+
+// ── Importing a raw keypair (legacy key files) ────────────────────────────────
+
+/**
+ * Adopt a bare keypair as a version-1 keyring.
+ *
+ * For key files exported by a build that predates versioning. Minting a fresh
+ * identity instead would orphan everything already sealed to the imported one.
+ */
+export async function adoptKeyPair(
+  userId: string,
+  userName: string,
+  publicKey: Uint8Array,
+  secretKey: Uint8Array,
+  wrap: { method: 'passkey'; label: string } | { method: 'passphrase'; passphrase: string },
+): Promise<void> {
+  await initSodium();
+  await adoptKeyring(keyringFromKeyPair(userId, publicKey, secretKey), userName, wrap);
+}
+
+// ── Device management ─────────────────────────────────────────────────────────
+
+export async function deviceHoldsKeyring(userId: string): Promise<boolean> {
+  return hasLocalKeyring(userId);
+}
+
+/**
+ * Forget this device's copy of the keyring.
+ *
+ * Only the local copy goes; the account's published keys and every file stay as
+ * they are. Pinned recipient keys go with it, since they are trust decisions
+ * made by an identity this device no longer holds.
+ */
+export async function forgetThisDevice(userId: string): Promise<void> {
+  await clearLocalKeyring(userId);
+  clearPins(userId);
+}
+
+export type { WrapMethod, LocalKeystoreInfo };

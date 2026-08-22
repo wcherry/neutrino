@@ -8,53 +8,84 @@ export {
   decryptFileKey,
   encryptMetadata,
   decryptMetadata,
-  encryptKeysWithPin,
-  decryptKeysWithPin,
   toBase64url,
   toBase64,
   type KeyPair,
-  type PinEncryptedKeys,
 } from './crypto';
 
 export {
   loadKeyPair,
-  saveKeyPair,
+  loadKeyPairForVersion,
+  activeKeyVersion,
   clearKeyPair,
   hasKeyPair,
-  readLegacyKeyPair,
-  hasLegacyKeyPair,
-  clearLegacyKeyPair,
+  openSealedFileKey,
   fromBase64url,
   fromBase64,
-  type StoredKeyPair,
 } from './keystore';
 
 export {
   subscribeToLockState,
   isUnlocked,
   clearSession,
-  setSessionKeyPair,
+  setSessionKeyring,
+  getSessionKeyring,
   getSessionKeyPair,
-  setSessionMasterKey,
-  getSessionMasterKey,
+  getSessionKeyPairForVersion,
+  getActiveKeyVersion,
+  getSessionWrappingKey,
+  setSessionWrappingKey,
   type SessionKeyPair,
 } from './session';
 
 export {
-  generateMasterKey,
-  wrapIdentity,
-  unwrapIdentity,
-  openVault,
-  buildSecretUnlock,
-  buildPasskeyUnlock,
-  unwrapWithSecret,
-  unwrapWithPasskey,
-  toBase64urlBytes,
-  fromBase64urlBytes,
-  type UnlockMethod,
-  type UnlockMethodBlob,
-  type VaultBundle,
-} from './vault';
+  createKeyring,
+  keyringFromKeyPair,
+  activeEntry,
+  entryForVersion,
+  rotateKeyring,
+  serializeKeyring,
+  deserializeKeyring,
+  wipeKeyring,
+  type Keyring,
+  type KeyringEntry,
+  type SerializedKeyring,
+} from './keyring';
+
+export {
+  getLocalKeystoreInfo,
+  hasLocalKeyring,
+  storeUnderPasskey,
+  storeUnderPassphrase,
+  rewrapExisting,
+  unlockWithPasskey,
+  unlockWithPassphrase,
+  clearLocalKeyring,
+  ARGON2_DEFAULTS,
+  type WrapMethod,
+  type LocalKeystoreInfo,
+} from './keystoreLocal';
+
+export {
+  exportRecoveryKit,
+  importRecoveryKit,
+  normalizeRecoveryKit,
+  looksLikeRecoveryKit,
+} from './recoveryKit';
+
+export {
+  createPairingSession,
+  acceptPairingResponse,
+  closePairingSession,
+  parsePairingOffer,
+  respondToPairingOffer,
+  parsePairingResponse,
+  encodePairingPayload,
+  confirmationCode,
+  type PairingOffer,
+  type PairingResponse,
+  type PairingSession,
+} from './pairing';
 
 export {
   isPasskeySupported,
@@ -64,14 +95,12 @@ export {
 } from './prf';
 
 export {
-  deriveKek,
-  newArgon2Params,
-  DEFAULT_ARGON2_PARAMS,
-  type Argon2Params,
-} from './kdf';
-
-export {
-  generateRecoveryCode,
-  normalizeRecoveryCode,
-  looksLikeRecoveryCode,
-} from './recovery';
+  fingerprintFor,
+  checkKey,
+  pinKey,
+  listPins,
+  forgetPin,
+  clearPins,
+  type PinnedKey,
+  type PinCheck,
+} from './pinning';

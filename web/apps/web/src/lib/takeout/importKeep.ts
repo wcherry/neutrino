@@ -18,6 +18,7 @@
 import {
   initSodium,
   loadKeyPair,
+  activeKeyVersion,
   generateFileKey,
   encryptFileKey,
   type KeyPair,
@@ -120,9 +121,17 @@ export async function findKeepNotes(archive: TakeoutArchive): Promise<KeepSource
  * Encrypt a note's content the way the editor's autosave does, and register
  * the DEK so the editor can decrypt it later.
  */
-async function saveEncryptedBody(noteId: string, content: string, keyPair: KeyPair): Promise<void> {
+async function saveEncryptedBody(
+  noteId: string,
+  content: string,
+  keyPair: KeyPair,
+  userId: string,
+): Promise<void> {
   const dek = generateFileKey();
-  await encryptionApi.setFileKey(noteId, { encryptedFileKey: encryptFileKey(dek, keyPair.publicKey) });
+  await encryptionApi.setFileKey(noteId, {
+    encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
+    keyVersion: activeKeyVersion(userId) ?? undefined,
+  });
   await driveAutosaveEncryptedContent(noteId, content, 'note.json', dek);
 }
 
@@ -149,6 +158,8 @@ export async function runKeepImport({
 
   await initSodium();
   const keyPair = userId ? loadKeyPair(userId) : null;
+  // Narrowed together: a key pair exists only if a user id did.
+  const encrypting = keyPair && userId ? { keyPair, userId } : null;
   if (!keyPair) {
     logWarn('keep', 'no key pair on this device — notes will be saved as plaintext', { userId });
   }
@@ -225,8 +236,8 @@ export async function runKeepImport({
       // Keep notes contain no `[[wiki links]]`, so there is nothing to link up
       // — this never calls linksApi.updateLinks, unlike the editor's save path.
       step = keyPair ? 'encrypting the body' : 'saving the body';
-      if (keyPair) {
-        await saveEncryptedBody(created.id, converted.content, keyPair);
+      if (encrypting) {
+        await saveEncryptedBody(created.id, converted.content, encrypting.keyPair, encrypting.userId);
       } else {
         await driveAutosaveContent(created.id, converted.content, 'note.json');
       }

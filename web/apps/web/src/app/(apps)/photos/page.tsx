@@ -36,7 +36,7 @@ import {
 import { readAutoFaceDetect } from '@/hooks/usePhotoSettings';
 import { generateThumbnail } from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
-import { initSodium, generateFileKey, encryptFileKey, encryptMetadata, loadKeyPair } from '@neutrino/e2e-crypto';
+import { initSodium, generateFileKey, encryptFileKey, encryptMetadata, loadKeyPair, activeKeyVersion } from '@neutrino/e2e-crypto';
 import { PhotoInfoPanel } from './PhotoInfoPanel';
 import { PersonPhotosPanel } from './PersonPhotosPanel';
 import { SuggestionsPanel, SuggestionsBadge } from './SuggestionsPanel';
@@ -304,6 +304,7 @@ export default function PhotosPage() {
         (pct) => setUploadProgress(pct),
         undefined,
         thumbnailB64,
+        activeKeyVersion(userId) ?? undefined,
       );
       return photosApi.registerPhoto({ fileId: fileItem.id });
     },

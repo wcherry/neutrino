@@ -4,30 +4,32 @@
  * First-run encryption setup, shown immediately after registration.
  *
  * The key is created *for* the user: the account exists and is signed in by the
- * time this opens, so this provisions the vault on mount with the password they
- * just registered with. Nothing is asked of them before their key exists —
- * a new account is never left with files it cannot encrypt.
+ * time this opens, so this mints the keyring on mount and wraps it to this
+ * device with the password they just registered with. Nothing is asked of them
+ * before their key exists — a new account is never left with files it cannot
+ * encrypt.
  *
- * The trade-off that buys: the vault's password unlock derives its KEK from the
- * account password, which the server *does* see at sign-in — so a hostile server
- * could derive that KEK and unwrap the master key. A separate encryption
- * password (Settings → Account → Unlock methods) is what removes that, and a
- * passkey — offered below — sidesteps it entirely, since its PRF secret never
- * leaves the authenticator.
+ * Wrapping under the account password is weaker than a passkey, because the
+ * server sees that password at sign-in. It is nonetheless sound here in a way it
+ * was not under the old server-side vault: the wrapped keyring never leaves this
+ * device, so knowing the password buys nothing without also holding this
+ * browser's IndexedDB. A passkey — offered below — removes even that, since its
+ * PRF secret never leaves the authenticator.
  *
  * What is still asked, because it cannot be automated:
- *   - the recovery code, shown exactly once, so a forgotten password is not the
- *     end of the account
+ *   - the recovery kit, shown exactly once. With no server-side copy of the key,
+ *     this is the only thing that survives losing the device.
  *   - a passkey, optional, needing a user gesture
  *
- * Provisioning failure is not fatal: `E2EEUnlockGate` prompts again on the next
- * load, so the user can move on and set the key up from inside the app.
+ * Failure is not fatal: `E2EEUnlockGate` prompts again on the next load, so the
+ * user can move on and set the key up from inside the app.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, ModalBody, ModalFooter, ModalHeader, Button, Alert, Spinner } from '@neutrino/ui';
 import { Check, Fingerprint, ShieldCheck } from 'lucide-react';
-import { enrollPasskey, provisionVault } from '@neutrino/auth';
+import { provisionKeyring, currentRecoveryKit } from '@neutrino/auth';
+import { storeUnderPasskey, getSessionKeyring } from '@neutrino/e2e-crypto';
 import { isPasskeySupported } from '@neutrino/e2e-crypto';
 import { defaultPasskeyLabel } from '@/lib/passkeyLabel';
 import styles from './EncryptionSetupDialog.module.css';
@@ -52,7 +54,7 @@ export function EncryptionSetupDialog({
   const [phase, setPhase] = useState<Phase>('working');
   const [error, setError] = useState('');
 
-  const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoveryKit, setRecoveryKit] = useState('');
   const [recoverySaved, setRecoverySaved] = useState(false);
 
   const [passkeyBusy, setPasskeyBusy] = useState(false);
@@ -63,8 +65,11 @@ export function EncryptionSetupDialog({
     setPhase('working');
     setError('');
     try {
-      const { recoveryCode: code } = await provisionVault(userId, userEmail, accountPassword);
-      setRecoveryCode(code);
+      const { recoveryKit: kit } = await provisionKeyring(userId, userEmail, {
+        method: 'passphrase',
+        passphrase: accountPassword,
+      });
+      setRecoveryKit(kit);
       setPhase('ready');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
@@ -72,9 +77,9 @@ export function EncryptionSetupDialog({
     }
   }, [userId, userEmail, accountPassword]);
 
-  // Runs exactly once. A second `provisionVault` would mint a second master key
-  // and PUT it over the first, orphaning the recovery code already on screen —
-  // so this is guarded rather than left to effect deps (React's development
+  // Runs exactly once. A second `provisionKeyring` would mint a second identity
+  // and overwrite the first, orphaning the recovery kit already on screen — so
+  // this is guarded rather than left to effect deps (React's development
   // double-invoke alone would trigger it).
   const startedRef = useRef(false);
   useEffect(() => {
@@ -87,11 +92,16 @@ export function EncryptionSetupDialog({
     setPasskeyBusy(true);
     setPasskeyError('');
     try {
-      await enrollPasskey(userId, userEmail, defaultPasskeyLabel());
+      // Re-wraps this device's stored keyring under the passkey, replacing the
+      // account-password wrapping chosen above. The keyring itself is unchanged,
+      // so the recovery kit on screen stays correct.
+      const keyring = getSessionKeyring(userId);
+      if (!keyring) throw new Error('Your key is not unlocked.');
+      await storeUnderPasskey(keyring, userEmail, defaultPasskeyLabel());
       setPasskeyAdded(true);
     } catch (e) {
       // A passkey is optional here, so a refused prompt must not block the
-      // recovery code the user still has to save.
+      // recovery kit the user still has to save.
       setPasskeyError(e instanceof Error ? e.message : 'Could not add a passkey.');
     } finally {
       setPasskeyBusy(false);
@@ -143,7 +153,7 @@ export function EncryptionSetupDialog({
     );
   }
 
-  // ── Key created: passkey, then the recovery code shown exactly once ───────
+  // ── Key created: passkey, then the recovery kit shown exactly once ───────
   return (
     <Modal open onClose={() => {}} size="sm" closeOnBackdrop={false} closeOnEsc={false}>
       <ModalHeader>
@@ -190,19 +200,20 @@ export function EncryptionSetupDialog({
           )}
 
           <div className={styles.section}>
-            <p className={styles.sectionTitle}>Save your recovery code</p>
+            <p className={styles.sectionTitle}>Save your recovery kit</p>
             <p className={styles.intro}>
-              This is the only way back into your files if you forget your password. Write it down
-              and keep it somewhere safe — it will not be shown again.
+              Your key is created on this device and never sent to us, so we cannot reset it. This
+              kit is the only way back into your files if you lose this device. Print it or write it
+              down — it will not be shown again.
             </p>
-            <div className={styles.recoveryCode}>{recoveryCode}</div>
+            <pre className={styles.recoveryKit}>{recoveryKit}</pre>
             <label className={styles.confirmRow}>
               <input
                 type="checkbox"
                 checked={recoverySaved}
                 onChange={(e) => setRecoverySaved(e.target.checked)}
               />
-              <span>I have saved my recovery code somewhere safe.</span>
+              <span>I have saved my recovery kit somewhere safe.</span>
             </label>
           </div>
         </div>
@@ -210,7 +221,7 @@ export function EncryptionSetupDialog({
       <ModalFooter>
         <Button
           onClick={() => {
-            setRecoveryCode('');
+            setRecoveryKit('');
             onDone();
           }}
           disabled={!recoverySaved || passkeyBusy}

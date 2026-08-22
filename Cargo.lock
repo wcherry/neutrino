@@ -4159,6 +4159,7 @@ dependencies = [
  "base64",
  "chrono",
  "diesel",
+ "diesel_migrations",
  "image",
  "libsqlite3-sys",
  "rustface",

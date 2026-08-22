@@ -1,0 +1,218 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.error {
+  font-size: 12px;
+  color: var(--color-error, #dc2626);
+}
+
+/* ── Key versions ─────────────────────────────────────────────────────────── */
+
+.versions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.versionRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+}
+
+.activeIcon {
+  color: var(--color-success, #16a34a);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Retired versions are still load-bearing — they open older files — so they are
+   dimmed rather than struck through, which would read as "no longer valid". */
+.retiredIcon {
+  color: var(--color-text-secondary, #6b7280);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.versionInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.versionName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary, #111827);
+}
+
+.activeBadge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-success-bg, #dcfce7);
+  color: var(--color-success, #16a34a);
+}
+
+.versionFingerprint {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary, #6b7280);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* ── Actions and blocks ───────────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--color-surface-secondary, transparent);
+}
+
+.blockTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary, #111827);
+}
+
+.outlineBtn,
+.primaryBtn,
+.dangerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: transparent;
+  color: var(--color-text-primary, #111827);
+}
+
+.outlineBtn:hover:not(:disabled) {
+  background: var(--color-surface-hover, #f9fafb);
+}
+
+.primaryBtn {
+  border-color: transparent;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+}
+
+.dangerBtn {
+  border-color: var(--color-error, #dc2626);
+  color: var(--color-error, #dc2626);
+}
+
+.outlineBtn:disabled,
+.primaryBtn:disabled,
+.dangerBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Recovery kit ─────────────────────────────────────────────────────────── */
+
+/* Pre-wrapped into groups of four by `exportRecoveryKit`; `pre-wrap` keeps
+   those breaks, which is what makes it transcribable by hand. */
+.kit {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  line-height: 1.9;
+  letter-spacing: 0.06em;
+  text-align: center;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px dashed var(--color-border, #e5e7eb);
+  background: var(--color-surface, #fff);
+  color: var(--color-text-primary, #111827);
+  user-select: all;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-x: auto;
+}
+
+.textarea {
+  width: 100%;
+  padding: 10px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text-primary, #111827);
+  resize: vertical;
+}
+
+.confirmRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.confirmRow input {
+  margin-top: 2px;
+}
+
+/* ── Pairing ──────────────────────────────────────────────────────────────── */
+
+.qrWrap {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.sasLabel {
+  font-size: 12px;
+  text-align: center;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+/* Large and widely spaced: this is compared digit by digit against another
+   screen, and it is the only thing standing between the user and a relay. */
+.sas {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-align: center;
+  color: var(--color-text-primary, #111827);
+}

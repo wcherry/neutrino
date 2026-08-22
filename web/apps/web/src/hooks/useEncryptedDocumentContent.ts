@@ -38,7 +38,8 @@ import { useAuth } from '@neutrino/auth';
 import {
   initSodium,
   loadKeyPair,
-  decryptFileKey,
+  openSealedFileKey,
+  activeKeyVersion,
   generateFileKey,
   encryptFileKey,
   isUnlocked,
@@ -164,17 +165,20 @@ export function useEncryptedDocumentContent({
         if (kp) {
           const keyRef = await encryptionApi.getFileKey(id);
           if (!cancelled && keyRef) {
-            dekRef.current = decryptFileKey(
+            dekRef.current = openSealedFileKey(
+              currentUser!.id,
               keyRef.encryptedFileKey,
-              kp.publicKey,
-              kp.secretKey,
+              keyRef.keyVersion,
             );
             dekOwnerRef.current = owner;
           } else if (!cancelled && !keyRef) {
             // New file: generate a DEK, encrypt it with the user's public key, and store it.
             const newDek = generateFileKey();
             const encryptedFileKey = encryptFileKey(newDek, kp.publicKey);
-            await encryptionApi.setFileKey(id, { encryptedFileKey });
+            await encryptionApi.setFileKey(id, {
+              encryptedFileKey,
+              keyVersion: activeKeyVersion(currentUser!.id) ?? undefined,
+            });
             dekRef.current = newDek;
             dekOwnerRef.current = owner;
             setIsNewEncryption(true);

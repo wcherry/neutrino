@@ -446,15 +446,27 @@ export interface FileKeyResponse {
   userId: string;
   /** Base64url-encoded sealed-box ciphertext of the DEK. */
   encryptedFileKey: string;
+  /**
+   * Which version of `userId`'s keyring opens `encryptedFileKey`.
+   *
+   * Optional because rows written before rotation existed carry no version;
+   * those are version 1 by definition, which is what `openSealedFileKey`
+   * defaults to.
+   */
+  keyVersion?: number;
 }
 
 export interface SetFileKeyRequest {
   encryptedFileKey: string;
+  /** The caller's active key version — what the DEK above was sealed to. */
+  keyVersion?: number;
 }
 
 export interface ShareFileKeyRequest {
   recipientId: string;
   encryptedFileKey: string;
+  /** The *recipient's* active key version, not the caller's. */
+  keyVersion?: number;
 }
 
 

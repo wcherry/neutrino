@@ -1,0 +1,51 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+/*
+ * Monospaced and letter-spaced because this string exists to be read aloud and
+ * compared character by character. The groups come pre-hyphenated from
+ * `fingerprintFor`; `word-break` keeps a narrow viewport from splitting one.
+ */
+.fingerprint {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  line-height: 1.6;
+  padding: 12px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-secondary, var(--color-surface));
+  color: var(--color-text-primary);
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* Struck through and dimmed: this is the value that no longer applies. */
+.previous {
+  color: var(--color-text-secondary);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
