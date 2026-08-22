@@ -23,6 +23,24 @@ use serde_json;
 use std::sync::Arc;
 use uuid::Uuid;
 
+/// How long a soft-deleted account is kept before the worker purges it.
+///
+/// Deletion is two-stage: `delete_own_account` (or `admin_delete_user`) sets
+/// `deleted_at`, which makes the account unreachable immediately, and the
+/// background worker erases the rows and the stored files once this window has
+/// closed. The worker enforces the same number from its own crate — see
+/// `PURGE_GRACE_DAYS` in `worker/src/purge.rs`, which cannot import this one —
+/// so the two must be changed together.
+pub const PURGE_GRACE_DAYS: i64 = 30;
+
+/// When an account soft-deleted at `deleted_at` becomes eligible for purging.
+///
+/// Sent to the admin console so the countdown it shows comes from the policy
+/// rather than from a second copy of the number in the browser.
+pub fn purge_after(deleted_at: chrono::NaiveDateTime) -> chrono::NaiveDateTime {
+    deleted_at + chrono::Duration::days(PURGE_GRACE_DAYS)
+}
+
 pub struct AuthService {
     repo: Arc<AuthRepository>,
     token_service: Arc<TokenService>,
@@ -391,13 +409,15 @@ impl AuthService {
         &self,
         page: i64,
         page_size: i64,
+        include_deleted: bool,
     ) -> Result<AdminUserListResponse, ApiError> {
         let page_size = page_size.min(100).max(1);
         let page = page.max(1);
-        let (users, total) = self.repo.list_users(page, page_size)?;
+        let (users, total) = self.repo.list_users(page, page_size, include_deleted)?;
         let items = users
             .into_iter()
             .map(|u| AdminUserResponse {
+                purge_after: u.deleted_at.map(purge_after),
                 id: u.id,
                 email: u.email,
                 name: u.name,
@@ -421,6 +441,7 @@ impl AuthService {
             .find_user_by_id(user_id)?
             .ok_or_else(|| ApiError::not_found("User not found"))?;
         Ok(AdminUserResponse {
+            purge_after: user.deleted_at.map(purge_after),
             id: user.id,
             email: user.email,
             name: user.name,
@@ -429,6 +450,26 @@ impl AuthService {
             created_at: user.created_at,
             deleted_at: user.deleted_at,
         })
+    }
+
+    /// Undoes a soft delete, whoever performed it.
+    ///
+    /// Only meaningful inside the grace window: after the worker's purge there
+    /// is no row left, so this reports 404 exactly as it would for an id that
+    /// never existed — which is the honest answer, since nothing can bring that
+    /// account back. Restoring an account that is not deleted is refused rather
+    /// than treated as a no-op, so an admin double-clicking Restore on a stale
+    /// page learns the list moved under them.
+    pub fn admin_restore_user(&self, user_id: &str) -> Result<AdminUserResponse, ApiError> {
+        let user = self
+            .repo
+            .find_user_by_id_including_deleted(user_id)?
+            .ok_or_else(|| ApiError::not_found("User not found"))?;
+        if user.deleted_at.is_none() {
+            return Err(ApiError::bad_request("User is not deleted"));
+        }
+        self.repo.restore_user(user_id)?;
+        self.admin_get_user(user_id)
     }
 
     pub fn admin_update_user(
@@ -451,8 +492,39 @@ impl AuthService {
         self.admin_get_user(user_id)
     }
 
+    /// Soft-deletes an account on an admin's behalf, starting the same
+    /// [`PURGE_GRACE_DAYS`] countdown a self-delete starts.
+    ///
+    /// Refresh tokens go too, for the reason spelled out on
+    /// `delete_own_account`: the target's access token stays valid until it
+    /// expires, and leaving them a refresh token lets them mint a new one and
+    /// carry on working in an account an admin has just removed.
     pub fn admin_delete_user(&self, user_id: &str) -> Result<(), ApiError> {
-        self.repo.soft_delete_user(user_id)
+        self.repo.soft_delete_user(user_id)?;
+        self.repo.delete_all_refresh_tokens_for_user(user_id)
+    }
+
+    // ── Self-Serve Deletion ───────────────────────────────────────────────────
+
+    /// Deletes the caller's own account — what Settings → Account → Delete
+    /// account is behind.
+    ///
+    /// The row is soft-deleted, the same state `admin_delete_user` leaves a
+    /// user in: every lookup filters on `deleted_at IS NULL`, so the account
+    /// can no longer sign in or be found. Refresh tokens are then dropped,
+    /// because the access token the caller is still holding stays valid until
+    /// it expires — without this they could quietly mint a fresh one and keep
+    /// the session alive past the deletion.
+    ///
+    /// Looking the user up first is what turns a repeat call into a 404
+    /// instead of a silent success: `soft_delete_user` updates by id and an
+    /// update matching no rows is not an error in Diesel.
+    pub fn delete_own_account(&self, user_id: &str) -> Result<(), ApiError> {
+        self.repo
+            .find_user_by_id(user_id)?
+            .ok_or_else(|| ApiError::not_found("User not found"))?;
+        self.repo.soft_delete_user(user_id)?;
+        self.repo.delete_all_refresh_tokens_for_user(user_id)
     }
 
     // ── User Profile ──────────────────────────────────────────────────────────
@@ -580,12 +652,22 @@ impl AuthService {
 
     // ── E2EE key management ───────────────────────────────────────────────────
 
-    pub fn set_public_key(&self, user_id: &str, public_key: &str) -> Result<(), ApiError> {
-        self.repo.set_public_key(user_id, public_key)
+    /// Publish a new identity version. See `AuthRepository::publish_public_key`
+    /// for why this appends rather than overwrites.
+    pub fn publish_public_key(
+        &self,
+        user_id: &str,
+        public_key: &str,
+    ) -> Result<super::repository::UserPublicKey, ApiError> {
+        self.repo.publish_public_key(user_id, public_key)
     }
 
-    pub fn get_public_key(&self, user_id: &str) -> Result<Option<String>, ApiError> {
-        self.repo.get_public_key(user_id)
+    /// Every version `user_id` has published, oldest first.
+    pub fn list_public_keys(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<super::repository::UserPublicKey>, ApiError> {
+        self.repo.list_public_keys(user_id)
     }
 }
 
@@ -898,7 +980,7 @@ mod tests {
     #[test]
     fn admin_list_users_clamps_page_and_size() {
         let svc = make_service();
-        let result = svc.admin_list_users(0, 200).unwrap();
+        let result = svc.admin_list_users(0, 200, false).unwrap();
         assert_eq!(result.page, 1, "page < 1 should be clamped to 1");
         assert_eq!(
             result.page_size, 100,
@@ -923,6 +1005,115 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(err.status, 400);
+    }
+
+    // ── self-serve deletion ───────────────────────────────────────────────────
+
+    #[test]
+    fn delete_own_account_blocks_sign_in_and_drops_sessions() {
+        let svc = make_service();
+        svc.register(reg("ivy@test.com", "password123", "Ivy"))
+            .unwrap();
+        svc.login(login_req("ivy@test.com", "password123"), None, None, None)
+            .unwrap();
+        let user = svc.lookup_user_by_email("ivy@test.com").unwrap().unwrap();
+
+        svc.delete_own_account(&user.id).unwrap();
+
+        // The account is gone as far as every `deleted_at IS NULL` lookup goes.
+        assert!(svc.lookup_user_by_email("ivy@test.com").unwrap().is_none());
+        assert!(svc
+            .login(login_req("ivy@test.com", "password123"), None, None, None)
+            .is_err());
+        // And the refresh tokens went with it — otherwise the access token the
+        // caller still holds could be traded for a fresh one after deletion.
+        assert!(svc.list_sessions(&user.id).unwrap().sessions.is_empty());
+    }
+
+    #[test]
+    fn delete_own_account_twice_returns_404() {
+        let svc = make_service();
+        let reg_resp = svc
+            .register(reg("jack@test.com", "password123", "Jack"))
+            .unwrap();
+
+        svc.delete_own_account(&reg_resp.id).unwrap();
+        let err = svc.delete_own_account(&reg_resp.id).unwrap_err();
+        assert_eq!(
+            err.status, 404,
+            "a soft-deleted row still matches the update, so the lookup is what makes this a 404"
+        );
+    }
+
+    // ── restore ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn deleted_users_are_hidden_from_the_admin_list_unless_asked_for() {
+        let svc = make_service();
+        let kept = svc
+            .register(reg("kept@test.com", "password123", "Kept"))
+            .unwrap();
+        let gone = svc
+            .register(reg("gone@test.com", "password123", "Gone"))
+            .unwrap();
+        svc.admin_delete_user(&gone.id).unwrap();
+
+        let default = svc.admin_list_users(1, 20, false).unwrap();
+        assert_eq!(default.total, 1);
+        assert_eq!(default.users[0].id, kept.id);
+
+        // Without this the console has no row to press Restore on.
+        let with_deleted = svc.admin_list_users(1, 20, true).unwrap();
+        assert_eq!(with_deleted.total, 2);
+        let deleted = with_deleted
+            .users
+            .iter()
+            .find(|u| u.id == gone.id)
+            .expect("deleted user missing from include_deleted listing");
+        assert!(deleted.deleted_at.is_some());
+        assert_eq!(
+            deleted.purge_after,
+            deleted.deleted_at.map(purge_after),
+            "the console counts down to this, so it has to come from the policy",
+        );
+    }
+
+    #[test]
+    fn restore_brings_a_deleted_account_back() {
+        let svc = make_service();
+        svc.register(reg("kim@test.com", "password123", "Kim"))
+            .unwrap();
+        let user = svc.lookup_user_by_email("kim@test.com").unwrap().unwrap();
+        svc.delete_own_account(&user.id).unwrap();
+
+        let restored = svc.admin_restore_user(&user.id).unwrap();
+        assert!(restored.deleted_at.is_none());
+        assert!(restored.purge_after.is_none());
+
+        // Restored means usable, not merely visible.
+        assert!(svc.lookup_user_by_email("kim@test.com").unwrap().is_some());
+        assert!(svc
+            .login(login_req("kim@test.com", "password123"), None, None, None)
+            .is_ok());
+    }
+
+    #[test]
+    fn restoring_a_live_account_returns_400() {
+        let svc = make_service();
+        let user = svc
+            .register(reg("liv@test.com", "password123", "Liv"))
+            .unwrap();
+        let err = svc.admin_restore_user(&user.id).unwrap_err();
+        assert_eq!(err.status, 400);
+    }
+
+    #[test]
+    fn restoring_an_unknown_account_returns_404() {
+        let svc = make_service();
+        // Also the answer once the worker's purge has run: the row is gone, and
+        // nothing can bring it back.
+        let err = svc.admin_restore_user("no-such-user").unwrap_err();
+        assert_eq!(err.status, 404);
     }
 
     // ── anonymize_ip ──────────────────────────────────────────────────────────

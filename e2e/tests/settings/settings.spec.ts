@@ -222,6 +222,37 @@ test.describe('Settings page — account', () => {
   });
 });
 
+/**
+ * Its own describe block because the account it registers does not survive the
+ * test — the one above shares a `beforeEach` whose other tests expect a live
+ * session.
+ */
+test.describe('Settings page — delete account', () => {
+  test('confirming the dialog deletes the account and signs out', async ({ page, request }) => {
+    const { email, password } = await registerAndLogin(request, page, 'DeleteMe User');
+    await page.goto('/settings');
+    await clickTab(page, 'Account');
+    await expect(page.getByRole('heading', { name: 'Account', level: 2 })).toBeVisible({
+      timeout: 10_000,
+    });
+
+    await page.getByRole('button', { name: 'Delete account' }).click();
+    await expect(page.getByText('Delete your account?')).toBeVisible();
+    // The confirm button, not the danger-zone one that opened the dialog.
+    await page.locator('[class*="dialogConfirmBtn"]').click();
+
+    // Issue #99: the dialog used to dismiss and leave the account intact.
+    await expect(page).toHaveURL(`${BASE_URL}/`, { timeout: 15_000 });
+    expect(await page.evaluate(() => localStorage.getItem('access_token'))).toBeNull();
+
+    const signIn = await request.post(`${BASE_URL}/api/v1/auth/login`, {
+      data: { email, password },
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(signIn.ok(), 'a deleted account must not be able to sign back in').toBe(false);
+  });
+});
+
 test.describe('Settings page — tab URL param', () => {
   test.beforeEach(async ({ page, request }) => {
     await registerAndLogin(request, page);

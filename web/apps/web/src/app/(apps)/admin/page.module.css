@@ -361,6 +361,60 @@
   color: var(--color-text, #111827);
 }
 
+/* ── Deleted accounts ────────────────────────────────────────────────────── */
+
+.showDeletedRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+}
+
+/* Dimmed rather than hidden: the row is still readable, but it reads as
+   something on its way out rather than as an ordinary account. */
+.deletedRow {
+  opacity: 0.6;
+}
+
+.deletedBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+:global([data-theme='dark']) .deletedBadge {
+  background: #422006;
+  color: #fcd34d;
+}
+
+.restoreBtn {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.restoreBtn:hover:not(:disabled) {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.restoreBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ── Pagination ──────────────────────────────────────────────────────────── */
 .pagination {
   display: flex;

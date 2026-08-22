@@ -12,7 +12,7 @@ vi.mock('next/navigation', () => ({
 
 const register = vi.fn();
 const login = vi.fn();
-const provisionVault = vi.fn();
+const provisionKeyring = vi.fn();
 vi.mock('@/lib/api', () => ({
   authApi: {
     register: (...args: unknown[]) => register(...args),
@@ -21,11 +21,14 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@neutrino/auth', () => ({
-  provisionVault: (...args: unknown[]) => provisionVault(...args),
+  provisionKeyring: (...args: unknown[]) => provisionKeyring(...args),
+  currentRecoveryKit: vi.fn(),
   enrollPasskey: vi.fn(),
 }));
 vi.mock('@neutrino/e2e-crypto', () => ({
   isPasskeySupported: () => false,
+  storeUnderPasskey: vi.fn(),
+  getSessionKeyring: () => ({ userId: 'u1', entries: [] }),
 }));
 
 import RegisterPage from '@/app/register/page';
@@ -39,7 +42,7 @@ describe('RegisterPage password fields', () => {
     vi.clearAllMocks();
     register.mockResolvedValue({ id: 'u1', email: 'w@example.com', name: 'William' });
     login.mockResolvedValue(undefined);
-    provisionVault.mockResolvedValue({ recoveryCode: 'CODE-1234-5678' });
+    provisionKeyring.mockResolvedValue({ recoveryKit: 'KIT0-1234-5678' });
   });
 
   it('toggles each password field between hidden and visible independently', () => {
@@ -97,7 +100,10 @@ describe('RegisterPage password fields', () => {
     // The account password is what wraps the new key, and the redirect waits on
     // setup — see encryptionSetupDialog.test.tsx.
     await waitFor(() =>
-      expect(provisionVault).toHaveBeenCalledWith('u1', 'w@example.com', 'correct-horse'),
+      expect(provisionKeyring).toHaveBeenCalledWith('u1', 'w@example.com', {
+        method: 'passphrase',
+        passphrase: 'correct-horse',
+      }),
     );
     await waitFor(() =>
       expect(screen.getByText('Your encryption key is ready')).toBeInTheDocument(),

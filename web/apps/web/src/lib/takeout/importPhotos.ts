@@ -33,6 +33,7 @@ import {
   loadKeyPair,
   generateFileKey,
   encryptFileKey,
+  activeKeyVersion,
   encryptMetadata,
   type KeyPair,
 } from '@neutrino/e2e-crypto';
@@ -180,6 +181,7 @@ async function uploadPhotoFile(
   thumbnailB64: string | null,
   folderId: string | null,
   keyPair: KeyPair | null,
+  userId: string,
 ): Promise<string> {
   if (!keyPair) {
     const item = await storageApi.uploadFile(file, undefined, folderId);
@@ -194,6 +196,7 @@ async function uploadPhotoFile(
     undefined,
     folderId,
     thumbnailB64,
+    activeKeyVersion(userId) ?? undefined,
   );
   return item.id;
 }
@@ -217,6 +220,8 @@ export async function runPhotosImport({
   // a half-imported library is worse than a plaintext one.
   await initSodium();
   const keyPair = userId ? loadKeyPair(userId) : null;
+  // Narrowed together: a key pair exists only if a user id did.
+  const encrypting = keyPair && userId ? { keyPair, userId } : null;
   if (!keyPair) {
     logWarn('photos', 'no key pair on this device — photos will be uploaded unencrypted', { userId });
   }
@@ -293,7 +298,13 @@ export async function runPhotosImport({
         thumbnail: thumbnail !== null,
         encrypted: !!keyPair,
       });
-      const fileId = await uploadPhotoFile(media, thumbnail, folderId, keyPair);
+      const fileId = await uploadPhotoFile(
+        media,
+        thumbnail,
+        folderId,
+        encrypting?.keyPair ?? null,
+        encrypting?.userId ?? '',
+      );
 
       step = 'registering it in Photos';
       const info = await readPhotoInfo(photo.info);

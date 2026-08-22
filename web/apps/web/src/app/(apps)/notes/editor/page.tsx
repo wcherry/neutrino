@@ -14,7 +14,7 @@ import {
 } from '@neutrino/api-drive';
 import { linksApi } from '@neutrino/api-links';
 import { createNote, extractNoteText, listAllNotes } from '@/lib/noteFiles';
-import { initSodium, decryptFile, fromBase64url, loadKeyPair, generateFileKey, encryptFileKey } from '@neutrino/e2e-crypto';
+import { initSodium, decryptFile, fromBase64url, loadKeyPair, activeKeyVersion, generateFileKey, encryptFileKey } from '@neutrino/e2e-crypto';
 import { encryptionApi } from '@neutrino/api-drive';
 import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -360,7 +360,10 @@ export default function NoteEditorPage() {
       const kp = currentUser ? loadKeyPair(currentUser.id) : null;
       if (kp) {
         const dek = generateFileKey();
-        await encryptionApi.setFileKey(newNote.id, { encryptedFileKey: encryptFileKey(dek, kp.publicKey) });
+        await encryptionApi.setFileKey(newNote.id, {
+          encryptedFileKey: encryptFileKey(dek, kp.publicKey),
+          keyVersion: activeKeyVersion(currentUser!.id) ?? undefined,
+        });
         await driveAutosaveEncryptedContent(newNote.id, serialized, 'note.json', dek);
       } else {
         await driveAutosaveContent(newNote.id, serialized, 'note.json');

@@ -65,10 +65,15 @@ export const adminApi = {
   /**
    * List all users (paginated).
    * GET /api/v1/admin/users
+   *
+   * `includeDeleted` widens the listing to soft-deleted accounts, which every
+   * other endpoint hides. They are only visible here so an admin can restore
+   * one before the worker erases it.
    */
-  async listUsers(page = 1, pageSize = 20): Promise<AdminUserListResponse> {
+  async listUsers(page = 1, pageSize = 20, includeDeleted = false): Promise<AdminUserListResponse> {
+    const params = `page=${page}&pageSize=${pageSize}`;
     return request<AdminUserListResponse>(
-      `/api/v1/admin/users?page=${page}&pageSize=${pageSize}`,
+      `/api/v1/admin/users?${params}${includeDeleted ? '&includeDeleted=true' : ''}`,
     );
   },
 
@@ -98,6 +103,19 @@ export const adminApi = {
   async deleteUser(userId: string): Promise<void> {
     return request<void>(`/api/v1/admin/users/${encodeURIComponent(userId)}`, {
       method: 'DELETE',
+    });
+  },
+
+  /**
+   * Undo a soft delete, whether the user or an admin performed it.
+   * POST /api/v1/admin/users/{userId}/restore
+   *
+   * Only works inside the retention window: once the worker has purged the
+   * account there is no row left and this 404s.
+   */
+  async restoreUser(userId: string): Promise<AdminUser> {
+    return request<AdminUser>(`/api/v1/admin/users/${encodeURIComponent(userId)}/restore`, {
+      method: 'POST',
     });
   },
 

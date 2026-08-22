@@ -45,7 +45,7 @@ const loadKeyPair = vi.fn(() => ({ publicKey: 'pk', secretKey: 'sk' }));
 vi.mock('@neutrino/e2e-crypto', () => ({
   initSodium: () => Promise.resolve(),
   loadKeyPair: () => loadKeyPair(),
-  decryptFileKey: () => 'dek',
+  openSealedFileKey: () => 'dek',
   decryptFile: () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
 }));
 

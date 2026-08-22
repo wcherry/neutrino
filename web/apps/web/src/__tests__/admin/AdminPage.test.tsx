@@ -34,6 +34,7 @@ vi.mock('@neutrino/api-admin', () => ({
     ),
     updateUser: vi.fn(),
     deleteUser: vi.fn(),
+    restoreUser: vi.fn(),
   },
 }));
 
@@ -210,6 +211,7 @@ describe('AdminPage', () => {
           totpEnabled: false,
           createdAt: '2026-01-01T00:00:00Z',
           deletedAt: null,
+          purgeAfter: null,
         },
       ],
       total: 1,
@@ -222,5 +224,105 @@ describe('AdminPage', () => {
       expect(screen.getByText('bob@example.com')).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: /remove/i })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Deleting an account only soft-deletes it; the worker erases it 30 days later.
+ * The admin console is the only place that window is visible or reversible, so
+ * these cover getting the deleted accounts on screen and undoing the delete.
+ */
+describe('AdminPage — deleted accounts', () => {
+  const DELETED_USER = {
+    id: 'u9',
+    email: 'gone@example.com',
+    name: 'Gone',
+    role: 'user',
+    totpEnabled: false,
+    createdAt: '2026-01-01T00:00:00Z',
+    deletedAt: '2026-08-01T00:00:00Z',
+    purgeAfter: '2026-08-31T00:00:00Z',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue(adminUser());
+  });
+
+  async function openUsersWithDeleted() {
+    const { adminApi } = await import('@neutrino/api-admin');
+    vi.mocked(adminApi.listUsers).mockImplementation((_page, _size, includeDeleted) =>
+      Promise.resolve({
+        users: includeDeleted ? [DELETED_USER] : [],
+        total: includeDeleted ? 1 : 0,
+        page: 1,
+        pageSize: 20,
+      }),
+    );
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /^users$/i }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/show deleted accounts/i)).toBeInTheDocument();
+    });
+    return adminApi;
+  }
+
+  it('hides deleted accounts until asked for, then lists them', async () => {
+    const adminApi = await openUsersWithDeleted();
+
+    // The default listing is the live one — a deleted account is invisible
+    // everywhere else in the product and the console is no exception.
+    await waitFor(() => expect(screen.getByText(/no users found/i)).toBeInTheDocument());
+    expect(adminApi.listUsers).toHaveBeenCalledWith(1, 20, false);
+
+    fireEvent.click(screen.getByLabelText(/show deleted accounts/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('gone@example.com')).toBeInTheDocument();
+    });
+    expect(adminApi.listUsers).toHaveBeenCalledWith(1, 20, true);
+  });
+
+  it('shows how long is left before the account is purged', async () => {
+    await openUsersWithDeleted();
+    fireEvent.click(screen.getByLabelText(/show deleted accounts/i));
+
+    // Counted from the server's `purgeAfter`, so the number on screen is the
+    // one the worker will actually act on.
+    await waitFor(() => {
+      expect(screen.getByText(/deleted —/i)).toBeInTheDocument();
+    });
+  });
+
+  it('restores a deleted account and refreshes the list', async () => {
+    const adminApi = await openUsersWithDeleted();
+    vi.mocked(adminApi.restoreUser).mockResolvedValue({
+      ...DELETED_USER,
+      deletedAt: null,
+      purgeAfter: null,
+    });
+
+    fireEvent.click(screen.getByLabelText(/show deleted accounts/i));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /restore/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+
+    await waitFor(() => {
+      expect(adminApi.restoreUser).toHaveBeenCalledWith('u9');
+    });
+  });
+
+  it('offers Restore instead of Remove on a deleted row', async () => {
+    await openUsersWithDeleted();
+    fireEvent.click(screen.getByLabelText(/show deleted accounts/i));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /restore/i })).toBeInTheDocument();
+    });
+    // Deleting something already deleted has nothing to do, and the row is
+    // about to be erased regardless.
+    expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
   });
 });

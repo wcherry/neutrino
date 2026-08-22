@@ -7,10 +7,12 @@ import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, QrCode,
 import QRCode from 'react-qr-code';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
 import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest } from '@/lib/api';
-import { initSodium, generateKeyPair, loadKeyPair, hasKeyPair, subscribeToLockState, encryptKeysWithPin, toBase64, fromBase64 } from '@neutrino/e2e-crypto';
-import { getVaultState, replaceIdentity } from '@neutrino/auth';
+import { initSodium, loadKeyPair, hasKeyPair, subscribeToLockState, toBase64, fromBase64, toBase64url, fingerprintFor, clearSession } from '@neutrino/e2e-crypto';
+import { clearSearchIndex } from '@neutrino/search';
+import { clearDriveImageCache } from '@/lib/driveImages';
+import { getKeyringState, adoptKeyPair } from '@neutrino/auth';
 import { requestEncryptionGate } from '@/components/E2EEUnlockGate';
-import { UnlockMethodsPanel } from './UnlockMethodsPanel';
+import { KeyManagementPanel } from './KeyManagementPanel';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
 import { getOfficeFileMode, OFFICE_FILE_MODE_KEY, type OfficeFileMode } from '@/hooks/useOfficeFileMode';
@@ -238,18 +240,14 @@ const qc = useQueryClient();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // ── Encryption key state ───────────────────────────────────────────────────
-  const [keyStatus, setKeyStatus] = useState<'loading' | 'unlocked' | 'locked' | 'none'>('loading');
+  const [keyStatus, setKeyStatus] = useState<'loading' | 'unlocked' | 'locked' | 'needs-device' | 'none'>('loading');
   const [showExportKey, setShowExportKey] = useState(false);
   const [exportedKeyJson, setExportedKeyJson] = useState('');
   const [keyCopied, setKeyCopied] = useState(false);
   const [importKeyValue, setImportKeyValue] = useState('');
   const [importKeyError, setImportKeyError] = useState('');
   const [importKeySaved, setImportKeySaved] = useState(false);
-  const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
-  const [generatingKey, setGeneratingKey] = useState(false);
-  const [showQrModal, setShowQrModal] = useState(false);
-  const [qrPayload, setQrPayload] = useState('');
-  const [qrPin, setQrPin] = useState('');
+  const [keyFingerprint, setKeyFingerprint] = useState('');
 
   // ── Advanced state ─────────────────────────────────────────────────────────
   const [searchSyncDisabled, setSearchSyncDisabled] = useState<boolean>(false);
@@ -267,11 +265,13 @@ const qc = useQueryClient();
   const [officeFileMode, setOfficeFileModeState] = useState<OfficeFileMode>('native-roundtrip');
 
   /**
-   * Whether a key *exists* is a server question — `hasKeyPair` only answers
-   * whether this tab has it in memory, which reads as "no encryption key found"
-   * to someone who simply reloaded the page. Ask the vault, and re-ask on every
-   * lock/unlock transition so the panel follows an unlock done in the gate
-   * instead of going stale the moment it mounted.
+   * Whether a key exists is partly a local question (does this device hold a
+   * wrapped copy?) and partly a server one (has the account published a public
+   * key at all?) — `hasKeyPair` answers neither, only whether this tab has it in
+   * memory, which reads as "no encryption key found" to someone who simply
+   * reloaded. `getKeyringState` asks both, and this re-asks on every lock/unlock
+   * transition so the panel follows an unlock done in the gate instead of going
+   * stale the moment it mounted.
    */
   useEffect(() => {
     if (!user) return;
@@ -280,9 +280,9 @@ const qc = useQueryClient();
 
     async function refresh() {
       try {
-        const { state } = await getVaultState(userId);
+        const { state } = await getKeyringState(userId);
         if (cancelled) return;
-        setKeyStatus(state === 'unlocked' ? 'unlocked' : state === 'locked' ? 'locked' : 'none');
+        setKeyStatus(state);
       } catch {
         // Offline or the server is down — the local session is still the truth
         // about what this tab can decrypt right now.
@@ -297,6 +297,39 @@ const qc = useQueryClient();
       unsubscribe();
     };
   }, [user]);
+
+  /**
+   * The fingerprint of this account's own public key.
+   *
+   * Someone sharing a file with you sees this same value derived from the key
+   * the server handed them; if the two match, the server did not substitute a
+   * key of its own. That comparison has to happen over a channel this app does
+   * not control — a phone call, or in person — so the only job here is to put
+   * the string somewhere it can be read aloud.
+   *
+   * Derived from the session keypair rather than fetched, so a server that lies
+   * about your key cannot make its lie agree with itself.
+   */
+  useEffect(() => {
+    if (!user || keyStatus !== 'unlocked') {
+      setKeyFingerprint('');
+      return;
+    }
+    const userId = user.id;
+    let cancelled = false;
+
+    void (async () => {
+      await initSodium();
+      if (cancelled) return;
+      const kp = loadKeyPair(userId);
+      if (!kp) return;
+      setKeyFingerprint(fingerprintFor(userId, toBase64url(kp.publicKey)));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, keyStatus]);
 
   useEffect(() => {
     const stored = localStorage.getItem(WEEK_START_KEY);
@@ -327,20 +360,6 @@ const qc = useQueryClient();
     setShowExportKey(true);
   }
 
-  async function handleShowQrCode() {
-    if (!user) return;
-    await initSodium();
-    const kp = loadKeyPair(user.id);
-    if (!kp) return;
-    const pinBytes = new Uint8Array(6);
-    crypto.getRandomValues(pinBytes);
-    const pin = Array.from(pinBytes).map(b => b % 10).join('');
-    const encrypted = await encryptKeysWithPin(kp.publicKey, kp.secretKey, pin);
-    setQrPin(pin);
-    setQrPayload(JSON.stringify(encrypted));
-    setShowQrModal(true);
-  }
-
   async function handleCopyExportedKey() {
     try {
       await navigator.clipboard.writeText(exportedKeyJson);
@@ -364,10 +383,13 @@ const qc = useQueryClient();
       if (publicKey.length !== 32 || secretKey.length !== 32) {
         throw new Error('Key has wrong length — make sure you pasted the complete key');
       }
-      // Writes the imported key into the vault under the session's master key,
-      // so it survives a reload and reaches the user's other devices. Storing
-      // it in memory alone (as this used to) lost it on the next refresh.
-      await replaceIdentity(user.id, publicKey, secretKey);
+      // Adopts the imported keypair as a version-1 keyring and wraps it to this
+      // device, so it survives a reload. Storing it in memory alone (as this
+      // once did) lost it on the next refresh.
+      await adoptKeyPair(user.id, user.email, publicKey, secretKey, {
+        method: 'passphrase',
+        passphrase: window.prompt('Choose a passphrase to protect this key on this device') ?? '',
+      });
       setKeyStatus('unlocked');
       setImportKeyValue('');
       setImportKeySaved(true);
@@ -379,25 +401,6 @@ const qc = useQueryClient();
           ? msg
           : 'Invalid JSON — paste the full exported key',
       );
-    }
-  }
-
-  async function handleGenerateKey() {
-    if (!user) return;
-    setGeneratingKey(true);
-    try {
-      await initSodium();
-      const { publicKey, secretKey } = generateKeyPair();
-      await replaceIdentity(user.id, publicKey, secretKey);
-      setKeyStatus('unlocked');
-      setShowRegenerateDialog(false);
-      setShowExportKey(false);
-    } catch (err) {
-      toastError(
-        err instanceof Error ? err.message : 'Failed to generate key. Please try again.',
-      );
-    } finally {
-      setGeneratingKey(false);
     }
   }
 
@@ -509,9 +512,39 @@ const qc = useQueryClient();
     setTimeout(() => setNameSaved(false), 2000);
   }
 
+  /**
+   * Deleting the account has to take the local copies with it. The server row
+   * going away leaves this device holding the decrypted identity key, the
+   * search index (which is plaintext content, in IndexedDB) and the cached
+   * image bytes — all of it readable by whoever opens the browser next, and
+   * none of it reachable once the account can no longer sign in to clear it.
+   *
+   * Local cleanup runs even if a step throws: `authApi.deleteAccount` has
+   * already succeeded by then, so there is no account to keep the data for and
+   * failing here would strand it. The redirect is `replace` so Back cannot
+   * return to a settings page for an account that no longer exists.
+   */
+  const deleteAccount = useMutation({
+    mutationFn: () => authApi.deleteAccount(),
+    onSuccess: async () => {
+      setShowDeleteDialog(false);
+      clearSession();
+      clearDriveImageCache();
+      await clearSearchIndex().catch(() => {});
+      // The React Query cache is deliberately left alone, as sign-out leaves
+      // it: clearing it makes every mounted query on the shell refetch, and
+      // with the tokens already gone each one 401s into the client's own
+      // redirect-to-sign-in — racing the redirect below.
+      toastSuccess('Your account has been deleted.');
+      router.replace('/');
+    },
+    onError: () => {
+      toastError('Could not delete your account. Please try again.');
+    },
+  });
+
   function handleDeleteAccount() {
-    // TODO: wire to DELETE /api/v1/auth/me once endpoint is available
-    setShowDeleteDialog(false);
+    deleteAccount.mutate();
   }
 
   function handleSearchSyncToggle(disabled: boolean) {
@@ -922,9 +955,11 @@ const qc = useQueryClient();
                     ? 'Your encryption key is set up and unlocked on this device'
                     : keyStatus === 'locked'
                       ? 'Your encryption key is set up but locked on this device — unlock it to read and edit encrypted files'
-                      : keyStatus === 'none'
-                        ? 'No encryption key yet — files uploaded here will not be end-to-end encrypted'
-                        : 'Checking…'}
+                      : keyStatus === 'needs-device'
+                        ? 'Your account has an encryption key, but this device does not have a copy — restore it from your recovery kit or another device'
+                        : keyStatus === 'none'
+                          ? 'No encryption key yet — files uploaded here will not be end-to-end encrypted'
+                          : 'Checking…'}
                 </div>
               </div>
               {keyStatus === 'unlocked' && <ShieldCheck size={20} color="var(--color-success, #16a34a)" />}
@@ -932,28 +967,42 @@ const qc = useQueryClient();
               {keyStatus === 'none' && <ShieldX size={20} color="var(--color-warning, #d97706)" />}
             </div>
 
+            {keyFingerprint && (
+              <div className={styles.settingRow}>
+                <div className={styles.settingInfo}>
+                  <div className={styles.settingName}>Key fingerprint</div>
+                  <div className={styles.settingDesc}>
+                    Read this aloud to someone sharing a file with you, so they can confirm they
+                    are encrypting it to your key and not to one substituted along the way.
+                  </div>
+                  <div className={styles.fingerprint}>{keyFingerprint}</div>
+                </div>
+              </div>
+            )}
+
             {keyStatus === 'unlocked' && (
               <div className={styles.keyActions}>
                 <button type="button" className={styles.outlineBtn} onClick={handleExportKey}>
                   Export key
                 </button>
-                <button type="button" className={styles.outlineBtn} onClick={handleShowQrCode}>
-                  <QrCode size={14} /> Link to mobile
-                </button>
-                <button type="button" className={styles.outlineBtn} onClick={() => setShowRegenerateDialog(true)}>
-                  Regenerate key
-                </button>
               </div>
             )}
 
-            {/* Both of these hand off to `E2EEUnlockGate`, which owns every way
-                a key gets made or opened. Generating one here would mint an
-                identity with nothing to wrap it, and the user's existing files
-                are sealed to the key the vault already holds. */}
+            {/* All three hand off to `E2EEUnlockGate`, which owns every way a
+                key gets made, opened or restored. Creating one here would mint a
+                second identity and orphan every file sealed to the first. */}
             {keyStatus === 'locked' && (
               <div className={styles.keyActions}>
                 <button type="button" className={styles.saveBtn} onClick={requestEncryptionGate}>
                   Unlock key
+                </button>
+              </div>
+            )}
+
+            {keyStatus === 'needs-device' && (
+              <div className={styles.keyActions}>
+                <button type="button" className={styles.saveBtn} onClick={requestEncryptionGate}>
+                  Restore key on this device
                 </button>
               </div>
             )}
@@ -966,13 +1015,23 @@ const qc = useQueryClient();
               </div>
             )}
 
-            {/* ── How the key is protected ─────────────────────────── */}
-            <h3 className={styles.sectionTitle}>Unlock methods</h3>
+            {/* ── Managing the key ─────────────────────────────────── */}
+            <h3 className={styles.sectionTitle}>Your key</h3>
             <p className={styles.hint}>
-              Your encryption key is stored encrypted. Each method below can unlock it — none of
-              them is ever sent to the server.
+              Your key is created on this device and never sent to us — not even encrypted. That
+              means we cannot reset it: your recovery kit is the only way back if you lose every
+              device that holds it.
             </p>
-            {user && <UnlockMethodsPanel userId={user.id} userEmail={user.email} />}
+            {user && (
+              <KeyManagementPanel
+                userId={user.id}
+                unlocked={keyStatus === 'unlocked'}
+                onForgotten={() => {
+                  setKeyStatus('needs-device');
+                  setKeyFingerprint('');
+                }}
+              />
+            )}
 
             {showExportKey && (
               <div className={styles.formGroup}>
@@ -1025,7 +1084,8 @@ const qc = useQueryClient();
             <div className={styles.dangerZone}>
               <h2 className={styles.dangerTitle}>Danger zone</h2>
               <p className={styles.dangerDesc}>
-                Permanently delete your account and all associated data. This action cannot be undone.
+                Delete your account and all associated data. Your account stops working
+                straight away and is permanently erased after 30 days.
               </p>
               <button
                 type="button"
@@ -1117,72 +1177,26 @@ const qc = useQueryClient();
         />
       )}
 
-      {/* ── QR key-transfer modal ───────────────────────────────────────── */}
-      {showQrModal && (
-        <div className={styles.overlay} onClick={() => setShowQrModal(false)}>
-          <div className={`${styles.dialog} ${styles.qrDialog}`} onClick={(e) => e.stopPropagation()}>
-            <h2 className={styles.dialogTitle}>Link to mobile device</h2>
-            <p className={styles.dialogBody}>
-              Scan this QR code in the mobile app, then enter the PIN when prompted. The code is single-use and valid for this session only.
-            </p>
-            <div className={styles.qrCodeWrap}>
-              <QRCode value={qrPayload} size={200} level="M" />
-            </div>
-            <p className={styles.qrPinLabel}>PIN</p>
-            <p className={styles.qrPin}>{qrPin}</p>
-            <div className={styles.dialogActions}>
-              <button type="button" className={styles.dialogCancelBtn} onClick={() => setShowQrModal(false)}>
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Regenerate key confirmation dialog ──────────────────────────── */}
-      {showRegenerateDialog && (
-        <div className={styles.overlay} onClick={() => setShowRegenerateDialog(false)}>
-          <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
-            <h2 className={styles.dialogTitle}>Regenerate encryption key?</h2>
-            <p className={styles.dialogBody}>
-              This will replace your current key with a new one. You will lose the ability to decrypt
-              files encrypted with your old key unless you have exported a backup of it.
-            </p>
-            <div className={styles.dialogActions}>
-              <button
-                type="button"
-                className={styles.dialogCancelBtn}
-                onClick={() => setShowRegenerateDialog(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className={styles.dialogConfirmBtn}
-                onClick={handleGenerateKey}
-                disabled={generatingKey}
-              >
-                {generatingKey ? 'Generating…' : 'Regenerate'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Delete account confirmation dialog ──────────────────────────── */}
       {showDeleteDialog && (
-        <div className={styles.overlay} onClick={() => setShowDeleteDialog(false)}>
+        <div className={styles.overlay} onClick={() => { if (!deleteAccount.isPending) setShowDeleteDialog(false); }}>
           <div className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="delete-account-title" onClick={(e) => e.stopPropagation()}>
             <h2 id="delete-account-title" className={styles.dialogTitle}>Delete your account?</h2>
+            {/* Says 30 days because that is what the server enforces —
+                `PURGE_GRACE_DAYS` in `src/auth/service.rs` and its twin in
+                `worker/src/purge.rs`. Change those and this has to follow. */}
             <p className={styles.dialogBody}>
-              This will permanently delete your account, all your files, and all associated data.
-              This action cannot be undone.
+              You will be signed out immediately and your account will stop working.
+              After 30 days it is permanently erased, along with all your files and
+              all associated data — that step cannot be undone. Until then, an
+              administrator can restore it for you.
             </p>
             <div className={styles.dialogActions}>
               <button
                 type="button"
                 className={styles.dialogCancelBtn}
                 onClick={() => setShowDeleteDialog(false)}
+                disabled={deleteAccount.isPending}
               >
                 Cancel
               </button>
@@ -1190,8 +1204,11 @@ const qc = useQueryClient();
                 type="button"
                 className={styles.dialogConfirmBtn}
                 onClick={handleDeleteAccount}
+                disabled={deleteAccount.isPending}
               >
-                Delete account
+                {deleteAccount.isPending
+                  ? <><Loader2 size={14} className={styles.spinner} /> Deleting…</>
+                  : 'Delete account'}
               </button>
             </div>
           </div>

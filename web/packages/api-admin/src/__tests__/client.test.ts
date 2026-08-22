@@ -24,6 +24,7 @@ const sampleUser = {
   totpEnabled: false,
   createdAt: '2026-01-01T00:00:00Z',
   deletedAt: null,
+  purgeAfter: null,
 };
 
 const sampleUserList = {
@@ -158,6 +159,14 @@ describe('adminApi', () => {
       await adminApi.listUsers(3, 50);
       expect(mockRequest).toHaveBeenCalledWith('/api/v1/admin/users?page=3&pageSize=50');
     });
+
+    it('asks for deleted accounts only when told to', async () => {
+      mockRequest.mockResolvedValueOnce(sampleUserList);
+      await adminApi.listUsers(1, 20, true);
+      expect(mockRequest).toHaveBeenCalledWith(
+        '/api/v1/admin/users?page=1&pageSize=20&includeDeleted=true',
+      );
+    });
   });
 
   describe('getUser', () => {
@@ -188,6 +197,18 @@ describe('adminApi', () => {
         '/api/v1/admin/users/u1',
         { method: 'DELETE' },
       );
+    });
+  });
+
+  describe('restoreUser', () => {
+    it('calls POST /api/v1/admin/users/{userId}/restore', async () => {
+      mockRequest.mockResolvedValueOnce(sampleUser);
+      const result = await adminApi.restoreUser('u1');
+      expect(mockRequest).toHaveBeenCalledWith(
+        '/api/v1/admin/users/u1/restore',
+        { method: 'POST' },
+      );
+      expect(result).toEqual(sampleUser);
     });
   });
 

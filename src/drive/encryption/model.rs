@@ -14,6 +14,10 @@ pub struct FileKeyRef {
     pub user_id: String,
     pub encrypted_file_key: String,
     pub created_at: NaiveDateTime,
+    /// Which `user_public_keys.version` of `user_id`'s identity the DEK above
+    /// is sealed to. The client needs it to pick the right secret key out of
+    /// its local keyring; the server treats it as an opaque number.
+    pub key_version: i32,
 }
 
 #[derive(Debug, Insertable)]
@@ -23,4 +27,5 @@ pub struct NewFileKeyRef<'a> {
     pub file_id: &'a str,
     pub user_id: &'a str,
     pub encrypted_file_key: &'a str,
+    pub key_version: i32,
 }

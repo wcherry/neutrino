@@ -22,7 +22,7 @@
 import {
   initSodium,
   loadKeyPair,
-  decryptFileKey,
+  openSealedFileKey,
   decryptFile,
   fromBase64url,
 } from '@neutrino/e2e-crypto';
@@ -35,7 +35,7 @@ async function resolveDek(userId: string, fileId: string): Promise<Uint8Array | 
   if (!kp) return null;
   const keyRef = await encryptionApi.getFileKey(fileId);
   if (!keyRef) return null;
-  return decryptFileKey(keyRef.encryptedFileKey, kp.publicKey, kp.secretKey);
+  return openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
 }
 
 /**

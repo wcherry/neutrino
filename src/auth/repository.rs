@@ -29,6 +29,23 @@ pub struct NewUser<'a> {
     pub password_hash: &'a str,
 }
 
+/// One published version of a user's Curve25519 identity key.
+///
+/// Public halves only. The secret key is created on the user's device and never
+/// leaves it — see `agent_docs/client-only-key-architecture.md`.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = crate::schema::user_public_keys)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct UserPublicKey {
+    pub user_id: String,
+    pub version: i32,
+    pub public_key: String,
+    pub created_at: NaiveDateTime,
+    /// NULL for the active version.
+    pub retired_at: Option<NaiveDateTime>,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Queryable, Selectable)]
 #[diesel(table_name = crate::schema::refresh_tokens)]
@@ -190,6 +207,54 @@ impl AuthRepository {
             })?;
 
         Ok(result)
+    }
+
+    /// Finds a user whether or not they are soft-deleted.
+    ///
+    /// Every other lookup filters `deleted_at IS NULL`, which is what makes a
+    /// soft delete behave like a real one. Restoring an account is the one
+    /// operation that has to see past that.
+    pub fn find_user_by_id_including_deleted(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<User>, ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        let result = users::table
+            .filter(users::id.eq(user_id))
+            .select(User::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB query error: {:?}", e);
+                ApiError::internal("Database query error")
+            })?;
+
+        Ok(result)
+    }
+
+    /// Clears `deleted_at`, putting the account back in every lookup.
+    ///
+    /// This is only ever reachable during the grace window: once the worker's
+    /// purge has run there is no row left to restore.
+    pub fn restore_user(&self, user_id_val: &str) -> Result<(), ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        diesel::update(users::table.filter(users::id.eq(user_id_val)))
+            .set(users::deleted_at.eq(None::<chrono::NaiveDateTime>))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(())
     }
 
     pub fn create_user(&self, new_user: NewUser) -> Result<User, ApiError> {
@@ -455,33 +520,61 @@ impl AuthRepository {
         Ok(())
     }
 
-    pub fn list_users(&self, page: i64, page_size: i64) -> Result<(Vec<User>, i64), ApiError> {
+    /// Lists users a page at a time.
+    ///
+    /// `include_deleted` widens the page to soft-deleted accounts as well,
+    /// which is what the admin console's restore view needs: an account in its
+    /// grace window is invisible everywhere else by design, so without this
+    /// there is nothing on screen to press Restore on. The count is filtered
+    /// the same way as the page, or the pager reports a total the rows can't
+    /// account for.
+    pub fn list_users(
+        &self,
+        page: i64,
+        page_size: i64,
+        include_deleted: bool,
+    ) -> Result<(Vec<User>, i64), ApiError> {
         let mut conn = self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")
         })?;
 
         let offset = (page - 1) * page_size;
-        let items = users::table
-            .filter(users::deleted_at.is_null())
-            .order(users::created_at.desc())
-            .limit(page_size)
-            .offset(offset)
-            .select(User::as_select())
-            .load(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB query error: {:?}", e);
-                ApiError::internal("Database query error")
-            })?;
 
-        let total: i64 = users::table
-            .filter(users::deleted_at.is_null())
-            .count()
-            .get_result(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB count error: {:?}", e);
-                ApiError::internal("Database query error")
-            })?;
+        // Diesel's builder types diverge the moment a filter is applied
+        // conditionally, so the two shapes are spelled out rather than boxed.
+        let (items, total) = if include_deleted {
+            let items = users::table
+                .order(users::created_at.desc())
+                .limit(page_size)
+                .offset(offset)
+                .select(User::as_select())
+                .load(&mut conn);
+            let total = users::table.count().get_result::<i64>(&mut conn);
+            (items, total)
+        } else {
+            let items = users::table
+                .filter(users::deleted_at.is_null())
+                .order(users::created_at.desc())
+                .limit(page_size)
+                .offset(offset)
+                .select(User::as_select())
+                .load(&mut conn);
+            let total = users::table
+                .filter(users::deleted_at.is_null())
+                .count()
+                .get_result::<i64>(&mut conn);
+            (items, total)
+        };
+
+        let items = items.map_err(|e| {
+            tracing::error!("DB query error: {:?}", e);
+            ApiError::internal("Database query error")
+        })?;
+        let total = total.map_err(|e| {
+            tracing::error!("DB count error: {:?}", e);
+            ApiError::internal("Database query error")
+        })?;
 
         Ok((items, total))
     }
@@ -534,43 +627,108 @@ impl AuthRepository {
         Ok(result)
     }
 
-    pub fn set_public_key(&self, user_id: &str, public_key: &str) -> Result<(), ApiError> {
+    /// Publish `public_key` as the caller's newest identity version.
+    ///
+    /// Append-only: an existing version is never overwritten, because files are
+    /// sealed to it and `file_key_refs.key_version` points at it by number.
+    /// Re-publishing the key that is already active is a no-op returning that
+    /// version — otherwise `ensurePublicKeyRegistered` firing twice would mint
+    /// a second version holding identical bytes and retire a key nothing had
+    /// stopped using.
+    ///
+    /// Runs in a transaction: retiring the old version and inserting the new
+    /// one must not be separable, or the partial unique index on "one active
+    /// version per user" would reject the insert and leave the user with no
+    /// active key at all.
+    pub fn publish_public_key(
+        &self,
+        user_id: &str,
+        public_key: &str,
+    ) -> Result<UserPublicKey, ApiError> {
+        use crate::schema::user_public_keys as upk;
+
         let mut conn = self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")
         })?;
 
-        diesel::update(users::table.filter(users::id.eq(user_id)))
-            .set(users::public_key.eq(public_key))
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB update public_key error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
+        conn.transaction::<UserPublicKey, diesel::result::Error, _>(|conn| {
+            let active: Option<UserPublicKey> = upk::table
+                .filter(upk::user_id.eq(user_id))
+                .filter(upk::retired_at.is_null())
+                .select(UserPublicKey::as_select())
+                .first(conn)
+                .optional()?;
 
-        Ok(())
+            if let Some(current) = active.as_ref() {
+                if current.public_key == public_key {
+                    return Ok(current.clone());
+                }
+            }
+
+            let next_version = upk::table
+                .filter(upk::user_id.eq(user_id))
+                .select(diesel::dsl::max(upk::version))
+                .first::<Option<i32>>(conn)?
+                .unwrap_or(0)
+                + 1;
+
+            if active.is_some() {
+                diesel::update(
+                    upk::table
+                        .filter(upk::user_id.eq(user_id))
+                        .filter(upk::retired_at.is_null()),
+                )
+                .set(upk::retired_at.eq(diesel::dsl::now))
+                .execute(conn)?;
+            }
+
+            diesel::insert_into(upk::table)
+                .values((
+                    upk::user_id.eq(user_id),
+                    upk::version.eq(next_version),
+                    upk::public_key.eq(public_key),
+                ))
+                .execute(conn)?;
+
+            // Kept in step so paths that predate the keyring and only ever want
+            // "the current key" keep working without joining this table.
+            diesel::update(users::table.filter(users::id.eq(user_id)))
+                .set(users::public_key.eq(public_key))
+                .execute(conn)?;
+
+            upk::table
+                .filter(upk::user_id.eq(user_id))
+                .filter(upk::version.eq(next_version))
+                .select(UserPublicKey::as_select())
+                .first(conn)
+        })
+        .map_err(|e| {
+            tracing::error!("DB publish_public_key error: {:?}", e);
+            ApiError::internal("Database error")
+        })
     }
 
-    pub fn get_public_key(&self, user_id: &str) -> Result<Option<String>, ApiError> {
+    /// Every version `user_id` has published, oldest first.
+    pub fn list_public_keys(&self, user_id: &str) -> Result<Vec<UserPublicKey>, ApiError> {
+        use crate::schema::user_public_keys as upk;
+
         let mut conn = self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
             ApiError::internal("Database connection error")
         })?;
 
-        let result = users::table
-            .filter(users::id.eq(user_id))
-            .filter(users::deleted_at.is_null())
-            .select(users::public_key)
-            .first::<Option<String>>(&mut conn)
-            .optional()
+        upk::table
+            .filter(upk::user_id.eq(user_id))
+            .order(upk::version.asc())
+            .select(UserPublicKey::as_select())
+            .load(&mut conn)
             .map_err(|e| {
-                tracing::error!("DB query public_key error: {:?}", e);
+                tracing::error!("DB list_public_keys error: {:?}", e);
                 ApiError::internal("Database query error")
-            })?
-            .flatten();
-
-        Ok(result)
+            })
     }
+
 
     #[allow(dead_code)]
     pub fn check_db_health(&self) -> Result<(), ApiError> {
@@ -587,5 +745,113 @@ impl AuthRepository {
             })?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod public_key_tests {
+    use super::*;
+    use crate::search::repository::{insert_test_user, test_pool};
+
+    fn active_of(keys: &[UserPublicKey]) -> &UserPublicKey {
+        keys.iter()
+            .find(|k| k.retired_at.is_none())
+            .expect("exactly one version should be active")
+    }
+
+    fn repo_with_user(user_id: &str) -> AuthRepository {
+        let pool = test_pool();
+        insert_test_user(&pool, user_id);
+        AuthRepository::new(pool)
+    }
+
+    #[test]
+    fn first_publish_is_version_one_and_active() {
+        let repo = repo_with_user("u1");
+
+        let published = repo.publish_public_key("u1", "key-a").expect("publish");
+
+        assert_eq!(published.version, 1);
+        assert!(published.retired_at.is_none());
+    }
+
+    #[test]
+    fn republishing_the_active_key_does_not_mint_a_version() {
+        // `ensurePublicKeyRegistered` can fire more than once. Minting a second
+        // version holding identical bytes would retire a key nothing had
+        // stopped using, and strand `file_key_refs` rows pointing at v1.
+        let repo = repo_with_user("u1");
+
+        let first = repo.publish_public_key("u1", "key-a").expect("publish");
+        let again = repo.publish_public_key("u1", "key-a").expect("republish");
+
+        assert_eq!(first.version, again.version);
+        assert_eq!(repo.list_public_keys("u1").expect("list").len(), 1);
+    }
+
+    #[test]
+    fn publishing_a_different_key_retires_the_previous_version() {
+        let repo = repo_with_user("u1");
+        repo.publish_public_key("u1", "key-a").expect("publish a");
+
+        let rotated = repo.publish_public_key("u1", "key-b").expect("publish b");
+
+        assert_eq!(rotated.version, 2);
+        let keys = repo.list_public_keys("u1").expect("list");
+        assert_eq!(keys.len(), 2);
+        assert_eq!(active_of(&keys).version, 2);
+        assert!(keys[0].retired_at.is_some(), "v1 should be retired");
+    }
+
+    #[test]
+    fn retired_versions_are_kept_so_old_files_stay_resolvable() {
+        // A rotated-away key is what `file_key_refs.key_version` points at for
+        // every file sealed before the rotation. Deleting it would leave those
+        // rows naming a version that no longer exists.
+        let repo = repo_with_user("u1");
+        repo.publish_public_key("u1", "key-a").expect("a");
+        repo.publish_public_key("u1", "key-b").expect("b");
+        repo.publish_public_key("u1", "key-c").expect("c");
+
+        let keys = repo.list_public_keys("u1").expect("list");
+
+        assert_eq!(
+            keys.iter().map(|k| k.version).collect::<Vec<_>>(),
+            vec![1, 2, 3],
+            "every version is retained, oldest first"
+        );
+        assert_eq!(
+            keys.iter().filter(|k| k.retired_at.is_none()).count(),
+            1,
+            "exactly one version is ever active"
+        );
+        assert_eq!(active_of(&keys).public_key, "key-c");
+    }
+
+    #[test]
+    fn users_public_key_tracks_the_active_version() {
+        // Paths that predate the keyring read `users.public_key` directly and
+        // only ever want the current key; they must not go stale on rotation.
+        let repo = repo_with_user("u1");
+        repo.publish_public_key("u1", "key-a").expect("a");
+        repo.publish_public_key("u1", "key-b").expect("b");
+
+        let user = repo.find_user_by_id("u1").expect("query").expect("user");
+        assert_eq!(user.public_key.as_deref(), Some("key-b"));
+    }
+
+    #[test]
+    fn keyrings_are_per_user() {
+        let pool = test_pool();
+        insert_test_user(&pool, "u1");
+        insert_test_user(&pool, "u2");
+        let repo = AuthRepository::new(pool);
+
+        repo.publish_public_key("u1", "key-a").expect("u1 a");
+        repo.publish_public_key("u1", "key-b").expect("u1 b");
+        let u2 = repo.publish_public_key("u2", "key-z").expect("u2 z");
+
+        assert_eq!(u2.version, 1, "u2's numbering is independent of u1's");
+        assert_eq!(repo.list_public_keys("u2").expect("list").len(), 1);
     }
 }

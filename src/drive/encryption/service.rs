@@ -24,6 +24,7 @@ impl EncryptionService {
         caller_id: &str,
         file_id: &str,
         encrypted_file_key: &str,
+        key_version: i32,
     ) -> Result<FileKeyRef, ApiError> {
         // Caller must have access to the file.
         self.permissions
@@ -36,6 +37,7 @@ impl EncryptionService {
             file_id,
             user_id: caller_id,
             encrypted_file_key,
+            key_version,
         })
     }
 
@@ -55,13 +57,16 @@ impl EncryptionService {
 
     /// Share a file key with another user.
     /// `caller` must be owner or editor; the `encrypted_file_key` is the DEK
-    /// already re-sealed by the client with `recipient_id`'s public key.
+    /// already re-sealed by the client with `recipient_id`'s public key, and
+    /// `key_version` says which version of *the recipient's* keyring that was —
+    /// not the caller's.
     pub fn share_file_key(
         &self,
         caller_id: &str,
         file_id: &str,
         recipient_id: &str,
         encrypted_file_key: &str,
+        key_version: i32,
     ) -> Result<FileKeyRef, ApiError> {
         let role = self
             .permissions
@@ -93,6 +98,7 @@ impl EncryptionService {
             file_id,
             user_id: recipient_id,
             encrypted_file_key,
+            key_version,
         })
     }
 

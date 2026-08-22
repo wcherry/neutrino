@@ -11,6 +11,7 @@ import {
   initSodium,
   generateFileKey,
   encryptFileKey,
+  activeKeyVersion,
   encryptMetadata,
   loadKeyPair,
 } from '@neutrino/e2e-crypto';
@@ -74,6 +75,7 @@ export function UploadZone({ onClose, folderId, initialFiles }: UploadZoneProps)
             (progress) => updateEntry(entry.id, { progress, status: 'uploading' }),
             folderId,
             thumbnailB64,
+            activeKeyVersion(userId) ?? undefined,
           );
         }
       }

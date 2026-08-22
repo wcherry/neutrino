@@ -87,9 +87,15 @@ impl KeyVaultService {
             })?);
         }
 
-        // Keep `users.public_key` in step so sharing and the vault never
+        // Keep the published keyring in step so sharing and the vault never
         // disagree about which key a recipient should be sealed to.
-        self.auth_repo.set_public_key(user_id, public_key)?;
+        //
+        // `publish_public_key` is append-only and idempotent: storing a vault
+        // whose identity is unchanged returns the existing version, while
+        // `replaceIdentity` — the one path that swaps the key underneath a live
+        // vault — mints the next one and retires its predecessor, leaving files
+        // sealed to the old key still resolvable by version.
+        self.auth_repo.publish_public_key(user_id, public_key)?;
 
         Ok(VaultBundle {
             vault,

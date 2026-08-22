@@ -26,6 +26,7 @@
 import {
   initSodium,
   loadKeyPair,
+  activeKeyVersion,
   generateFileKey,
   encryptFileKey,
   type KeyPair,
@@ -127,9 +128,17 @@ function titleFor(sheet: DriveSheetEntry, info: DriveSheetInfo | null): string {
  * Encrypt a spreadsheet's content the way the editor's first save does, and
  * register the DEK so the editor can decrypt it later.
  */
-async function saveEncrypted(sheetId: string, content: string, keyPair: KeyPair): Promise<void> {
+async function saveEncrypted(
+  sheetId: string,
+  content: string,
+  keyPair: KeyPair,
+  userId: string,
+): Promise<void> {
   const dek = generateFileKey();
-  await encryptionApi.setFileKey(sheetId, { encryptedFileKey: encryptFileKey(dek, keyPair.publicKey) });
+  await encryptionApi.setFileKey(sheetId, {
+    encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
+    keyVersion: activeKeyVersion(userId) ?? undefined,
+  });
   await driveAutosaveEncryptedContent(sheetId, content, CONTENT_FILENAME, dek);
 }
 
@@ -152,6 +161,8 @@ export async function runSheetsImport({
   // surfaces `unencrypted` so the user knows.
   await initSodium();
   const keyPair = userId ? loadKeyPair(userId) : null;
+  // Narrowed together: a key pair exists only if a user id did.
+  const encrypting = keyPair && userId ? { keyPair, userId } : null;
   if (!keyPair) {
     logWarn('sheets', 'no key pair on this device — spreadsheets will be saved as plaintext', { userId });
   }
@@ -228,7 +239,7 @@ export async function runSheetsImport({
       logStep('sheets', `saving ${title}`, { id: created.id, body: formatBytes(content.length), encrypted: !!keyPair });
 
       step = keyPair ? 'saving the encrypted body' : 'saving the body';
-      if (keyPair) await saveEncrypted(created.id, content, keyPair);
+      if (encrypting) await saveEncrypted(created.id, content, encrypting.keyPair, encrypting.userId);
       else await driveAutosaveContent(created.id, content, CONTENT_FILENAME);
 
       // After the body, not before: saving it is what stamps the file with the

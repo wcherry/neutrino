@@ -94,6 +94,8 @@ export interface PublicKeyResponse {
   userId: string;
   /** Base64url-encoded Curve25519 public key. */
   publicKey: string;
+  /** Which entry of the user's keyring this is. */
+  version: number;
 }
 
 export interface SetPublicKeyRequest {
@@ -101,39 +103,25 @@ export interface SetPublicKeyRequest {
   publicKey: string;
 }
 
-// ── Key vault ────────────────────────────────────────────────────────────────
-
-/** One enrolled way to unlock the vault. Everything here is ciphertext or
- *  derivation parameters — none of it opens the vault on its own. */
-export interface UnlockMethodResponse {
-  id: string;
-  method: 'password' | 'passkey' | 'recovery';
-  label: string;
-  /** base64url( nonce || ciphertext of the master key ). */
-  encryptedMasterKey: string;
-  /** JSON: Argon2 parameters, or passkey credential ID and PRF salt. */
-  params: string;
-  createdAt: string;
-  lastUsedAt: string | null;
-}
-
-export interface VaultResponse {
-  /** base64url( nonce || ciphertext of the Curve25519 secret key ). */
-  encryptedIdentity: string;
-  publicKey: string;
+/** One published version of a user's identity key. */
+export interface PublicKeyVersion {
   version: number;
-  unlocks: UnlockMethodResponse[];
-}
-
-export interface UnlockMethodInput {
-  method: 'password' | 'passkey' | 'recovery';
-  label: string;
-  encryptedMasterKey: string;
-  params: string;
-}
-
-export interface PutVaultRequest {
-  encryptedIdentity: string;
   publicKey: string;
-  unlocks: UnlockMethodInput[];
+  createdAt: string;
+  /** Null for the active version. */
+  retiredAt: string | null;
+}
+
+/**
+ * A user's whole published keyring.
+ *
+ * Public halves only. Needed to seal to someone's *current* key while still
+ * being able to recognise the ones they have rotated away from.
+ */
+export interface PublicKeyRingResponse {
+  userId: string;
+  /** Oldest first. */
+  keys: PublicKeyVersion[];
+  /** The version new work should be sealed to. */
+  activeVersion: number | null;
 }

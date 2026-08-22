@@ -20,7 +20,7 @@ import { storageApi, filesystemApi, encryptionApi, uploadEncryptedFile } from '@
 import {
   initSodium,
   loadKeyPair,
-  decryptFileKey,
+  openSealedFileKey,
   decryptFile,
   generateFileKey,
   encryptFileKey,
@@ -268,15 +268,16 @@ async function fetchDriveImageBlob(fileId: string): Promise<Blob> {
 
   // Encrypted: the download is ciphertext and only this browser holds the key.
   const userId = currentUserId();
-  const keyPair = userId ? loadKeyPair(userId) : null;
-  if (!keyPair) throw new Error('Unlock your encryption keys to see this image.');
+  if (!userId || !loadKeyPair(userId)) {
+    throw new Error('Unlock your encryption keys to see this image.');
+  }
 
   await initSodium();
   const keyRef = await encryptionApi.getFileKey(fileId);
   // Flagged as encrypted but no key is stored for us — take the bytes as they are.
   if (!keyRef) return new Blob([blob], { type: mimeType });
 
-  const dek = decryptFileKey(keyRef.encryptedFileKey, keyPair.publicKey, keyPair.secretKey);
+  const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
   const plain = decryptFile(new Uint8Array(await blob.arrayBuffer()), dek);
   return new Blob([plain.buffer as ArrayBuffer], { type: mimeType });
 }

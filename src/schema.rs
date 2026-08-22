@@ -808,6 +808,9 @@ diesel::table! {
         // Base64url-encoded sealed-box ciphertext of the DEK.
         encrypted_file_key -> Text,
         created_at -> Timestamp,
+        // Added in migration 112: which `user_public_keys.version` the DEK
+        // above is sealed to.
+        key_version -> Integer,
     }
 }
 
@@ -898,6 +901,20 @@ diesel::table! {
         code_challenge_method -> Text,
         expires_at -> Timestamp,
         created_at -> Timestamp,
+    }
+}
+
+// ── Added in migration 112 ────────────────────────────────────────────────────
+
+diesel::table! {
+    user_public_keys (user_id, version) {
+        user_id -> Text,
+        version -> Integer,
+        // base64url Curve25519 public key.
+        public_key -> Text,
+        created_at -> Timestamp,
+        // NULL for the one active version; set when superseded.
+        retired_at -> Nullable<Timestamp>,
     }
 }
 
@@ -1052,4 +1069,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     // Key vault
     user_key_vaults,
     user_key_unlocks,
+    // Versioned identity keys
+    user_public_keys,
 );
