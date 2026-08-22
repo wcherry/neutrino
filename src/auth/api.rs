@@ -1,6 +1,7 @@
 use super::dto::{
     AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse, AuthResponse,
-    EmailPreferences, LoginRequest, LoginResponse, PublicKeyResponse, PublicProfileResponse,
+    EmailPreferences, LoginRequest, LoginResponse, PublicKeyResponse, PublicKeyRingResponse,
+    PublicKeyVersionResponse, PublicProfileResponse,
     RefreshRequest, RegisterRequest, RegisterResponse, SessionListResponse, SessionResponse,
     SetPublicKeyRequest, SocialLinks, TwoFactorConfirmRequest, TwoFactorDisableRequest,
     TwoFactorEnrollResponse, TwoFactorStatusResponse, UpdateProfileRequest, UserLookupResponse,
@@ -186,6 +187,32 @@ pub async fn me(
     }
     let profile = state.auth_service.get_profile(&user.user_id)?;
     Ok(web::Json(profile))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/auth/me",
+    responses(
+        (status = 204, description = "Account deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Guest sessions have no account to delete"),
+        (status = 404, description = "User not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "auth"
+)]
+#[delete("/me")]
+pub async fn delete_own_account(
+    state: web::Data<AuthApiState>,
+    user: AuthenticatedUser,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    // A guest session has a synthetic `guest:<token>` subject and no user row
+    // behind it — see `me` above — so there is nothing here to delete.
+    if user.user_id.starts_with("guest:") {
+        return Err(ApiError::forbidden("Guest sessions have no account to delete"));
+    }
+    state.auth_service.delete_own_account(&user.user_id)?;
+    Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
 // ── User Lookup ───────────────────────────────────────────────────────────────
@@ -455,10 +482,21 @@ fn require_admin(user: &AuthenticatedUser) -> Result<(), ApiError> {
     }
 }
 
+/// Query for the admin user listing.
+///
+/// camelCase to match the only client there is: `adminApi.listUsers` has always
+/// sent `pageSize`, which under the previous snake_case naming serde simply
+/// dropped — harmless while the value it sent equalled the default, and a
+/// silently ignored parameter the moment it did not.
 #[derive(Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct AdminListQuery {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
+    /// Include soft-deleted accounts, which every other listing hides. The
+    /// admin console sets this for its "show deleted" view, where restoring
+    /// them is the point.
+    pub include_deleted: Option<bool>,
 }
 
 #[utoipa::path(
@@ -466,7 +504,8 @@ pub struct AdminListQuery {
     path = "/api/v1/admin/users",
     params(
         ("page" = Option<i64>, Query, description = "Page number (1-based)"),
-        ("page_size" = Option<i64>, Query, description = "Items per page"),
+        ("pageSize" = Option<i64>, Query, description = "Items per page"),
+        ("includeDeleted" = Option<bool>, Query, description = "Include soft-deleted accounts"),
     ),
     responses(
         (status = 200, description = "List of users", body = AdminUserListResponse),
@@ -481,9 +520,11 @@ pub async fn admin_list_users(
     query: web::Query<AdminListQuery>,
 ) -> Result<web::Json<AdminUserListResponse>, ApiError> {
     require_admin(&user)?;
-    let result = state
-        .auth_service
-        .admin_list_users(query.page.unwrap_or(1), query.page_size.unwrap_or(20))?;
+    let result = state.auth_service.admin_list_users(
+        query.page.unwrap_or(1),
+        query.page_size.unwrap_or(20),
+        query.include_deleted.unwrap_or(false),
+    )?;
     Ok(web::Json(result))
 }
 
@@ -560,6 +601,30 @@ pub async fn admin_delete_user(
     Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/users/{user_id}/restore",
+    params(("user_id" = String, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "User restored", body = AdminUserResponse),
+        (status = 400, description = "User is not deleted"),
+        (status = 404, description = "User not found, or already purged"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "auth"
+)]
+#[post("/admin/users/{user_id}/restore")]
+pub async fn admin_restore_user(
+    state: web::Data<AuthApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<web::Json<AdminUserResponse>, ApiError> {
+    require_admin(&user)?;
+    let target_id = path.into_inner();
+    let result = state.auth_service.admin_restore_user(&target_id)?;
+    Ok(web::Json(result))
+}
+
 // ── Extended Profile ──────────────────────────────────────────────────────────
 
 #[utoipa::path(
@@ -604,13 +669,18 @@ pub async fn update_profile_details(
 
 // ── E2EE Public Key ───────────────────────────────────────────────────────────
 
-/// Store or update the authenticated user's Curve25519 public key.
+/// Publish the authenticated user's Curve25519 public key as a new version.
+///
+/// Append-only. Publishing a key that differs from the active one retires that
+/// one and mints the next version; publishing the active key again returns it
+/// unchanged. Nothing is ever overwritten, because `file_key_refs.key_version`
+/// refers to these versions by number.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/keys",
     request_body = SetPublicKeyRequest,
     responses(
-        (status = 200, description = "Public key stored", body = PublicKeyResponse),
+        (status = 200, description = "Public key published", body = PublicKeyResponse),
         (status = 400, description = "Invalid request"),
     ),
     security(("bearer_auth" = [])),
@@ -626,14 +696,18 @@ pub async fn set_public_key(
     if pk.is_empty() {
         return Err(ApiError::bad_request("public_key cannot be empty"));
     }
-    state.auth_service.set_public_key(&user.user_id, &pk)?;
+    let published = state.auth_service.publish_public_key(&user.user_id, &pk)?;
     Ok(web::Json(PublicKeyResponse {
         user_id: user.user_id,
-        public_key: pk,
+        public_key: published.public_key,
+        version: published.version,
     }))
 }
 
-/// Fetch any user's Curve25519 public key (needed for sharing).
+/// Fetch any user's *active* Curve25519 public key (needed for sharing).
+///
+/// This is what a client seals a new DEK to. To open a file sealed to a key the
+/// owner has since rotated away from, read the whole keyring instead.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/users/{user_id}/public-key",
@@ -652,13 +726,56 @@ pub async fn get_user_public_key(
     path: web::Path<String>,
 ) -> Result<web::Json<PublicKeyResponse>, ApiError> {
     let target_id = path.into_inner();
-    let pk = state
-        .auth_service
-        .get_public_key(&target_id)?
+    let keys = state.auth_service.list_public_keys(&target_id)?;
+    let active = keys
+        .into_iter()
+        .find(|k| k.retired_at.is_none())
         .ok_or_else(|| ApiError::not_found("No public key registered for this user"))?;
+
     Ok(web::Json(PublicKeyResponse {
         user_id: target_id,
-        public_key: pk,
+        public_key: active.public_key,
+        version: active.version,
+    }))
+}
+
+/// Fetch any user's full identity keyring, oldest version first.
+///
+/// A rotated key is retired, never deleted: files sealed to it stay readable,
+/// and `file_key_refs.key_version` is what says which one a given file wants.
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/users/{user_id}/public-keys",
+    params(("user_id" = String, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "The user's published key versions", body = PublicKeyRingResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "auth"
+)]
+#[get("/users/{user_id}/public-keys")]
+pub async fn get_user_public_keys(
+    state: web::Data<AuthApiState>,
+    _user: AuthenticatedUser,
+    path: web::Path<String>,
+) -> Result<web::Json<PublicKeyRingResponse>, ApiError> {
+    let target_id = path.into_inner();
+    let keys = state.auth_service.list_public_keys(&target_id)?;
+
+    let active_version = keys.iter().find(|k| k.retired_at.is_none()).map(|k| k.version);
+
+    Ok(web::Json(PublicKeyRingResponse {
+        user_id: target_id,
+        keys: keys
+            .into_iter()
+            .map(|k| PublicKeyVersionResponse {
+                version: k.version,
+                public_key: k.public_key,
+                created_at: k.created_at.and_utc().to_rfc3339(),
+                retired_at: k.retired_at.map(|t| t.and_utc().to_rfc3339()),
+            })
+            .collect(),
+        active_version,
     }))
 }
 
@@ -671,6 +788,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .service(login)
             .service(refresh)
             .service(me)
+            .service(delete_own_account)
             .service(get_profile_details)
             .service(update_profile_details)
             .service(lookup_user_by_email)
@@ -686,13 +804,15 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .service(revoke_all_sessions)
             .service(set_public_key)
             .service(get_user_public_key)
+            .service(get_user_public_keys)
             // Wrapped identity-key storage — /auth/keyvault*
             .configure(crate::auth::keyvault::api::configure),
     )
     .service(admin_list_users)
     .service(admin_get_user)
     .service(admin_update_user)
-    .service(admin_delete_user);
+    .service(admin_delete_user)
+    .service(admin_restore_user);
 }
 
 #[derive(OpenApi)]
@@ -702,6 +822,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         login,
         refresh,
         me,
+        delete_own_account,
         lookup_user_by_email,
         get_user_by_id,
         get_user_public_profile,
@@ -716,10 +837,12 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         update_profile_details,
         set_public_key,
         get_user_public_key,
+        get_user_public_keys,
         admin_list_users,
         admin_get_user,
         admin_update_user,
         admin_delete_user,
+        admin_restore_user,
     ),
     components(schemas(
         RegisterRequest,
@@ -746,6 +869,8 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         EmailPreferences,
         SetPublicKeyRequest,
         PublicKeyResponse,
+        PublicKeyVersionResponse,
+        PublicKeyRingResponse,
         LookupByEmailQuery,
         AdminListQuery,
     )),

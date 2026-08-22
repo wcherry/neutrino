@@ -6,6 +6,19 @@ import { subscribeToAuthChanged } from './authEvents';
 import { clearSession } from '@neutrino/e2e-crypto';
 import type { UserProfile } from './types';
 
+/**
+ * Whether this browser holds anything that could stand for a session. The
+ * sentinel strings are the ones `getAuthHeader` also rejects — `localStorage`
+ * keeps whatever it is handed, and `String(undefined)` has been written here
+ * before.
+ */
+function hasStoredToken(): boolean {
+  return ['access_token', 'refresh_token'].some((key) => {
+    const value = localStorage.getItem(key);
+    return !!value && value !== 'undefined' && value !== 'null';
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Auth context
 // ---------------------------------------------------------------------------
@@ -41,6 +54,20 @@ export function AuthProvider({ children, onUnauthenticated }: AuthProviderProps)
   const [isLoading, setIsLoading] = useState(true);
 
   const loadUser = useCallback(async () => {
+    // With no tokens at all there is no session to load, and asking anyway buys
+    // a guaranteed 401 — which the API client answers by hard-redirecting to
+    // /sign-in. That is right for a session that expired underneath the user
+    // and wrong right after a deliberate sign-out or account deletion, where
+    // the caller is already navigating somewhere of its own choosing and the
+    // redirect races it. Only the both-missing case short-circuits: a lone
+    // refresh token is still a session, and `request()` can trade it for a new
+    // access token.
+    if (typeof window !== 'undefined' && !hasStoredToken()) {
+      setUser(null);
+      setIsLoading(false);
+      onUnauthenticated?.();
+      return;
+    }
     try {
       // request() handles 401 → refresh → retry automatically.
       const profile = await authApi.getProfile();

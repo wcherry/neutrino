@@ -122,6 +122,10 @@ pub struct AdminUserResponse {
     pub totp_enabled: bool,
     pub created_at: chrono::NaiveDateTime,
     pub deleted_at: Option<chrono::NaiveDateTime>,
+    /// When the background worker becomes free to erase this account for good.
+    /// `None` for a live account. Sent so the console's countdown reads the
+    /// retention policy off the server instead of hard-coding 30 days again.
+    pub purge_after: Option<chrono::NaiveDateTime>,
 }
 
 /// Public-facing profile returned when any authenticated user views another user's profile.
@@ -223,10 +227,37 @@ pub struct SetPublicKeyRequest {
     pub public_key: String,
 }
 
-/// Response carrying a user's Curve25519 public key.
+/// Response carrying a user's *active* Curve25519 public key.
+///
+/// `version` says which entry of their keyring this is, so a client sealing a
+/// DEK can record it on the key ref and know which secret key opens it later.
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicKeyResponse {
     pub user_id: String,
     pub public_key: String,
+    pub version: i32,
+}
+
+/// One published version of a user's identity key.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicKeyVersionResponse {
+    pub version: i32,
+    pub public_key: String,
+    pub created_at: String,
+    /// Null for the active version.
+    pub retired_at: Option<String>,
+}
+
+/// A user's whole keyring, for a client that must open files sealed to a key
+/// they have since rotated away from.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicKeyRingResponse {
+    pub user_id: String,
+    /// Oldest first.
+    pub keys: Vec<PublicKeyVersionResponse>,
+    /// The version new work should be sealed to. Absent if none published.
+    pub active_version: Option<i32>,
 }

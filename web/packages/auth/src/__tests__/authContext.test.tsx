@@ -38,7 +38,8 @@ describe('AuthProvider', () => {
   });
 
   it('loads the profile when a sign-in happens under the mounted provider', async () => {
-    getProfile.mockRejectedValueOnce(new Error('401'));
+    // No tokens in storage, so the provider is signed out without asking the
+    // server — see `hasStoredToken` in the context.
     render(
       <AuthProvider>
         <Probe />
@@ -56,6 +57,8 @@ describe('AuthProvider', () => {
   });
 
   it('drops the profile on sign-out', async () => {
+    localStorage.setItem('access_token', 'a');
+    localStorage.setItem('refresh_token', 'r');
     getProfile.mockResolvedValue({ id: 'u1', email: 'w@example.com', name: 'W', role: 'user' });
     render(
       <AuthProvider>
@@ -64,7 +67,8 @@ describe('AuthProvider', () => {
     );
     await waitFor(() => expect(screen.getByText('w@example.com')).toBeInTheDocument());
 
-    getProfile.mockRejectedValue(new Error('401'));
+    // `logout` clears the tokens, so the reload it triggers reads the empty
+    // storage and signs out without a request `getProfile` would have to fail.
     await authApi.logout();
 
     await waitFor(() => expect(screen.getByText('signed out')).toBeInTheDocument());

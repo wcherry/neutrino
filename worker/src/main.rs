@@ -6,6 +6,8 @@
 //! process owns the job APIs that enqueue work into that table.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::Instant;
 use std::{env, thread, time::Duration};
 
 use chrono::Utc;
@@ -18,6 +20,7 @@ use uuid::Uuid;
 
 mod crypto;
 mod face;
+mod purge;
 mod schema;
 mod tasks;
 use face::FaceScanner;
@@ -74,6 +77,13 @@ fn main() {
         env::var("DATABASE_URL").unwrap_or_else(|_| "./data/neutrino.db".to_string());
     let model_path = env::var("FACE_MODEL_PATH")
         .unwrap_or_else(|_| "./models/seeta_fd_frontal_v1.0.bin".to_string());
+    // Same variable and same default as the main app's `Config::storage_path`;
+    // the purge sweep deletes the departing user's directory under it. Pointing
+    // the worker at a different root than the app makes the sweep a no-op that
+    // still deletes the rows, so the bytes would be left orphaned.
+    let storage_root = PathBuf::from(
+        env::var("STORAGE_PATH").unwrap_or_else(|_| "./storage".to_string()),
+    );
     let worker_id = format!("worker-{}", Uuid::new_v4());
 
     let pool = Pool::builder()
@@ -99,10 +109,31 @@ fn main() {
         .map(|h| (h.job_type().to_string(), h))
         .collect();
 
-    tracing::info!(%worker_id, db = %database_url, model = %model_path, "background worker started");
+    tracing::info!(
+        %worker_id,
+        db = %database_url,
+        model = %model_path,
+        storage = %storage_root.display(),
+        "background worker started",
+    );
+
+    // Tracks the account-purge sweep, which runs on a wall-clock interval
+    // rather than per poll. `None` means it has never run, so the first pass
+    // through the loop sweeps immediately — a restart then catches up on
+    // anything whose grace window closed while the process was down.
+    let mut last_sweep: Option<Instant> = None;
 
     // Poll the jobs table forever, claiming and processing one task at a time.
     loop {
+        if last_sweep.is_none_or(|t| t.elapsed() >= purge::SWEEP_INTERVAL) {
+            last_sweep = Some(Instant::now());
+            match purge::sweep(&pool, &storage_root) {
+                Ok(0) => {}
+                Ok(n) => tracing::info!("purged {n} expired account(s)"),
+                Err(e) => tracing::error!("account purge sweep failed: {e}"),
+            }
+        }
+
         match run_once(&pool, &worker_id, &mut registry) {
             Ok(true) => continue, // processed a task; look for the next immediately
             Ok(false) => thread::sleep(POLL_INTERVAL), // no work waiting

@@ -27,3 +27,11 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # Logging
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["time", "env-filter"] }
+
+[dev-dependencies]
+# The account purge writes raw SQL against ~55 of the main app's tables, which
+# nothing here mirrors in Diesel. Running the real migrations in the test is
+# what proves every one of those statements names a table and column that
+# actually exists — a typo would otherwise only surface as a failed sweep in
+# production.
+diesel_migrations = "2"

@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Spinner, Toggle, ProgressBar, useToast, DropZone } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { adminApi, fontsApi } from '@neutrino/api-admin';
+import { ApiClientError } from '@neutrino/api-core';
 import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag, JobResponse, CustomFont } from '@neutrino/api-admin';
 import styles from './page.module.css';
 
@@ -19,6 +20,27 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/**
+ * How long a deleted account has left before the worker erases it.
+ *
+ * `purgeAfter` is computed on the server from the retention policy, so the
+ * countdown here cannot drift from what the worker actually enforces. It can
+ * be in the past: the sweep runs hourly, and an account past its window simply
+ * has not been picked up yet — "Purging now" rather than a negative number.
+ */
+function purgeLabel(u: AdminUser): string {
+  if (!u.purgeAfter) return 'Deleted';
+  const days = Math.ceil((new Date(u.purgeAfter).getTime() - Date.now()) / 86_400_000);
+  if (days <= 0) return 'Deleted — purging now';
+  return `Deleted — ${days} day${days === 1 ? '' : 's'} left`;
+}
+
+function purgeTitle(u: AdminUser): string {
+  const deleted = u.deletedAt ? new Date(u.deletedAt).toLocaleString() : 'unknown';
+  if (!u.purgeAfter) return `Deleted ${deleted}`;
+  return `Deleted ${deleted}. Permanently erased after ${new Date(u.purgeAfter).toLocaleString()}.`;
 }
 
 function statusClass(status: string): string {
@@ -285,10 +307,13 @@ function UsersTab() {
   const { error: toastError, success: toastSuccess } = useToast();
   const [page, setPage] = useState(1);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['admin-users', page],
-    queryFn: () => adminApi.listUsers(page, 20),
+    // `showDeleted` is part of the key: the two listings have different totals,
+    // so sharing one cache entry would page the wrong one.
+    queryKey: ['admin-users', page, showDeleted],
+    queryFn: () => adminApi.listUsers(page, 20, showDeleted),
   });
 
   const updateUser = useMutation({
@@ -316,6 +341,28 @@ function UsersTab() {
     },
   });
 
+  /**
+   * Undoes a delete while the account is still in its retention window.
+   *
+   * A 404 here means the window has already closed and the worker has erased
+   * the account — nothing can bring it back, so it is worth saying plainly
+   * rather than inviting a retry that will fail the same way.
+   */
+  const restoreUser = useMutation({
+    mutationFn: (userId: string) => adminApi.restoreUser(userId),
+    onSuccess: (user) => {
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+      toastSuccess(`${user.name} restored.`);
+    },
+    onError: (err) => {
+      toastError(
+        err instanceof ApiClientError && err.statusCode === 404
+          ? 'That account has already been permanently deleted and cannot be restored.'
+          : 'Failed to restore user. Please try again.',
+      );
+    },
+  });
+
   if (isLoading) {
     return (
       <div className={styles.loading}>
@@ -336,10 +383,27 @@ function UsersTab() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / 20);
 
+  // The toggle has to render even with nothing in the list, or an admin whose
+  // only remaining accounts are deleted ones has no way to reveal them.
+  const deletedToggle = (
+    <label className={styles.showDeletedRow}>
+      <input
+        type="checkbox"
+        checked={showDeleted}
+        onChange={(e) => {
+          setShowDeleted(e.target.checked);
+          setPage(1);
+        }}
+      />
+      Show deleted accounts
+    </label>
+  );
+
   if (users.length === 0) {
     return (
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>Users</h2>
+        {deletedToggle}
         <div className={styles.empty}>No users found.</div>
       </div>
     );
@@ -350,6 +414,7 @@ function UsersTab() {
       <h2 className={styles.sectionTitle}>
         Users <span className={styles.userCount}>({total})</span>
       </h2>
+      {deletedToggle}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
@@ -364,14 +429,25 @@ function UsersTab() {
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id}>
-                <td>{u.name}</td>
+              <tr key={u.id} className={u.deletedAt ? styles.deletedRow : undefined}>
+                <td>
+                  {u.name}
+                  {u.deletedAt && (
+                    <span className={styles.deletedBadge} title={purgeTitle(u)}>
+                      {purgeLabel(u)}
+                    </span>
+                  )}
+                </td>
                 <td>{u.email}</td>
                 <td>
                   <select
                     className={styles.roleSelect}
                     value={u.role}
-                    disabled={u.id === currentUser?.id || updateUser.isPending}
+                    // Changing the role of an account on its way out writes to a
+                    // row the worker is about to delete.
+                    disabled={
+                      u.id === currentUser?.id || updateUser.isPending || !!u.deletedAt
+                    }
                     onChange={(e) =>
                       updateUser.mutate({ userId: u.id, role: e.target.value })
                     }
@@ -387,7 +463,16 @@ function UsersTab() {
                 </td>
                 <td>{new Date(u.createdAt).toLocaleDateString()}</td>
                 <td>
-                  {u.id === currentUser?.id ? (
+                  {u.deletedAt ? (
+                    <button
+                      className={styles.restoreBtn}
+                      onClick={() => restoreUser.mutate(u.id)}
+                      disabled={restoreUser.isPending}
+                      type="button"
+                    >
+                      Restore
+                    </button>
+                  ) : u.id === currentUser?.id ? (
                     <span className={styles.selfLabel}>You</span>
                   ) : confirmDeleteId === u.id ? (
                     <span className={styles.confirmRow}>

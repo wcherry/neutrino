@@ -9,11 +9,8 @@ import type {
   PublicProfile,
   UpdateProfileRequest,
   PublicKeyResponse,
+  PublicKeyRingResponse,
   SetPublicKeyRequest,
-  VaultResponse,
-  PutVaultRequest,
-  UnlockMethodInput,
-  UnlockMethodResponse,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -69,6 +66,25 @@ export const authApi = {
     }
   },
 
+  /**
+   * Deletes the signed-in account, then clears the session the way `logout`
+   * does — the access token stays cryptographically valid until it expires, so
+   * leaving it in `localStorage` would keep the app rendering for an account
+   * that no longer exists until the next 401.
+   *
+   * Unlike `logout` the tokens are only dropped on success: a failed delete
+   * has to leave the user signed in, or they are thrown out of an account they
+   * still have.
+   */
+  async deleteAccount(): Promise<void> {
+    await request<void>('/api/v1/auth/me', { method: 'DELETE' });
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      emitAuthChanged();
+    }
+  },
+
   async getProfile(): Promise<UserProfile> {
     return request<UserProfile>('/api/v1/auth/me');
   },
@@ -103,7 +119,12 @@ export const authApi = {
     });
   },
 
-  /** Fetch the Curve25519 public key for any user (needed before sharing). */
+  /**
+   * Fetch a user's *active* Curve25519 public key — what a new DEK is sealed to.
+   *
+   * Carries the key's version so the caller can record it on the key ref; a
+   * file's `keyVersion` is what says which secret key opens it later.
+   */
   async getUserPublicKey(userId: string): Promise<PublicKeyResponse | null> {
     try {
       return await request<PublicKeyResponse>(`/api/v1/auth/users/${userId}/public-key`);
@@ -113,44 +134,9 @@ export const authApi = {
     }
   },
 
-  // ── Key vault ──────────────────────────────────────────────────────────────
-
-  /** The caller's wrapped identity key, or null if they have no vault yet. */
-  async getVault(): Promise<VaultResponse | null> {
-    try {
-      return await request<VaultResponse>('/api/v1/auth/keyvault');
-    } catch (e) {
-      if (e instanceof ApiClientError && e.statusCode === 404) return null;
-      throw e;
-    }
+  /** Fetch a user's full published keyring, including retired versions. */
+  async getUserPublicKeys(userId: string): Promise<PublicKeyRingResponse> {
+    return request<PublicKeyRingResponse>(`/api/v1/auth/users/${userId}/public-keys`);
   },
 
-  /** Create or replace the vault. Replacing drops every existing unlock method. */
-  async putVault(body: PutVaultRequest): Promise<VaultResponse> {
-    return request<VaultResponse>('/api/v1/auth/keyvault', {
-      method: 'PUT',
-      body: JSON.stringify(body),
-    });
-  },
-
-  async addUnlockMethod(body: UnlockMethodInput): Promise<UnlockMethodResponse> {
-    return request<UnlockMethodResponse>('/api/v1/auth/keyvault/unlocks', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-  },
-
-  /** Revoke an unlock method. The server refuses to remove the last one. */
-  async removeUnlockMethod(id: string): Promise<void> {
-    await request<void>(`/api/v1/auth/keyvault/unlocks/${id}`, { method: 'DELETE' });
-  },
-
-  /** Record a successful unlock, for the "last used" column in settings. */
-  async markUnlockMethodUsed(id: string): Promise<void> {
-    try {
-      await request<void>(`/api/v1/auth/keyvault/unlocks/${id}/used`, { method: 'POST' });
-    } catch {
-      // Bookkeeping only — never fail an unlock because this did not land.
-    }
-  },
 };

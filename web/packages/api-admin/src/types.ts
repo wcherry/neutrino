@@ -50,6 +50,12 @@ export interface AdminUser {
   totpEnabled: boolean;
   createdAt: string;
   deletedAt: string | null;
+  /**
+   * When the background worker becomes free to erase this account for good.
+   * `null` for a live account. Comes from the server so the console's countdown
+   * follows the retention policy rather than a second copy of it here.
+   */
+  purgeAfter: string | null;
 }
 
 export interface AdminUserListResponse {
