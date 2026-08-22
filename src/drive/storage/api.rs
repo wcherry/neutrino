@@ -1,5 +1,4 @@
 use crate::drive::filesystem::repository::FilesystemRepository;
-use crate::drive::irm::service::IrmService;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
@@ -29,7 +28,6 @@ use uuid::Uuid;
 
 pub struct StorageApiState {
     pub storage_service: Arc<StorageService>,
-    pub irm_service: Arc<IrmService>,
     pub permissions_service: Arc<PermissionsService>,
     pub tags_service: Arc<TagsService>,
     /// Used by autosave to apply a rename carried in the multipart `metadata`
@@ -496,22 +494,10 @@ pub async fn download_file(
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
 
-    let role = state
+    state
         .permissions_service
         .get_effective_role(&user.user_id, "file", &file_id)?
         .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
-
-    // Enforce IRM download restriction based on caller's effective role
-    let restrictions = state
-        .irm_service
-        .get_restrictions("file", &file_id, &role)?;
-    if restrictions.restrict_download {
-        return Err(ApiError::new(
-            403,
-            "DOWNLOAD_RESTRICTED",
-            "Download is restricted by the file owner's IRM policy",
-        ));
-    }
 
     let (file_path, mime_type, file_name) =
         state.storage_service.resolve_file_path_by_id(&file_id)?;
@@ -563,16 +549,10 @@ pub async fn preview_file(
 ) -> Result<HttpResponse, ApiError> {
     let file_id = path.into_inner();
 
-    let role = state
+    state
         .permissions_service
         .get_effective_role(&user.user_id, "file", &file_id)?
         .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
-
-    // Check IRM print/copy restrictions for this user's role
-    let restrict_print_copy = state
-        .irm_service
-        .get_restrictions("file", &file_id, &role)?
-        .restrict_print_copy;
 
     let (file_path, mime_type, _) = state.storage_service.resolve_file_path_by_id(&file_id)?;
 
@@ -598,17 +578,6 @@ pub async fn preview_file(
         actix_web::http::header::CACHE_CONTROL,
         actix_web::http::header::HeaderValue::from_static("no-store"),
     );
-    if restrict_print_copy {
-        let headers = response.headers_mut();
-        headers.insert(
-            actix_web::http::header::HeaderName::from_static("x-irm-restrict-print"),
-            actix_web::http::header::HeaderValue::from_static("true"),
-        );
-        headers.insert(
-            actix_web::http::header::HeaderName::from_static("x-irm-restrict-copy"),
-            actix_web::http::header::HeaderValue::from_static("true"),
-        );
-    }
     Ok(response)
 }
 

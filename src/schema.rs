@@ -548,22 +548,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    irm_policies (id) {
-        id -> Text,
-        resource_type -> Text,
-        resource_id -> Text,
-        restrict_download_viewer -> Bool,
-        restrict_download_commenter -> Bool,
-        restrict_download_editor -> Bool,
-        restrict_print_copy_viewer -> Bool,
-        restrict_print_copy_commenter -> Bool,
-        restrict_print_copy_editor -> Bool,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     workspace_settings (id) {
         id -> Text,
         allowed_domain -> Nullable<Text>,
@@ -1036,7 +1020,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     share_links,
     permissions,
     access_requests,
-    irm_policies,
     workspace_settings,
     worker_jobs,
     worker_registrations,

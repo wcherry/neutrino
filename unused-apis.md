@@ -120,15 +120,13 @@ In-app notification listing and management are unimplemented on both clients.
 
 ---
 
-## 9. Drive — Information Rights Management (IRM)
+## 9. Drive — Information Rights Management (IRM) — **removed**
 
-IRM policy endpoints exist on the backend but are never called.
-
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/drive/files/{id}/irm` |
-| POST | `/api/v1/drive/files/{id}/irm` |
-| DELETE | `/api/v1/drive/files/{id}/irm` |
+The IRM policy endpoints (`/api/v1/drive/{files,folders}/{id}/irm`) had no caller in
+any client, so the feature was deleted: the `drive::irm` module, its wiring, and the
+download/print/copy enforcement it fed in `drive::storage` and `drive::sharing`. With
+no way to create a policy, that enforcement could never fire. The `irm_policies` table
+and its migration are left in place.
 
 ---
 
@@ -324,7 +322,7 @@ Like docs, the backend has a real-time collaboration protocol for diagrams that 
 | Drive — Search | 2 |
 | Drive — Tags | 7 |
 | Drive — Notifications | 3 |
-| Drive — IRM | 3 |
+| Drive — IRM | 0 (removed) |
 | Drive — Encryption Management | 2 |
 | Drive — File Priority | 2 |
 | Drive — AI Features | 2 |
