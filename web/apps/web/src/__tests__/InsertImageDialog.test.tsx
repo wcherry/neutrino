@@ -18,7 +18,7 @@ import { InsertImageDialog } from '@/components/InsertImageDialog';
 import { clearDriveImageCache } from '@/lib/driveImages';
 
 const listFiles = vi.fn();
-const uploadFile = vi.fn();
+const uploadDriveFile = vi.fn();
 const downloadFile = vi.fn();
 const getFileMetadata = vi.fn();
 const getFileKey = vi.fn();
@@ -28,7 +28,6 @@ const createFolder = vi.fn();
 vi.mock('@/lib/api', () => ({
   storageApi: {
     listFiles: (...a: unknown[]) => listFiles(...a),
-    uploadFile: (...a: unknown[]) => uploadFile(...a),
     downloadFile: (...a: unknown[]) => downloadFile(...a),
     getFileMetadata: (...a: unknown[]) => getFileMetadata(...a),
     getFileDownloadUrl: (id: string) => `https://drive.test/files/${id}?token=t`,
@@ -38,6 +37,9 @@ vi.mock('@/lib/api', () => ({
     createFolder: (...a: unknown[]) => createFolder(...a),
   },
   encryptionApi: { getFileKey: (...a: unknown[]) => getFileKey(...a) },
+  // Every upload goes through the encrypted uploader now; the plaintext
+  // `storageApi.uploadFile` this used to stub no longer exists (issue #95).
+  uploadDriveFile: (...a: unknown[]) => uploadDriveFile(...a),
 }));
 
 const loadKeyPair = vi.fn(() => ({ publicKey: 'pk', secretKey: 'sk' }));
@@ -79,7 +81,7 @@ beforeEach(() => {
   });
   getFileMetadata.mockImplementation(async (id: string) => driveFile({ id }));
   getFolderContents.mockResolvedValue({ folder: null, folders: [{ id: 'attach-1', name: 'Attachments' }], files: [] });
-  uploadFile.mockImplementation(async (file: File) => driveFile({ id: 'up-1', name: file.name }));
+  uploadDriveFile.mockImplementation(async (file: File) => driveFile({ id: 'up-1', name: file.name }));
 });
 
 describe('InsertImageDialog', () => {
@@ -148,7 +150,7 @@ describe('InsertImageDialog', () => {
       source: 'local',
       driveFileId: 'up-1',
     })));
-    expect(uploadFile.mock.calls[0][2]).toBe('attach-1');
+    expect((uploadDriveFile.mock.calls[0][2] as { folderId: string }).folderId).toBe('attach-1');
   });
 
   it('copies a linked image into Attachments and returns its id', async () => {
@@ -169,7 +171,7 @@ describe('InsertImageDialog', () => {
       source: 'url',
       driveFileId: 'up-1',
     })));
-    expect(uploadFile.mock.calls[0][2]).toBe('attach-1');
+    expect((uploadDriveFile.mock.calls[0][2] as { folderId: string }).folderId).toBe('attach-1');
   });
 
   it('decrypts an E2EE Drive image rather than previewing its ciphertext', async () => {

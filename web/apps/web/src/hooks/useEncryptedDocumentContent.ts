@@ -47,9 +47,7 @@ import {
 } from '@neutrino/e2e-crypto';
 import {
   encryptionApi,
-  driveAutosaveContent,
   driveAutosaveEncryptedContent,
-  driveCreateVersion,
   driveCreateEncryptedVersion,
 } from '@/lib/api';
 
@@ -139,8 +137,10 @@ export function useEncryptedDocumentContent({
 
     const owner = `${currentUser.id}:${id}`;
 
-    // Locked: no key to resolve.  Callers fall back to plaintext, exactly as
-    // before; the subscription above brings us back here when that changes.
+    // Locked: no key to resolve, so `awaitDek` reports null and every caller
+    // declines to save rather than writing plaintext (issue #95). The
+    // subscription above brings us back here the moment that changes, and the
+    // content is still in the editor, so nothing is lost by waiting.
     if (!isUnlocked(currentUser.id)) {
       dekRef.current = null;
       dekOwnerRef.current = null;

@@ -316,14 +316,19 @@ describe('runPhotosImport', () => {
     expect(summary.folderId).toBe('f1');
   });
 
-  it('uploads unencrypted and flags it when the device has no key pair', async () => {
+  // Issue #95. This used to assert the opposite: that the run went ahead and
+  // wrote every item as plaintext, on the reasoning that a half-imported
+  // library is worse than a plaintext one. The cost was backwards — a plaintext
+  // import is thousands of files with no key ref, none of which anything comes
+  // back to encrypt, while a declined import can be re-run in full the moment
+  // the vault is unlocked.
+  it('uploads nothing when the device has no key pair', async () => {
     loadKeyPair.mockReturnValue(null);
     const summary = await run([photo('a.jpg')]);
 
-    expect(summary).toMatchObject({ imported: 1, unencrypted: true });
+    expect(summary).toMatchObject({ imported: 0, unencrypted: true, cancelled: true });
     expect(uploadEncryptedFile).not.toHaveBeenCalled();
-    expect(storageApi.uploadFile).toHaveBeenCalledTimes(1);
-    expect(photosApi.registerPhoto).toHaveBeenCalledWith({ fileId: 'file-a.jpg', captureDate: null });
+    expect(photosApi.registerPhoto).not.toHaveBeenCalled();
   });
 
   it('records a failure and carries on with the rest', async () => {

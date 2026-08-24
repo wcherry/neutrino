@@ -112,9 +112,19 @@ export function generateQrPin(digits: number = PIN_DIGITS): string {
  * an envelope the phone cannot open no matter how correct the rest is.
  */
 async function deriveKey(pin: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
-  const material = await crypto.subtle.importKey('raw', utf8(pin), 'PBKDF2', false, ['deriveBits']);
+  // The cast, not a copy. WebCrypto's `BufferSource` wants a view over a plain
+  // `ArrayBuffer`, while `Uint8Array.buffer` is typed `ArrayBufferLike` (which
+  // admits `SharedArrayBuffer`), so this does not typecheck as written and the
+  // build fails on it. Re-slicing the buffer to satisfy the type is what jsdom
+  // then rejects at runtime — a detached-realm `ArrayBuffer` is not one of the
+  // instances `importKey` accepts. The values here are always ordinary
+  // `Uint8Array`s over ordinary buffers; only the type is imprecise.
+  const bytes = (u8: Uint8Array) => u8 as unknown as BufferSource;
+  const material = await crypto.subtle.importKey(
+    'raw', bytes(utf8(pin)), 'PBKDF2', false, ['deriveBits'],
+  );
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: bytes(salt), iterations, hash: 'SHA-256' },
     material,
     256,
   );

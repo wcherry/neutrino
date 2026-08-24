@@ -109,3 +109,47 @@ export function isZipMimeType(mimeType: string): boolean {
 export function cn(...classes: (string | undefined | null | false)[]): string {
   return classes.filter(Boolean).join(' ');
 }
+
+// ---------------------------------------------------------------------------
+// Thumbnail generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a JPEG thumbnail for an image file using the browser Canvas API.
+ * Returns the raw base64 string (no data-URL prefix), or null on failure.
+ *
+ * It lives here rather than in `@neutrino/api-photos` (which re-exports it, and
+ * where it used to be defined) because every encrypted upload needs one: the
+ * server holds ciphertext and cannot make a preview of it, so a Drive file
+ * without a client-made thumbnail shows as a blank tile. `@neutrino/api-drive`
+ * is what generates them now, and it cannot import api-photos — api-photos
+ * imports it.
+ */
+export function generateThumbnail(file: File, maxSize = 512): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        console.warn('[thumbnail] failed: could not get 2d context');
+        resolve(null);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      resolve(dataUrl.split(',')[1] ?? null);
+    };
+    img.onerror = (e) => {
+      URL.revokeObjectURL(url);
+      console.warn('[thumbnail] image load failed:', e);
+      resolve(null);
+    };
+    img.src = url;
+  });
+}

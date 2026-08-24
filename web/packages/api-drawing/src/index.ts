@@ -168,15 +168,30 @@ export const drawingApi = {
     return toDrawingMeta(file);
   },
 
-  async autosaveContent(
+  /**
+   * Write the drawing body, encrypted with the file's DEK.
+   *
+   * There is no plaintext counterpart. Until issue #95 there was only a
+   * plaintext one — drawings were the single app whose content reached Drive
+   * readable, while notes, docs, sheets, slides and diagrams all encrypted
+   * theirs. `DrawingEditor` resolves the DEK through
+   * `useEncryptedDocumentContent` like every other editor and refuses to save
+   * without it.
+   */
+  async autosaveEncryptedContent(
     drawingId: string,
     content: string,
     filename: string,
+    dek: Uint8Array,
     metadata?: { title?: string },
     versionCheck?: ContentVersionCheck,
   ): Promise<DrawingMetaResponse> {
+    const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
+    await initSodium();
+    const cipherBytes = encryptFile(new TextEncoder().encode(content), dek);
+    const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
     const formData = new FormData();
-    formData.append('file', new Blob([content], { type: 'application/json' }), filename);
+    formData.append('file', blob, filename);
     if (metadata) formData.append('metadata', JSON.stringify(metadata));
     const file = await request<DriveFileDto>(
       `/api/v1/drive/files/${drawingId}/autosave${contentVersionQuery(versionCheck)}`,

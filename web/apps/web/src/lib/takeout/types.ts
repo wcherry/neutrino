@@ -36,8 +36,15 @@ export interface ImportSummary {
   /** True when the user stopped the run before it finished. */
   cancelled: boolean;
   /**
-   * True when this device holds no E2EE key pair, so the content was written
-   * as plaintext. The caller warns about it.
+   * True when this device holds no E2EE key pair, so the run **did not happen**.
+   *
+   * It used to mean the opposite — that the import went ahead and wrote every
+   * item as plaintext, on the reasoning that a half-imported library is worse
+   * than a plaintext one. That reasoning had the cost backwards: a plaintext
+   * import is thousands of files with no key ref, none of which anything ever
+   * comes back to encrypt (issue #95), whereas an import that declines can be
+   * run again in full the moment the vault is unlocked. So the runners stop
+   * before the first write, and the caller says so.
    */
   unencrypted: boolean;
 }

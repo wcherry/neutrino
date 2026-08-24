@@ -87,19 +87,10 @@ function normalizeResolvedShareLink(link: ResolvedShareLink): ResolvedShareLink 
 // ---------------------------------------------------------------------------
 
 export const storageApi = {
-  async uploadFile(
-    file: File,
-    onProgress?: (percent: number) => void,
-    folderId?: string | null,
-  ): Promise<FileItem> {
-    const formData = new FormData();
-    if (folderId) formData.append('folder_id', folderId);
-    formData.append('file', file);
-    return request<FileItem>('/api/v1/drive/files/upload', {
-      method: 'POST',
-      body: formData,
-    }, { onUploadProgress: onProgress });
-  },
+  // There is deliberately no `uploadFile` here. It wrote the user's bytes to
+  // Drive in the clear, and a file that lands unencrypted stays that way
+  // forever — issue #95. Upload through `uploadDriveFile` in
+  // `encryptedWrites.ts`, which refuses to write at all without a key.
 
   async listFiles(
     query: FileListQuery = {}
@@ -509,34 +500,13 @@ export async function driveReadContent(path: string): Promise<string> {
   return request<string>(path, {}, { responseType: 'text' });
 }
 
-export async function driveWriteContent(path: string, content: string, filename: string): Promise<void> {
-  const formData = new FormData();
-  formData.append('file', new Blob([content], { type: 'application/json' }), filename);
-  return request<void>(path, { method: 'POST', body: formData });
-}
-
-/** Autosave: write content to the file without creating a version snapshot. */
-export async function driveAutosaveContent(
-  fileId: string,
-  content: string,
-  filename: string,
-  versionCheck?: ContentVersionCheck,
-): Promise<FileItem> {
-  const formData = new FormData();
-  formData.append('file', new Blob([content], { type: 'application/json' }), filename);
-  return request<FileItem>(
-    `/api/v1/drive/files/${fileId}/autosave${contentVersionQuery(versionCheck)}`,
-    { method: 'PUT', body: formData },
-  );
-}
-
-/** Explicit save: write content and create a new version snapshot. */
-export async function driveCreateVersion(fileId: string, content: string, filename: string, label?: string): Promise<FileVersionItem> {
-  const formData = new FormData();
-  formData.append('file', new Blob([content], { type: 'application/json' }), filename);
-  if (label) formData.append('label', label);
-  return request<FileVersionItem>(`/api/v1/drive/files/${fileId}/versions`, { method: 'POST', body: formData });
-}
+// `driveWriteContent`, `driveAutosaveContent` and `driveCreateVersion` used to
+// sit here. All three wrote a document's JSON to Drive as plaintext, and every
+// editor called one of them as the `else` branch of a key check — which is how
+// notes, docs, sheets and slides ended up with files that had no key ref and
+// so could never be encrypted (issue #95). Their encrypted counterparts are
+// below, and `encryptedWrites.ts` wraps them in a form that resolves the key
+// itself and throws rather than degrade.
 
 // ---------------------------------------------------------------------------
 // Binary-safe (raw bytes) transport — for arbitrary binary content such as
@@ -588,37 +558,15 @@ function transportInit(transport: AutosaveTransport | undefined, bodyBytes: numb
   return keepalive ? { keepalive: true } : { signal: transport.signal };
 }
 
-/** Autosave raw bytes: write file content without creating a version snapshot. */
-export async function driveAutosaveBytes(
-  fileId: string,
-  bytes: Uint8Array | ArrayBuffer,
-  filename: string,
-  mimeType: string,
-  transport?: AutosaveTransport,
-): Promise<void> {
-  const payload = toUint8Array(bytes);
-  const formData = new FormData();
-  formData.append('file', new Blob([toBlobPart(payload)], { type: mimeType }), filename);
-  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, {
-    method: 'PUT',
-    body: formData,
-    ...transportInit(transport, payload.byteLength),
-  });
-}
-
-/** Explicit save of raw bytes: write content and create a new version snapshot. */
-export async function driveCreateVersionBytes(
-  fileId: string,
-  bytes: Uint8Array | ArrayBuffer,
-  filename: string,
-  mimeType: string,
-  label?: string,
-): Promise<FileVersionItem> {
-  const formData = new FormData();
-  formData.append('file', new Blob([toBlobPart(toUint8Array(bytes))], { type: mimeType }), filename);
-  if (label) formData.append('label', label);
-  return request<FileVersionItem>(`/api/v1/drive/files/${fileId}/versions`, { method: 'POST', body: formData });
-}
+// `driveAutosaveBytes` and `driveCreateVersionBytes` used to sit here: the
+// binary counterparts of the string helpers above, and the last plaintext
+// writers left. Office mode was their only caller, on the reasoning that a
+// .docx/.xlsx/.pptx must stay real OOXML at rest so the raw file opens in Word
+// (issue #43, criterion 3) — but Drive's download decrypts client-side, so what
+// reaches the user's disk is the same file either way, and what the plaintext
+// write actually bought was a readable document in object storage (issue #95).
+// The editors now use `driveAutosaveEncryptedBytes` /
+// `driveCreateEncryptedVersionBytes` below, which take the file's DEK.
 
 // ---------------------------------------------------------------------------
 // E2EE Upload helpers
@@ -783,6 +731,7 @@ export async function driveAutosaveEncryptedBytes(
   bytes: Uint8Array | ArrayBuffer,
   filename: string,
   dek: Uint8Array,
+  transport?: AutosaveTransport,
 ): Promise<void> {
   const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
@@ -791,7 +740,11 @@ export async function driveAutosaveEncryptedBytes(
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
   formData.append('file', blob, filename);
-  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, { method: 'PUT', body: formData });
+  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, {
+    method: 'PUT',
+    body: formData,
+    ...transportInit(transport, cipherBytes.byteLength),
+  });
 }
 
 /**

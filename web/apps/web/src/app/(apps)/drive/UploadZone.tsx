@@ -3,19 +3,13 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, File } from 'lucide-react';
-import { authApi, storageApi, uploadEncryptedFile } from '@/lib/api';
-import { generateThumbnail } from '@neutrino/api-photos';
+import { authApi, uploadDriveFile, isMissingEncryptionKey } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
 import { DropZone } from '@neutrino/ui';
-import {
-  initSodium,
-  generateFileKey,
-  encryptFileKey,
-  activeKeyVersion,
-  encryptMetadata,
-  loadKeyPair,
-} from '@neutrino/e2e-crypto';
 import styles from './UploadZone.module.css';
+
+/** Shown against a queued file the vault was locked for. */
+const LOCKED_MESSAGE = 'Unlock your encryption keys and try again — files are never uploaded unencrypted.';
 
 interface UploadEntry {
   id: string;
@@ -52,39 +46,16 @@ export function UploadZone({ onClose, folderId, initialFiles }: UploadZoneProps)
 
   const { mutate: uploadFile } = useMutation({
     mutationFn: async ({ entry }: { entry: UploadEntry }) => {
-      // Attempt E2EE upload whenever we can resolve the current user's local keypair.
+      // `useUser()` can still be empty on a fresh page, so fall back to the
+      // profile call for the id — but not past that. This used to end in a
+      // plaintext upload whenever the keypair could not be resolved, and a file
+      // that reaches Drive unencrypted has no key ref and so no route back to
+      // being encrypted (issue #95). `uploadDriveFile` refuses instead.
       const userId = currentUser?.id ?? (await authApi.getProfile().then((user) => user.id).catch(() => null));
-      if (userId) {
-        await initSodium();
-        const kp = loadKeyPair(userId);
-        if (kp) {
-          const dek = generateFileKey();
-          const encryptedFileKey = encryptFileKey(dek, kp.publicKey);
-          const encryptedMetadata = encryptMetadata(
-            { name: entry.file.name, mimeType: entry.file.type || 'application/octet-stream' },
-            dek,
-          );
-          const thumbnailB64 = entry.file.type.startsWith('image/')
-            ? await generateThumbnail(entry.file)
-            : null;
-          return uploadEncryptedFile(
-            entry.file,
-            dek,
-            encryptedFileKey,
-            encryptedMetadata,
-            (progress) => updateEntry(entry.id, { progress, status: 'uploading' }),
-            folderId,
-            thumbnailB64,
-            activeKeyVersion(userId) ?? undefined,
-          );
-        }
-      }
-      // Fallback: plaintext upload (no keypair available).
-      return storageApi.uploadFile(
-        entry.file,
-        (progress) => updateEntry(entry.id, { progress, status: 'uploading' }),
+      return uploadDriveFile(entry.file, userId, {
         folderId,
-      );
+        onProgress: (progress) => updateEntry(entry.id, { progress, status: 'uploading' }),
+      });
     },
     onSuccess: (_data, { entry }) => {
       updateEntry(entry.id, { status: 'done', progress: 100 });
@@ -93,7 +64,9 @@ export function UploadZone({ onClose, folderId, initialFiles }: UploadZoneProps)
     onError: (err, { entry }) => {
       updateEntry(entry.id, {
         status: 'error',
-        error: err instanceof Error ? err.message : 'Upload failed',
+        error: isMissingEncryptionKey(err)
+          ? LOCKED_MESSAGE
+          : err instanceof Error ? err.message : 'Upload failed',
       });
     },
   });

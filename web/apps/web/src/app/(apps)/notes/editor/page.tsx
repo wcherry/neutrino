@@ -9,13 +9,15 @@ import {
   filesystemApi,
   storageApi,
   driveReadContent,
-  driveAutosaveContent,
   driveAutosaveEncryptedContent,
+  mintFileKey,
+  canEncryptFor,
+  isMissingEncryptionKey,
 } from '@neutrino/api-drive';
 import { linksApi } from '@neutrino/api-links';
 import { createNote, extractNoteText, listAllNotes } from '@/lib/noteFiles';
-import { initSodium, decryptFile, fromBase64url, loadKeyPair, activeKeyVersion, generateFileKey, encryptFileKey } from '@neutrino/e2e-crypto';
-import { encryptionApi } from '@neutrino/api-drive';
+import { initSodium, decryptFile, fromBase64url } from '@neutrino/e2e-crypto';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
@@ -101,7 +103,7 @@ export default function NoteEditorPage() {
   /** `updatedAt` of the revision currently in the editor. */
   const appliedUpdatedAtRef = useRef<string | null>(null);
 
-  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+  const { dekRef, dekResolved, isNewEncryption, awaitDek } = useEncryptedDocumentContent({
     id: noteId,
     filename: 'note.json',
   });
@@ -256,15 +258,22 @@ export default function NoteEditorPage() {
       savingRef.current = true;
       try {
         const titleChanged = nextTitle !== lastSavedRef.current.title;
-        const meta = dekRef.current
-          ? await driveAutosaveEncryptedContent(
-              noteId,
-              serialized,
-              'note.json',
-              dekRef.current,
-              versionGuard.check(),
-            )
-          : await driveAutosaveContent(noteId, serialized, 'note.json', versionGuard.check());
+        // `awaitDek`, not `dekRef.current`. A save that lands while the key is
+        // still being fetched — the first autosave after a reload, every time —
+        // reads the ref as null, and this used to answer that by writing the
+        // note in the clear. That is issue #95: the note then had no key ref,
+        // so nothing ever came back to encrypt it. Waiting reports "no key"
+        // only when the session is genuinely locked, and that is now a refusal
+        // rather than a plaintext write.
+        const dek = await awaitDek();
+        if (!dek) throw new Error('no-dek');
+        const meta = await driveAutosaveEncryptedContent(
+          noteId,
+          serialized,
+          'note.json',
+          dek,
+          versionGuard.check(),
+        );
         versionGuard.observe(meta.contentVersion);
         lastSavedRef.current = { content: serialized, title: nextTitle };
         appliedUpdatedAtRef.current = meta.updatedAt;
@@ -297,6 +306,12 @@ export default function NoteEditorPage() {
         broadcastFileUpdate();
       } catch (err) {
         setSaveStatus('error');
+        // Locked vault, or the keyring never reached this browser. The note is
+        // still in the editor, so unlocking and saving again loses nothing.
+        if (isMissingEncryptionKey(err)) {
+          toast.warning(ENCRYPTION_WARNING_MESSAGE);
+          return;
+        }
         // Another device saved this note while we were editing. Overwriting it
         // is a choice the user makes, not something autosave does quietly.
         if (versionGuard.handleError(err)) {
@@ -309,7 +324,7 @@ export default function NoteEditorPage() {
         savingRef.current = false;
       }
     },
-    [noteId, queryClient, dekRef, broadcastFileUpdate, currentUser?.id, versionGuard, toast]
+    [noteId, queryClient, awaitDek, broadcastFileUpdate, currentUser?.id, versionGuard, toast]
   );
 
   function scheduleAutosave(nextBlocks: Block[], nextTitle: string) {
@@ -354,27 +369,25 @@ export default function NoteEditorPage() {
 
   const handleDuplicate = useCallback(async () => {
     const serialized = serializeBlocks(blocks);
+    // The copy is a new Drive row with no key of its own. This used to fall
+    // back to a plaintext write when the vault was locked, producing a note
+    // that could never be encrypted (issue #95); now it declines up front,
+    // before an empty note has been created to strand.
+    if (!(await canEncryptFor(currentUser?.id))) {
+      toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      return;
+    }
     const newNote = await createNote(`${title || 'Untitled note'} (copy)`);
     try {
-      await initSodium();
-      const kp = currentUser ? loadKeyPair(currentUser.id) : null;
-      if (kp) {
-        const dek = generateFileKey();
-        await encryptionApi.setFileKey(newNote.id, {
-          encryptedFileKey: encryptFileKey(dek, kp.publicKey),
-          keyVersion: activeKeyVersion(currentUser!.id) ?? undefined,
-        });
-        await driveAutosaveEncryptedContent(newNote.id, serialized, 'note.json', dek);
-      } else {
-        await driveAutosaveContent(newNote.id, serialized, 'note.json');
-      }
+      const dek = await mintFileKey(currentUser?.id, newNote.id);
+      await driveAutosaveEncryptedContent(newNote.id, serialized, 'note.json', dek);
       await linksApi.updateLinks(newNote.id, { linkedTitles: extractWikiLinkTitles(blocks) });
     } catch {
       toast.error('Note duplicated, but its content failed to copy.');
     }
     queryClient.invalidateQueries({ queryKey: ['notes'] });
     router.push(`/notes/editor?id=${newNote.id}`);
-  }, [blocks, title, currentUser, queryClient, router, toast]);
+  }, [blocks, title, currentUser?.id, queryClient, router, toast]);
 
   const handleDelete = useCallback(async () => {
     await storageApi.deleteFile(noteId);

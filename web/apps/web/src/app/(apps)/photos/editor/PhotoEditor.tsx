@@ -6,7 +6,7 @@ import { Spinner, ZoomSlider, AlertDialog } from '@neutrino/ui';
 import type { Background } from '@neutrino/ui';
 import { useToast } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
-import { storageApi, filesystemApi, encryptionApi } from '@neutrino/api-drive';
+import { storageApi, filesystemApi, encryptionApi, uploadDriveFile, isMissingEncryptionKey } from '@neutrino/api-drive';
 import { photosAiApi, type DetectedObject } from '@neutrino/api-photos';
 import type { SmartEraseTarget } from '@neutrino/api-photos';
 import { initSodium, openSealedFileKey, decryptFile } from '@neutrino/e2e-crypto';
@@ -352,15 +352,22 @@ export function PhotoEditor() {
     try {
       const blob = await canvasRef.current.getExportBlob();
       const file = new File([blob], fileName || 'photo.png', { type: 'image/png' });
-      await storageApi.uploadFile(file, undefined, folderId ?? null);
+      // Encrypted, like every other Drive write. This used to upload the edited
+      // photo in the clear, so opening an encrypted picture in the editor and
+      // pressing Save produced a readable copy of it (issue #95).
+      await uploadDriveFile(file, currentUser?.id, { folderId: folderId ?? null });
       toastSuccess('Saved');
       setIsDirty(false);
-    } catch {
+    } catch (err) {
+      if (isMissingEncryptionKey(err)) {
+        toastError('Unlock your encryption keys to save — photos are never stored unencrypted.');
+        return;
+      }
       toastError('Failed to save');
     } finally {
       setIsSaving(false);
     }
-  }, [fileId, fileName, folderId, toastSuccess, toastError]);
+  }, [fileId, fileName, folderId, currentUser?.id, toastSuccess, toastError]);
 
   const handleRename = useCallback(async (name: string) => {
     setFileName(name);
@@ -379,12 +386,16 @@ export function PhotoEditor() {
       const baseName = (fileName || 'photo').replace(/\.[^.]+$/, '');
       const dupName = `Copy of ${baseName}.png`;
       const file = new File([blob], dupName, { type: 'image/png' });
-      await storageApi.uploadFile(file, undefined, folderId ?? null);
+      await uploadDriveFile(file, currentUser?.id, { folderId: folderId ?? null });
       toastSuccess(`Saved as "${dupName}"`);
-    } catch {
+    } catch (err) {
+      if (isMissingEncryptionKey(err)) {
+        toastError('Unlock your encryption keys to save — photos are never stored unencrypted.');
+        return;
+      }
       toastError('Failed to duplicate');
     }
-  }, [fileName, folderId, toastSuccess, toastError]);
+  }, [fileName, folderId, currentUser?.id, toastSuccess, toastError]);
 
   const handleExport = useCallback(async () => {
     if (!canvasRef.current) return;

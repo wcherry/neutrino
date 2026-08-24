@@ -20,9 +20,12 @@ import {
   authApi,
   storageApi,
   tagsApi,
+  uploadDriveFile,
+  canEncryptFor,
   type UserProfile,
   type QuotaInfo,
 } from '@/lib/api';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { getNavSections, withActiveItem } from './navSections';
 import { NewItemFAB } from './NewItemFAB';
 import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
@@ -131,9 +134,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   async function handleUpload(files: FileList) {
     const fileArr = Array.from(files);
+    const userId = auth.status === 'ready' ? auth.user.id : undefined;
+    // This dropped every file into Drive in the clear — the shortest path there
+    // was to issue #95. `uploadDriveFile` encrypts or refuses; check the key
+    // once up front so a locked vault says so instead of reporting every file
+    // as a failed upload.
+    if (!(await canEncryptFor(userId))) {
+      toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      return;
+    }
     toast.info(`Uploading ${fileArr.length} file${fileArr.length > 1 ? 's' : ''}…`);
     const results = await Promise.allSettled(
-      fileArr.map((file) => storageApi.uploadFile(file, undefined, null))
+      fileArr.map((file) => uploadDriveFile(file, userId, { folderId: null }))
     );
     const succeeded = results.filter((r) => r.status === 'fulfilled').length;
     const failed = results.filter((r) => r.status === 'rejected').length;

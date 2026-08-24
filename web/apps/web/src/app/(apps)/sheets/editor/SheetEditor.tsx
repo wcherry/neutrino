@@ -7,7 +7,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
-import { sheetsApi, filesystemApi, driveAutosaveContent } from '@/lib/api';
+import {
+    sheetsApi, filesystemApi, driveAutosaveEncryptedContent,
+    mintFileKey, canEncryptFor,
+} from '@/lib/api';
+import { useToast } from '@neutrino/ui';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { useUser } from '@neutrino/auth';
 import { useSheetPresence, type CellSyncItem } from '@/hooks/useSheetPresence';
 import type { CellProps, ClipboardCFRule, CFRule, SheetFile, TableRegion } from './types';
@@ -138,6 +143,7 @@ export function SheetEditor() {
     useAccessRevocation(sheetId);
 
     const currentUser = useUser();
+    const toast = useToast();
     const [authToken, setAuthToken] = useState<string | null>(null);
     useEffect(() => {
         setAuthToken(localStorage.getItem('access_token'));
@@ -1392,11 +1398,20 @@ export function SheetEditor() {
     }, []);
 
     const handleDuplicate = useCallback(async (newTitle: string) => {
+        // The copy is a new Drive row with no key of its own. This wrote the
+        // copy in the clear unconditionally — every "Make a copy" produced a
+        // spreadsheet that could never be encrypted (issue #95). Checked before
+        // the sheet is created so a locked vault leaves no empty copy behind.
+        if (!(await canEncryptFor(currentUser?.id))) {
+            toast.warning(ENCRYPTION_WARNING_MESSAGE);
+            return;
+        }
         const serialized = persist.serialize();
         const newSheet = await sheetsApi.createSheet({ title: newTitle });
-        await driveAutosaveContent(newSheet.id, serialized, 'sheet.json');
+        const dek = await mintFileKey(currentUser?.id, newSheet.id);
+        await driveAutosaveEncryptedContent(newSheet.id, serialized, 'sheet.json', dek);
         router.push(`/sheets/editor?id=${newSheet.id}`);
-    }, [persist, router]);
+    }, [persist, router, currentUser?.id, toast]);
 
     const handleDelete = useCallback(async () => {
         await filesystemApi.bulkDelete({ fileIds: [sheetId], folderIds: [] });

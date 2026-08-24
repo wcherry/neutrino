@@ -16,17 +16,13 @@
  * through untouched, so documents written before this keep rendering.
  */
 
-import { storageApi, filesystemApi, encryptionApi, uploadEncryptedFile } from '@/lib/api';
+import { storageApi, filesystemApi, encryptionApi, uploadDriveFile } from '@/lib/api';
 import {
   initSodium,
   loadKeyPair,
   openSealedFileKey,
   decryptFile,
-  generateFileKey,
-  encryptFileKey,
-  encryptMetadata,
 } from '@neutrino/e2e-crypto';
-import { generateThumbnail } from '@neutrino/api-photos';
 import type { FileItem } from '@neutrino/api-drive';
 
 /**
@@ -119,43 +115,21 @@ async function findOrCreateAttachmentsFolder(): Promise<string> {
  * Uploads a local file into Attachments and returns the stored Drive file.
  *
  * An image inserted into a document is a Drive file like any other, so it is
- * encrypted like any other: same rule as `UploadZone`, encrypt whenever this
- * browser holds the user's keypair and fall back to a plaintext upload only
- * when it doesn't (a locked or key-less session, where the alternative is
- * failing the insert). Nothing on the read side has to change — a reference
- * resolves through `fetchDriveImageBlob`, which decrypts when the file is
- * encrypted and passes the bytes through when it isn't.
+ * encrypted like any other. It used to fall back to a plaintext upload on a
+ * locked or key-less session, on the grounds that a stored image beats a failed
+ * insert — but that image then had no key ref and could never be encrypted
+ * (issue #95), so the whole document's illustrations sat readable in storage.
+ * `uploadDriveFile` throws instead, and the editors report it as a locked
+ * vault. Nothing on the read side changes: `fetchDriveImageBlob` decrypts when
+ * the file is encrypted and passes the bytes through when it isn't, so images
+ * stored plaintext before this still render.
  */
 export async function uploadAttachment(
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<FileItem> {
   const folderId = await ensureAttachmentsFolder();
-
-  const userId = currentUserId();
-  const keyPair = userId ? loadKeyPair(userId) : null;
-  if (!keyPair) return storageApi.uploadFile(file, onProgress, folderId);
-
-  await initSodium();
-  const dek = generateFileKey();
-  const encryptedFileKey = encryptFileKey(dek, keyPair.publicKey);
-  const encryptedMetadata = encryptMetadata(
-    { name: file.name, mimeType: file.type || 'application/octet-stream' },
-    dek,
-  );
-  // The server cannot make a preview of a file it cannot decrypt, so the
-  // thumbnail the picker grid and the Drive grid browse off is made here.
-  const thumbnailB64 = await generateThumbnail(file);
-
-  return uploadEncryptedFile(
-    file,
-    dek,
-    encryptedFileKey,
-    encryptedMetadata,
-    onProgress,
-    folderId,
-    thumbnailB64,
-  );
+  return uploadDriveFile(file, currentUserId(), { folderId, onProgress });
 }
 
 /** Derives a sensible file name for an image linked by URL. */

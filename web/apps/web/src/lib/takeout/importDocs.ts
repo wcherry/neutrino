@@ -32,7 +32,6 @@ import {
 import { extractDocText } from '@neutrino/api-docs';
 import {
   docsApi,
-  driveAutosaveContent,
   driveAutosaveEncryptedContent,
   encryptionApi,
 } from '@/lib/api';
@@ -157,18 +156,31 @@ export async function runDocsImport({
 }: RunDocsImportArgs): Promise<ImportSummary> {
   const items: ImportItem[] = [];
 
-  // Without a key pair on this device there is nothing to encrypt with. The
-  // editor tolerates plaintext content, so the import still runs — the caller
-  // surfaces `unencrypted` so the user knows.
+  // Without a key pair on this device there is nothing to encrypt with, and an
+  // import that writes plaintext leaves every item it touched with no key ref
+  // and no way back (issue #95). So the run stops here, before the first
+  // write, and the page tells the user to unlock and try again — a declined
+  // import can be re-run in full; a plaintext one cannot be undone.
   logStep('docs', `starting: ${docs.length} document${docs.length === 1 ? '' : 's'}`, { options, userId });
 
   await initSodium();
   const keyPair = userId ? loadKeyPair(userId) : null;
-  // Narrowed together: a key pair exists only if a user id did.
-  const encrypting = keyPair && userId ? { keyPair, userId } : null;
-  if (!keyPair) {
-    logWarn('docs', 'no key pair on this device — documents will be saved as plaintext', { userId });
+  if (!keyPair || !userId) {
+    logWarn('docs', 'no key pair on this device — refusing to import, nothing was written', { userId });
+    return {
+      total: docs.length,
+      imported: 0,
+      skipped: 0,
+      failed: 0,
+      items: [],
+      folderId: null,
+      cancelled: true,
+      unencrypted: true,
+    } as ImportSummary;
   }
+  // Narrowed together, and now unconditional: everything below encrypts.
+  const encrypting = { keyPair, userId };
+
 
   const folders = createFolderResolver();
   const destination = options.folderName?.trim() ? [options.folderName.trim()] : [];
@@ -183,7 +195,7 @@ export async function runDocsImport({
     items,
     folderId,
     cancelled: false,
-    unencrypted: !keyPair,
+    unencrypted: false,
     ...extra,
   });
 
@@ -237,11 +249,10 @@ export async function runDocsImport({
       // Body size is the usual reason a save is rejected where a create was
       // fine: images arrive from mammoth as data URIs, so one photo-heavy
       // document can be tens of megabytes.
-      logStep('docs', `saving ${title}`, { id: created.id, body: formatBytes(content.length), encrypted: !!keyPair });
+      logStep('docs', `saving ${title}`, { id: created.id, body: formatBytes(content.length), encrypted: true });
 
-      step = keyPair ? 'saving the encrypted body' : 'saving the body';
-      if (encrypting) await saveEncrypted(created.id, content, encrypting.keyPair, encrypting.userId);
-      else await driveAutosaveContent(created.id, content, CONTENT_FILENAME);
+      step = 'saving the encrypted body';
+      await saveEncrypted(created.id, content, encrypting.keyPair, encrypting.userId);
 
       // After the body, not before: saving it is what stamps the file with the
       // current time, so dates written any earlier would be overwritten here.
