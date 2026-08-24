@@ -168,7 +168,6 @@ export default function RegisterPage() {
         <EncryptionSetupDialog
           userId={newUser.id}
           userEmail={newUser.email}
-          accountPassword={password}
           onDone={() => router.push('/drive')}
         />
       )}

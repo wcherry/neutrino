@@ -8,6 +8,7 @@ pub mod encryption;
 pub mod feature_flags;
 pub mod filesystem;
 pub mod fonts;
+pub mod key_files;
 pub mod notifications;
 pub mod permissions;
 pub mod priority;
@@ -39,6 +40,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .configure(ai::api::configure)
             .configure(tags::api::configure)
             .configure(encryption::api::configure)
+            .configure(key_files::api::configure)
             .configure(shared_drives::api::configure),
     );
 }

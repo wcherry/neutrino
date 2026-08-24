@@ -24,14 +24,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 import { EncryptionSetupDialog } from '@/components/EncryptionSetupDialog';
 
 function renderDialog(onDone = vi.fn()) {
-  render(
-    <EncryptionSetupDialog
-      userId="u1"
-      userEmail="w@example.com"
-      accountPassword="correct-horse"
-      onDone={onDone}
-    />,
-  );
+  render(<EncryptionSetupDialog userId="u1" userEmail="w@example.com" onDone={onDone} />);
   return onDone;
 }
 
@@ -47,13 +40,14 @@ describe('EncryptionSetupDialog', () => {
     storeUnderPasskey.mockResolvedValue(undefined);
   });
 
-  it('provisions on open with the account password, asking nothing', async () => {
+  it('provisions on open under device wrapping, asking nothing', async () => {
     renderDialog();
 
+    // Not the account password: wrapping under it is what sent a new sign-up to
+    // the unlock dialog on their next load.
     await waitFor(() =>
       expect(provisionKeyring).toHaveBeenCalledWith('u1', 'w@example.com', {
-        method: 'passphrase',
-        passphrase: 'correct-horse',
+        method: 'device',
       }),
     );
     await ready();
@@ -64,22 +58,10 @@ describe('EncryptionSetupDialog', () => {
 
   it('provisions once, not once per render', async () => {
     const { rerender } = render(
-      <EncryptionSetupDialog
-        userId="u1"
-        userEmail="w@example.com"
-        accountPassword="correct-horse"
-        onDone={vi.fn()}
-      />,
+      <EncryptionSetupDialog userId="u1" userEmail="w@example.com" onDone={vi.fn()} />,
     );
     await ready();
-    rerender(
-      <EncryptionSetupDialog
-        userId="u1"
-        userEmail="w@example.com"
-        accountPassword="correct-horse"
-        onDone={vi.fn()}
-      />,
-    );
+    rerender(<EncryptionSetupDialog userId="u1" userEmail="w@example.com" onDone={vi.fn()} />);
 
     // A second call would mint a second identity over the first, stranding the
     // recovery kit already on screen.

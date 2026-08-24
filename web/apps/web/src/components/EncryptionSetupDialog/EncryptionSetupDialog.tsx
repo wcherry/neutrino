@@ -37,8 +37,6 @@ import styles from './EncryptionSetupDialog.module.css';
 interface EncryptionSetupDialogProps {
   userId: string;
   userEmail: string;
-  /** The password the account was just created with; it wraps the new key. */
-  accountPassword: string;
   /** Called when the user finishes setup or chooses to move on without it. */
   onDone: () => void;
 }
@@ -48,7 +46,6 @@ type Phase = 'working' | 'ready' | 'failed';
 export function EncryptionSetupDialog({
   userId,
   userEmail,
-  accountPassword,
   onDone,
 }: EncryptionSetupDialogProps) {
   const [phase, setPhase] = useState<Phase>('working');
@@ -65,17 +62,17 @@ export function EncryptionSetupDialog({
     setPhase('working');
     setError('');
     try {
-      const { recoveryKit: kit } = await provisionKeyring(userId, userEmail, {
-        method: 'passphrase',
-        passphrase: accountPassword,
-      });
+      // Device wrapping, not the account password: wrapping under the password
+      // is what put a new sign-up behind the unlock dialog on their very next
+      // load, which is the prompt that has been removed.
+      const { recoveryKit: kit } = await provisionKeyring(userId, userEmail, { method: 'device' });
       setRecoveryKit(kit);
       setPhase('ready');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
       setPhase('failed');
     }
-  }, [userId, userEmail, accountPassword]);
+  }, [userId, userEmail]);
 
   // Runs exactly once. A second `provisionKeyring` would mint a second identity
   // and overwrite the first, orphaning the recovery kit already on screen — so

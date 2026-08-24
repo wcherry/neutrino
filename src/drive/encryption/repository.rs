@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::drive::encryption::model::{FileKeyRef, NewFileKeyRef};
-use crate::schema::file_key_refs;
+use crate::schema::{file_key_refs, files};
 use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -91,6 +91,53 @@ impl EncryptionRepository {
             .load(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB list file_key_refs error: {:?}", e);
+                ApiError::internal("Database query error")
+            })
+    }
+
+    /// How many of `user_id`'s still-existing files are sealed to each key
+    /// version, as `(key_version, count)`.
+    ///
+    /// The join to `files` is what makes the number mean something: a
+    /// permanently deleted file leaves its key ref behind, and an orphan ref
+    /// counted here would report an old key as still load bearing when no
+    /// file exists to re-seal.
+    pub fn count_files_by_key_version(&self, user_id: &str) -> Result<Vec<(i32, i64)>, ApiError> {
+        let mut conn = self.get_conn()?;
+
+        file_key_refs::table
+            .inner_join(files::table.on(files::id.eq(file_key_refs::file_id)))
+            .filter(file_key_refs::user_id.eq(user_id))
+            .group_by(file_key_refs::key_version)
+            .select((file_key_refs::key_version, diesel::dsl::count_star()))
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB count file_key_refs by key_version error: {:?}", e);
+                ApiError::internal("Database query error")
+            })
+    }
+
+    /// Every one of `user_id`'s key refs as `(key_version, file_id)`, oldest
+    /// ref first within a version. Same `files` join, same reason, as
+    /// `count_files_by_key_version`.
+    pub fn list_file_ids_by_key_version(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<(i32, String)>, ApiError> {
+        let mut conn = self.get_conn()?;
+
+        file_key_refs::table
+            .inner_join(files::table.on(files::id.eq(file_key_refs::file_id)))
+            .filter(file_key_refs::user_id.eq(user_id))
+            .select((file_key_refs::key_version, file_key_refs::file_id))
+            .order((
+                file_key_refs::key_version.asc(),
+                file_key_refs::created_at.asc(),
+                file_key_refs::file_id.asc(),
+            ))
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list file_key_refs by key_version error: {:?}", e);
                 ApiError::internal("Database query error")
             })
     }

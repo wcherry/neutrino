@@ -58,7 +58,27 @@ const ARGON2_FLOOR = { iterations: 2, memoryKiB: 19456 } as const;
 const SALT_BYTES = 16;
 const DERIVED_KEY_BYTES = 32;
 
-export type WrapMethod = 'passkey' | 'passphrase';
+export type WrapMethod = 'passkey' | 'passphrase' | 'device';
+
+/**
+ * The unprotected wrap.
+ *
+ * The wrapping key is stored in the record beside the ciphertext it opens, so
+ * the record opens itself and nothing is ever asked of the user. This is not
+ * protection and is not pretending to be: it exists because the passphrase
+ * prompt was removed by request, and it restores what the build before the key
+ * vault did — the identity readable by any script on this origin and by anyone
+ * with the browser profile.
+ *
+ * Kept as an explicit method rather than by storing the keyring in the clear so
+ * that `method` still says how a record is protected, and a future build can
+ * find these records to re-wrap them.
+ */
+interface DeviceParams {
+  kdf: 'none';
+  /** base64url, 32 bytes. The key to the blob it sits next to. */
+  key: string;
+}
 
 interface PassphraseParams {
   kdf: 'argon2id';
@@ -73,8 +93,8 @@ interface PassphraseParams {
 interface KeystoreRecord {
   userId: string;
   method: WrapMethod;
-  /** `PasskeyParams` or `PassphraseParams`, by `method`. */
-  params: PasskeyParams | PassphraseParams;
+  /** `PasskeyParams`, `PassphraseParams` or `DeviceParams`, by `method`. */
+  params: PasskeyParams | PassphraseParams | DeviceParams;
   /** base64url( nonce || secretbox ciphertext of the serialised keyring ). */
   blob: string;
   updatedAt: string;
@@ -253,6 +273,22 @@ export async function storeUnderPasskey(
   }
 }
 
+/**
+ * Store `keyring` so that this device can open it with nothing asked of anyone.
+ *
+ * See `DeviceParams`: the key travels in the record. Used for every new keyring
+ * now that the passphrase prompt is gone, and to convert a record the user has
+ * just unlocked so they are not asked a second time.
+ */
+export async function storeOnDevice(keyring: Keyring): Promise<void> {
+  const key = sodium.randombytes_buf(DERIVED_KEY_BYTES);
+  try {
+    await writeRecord(keyring, 'device', { kdf: 'none', key: b64u(key) }, key);
+  } finally {
+    key.fill(0);
+  }
+}
+
 /** Store `keyring` wrapped under a passphrase, for devices without PRF. */
 export async function storeUnderPassphrase(keyring: Keyring, passphrase: string): Promise<void> {
   const params = newPassphraseParams();
@@ -267,7 +303,7 @@ export async function storeUnderPassphrase(keyring: Keyring, passphrase: string)
 async function writeRecord(
   keyring: Keyring,
   method: WrapMethod,
-  params: PasskeyParams | PassphraseParams,
+  params: PasskeyParams | PassphraseParams | DeviceParams,
   wrappingKey: Uint8Array,
 ): Promise<void> {
   const plaintext = utf8(JSON.stringify(serializeKeyring(keyring)));
@@ -314,6 +350,22 @@ export async function unlockWithPasskey(
     throw new Error('This device’s key is protected by a passphrase, not a passkey');
   }
   const wrappingKey = await getPasskeyPrf(record.params as PasskeyParams);
+  return { keyring: openRecord(record, wrappingKey, userId), wrappingKey };
+}
+
+/**
+ * Open a device-wrapped record. Asks the user nothing, because it can't — the
+ * key is in the record.
+ */
+export async function unlockOnDevice(
+  userId: string,
+): Promise<{ keyring: Keyring; wrappingKey: Uint8Array }> {
+  const record = await readRecord(userId);
+  if (!record) throw new Error('This device holds no stored key');
+  if (record.method !== 'device') {
+    throw new Error('This device’s key is protected and has to be unlocked');
+  }
+  const wrappingKey = unb64u((record.params as DeviceParams).key);
   return { keyring: openRecord(record, wrappingKey, userId), wrappingKey };
 }
 

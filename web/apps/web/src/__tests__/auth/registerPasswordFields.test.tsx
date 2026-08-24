@@ -97,12 +97,12 @@ describe('RegisterPage password fields', () => {
         password: 'correct-horse',
       }),
     );
-    // The account password is what wraps the new key, and the redirect waits on
+    // The new key is wrapped to the device, not to the account password, so the
+    // sign-up is never asked to unlock it later. The redirect still waits on
     // setup — see encryptionSetupDialog.test.tsx.
     await waitFor(() =>
       expect(provisionKeyring).toHaveBeenCalledWith('u1', 'w@example.com', {
-        method: 'passphrase',
-        passphrase: 'correct-horse',
+        method: 'device',
       }),
     );
     await waitFor(() =>

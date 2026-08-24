@@ -469,6 +469,38 @@ export interface ShareFileKeyRequest {
   keyVersion?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Key file types — the caller's retired identity keys
+// ---------------------------------------------------------------------------
+
+/**
+ * One retired key. `encryptedKey` is opaque to the server: a sealed box that
+ * `@neutrino/e2e-crypto`'s `buildKeyFile` wrapped to the keyring's active public
+ * key, so only the holder of the current identity can open it.
+ */
+export interface ArchivedKey {
+  keyVersion: number;
+  /** Base64url. Never plaintext — the server holds no key that opens it. */
+  encryptedKey: string;
+  /** Base64url public half, so a client can match an entry before unsealing. */
+  publicKey?: string;
+}
+
+export interface PutKeyFileRequest {
+  /**
+   * The complete set, not a delta: the server replaces rather than merges, so
+   * omitting an entry here is how a key is retired for good.
+   */
+  keys: ArchivedKey[];
+}
+
+export interface KeyFileResponse {
+  userId: string;
+  /** Ascending by `keyVersion`, whatever order they were sent in. */
+  keys: ArchivedKey[];
+  createdAt: string;
+  updatedAt: string;
+}
 
 // ---------------------------------------------------------------------------
 // Notification types
