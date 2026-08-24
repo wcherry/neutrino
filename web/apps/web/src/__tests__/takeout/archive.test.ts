@@ -174,6 +174,123 @@ describe('openTakeout', () => {
   it('rejects an archive with no product folders', async () => {
     await expect(openTakeout(await zipOf({ 'notes.txt': 'hello' }))).rejects.toThrow(/product folders/);
   });
+
+  it('reports one part for a single zip', async () => {
+    const archive = await openTakeout(await zipOf({ 'Takeout/Keep/a.json': '{}' }));
+    expect(archive.partCount).toBe(1);
+    await archive.close();
+  });
+});
+
+/**
+ * Google splits a large export into numbered zips, and splits them wherever it
+ * likes: one product's directory routinely runs across several parts, and an
+ * album can be in a different part from the photos it names. Reading them one
+ * at a time is therefore not the same import — these are the properties that
+ * make the parts behave as the single export they are.
+ */
+describe('openTakeout across a split export', () => {
+  it('merges a product directory split across parts', async () => {
+    const archive = await openTakeout([
+      await zipOf({ 'Takeout/Google Photos/a.jpg': 'a', 'Takeout/Keep/note.json': '{}' }),
+      await zipOf({ 'Takeout/Google Photos/b.jpg': 'b' }),
+      await zipOf({ 'Takeout/Google Photos/c.jpg': 'c' }),
+    ]);
+
+    expect(archive.partCount).toBe(3);
+    expect(archive.product('Google Photos')!.entries.map((e) => e.path)).toEqual([
+      'a.jpg',
+      'b.jpg',
+      'c.jpg',
+    ]);
+    expect(archive.product('Keep')!.entries).toHaveLength(1);
+    await archive.close();
+  });
+
+  it('reads an entry out of whichever part it came from', async () => {
+    const archive = await openTakeout([
+      await zipOf({ 'Takeout/Keep/first.json': '{"part":1}' }),
+      await zipOf({ 'Takeout/Keep/second.json': '{"part":2}' }),
+    ]);
+
+    const [first, second] = archive.product('Keep')!.entries;
+    await expect(first.text()).resolves.toBe('{"part":1}');
+    await expect(second.text()).resolves.toBe('{"part":2}');
+    await archive.close();
+  });
+
+  it('lists products from every part', async () => {
+    const archive = await openTakeout([
+      await zipOf({ 'Takeout/Keep/a.json': '{}' }),
+      await zipOf({ 'Takeout/Drive/a.docx': 'x' }),
+    ]);
+
+    expect(archive.products.map((p) => p.name)).toEqual(['Drive', 'Keep']);
+    await archive.close();
+  });
+
+  it('drops a part chosen twice rather than importing it twice', async () => {
+    const part = await zipOf({ 'Takeout/Keep/a.json': '{}', 'Takeout/Keep/b.json': '{}' });
+    const archive = await openTakeout([part, part]);
+
+    expect(archive.product('Keep')!.entries.map((e) => e.path)).toEqual(['a.json', 'b.json']);
+    await archive.close();
+  });
+
+  it('does not fold together the copies Google files under both an album and a year', async () => {
+    // Same name, same bytes, different paths — the photo importer pairs these
+    // up itself, and would have nothing to pair if this dropped one of them.
+    const archive = await openTakeout([
+      await zipOf({ 'Takeout/Google Photos/Holiday/x.jpg': 'same' }),
+      await zipOf({ 'Takeout/Google Photos/Photos from 2019/x.jpg': 'same' }),
+    ]);
+
+    expect(archive.product('Google Photos')!.entries).toHaveLength(2);
+    await archive.close();
+  });
+
+  it('tolerates a part that holds nothing usable', async () => {
+    // The last part of an export can be almost empty, which is not a reason to
+    // refuse the ones that are not.
+    const archive = await openTakeout([
+      await zipOf({ 'Takeout/Keep/a.json': '{}' }),
+      await new JSZip().generateAsync({ type: 'blob' }),
+    ]);
+
+    expect(archive.product('Keep')!.entries).toHaveLength(1);
+    await archive.close();
+  });
+
+  it('rejects the whole set when one part is not a zip', async () => {
+    await expect(
+      openTakeout([await zipOf({ 'Takeout/Keep/a.json': '{}' }), new Blob(['not a zip'])]),
+    ).rejects.toBeInstanceOf(TakeoutError);
+  });
+
+  it('closes every part’s reader', async () => {
+    const archive = await openTakeout([
+      await zipOf({ 'Takeout/Keep/a.json': '{}' }),
+      await zipOf({ 'Takeout/Keep/b.json': '{}' }),
+    ]);
+
+    await expect(archive.close()).resolves.toBeUndefined();
+    await expect(archive.close()).resolves.toBeUndefined();
+  });
+
+  it('opening one part costs only that part’s tail', async () => {
+    // The property the single-archive tests pin down has to survive the merge:
+    // opening thirty parts must not read thirty archives.
+    const counted = [
+      counting(await zipOf({ 'Takeout/Drive/a.bin': incompressible(300_000) })),
+      counting(await zipOf({ 'Takeout/Drive/b.bin': incompressible(300_000) })),
+    ];
+
+    const archive = await openTakeout(counted.map((c) => c.blob));
+
+    for (const { blob, read } of counted) expect(read()).toBeLessThan(blob.size / 4);
+    expect(archive.product('Drive')!.entries).toHaveLength(2);
+    await archive.close();
+  });
 });
 
 /**

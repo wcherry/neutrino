@@ -40,6 +40,23 @@
  * the `File` handle and a pool of workers, so whoever opened it should
  * `close()` it (the import page does, when another archive is chosen or the
  * page goes away).
+ *
+ * ── Split exports ─────────────────────────────────────────────────────────
+ *
+ * Google splits an export into parts at a size the user chooses when they
+ * request it — 2 GB by default, so a large Photos library arrives as dozens of
+ * `takeout-…-001.zip`, `-002.zip` files. The split falls between files, never
+ * through one, and every part carries the same `Takeout/` wrapper, so the
+ * parts are one archive that happens to be stored in several zips: part 3 can
+ * hold the second half of `Google Photos/` and the whole of `Keep/`.
+ *
+ * `openTakeout` therefore takes either one zip or all of them, opens each, and
+ * presents the union as a single `TakeoutArchive`. Nothing downstream knows
+ * the difference — a product directory is the merge of that directory across
+ * every part, and an entry still reads from whichever zip it came out of.
+ * Reading one part at a time instead would import each in isolation, which
+ * for anything Google split is wrong: albums, sidecars and the files they
+ * describe routinely land in different parts.
  */
 
 import {
@@ -96,9 +113,13 @@ export interface TakeoutArchive {
   /**
    * The wrapper prefix that was stripped, e.g. `Takeout/`. Empty when the zip
    * has no single wrapper directory (someone zipped the product folders
-   * directly).
+   * directly), or when the parts of a split export disagree about theirs.
    */
   root: string;
+  /**
+   * How many zips this archive was assembled from. `1` for an unsplit export.
+   */
+  partCount: number;
   products: TakeoutProductDir[];
   /** Case-insensitive lookup by directory name. */
   product(name: string): TakeoutProductDir | undefined;
@@ -167,91 +188,171 @@ function isFileEntry(entry: Entry): entry is FileEntry {
 }
 
 /**
- * Open a Takeout zip and group its contents by product directory.
- *
- * Only the zip's central directory is read here; entry contents are read on
- * demand. Files sitting directly in the archive root (Takeout's
- * `archive_browser.html` and friends) belong to no product and are dropped.
+ * A name to put in a log line or an error, for a Blob that may not have one.
+ * Lower case, so that it reads as part of a sentence; `sentenceCase` puts it
+ * back for the one place it starts one.
  */
-export async function openTakeout(file: Blob): Promise<TakeoutArchive> {
-  logStep('archive', 'opening zip', { size: formatBytes(file.size), type: file.type });
-  configureWorkers();
+function labelOf(file: Blob, index: number, total: number): string {
+  if (file instanceof File && file.name) return file.name;
+  return total === 1 ? 'the archive' : `archive ${index + 1}`;
+}
+
+const sentenceCase = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** One opened zip: its own wrapper prefix, its content entries, its reader. */
+interface ArchivePart {
+  label: string;
+  root: string;
+  content: FileEntry[];
+  /** Entries dropped as macOS metadata, for the log only. */
+  ignored: number;
+  close(): Promise<void>;
+}
+
+/**
+ * Open one zip and read its central directory. Contents are not read.
+ *
+ * Only an unreadable zip fails here. A part that turns out to hold nothing
+ * usable is not an error on its own — that judgement belongs to the merged
+ * archive, since in a split export any individual part may be all photos, or
+ * all sidecars, or (for the last one) very nearly empty.
+ */
+async function openPart(file: Blob, label: string): Promise<ArchivePart> {
+  logStep('archive', `opening ${label}`, { size: formatBytes(file.size), type: file.type });
 
   const reader = new ZipReader(new BlobReader(file));
   let all: Entry[];
   try {
     all = await reader.getEntries();
   } catch (err) {
-    logFail('archive', 'zip could not be read', err);
+    logFail('archive', `${label} could not be read`, err);
     await reader.close().catch(() => {});
-    throw new TakeoutError('That file is not a readable zip archive.');
+    throw new TakeoutError(`${sentenceCase(label)} is not a readable zip archive.`);
   }
 
   const close = () =>
     reader
       .close()
-      .then(() => logStep('archive', 'reader closed'))
-      .catch((err) => logWarn('archive', 'reader would not close', err));
-
-  const fail = async (message: string): Promise<never> => {
-    await close();
-    throw new TakeoutError(message);
-  };
+      .then(() => logStep('archive', `reader closed for ${label}`))
+      .catch((err) => logWarn('archive', `reader would not close for ${label}`, err));
 
   const files = all.filter(isFileEntry);
-  if (files.length === 0) {
-    logWarn('archive', 'zip holds no files');
-    return fail('The archive is empty.');
-  }
-
   // macOS' Archive Utility and Finder add these; they are never real content
   // and would otherwise defeat the single-wrapper-directory detection.
   const content = files.filter((f) => {
     const name = f.filename;
     return !name.startsWith('__MACOSX/') && !name.split('/').some((p) => p === '.DS_Store');
   });
-  if (content.length === 0) {
-    logWarn('archive', 'zip holds nothing but macOS metadata', { entries: files.length });
-    return fail('The archive is empty.');
-  }
 
   const root = detectRoot(content.map((f) => f.filename));
-  logStep('archive', 'read the central directory', {
+  logStep('archive', `read the central directory of ${label}`, {
     entries: content.length,
     ignored: files.length - content.length,
     root: root || '(no wrapper directory)',
-    // What the archive would have cost to hold in memory, which is what this
+    // What this part would have cost to hold in memory, which is what this
     // reader exists not to pay.
     uncompressed: formatBytes(content.reduce((total, f) => total + (f.uncompressedSize ?? 0), 0)),
   });
 
+  return { label, root, content, ignored: files.length - content.length, close };
+}
+
+/**
+ * Open a Takeout export and group its contents by product directory.
+ *
+ * Pass one zip, or every part of a split export — see the note at the top of
+ * this module. Only the zips' central directories are read here; entry
+ * contents are read on demand. Files sitting directly in an archive root
+ * (Takeout's `archive_browser.html` and friends) belong to no product and are
+ * dropped.
+ */
+export async function openTakeout(source: Blob | Blob[]): Promise<TakeoutArchive> {
+  const files = Array.isArray(source) ? source : [source];
+  if (files.length === 0) throw new TakeoutError('No archive was chosen.');
+  configureWorkers();
+
+  // Opened in sequence rather than concurrently: each reader spins up its own
+  // worker pool, and a user who drops thirty parts should not get thirty pools
+  // at once. Reading a central directory is a tail seek, so this is cheap.
+  const parts: ArchivePart[] = [];
+  const closeAll = async () => {
+    await Promise.all(parts.map((p) => p.close()));
+  };
+  try {
+    for (const [index, file] of files.entries()) {
+      parts.push(await openPart(file, labelOf(file, index, files.length)));
+    }
+  } catch (err) {
+    await closeAll();
+    throw err;
+  }
+
+  const fail = async (message: string): Promise<never> => {
+    await closeAll();
+    throw new TakeoutError(message);
+  };
+
+  if (parts.every((p) => p.content.length === 0)) {
+    logWarn('archive', 'the archive holds no files', { parts: parts.length });
+    return fail(files.length === 1 ? 'The archive is empty.' : 'Those archives are empty.');
+  }
+
+  // Only meaningful when every part agrees. Parts of one export always do;
+  // a mismatch means the user mixed exports together, which is theirs to see
+  // in the product list rather than something to refuse outright.
+  const roots = new Set(parts.map((p) => p.root));
+  const root = roots.size === 1 ? parts[0].root : '';
+
   const byProduct = new Map<string, TakeoutEntry[]>();
-  for (const zipEntry of content) {
-    const relative = zipEntry.filename.slice(root.length);
-    const slash = relative.indexOf('/');
-    // A file directly in the root (archive_browser.html) has no product.
-    if (slash <= 0) continue;
+  // A path identifies a file within an export, so this is what stops a user
+  // who picked the same part twice from importing everything in it twice. It
+  // is deliberately not name-and-size: Google files a photo under both its
+  // album and its year, and folding *those* together is the photo importer's
+  // job, which it does by name and size after this has run.
+  const seen = new Set<string>();
+  let duplicates = 0;
 
-    const product = relative.slice(0, slash);
-    const path = relative.slice(slash + 1);
-    const entry: TakeoutEntry = {
-      path,
-      fullPath: zipEntry.filename,
-      ext: extensionOf(path),
-      size: zipEntry.uncompressedSize ?? 0,
-      lastModified: validDate(zipEntry.lastModDate),
-      text: () => zipEntry.getData(new TextWriter()),
-      blob: () => zipEntry.getData(new BlobWriter()),
-    };
+  for (const part of parts) {
+    for (const zipEntry of part.content) {
+      const relative = zipEntry.filename.slice(part.root.length);
+      const slash = relative.indexOf('/');
+      // A file directly in the root (archive_browser.html) has no product.
+      if (slash <= 0) continue;
 
-    const existing = byProduct.get(product);
-    if (existing) existing.push(entry);
-    else byProduct.set(product, [entry]);
+      if (seen.has(zipEntry.filename)) {
+        duplicates++;
+        continue;
+      }
+      seen.add(zipEntry.filename);
+
+      const product = relative.slice(0, slash);
+      const path = relative.slice(slash + 1);
+      const entry: TakeoutEntry = {
+        path,
+        fullPath: zipEntry.filename,
+        ext: extensionOf(path),
+        size: zipEntry.uncompressedSize ?? 0,
+        lastModified: validDate(zipEntry.lastModDate),
+        text: () => zipEntry.getData(new TextWriter()),
+        blob: () => zipEntry.getData(new BlobWriter()),
+      };
+
+      const existing = byProduct.get(product);
+      if (existing) existing.push(entry);
+      else byProduct.set(product, [entry]);
+    }
+  }
+
+  if (duplicates > 0) {
+    logWarn('archive', 'the same file appeared in more than one archive', {
+      dropped: duplicates,
+      hint: 'the same part was probably chosen twice',
+    });
   }
 
   if (byProduct.size === 0) {
     logWarn('archive', 'no product directories under the root', {
-      sample: content.slice(0, 10).map((f) => f.filename),
+      sample: parts.flatMap((p) => p.content.slice(0, 10).map((f) => f.filename)).slice(0, 10),
     });
     return fail(
       'No product folders found in the archive. A Takeout export has a folder per product, such as Takeout/Keep.',
@@ -261,23 +362,26 @@ export async function openTakeout(file: Blob): Promise<TakeoutArchive> {
   const products: TakeoutProductDir[] = [...byProduct.entries()]
     .map(([name, entries]) => ({
       name,
+      // Sorted across the merged set, not per part, so a product split down
+      // the middle of two zips still reads in one order.
       entries: entries.sort((a, b) => a.path.localeCompare(b.path)),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   logStep(
     'archive',
-    'grouped by product',
+    parts.length === 1 ? 'grouped by product' : `grouped by product across ${parts.length} archives`,
     products.map((p) => `${p.name} (${p.entries.length})`),
   );
 
   return {
     root,
+    partCount: parts.length,
     products,
     product(name: string) {
       const wanted = name.toLowerCase();
       return products.find((p) => p.name.toLowerCase() === wanted);
     },
-    close,
+    close: closeAll,
   };
 }

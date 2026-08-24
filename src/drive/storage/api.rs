@@ -9,7 +9,7 @@ use crate::drive::storage::{
         ZipEntryOrderField,
     },
     native_types,
-    service::StorageService,
+    service::{StorageService, UploadAllowance},
     store::TempUpload,
 };
 use crate::drive::tags::service::TagsService;
@@ -18,9 +18,10 @@ use crate::shared::{
     ListQuery, ListQueryParams, OrderDirection,
 };
 use actix_files::NamedFile;
-use actix_multipart::Multipart;
+use actix_multipart::{Field, Multipart};
 use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
 use futures_util::StreamExt;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use utoipa::OpenApi;
@@ -33,6 +34,76 @@ pub struct StorageApiState {
     /// Used by autosave to apply a rename carried in the multipart `metadata`
     /// part; renames are filesystem metadata, which this repo owns.
     pub filesystem_repo: Arc<FilesystemRepository>,
+    /// `MAX_UPLOAD_BYTES`, the ceiling on any single streamed body.
+    pub max_upload_bytes: u64,
+}
+
+/// Stream one multipart file field onto disk at `path`, stopping the moment
+/// the running total crosses what `allowance` permits, and return the number
+/// of bytes written.
+///
+/// Every route in this module that accepts bytes goes through here, so the
+/// ceiling cannot be forgotten by a fourth one. It is the only thing bounding
+/// a streamed body at all: `MAX_UPLOAD_BYTES` is installed as an actix
+/// `PayloadConfig`, which bounds the `Bytes`/`String` extractors but is never
+/// consulted by `actix_multipart::Multipart` — that streams whatever arrives.
+///
+/// `label` names the operation in the log lines only; the errors returned to
+/// the client are deliberately uniform.
+async fn stream_field_to_file(
+    field: &mut Field,
+    path: &Path,
+    allowance: &UploadAllowance,
+    label: &str,
+) -> Result<i64, ApiError> {
+    let raw_file = tokio::fs::File::create(path).await.map_err(|e| {
+        tracing::error!("Failed to create temp file for {}: {:?}", label, e);
+        ApiError::internal("Failed to initialize upload")
+    })?;
+    // Buffer writes to reduce backpressure on the network stream.
+    // Without this, each ~32 KB chunk causes a blocking disk syscall, stalling
+    // the TCP receive window and potentially triggering client/proxy timeouts.
+    let mut file = BufWriter::with_capacity(1 << 20, raw_file); // 1 MB write buffer
+
+    let mut size: i64 = 0;
+    // Held rather than returned, so that every exit closes the handle below
+    // before the caller's `TempUpload` guard unlinks the partial file.
+    let mut outcome: Result<(), ApiError> = Ok(());
+
+    while let Some(chunk) = field.next().await {
+        let data = match chunk {
+            Ok(data) => data,
+            Err(e) => {
+                tracing::error!("Chunk read error during {}: {:?}", label, e);
+                outcome = Err(ApiError::bad_request("Upload interrupted"));
+                break;
+            }
+        };
+        size += data.len() as i64;
+        // Checked per chunk rather than at the end: an upload that cannot be
+        // committed is refused at the first byte over the line, instead of
+        // being written out in full and rejected once it is already on disk.
+        if let Err(e) = allowance.check(size) {
+            tracing::info!("Refused {} at {} bytes: {}", label, size, e.code);
+            outcome = Err(e);
+            break;
+        }
+        if let Err(e) = file.write_all(&data).await {
+            tracing::error!("Write error during {}: {:?}", label, e);
+            outcome = Err(ApiError::internal("Failed to write upload data"));
+            break;
+        }
+    }
+
+    let flushed = file.flush().await;
+    drop(file);
+    outcome?;
+    flushed.map_err(|e| {
+        tracing::error!("Flush error during {}: {:?}", label, e);
+        ApiError::internal("Failed to finalize upload")
+    })?;
+
+    Ok(size)
 }
 
 #[utoipa::path(
@@ -95,7 +166,7 @@ pub async fn convert_file(
     responses(
         (status = 201, description = "File uploaded successfully", body = FileMetadataResponse),
         (status = 400, description = "No file provided or invalid multipart data"),
-        (status = 413, description = "Storage quota exceeded"),
+        (status = 413, description = "File too large, or storage quota exceeded"),
         (status = 429, description = "Daily upload limit exceeded"),
     ),
     security(("bearer_auth" = [])),
@@ -111,6 +182,12 @@ pub async fn upload_file(
     let mut encrypted_metadata: Option<String> = None;
     let mut explicit_mime_type: Option<String> = None;
     let mut thumbnail_b64: Option<String> = None;
+
+    // Settled before the body is touched, so a file that was never going to
+    // fit is refused as it streams rather than after it has all been written.
+    let allowance = state
+        .storage_service
+        .upload_allowance(&user.user_id, state.max_upload_bytes)?;
 
     while let Some(field) = payload.next().await {
         let mut field = field.map_err(|e| {
@@ -190,33 +267,7 @@ pub async fn upload_file(
             .store()
             .temp_upload(&user.user_id, &temp_id);
 
-        let raw_file = tokio::fs::File::create(temp.path()).await.map_err(|e| {
-            tracing::error!("Failed to create temp file: {:?}", e);
-            ApiError::internal("Failed to initialize upload")
-        })?;
-        // Buffer writes to reduce backpressure on the network stream.
-        // Without this, each ~32 KB chunk causes a blocking disk syscall, stalling
-        // the TCP receive window and potentially triggering client/proxy timeouts.
-        let mut file = BufWriter::with_capacity(1 << 20, raw_file); // 1 MB write buffer
-
-        let mut size: i64 = 0;
-        while let Some(chunk) = field.next().await {
-            let data = chunk.map_err(|e| {
-                tracing::error!("Chunk read error: {:?}", e);
-                ApiError::bad_request("Upload interrupted")
-            })?;
-            size += data.len() as i64;
-            file.write_all(&data).await.map_err(|e| {
-                tracing::error!("Write error: {:?}", e);
-                ApiError::internal("Failed to write upload data")
-            })?;
-        }
-
-        file.flush().await.map_err(|e| {
-            tracing::error!("Flush error: {:?}", e);
-            ApiError::internal("Failed to finalize upload")
-        })?;
-        drop(file);
+        let size = stream_field_to_file(&mut field, temp.path(), &allowance, "upload").await?;
 
         let response = state
             .storage_service
@@ -761,30 +812,17 @@ pub async fn autosave_file(
             .store()
             .temp_upload(&user.user_id, &temp_id);
 
-        let raw_file = tokio::fs::File::create(temp.path()).await.map_err(|e| {
-            tracing::error!("Failed to create temp file: {:?}", e);
-            ApiError::internal("Failed to initialize autosave")
-        })?;
-        let mut file = BufWriter::with_capacity(1 << 20, raw_file);
-
-        let mut size: i64 = 0;
-        while let Some(chunk) = field.next().await {
-            let data = chunk.map_err(|e| {
-                tracing::error!("Chunk read error: {:?}", e);
-                ApiError::bad_request("Upload interrupted")
-            })?;
-            size += data.len() as i64;
-            file.write_all(&data).await.map_err(|e| {
-                tracing::error!("Write error: {:?}", e);
-                ApiError::internal("Failed to write autosave data")
-            })?;
-        }
-
-        file.flush().await.map_err(|e| {
-            tracing::error!("Flush error: {:?}", e);
-            ApiError::internal("Failed to finalize autosave")
-        })?;
-        drop(file);
+        // Bounded by the configured ceiling but not by quota: a save from an
+        // open editor is a write the user has already made, and failing it
+        // over a full disk quota would lose their work rather than prevent it.
+        // Quota is enforced where new bytes are claimed, on upload.
+        let size = stream_field_to_file(
+            &mut field,
+            temp.path(),
+            &UploadAllowance::unmetered(state.max_upload_bytes),
+            "autosave",
+        )
+        .await?;
 
         // Don't commit yet — the `metadata` part carrying a rename may still
         // be ahead of us in the body, and clients append it after the file.
@@ -897,30 +935,15 @@ pub async fn save_version(
             .store()
             .temp_upload(&user.user_id, &temp_id);
 
-        let raw_file = tokio::fs::File::create(temp.path()).await.map_err(|e| {
-            tracing::error!("Failed to create temp file: {:?}", e);
-            ApiError::internal("Failed to initialize version save")
-        })?;
-        let mut file = BufWriter::with_capacity(1 << 20, raw_file);
-
-        let mut size: i64 = 0;
-        while let Some(chunk) = field.next().await {
-            let data = chunk.map_err(|e| {
-                tracing::error!("Chunk read error: {:?}", e);
-                ApiError::bad_request("Upload interrupted")
-            })?;
-            size += data.len() as i64;
-            file.write_all(&data).await.map_err(|e| {
-                tracing::error!("Write error: {:?}", e);
-                ApiError::internal("Failed to write version data")
-            })?;
-        }
-
-        file.flush().await.map_err(|e| {
-            tracing::error!("Flush error: {:?}", e);
-            ApiError::internal("Failed to finalize version save")
-        })?;
-        drop(file);
+        // Unmetered for the same reason autosave is: a named version is a
+        // snapshot of content that already exists.
+        let size = stream_field_to_file(
+            &mut field,
+            temp.path(),
+            &UploadAllowance::unmetered(state.max_upload_bytes),
+            "version save",
+        )
+        .await?;
 
         let response =
             state

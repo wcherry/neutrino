@@ -69,7 +69,10 @@ import styles from './page.module.css';
 type PickStage = 'pick' | 'configure';
 
 interface LoadedArchive {
+  /** What to show it as: one file's name, or the first part's plus a count. */
   fileName: string;
+  /** How many zips it was assembled from; 1 for an unsplit export. */
+  partCount: number;
   archive: TakeoutArchive;
   keep: KeepSource | null;
   docs: DriveDocsSource | null;
@@ -78,6 +81,24 @@ interface LoadedArchive {
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+/**
+ * What to call the export on screen once it is open. A split export is many
+ * files, and listing thirty of them helps nobody, so the first part names the
+ * set and the rest are a count.
+ */
+const archiveLabel = (files: File[]) =>
+  files.length === 1 ? files[0].name : `${files[0].name} + ${plural(files.length - 1, 'more part')}`;
+
+/**
+ * Google names the parts of a split export `…-001.zip`, `…-002.zip`, and a
+ * file picker hands them over in whatever order it feels like. Sorting them
+ * only affects which one names the set above and the order the log reads in —
+ * the merge itself does not care — but an export that reports itself by its
+ * first part rather than an arbitrary one is the less confusing of the two.
+ */
+const inPartOrder = (files: File[]) =>
+  [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
 
 /** "12 photos", or "12 photos and videos" when the export holds both. */
 const mediaLabel = (source: PhotosSource) =>
@@ -141,21 +162,29 @@ export default function ImportPage() {
     setIncludePhotos(true);
   };
 
-  const handleFiles = useCallback(async (files: File[]) => {
-    const file = files[0];
-    if (!file) return;
+  /**
+   * Every file dropped at once is one export. A split Takeout has to be read
+   * as a whole — a photo's sidecar, its album and the file itself routinely
+   * land in different parts — so the parts are merged into a single archive
+   * rather than imported one after another.
+   */
+  const handleFiles = useCallback(async (dropped: File[]) => {
+    if (dropped.length === 0) return;
+    const files = inPartOrder(dropped);
+    const label = archiveLabel(files);
     setReadError(null);
     setReading(true);
     try {
       // Dropping a second archive replaces the first; let the old one go.
       closeArchive();
-      const archive = await openTakeout(file);
+      const archive = await openTakeout(files);
       archiveRef.current = archive;
       const keep = await findKeepNotes(archive);
       const docs = findDriveDocs(archive);
       const sheets = findDriveSheets(archive);
       const photos = await findTakeoutPhotos(archive);
-      logStep('page', `read ${file.name}`, {
+      logStep('page', `read ${label}`, {
+        parts: archive.partCount,
         notes: keep?.entries.length ?? 0,
         documents: docs?.docs.length ?? 0,
         unsupportedDocuments: docs?.unsupported.length ?? 0,
@@ -164,14 +193,16 @@ export default function ImportPage() {
         photos: photos?.photos.length ?? 0,
         albums: photos?.albums.length ?? 0,
       });
-      setLoaded({ fileName: file.name, archive, keep, docs, sheets, photos });
+      setLoaded({ fileName: label, partCount: archive.partCount, archive, keep, docs, sheets, photos });
       setPickStage('configure');
     } catch (err) {
-      logFail('page', `could not read ${file.name}`, err);
+      logFail('page', `could not read ${label}`, err);
       setReadError(
         err instanceof TakeoutError
           ? err.message
-          : `Could not read ${file.name}. Make sure it is the .zip you downloaded from Google Takeout.`,
+          : `Could not read ${label}. Make sure ${
+              files.length === 1 ? 'it is the .zip' : 'they are the .zip files'
+            } you downloaded from Google Takeout.`,
       );
     } finally {
       setReading(false);
@@ -291,10 +322,10 @@ export default function ImportPage() {
             ) : (
               <DropZone
                 onFiles={handleFiles}
-                multiple={false}
+                multiple
                 accept=".zip,application/zip"
                 label="Drop your Takeout .zip here"
-                hint="or click to browse"
+                hint="or click to browse — select every part if your export was split"
               />
             )}
             <div className={styles.helpBox}>
@@ -314,7 +345,10 @@ export default function ImportPage() {
                   and <strong>Excel (.xlsx)</strong> for Google Sheets — those are the defaults, and
                   the formats that convert best.
                 </li>
-                <li>Download the .zip Google emails you and drop it above.</li>
+                <li>
+                  Download the .zip Google emails you and drop it above. A large export comes as
+                  several numbered .zip files — download all of them and drop them in together.
+                </li>
               </ol>
               <p className={styles.helpNote}>
                 Keep notes become Neutrino notes, Google Docs documents become Neutrino documents,
@@ -323,8 +357,9 @@ export default function ImportPage() {
                 cannot be imported yet.
               </p>
               <p className={styles.helpNote}>
-                A Photos export is split across several .zip files when it is large. Drop them in
-                one at a time — each is imported on its own.
+                Google splits a large export across several .zip files, and it splits them wherever
+                it likes — an album and the photos in it can end up in different parts. Select them
+                all and they are read as the one export they are.
               </p>
             </div>
           </section>
@@ -338,6 +373,7 @@ export default function ImportPage() {
               <div>
                 <div className={styles.archiveName}>{loaded.fileName}</div>
                 <div className={styles.archiveMeta}>
+                  {loaded.partCount > 1 && `${plural(loaded.partCount, 'part')} · `}
                   {plural(loaded.archive.products.length, 'product')}:{' '}
                   {loaded.archive.products.map((p) => p.name).join(', ')}
                 </div>

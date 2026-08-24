@@ -11,6 +11,31 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 
 const isDev = process.env.NODE_ENV === 'development';
 const configDir = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * The ceiling on a request body passing through the dev `/api/*` proxy below.
+ *
+ * `next dev` clones the body of an externally-rewritten request through a
+ * stream capped at `experimental.middlewareClientMaxBodySize`, which defaults
+ * to 10 MB — and past that it *truncates* the clone rather than rejecting the
+ * request. The Rust server then reaches EOF before the closing multipart
+ * boundary and fails the upload with "Upload interrupted", which is issue
+ * #102: in dev, every Drive upload over 10 MB dies, and a Google Takeout
+ * import (all photos and videos) dies almost immediately.
+ *
+ * This is not where the real upload limit lives. Production is
+ * `output: 'export'` — static files served by the Rust binary, with no Node
+ * process anywhere near an upload — so nothing here applies to a deployed
+ * instance; `MAX_UPLOAD_BYTES` on the server is the limit that counts. This
+ * only needs to stop being the bottleneck in dev.
+ *
+ * Deliberately not enormous: the clone pushes into `PassThrough` streams in
+ * flowing mode without honouring backpressure, so a value far above anything
+ * a developer would actually upload buys nothing but unbounded heap growth if
+ * the server ever drains slower than the browser sends.
+ */
+const DEV_PROXY_MAX_BODY_BYTES = 2 * 1024 * 1024 * 1024;
+
 const libsodiumWrappersCjs = path.resolve(
   configDir,
   '../../packages/e2e-crypto/node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js',
@@ -73,6 +98,11 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['libsodium-wrappers'],
   experimental: {
     // Optimize CSS imports from workspace packages
+
+    // Only meaningful alongside the dev rewrite above — see
+    // DEV_PROXY_MAX_BODY_BYTES. Kept in this block rather than in the `isDev`
+    // spread because a later literal key would override the spread wholesale.
+    ...(isDev && { middlewareClientMaxBodySize: DEV_PROXY_MAX_BODY_BYTES }),
   },
   images: {
     remotePatterns: [
