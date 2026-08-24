@@ -68,19 +68,17 @@ import {
 import { useUser } from '@neutrino/auth';
 import {
   slidesApi, driveReadContent, driveAutosaveEncryptedContent,
-  driveAutosaveBytes, driveCreateVersion, encryptionApi, extractSlideText,
+  driveAutosaveEncryptedBytes, mintFileKey, canEncryptFor, extractSlideText,
   storageApi, filesystemApi, ApiClientError, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
-import { OFFICE_MIME, officeAppForFile } from '@/lib/officeFormats';
+import { officeAppForFile } from '@/lib/officeFormats';
 import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
-import {
-  decryptFile, initSodium, loadKeyPair, activeKeyVersion, generateFileKey, encryptFileKey,
-} from '@neutrino/e2e-crypto';
+import { decryptFile } from '@neutrino/e2e-crypto';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme, CreateThemeRequest, UpdateThemeRequest } from '@neutrino/api-slides';
 import { ThemeEditorDialog, type ThemeEditorMode } from './ThemeEditorDialog';
@@ -527,14 +525,28 @@ export function SlideEditor() {
 
   const officeContentLoadStartedRef = useRef(false);
   useEffect(() => {
-    if (!officeMode || !officeFileMeta || officeContentLoadStartedRef.current) return;
+    if (!officeMode || !officeFileMeta || !dekResolved || officeContentLoadStartedRef.current) return;
     officeContentLoadStartedRef.current = true;
     let cancelled = false;
     (async () => {
       try {
         const blob = await storageApi.downloadFile(slideId);
         if (cancelled) return;
-        const file = new File([blob], officeFileMeta.name, { type: officeFileMeta.mimeType });
+        // Office-mode saves are encrypted now, so a file that already has a key
+        // ref holds ciphertext. `isNewEncryption` separates the two: it means
+        // the DEK was just minted for a file that had none, so what is stored
+        // is still the plaintext .pptx it was uploaded as, and the first save
+        // is what encrypts it.
+        const stored = new Uint8Array(await blob.arrayBuffer());
+        if (cancelled) return;
+        const plain = dekRef.current && !isNewEncryption
+          ? decryptFile(stored, dekRef.current)
+          : stored;
+        const file = new File(
+          [plain.buffer.slice(plain.byteOffset, plain.byteOffset + plain.byteLength) as ArrayBuffer],
+          officeFileMeta.name,
+          { type: officeFileMeta.mimeType },
+        );
         const { importFromPptx } = await import('./pptxImport');
         if (cancelled) return;
         const imported = await importFromPptx(file);
@@ -556,7 +568,7 @@ export function SlideEditor() {
   // toast is intentionally omitted — a fresh identity on every render would
   // otherwise cancel this one-shot load via the cleanup function above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [officeMode, officeFileMeta, slideId]);
+  }, [officeMode, officeFileMeta, slideId, dekResolved, isNewEncryption]);
 
   useEffect(() => {
     if (!slideContent) return;
@@ -601,12 +613,15 @@ export function SlideEditor() {
       if (officeModeRef.current) {
         const meta = officeFileMetaRef.current;
         if (!meta) throw new Error('office-meta-missing');
+        if (!dekRef.current) throw new Error('no-dek');
         const bytes = await exportAsPptxBytes(presentationRef.current);
-        // Office-mode files stay real, uncorrupted OOXML at rest (acceptance
-        // criterion 3 — downloading the raw file must open in real
-        // PowerPoint), so these never go through the E2EE-encrypted transport
-        // even when a DEK is available for this file id.
-        await driveAutosaveBytes(slideId, bytes, meta.name, OFFICE_MIME.pptx);
+        // Office-mode bytes are encrypted like everything else. They used not
+        // to be, on the grounds that "downloading the raw file must open in
+        // real PowerPoint" (issue #43, criterion 3) — but Drive's download
+        // decrypts client-side, so the .pptx that reaches the user's disk is
+        // the same either way. What the plaintext write bought was a readable
+        // deck in object storage: issue #95.
+        await driveAutosaveEncryptedBytes(slideId, bytes, meta.name, dekRef.current);
         return;
       }
       if (!dekRef.current) throw new Error('no-dek');
@@ -724,27 +739,22 @@ export function SlideEditor() {
   }, [router]);
 
   const handleDuplicate = useCallback(async () => {
+    // The copy is a new Drive file with no key of its own, so mint a DEK and
+    // register it the way an editor's first save does. This used to fall back
+    // to a plaintext write when there was no key pair on this device, which
+    // left a presentation that could never be encrypted (issue #95). Checked
+    // before the copy is created so a locked vault leaves no empty deck behind.
+    if (!(await canEncryptFor(currentUser?.id))) {
+      toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      return;
+    }
     const content = JSON.stringify(presentationRef.current);
     const copy = await slidesApi.createSlide({ title: `${title || 'Untitled presentation'} (copy)` });
-    // The copy is a new Drive file with no key of its own, so mint a DEK and
-    // register it the way an editor's first save does. Without a key pair on
-    // this device there is nothing to encrypt with — fall back to plaintext,
-    // which the editor still reads back.
-    await initSodium();
-    const keyPair = currentUser?.id ? loadKeyPair(currentUser.id) : null;
-    if (keyPair) {
-      const dek = generateFileKey();
-      await encryptionApi.setFileKey(copy.id, {
-        encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
-        keyVersion: activeKeyVersion(currentUser!.id) ?? undefined,
-      });
-      await driveAutosaveEncryptedContent(copy.id, content, 'slide.json', dek);
-    } else {
-      await driveCreateVersion(copy.id, content, 'slide.json');
-    }
+    const dek = await mintFileKey(currentUser?.id, copy.id);
+    await driveAutosaveEncryptedContent(copy.id, content, 'slide.json', dek);
     queryClient.invalidateQueries({ queryKey: ['slides'] });
     router.push(`/slides/editor?id=${copy.id}`);
-  }, [title, currentUser?.id, queryClient, router]);
+  }, [title, currentUser?.id, queryClient, router, toast]);
 
   function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;

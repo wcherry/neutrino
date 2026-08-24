@@ -269,42 +269,13 @@ export interface ListSuggestionsResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * Generate a JPEG thumbnail for an image file using the browser Canvas API.
- * Returns the raw base64 string (no data-URL prefix), or null on failure.
+ * Generate a JPEG thumbnail for an image file.
+ *
+ * Defined in `@neutrino/utils` and re-exported here, because `@neutrino/api-drive`
+ * needs it for every encrypted upload and cannot import this package — this one
+ * imports it. Existing callers keep importing it from here.
  */
-export function generateThumbnail(file: File, maxSize = 512): Promise<string | null> {
-  return new Promise((resolve) => {
-    console.log('[thumbnail] generating for', file.name, file.type, file.size, 'bytes');
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      console.log('[thumbnail] image loaded, dimensions:', img.width, 'x', img.height);
-      const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      console.log('[thumbnail] canvas size:', canvas.width, 'x', canvas.height, 'scale:', scale);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        console.warn('[thumbnail] failed: could not get 2d context');
-        resolve(null);
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-      const b64 = dataUrl.split(',')[1] ?? null;
-      console.log('[thumbnail] generated, base64 length:', b64?.length ?? 0);
-      resolve(b64);
-    };
-    img.onerror = (e) => {
-      URL.revokeObjectURL(url);
-      console.warn('[thumbnail] image load failed:', e);
-      resolve(null);
-    };
-    img.src = url;
-  });
-}
+export { generateThumbnail } from '@neutrino/utils';
 
 // ---------------------------------------------------------------------------
 // Photos API
@@ -410,26 +381,10 @@ export const photosApi = {
     return request<void>('/api/v1/photos/trash', { method: 'DELETE' });
   },
 
-  /** Upload a media file to Drive then register it in Photos. Returns the photo record. */
-  async uploadPhoto(
-    file: File,
-    onProgress?: (percent: number) => void,
-  ): Promise<PhotoResponse> {
-    const formData = new FormData();
-    if (file.type.startsWith('image/')) {
-      const thumbnailB64 = await generateThumbnail(file);
-      if (thumbnailB64) formData.append('thumbnail_b64', thumbnailB64);
-    }
-    formData.append('file', file);
-    const fileItem = await request<FileItem>('/api/v1/drive/files/upload', {
-      method: 'POST',
-      body: formData,
-    }, { onUploadProgress: onProgress });
-    return request<PhotoResponse>('/api/v1/photos', {
-      method: 'POST',
-      body: JSON.stringify({ fileId: fileItem.id } satisfies RegisterPhotoRequest),
-    });
-  },
+  // `uploadPhoto` used to sit here and posted the picture to Drive in the clear.
+  // Nothing called it — the Photos page and the Takeout import both encrypt —
+  // but leaving a plaintext upload lying around is how issue #95 spreads. Upload
+  // with `uploadDriveFile` from `@neutrino/api-drive`, then `registerPhoto`.
 
   async getMap(bbox?: string): Promise<PhotoMapResponse> {
     const qs = buildQuery({ bbox, limit: 500 });

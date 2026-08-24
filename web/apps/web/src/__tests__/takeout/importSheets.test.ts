@@ -201,14 +201,20 @@ describe('runSheetsImport', () => {
     expect(driveAutosaveEncryptedContent.mock.calls[0][2]).toBe('sheet.json');
   });
 
-  it('saves plaintext and flags it when the device has no key pair', async () => {
+  // Issue #95. This used to assert the opposite: that the run went ahead and
+  // wrote every item as plaintext, on the reasoning that a half-imported
+  // library is worse than a plaintext one. The cost was backwards — a plaintext
+  // import is thousands of files with no key ref, none of which anything comes
+  // back to encrypt, while a declined import can be re-run in full the moment
+  // the vault is unlocked.
+  it('imports nothing when the device has no key pair', async () => {
     loadKeyPair.mockReturnValue(null);
     const summary = await run([sheet('A.csv')]);
 
-    expect(summary.unencrypted).toBe(true);
+    expect(summary).toMatchObject({ imported: 0, unencrypted: true, cancelled: true });
+    expect(sheetsApi.createSheet).not.toHaveBeenCalled();
     expect(encryptionApi.setFileKey).not.toHaveBeenCalled();
     expect(driveAutosaveEncryptedContent).not.toHaveBeenCalled();
-    expect(driveAutosaveContent).toHaveBeenCalledWith('id-A', expect.any(String), 'sheet.json');
   });
 
   it('adds each imported spreadsheet to the search index', async () => {

@@ -42,7 +42,6 @@ import {
   albumsApi,
   filesystemApi,
   photosApi,
-  storageApi,
   uploadEncryptedFile,
   getCurrentUserId,
 } from '@/lib/api';
@@ -180,13 +179,9 @@ async function uploadPhotoFile(
   file: File,
   thumbnailB64: string | null,
   folderId: string | null,
-  keyPair: KeyPair | null,
+  keyPair: KeyPair,
   userId: string,
 ): Promise<string> {
-  if (!keyPair) {
-    const item = await storageApi.uploadFile(file, undefined, folderId);
-    return item.id;
-  }
   const dek = generateFileKey();
   const item = await uploadEncryptedFile(
     file,
@@ -214,17 +209,29 @@ export async function runPhotosImport({
 
   logStep('photos', `starting: ${photos.length} file${photos.length === 1 ? '' : 's'}`, { options, userId });
 
-  // Without a key pair on this device there is nothing to encrypt with. The
-  // Photos app refuses to upload at all in that state; the import goes ahead
-  // unencrypted — the caller surfaces `unencrypted` so the user knows — because
-  // a half-imported library is worse than a plaintext one.
+  // Without a key pair on this device there is nothing to encrypt with, and an
+  // import that writes plaintext leaves every item it touched with no key ref
+  // and no way back (issue #95). So the run stops here, before the first
+  // write, and the page tells the user to unlock and try again — a declined
+  // import can be re-run in full; a plaintext one cannot be undone.
   await initSodium();
   const keyPair = userId ? loadKeyPair(userId) : null;
-  // Narrowed together: a key pair exists only if a user id did.
-  const encrypting = keyPair && userId ? { keyPair, userId } : null;
-  if (!keyPair) {
-    logWarn('photos', 'no key pair on this device — photos will be uploaded unencrypted', { userId });
+  if (!keyPair || !userId) {
+    logWarn('photos', 'no key pair on this device — refusing to import, nothing was written', { userId });
+    return {
+      total: photos.length,
+      imported: 0,
+      skipped: 0,
+      failed: 0,
+      items: [],
+      folderId: null,
+      cancelled: true,
+      unencrypted: true,
+    } as ImportSummary;
   }
+  // Narrowed together, and now unconditional: everything below encrypts.
+  const encrypting = { keyPair, userId };
+
 
   const folders = createFolderResolver();
   const destination = options.folderName?.trim() ? [options.folderName.trim()] : [];
@@ -241,7 +248,7 @@ export async function runPhotosImport({
     items,
     folderId,
     cancelled: false,
-    unencrypted: !keyPair,
+    unencrypted: false,
     ...extra,
   });
 
@@ -296,7 +303,7 @@ export async function runPhotosImport({
         size: formatBytes(media.size),
         kind: photo.kind,
         thumbnail: thumbnail !== null,
-        encrypted: !!keyPair,
+        encrypted: true,
       });
       const fileId = await uploadPhotoFile(
         media,

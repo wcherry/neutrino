@@ -29,7 +29,9 @@ import {
   Package,
   X,
 } from 'lucide-react';
-import { Alert, Button, Checkbox, DropZone, ProgressBar, Spinner, TextInput } from '@neutrino/ui';
+import { Alert, Button, Checkbox, DropZone, ProgressBar, Spinner, TextInput, useToast } from '@neutrino/ui';
+import { canEncryptFor } from '@neutrino/api-drive';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { useUser } from '@neutrino/auth';
 import {
   DEFAULT_DOCS_IMPORT_OPTIONS,
@@ -109,6 +111,7 @@ const mediaLabel = (source: PhotosSource) =>
 export default function ImportPage() {
   const router = useRouter();
   const user = useUser();
+  const toast = useToast();
   const run = useImportRun();
 
   const [pickStage, setPickStage] = useState<PickStage>('pick');
@@ -261,8 +264,15 @@ export default function ImportPage() {
     return steps;
   };
 
-  const startImport = () => {
+  const startImport = async () => {
     if (!loaded || selectedCount === 0) return;
+    // Every runner declines without a key rather than importing in the clear
+    // (issue #95), so ask once here instead of letting four passes each fail
+    // their way to the same answer.
+    if (!(await canEncryptFor(user?.id))) {
+      toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      return;
+    }
     // The archive goes with the plan: from here it is the run's to read and the
     // run's to close, so this page's unmount must not touch it.
     archiveRef.current = null;
@@ -699,7 +709,7 @@ export default function ImportPage() {
 
             {loaded.keep || loaded.docs || loaded.sheets || loaded.photos ? (
               <div className={styles.actions}>
-                <Button onClick={startImport} disabled={selectedCount === 0}>
+                <Button onClick={() => { void startImport(); }} disabled={selectedCount === 0}>
                   Import {plural(selectedCount, 'item')}
                 </Button>
                 <Button variant="secondary" onClick={reset}>
@@ -753,7 +763,7 @@ export default function ImportPage() {
               <Alert
                 variant="warning"
                 className={styles.alert}
-                message="This device has no encryption key set up, so the imported items were saved without end-to-end encryption. Set up your keys in Settings → Account, then re-import."
+                message="This device has no encryption key set up, so nothing was imported — items are never written without end-to-end encryption. Set up or unlock your keys in Settings → Account, then run the import again."
               />
             )}
 

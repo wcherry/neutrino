@@ -23,7 +23,7 @@ import {
   encryptFileKey,
   type KeyPair,
 } from '@neutrino/e2e-crypto';
-import { driveAutosaveContent, driveAutosaveEncryptedContent } from '@neutrino/api-drive';
+import { driveAutosaveEncryptedContent } from '@neutrino/api-drive';
 import { encryptionApi } from '@/lib/api';
 import { createNote, extractNoteText, listAllNotes } from '@/lib/noteFiles';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
@@ -151,18 +151,31 @@ export async function runKeepImport({
 }: RunKeepImportArgs): Promise<KeepImportSummary> {
   const items: ImportItem[] = [];
 
-  // Without a key pair on this device there is nothing to encrypt with. The
-  // editor tolerates plaintext content, so the import still runs — the caller
-  // surfaces `unencrypted` so the user knows.
+  // Without a key pair on this device there is nothing to encrypt with, and an
+  // import that writes plaintext leaves every item it touched with no key ref
+  // and no way back (issue #95). So the run stops here, before the first
+  // write, and the page tells the user to unlock and try again — a declined
+  // import can be re-run in full; a plaintext one cannot be undone.
   logStep('keep', `starting: ${entries.length} note${entries.length === 1 ? '' : 's'}`, { options, userId });
 
   await initSodium();
   const keyPair = userId ? loadKeyPair(userId) : null;
-  // Narrowed together: a key pair exists only if a user id did.
-  const encrypting = keyPair && userId ? { keyPair, userId } : null;
-  if (!keyPair) {
-    logWarn('keep', 'no key pair on this device — notes will be saved as plaintext', { userId });
+  if (!keyPair || !userId) {
+    logWarn('keep', 'no key pair on this device — refusing to import, nothing was written', { userId });
+    return {
+      total: entries.length,
+      imported: 0,
+      skipped: 0,
+      failed: 0,
+      items: [],
+      folderId: null,
+      cancelled: true,
+      unencrypted: true,
+    } as KeepImportSummary;
   }
+  // Narrowed together, and now unconditional: everything below encrypts.
+  const encrypting = { keyPair, userId };
+
 
   const folderId = options.folderName
     ? await createFolderResolver().folderFor([options.folderName])
@@ -176,7 +189,7 @@ export async function runKeepImport({
     items,
     folderId,
     cancelled: false,
-    unencrypted: !keyPair,
+    unencrypted: false,
     ...extra,
   });
 
@@ -230,17 +243,13 @@ export async function runKeepImport({
         id: created.id,
         blocks: converted.blocks.length,
         body: formatBytes(converted.content.length),
-        encrypted: !!keyPair,
+        encrypted: true,
       });
 
       // Keep notes contain no `[[wiki links]]`, so there is nothing to link up
       // — this never calls linksApi.updateLinks, unlike the editor's save path.
-      step = keyPair ? 'encrypting the body' : 'saving the body';
-      if (encrypting) {
-        await saveEncryptedBody(created.id, converted.content, encrypting.keyPair, encrypting.userId);
-      } else {
-        await driveAutosaveContent(created.id, converted.content, 'note.json');
-      }
+      step = 'encrypting the body';
+      await saveEncryptedBody(created.id, converted.content, encrypting.keyPair, encrypting.userId);
 
       // After the body, not before: saving it is what stamps the file with the
       // current time, so dates written any earlier would be overwritten here.

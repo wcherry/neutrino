@@ -6,8 +6,8 @@ import * as XLSX from 'xlsx';
 import type { CellProps, SheetFile, CFRule, TableRegion } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import {
-    sheetsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
-    driveAutosaveBytes, driveCreateVersionBytes, extractSheetText,
+    sheetsApi, driveReadContent, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
+    driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes, extractSheetText,
     storageApi, filesystemApi, ApiClientError, type SheetResponse, type FileItem,
 } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
@@ -20,7 +20,7 @@ import type { SheetRef } from '../formula';
 import { numToAlpha } from '../utils';
 import { buildXlsxWorksheet } from './useExport';
 import { buildRawSheetMap, evaluateSheetMap } from './sheetFileUtils';
-import { officeAppForFile, OFFICE_MIME } from '@/lib/officeFormats';
+import { officeAppForFile } from '@/lib/officeFormats';
 import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 
@@ -259,28 +259,30 @@ export function usePersistence({
 
     const save = async ({ keepalive = false }: SaveOptions = {}) => {
         const transport = { signal: abortAfter(SAVE_DEADLINE_MS), keepalive };
-        if (officeMode) {
-            const meta = officeFileMetaRef.current;
-            if (!meta) return;
-            const bytes = buildXlsxBytes();
-            // Office-mode files stay real, uncorrupted OOXML at rest (acceptance
-            // criterion 3 — downloading the raw file must open in real Excel), so
-            // these never go through the E2EE-encrypted transport even when a DEK
-            // is available for this file id.
-            try {
-                await driveAutosaveBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx, transport);
-            } catch {
-                if (keepalive) throw new Error('save-failed-on-unload');
-                await delay(SAVE_RETRY_DELAY_MS);
-                await driveAutosaveBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx, transport);
-            }
-            return;
-        }
-        if (!sheetRef.current) return;
+        // Checked before the office branch, not after: office-mode bytes are
+        // encrypted too. They used not to be, on the grounds that "downloading
+        // the raw file must open in real Excel" (issue #43, criterion 3) — but
+        // Drive's download decrypts client-side, so the .xlsx that reaches the
+        // user's disk is identical either way. What the plaintext write bought
+        // was a readable spreadsheet in object storage: issue #95.
         if (!dekRef.current) {
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
+        if (officeMode) {
+            const meta = officeFileMetaRef.current;
+            if (!meta) return;
+            const bytes = buildXlsxBytes();
+            try {
+                await driveAutosaveEncryptedBytes(sheetId, bytes, meta.name, dekRef.current, transport);
+            } catch {
+                if (keepalive) throw new Error('save-failed-on-unload');
+                await delay(SAVE_RETRY_DELAY_MS);
+                await driveAutosaveEncryptedBytes(sheetId, bytes, meta.name, dekRef.current, transport);
+            }
+            return;
+        }
+        if (!sheetRef.current) return;
         const savedTitle = sheetRef.current.title;
         const content = serialize();
         // Retry once on failure: the autosave PUT has been observed to occasionally
@@ -328,19 +330,24 @@ export function usePersistence({
     saveRef.current = save;
 
     const manualSave = async () => {
+        // No key, no write — for either shape of file. The plaintext fallback
+        // this used to have wrote a readable version snapshot of an encrypted
+        // spreadsheet, which is a file with no key ref and so no way back
+        // (issue #95). The content is still in the editor, so unlocking and
+        // pressing save again loses nothing.
+        if (!dekRef.current) {
+            toast.warning(ENCRYPTION_WARNING_MESSAGE);
+            return;
+        }
         if (officeMode) {
             const meta = officeFileMetaRef.current;
             if (!meta) return;
             const bytes = buildXlsxBytes();
-            await driveCreateVersionBytes(sheetId, bytes, meta.name, OFFICE_MIME.xlsx);
+            await driveCreateEncryptedVersionBytes(sheetId, bytes, meta.name, dekRef.current);
             return;
         }
         if (!sheetRef.current) return;
-        if (dekRef.current) {
-            await driveCreateEncryptedVersion(sheetId, serialize(), 'sheet.json', dekRef.current);
-        } else {
-            await driveCreateVersion(sheetId, serialize(), 'sheet.json');
-        }
+        await driveCreateEncryptedVersion(sheetId, serialize(), 'sheet.json', dekRef.current);
     };
 
     // "Convert to Neutrino Sheet" — one-shot promote of the raw office file
@@ -451,7 +458,18 @@ export function usePersistence({
             setYourRole('owner');
             try {
                 const blob = await storageApi.downloadFile(sheetId);
-                const arrayBuffer = await blob.arrayBuffer();
+                const stored = new Uint8Array(await blob.arrayBuffer());
+                // Office-mode saves are encrypted now, so a file that already
+                // has a key ref holds ciphertext. `isNewEncryption` separates
+                // the two: it means the DEK was just minted for a file that had
+                // none, so the stored bytes are still the plaintext .xlsx it
+                // was uploaded as, and the first save is what encrypts it.
+                const plain = dekRef.current && !isNewEncryption
+                    ? decryptFile(stored, dekRef.current)
+                    : stored;
+                const arrayBuffer = plain.buffer.slice(
+                    plain.byteOffset, plain.byteOffset + plain.byteLength,
+                ) as ArrayBuffer;
                 const parsed = xlsxBufferToSheets(arrayBuffer);
                 if (parsed.length > 0) {
                     const names = parsed.map((s, i) => s.name || `Sheet ${i + 1}`);

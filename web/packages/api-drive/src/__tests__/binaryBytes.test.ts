@@ -1,24 +1,22 @@
 /**
- * Unit tests for the binary-safe `*Bytes` sibling functions added to
- * api-drive/src/client.ts for issue #43 (in-place editing of MS Office docs).
+ * Unit tests for the binary-safe `*Bytes` functions in api-drive/src/client.ts,
+ * added for issue #43 (in-place editing of MS Office docs).
  *
  * Office file bytes (raw .docx/.xlsx/.pptx) must never be run through the
- * existing string-based helpers (driveAutosaveContent / driveCreateVersion /
- * driveAutosaveEncryptedContent), which construct their multipart Blob with
- * `type: 'application/json'` and, for the encrypted variant, run the payload
- * through `TextEncoder` — both of which corrupt arbitrary binary content.
- * These new `*Bytes` functions must:
+ * string-based content helpers, which build their multipart Blob with
+ * `type: 'application/json'` and run the payload through `TextEncoder` — both
+ * of which corrupt arbitrary binary content. The `*Bytes` functions must:
  *  - Accept raw bytes (Uint8Array | ArrayBuffer) directly, never a string.
- *  - Build the multipart Blob with the file's *real* mimeType, not
- *    'application/json'.
  *  - Preserve the exact byte content (no TextEncoder/TextDecoder round-trip,
  *    which would corrupt non-UTF8 binary data such as a zip-based OOXML file).
- *  - For the encrypted variants, pass the raw bytes straight into
- *    encryptFile() — not a TextEncoder-derived reinterpretation of them.
+ *  - Pass the raw bytes straight into encryptFile() — not a TextEncoder-derived
+ *    reinterpretation of them.
  *
- * These functions do not exist yet (red phase / TDD) — expected to fail with
- * a "no matching export" / "is not a function" error until they land in
- * web/packages/api-drive/src/client.ts.
+ * Only the encrypted variants remain. The plaintext `driveAutosaveBytes` and
+ * `driveCreateVersionBytes` this file used to also cover were removed for
+ * issue #95: office mode was their only caller, and writing a readable .docx
+ * to Drive is the same bug as writing a readable note. `noPlaintextWrites.test.ts`
+ * is what keeps them from coming back.
  *
  * Mocking convention follows web/packages/api-admin/src/__tests__/client.test.ts:
  * mock @neutrino/api-core's `request` and assert on the exact call args.
@@ -64,8 +62,6 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 }));
 
 import {
-  driveAutosaveBytes,
-  driveCreateVersionBytes,
   driveAutosaveEncryptedBytes,
   driveCreateEncryptedVersionBytes,
 } from '../client';
@@ -98,98 +94,6 @@ async function blobBytes(blob: Blob): Promise<Uint8Array> {
 
 beforeEach(() => {
   vi.clearAllMocks();
-});
-
-// ---------------------------------------------------------------------------
-// driveAutosaveBytes
-// ---------------------------------------------------------------------------
-
-describe('driveAutosaveBytes', () => {
-  it('PUTs to the autosave endpoint with a FormData body using the real mimetype', async () => {
-    mockRequest.mockResolvedValueOnce(undefined);
-    const bytes = fakeOoxmlBytes();
-
-    await driveAutosaveBytes('file-1', bytes, 'report.docx', DOCX_MIME);
-
-    expect(mockRequest).toHaveBeenCalledTimes(1);
-    const [path, init] = mockRequest.mock.calls[0];
-    expect(path).toBe('/api/v1/drive/files/file-1/autosave');
-    expect((init as RequestInit).method).toBe('PUT');
-
-    const { blob, filename } = await extractFormDataFile((init as RequestInit).body);
-    expect(filename).toBe('report.docx');
-    expect(blob.type).toBe(DOCX_MIME);
-    expect(blob.type).not.toBe('application/json');
-  });
-
-  it('preserves the exact raw bytes with no TextEncoder/JSON transformation', async () => {
-    mockRequest.mockResolvedValueOnce(undefined);
-    const bytes = fakeOoxmlBytes();
-
-    await driveAutosaveBytes('file-1', bytes, 'report.docx', DOCX_MIME);
-
-    const [, init] = mockRequest.mock.calls[0];
-    const { blob } = await extractFormDataFile((init as RequestInit).body);
-    const roundTripped = await blobBytes(blob);
-    expect(Array.from(roundTripped)).toEqual(Array.from(bytes));
-  });
-
-  it('accepts an ArrayBuffer as well as a Uint8Array', async () => {
-    mockRequest.mockResolvedValueOnce(undefined);
-    const bytes = fakeOoxmlBytes();
-
-    await driveAutosaveBytes('file-1', bytes.buffer, 'report.docx', DOCX_MIME);
-
-    const [, init] = mockRequest.mock.calls[0];
-    const { blob } = await extractFormDataFile((init as RequestInit).body);
-    const roundTripped = await blobBytes(blob);
-    expect(Array.from(roundTripped)).toEqual(Array.from(bytes));
-  });
-});
-
-// ---------------------------------------------------------------------------
-// driveCreateVersionBytes
-// ---------------------------------------------------------------------------
-
-describe('driveCreateVersionBytes', () => {
-  it('POSTs to the versions endpoint with a FormData body using the real mimetype', async () => {
-    const versionItem = { id: 'v1', versionNumber: 2, label: null, createdAt: '', sizeBytes: 10 };
-    mockRequest.mockResolvedValueOnce(versionItem);
-    const bytes = fakeOoxmlBytes();
-
-    const result = await driveCreateVersionBytes('file-1', bytes, 'report.docx', DOCX_MIME);
-
-    expect(result).toEqual(versionItem);
-    const [path, init] = mockRequest.mock.calls[0];
-    expect(path).toBe('/api/v1/drive/files/file-1/versions');
-    expect((init as RequestInit).method).toBe('POST');
-    const { blob, filename } = await extractFormDataFile((init as RequestInit).body);
-    expect(filename).toBe('report.docx');
-    expect(blob.type).toBe(DOCX_MIME);
-  });
-
-  it('appends an optional label to the FormData', async () => {
-    mockRequest.mockResolvedValueOnce({ id: 'v1' });
-    const bytes = fakeOoxmlBytes();
-
-    await driveCreateVersionBytes('file-1', bytes, 'report.docx', DOCX_MIME, 'Before edits');
-
-    const [, init] = mockRequest.mock.calls[0];
-    const fd = (init as RequestInit).body as FormData;
-    expect(fd.get('label')).toBe('Before edits');
-  });
-
-  it('preserves the exact raw bytes', async () => {
-    mockRequest.mockResolvedValueOnce({ id: 'v1' });
-    const bytes = fakeOoxmlBytes();
-
-    await driveCreateVersionBytes('file-1', bytes, 'report.docx', DOCX_MIME);
-
-    const [, init] = mockRequest.mock.calls[0];
-    const { blob } = await extractFormDataFile((init as RequestInit).body);
-    const roundTripped = await blobBytes(blob);
-    expect(Array.from(roundTripped)).toEqual(Array.from(bytes));
-  });
 });
 
 // ---------------------------------------------------------------------------

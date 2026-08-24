@@ -61,8 +61,9 @@ import {
 import { ShareButton, Spinner, useToast, ZoomSlider } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import {
-  docsApi, driveReadContent, driveCreateVersion, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
-  driveAutosaveBytes, driveCreateVersionBytes, extractDocText,
+  docsApi, driveReadContent, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
+  driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes, extractDocText,
+  uploadDriveFile, mintFileKey, canEncryptFor, isMissingEncryptionKey,
   storageApi, filesystemApi, ApiClientError, type PageSetup, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
@@ -71,7 +72,7 @@ import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { OFFICE_MIME, officeAppForFile } from '@/lib/officeFormats';
+import { officeAppForFile } from '@/lib/officeFormats';
 import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
@@ -999,12 +1000,13 @@ export function DocEditor() {
   const versionMutation = useMutation({
     mutationFn: async (content: string) => {
       // Same race as the autosave, with a sharper edge: reading dekRef before
-      // resolution settles would take the plaintext branch and write an
-      // unencrypted version of an encrypted document.
+      // resolution settles reports no key for a document that has one.
+      // `awaitDek` returns null only for a genuinely locked session, and that
+      // is a refusal — a plaintext version snapshot of an encrypted document
+      // is a file that can never be encrypted (issue #95).
       const dek = await awaitDek();
-      return dek
-        ? driveCreateEncryptedVersion(docId, content, 'doc.json', dek)
-        : driveCreateVersion(docId, content, 'doc.json');
+      if (!dek) throw new Error('no-dek');
+      return driveCreateEncryptedVersion(docId, content, 'doc.json', dek);
     },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
@@ -1012,7 +1014,10 @@ export function DocEditor() {
       queryClient.invalidateQueries({ queryKey: ['versions', docId] });
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
     },
-    onError: () => setSaveStatus('unsaved'),
+    onError: (err) => {
+      setSaveStatus('unsaved');
+      if (isMissingEncryptionKey(err)) toast.warning(ENCRYPTION_WARNING_MESSAGE);
+    },
   });
 
   const metaMutation = useMutation({
@@ -1028,35 +1033,45 @@ export function DocEditor() {
   // editor HTML into real DOCX bytes via buildDocxBlob, then writes those
   // bytes to the SAME Drive file id using the binary-safe *Bytes transport —
   // never the string-based helpers above, which would corrupt binary content.
+  //
+  // Those bytes are then encrypted, like every other write. They used not to
+  // be, on the grounds that "downloading the raw file must open in real Word"
+  // (issue #43, criterion 3) — but Drive's download decrypts client-side
+  // (`downloadAndDecryptFile`), so what reaches the user's disk is the same
+  // uncorrupted OOXML either way. What the plaintext write actually bought was
+  // a .docx sitting readable in object storage, which is issue #95.
   const officeAutosaveMutation = useMutation({
     mutationFn: async () => {
       const ed = editorRef.current;
       if (!ed) throw new Error('editor-not-ready');
+      const dek = await awaitDek();
+      if (!dek) throw new Error('no-dek');
       const blob = await buildDocxBlob(ed.getHTML());
       const bytes = new Uint8Array(await blob.arrayBuffer());
       const filename = officeFileMeta?.name ?? `${titleRef.current || 'document'}.docx`;
-      // Office-mode files stay real, uncorrupted OOXML at rest (acceptance
-      // criterion 3 — downloading the raw file must open in real Word), so
-      // these never go through the E2EE-encrypted transport even when a DEK
-      // is available for this file id.
-      await driveAutosaveBytes(docId, bytes, filename, OFFICE_MIME.docx);
+      await driveAutosaveEncryptedBytes(docId, bytes, filename, dek);
     },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
       setSaveStatus('saved');
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
     },
-    onError: () => setSaveStatus('unsaved'),
+    onError: (err) => {
+      setSaveStatus('unsaved');
+      if (isMissingEncryptionKey(err)) toast.warning(ENCRYPTION_WARNING_MESSAGE);
+    },
   });
 
   const officeVersionMutation = useMutation({
     mutationFn: async (label?: string) => {
       const ed = editorRef.current;
       if (!ed) throw new Error('editor-not-ready');
+      const dek = await awaitDek();
+      if (!dek) throw new Error('no-dek');
       const blob = await buildDocxBlob(ed.getHTML());
       const bytes = new Uint8Array(await blob.arrayBuffer());
       const filename = officeFileMeta?.name ?? `${titleRef.current || 'document'}.docx`;
-      return driveCreateVersionBytes(docId, bytes, filename, OFFICE_MIME.docx, label);
+      return driveCreateEncryptedVersionBytes(docId, bytes, filename, dek, label);
     },
     onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
@@ -1064,7 +1079,10 @@ export function DocEditor() {
       queryClient.invalidateQueries({ queryKey: ['versions', docId] });
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
     },
-    onError: () => setSaveStatus('unsaved'),
+    onError: (err) => {
+      setSaveStatus('unsaved');
+      if (isMissingEncryptionKey(err)) toast.warning(ENCRYPTION_WARNING_MESSAGE);
+    },
   });
 
   // "Convert to Neutrino Doc" — one-shot promote of the raw office file into
@@ -1324,16 +1342,36 @@ export function DocEditor() {
   // the tiptap instance's lifecycle; only *applying* the result waits on it.
   const officeContentLoadStartedRef = useRef(false);
   const [officeHtml, setOfficeHtml] = useState<string | null>(null);
+
+  /**
+   * The stored .docx bytes, decrypted if they are ciphertext.
+   *
+   * `isNewEncryption` is the discriminator, not the presence of a DEK:
+   * `useEncryptedDocumentContent` mints a key for a file that has none, so a
+   * legacy plaintext upload also arrives here holding one. Decrypting those
+   * bytes fails; reading a real ciphertext as a zip fails just as loudly.
+   */
+  const readOfficeBytes = useCallback(async (): Promise<ArrayBuffer | null> => {
+    const blob = await storageApi.downloadFile(docId);
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (!dekRef.current || isNewEncryption) return bytes.buffer as ArrayBuffer;
+    const plain = decryptFile(bytes, dekRef.current);
+    return plain.buffer.slice(plain.byteOffset, plain.byteOffset + plain.byteLength) as ArrayBuffer;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId, isNewEncryption]);
   useEffect(() => {
-    if (!officeMode || !officeFileMeta || officeContentLoadStartedRef.current) return;
+    if (!officeMode || !officeFileMeta || !dekResolved || officeContentLoadStartedRef.current) return;
     officeContentLoadStartedRef.current = true;
     let cancelled = false;
     (async () => {
       try {
-        const blob = await storageApi.downloadFile(docId);
-        if (cancelled) return;
-        const arrayBuffer = await blob.arrayBuffer();
-        if (cancelled) return;
+        // Office-mode saves are encrypted now, so the stored bytes are
+        // ciphertext for any file that has a key ref. `isNewEncryption` is what
+        // separates the two: it means the DEK was just minted for a file that
+        // had none, so what is stored is still the plaintext .docx it was
+        // uploaded as, and the first save is what encrypts it.
+        const arrayBuffer = await readOfficeBytes();
+        if (cancelled || !arrayBuffer) return;
         const html = await docxBytesToHtml(arrayBuffer);
         if (cancelled) return;
         setOfficeHtml(html);
@@ -1347,7 +1385,7 @@ export function DocEditor() {
   // which would otherwise cancel this one-shot load on every unrelated
   // re-render via the cleanup function above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [officeMode, officeFileMeta, docId]);
+  }, [officeMode, officeFileMeta, docId, dekResolved]);
 
   const officeContentAppliedRef = useRef(false);
   useEffect(() => {
@@ -1609,11 +1647,21 @@ export function DocEditor() {
 
   const handleDuplicate = useCallback(async () => {
     if (!editor || !doc) return;
+    // The copy is a new Drive row with no key of its own, so it needs one
+    // minted before anything is written to it. This used to write the copy
+    // unconditionally in the clear — every "Make a copy" produced a document
+    // that could never be encrypted (issue #95). Checked before the document
+    // is created so a locked vault leaves no empty copy behind.
+    if (!(await canEncryptFor(currentUser?.id))) {
+      toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      return;
+    }
     const newDoc = await docsApi.createDoc({ title: `${title} (copy)` });
     const content = JSON.stringify(editor.getJSON());
-    await driveCreateVersion(newDoc.id, content, 'doc.json');
+    const dek = await mintFileKey(currentUser?.id, newDoc.id);
+    await driveCreateEncryptedVersion(newDoc.id, content, 'doc.json', dek);
     router.push(`/docs/editor?id=${newDoc.id}`);
-  }, [editor, doc, title, router]);
+  }, [editor, doc, title, router, currentUser?.id, toast]);
 
   const handlePageSetupSave = (ps: PageSetup) => {
     setPageSetup(ps);
@@ -2146,7 +2194,19 @@ export function DocEditor() {
     if (opts.location === 'drive') {
       console.log('[handleSaveAs] uploading to Drive, folderId:', opts.folderId);
       const file = new File([blob], filename, { type: blob.type });
-      await storageApi.uploadFile(file, undefined, opts.folderId);
+      // A Save As into Drive is a Drive file like any other and is encrypted
+      // like any other. It used to go up in the clear, which meant exporting a
+      // document to PDF was a way of putting its contents in readable storage.
+      try {
+        await uploadDriveFile(file, currentUser?.id, { folderId: opts.folderId });
+      } catch (err) {
+        if (isMissingEncryptionKey(err)) {
+          toast.warning(ENCRYPTION_WARNING_MESSAGE);
+          setShowSaveAs(false);
+          return;
+        }
+        throw err;
+      }
       console.log('[handleSaveAs] Drive upload complete');
     } else {
       console.log('[handleSaveAs] downloading locally');

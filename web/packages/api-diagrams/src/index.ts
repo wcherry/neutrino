@@ -221,22 +221,9 @@ export const diagramsApi = {
     await request<void>(`/api/v1/drive/files/${diagramId}`, { method: 'DELETE' });
   },
 
-  async autosaveContent(
-    diagramId: string,
-    content: string,
-    filename: string,
-    metadata?: { title?: string },
-    versionCheck?: ContentVersionCheck,
-  ): Promise<DiagramMetaResponse> {
-    const formData = new FormData();
-    formData.append('file', new Blob([content], { type: 'application/json' }), filename);
-    if (metadata) formData.append('metadata', JSON.stringify(metadata));
-    const file = await request<DriveFileDto>(
-      `/api/v1/drive/files/${diagramId}/autosave${contentVersionQuery(versionCheck)}`,
-      { method: 'PUT', body: formData },
-    );
-    return toDiagramMeta(file);
-  },
+  // The plaintext `autosaveContent` that used to sit here had no callers —
+  // `DiagramEditor` has always used the encrypted one below — but an unused
+  // plaintext writer is one import away from being a used one (issue #95).
 
   async autosaveEncryptedContent(
     diagramId: string,

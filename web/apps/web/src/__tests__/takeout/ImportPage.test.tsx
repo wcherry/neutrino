@@ -11,10 +11,13 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToastProvider } from '@neutrino/ui';
 import { ImportRunProvider } from '@/components/ImportRun';
 
-const { pushMock, takeout } = vi.hoisted(() => ({
+const { pushMock, takeout, canEncryptFor } = vi.hoisted(() => ({
   pushMock: vi.fn(),
+  /** Whether this device could encrypt. The page declines to start when it can't. */
+  canEncryptFor: vi.fn(),
   takeout: {
     openTakeout: vi.fn(),
     findKeepNotes: vi.fn(),
@@ -35,6 +38,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@neutrino/auth', () => ({ useUser: () => ({ id: 'user-1' }) }));
+
+vi.mock('@neutrino/api-drive', () => ({ canEncryptFor }));
 
 vi.mock('@/lib/takeout', () => ({
   ...takeout,
@@ -79,11 +84,13 @@ function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      {/* The run lives above the route in the real app, so the page is tested
-          the way it is mounted — without the provider it has nothing to run in. */}
-      <ImportRunProvider>
-        <ImportPage />
-      </ImportRunProvider>
+      <ToastProvider>
+        {/* The run lives above the route in the real app, so the page is tested
+            the way it is mounted — without the provider it has nothing to run in. */}
+        <ImportRunProvider>
+          <ImportPage />
+        </ImportRunProvider>
+      </ToastProvider>
     </QueryClientProvider>,
   );
 }
@@ -128,6 +135,7 @@ const sheetsSource = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  canEncryptFor.mockResolvedValue(true);
   takeout.openTakeout.mockResolvedValue(archive);
   takeout.findKeepNotes.mockResolvedValue(keepSource);
   takeout.findDriveDocs.mockReturnValue(docsSource);
@@ -142,6 +150,26 @@ beforeEach(() => {
 });
 
 describe('ImportPage', () => {
+  // Issue #95. Every runner declines without a key rather than importing in
+  // the clear, so the page asks once up front — otherwise pressing Import on a
+  // locked vault spins up four passes that each fail their way to the same
+  // answer, and the user sees a finished run that imported nothing.
+  it('does not start a run when this device cannot encrypt', async () => {
+    canEncryptFor.mockResolvedValue(false);
+    const { container } = renderPage();
+    await dropArchive(container);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 4 items' }));
+    });
+
+    expect(takeout.runKeepImport).not.toHaveBeenCalled();
+    expect(takeout.runDocsImport).not.toHaveBeenCalled();
+    // Still on the configure stage, with the archive intact, so unlocking and
+    // pressing Import again is the whole recovery.
+    expect(screen.getByRole('button', { name: 'Import 4 items' })).toBeTruthy();
+  });
+
   it('lists both products it found and imports both', async () => {
     const { container } = renderPage();
     await dropArchive(container);

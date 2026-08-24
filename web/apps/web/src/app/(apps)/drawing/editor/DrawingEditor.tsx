@@ -7,10 +7,13 @@ import { ArrowLeft } from 'lucide-react';
 import { Spinner, useToast } from '@neutrino/ui';
 import { drawingApi, extractDrawingText } from '@neutrino/api-drawing';
 import { request } from '@neutrino/api-core';
-import { storageApi } from '@neutrino/api-drive';
+import { storageApi, isMissingEncryptionKey } from '@neutrino/api-drive';
+import { decryptFile } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
+import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
+import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { DriveImageItem } from '@neutrino/ui';
 import type { Shape, Layer, ToolType, DrawingContent, Transform } from './types';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
@@ -38,6 +41,25 @@ function triggerDownload(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * The stored drawing body, decrypted.
+ *
+ * Downloads the blob rather than reading `contentUrl` as text: the stored bytes
+ * are ciphertext, and `responseType: 'text'` would hand back the mojibake a
+ * UTF-8 decode makes of random bytes. Returns '' on failure, which the caller
+ * already treats as "empty drawing" — the same as it did for an unreadable
+ * plaintext body.
+ */
+async function readEncryptedDrawing(drawingId: string, dek: Uint8Array): Promise<string> {
+  try {
+    const blob = await storageApi.downloadFile(drawingId);
+    const cipherBytes = new Uint8Array(await blob.arrayBuffer());
+    return new TextDecoder().decode(decryptFile(cipherBytes, dek));
+  } catch {
+    return '';
+  }
+}
+
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -56,6 +78,14 @@ export function DrawingEditor() {
   // Rejects a save that would overwrite a revision written elsewhere since this
   // drawing was loaded. See `useContentVersionGuard`.
   const versionGuard = useContentVersionGuard();
+
+  // Drawing content is E2EE like every other app's. It was the one exception
+  // until issue #95: `drawingApi.autosaveContent` wrote the body to Drive as
+  // readable JSON, so every drawing ever saved sat in storage in the clear.
+  const { dekRef, dekResolved, isNewEncryption, awaitDek } = useEncryptedDocumentContent({
+    id: drawingId ?? '',
+    filename: 'drawing.json',
+  });
 
   const bgLayerIdRef = useRef(Math.random().toString(36).slice(2, 10));
 
@@ -131,7 +161,13 @@ export function DrawingEditor() {
         const drawing = await drawingApi.getDrawing(drawingId!);
         setTitle(drawing.title);
         versionGuard.observe(drawing.contentVersion);
-        const raw = await request<string>(drawing.contentUrl, {}, { responseType: 'text' }).catch(() => '');
+        // A drawing saved since #95 is ciphertext; one saved before it is the
+        // plaintext JSON it always was. `isNewEncryption` tells them apart — it
+        // means the DEK was minted just now for a file that had no key ref, so
+        // what is stored is still plaintext and the next save encrypts it.
+        const raw = dekRef.current && !isNewEncryption
+          ? await readEncryptedDrawing(drawingId!, dekRef.current)
+          : await request<string>(drawing.contentUrl, {}, { responseType: 'text' }).catch(() => '');
         if (raw) {
           try {
             const content = JSON.parse(raw) as DrawingContent;
@@ -175,8 +211,10 @@ export function DrawingEditor() {
         hasMounted.current = true;
       }
     }
+    if (!dekResolved) return;
     load();
-  }, [drawingId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawingId, dekResolved, isNewEncryption]);
 
   useEffect(() => {
     if (!hasMounted.current || !drawingId || saveInProgress.current || !isDirtyRef.current) return;
@@ -184,8 +222,16 @@ export function DrawingEditor() {
     saveInProgress.current = true;
     const content: DrawingContent = { version: 1, shapes: debouncedShapes, layers };
     const serialized = JSON.stringify(content);
-    drawingApi
-      .autosaveContent(drawingId, serialized, 'drawing.json', { title }, versionGuard.check())
+    // `awaitDek`, not `dekRef.current`: the first autosave after a reload
+    // routinely lands while the key is still resolving, and reading the ref
+    // there reports "no key" for a drawing that has one.
+    awaitDek()
+      .then((dek) => {
+        if (!dek) throw new Error('no-dek');
+        return drawingApi.autosaveEncryptedContent(
+          drawingId, serialized, 'drawing.json', dek, { title }, versionGuard.check(),
+        );
+      })
       .then((meta) => {
         versionGuard.observe(meta.contentVersion);
         indexOnSave(currentUser?.id, {
@@ -196,6 +242,12 @@ export function DrawingEditor() {
         });
       })
       .catch((err) => {
+        // Locked vault. The drawing is still on the canvas, so unlocking and
+        // touching it again saves it — nothing is written in the clear.
+        if (isMissingEncryptionKey(err)) {
+          toast.warning(ENCRYPTION_WARNING_MESSAGE);
+          return;
+        }
         // A drawing changed elsewhere would be silently overwritten otherwise.
         if (versionGuard.handleError(err)) {
           toast.warning(
@@ -205,7 +257,7 @@ export function DrawingEditor() {
         }
       })
       .finally(() => { saveInProgress.current = false; });
-  }, [debouncedShapes, drawingId, title, layers, currentUser?.id]);
+  }, [debouncedShapes, drawingId, title, layers, currentUser?.id, awaitDek]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {

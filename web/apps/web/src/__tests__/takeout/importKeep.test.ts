@@ -189,18 +189,20 @@ describe('runKeepImport', () => {
     expect(JSON.parse(content)[0]).toMatchObject({ type: 'paragraph', content: 'first' });
   });
 
-  it('saves plaintext (unencrypted) when the device has no key pair', async () => {
+  // Issue #95. This used to assert the opposite: that the run went ahead and
+  // wrote every item as plaintext, on the reasoning that a half-imported
+  // library is worse than a plaintext one. The cost was backwards — a plaintext
+  // import is thousands of files with no key ref, none of which anything comes
+  // back to encrypt, while a declined import can be re-run in full the moment
+  // the vault is unlocked.
+  it('imports nothing when the device has no key pair', async () => {
     loadKeyPair.mockReturnValue(null);
     const summary = await run([entry('a.json', { title: 'A', textContent: 'x' })]);
 
-    expect(summary.unencrypted).toBe(true);
+    expect(summary).toMatchObject({ imported: 0, unencrypted: true, cancelled: true });
+    expect(createNote).not.toHaveBeenCalled();
     expect(encryptionApi.setFileKey).not.toHaveBeenCalled();
     expect(driveAutosaveEncryptedContent).not.toHaveBeenCalled();
-    expect(driveAutosaveContent).toHaveBeenCalledTimes(1);
-    const [noteId, content, filename] = driveAutosaveContent.mock.calls[0];
-    expect(noteId).toBe('id-A');
-    expect(filename).toBe('note.json');
-    expect(JSON.parse(content)[0]).toMatchObject({ type: 'paragraph', content: 'x' });
   });
 
   it('adds each imported note to the search index', async () => {

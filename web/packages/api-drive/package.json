@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "@neutrino/api-core": "workspace:*",
-    "@neutrino/e2e-crypto": "workspace:*"
+    "@neutrino/e2e-crypto": "workspace:*",
+    "@neutrino/utils": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

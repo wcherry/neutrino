@@ -31,7 +31,7 @@ vi.mock('next/navigation', () => ({
 const getFileInfoMock = vi.fn();
 const updateFileMock = vi.fn();
 const driveReadContentMock = vi.fn();
-const driveAutosaveContentMock = vi.fn();
+const driveAutosaveEncryptedContentMock = vi.fn();
 
 vi.mock('@neutrino/api-drive', () => ({
   filesystemApi: {
@@ -42,8 +42,12 @@ vi.mock('@neutrino/api-drive', () => ({
     downloadFile: vi.fn(),
   },
   driveReadContent: (...args: unknown[]) => driveReadContentMock(...args),
-  driveAutosaveContent: (...args: unknown[]) => driveAutosaveContentMock(...args),
-  driveAutosaveEncryptedContent: vi.fn(),
+  driveAutosaveEncryptedContent: (...args: unknown[]) =>
+    driveAutosaveEncryptedContentMock(...args),
+  mintFileKey: vi.fn(),
+  canEncryptFor: vi.fn(() => Promise.resolve(true)),
+  isMissingEncryptionKey: (err: unknown) =>
+    err instanceof Error && err.message === 'no-dek',
 }));
 
 const listAllNotesMock = vi.fn();
@@ -63,12 +67,17 @@ vi.mock('@neutrino/api-links', () => ({
   },
 }));
 
-// Unencrypted path — E2EE is covered by the notes/note-encryption e2e specs.
+// A resolved DEK: the editor has no other kind of save path since issue #95 —
+// it encrypts or it declines. `awaitDek` rather than `dekRef.current` is what
+// the save awaits, so a save that lands mid-resolution is not mistaken for a
+// locked vault.
+const DEK = new Uint8Array(32).fill(3);
 vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   useEncryptedDocumentContent: () => ({
-    dekRef: { current: null },
+    dekRef: { current: DEK },
     dekResolved: true,
-    isNewEncryption: false,
+    isNewEncryption: true,
+    awaitDek: () => Promise.resolve(DEK),
     autosave: vi.fn(),
     createVersion: vi.fn(),
     isAutosaving: false,
@@ -238,7 +247,7 @@ beforeEach(() => {
   getBacklinksMock.mockResolvedValue({ backlinks: [] });
   updateLinksMock.mockResolvedValue({ backlinks: [] });
   updateFileMock.mockResolvedValue({});
-  driveAutosaveContentMock.mockResolvedValue(autosaveMeta());
+  driveAutosaveEncryptedContentMock.mockResolvedValue(autosaveMeta());
 });
 
 afterEach(() => {
@@ -321,14 +330,14 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
     await settle();
 
-    expect(driveAutosaveContentMock).toHaveBeenCalledTimes(1);
+    expect(driveAutosaveEncryptedContentMock).toHaveBeenCalledTimes(1);
     expect(broadcastFileUpdateMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps keystrokes typed while a save was in flight', async () => {
     vi.useFakeTimers();
     let resolveSave: (meta: unknown) => void = () => {};
-    driveAutosaveContentMock.mockImplementation(
+    driveAutosaveEncryptedContentMock.mockImplementation(
       () => new Promise((resolve) => { resolveSave = resolve; })
     );
 
@@ -337,7 +346,7 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
 
     act(() => latestProps().onChange(LOCAL_EDIT));
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
-    expect(driveAutosaveContentMock).toHaveBeenCalledTimes(1);
+    expect(driveAutosaveEncryptedContentMock).toHaveBeenCalledTimes(1);
 
     // The user keeps typing before that save comes back.
     act(() => latestProps().onChange(LATER_LOCAL_EDIT));

@@ -10,11 +10,6 @@ export {
   sharedWithMeApi,
   sharedDrivesApi,
   driveReadContent,
-  driveWriteContent,
-  driveAutosaveContent,
-  driveCreateVersion,
-  driveAutosaveBytes,
-  driveCreateVersionBytes,
   driveAutosaveEncryptedContent,
   driveCreateEncryptedVersion,
   driveAutosaveEncryptedBytes,
@@ -29,6 +24,22 @@ export {
   getNotificationsWsUrl,
   tagsApi,
 } from './client';
+
+export type { AutosaveTransport } from './client';
+
+// The only way to write user content into Drive. See the module header for why
+// the plaintext helpers this replaced no longer exist.
+export {
+  MissingEncryptionKeyError,
+  isMissingEncryptionKey,
+  canEncryptFor,
+  mintFileKey,
+  requireFileKey,
+  uploadDriveFile,
+  autosaveEncrypted,
+  createEncryptedVersion,
+  type UploadDriveFileOptions,
+} from './encryptedWrites';
 
 export type {
   FileItem,

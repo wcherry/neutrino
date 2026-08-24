@@ -5,6 +5,7 @@
  *   - Building and parsing `neutrino-drive:` references
  *   - Attachments folder is reused when present, created when not, memoised
  *   - Local uploads and URL imports land in Attachments, encrypted
+ *   - A locked session is refused rather than uploaded in the clear (#95)
  *   - A URL import blocked by CORS reports something actionable
  *   - Unencrypted images resolve to a download URL without being downloaded
  *   - Encrypted images are downloaded and decrypted, and cached across calls
@@ -15,18 +16,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const listFolderContents = vi.fn();
 const createFolder = vi.fn();
-const uploadFile = vi.fn();
-const uploadEncryptedFile = vi.fn();
+const uploadDriveFile = vi.fn();
 const downloadFile = vi.fn();
 const getFileMetadata = vi.fn();
 const getFileKey = vi.fn();
 const generateThumbnail = vi.fn();
-/** null stands for a locked session — the branch that falls back to plaintext. */
+/** null stands for a locked session — the branch that must refuse to write. */
 let keyPair: { publicKey: string; secretKey: string } | null = null;
 
 vi.mock('@/lib/api', () => ({
   storageApi: {
-    uploadFile: (...a: unknown[]) => uploadFile(...a),
     downloadFile: (...a: unknown[]) => downloadFile(...a),
     getFileMetadata: (...a: unknown[]) => getFileMetadata(...a),
     getFileDownloadUrl: (id: string) => `https://drive.test/files/${id}?token=t`,
@@ -36,7 +35,13 @@ vi.mock('@/lib/api', () => ({
     createFolder: (...a: unknown[]) => createFolder(...a),
   },
   encryptionApi: { getFileKey: (...a: unknown[]) => getFileKey(...a) },
-  uploadEncryptedFile: (...a: unknown[]) => uploadEncryptedFile(...a),
+  // Stubbed at the boundary. What `uploadDriveFile` itself does — seal a DEK,
+  // encrypt the metadata, generate a thumbnail, and throw rather than write
+  // plaintext when the vault is locked — is covered in
+  // `packages/api-drive/src/__tests__/encryptedWrites.test.ts`. What matters
+  // here is that the attachment path goes through it at all, and into
+  // Attachments.
+  uploadDriveFile: (...a: unknown[]) => uploadDriveFile(...a),
 }));
 
 vi.mock('@neutrino/e2e-crypto', () => ({
@@ -49,7 +54,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   encryptMetadata: (meta: Record<string, unknown>) => `enc(${JSON.stringify(meta)})`,
 }));
 
-vi.mock('@neutrino/api-photos', () => ({
+vi.mock('@neutrino/utils', () => ({
   generateThumbnail: (...a: unknown[]) => generateThumbnail(...a),
 }));
 
@@ -88,8 +93,7 @@ beforeEach(() => {
   localStorage.setItem('access_token', tokenFor('user-1'));
   listFolderContents.mockResolvedValue({ folder: null, folders: [], files: [] });
   createFolder.mockResolvedValue({ id: 'attach-1', name: ATTACHMENTS_FOLDER_NAME });
-  uploadFile.mockImplementation(async (file: File) => driveFile({ id: 'up-1', name: file.name }));
-  uploadEncryptedFile.mockImplementation(async (file: File) =>
+  uploadDriveFile.mockImplementation(async (file: File) =>
     driveFile({ id: 'up-1', name: file.name, encryptedMetadata: 'enc' }),
   );
   generateThumbnail.mockResolvedValue('thumb-b64');
@@ -144,30 +148,27 @@ describe('Attachments folder', () => {
 });
 
 describe('getting images into Drive', () => {
-  it('uploads a local file into Attachments, encrypted', async () => {
+  it('uploads a local file into Attachments through the encrypted uploader', async () => {
     const file = new File(['bytes'], 'holiday.png', { type: 'image/png' });
     await uploadAttachment(file);
 
-    expect(uploadFile).not.toHaveBeenCalled();
-    const [uploaded, dek, sealedKey, meta, , folderId, thumbnail] =
-      uploadEncryptedFile.mock.calls[0];
+    const [uploaded, userId, opts] = uploadDriveFile.mock.calls[0];
     expect(uploaded).toBe(file);
-    expect(dek).toEqual(new Uint8Array([1, 2, 3]));
-    expect(sealedKey).toBe('sealed-dek');
-    expect(meta).toBe('enc({"name":"holiday.png","mimeType":"image/png"})');
-    expect(folderId).toBe('attach-1');
-    // The server can't preview ciphertext, so the thumbnail is made here.
-    expect(thumbnail).toBe('thumb-b64');
+    expect(userId).toBe('user-1');
+    expect((opts as { folderId: string }).folderId).toBe('attach-1');
   });
 
-  it('falls back to a plaintext upload when the session holds no key', async () => {
-    keyPair = null;
+  // Issue #95. This used to assert the opposite — that a locked session fell
+  // back to `storageApi.uploadFile` — on the reasoning that a stored image
+  // beats a failed insert. It doesn't: an image uploaded in the clear has no
+  // key ref, so nothing ever comes back to encrypt it, and the document's
+  // illustrations sit readable in storage forever. Refusing costs the user one
+  // unlock and nothing else.
+  it('propagates the refusal when the session holds no key', async () => {
+    uploadDriveFile.mockRejectedValueOnce(new Error('no-dek'));
     const file = new File(['bytes'], 'holiday.png', { type: 'image/png' });
 
-    await uploadAttachment(file);
-
-    expect(uploadEncryptedFile).not.toHaveBeenCalled();
-    expect(uploadFile).toHaveBeenCalledWith(file, undefined, 'attach-1');
+    await expect(uploadAttachment(file)).rejects.toThrow('no-dek');
   });
 
   it('copies a linked image into Attachments, keeping its name', async () => {
@@ -178,9 +179,9 @@ describe('getting images into Drive', () => {
 
     await importUrlAttachment('https://example.test/pics/sunset.png?v=2');
 
-    const [uploaded, , , , , folderId] = uploadEncryptedFile.mock.calls[0];
+    const [uploaded, , opts] = uploadDriveFile.mock.calls[0];
     expect((uploaded as File).name).toBe('sunset.png');
-    expect(folderId).toBe('attach-1');
+    expect((opts as { folderId: string }).folderId).toBe('attach-1');
   });
 
   it('explains a cross-origin refusal instead of failing opaquely', async () => {
@@ -188,7 +189,7 @@ describe('getting images into Drive', () => {
 
     await expect(importUrlAttachment('https://example.test/a.png'))
       .rejects.toThrow(/doesn't allow images to be copied/);
-    expect(uploadEncryptedFile).not.toHaveBeenCalled();
+    expect(uploadDriveFile).not.toHaveBeenCalled();
   });
 
   it('rejects an address that is not an image', async () => {
@@ -209,7 +210,7 @@ describe('getting images into Drive', () => {
 
     await importUrlAttachment('https://example.test/');
 
-    expect((uploadEncryptedFile.mock.calls[0][0] as File).name).toBe('image');
+    expect((uploadDriveFile.mock.calls[0][0] as File).name).toBe('image');
   });
 });
 
