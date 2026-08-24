@@ -1,341 +1,105 @@
 # Unused Backend APIs
 
-Backend APIs that are defined in the server but called by **neither** the web app nor the iOS mobile app.
+Backend routes with no caller in the web app or any native client.
 
-> **Method:** Backend routes were extracted from `src/*/api.rs` files. Web usage was traced through `web/packages/api-*/src/` clients. Mobile usage was traced through `NeutrinoDrive/Services/*.swift`. OAuth callbacks (`/callback`) are intentional server-side redirects and are excluded from "unused" classification.
+> **Method.** Routes come from the `#[get(...)]`/`#[post(...)]`-style macros in
+> `src/**/api.rs`, combined with the scope each module is mounted under — *not*
+> from the `#[utoipa::path(path = "...")]` annotations, which are wrong in
+> places (the calendar ones omit the `/calendar` scope, and `docs::ai` carried a
+> doubled `/docs`). Client usage was traced across **all** clients: `web/` and
+> the six native repos — `neutrino_{docs,drive,notes,photos,sheets}_ios_mobile`
+> and `neutrino_drive_mac_desktop`. Build output (`node_modules`, `.next`,
+> `out/`, `storybook-static`, `dist`) is excluded.
+>
+> **Caveat.** Path matching cannot tell verbs apart: `GET /tasks/{id}` and
+> `PATCH /tasks/{id}` look identical to a text search. Anything acted on below
+> was additionally verified by reading the client method that builds the call.
 
----
-
-## 1. Two-Factor Authentication (2FA)
-
-The entire 2FA subsystem exists in the backend but has no client-side implementation.
-
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/auth/2fa/status` |
-| POST | `/api/v1/auth/2fa/enroll` |
-| POST | `/api/v1/auth/2fa/confirm` |
-| POST | `/api/v1/auth/2fa/disable` |
-
----
-
-## 2. Session Management
-
-Active session listing and granular session revocation are not exposed in any client.
-
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/auth/sessions` |
-| DELETE | `/api/v1/auth/sessions/{session_id}` |
-| DELETE | `/api/v1/auth/sessions` (revoke all) |
+Last verified: 2026-08-24, against 301 backend routes.
 
 ---
 
-## 3. OAuth Token Revocation
+## Removed
 
-The OAuth PKCE flow (authorize + token exchange) is used by the mobile app, but token revocation is never called.
+37 routes deleted — see the commits on this branch. Four whole modules went with
+them (`docs::ai`, `drive::ai`, `drive::priority`, `drive::suggestions`); the
+rest lost routes while keeping the service behind them, because something else
+still calls it.
 
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/oauth/revoke` |
+| Area | Routes | Note |
+|------|--------|------|
+| `docs::ai` | 7 | Whole module. Took the OpenAI/Claude/Gemini provider clients with it — nothing else imported them. |
+| `drive::shared_drives` | 9 | Only `GET /shared-drives` survives. Create, update, delete, the whole member sub-resource, and analytics had no caller. |
+| `calendar::tasks` | 7 | Task-list read/update/delete, `POST /tasks/bulk`, `GET`/`DELETE /tasks/{id}`, and `DELETE /tasks/{id}/lists/{list_id}`. |
+| `drive::suggestions` | 4 | Whole module. Distinct from access requests, which are used. |
+| `drive::priority` | 3 | Whole module — `quick-access`, `suggested-collaborators`, `suggested-actions`. |
+| `drive::workspace` | 2 | Routes only. `WorkspaceService` stays: sharing, permissions and links all call it. |
+| `photos::learning` | 2 | Routes only. `LearningService` stays: a background task calls `process_all_pending`. |
+| `drive::activity` | 1 | Read route only. The service stays — `comments` writes the log through it. |
+| `drive::ai` | 1 | Whole module (`catch-me-up`). |
+| `drive::filesystem` | 1 | `GET /bulk/download`. |
 
----
-
-## 4. Calendar — Incomplete Task & Reminder Coverage
-
-The web uses list/create/update for tasks and reminders, but several CRUD operations are unimplemented on the client side.
-
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/calendar/reminders/{id}` |
-| GET | `/api/v1/calendar/tasks/{id}` |
-| DELETE | `/api/v1/calendar/tasks/{id}` |
-| POST | `/api/v1/calendar/tasks/bulk` |
-| GET | `/api/v1/calendar/tasks/lists/{id}` |
-| PATCH | `/api/v1/calendar/tasks/lists/{id}` |
-| DELETE | `/api/v1/calendar/tasks/lists/{id}` |
-| DELETE | `/api/v1/calendar/tasks/{id}/lists/{list_id}` |
+Tables behind the deleted modules (`doc_suggestions`, and the priority/AI ones)
+are left in place, as the IRM removal did with `irm_policies`.
 
 ---
 
-## 5. Drive — Activity Log
+## Still unused, kept deliberately
 
-The backend tracks per-file and workspace-level activity, but no client reads it.
+### Enterprise scaffolding — 22 routes
 
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/drive/activity` |
-| GET | `/api/v1/drive/files/{id}/activity` |
+No caller, no way to reach the feature from any client, but this reads as
+roadmap work rather than abandoned code. Kept pending an explicit call.
 
----
+| Area | Routes | Endpoints |
+|------|--------|-----------|
+| Compliance | 11 | `/admin/compliance/holds*`, `/admin/compliance/retention*` |
+| Security | 7 | `/admin/security/{siem*,ransomware*,cmek}` |
+| Two-factor auth | 4 | `/auth/2fa/{status,enroll,confirm,disable}` |
 
-## 6. Drive — Search
+The 2FA response field `totpEnabled` *is* consumed — `AuthService.swift` in the
+photos app decodes it — but nothing calls the four endpoints that would change
+it.
 
-Full-text search and autocomplete suggestions are defined but not called by either app.
+### Not client-facing by design — 12 routes
 
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/drive/search` |
-| GET | `/api/v1/drive/search/suggestions` |
+These have no client caller because a client is not what calls them. Counting
+them as dead would be a category error.
 
----
+| Area | Routes | Why it stays |
+|------|--------|--------------|
+| Jobs | 6 | Worker API — `/jobs/pending`, `/jobs/workers`, thumbnail upload. Consumed by an out-of-repo job runner. |
+| Photos internal | 3 | `/internal/users-with-faces`, `/internal/users/{id}/face-embeddings`, `/internal/persons/clusters` — service-to-service face clustering. |
+| Service registry | 1 | `POST /internal/services/register` is the **write** side of the admin Services tab. `GET /api/v1/admin/services` reads the registry this populates; deleting it would leave that tab permanently empty. |
+| OAuth | 1 | `POST /oauth/revoke` is part of the OAuth surface third-party clients rely on. |
+| Calendar | 1 | `GET /calendar/connections/outlook/callback` is a provider redirect target. |
 
-## 7. Drive — Tags ✅ RESOLVED
+### New, not yet wired — 1 route
 
-~~The entire tagging system (CRUD + assignment) has no client usage.~~
-
-The web client now consumes every tag route via `tagsApi`
-(`web/packages/api-drive/src/client.ts`): the file info panel and its tag
-picker, the sidebar's usage-ordered Tags section, `/drive/tags`,
-`/drive/tags/{id}`, and `tag:` filtering in topbar search. See
-`agent_docs/plans/feature-drive-tags.md`.
-
-The original list was also incomplete — three routes were missing and
-`POST /files/{id}/tags` does not exist. Corrected surface:
-
-| Method | Endpoint | Client usage |
-|--------|----------|--------------|
-| GET | `/api/v1/drive/tags` | sidebar, picker, manage page, search |
-| POST | `/api/v1/drive/tags` | picker "Create", manage page |
-| GET | `/api/v1/drive/tags/{id}` | tag detail page |
-| PATCH | `/api/v1/drive/tags/{id}` | rename (both tag pages) |
-| DELETE | `/api/v1/drive/tags/{id}` | delete (both tag pages) |
-| GET | `/api/v1/drive/tags/{id}/files` | tag detail page, tag search |
-| GET | `/api/v1/drive/files/{id}/tags` | file info panel |
-| PUT | `/api/v1/drive/files/{id}/tags` | *unused* — the picker toggles per tag |
-| POST | `/api/v1/drive/files/{id}/tags/{tag_id}` | picker |
-| DELETE | `/api/v1/drive/files/{id}/tags/{tag_id}` | picker, chip remove |
+`GET /api/v1/drive/key-versions` ships with the key-file work and has no client
+caller yet. It is the check the rotation UI is meant to make before a key is
+dropped.
 
 ---
 
-## 8. Drive — Notifications
+## Known false negatives
 
-In-app notification listing and management are unimplemented on both clients.
+Flagged by path matching, but genuinely used — recorded so the next sweep does
+not re-raise them.
 
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/drive/notifications` |
-| PATCH | `/api/v1/drive/notifications/{id}` |
-| DELETE | `/api/v1/drive/notifications/{id}` |
-
----
-
-## 9. Drive — Information Rights Management (IRM) — **removed**
-
-The IRM policy endpoints (`/api/v1/drive/{files,folders}/{id}/irm`) had no caller in
-any client, so the feature was deleted: the `drive::irm` module, its wiring, and the
-download/print/copy enforcement it fed in `drive::storage` and `drive::sharing`. With
-no way to create a policy, that enforcement could never fire. The `irm_policies` table
-and its migration are left in place.
-
----
-
-## 10. Drive — Encryption Management
-
-Separate encrypt-on-demand and status check endpoints (distinct from the E2EE key endpoints used by both clients).
-
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/drive/files/{id}/encrypt` |
-| GET | `/api/v1/drive/files/{id}/encryption-status` |
-
----
-
-## 11. Drive — File Priority
-
-Priority flagging and listing are unused by both clients.
-
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/drive/files/{id}/priority` |
-| GET | `/api/v1/drive/priority-items` |
-
----
-
-## 12. Drive — AI Features
-
-Backend AI endpoints for drive-level file analysis and summarization are not called by either client (the web calls AI via its own Next.js proxy routes instead).
-
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/drive/analyze` |
-| POST | `/api/v1/drive/summarize` |
-
----
-
-## 13. Drive — Suggestions
-
-Collaborative change suggestions (distinct from access requests) have no client-side implementation.
-
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/drive/files/{id}/suggestions` |
-| POST | `/api/v1/drive/suggestions` |
-| PATCH | `/api/v1/drive/suggestions/{id}` |
-
----
-
-## 14. Drive — Shared Drives Write Operations
-
-The web only lists shared drives (`GET /shared-drives`). Creating, fetching, and updating individual shared drives is unused.
-
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/drive/shared-drives` |
-| GET | `/api/v1/drive/shared-drives/{id}` |
-| PATCH | `/api/v1/drive/shared-drives/{id}` |
-
----
-
-## 15. Drive — File Version Deletion
-
-The web can create and restore versions but never calls the delete endpoint.
-
-| Method | Endpoint |
-|--------|----------|
-| DELETE | `/api/v1/drive/files/{id}/versions/{vid}` |
-
----
-
-## 16. Admin — Workspace, Compliance & Security Settings
-
-The web admin panel covers users, services, disk, and feature flags. These three admin resource groups are never called.
-
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/admin/workspace` |
-| PATCH | `/api/v1/admin/workspace` |
-| GET | `/api/v1/admin/compliance` |
-| POST | `/api/v1/admin/compliance` |
-| GET | `/api/v1/admin/security` |
-| PATCH | `/api/v1/admin/security` |
-
----
-
-## 17. Internal Service Registry
-
-These internal endpoints are used for service-to-service communication only and have no client-facing callers.
-
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/internal/services/register` |
-| GET | `/api/v1/internal/services` |
-| DELETE | `/api/v1/internal/services/{id}` |
-
----
-
-## 18. Docs — Real-time Collaboration
-
-The docs collaboration session endpoints (cursor, selection, change broadcasting) are defined but no client connects to them. Real-time editing likely falls back to autosave only.
-
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/docs/collab/{id}` (join session) |
-| POST | `/api/v1/docs/collab/{id}/cursor` |
-| POST | `/api/v1/docs/collab/{id}/selection` |
-| POST | `/api/v1/docs/collab/{id}/changes` |
-
----
-
-## 19. Docs — Revision History & AI
-
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/docs/{id}/history` |
-| POST | `/api/v1/docs/{id}/restore` |
-| POST | `/api/v1/docs/generate` (AI content generation) |
-| POST | `/api/v1/docs/improve` (AI content improvement) |
-
----
-
-## 20. Notes — References
-
-Backlinks are used by the web, but the reference creation endpoint is not.
-
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/notes/{id}/reference` |
-
----
-
-## 21. Photos — Face & Person Management
-
-The web reads persons (list, photos, timeline, merge, smart-album) but never creates, fetches by ID, or deletes individual persons. The raw faces index is also unused.
-
-| Method | Endpoint |
-|--------|----------|
-| GET | `/api/v1/photos/faces` |
-| GET | `/api/v1/photos/faces/{id}` |
-| POST | `/api/v1/photos/persons` |
-| GET | `/api/v1/photos/persons/{id}` |
-| DELETE | `/api/v1/photos/persons/{id}` |
-| POST | `/api/v1/photos/learning/reprocess` |
-
----
-
-## 22. Sheets — Incomplete Operations & AI
-
-The web covers autosave and named-range creation but misses delete, export, bulk named-range management, and two AI endpoints.
-
-| Method | Endpoint |
-|--------|----------|
-| DELETE | `/api/v1/sheets/{id}` |
-| GET | `/api/v1/sheets/{id}/export` |
-| GET | `/api/v1/sheets/named-ranges` |
-| PATCH | `/api/v1/sheets/named-ranges/{id}` |
-| DELETE | `/api/v1/sheets/named-ranges/{id}` |
-| POST | `/api/v1/sheets/ai/analyze` |
-| POST | `/api/v1/sheets/ai/generate-formula` |
-
----
-
-## 23. Slides — Delete & AI
-
-| Method | Endpoint |
-|--------|----------|
-| DELETE | `/api/v1/slides/{id}` |
-| POST | `/api/v1/slides/ai/generate-slide` |
-| POST | `/api/v1/slides/ai/improve-slide` |
-
----
-
-## 24. Diagrams — Real-time Collaboration
-
-Like docs, the backend has a real-time collaboration protocol for diagrams that no client calls.
-
-| Method | Endpoint |
-|--------|----------|
-| POST | `/api/v1/diagrams/collab/{id}` (join session) |
-| POST | `/api/v1/diagrams/collab/{id}/changes` |
+| Route | Reality |
+|-------|---------|
+| `/auth/admin/users*` (5) | Registered *outside* the `/auth` scope, so they serve `/api/v1/admin/users*`, which `@neutrino/api-admin` calls. |
+| `GET /fonts/{id}/file` | Never written by a client. The server hands out `file_url` in the font list and the web loads it through `@font-face`. |
 
 ---
 
 ## Summary
 
-| Group | Unused Endpoints |
-|-------|-----------------|
-| Two-Factor Authentication | 4 |
-| Session Management | 3 |
-| OAuth Token Revocation | 1 |
-| Calendar — Tasks & Reminders | 8 |
-| Drive — Activity Log | 2 |
-| Drive — Search | 2 |
-| Drive — Tags | 7 |
-| Drive — Notifications | 3 |
-| Drive — IRM | 0 (removed) |
-| Drive — Encryption Management | 2 |
-| Drive — File Priority | 2 |
-| Drive — AI Features | 2 |
-| Drive — Suggestions | 3 |
-| Drive — Shared Drives (write) | 3 |
-| Drive — Version Deletion | 1 |
-| Admin — Workspace/Compliance/Security | 6 |
-| Internal Service Registry | 3 |
-| Docs — Real-time Collaboration | 4 |
-| Docs — History & AI | 4 |
-| Notes — References | 1 |
-| Photos — Face & Person Management | 6 |
-| Sheets — Incomplete Operations & AI | 7 |
-| Slides — Delete & AI | 3 |
-| Diagrams — Real-time Collaboration | 2 |
-| **Total** | **83** |
+| | Routes |
+|---|---|
+| Backend routes | 301 |
+| With a client caller | 266 |
+| Unused — enterprise scaffolding | 22 |
+| Unused — not client-facing by design | 12 |
+| Unused — new, not yet wired | 1 |
