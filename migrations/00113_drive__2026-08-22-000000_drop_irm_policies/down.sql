@@ -1,4 +1,10 @@
-CREATE TABLE irm_policies (
+-- Recreate `irm_policies` as it stood before the drop.
+--
+-- This is the full table definition from the deleted create migration. There
+-- are no rows to reconstruct: the policies were only ever writable through the
+-- IRM endpoints, which no client called, so the table is restored empty.
+
+CREATE TABLE IF NOT EXISTS irm_policies (
     id TEXT NOT NULL PRIMARY KEY,
     resource_type TEXT NOT NULL,
     resource_id TEXT NOT NULL,
