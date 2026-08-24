@@ -626,7 +626,7 @@ async fn main() -> std::io::Result<()> {
     });
 
     let drive_encryption_service = Arc::new(EncryptionService::new(
-        drive_encryption_repo,
+        drive_encryption_repo.clone(),
         drive_permissions_service.clone(),
     ));
     let drive_encryption_state = web::Data::new(drive::encryption::api::EncryptionApiState {
@@ -959,6 +959,21 @@ async fn main() -> std::io::Result<()> {
             service: private_lib_service,
         });
 
+    // ── Key files ─────────────────────────────────────────────────────────────
+    //
+    // Retired identity keys, stored per user in the same private store as the
+    // diagram libraries and the search snapshots. Wired here rather than beside
+    // the other drive services because that is where the store is built.
+
+    use drive::key_files::service::KeyFileService;
+
+    let key_files_state = web::Data::new(drive::key_files::api::KeyFilesApiState {
+        service: Arc::new(KeyFileService::new(
+            private_store.clone(),
+            drive_encryption_repo.clone(),
+        )),
+    });
+
     // ── Themes service ────────────────────────────────────────────────────────
 
     use themes::repository::CustomThemesRepository;
@@ -1028,6 +1043,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(drive::compliance::api::ComplianceApiDoc::openapi());
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
         doc.merge(drive::filesystem::api::FilesystemApiDoc::openapi());
+        doc.merge(drive::key_files::api::KeyFilesApiDoc::openapi());
         doc.merge(jobs::api::JobsApiDoc::openapi());
         doc.merge(drive::notifications::api::NotificationsApiDoc::openapi());
         doc.merge(drive::permissions::api::PermissionsApiDoc::openapi());
@@ -1108,6 +1124,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_security_state.clone())
             .app_data(drive_tags_state.clone())
             .app_data(drive_encryption_state.clone())
+            .app_data(key_files_state.clone())
             .app_data(drive_service_registry_state.clone())
             .app_data(drive_admin_state.clone())
             .app_data(drive_feature_flags_state.clone())

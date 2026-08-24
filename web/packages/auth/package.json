@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@neutrino/api-core": "workspace:*",
+    "@neutrino/api-drive": "workspace:*",
     "@neutrino/e2e-crypto": "workspace:*"
   },
   "peerDependencies": {

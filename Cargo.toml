@@ -72,7 +72,10 @@ tracing-appender = "0.2.4"
 
 # API docs
 utoipa = { version = "4", features = ["actix_extras"] }
-utoipa-swagger-ui = { version = "6", features = ["actix-web"] }
+# `debug-embed` bakes the Swagger UI assets into the binary in debug builds too.
+# Without it rust-embed reads them from the build-time OUT_DIR at runtime, so
+# moving or copying the checkout leaves /swagger-ui/ serving empty 404s.
+utoipa-swagger-ui = { version = "6", features = ["actix-web", "debug-embed"] }
 thiserror = "1"
 
 # Calendar features

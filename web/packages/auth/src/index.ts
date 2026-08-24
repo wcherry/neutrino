@@ -9,6 +9,8 @@ export {
   unlockKeyring,
   restoreFromRecoveryKit,
   rotateIdentity,
+  backUpRetiredKeys,
+  storedKeyFileVersions,
   currentRecoveryKit,
   deviceHoldsKeyring,
   forgetThisDevice,

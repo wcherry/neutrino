@@ -50,6 +50,8 @@ import type {
   FileKeyResponse,
   SetFileKeyRequest,
   ShareFileKeyRequest,
+  PutKeyFileRequest,
+  KeyFileResponse,
   NotificationListResponse,
   Tag,
   ListTagsResponse,
@@ -864,6 +866,32 @@ export const encryptionApi = {
   /** Remove the caller's own key ref (e.g. on leaving a shared file). */
   async deleteFileKey(fileId: string): Promise<void> {
     return request<void>(`/api/v1/drive/files/${fileId}/key`, { method: 'DELETE' });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Key file API — the caller's retired identity keys
+// ---------------------------------------------------------------------------
+
+export const keyFileApi = {
+  /** The caller's stored key file, or null if they have never written one. */
+  async getKeyFile(): Promise<KeyFileResponse | null> {
+    try {
+      return await request<KeyFileResponse>('/api/v1/drive/key-file');
+    } catch (e) {
+      // A user who has never rotated has no key file, which is a state and not
+      // a failure — the same shape `getFileKey` uses for an unencrypted file.
+      if (e instanceof ApiClientError && e.statusCode === 404) return null;
+      throw e;
+    }
+  },
+
+  /** Store the caller's key file, replacing any existing one. */
+  async putKeyFile(body: PutKeyFileRequest): Promise<KeyFileResponse> {
+    return request<KeyFileResponse>('/api/v1/drive/key-file', {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
   },
 };
 

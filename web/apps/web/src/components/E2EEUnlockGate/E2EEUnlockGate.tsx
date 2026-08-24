@@ -17,6 +17,17 @@
  *                orphan every existing file. Recovery kit or pairing only.
  *   locked       this device holds the keyring — open it
  *   unlocked     render nothing
+ *
+ * The passphrase prompt has been removed: a key created here is stored so that
+ * this device opens it unattended, `getKeyringState` does that before anything
+ * renders, and 'unlocked' is what it reports. So on a device enrolled from now
+ * on, this component never appears after the first run.
+ *
+ * 'locked' therefore only happens on a browser enrolled *before* that change,
+ * whose stored record is still wrapped under a passphrase or passkey. That path
+ * is kept — the alternative is those users being unable to reach their own files
+ * — and `unlockKeyring` converts the record afterwards, so it asks exactly once
+ * and then never again.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -39,7 +50,6 @@ import {
   type KeyringState,
   type LocalKeystoreInfo,
 } from '@neutrino/auth';
-import { isPasskeySupported } from '@neutrino/e2e-crypto';
 import { subscribeToGateRequests } from './gateEvents';
 import styles from './E2EEUnlockGate.module.css';
 
@@ -64,16 +74,12 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
   const [error, setError] = useState('');
 
   // Provision / restore inputs
-  const [passphrase, setPassphrase] = useState('');
-  const [confirmPassphrase, setConfirmPassphrase] = useState('');
   const [recoveryKit, setRecoveryKit] = useState('');
   const [kitSaved, setKitSaved] = useState(false);
   const [kitInput, setKitInput] = useState('');
 
-  // Unlock input
+  // Unlock input — only ever used by a device enrolled before the prompt went.
   const [unlockSecret, setUnlockSecret] = useState('');
-
-  const usePasskey = isPasskeySupported();
 
   const check = useCallback(async () => {
     setPhase('checking');
@@ -111,47 +117,27 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
   /**
    * How this device will wrap the keyring.
    *
-   * A passkey is preferred wherever the browser has one: its PRF secret never
-   * leaves the authenticator, so the stored blob cannot be ground offline the
-   * way a passphrase-derived key can.
+   * Device wrapping, always: the passphrase prompt was removed by request, so
+   * there is no secret to wrap under and nothing to ask. The key is stored where
+   * this origin's JavaScript can read it back without a gesture — see
+   * `DeviceParams` in `keystoreLocal.ts` for exactly what that gives up.
    */
   function wrapChoice() {
-    return usePasskey
-      ? ({ method: 'passkey', label: `${userName}'s device` } as const)
-      : ({ method: 'passphrase', passphrase } as const);
-  }
-
-  function validatePassphrase(): boolean {
-    if (usePasskey) return true;
-    if (passphrase.length < 8) {
-      setError('Use at least 8 characters.');
-      return false;
-    }
-    if (passphrase !== confirmPassphrase) {
-      setError('The two passphrases do not match.');
-      return false;
-    }
-    return true;
+    return { method: 'device' } as const;
   }
 
   async function handleProvision() {
-    if (!validatePassphrase()) return;
     await runGuarded(async () => {
       const { recoveryKit: kit } = await provisionKeyring(userId, userName, wrapChoice());
       setRecoveryKit(kit);
-      setPassphrase('');
-      setConfirmPassphrase('');
       setPhase('show-kit');
     });
   }
 
   async function handleRestore() {
-    if (!validatePassphrase()) return;
     await runGuarded(async () => {
       await restoreFromRecoveryKit(userId, userName, kitInput, wrapChoice());
       setKitInput('');
-      setPassphrase('');
-      setConfirmPassphrase('');
       setPhase('done');
     });
   }
@@ -180,38 +166,13 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
           <div className={styles.body}>
             <p className={styles.intro}>
               Your notes, documents and files are encrypted with a key that is created here and
-              never sent to us. {usePasskey
-                ? 'It will be protected by a passkey on this device.'
-                : 'Choose a passphrase to protect it on this device.'}
+              never sent to us. It is kept on this device and unlocks automatically.
             </p>
             <p className={styles.intro}>
               Because we never receive it, we cannot reset it. The recovery kit shown next is the
               only way back if you lose this device.
             </p>
             {error && <Alert variant="error" message={error} />}
-            {!usePasskey && (
-              <div className={styles.form}>
-                <TextInput
-                  type="password"
-                  label="Passphrase"
-                  autoComplete="new-password"
-                  value={passphrase}
-                  onChange={(e) => setPassphrase(e.target.value)}
-                  disabled={busy}
-                />
-                <TextInput
-                  type="password"
-                  label="Confirm passphrase"
-                  autoComplete="new-password"
-                  value={confirmPassphrase}
-                  onChange={(e) => setConfirmPassphrase(e.target.value)}
-                  disabled={busy}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void handleProvision();
-                  }}
-                />
-              </div>
-            )}
           </div>
         </ModalBody>
         <ModalFooter>
@@ -285,27 +246,10 @@ export function E2EEUnlockGate({ userId, userName }: E2EEUnlockGateProps) {
                 value={kitInput}
                 onChange={(e) => setKitInput(e.target.value)}
                 disabled={busy}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && kitInput) void handleRestore();
+                }}
               />
-              {!usePasskey && (
-                <>
-                  <TextInput
-                    type="password"
-                    label="New passphrase for this device"
-                    autoComplete="new-password"
-                    value={passphrase}
-                    onChange={(e) => setPassphrase(e.target.value)}
-                    disabled={busy}
-                  />
-                  <TextInput
-                    type="password"
-                    label="Confirm passphrase"
-                    autoComplete="new-password"
-                    value={confirmPassphrase}
-                    onChange={(e) => setConfirmPassphrase(e.target.value)}
-                    disabled={busy}
-                  />
-                </>
-              )}
             </div>
           </div>
         </ModalBody>

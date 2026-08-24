@@ -3,11 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, QrCode, RefreshCw, ShieldAlert, ShieldCheck, ShieldX, Upload } from 'lucide-react';
-import QRCode from 'react-qr-code';
+import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, RefreshCw, ShieldAlert, ShieldCheck, ShieldX, Upload } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
 import { authApi, calendarApi, useAuth, type UpdateProfileRequest, type ConnectionProvider, type ConnectionResponse, type CreateAppleConnectionRequest } from '@/lib/api';
-import { initSodium, loadKeyPair, hasKeyPair, subscribeToLockState, toBase64, fromBase64, toBase64url, fingerprintFor, clearSession } from '@neutrino/e2e-crypto';
+import { initSodium, loadKeyPair, hasKeyPair, subscribeToLockState, toBase64, fromBase64, toBase64url, fingerprintFor, keyPairMatches, clearSession } from '@neutrino/e2e-crypto';
 import { clearSearchIndex } from '@neutrino/search';
 import { clearDriveImageCache } from '@/lib/driveImages';
 import { getKeyringState, adoptKeyPair } from '@neutrino/auth';
@@ -374,14 +373,33 @@ const qc = useQueryClient();
     if (!user) return;
     setImportKeyError('');
     try {
-      const parsed = JSON.parse(importKeyValue.trim()) as { public_key?: string; private_key?: string; key_version?: string };
-      if (typeof parsed.public_key !== 'string' || typeof parsed.private_key !== 'string') {
-        throw new Error('Invalid format — paste the full exported key JSON');
+      await initSodium();
+
+      let parsed: { public_key?: string; private_key?: string; key_version?: string };
+      try {
+        parsed = JSON.parse(importKeyValue.trim());
+      } catch {
+        throw new Error('Invalid JSON — paste the full exported key');
       }
-      const publicKey = fromBase64(parsed.public_key);
-      const secretKey = fromBase64(parsed.private_key);
+      if (typeof parsed.public_key !== 'string' || typeof parsed.private_key !== 'string') {
+        throw new Error('Invalid format — the file needs both public_key and private_key');
+      }
+
+      // Decoding is its own step with its own message. Rolling it in with the
+      // JSON parse is what made a good key file report "invalid JSON".
+      let publicKey: Uint8Array;
+      let secretKey: Uint8Array;
+      try {
+        publicKey = fromBase64(parsed.public_key);
+        secretKey = fromBase64(parsed.private_key);
+      } catch {
+        throw new Error('Key is not readable base64 — it may have been truncated or edited');
+      }
       if (publicKey.length !== 32 || secretKey.length !== 32) {
         throw new Error('Key has wrong length — make sure you pasted the complete key');
+      }
+      if (!keyPairMatches(publicKey, secretKey)) {
+        throw new Error('Key halves do not match — these came from two different keys');
       }
       // Adopts the imported keypair as a version-1 keyring and wraps it to this
       // device, so it survives a reload. Storing it in memory alone (as this
@@ -395,11 +413,15 @@ const qc = useQueryClient();
       setImportKeySaved(true);
       setTimeout(() => setImportKeySaved(false), 2500);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '';
+      // Every rejection above is thrown with the sentence to show, so it is
+      // shown. Matching on the message prefix (as this did) meant anything
+      // unrecognised was relabelled "invalid JSON" — including a base64 error
+      // about JSON that had parsed perfectly well, which is how a good key file
+      // came to be reported as a bad one.
       setImportKeyError(
-        msg.startsWith('Invalid') || msg.startsWith('Key')
-          ? msg
-          : 'Invalid JSON — paste the full exported key',
+        err instanceof Error && err.message
+          ? err.message
+          : 'Could not import that key — check the file and try again.',
       );
     }
   }

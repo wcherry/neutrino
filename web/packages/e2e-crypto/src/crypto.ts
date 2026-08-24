@@ -68,6 +68,22 @@ export function generateKeyPair(): KeyPair {
 }
 
 /**
+ * Do these two halves belong together?
+ *
+ * Curve25519 public keys are derived from the secret, so this is checkable
+ * rather than a matter of trust. Worth checking on any keypair that arrives from
+ * outside: adopting a mismatched pair fails silently and late — everything seals
+ * to a public key whose secret nobody holds, and the damage only shows up when a
+ * file will not open. The iOS importer makes the same comparison.
+ */
+export function keyPairMatches(publicKey: Uint8Array, secretKey: Uint8Array): boolean {
+  ensureReady();
+  if (publicKey.length !== 32 || secretKey.length !== 32) return false;
+  const derived = sodium.crypto_scalarmult_base(secretKey);
+  return sodium.memcmp(derived, publicKey);
+}
+
+/**
  * Generate a random 32-byte file Data Encryption Key (DEK).
  */
 export function generateFileKey(): Uint8Array {

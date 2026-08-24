@@ -11,11 +11,6 @@
   color: var(--color-text-secondary, #6b7280);
 }
 
-.error {
-  font-size: 12px;
-  color: var(--color-error, #dc2626);
-}
-
 /* ── Key versions ─────────────────────────────────────────────────────────── */
 
 .versions {
@@ -165,18 +160,6 @@
   overflow-x: auto;
 }
 
-.textarea {
-  width: 100%;
-  padding: 10px;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12px;
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 6px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text-primary, #111827);
-  resize: vertical;
-}
-
 .confirmRow {
   display: flex;
   gap: 8px;
@@ -215,4 +198,62 @@
   letter-spacing: 0.3em;
   text-align: center;
   color: var(--color-text-primary, #111827);
+}
+
+/* ── Mobile key code ──────────────────────────────────────────────────────── */
+
+/* Louder than .hint: unlike pairing, this code really is the key behind six
+   digits, and the consequence of leaving it on a shared screen is total. */
+.warning {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-warning-text, #92400e);
+  background: var(--color-warning-bg, #fffbeb);
+  border: 1px solid var(--color-warning-border, #fde68a);
+  border-radius: 8px;
+}
+
+/*
+ * An action inside a sentence, for the "back up now" / "try again" prompts. A
+ * link rather than a button visually: it sits mid-paragraph in the warning
+ * block, where a bordered control would break the line it belongs to.
+ */
+.inlineBtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.inlineBtn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.countdown {
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+/* The whole point is that it stopped being readable — greyed, not hidden, so
+   the user understands it expired rather than wondering where it went. */
+.expired {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  padding: 16px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--color-text-secondary, #6b7280);
+  background: var(--color-surface-muted, #f9fafb);
+  border-radius: 8px;
 }

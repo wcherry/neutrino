@@ -1,6 +1,7 @@
 export {
   initSodium,
   generateKeyPair,
+  keyPairMatches,
   generateFileKey,
   encryptFile,
   decryptFile,
@@ -57,14 +58,23 @@ export {
   hasLocalKeyring,
   storeUnderPasskey,
   storeUnderPassphrase,
+  storeOnDevice,
   rewrapExisting,
   unlockWithPasskey,
   unlockWithPassphrase,
+  unlockOnDevice,
   clearLocalKeyring,
   ARGON2_DEFAULTS,
   type WrapMethod,
   type LocalKeystoreInfo,
 } from './keystoreLocal';
+
+export {
+  buildKeyFile,
+  openKeyFile,
+  type ArchivedKey,
+  type RecoveredKey,
+} from './keyFile';
 
 export {
   exportRecoveryKit,
@@ -86,6 +96,16 @@ export {
   type PairingResponse,
   type PairingSession,
 } from './pairing';
+
+export {
+  exportKeyQr,
+  openKeyQr,
+  generateQrPin,
+  expireQrPayload,
+  MOBILE_QR_ITERATIONS,
+  type MobileKeyQr,
+  type MobileKeyQrEnvelope,
+} from './mobileKeyQr';
 
 export {
   isPasskeySupported,

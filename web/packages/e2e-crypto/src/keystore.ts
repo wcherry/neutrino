@@ -35,8 +35,24 @@ export function fromBase64url(s: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * Decode base64 that a human has carried between two places.
+ *
+ * Deliberately tolerant of the alphabet. Its only caller is the "import a key"
+ * box, and the JSON pasted into it does not come from one writer: the web
+ * export emits standard base64 (`toBase64`), while the mobile key QR and the
+ * iOS app emit base64url — so a perfectly good key file was rejected whenever a
+ * 32-byte key happened to contain a byte encoding as `-` or `_`, which is most
+ * of them. `atob` throws on those two characters, and the failure surfaced as
+ * "invalid JSON" about JSON that had parsed cleanly.
+ *
+ * Padding is optional for the same reason: the url-safe writers omit it.
+ * Accepting both alphabets is a superset of the old behaviour — nothing that
+ * decoded before decodes differently now.
+ */
 export function fromBase64(s: string): Uint8Array {
-  const binary = atob(s.replace(/\s/g, ''));
+  const compact = s.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(compact.padEnd(Math.ceil(compact.length / 4) * 4, '='));
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
     bytes[i] = binary.charCodeAt(i);
