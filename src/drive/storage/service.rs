@@ -55,6 +55,73 @@ fn no_content_error(err: ServeResolveError, key: &str) -> ApiError {
     }
 }
 
+/// What an upload still in flight is allowed to write, worked out before a
+/// single byte is streamed.
+///
+/// The commit-time checks in [`StorageService::finalize_upload`] stay where
+/// they are — they are what settles a race between two uploads running at
+/// once — but on their own they mean a body that can never be committed is
+/// written to disk in full and only then rejected, so a 50 GB upload costs
+/// 50 GB of writes to earn its 413. This is the same arithmetic done up front,
+/// so the chunk loop can stop at the first byte over the line.
+///
+/// It also carries `MAX_UPLOAD_BYTES`, which until now was enforced nowhere:
+/// it was wired up as an actix `PayloadConfig`, and `actix_multipart::Multipart`
+/// never consults one.
+pub struct UploadAllowance {
+    max_upload_bytes: i64,
+    /// `None` where the limit is unset, not where it is reached.
+    quota_remaining: Option<i64>,
+    daily_remaining: Option<i64>,
+}
+
+impl UploadAllowance {
+    /// An allowance bounded only by the configured single-file ceiling, for
+    /// writes that do not draw down the user's quota.
+    pub fn unmetered(max_upload_bytes: u64) -> Self {
+        UploadAllowance {
+            max_upload_bytes: saturating_i64(max_upload_bytes),
+            quota_remaining: None,
+            daily_remaining: None,
+        }
+    }
+
+    /// Whether an upload that has written `size_bytes` so far may keep going.
+    /// Called once per chunk, so the answer has to stay cheap — every field
+    /// here is a plain integer settled before the stream opened.
+    pub fn check(&self, size_bytes: i64) -> Result<(), ApiError> {
+        if size_bytes > self.max_upload_bytes {
+            return Err(ApiError::new(
+                413,
+                "PAYLOAD_TOO_LARGE",
+                "File exceeds the maximum upload size",
+            ));
+        }
+        if self.quota_remaining.is_some_and(|left| size_bytes > left) {
+            return Err(ApiError::new(
+                413,
+                "QUOTA_EXCEEDED",
+                "Storage quota exceeded",
+            ));
+        }
+        if self.daily_remaining.is_some_and(|left| size_bytes > left) {
+            return Err(ApiError::new(
+                429,
+                "DAILY_LIMIT_EXCEEDED",
+                "Daily upload limit exceeded",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// `MAX_UPLOAD_BYTES` is configured as a `u64` and compared against sizes that
+/// are `i64` everywhere else in this module. An operator who sets it above
+/// `i64::MAX` means "no limit", which is what saturating gives them.
+fn saturating_i64(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
+
 pub struct StorageService {
     repo: Arc<StorageRepository>,
     store: Arc<LocalFileStore>,
@@ -74,9 +141,56 @@ impl StorageService {
         }
     }
 
+    /// How much this user may still upload, for the chunk loop to check
+    /// against as it streams.
+    ///
+    /// Read once per request rather than per chunk, so it is a snapshot: two
+    /// uploads started together both see the same headroom and can between
+    /// them exceed it. That is what the commit-time checks in
+    /// [`Self::finalize_upload`] are for. This one exists to stop the
+    /// overwhelmingly common case — a single upload that was never going to
+    /// fit — from being written out in full first.
+    pub fn upload_allowance(
+        &self,
+        user_id: &str,
+        max_upload_bytes: u64,
+    ) -> Result<UploadAllowance, ApiError> {
+        let quota = self.repo.get_or_create_quota(user_id)?;
+        let today = Utc::now().naive_utc().date();
+        let used_daily = if quota.daily_reset_at.date() < today {
+            0
+        } else {
+            quota.daily_upload_bytes
+        };
+
+        // Derived rather than read off the row, for the reason `finalize_upload`
+        // gives: the stored counter under-reports by every version snapshot and
+        // never shrank on delete. Skipped entirely when no quota is set, since
+        // then nothing would be done with the answer.
+        let quota_remaining = match quota.quota_bytes {
+            Some(limit) => {
+                let used = self.repo.refresh_used_bytes(user_id, quota.used_bytes)?;
+                Some((limit - used).max(0))
+            }
+            None => None,
+        };
+
+        Ok(UploadAllowance {
+            max_upload_bytes: saturating_i64(max_upload_bytes),
+            quota_remaining,
+            daily_remaining: quota.daily_cap_bytes.map(|cap| (cap - used_daily).max(0)),
+        })
+    }
+
     /// Called after a file has been streamed to `temp_path`.
     /// Enforces per-user quota and daily cap, then commits the upload.
     /// Automatically creates version 1 for the new file.
+    ///
+    /// These checks are the second of two: [`Self::upload_allowance`] has
+    /// already refused anything obviously over the line before it reached
+    /// disk. Keeping them here is what makes concurrent uploads safe, since
+    /// the pre-flight figure is a snapshot taken before either had written
+    /// anything.
     pub async fn finalize_upload(
         &self,
         user: &AuthenticatedUser,
@@ -1565,6 +1679,128 @@ mod tests {
 
         assert_eq!(err.status, 413);
         assert_eq!(err.code, "QUOTA_EXCEEDED");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    // ── Pre-flight upload allowance (issue #102) ─────────────────────────────
+    //
+    // `MAX_UPLOAD_BYTES` used to be enforced nowhere: it was installed as an
+    // actix `PayloadConfig`, which `actix_multipart::Multipart` never consults,
+    // so a streamed body had no ceiling at all. Quota had one, but only at
+    // commit time — after every byte was already written to disk. These cover
+    // the figure the chunk loop now checks against as it streams.
+
+    const GIB: u64 = 1024 * 1024 * 1024;
+
+    #[test]
+    fn the_configured_ceiling_stops_an_upload_over_it() {
+        let allowance = UploadAllowance::unmetered(1000);
+
+        assert!(allowance.check(1000).is_ok(), "exactly the limit is allowed");
+        let err = allowance.check(1001).expect_err("one byte over");
+        assert_eq!(err.status, 413);
+        assert_eq!(err.code, "PAYLOAD_TOO_LARGE");
+    }
+
+    #[test]
+    fn an_unmetered_allowance_ignores_quota() {
+        // Autosave and named versions write content that already exists, so
+        // they are bounded by the ceiling and by nothing else.
+        let allowance = UploadAllowance::unmetered(GIB);
+        assert!(allowance.check(500 * 1024 * 1024).is_ok());
+    }
+
+    #[test]
+    fn a_ceiling_above_i64_max_means_no_ceiling() {
+        let allowance = UploadAllowance::unmetered(u64::MAX);
+        assert!(allowance.check(i64::MAX).is_ok());
+    }
+
+    #[test]
+    fn the_allowance_reports_which_limit_was_hit() {
+        let allowance = UploadAllowance {
+            max_upload_bytes: 10_000,
+            quota_remaining: Some(5_000),
+            daily_remaining: Some(1_000),
+        };
+
+        assert!(allowance.check(1_000).is_ok());
+        // Tightest limit first, and each keeps its own status: a full quota is
+        // permanent (413) while a spent daily cap is not (429).
+        assert_eq!(allowance.check(1_001).unwrap_err().code, "DAILY_LIMIT_EXCEEDED");
+        assert_eq!(allowance.check(1_001).unwrap_err().status, 429);
+
+        let no_daily = UploadAllowance {
+            daily_remaining: None,
+            ..allowance
+        };
+        assert_eq!(no_daily.check(5_001).unwrap_err().code, "QUOTA_EXCEEDED");
+        assert_eq!(no_daily.check(5_001).unwrap_err().status, 413);
+    }
+
+    /// The point of the whole exercise: an upload that cannot be committed is
+    /// refused from the headroom worked out before it started, rather than
+    /// after it has been written out in full and rejected by `finalize_upload`.
+    #[tokio::test]
+    async fn the_allowance_sees_a_full_quota_before_any_bytes_are_written() {
+        let (service, _repo, _perms, pool, base) = test_service_with_permissions();
+        let user = convert_test_user("user-1");
+        let content = vec![7u8; 4096];
+        upload(&service, &user, "photo.jpg", &content).await;
+
+        // Same arrangement as the commit-time test above: room for one more
+        // copy of the content, but not for the copy and the snapshot already
+        // on disk.
+        let limit = content.len() as i64 * 2 + 1;
+        diesel::update(crate::schema::user_quotas::table)
+            .set(crate::schema::user_quotas::quota_bytes.eq(Some(limit)))
+            .execute(&mut pool.get().expect("conn"))
+            .expect("set limit");
+
+        let allowance = service
+            .upload_allowance(&user.user_id, 10 * GIB)
+            .expect("allowance");
+
+        let err = allowance
+            .check(content.len() as i64)
+            .expect_err("no room for a second copy");
+        assert_eq!(err.code, "QUOTA_EXCEEDED");
+        // ...and the headroom that *is* left is still offered.
+        assert!(allowance.check(1).is_ok());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn an_unset_quota_leaves_only_the_configured_ceiling() {
+        let (service, _repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = convert_test_user("user-1");
+
+        let allowance = service.upload_allowance(&user.user_id, 1_000).expect("allowance");
+
+        assert!(allowance.check(1_000).is_ok());
+        assert_eq!(allowance.check(1_001).unwrap_err().code, "PAYLOAD_TOO_LARGE");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A quota already over its limit yields zero headroom, not a negative one
+    /// that would read as "anything goes" once compared against a size.
+    #[tokio::test]
+    async fn an_overdrawn_quota_leaves_no_headroom() {
+        let (service, _repo, _perms, pool, base) = test_service_with_permissions();
+        let user = convert_test_user("user-1");
+        upload(&service, &user, "photo.jpg", &vec![7u8; 4096]).await;
+
+        diesel::update(crate::schema::user_quotas::table)
+            .set(crate::schema::user_quotas::quota_bytes.eq(Some(1i64)))
+            .execute(&mut pool.get().expect("conn"))
+            .expect("set limit");
+
+        let allowance = service
+            .upload_allowance(&user.user_id, 10 * GIB)
+            .expect("allowance");
+
+        assert_eq!(allowance.check(1).unwrap_err().code, "QUOTA_EXCEEDED");
+        assert!(allowance.check(0).is_ok());
         let _ = std::fs::remove_dir_all(base);
     }
 }

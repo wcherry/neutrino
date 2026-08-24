@@ -42,6 +42,7 @@ function fakeArchive(): TakeoutArchive & { closed: () => number } {
   let closed = 0;
   return {
     root: 'Takeout/',
+    partCount: 1,
     products: [],
     product: () => undefined,
     close: async () => {

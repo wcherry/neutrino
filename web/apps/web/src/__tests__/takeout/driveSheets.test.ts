@@ -30,6 +30,7 @@ function archiveOf(products: Record<string, TakeoutEntry[]>): TakeoutArchive {
   const list = Object.entries(products).map(([name, entries]) => ({ name, entries }));
   return {
     root: 'Takeout/',
+    partCount: 1,
     products: list,
     product: (name) => list.find((p) => p.name.toLowerCase() === name.toLowerCase()),
     close: async () => {},

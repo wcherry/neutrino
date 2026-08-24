@@ -502,6 +502,7 @@ async fn main() -> std::io::Result<()> {
         permissions_service: drive_permissions_service.clone(),
         tags_service: drive_tags_service.clone(),
         filesystem_repo: drive_fs_repo.clone(),
+        max_upload_bytes: config.max_upload_bytes,
     });
     let drive_fs_service = Arc::new(FilesystemService::new(
         drive_fs_repo.clone(),
