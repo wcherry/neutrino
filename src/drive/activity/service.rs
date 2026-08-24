@@ -1,29 +1,17 @@
 #![allow(dead_code)]
 
-use crate::drive::activity::{
-    dto::{ActivityEntryResponse, ActivityListResponse},
-    model::NewActivityEntry,
-    repository::ActivityRepository,
-};
-use crate::drive::permissions::service::PermissionsService;
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::drive::activity::{model::NewActivityEntry, repository::ActivityRepository};
+use crate::shared::ApiError;
 use std::sync::Arc;
 use uuid::Uuid;
 
 pub struct ActivityService {
     repo: Arc<ActivityRepository>,
-    permissions_service: Arc<PermissionsService>,
 }
 
 impl ActivityService {
-    pub fn new(
-        repo: Arc<ActivityRepository>,
-        permissions_service: Arc<PermissionsService>,
-    ) -> Self {
-        ActivityService {
-            repo,
-            permissions_service,
-        }
+    pub fn new(repo: Arc<ActivityRepository>) -> Self {
+        ActivityService { repo }
     }
 
     pub fn log(
@@ -67,51 +55,5 @@ impl ActivityService {
         };
 
         self.repo.insert_entry(&entry)
-    }
-
-    pub fn list_file_activity(
-        &self,
-        user: &AuthenticatedUser,
-        file_id: &str,
-        page: Option<i64>,
-        page_size: Option<i64>,
-    ) -> Result<ActivityListResponse, ApiError> {
-        let role = self
-            .permissions_service
-            .get_effective_role(&user.user_id, "file", file_id)?;
-        if role.is_none() {
-            return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
-        }
-
-        let page = page.unwrap_or(1).max(1);
-        let page_size = page_size.unwrap_or(20).min(100).max(1);
-
-        let (items, total) = self.repo.list_for_file(file_id, page, page_size)?;
-
-        Ok(ActivityListResponse {
-            entries: items.into_iter().map(ActivityEntryResponse::from).collect(),
-            total,
-        })
-    }
-
-    pub fn list_all_activity(
-        &self,
-        user_id_filter: Option<&str>,
-        resource_type_filter: Option<&str>,
-        action_filter: Option<&str>,
-        page: i64,
-        page_size: i64,
-    ) -> Result<ActivityListResponse, ApiError> {
-        let (items, total) = self.repo.list_all(
-            user_id_filter,
-            resource_type_filter,
-            action_filter,
-            page,
-            page_size,
-        )?;
-        Ok(ActivityListResponse {
-            entries: items.into_iter().map(ActivityEntryResponse::from).collect(),
-            total,
-        })
     }
 }

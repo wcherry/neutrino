@@ -774,25 +774,6 @@ impl FilesystemRepository {
         Ok(count)
     }
 
-    pub fn find_files_by_ids(
-        &self,
-        file_ids: &[String],
-        user_id: &str,
-    ) -> Result<Vec<FileRecord>, ApiError> {
-        let mut conn = self.get_conn()?;
-
-        files::table
-            .filter(files::id.eq_any(file_ids))
-            .filter(files::user_id.eq(user_id))
-            .filter(files::deleted_at.is_null())
-            .select(FileRecord::as_select())
-            .load(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB find files by ids error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
     // ── Shortcut operations ───────────────────────────────────────────────────
 
     pub fn create_shortcut(&self, record: NewShortcutRecord) -> Result<ShortcutRecord, ApiError> {

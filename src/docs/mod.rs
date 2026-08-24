@@ -1,4 +1,3 @@
-pub mod ai;
 pub mod collab;
 pub mod docs;
 pub mod permissions;
@@ -11,7 +10,6 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         web::scope("/docs")
             .configure(docs::api::configure)
             .configure(collab::api::configure)
-            .configure(ai::api::configure)
             .configure(templates::api::configure),
     );
 }

@@ -270,47 +270,6 @@ impl FilesystemService {
         Ok(BulkResult { affected })
     }
 
-    pub fn bulk_download(&self, user_id: &str, file_ids: &[String]) -> Result<Vec<u8>, ApiError> {
-        use std::io::Write;
-        use zip::write::SimpleFileOptions;
-
-        let files = self.repo.find_files_by_ids(file_ids, user_id)?;
-
-        let buf = Vec::new();
-        let cursor = std::io::Cursor::new(buf);
-        let mut zip = zip::ZipWriter::new(cursor);
-        let options = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated)
-            .unix_permissions(0o644);
-
-        for file in &files {
-            let abs_path = self.store.resolve(&file.storage_path);
-            let data = std::fs::read(&abs_path).map_err(|e| {
-                tracing::error!("Failed to read file {:?} for zip: {:?}", abs_path, e);
-                ApiError::internal("Failed to read file for download")
-            })?;
-
-            zip.start_file(&file.name, options).map_err(|e| {
-                tracing::error!("Zip start_file error: {:?}", e);
-                ApiError::internal("Failed to create zip archive")
-            })?;
-
-            zip.write_all(&data).map_err(|e| {
-                tracing::error!("Zip write error: {:?}", e);
-                ApiError::internal("Failed to write to zip archive")
-            })?;
-        }
-
-        let cursor = zip.finish().map_err(|e| {
-            tracing::error!("Zip finish error: {:?}", e);
-            ApiError::internal("Failed to finalize zip archive")
-        })?;
-
-        Ok(cursor.into_inner())
-    }
-
-    // ── Recent (whole-drive, sorted by recency) ───────────────────────────────
-
     pub fn list_recent(
         &self,
         user_id: &str,

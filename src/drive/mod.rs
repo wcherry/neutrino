@@ -1,7 +1,6 @@
 pub mod access_requests;
 pub mod activity;
 pub mod admin;
-pub mod ai;
 pub mod comments;
 pub mod compliance;
 pub mod encryption;
@@ -11,14 +10,12 @@ pub mod fonts;
 pub mod key_files;
 pub mod notifications;
 pub mod permissions;
-pub mod priority;
 pub mod private_store;
 pub mod security;
 pub mod service_registry;
 pub mod shared_drives;
 pub mod sharing;
 pub mod storage;
-pub mod suggestions;
 pub mod tags;
 pub mod workspace;
 
@@ -33,11 +30,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .configure(sharing::api::configure_drive)
             .configure(access_requests::api::configure)
             .configure(comments::api::configure)
-            .configure(suggestions::api::configure)
-            .configure(activity::api::configure)
             .configure(notifications::api::configure)
-            .configure(priority::api::configure)
-            .configure(ai::api::configure)
             .configure(tags::api::configure)
             .configure(encryption::api::configure)
             .configure(key_files::api::configure)
