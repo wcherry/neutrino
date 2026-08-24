@@ -341,7 +341,6 @@ async fn main() -> std::io::Result<()> {
     use drive::activity::repository::ActivityRepository;
     use drive::activity::service::ActivityService;
     use drive::admin::service::AdminDashboardService;
-    use drive::ai::service::DriveAIService;
     use drive::comments::repository::CommentsRepository;
     use drive::comments::service::CommentsService;
     use drive::compliance::repository::ComplianceRepository;
@@ -358,7 +357,6 @@ async fn main() -> std::io::Result<()> {
     use drive::notifications::service::{NotificationService, SmtpConfig};
     use drive::permissions::repository::PermissionsRepository;
     use drive::permissions::service::PermissionsService;
-    use drive::priority::service::PriorityService;
     use drive::security::repository::SecurityRepository;
     use drive::security::service::SecurityService;
     use drive::service_registry::repository::ServiceRegistrationRepository;
@@ -370,8 +368,6 @@ async fn main() -> std::io::Result<()> {
     use drive::storage::repository::StorageRepository;
     use drive::storage::service::StorageService;
     use drive::storage::store::LocalFileStore;
-    use drive::suggestions::repository::SuggestionsRepository as DriveSuggestionsRepository;
-    use drive::suggestions::service::SuggestionsService as DriveSuggestionsService;
     use drive::tags::repository::TagsRepository;
     use drive::tags::service::TagsService;
     use drive::workspace::repository::WorkspaceRepository;
@@ -429,9 +425,6 @@ async fn main() -> std::io::Result<()> {
 
     let drive_workspace_repo = Arc::new(WorkspaceRepository::new(pool.clone()));
     let drive_workspace_service = Arc::new(WorkspaceService::new(drive_workspace_repo));
-    let drive_workspace_state = web::Data::new(drive::workspace::api::WorkspaceApiState {
-        workspace_service: drive_workspace_service.clone(),
-    });
 
     let drive_encryption_repo = Arc::new(EncryptionRepository::new(pool.clone()));
 
@@ -560,13 +553,7 @@ async fn main() -> std::io::Result<()> {
         });
 
     let drive_activity_repo = Arc::new(ActivityRepository::new(pool.clone()));
-    let drive_activity_service = Arc::new(ActivityService::new(
-        drive_activity_repo,
-        drive_permissions_service.clone(),
-    ));
-    let drive_activity_state = web::Data::new(drive::activity::api::ActivityApiState {
-        activity_service: drive_activity_service.clone(),
-    });
+    let drive_activity_service = Arc::new(ActivityService::new(drive_activity_repo));
 
     let drive_comments_repo = Arc::new(CommentsRepository::new(pool.clone()));
     let drive_comments_service = Arc::new(CommentsService::new(
@@ -579,30 +566,9 @@ async fn main() -> std::io::Result<()> {
         comments_service: drive_comments_service,
     });
 
-    let drive_suggestions_repo = Arc::new(DriveSuggestionsRepository::new(pool.clone()));
-    let drive_suggestions_service = Arc::new(DriveSuggestionsService::new(
-        drive_suggestions_repo,
-        drive_notification_service.clone(),
-        drive_activity_service.clone(),
-        drive_permissions_service.clone(),
-    ));
-    let drive_suggestions_state = web::Data::new(drive::suggestions::api::SuggestionsApiState {
-        suggestions_service: drive_suggestions_service,
-    });
-
     let drive_jobs_state = web::Data::new(jobs::api::JobsApiState {
         jobs_service: drive_jobs_service.clone(),
         storage_service: drive_storage_service.clone(),
-    });
-
-    let drive_priority_service = Arc::new(PriorityService::new(pool.clone()));
-    let drive_priority_state = web::Data::new(drive::priority::api::PriorityApiState {
-        priority_service: drive_priority_service,
-    });
-
-    let drive_ai_service = Arc::new(DriveAIService::new(pool.clone()));
-    let drive_ai_state = web::Data::new(drive::ai::api::DriveAIApiState {
-        ai_service: drive_ai_service,
     });
 
     let drive_shared_drives_repo = Arc::new(SharedDrivesRepository::new(pool.clone()));
@@ -668,7 +634,6 @@ async fn main() -> std::io::Result<()> {
     // ── Docs service ─────────────────────────────────────────────────────────
 
     use crate::shared::drive_client::DriveClient;
-    use docs::ai::service::DocsAIService;
     use docs::collab::repository::CollabRepository;
     use docs::collab::state::CollabState;
     use docs::docs::repository::DocsRepository;
@@ -687,11 +652,6 @@ async fn main() -> std::io::Result<()> {
         drive_client_for_docs.clone(),
     ));
     let docs_state = web::Data::new(docs::docs::api::DocsApiState { docs_service });
-
-    let docs_ai_service = Arc::new(DocsAIService::new());
-    let docs_ai_state = web::Data::new(docs::ai::api::DocsAIState {
-        ai_service: docs_ai_service,
-    });
 
     let templates_repo = Arc::new(TemplatesRepository::new(pool.clone()));
     let templates_service = Arc::new(TemplatesService::new(templates_repo, drive_client_for_docs));
@@ -835,9 +795,6 @@ async fn main() -> std::io::Result<()> {
     });
     let photos_suggestions_state = web::Data::new(photos::suggestions::api::SuggestionsApiState {
         suggestions_service: photos_suggestions_service,
-    });
-    let photos_learning_state = web::Data::new(photos::learning::api::LearningApiState {
-        learning_service: photos_learning_service.clone(),
     });
     let photos_ai_service = Arc::new(photos::ai::service::PhotosAIService::new());
     let photos_ai_state = web::Data::new(photos::ai::api::PhotosAIState {
@@ -1030,15 +987,12 @@ async fn main() -> std::io::Result<()> {
         doc.merge(calendar::connections::api::ConnectionsApiDoc::openapi());
         doc.merge(calendar::tasks::api::TasksApiDoc::openapi());
         doc.merge(docs::docs::api::DocsApiDoc::openapi());
-        doc.merge(docs::ai::api::DocsAIApiDoc::openapi());
         doc.merge(docs::collab::api::CollabApiDoc::openapi());
         doc.merge(docs::templates::api::TemplatesApiDoc::openapi());
         doc.merge(drive::access_requests::api::AccessRequestsApiDoc::openapi());
-        doc.merge(drive::activity::api::ActivityApiDoc::openapi());
         doc.merge(drive::admin::api::AdminApiDoc::openapi());
         doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
         doc.merge(drive::fonts::api::FontsApiDoc::openapi());
-        doc.merge(drive::ai::api::DriveAIApiDoc::openapi());
         doc.merge(drive::comments::api::CommentsApiDoc::openapi());
         doc.merge(drive::compliance::api::ComplianceApiDoc::openapi());
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
@@ -1047,20 +1001,16 @@ async fn main() -> std::io::Result<()> {
         doc.merge(jobs::api::JobsApiDoc::openapi());
         doc.merge(drive::notifications::api::NotificationsApiDoc::openapi());
         doc.merge(drive::permissions::api::PermissionsApiDoc::openapi());
-        doc.merge(drive::priority::api::PriorityApiDoc::openapi());
         doc.merge(drive::security::api::SecurityApiDoc::openapi());
         doc.merge(drive::service_registry::api::ServiceRegistryApiDoc::openapi());
         doc.merge(drive::shared_drives::api::SharedDrivesApiDoc::openapi());
         doc.merge(drive::sharing::api::SharingApiDoc::openapi());
         doc.merge(drive::storage::api::StorageApiDoc::openapi());
-        doc.merge(drive::suggestions::api::DriveSuggestionsApiDoc::openapi());
         doc.merge(drive::tags::api::TagsApiDoc::openapi());
-        doc.merge(drive::workspace::api::WorkspaceApiDoc::openapi());
         doc.merge(shared::file_events::api::FileEventsApiDoc::openapi());
         doc.merge(links::api::LinksApiDoc::openapi());
         doc.merge(photos::albums::api::AlbumsApiDoc::openapi());
         doc.merge(photos::faces::api::FacesApiDoc::openapi());
-        doc.merge(photos::learning::api::LearningApiDoc::openapi());
         doc.merge(photos::persons::api::PersonsApiDoc::openapi());
         doc.merge(photos::photos::api::PhotosApiDoc::openapi());
         doc.merge(photos::suggestions::api::SuggestionsApiDoc::openapi());
@@ -1100,7 +1050,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(cal_tasks_state.clone())
             // Docs
             .app_data(docs_state.clone())
-            .app_data(docs_ai_state.clone())
             .app_data(templates_state.clone())
             .app_data(docs_collab_repo.clone())
             .app_data(docs_collab_state.clone())
@@ -1110,15 +1059,10 @@ async fn main() -> std::io::Result<()> {
             .app_data(drive_permissions_state.clone())
             .app_data(drive_sharing_state.clone())
             .app_data(drive_access_requests_state.clone())
-            .app_data(drive_workspace_state.clone())
             .app_data(drive_jobs_state.clone())
             .app_data(drive_worker_secret_data.clone())
             .app_data(drive_notifications_state.clone())
-            .app_data(drive_activity_state.clone())
             .app_data(drive_comments_state.clone())
-            .app_data(drive_suggestions_state.clone())
-            .app_data(drive_priority_state.clone())
-            .app_data(drive_ai_state.clone())
             .app_data(drive_shared_drives_state.clone())
             .app_data(drive_compliance_state.clone())
             .app_data(drive_security_state.clone())
@@ -1140,7 +1084,6 @@ async fn main() -> std::io::Result<()> {
             .app_data(photos_faces_state.clone())
             .app_data(photos_persons_state.clone())
             .app_data(photos_suggestions_state.clone())
-            .app_data(photos_learning_state.clone())
             .app_data(photos_ai_state.clone())
             // Drawing
             // Sheets
@@ -1196,7 +1139,6 @@ async fn main() -> std::io::Result<()> {
                     // Admin routes under /admin
                     .service(
                         web::scope("/admin")
-                            .configure(drive::workspace::api::configure)
                             .configure(drive::compliance::api::configure)
                             .configure(drive::security::api::configure)
                             .configure(drive::admin::api::configure)
@@ -1217,7 +1159,6 @@ async fn main() -> std::io::Result<()> {
                     .configure(photos::faces::api::configure_faces)
                     .configure(photos::persons::api::configure_persons)
                     .configure(photos::suggestions::api::configure_suggestions)
-                    .configure(photos::learning::api::configure_learning)
                     .configure(photos::ai::api::configure)
                     // Drawing
                     // Sheets

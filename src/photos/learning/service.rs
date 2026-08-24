@@ -1,7 +1,4 @@
-use crate::photos::learning::{
-    dto::{ReprocessingResponse, ThresholdsResponse},
-    repository::LearningRepository,
-};
+use crate::photos::learning::{dto::ReprocessingResponse, repository::LearningRepository};
 use crate::photos::persons::repository::PersonsRepository;
 use crate::photos::suggestions::repository::SuggestionsRepository;
 use crate::shared::ApiError;
@@ -33,26 +30,6 @@ impl LearningService {
             repo,
             persons_repo,
             suggestions_repo,
-        }
-    }
-
-    /// Return the current recognition thresholds for a user (defaults if none stored).
-    pub fn get_thresholds(&self, user_id: &str) -> Result<ThresholdsResponse, ApiError> {
-        match self.repo.get_thresholds(user_id)? {
-            Some(t) => Ok(ThresholdsResponse {
-                auto_tag_threshold: t.auto_tag_threshold,
-                suggest_threshold: t.suggest_threshold,
-                total_accepts: t.total_accepts,
-                total_rejects: t.total_rejects,
-                updated_at: Some(t.updated_at.and_utc().to_rfc3339()),
-            }),
-            None => Ok(ThresholdsResponse {
-                auto_tag_threshold: DEFAULT_AUTO_TAG,
-                suggest_threshold: DEFAULT_SUGGEST,
-                total_accepts: 0,
-                total_rejects: 0,
-                updated_at: None,
-            }),
         }
     }
 

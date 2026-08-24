@@ -1,6 +1,4 @@
-use crate::drive::workspace::model::{
-    NewWorkspaceSettingsRecord, UpdateWorkspaceSettingsRecord, WorkspaceSettingsRecord,
-};
+use crate::drive::workspace::model::{NewWorkspaceSettingsRecord, WorkspaceSettingsRecord};
 use crate::schema::workspace_settings;
 use crate::shared::ApiError;
 use diesel::prelude::*;
@@ -67,33 +65,6 @@ impl WorkspaceRepository {
             .first(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB query workspace settings after insert error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
-    pub fn update(
-        &self,
-        changeset: UpdateWorkspaceSettingsRecord,
-    ) -> Result<WorkspaceSettingsRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-
-        // Ensure it exists before updating
-        self.get_or_create()?;
-
-        diesel::update(workspace_settings::table.filter(workspace_settings::id.eq(SINGLETON_ID)))
-            .set(&changeset)
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB update workspace settings error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-
-        workspace_settings::table
-            .filter(workspace_settings::id.eq(SINGLETON_ID))
-            .select(WorkspaceSettingsRecord::as_select())
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB query workspace settings after update error: {:?}", e);
                 ApiError::internal("Database error")
             })
     }

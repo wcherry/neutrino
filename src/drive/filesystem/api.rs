@@ -323,54 +323,6 @@ pub async fn bulk_trash(
     Ok(web::Json(result))
 }
 
-#[derive(serde::Deserialize)]
-pub struct BulkDownloadQuery {
-    pub ids: String, // comma-separated file IDs
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/v1/drive/bulk/download",
-    params(
-        ("ids" = String, Query, description = "Comma-separated file IDs to download as zip"),
-    ),
-    responses(
-        (status = 200, description = "ZIP archive of requested files"),
-        (status = 400, description = "No file IDs provided"),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "filesystem"
-)]
-#[get("/bulk/download")]
-pub async fn bulk_download(
-    state: web::Data<FilesystemApiState>,
-    user: AuthenticatedUser,
-    query: web::Query<BulkDownloadQuery>,
-) -> Result<HttpResponse, ApiError> {
-    let file_ids: Vec<String> = query
-        .ids
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    if file_ids.is_empty() {
-        return Err(ApiError::bad_request("No file IDs provided"));
-    }
-
-    let zip_bytes = state
-        .filesystem_service
-        .bulk_download(&user.user_id, &file_ids)?;
-
-    Ok(HttpResponse::Ok()
-        .content_type("application/zip")
-        .insert_header((
-            "Content-Disposition",
-            "attachment; filename=\"download.zip\"",
-        ))
-        .body(zip_bytes))
-}
-
 // ── Trash endpoints ───────────────────────────────────────────────────────────
 
 #[utoipa::path(
@@ -630,7 +582,6 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         .service(list_shortcuts)
         .service(bulk_move)
         .service(bulk_trash)
-        .service(bulk_download)
         .service(list_trash)
         .service(empty_trash)
         .service(restore_file)
@@ -656,7 +607,6 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         list_shortcuts,
         bulk_move,
         bulk_trash,
-        bulk_download,
         list_trash,
         empty_trash,
         restore_file,

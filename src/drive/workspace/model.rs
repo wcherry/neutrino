@@ -24,13 +24,3 @@ pub struct NewWorkspaceSettingsRecord<'a> {
     pub block_external_link_sharing: bool,
     pub domain_only_links: bool,
 }
-
-#[derive(Debug, AsChangeset)]
-#[diesel(table_name = crate::schema::workspace_settings)]
-pub struct UpdateWorkspaceSettingsRecord {
-    pub allowed_domain: Option<Option<String>>,
-    pub restrict_shares_to_domain: Option<bool>,
-    pub block_external_link_sharing: Option<bool>,
-    pub domain_only_links: Option<bool>,
-    pub updated_at: NaiveDateTime,
-}

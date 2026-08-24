@@ -10,13 +10,6 @@ pub struct CreateTaskListRequest {
     pub color: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateTaskListRequest {
-    pub name: Option<String>,
-    pub color: Option<String>,
-}
-
 // ── Task List Response types ──────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -44,22 +37,6 @@ pub struct CreateTaskRequest {
     pub notes: Option<String>,
     pub due_date: Option<String>, // ISO 8601 UTC
     pub position: Option<i32>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BulkCreateTaskItem {
-    pub title: String,
-    pub notes: Option<String>,
-    pub due_date: Option<String>, // ISO 8601 UTC
-}
-
-/// Up to 200 tasks to create atomically, all added to the given list.
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BulkCreateTasksRequest {
-    pub list_id: String,
-    pub tasks: Vec<BulkCreateTaskItem>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -106,10 +83,4 @@ pub struct TaskResponse {
     pub list_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct BulkCreateTasksResponse {
-    pub tasks: Vec<TaskResponse>,
 }
