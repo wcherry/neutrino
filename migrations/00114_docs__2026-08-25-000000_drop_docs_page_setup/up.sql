@@ -1,0 +1,22 @@
+-- Drop the `docs` table.
+--
+-- Page setup was the last thing in it, and page setup now lives in the
+-- document body's `_meta` block beside the header/footer, watermark and theme
+-- settings that were already stored there — so it is inside the E2EE payload
+-- rather than readable here in the clear. With it gone the whole `docs::docs`
+-- module goes too: `GET`/`PUT /api/v1/docs/{id}/page-setup` were its only live
+-- routes, and `GET /api/v1/docs/{id}/export/text` alongside them had no caller
+-- in any client and could not have worked anyway — it parsed the stored file as
+-- Tiptap JSON, which for an encrypted document is ciphertext.
+--
+-- Existing rows are dropped rather than migrated: the server cannot fold a
+-- value into an E2EE document body, so only a client holding the DEK could,
+-- and the value it would fold in is one the editor now defaults to regardless.
+-- A document whose margins were customised therefore opens at the default
+-- (72pt, portrait, letter) once and keeps whatever it is set to next.
+--
+-- `IF EXISTS` to match 00113: a database initialised from the current
+-- migration set still creates this table in 00019/00107, but the guard costs
+-- nothing and keeps the drop idempotent.
+
+DROP TABLE IF EXISTS docs;

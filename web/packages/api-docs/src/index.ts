@@ -6,7 +6,14 @@ import { request, ApiClientError } from '@neutrino/api-core';
  */
 export const DOC_MIME_TYPE = 'application/x-neutrino-doc';
 
-/** Matches `default_page_setup()` in `src/docs/docs/service.rs`. */
+/**
+ * What a document with no stored page setup lays out to.
+ *
+ * Page setup lives in the document body's `_meta` block (see `serializeContent`
+ * in `DocEditor`), so this is the client's own default — there is no server
+ * copy to keep in step with, and a document written before page setup moved
+ * into the body carries none at all.
+ */
 export const DEFAULT_PAGE_SETUP: PageSetup = {
   marginTop: 72,
   marginBottom: 72,
@@ -23,10 +30,10 @@ export const DEFAULT_PAGE_SETUP: PageSetup = {
 type TiptapNode = { type: string; text?: string; content?: TiptapNode[] };
 
 /**
- * With the `docsLayoutStructure` flag on, `serializeContent` in `DocEditor`
- * wraps the Tiptap JSON as `{ doc, _meta }` so header/footer/watermark settings
- * survive a round-trip. Older documents — and any saved with the flag off — are
- * bare Tiptap JSON.
+ * `serializeContent` in `DocEditor` wraps the Tiptap JSON as `{ doc, _meta }`
+ * so page setup and the header/footer/watermark settings survive a round-trip.
+ * A document with none of those — default margins, no header — is stored as
+ * bare Tiptap JSON, as every document was before `_meta` existed.
  */
 type StoredDoc = TiptapNode | { doc: TiptapNode; _meta?: unknown };
 
@@ -77,7 +84,6 @@ export interface DocResponse {
   contentUrl: string;
   /** Path to write document content directly to the drive API (multipart POST). */
   contentWriteUrl: string;
-  pageSetup: PageSetup;
   folderId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -109,14 +115,7 @@ export interface CreateDocRequest {
 }
 
 export interface SaveDocRequest {
-  pageSetup?: PageSetup;
   title?: string;
-}
-
-export interface ExportTextResponse {
-  text: string;
-  wordCount: number;
-  charCount: number;
 }
 
 export interface ListDocsResponse {
@@ -132,10 +131,10 @@ export interface ListDocsResponse {
 // keep the doc-shaped contract their callers were written against and
 // translate it to and from drive's file DTOs.
 //
-// Page setup is the exception: it is real per-document state Drive has no
-// notion of, so it keeps its own endpoint under /api/v1/docs and is stitched
-// in here. A document that has never had its margins changed has no stored row
-// and the endpoint answers with the defaults.
+// Nothing here reaches /api/v1/docs any more. Page setup used to be the
+// exception — server-side state with its own endpoint — and now rides in the
+// document body's `_meta` block, which means the editor reads it out of the
+// decrypted content rather than from a metadata call.
 
 /** The subset of drive's file DTOs these adapters read. */
 interface DriveFileDto {
@@ -169,12 +168,11 @@ function toDocMeta(file: DriveFileDto): DocMetaResponse {
   };
 }
 
-function toDoc(file: DriveFileDto, pageSetup: PageSetup): DocResponse {
+function toDoc(file: DriveFileDto): DocResponse {
   return {
     ...toDocMeta(file),
     contentUrl: `/api/v1/drive/files/${file.id}`,
     contentWriteUrl: `/api/v1/drive/files/${file.id}/versions`,
-    pageSetup,
   };
 }
 
@@ -199,8 +197,7 @@ export const docsApi = {
         folderId: body.folderId ?? null,
       }),
     });
-    // A brand-new document has no stored page setup, so skip the round trip.
-    return toDoc(file, DEFAULT_PAGE_SETUP);
+    return toDoc(file);
   },
 
   /**
@@ -215,30 +212,21 @@ export const docsApi = {
     if (file.mimeType !== DOC_MIME_TYPE) {
       throw new ApiClientError(404, 'NOT_FOUND', 'Document not found');
     }
-    const pageSetup = await request<PageSetup>(`/api/v1/docs/${docId}/page-setup`);
-    return toDoc(file, pageSetup);
+    return toDoc(file);
   },
 
   /**
-   * Rename and/or restyle. The two halves live in different places now — the
-   * name on the Drive file, the page setup in the docs table — so this issues
-   * up to two requests, and only for the fields actually supplied.
+   * Rename. A document's name is its Drive file's name, so this is a PATCH on
+   * the file; with no title supplied it degrades to a metadata read, which is
+   * what callers that only want the current `contentVersion` back rely on.
    */
   async saveDoc(docId: string, body: SaveDocRequest): Promise<DocMetaResponse> {
-    const [file] = await Promise.all([
-      body.title !== undefined
-        ? request<DriveFileDto>(`/api/v1/drive/files/${docId}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ name: body.title }),
-          })
-        : request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`),
-      body.pageSetup !== undefined
-        ? request<PageSetup>(`/api/v1/docs/${docId}/page-setup`, {
-            method: 'PUT',
-            body: JSON.stringify(body.pageSetup),
-          })
-        : Promise.resolve(null),
-    ]);
+    const file = body.title !== undefined
+      ? await request<DriveFileDto>(`/api/v1/drive/files/${docId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: body.title }),
+        })
+      : await request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`);
     return toDocMeta(file);
   },
 
@@ -252,11 +240,7 @@ export const docsApi = {
       method: 'POST',
       body: JSON.stringify({ targetMimeType: DOC_MIME_TYPE, content }),
     });
-    return toDoc(file, DEFAULT_PAGE_SETUP);
-  },
-
-  async exportText(docId: string): Promise<ExportTextResponse> {
-    return request<ExportTextResponse>(`/api/v1/docs/${docId}/export/text`);
+    return toDoc(file);
   },
 };
 

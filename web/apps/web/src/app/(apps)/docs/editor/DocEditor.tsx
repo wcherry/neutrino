@@ -34,6 +34,11 @@ import {
   normalizeDocProperties,
   type DocProperties,
 } from '@/lib/docFields';
+import {
+  pageSetupFromMeta,
+  serializeContent,
+  type LayoutMeta,
+} from '@/lib/docBody';
 import { driveImageRef, inlineDriveImagesInHtml } from '@/lib/driveImages';
 import { normalizeImagesForPdf } from '@/lib/pdfImages';
 import { useSheetPasteInterceptor, PasteChoiceDialog, type SheetEmbedAttrsShape, type CellValue } from '@neutrino/sheet-embed';
@@ -64,7 +69,8 @@ import {
   docsApi, driveReadContent, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
   driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes, extractDocText,
   uploadDriveFile, mintFileKey, canEncryptFor, isMissingEncryptionKey,
-  storageApi, filesystemApi, ApiClientError, type PageSetup, type FileItem,
+  storageApi, filesystemApi, ApiClientError, DEFAULT_PAGE_SETUP,
+  type PageSetup, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
@@ -651,61 +657,6 @@ function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
   );
 }
 
-// ── Content serialisation helpers ────────────────────────────────────────────
-// Content is stored as a wrapper object { doc: TiptapJSON, _meta: LayoutMeta }
-// whenever there is metadata to keep, and as plain Tiptap JSON when there is
-// not — which is what a document with no header, footer, watermark or theme has
-// always been stored as. Headers and footers are not behind a feature flag, so
-// the wrapper can no longer be conditioned on one: a header typed into a
-// document must survive its next save whatever the flags say.
-
-interface LayoutMeta {
-  /**
-   * The header and footer model. `headerText` / `footerText` /
-   * `showPageNumbers` beside it are the flattened legacy view of the default
-   * variant, still written so a build without this feature opens the document
-   * showing something rather than nothing — see `legacyFieldsFor`.
-   */
-  headerFooter: HeaderFooterConfig;
-  headerText: string;
-  footerText: string;
-  showPageNumbers: boolean;
-  watermarkText: string;
-  bgColor: string;
-  docTheme: DocTheme;
-  /**
-   * Author, subject, company and the rest — the values `{{author}}` and the
-   * other metadata field codes read. Part of the document rather than of the
-   * account, because on a shared document the person who opened it is routinely
-   * not the person who wrote it.
-   */
-  properties: DocProperties;
-}
-
-/** Whether `meta` holds anything worth the wrapper. */
-function hasLayoutMeta(meta: LayoutMeta): boolean {
-  return (
-    hasAnyContent(meta.headerFooter) ||
-    Boolean(meta.watermarkText) ||
-    Boolean(meta.bgColor) ||
-    meta.docTheme !== 'default' ||
-    hasDocProperties(meta.properties)
-  );
-}
-
-function serializeContent(
-  docJson: object,
-  meta: LayoutMeta,
-  layoutStructure: boolean,
-): string {
-  // The flag still forces the wrapper on, so documents that have been stored
-  // that way keep their shape even after their metadata is cleared out.
-  if (layoutStructure || hasLayoutMeta(meta)) {
-    return JSON.stringify({ doc: docJson, _meta: meta });
-  }
-  return JSON.stringify(docJson);
-}
-
 // ── Custom paragraph with line-height / paragraph-spacing support ────────────
 
 const LineParagraph = Paragraph.extend({
@@ -755,10 +706,7 @@ export function DocEditor() {
   const toast = useToast();
 
   const [title, setTitle] = useState('');
-  const [pageSetup, setPageSetup] = useState<PageSetup>({
-    marginTop: 72, marginBottom: 72, marginLeft: 72, marginRight: 72,
-    orientation: 'portrait', pageSize: 'letter',
-  });
+  const [pageSetup, setPageSetup] = useState<PageSetup>(DEFAULT_PAGE_SETUP);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const [showPageSetup, setShowPageSetup] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -876,14 +824,12 @@ export function DocEditor() {
     headerText: '', footerText: '', showPageNumbers: false,
     watermarkText: '', bgColor: '', docTheme: 'default',
     properties: emptyDocProperties(),
+    pageSetup: DEFAULT_PAGE_SETUP,
   });
-  // Stable refs for title and pageSetup so the onUpdate closure can include
-  // current metadata in each autosave without re-creating the editor.
+  // Stable ref for the title so the onUpdate closure can include it in each
+  // autosave without re-creating the editor. Page setup needs no ref of its
+  // own: it rides in `layoutMetaRef` with the rest of the layout metadata.
   const titleRef = useRef<string>('');
-  const pageSetupRef = useRef<PageSetup>({
-    marginTop: 72, marginBottom: 72, marginLeft: 72, marginRight: 72,
-    orientation: 'portrait', pageSize: 'letter',
-  });
 
   const { data: doc, isLoading: metaLoading, isError: metaIsError, error: metaError } = useQuery({
     queryKey: ['doc', docId],
@@ -1111,7 +1057,7 @@ export function DocEditor() {
   }, [officeAutosaveMutation]);
 
   const triggerSave = useCallback(
-    (content: string, metadata?: { title?: string; pageSetup?: PageSetup }) => {
+    (content: string, metadata?: { title?: string }) => {
       if (!isLocalWriterRef.current) return;
       contentMutation.mutate({ content });
       if (metadata) metaMutation.mutate(metadata);
@@ -1242,7 +1188,7 @@ export function DocEditor() {
         if (officeModeRef.current) {
           officeAutosaveRef.current();
         } else {
-          triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current });
+          triggerSave(content, { title: titleRef.current });
         }
       }, AUTO_SAVE_DELAY_MS);
     },
@@ -1319,17 +1265,15 @@ export function DocEditor() {
   useEffect(() => {
     layoutMetaRef.current = {
       headerFooter, ...legacyFieldsFor(headerFooter), watermarkText, bgColor, docTheme,
-      properties: docProperties,
+      properties: docProperties, pageSetup,
     };
-  }, [headerFooter, watermarkText, bgColor, docTheme, docProperties]);
+  }, [headerFooter, watermarkText, bgColor, docTheme, docProperties, pageSetup]);
 
   useEffect(() => { titleRef.current = title; }, [title]);
-  useEffect(() => { pageSetupRef.current = pageSetup; }, [pageSetup]);
 
   useEffect(() => {
     if (!doc || !editor) return;
     setTitle(doc.title);
-    setPageSetup(doc.pageSetup);
   }, [doc, editor]);
 
   // ── Office mode: title + content load (issue #43) ───────────────────────
@@ -1405,52 +1349,84 @@ export function DocEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [officeMode, editor, officeHtml]);
 
+  // `_meta` is applied once per document — the first stored content we see for
+  // it wins. A later refetch must not reapply it, or a stale response would put
+  // the server's older margins back over a change just made on screen.
+  const metaAppliedRef = useRef(false);
+  useEffect(() => { metaAppliedRef.current = false; }, [docId]);
+
   useEffect(() => {
     if (!docContent || !editor || !syncReady) return;
+
+    let parsed: { doc?: object; _meta?: Record<string, unknown> } | null = null;
+    try {
+      parsed = JSON.parse(docContent);
+    } catch {
+      parsed = null;
+    }
+    // The wrapper format is `{ doc, _meta }`. Detecting it is not conditioned on
+    // the layout flag: a document saved with a header in it is a wrapper whatever
+    // the flags are now, and reading it as a bare Tiptap doc would load the
+    // wrapper object itself as the content — an empty document on screen and, on
+    // the next autosave, an empty document on disk.
+    const wrapped = Boolean(parsed?._meta);
+
+    // ── Layout metadata ──────────────────────────────────────────────────────
+    // `_meta` rides only on the stored file: it is not in the Y.Doc, and it is
+    // not in any metadata call any more either. So it must be read back even
+    // when the body load below is skipped — and both of those skips are the
+    // common case, not the exception. The room holds the body of any document
+    // that has been edited before, and the collab sync applying that body fires
+    // `onUpdate`, which sets `pendingContent` and trips the unsaved-edits guard.
+    // Reading `_meta` after either guard (as this used to) left page setup,
+    // headers, watermark and theme at their defaults for exactly the documents
+    // most likely to have set them, and the next autosave wrote those defaults
+    // down over the stored values.
+    if (parsed && !metaAppliedRef.current) {
+      metaAppliedRef.current = true;
+      if (wrapped) {
+        const m = parsed._meta as Record<string, never>;
+        // Documents written before the header/footer variants existed carry
+        // only the two flat strings; migrate them rather than dropping them.
+        setHeaderFooter(
+          m.headerFooter
+            ? normalizeHeaderFooterConfig(m.headerFooter)
+            : migrateLegacyHeaderFooter(
+                m.headerText ?? '',
+                m.footerText ?? '',
+                m.showPageNumbers ?? false,
+              ),
+        );
+        setWatermarkText(m.watermarkText ?? '');
+        setBgColor(m.bgColor ?? '');
+        setDocTheme(m.docTheme ?? 'default');
+        setDocProperties(normalizeDocProperties(m.properties));
+        setPageSetup(pageSetupFromMeta(m));
+      } else {
+        setPageSetup(DEFAULT_PAGE_SETUP);
+      }
+    }
+
+    // ── Body ─────────────────────────────────────────────────────────────────
     // Skip if the user has unsaved edits — a stale refetch (e.g. triggered by
     // window.focus after a prompt dialog) must not clobber in-progress work.
     if (pendingContent.current !== null) return;
 
-    // If the Y.Doc already has content from an active collab session (other
-    // users were already editing), don't overwrite with the (older) REST snapshot.
-    const fragment = ydoc.getXmlFragment('default');
-    if (fragment.length > 0) {
-      console.log('[collab] Y.Doc has content from server — skipping REST content load');
+    // If the Y.Doc already has content from an active collab session (or from
+    // the room's persisted state, seeded back on reopening), don't overwrite it
+    // with the older REST snapshot.
+    if (ydoc.getXmlFragment('default').length > 0) {
+      console.log('[collab] Y.Doc has content from server — skipping REST body load');
       return;
     }
 
-    console.log('[collab] Y.Doc is empty after sync — loading content from REST');
-    try {
-      const parsed = JSON.parse(docContent);
-      // Detect the wrapper format { doc, _meta }. Not conditioned on the layout
-      // flag: a document saved with a header in it is a wrapper whatever the
-      // flags are now, and reading it as a bare Tiptap doc would load the
-      // wrapper object itself as the content — an empty document on screen and,
-      // on the next autosave, an empty document on disk.
-      if (parsed._meta) {
-        editor.commands.setContent(parsed.doc, false);
-        // Documents written before the header/footer variants existed carry
-        // only the two flat strings; migrate them rather than dropping them.
-        setHeaderFooter(
-          parsed._meta.headerFooter
-            ? normalizeHeaderFooterConfig(parsed._meta.headerFooter)
-            : migrateLegacyHeaderFooter(
-                parsed._meta.headerText ?? '',
-                parsed._meta.footerText ?? '',
-                parsed._meta.showPageNumbers ?? false,
-              ),
-        );
-        setWatermarkText(parsed._meta.watermarkText ?? '');
-        setBgColor(parsed._meta.bgColor ?? '');
-        setDocTheme(parsed._meta.docTheme ?? 'default');
-        setDocProperties(normalizeDocProperties(parsed._meta.properties));
-      } else {
-        editor.commands.setContent(parsed, false);
-      }
-    } catch {
+    console.log('[collab] Y.Doc is empty after sync — loading body from REST');
+    if (!parsed) {
       editor.commands.setContent(docContent, false);
+      return;
     }
-  }, [docContent, editor, syncReady, ydoc]);
+    editor.commands.setContent((wrapped ? parsed.doc : parsed) as object, false);
+  }, [docContent, editor, syncReady, ydoc, docId]);
 
   // After the DEK is resolved and the content query has settled, do a one-time
   // encrypted autosave when no valid content was loaded (new file or failed
@@ -1501,7 +1477,7 @@ export function DocEditor() {
         return;
       }
       driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current);
-      docsApi.saveDoc(docId, { title: titleRef.current, pageSetup: pageSetupRef.current });
+      docsApi.saveDoc(docId, { title: titleRef.current });
     };
     const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -1534,7 +1510,7 @@ export function DocEditor() {
     // Save title together with current content in one combined call.
     if (editor) {
       const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
-      triggerSave(content, { title, pageSetup });
+      triggerSave(content, { title });
     } else {
       metaMutation.mutate({ title });
     }
@@ -1553,7 +1529,7 @@ export function DocEditor() {
       } else {
         await Promise.all([
           contentMutation.mutateAsync({ content }),
-          metaMutation.mutateAsync({ title: titleRef.current, pageSetup: pageSetupRef.current }),
+          metaMutation.mutateAsync({ title: titleRef.current }),
         ]);
       }
     }
@@ -1570,10 +1546,10 @@ export function DocEditor() {
     }
     const content = serializeContent(editor.getJSON(), {
       headerFooter, ...legacyFieldsFor(headerFooter), watermarkText, bgColor, docTheme,
-      properties: docProperties,
+      properties: docProperties, pageSetup,
     }, flags.docsLayoutStructure);
     versionMutation.mutate(content);
-  }, [editor, versionMutation, officeMode, officeVersionMutation, headerFooter, watermarkText, bgColor, docTheme, docProperties]);
+  }, [editor, versionMutation, officeMode, officeVersionMutation, headerFooter, watermarkText, bgColor, docTheme, docProperties, pageSetup]);
 
   const handleConvertToNative = useCallback(() => {
     promoteMutation.mutate();
@@ -1663,15 +1639,20 @@ export function DocEditor() {
     router.push(`/docs/editor?id=${newDoc.id}`);
   }, [editor, doc, title, router, currentUser?.id, toast]);
 
+  /**
+   * Page setup is part of the document body now, so changing it is a content
+   * write — there is no metadata call left to fall back on when the editor is
+   * not up yet, and nothing to save into. Written through `layoutMetaRef`
+   * synchronously for the same reason `commitHeaderFooter` does: the sync
+   * effect has not run when a second change lands in the same tick.
+   */
   const handlePageSetupSave = (ps: PageSetup) => {
     setPageSetup(ps);
-    // Save page setup together with current content in one combined call.
-    if (editor) {
-      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
-      triggerSave(content, { title, pageSetup: ps });
-    } else {
-      metaMutation.mutate({ pageSetup: ps });
-    }
+    if (!editor) return;
+    const meta: LayoutMeta = { ...layoutMetaRef.current, pageSetup: ps };
+    layoutMetaRef.current = meta;
+    const content = serializeContent(editor.getJSON(), meta, flags.docsLayoutStructure);
+    triggerSave(content, { title });
   };
 
   const handleInsertImage = useCallback(() => setInsertImageSource('drive'), []);
@@ -1747,7 +1728,7 @@ export function DocEditor() {
     pendingContent.current = content;
     setSaveStatus('unsaved');
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
+    autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current }), AUTO_SAVE_DELAY_MS);
   }, [editor, triggerSave, flags.docsLayoutStructure]);
 
   /** Open the bands for editing, with the caret in the one that was clicked. */
@@ -1840,7 +1821,7 @@ export function DocEditor() {
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current }), AUTO_SAVE_DELAY_MS);
     }
   }, [editor, triggerSave]);
 
@@ -1853,7 +1834,7 @@ export function DocEditor() {
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }), AUTO_SAVE_DELAY_MS);
+      autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current }), AUTO_SAVE_DELAY_MS);
     }
   }, [editor, triggerSave]);
 
@@ -2320,7 +2301,7 @@ export function DocEditor() {
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(
-        () => triggerSave(content, { title: titleRef.current, pageSetup: pageSetupRef.current }),
+        () => triggerSave(content, { title: titleRef.current }),
         AUTO_SAVE_DELAY_MS,
       );
     },

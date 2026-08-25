@@ -68,6 +68,10 @@ vi.mock('@/providers/FeatureFlagsProvider', () => ({
 }));
 
 vi.mock('@/lib/api', () => ({
+  DEFAULT_PAGE_SETUP: {
+    marginTop: 72, marginBottom: 72, marginLeft: 72, marginRight: 72,
+    orientation: 'portrait', pageSize: 'letter',
+  },
   docsApi: {
     getDoc: vi.fn(() =>
       Promise.resolve({
@@ -77,15 +81,10 @@ vi.mock('@/lib/api', () => ({
         folderId: null,
         createdAt: '',
         updatedAt: '',
-        pageSetup: {
-          marginTop: 72, marginBottom: 72, marginLeft: 72, marginRight: 72,
-          orientation: 'portrait', pageSize: 'letter',
-        },
       })
     ),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveDoc: vi.fn(() => Promise.resolve()),
-    exportText: vi.fn(() => Promise.resolve({ text: '' })),
   },
   driveReadContent: vi.fn(() => Promise.resolve('')),
   driveCreateVersion: vi.fn(() => Promise.resolve()),

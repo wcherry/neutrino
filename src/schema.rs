@@ -167,13 +167,6 @@ diesel::table! {
 // ── Docs ─────────────────────────────────────────────────────────────────────
 
 diesel::table! {
-    docs (file_id) {
-        file_id -> Text,
-        page_setup -> Text,
-    }
-}
-
-diesel::table! {
     doc_yjs_state (file_id) {
         file_id -> Text,
         state -> Binary,
@@ -989,7 +982,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     tasks,
     task_list_memberships,
     // Docs
-    docs,
     doc_yjs_state,
     doc_templates,
     // Notes
