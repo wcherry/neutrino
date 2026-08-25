@@ -43,8 +43,10 @@ impl From<CustomFontRecord> for CustomFontDto {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-/// List all admin-uploaded custom fonts. Available to any authenticated user
-/// (fonts are a global, non-per-user resource selectable in every editor).
+/// List the custom fonts installed on this server.
+///
+/// Available to any authenticated user, because fonts are a global, non-per-user resource
+/// selectable in every editor.
 #[utoipa::path(
     get,
     path = "/api/v1/fonts",
@@ -65,10 +67,11 @@ async fn list_fonts(
     Ok(HttpResponse::Ok().json(dtos))
 }
 
-/// Serve a custom font's raw bytes with the correct `Content-Type` for
-/// `@font-face`. Requires authentication (not a bare public static route —
-/// see the plan doc for why: the frontend fetches this as a `Blob` via the
-/// authenticated API client and points `@font-face src` at an object URL).
+/// Download a custom font's raw bytes.
+///
+/// Served with the `Content-Type` `@font-face` needs. Authenticated rather than a bare public
+/// static route: the frontend fetches it as a `Blob` through the authenticated API client and
+/// points `@font-face src` at an object URL.
 #[utoipa::path(
     get,
     path = "/api/v1/fonts/{id}/file",
@@ -112,10 +115,11 @@ async fn get_font_file(
     Ok(response)
 }
 
-/// Upload a new custom font. Admin-only. Accepts `multipart/form-data` with
-/// a `display_name` text field and a `file` field (woff2/woff/ttf/otf, max
-/// 50 MB, validated against both the file extension and declared/sniffed MIME
-/// type).
+/// Upload a custom font. Admin only.
+///
+/// Accepts `multipart/form-data` with a `display_name` text field and a `file` field —
+/// woff2/woff/ttf/otf, max 50 MB, validated against both the file extension and the
+/// declared/sniffed MIME type.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/fonts",
@@ -247,7 +251,10 @@ async fn upload_font(
     Err(ApiError::bad_request("No file provided in multipart body"))
 }
 
-/// Delete a custom font's DB row and on-disk file. Admin-only.
+/// Delete a custom font. Admin only.
+///
+/// Removes both the database row and the file on disk; documents referencing the face fall back
+/// to a default.
 #[utoipa::path(
     delete,
     path = "/api/v1/admin/fonts/{id}",
@@ -286,7 +293,10 @@ pub fn configure_admin(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(list_fonts, get_font_file, upload_font, delete_font),
     components(schemas(CustomFontDto)),
-    tags((name = "fonts", description = "Admin-uploadable custom fonts — public read, admin write")),
+    tags((
+        name = "fonts",
+        description = "Custom font faces installed on the server and offered in every editor's font picker. Fonts are global rather than per user: any signed-in user can list them and fetch their bytes, while uploading and deleting are admin-only."
+    )),
     modifiers(&SecurityAddon)
 )]
 pub struct FontsApiDoc;

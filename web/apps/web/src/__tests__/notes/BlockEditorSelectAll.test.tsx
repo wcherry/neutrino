@@ -71,6 +71,30 @@ describe('BlockEditor — selectAll', () => {
     expect(screen.queryByLabelText('Block 2')).not.toBeInTheDocument();
   });
 
+  /**
+   * The regression: `selectAll` builds its Range immediately after bumping the
+   * exit-edit signal inside `flushSync`, so the edited block has to be plain
+   * text *by the time the call returns* — not one render later. It used to exit
+   * edit mode from an effect, whose `setIsEditing(false)` landed after the
+   * flush, so the Range was built while the block was still a <textarea> and
+   * the whole-note selection came out as just the newlines between blocks.
+   *
+   * Deliberately not wrapped in `act()`: act flushes effects, which is what hid
+   * this. A real Ctrl+A gets no such courtesy.
+   */
+  it('has left edit mode by the time selectAll returns, not a render later', () => {
+    const editorRef = createRef<BlockEditorHandle>();
+    render(<Harness initial={BLOCKS} editorRef={editorRef} />);
+
+    fireEvent.click(screen.getByText('Beta block content'));
+    expect(screen.getByLabelText('Block 2')).toBeInTheDocument();
+
+    editorRef.current?.selectAll();
+
+    expect(screen.queryByLabelText('Block 2')).not.toBeInTheDocument();
+    expect(screen.getByText('Beta block content')).toBeInTheDocument();
+  });
+
   it('works when no block is currently being edited', () => {
     const editorRef = createRef<BlockEditorHandle>();
     render(<Harness initial={BLOCKS} editorRef={editorRef} />);

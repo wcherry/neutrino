@@ -19,6 +19,10 @@ pub struct DiagramsApiState {
     pub diagrams_service: Arc<DiagramsService>,
 }
 
+/// List the comments on a diagram.
+///
+/// Comments are anchored to the diagram rather than to individual shapes and come back oldest
+/// first.
 #[utoipa::path(
     get,
     path = "/api/v1/diagrams/{id}/comments",
@@ -44,6 +48,9 @@ pub async fn list_comments(
     Ok(web::Json(result))
 }
 
+/// Add a comment to a diagram.
+///
+/// Requires read access to the diagram; the author is taken from the caller.
 #[utoipa::path(
     post,
     path = "/api/v1/diagrams/{id}/comments",
@@ -72,6 +79,10 @@ pub async fn create_comment(
     Ok(HttpResponse::Created().json(comment))
 }
 
+/// Edit a diagram comment.
+///
+/// Patches the body, the resolved flag, or both — at least one must be supplied. Only the
+/// comment's author may change it.
 #[utoipa::path(
     patch,
     path = "/api/v1/diagrams/{id}/comments/{comment_id}",
@@ -103,6 +114,9 @@ pub async fn update_comment(
     Ok(web::Json(comment))
 }
 
+/// Delete a diagram comment.
+///
+/// Restricted to the comment's author.
 #[utoipa::path(
     delete,
     path = "/api/v1/diagrams/{id}/comments/{comment_id}",
@@ -148,7 +162,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         DiagramCommentResponse,
         ListCommentsResponse,
     )),
-    tags((name = "diagrams", description = "Diagram comments")),
+    tags((
+        name = "diagrams",
+        description = "Everything around a diagram that is not its canvas — the canvas itself is a Drive file edited over the collaboration socket. That means comment threads anchored to the diagram as a whole, each with a resolved flag and editable only by their author, and the cached third-party shape libraries a user has added, which are fetched once and served from the local store thereafter."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct DiagramsApiDoc;

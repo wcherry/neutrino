@@ -15,7 +15,10 @@ pub struct FacesApiState {
     pub faces_service: Arc<FacesService>,
 }
 
-/// List faces detected in a photo.
+/// List the faces detected in a photo.
+///
+/// Each face carries its bounding box and the person it has been assigned to, if any — what the
+/// viewer draws its face boxes from.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/{photoId}/faces",
@@ -39,8 +42,10 @@ pub async fn list_faces(
     Ok(web::Json(result))
 }
 
-/// Worker endpoint — saves a single detected face for a photo.
-/// No user auth: called by the background worker after face detection.
+/// Save one detected face for a photo. Worker endpoint.
+///
+/// Called once per face after a detection job runs, carrying the bounding box and the embedding
+/// that clustering later groups people by. No user auth — this is a service-to-service call.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/{photoId}/faces",
@@ -66,7 +71,10 @@ pub async fn save_face(
     Ok(HttpResponse::Created().json(face))
 }
 
-/// Request background face detection for a photo. Enqueues a worker job.
+/// Request face detection for a photo.
+///
+/// Enqueues a worker job and returns 202 immediately rather than blocking — the detected faces
+/// appear through the list endpoints once the worker has run.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/{photoId}/faces/detect",
@@ -92,7 +100,10 @@ pub async fn detect_faces(
     Ok(HttpResponse::Accepted().json(resp))
 }
 
-/// List every face detected across the user's photos.
+/// List every face detected across the caller's library.
+///
+/// The whole set in one call, unassigned faces included, which is what the people-management
+/// screens work from.
 #[utoipa::path(
     get,
     path = "/api/v1/faces",
@@ -110,7 +121,9 @@ pub async fn list_all_faces(
     Ok(web::Json(state.faces_service.list_all_faces(&user.user_id)?))
 }
 
-/// Update a face (assign a person or correct its bounding box).
+/// Assign a face to a person, or correct its bounding box.
+///
+/// Assigning by hand is also how a user overrides what clustering decided.
 #[utoipa::path(
     put,
     path = "/api/v1/photos/{photoId}/faces/{faceId}",
@@ -142,6 +155,9 @@ pub async fn update_face(
 }
 
 /// Delete a detected face.
+///
+/// Removes a false positive so it stops appearing on the photo and in clustering. The photo
+/// itself is untouched.
 #[utoipa::path(
     delete,
     path = "/api/v1/photos/{photoId}/faces/{faceId}",
@@ -198,7 +214,10 @@ pub fn configure_faces(cfg: &mut web::ServiceConfig) {
         UpdateFaceRequest,
         DetectFacesResponse,
     )),
-    tags((name = "faces", description = "Face detection")),
+    tags((
+        name = "faces",
+        description = "Individual faces detected inside photos: their bounding boxes, the embedding used to group them, and which person each is assigned to. Detection runs as a background worker job that posts its results back here, and a user can correct a box, reassign a face or delete a false positive by hand."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct FacesApiDoc;

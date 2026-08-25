@@ -11,6 +11,11 @@ pub struct OauthApiState {
 
 // ── GET /oauth/authorize ──────────────────────────────────────────────────────
 
+/// Authorization endpoint of the OAuth 2.0 flow.
+///
+/// Requires an already signed-in user, validates the client and redirect URI, and redirects back
+/// to the client with a short-lived authorization code. PKCE is mandatory: `code_challenge` must
+/// be an S256 challenge.
 #[utoipa::path(
     get,
     path = "/api/v1/oauth/authorize",
@@ -55,6 +60,10 @@ pub async fn authorize(
 
 // ── POST /oauth/token ─────────────────────────────────────────────────────────
 
+/// Token endpoint of the OAuth 2.0 flow.
+///
+/// Form-encoded, per the spec. Exchanges an authorization code plus its PKCE verifier — or a
+/// refresh token — for an access token.
 #[utoipa::path(
     post,
     path = "/api/v1/oauth/token",
@@ -90,6 +99,10 @@ pub async fn token(
 
 // ── POST /oauth/revoke ────────────────────────────────────────────────────────
 
+/// Revocation endpoint of the OAuth 2.0 flow.
+///
+/// Form-encoded. Invalidates the presented token; as the spec requires, a token that was already
+/// invalid still returns success.
 #[utoipa::path(
     post,
     path = "/api/v1/oauth/revoke",
@@ -134,7 +147,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         TokenResponse,
         RevokeRequest,
     )),
-    tags((name = "oauth", description = "OAuth 2.0 authorization server endpoints")),
+    tags((
+        name = "oauth",
+        description = "Neutrino acting as an OAuth 2.0 authorization server, so third-party and native clients can obtain tokens without handling the user's password. The authorization-code flow with PKCE is the only one offered — an S256 `code_challenge` is required — and the token endpoint also handles refresh-token grants."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct OauthApiDoc;

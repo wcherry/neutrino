@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
@@ -20,6 +21,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page, prefix =
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 /** Click a cell, type a value into the formula bar, press Enter to commit. */

@@ -7,7 +7,9 @@
  */
 
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption, hasAnyKeyring } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { createNoteViaApi } from '../../fixtures/notes';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -28,42 +30,21 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 /**
- * Wait for ensureE2EKeys to store the keypair — the index sync only runs once
- * the user's E2EE keys are on the device.
+ * Wait for the keyring to reach this device's key store — the index sync only
+ * runs once the user's E2EE keys are on the device.
  */
 async function waitForKeypair(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => {
-      for (let i = 0; i < localStorage.length; i++) {
-        if (localStorage.key(i)?.startsWith('neutrino_e2e_')) return true;
-      }
-      return false;
-    },
-    { timeout: 15_000 },
-  );
+  await expect.poll(() => hasAnyKeyring(page), { timeout: 15_000 }).toBe(true);
 }
 
 async function getAuthToken(page: Page): Promise<string> {
   const token = await page.evaluate(() => localStorage.getItem('access_token'));
   if (!token) throw new Error('access_token not found in localStorage');
   return token;
-}
-
-async function createNoteViaApi(
-  request: APIRequestContext,
-  token: string,
-  title: string,
-): Promise<string> {
-  const res = await request.post(`${BASE_URL}/api/v1/notes`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
-  });
-  expect(res.ok(), `create note failed: ${res.status()} ${await res.text()}`).toBeTruthy();
-  const data = (await res.json()) as { id: string };
-  return data.id;
 }
 
 async function uploadFileViaApi(

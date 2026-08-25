@@ -31,7 +31,10 @@ pub struct UpdateFeatureFlagRequest {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-/// Return all feature flags as a key→boolean map (no auth required).
+/// Fetch the feature flags as a key-to-boolean map.
+///
+/// Unauthenticated, because the frontend needs the flags before anyone signs in in order to
+/// decide what to render.
 #[utoipa::path(
     get,
     path = "/api/v1/feature-flags",
@@ -56,7 +59,10 @@ async fn get_feature_flags_public(
     Ok(HttpResponse::Ok().json(serde_json::Value::Object(map)))
 }
 
-/// List all feature flags with metadata. Requires admin auth.
+/// List the feature flags in full. Admin only.
+///
+/// Adds the description and timestamps that the public key-to-boolean map leaves out, for the
+/// admin toggle list.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/feature-flags",
@@ -90,7 +96,9 @@ async fn list_feature_flags_admin(
     Ok(HttpResponse::Ok().json(dtos))
 }
 
-/// Enable or disable a feature flag. Requires admin auth.
+/// Turn one feature flag on or off. Admin only.
+///
+/// Takes effect for every client on its next read of the public flags endpoint.
 #[utoipa::path(
     patch,
     path = "/api/v1/admin/feature-flags/{key}",
@@ -145,7 +153,10 @@ pub fn configure_admin(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(get_feature_flags_public, list_feature_flags_admin, update_feature_flag),
     components(schemas(FeatureFlagDto, UpdateFeatureFlagRequest)),
-    tags((name = "feature-flags", description = "Feature flag management — public read, admin write")),
+    tags((
+        name = "feature-flags",
+        description = "Server-side switches for optional functionality. The public endpoint returns a key-to-boolean map with no authentication, because the frontend needs it before sign-in; the admin endpoints add metadata and are the only way to change a flag."
+    )),
     modifiers(&SecurityAddon)
 )]
 pub struct FeatureFlagsApiDoc;

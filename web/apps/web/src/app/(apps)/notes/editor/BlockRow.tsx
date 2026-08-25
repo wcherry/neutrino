@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { NoteLinkTarget } from './blockEditorHelpers';
 import type { Block, BlockType, BlockRowProps, FocusRequest } from './blockEditorTypes';
 import { SLASH_COMMANDS } from './blockEditorConstants';
@@ -66,30 +66,46 @@ export default function BlockRow({
   // Drop out of edit mode immediately (no blur/timeout round-trip) when the
   // parent signals it — used before a whole-note selection, which needs
   // every block rendered as plain, selectable text rather than a <textarea>.
-  const lastExitSignalRef = useRef(exitEditSignal);
-  useEffect(() => {
-    if (exitEditSignal === lastExitSignalRef.current) return;
-    lastExitSignalRef.current = exitEditSignal;
+  //
+  // Adjusted during render, not in an effect. The caller is `selectAll`, which
+  // wraps the signal bump in `flushSync` and then immediately builds a Range
+  // over the container — so "immediately" has to mean *before that flushSync
+  // returns*. An effect cannot: the `setIsEditing(false)` it schedules is a
+  // second render that lands after the flush, so the Range was built while the
+  // focused block was still a <textarea>. A textarea's value is not text
+  // content, so the whole-note selection came out as just the newlines between
+  // the blocks — select-all followed quickly by copy put `"\n\n"` on the
+  // clipboard. Re-rendering during render is React's supported way to derive
+  // state from a changed prop, and it completes inside the flush.
+  const [lastExitSignal, setLastExitSignal] = useState(exitEditSignal);
+  if (exitEditSignal !== lastExitSignal) {
+    setLastExitSignal(exitEditSignal);
     if (isEditing) {
       setIsEditing(false);
       setAcQuery(null);
       setSlashQuery(null);
     }
-  }, [exitEditSignal, isEditing]);
+  }
 
-  // Once isEditing becomes true, apply any pending cursor position
-  useEffect(() => {
+  // Once isEditing becomes true, apply any pending cursor position.
+  //
+  // In a layout effect, not a frame later: the textarea is already focused by
+  // `autoFocus` when it mounts, so a caret placed a frame after that is a caret
+  // placed *after* whatever was typed in the meantime. Pressing Enter and
+  // typing straight into the new block — which is one keystroke, not a pause —
+  // moved the caret back to the start mid-word and put the rest of the word in
+  // front of it. A layout effect runs in the same commit that mounts the
+  // textarea, before the browser can deliver another key event.
+  useLayoutEffect(() => {
     if (!isEditing || pendingFocusPositionRef.current === null) return;
     const pos = pendingFocusPositionRef.current;
     pendingFocusPositionRef.current = null;
-    requestAnimationFrame(() => {
-      const ta = taRef.current;
-      if (!ta) return;
-      ta.focus();
-      const cursor =
-        pos === 'end' ? ta.value.length : pos === 'start' ? 0 : (pos as number);
-      ta.setSelectionRange(cursor, cursor);
-    });
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.focus();
+    const cursor =
+      pos === 'end' ? ta.value.length : pos === 'start' ? 0 : (pos as number);
+    ta.setSelectionRange(cursor, cursor);
   }, [isEditing, focusNonce]);
 
   // Auto-resize textarea height whenever content or edit mode changes

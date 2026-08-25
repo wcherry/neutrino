@@ -12,6 +12,10 @@ pub struct NotificationsApiState {
     pub token_service: Arc<TokenService>,
 }
 
+/// List the caller's notifications, newest first, paginated.
+///
+/// Each entry carries an event type, a JSON payload the client renders, and whether it has been
+/// read.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/notifications",
@@ -39,6 +43,9 @@ pub async fn list_notifications(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Mark one notification as read.
+///
+/// What clears the unread badge for a single item.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/notifications/{id}/read",
@@ -63,6 +70,9 @@ pub async fn mark_notification_read(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Mark every notification for the caller as read.
+///
+/// The bulk counterpart, for the "mark all as read" control.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/notifications/read-all",
@@ -168,7 +178,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(list_notifications, mark_notification_read, mark_all_read),
-    tags((name = "drive-notifications", description = "Drive notifications endpoints")),
+    tags((
+        name = "drive-notifications",
+        description = "The user's notification inbox — new shares, comments, replies and @mentions — as stored, paginated records with an event type and a JSON payload the client renders. Live delivery goes over the WebSocket at /api/v1/drive/notifications/ws, which authenticates with `?token=<jwt>` and is not part of this REST surface."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct NotificationsApiDoc;

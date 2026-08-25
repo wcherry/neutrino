@@ -31,6 +31,10 @@ const ATTACHMENTS_FOLDER_NAME: &str = "Attachments";
 
 // ── Register ──────────────────────────────────────────────────────────────────
 
+/// Create an account with an email, name and password.
+///
+/// Passwords are hashed with Argon2 and must be at least eight characters. This only creates
+/// the row — the client still calls `POST /auth/login` to get tokens.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/register",
@@ -96,6 +100,11 @@ async fn create_default_folders(state: &AuthApiState, user: &RegisterResponse) {
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 
+/// Exchange email and password for an access and refresh token pair.
+///
+/// When the account has TOTP enabled and no `totp_code` is supplied, the call succeeds with
+/// `requiresTwoFactor: true` and no tokens; retry with the code to finish. The device name,
+/// user agent and IP are recorded against the new session.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/login",
@@ -136,6 +145,10 @@ pub async fn login(
 
 // ── Refresh ───────────────────────────────────────────────────────────────────
 
+/// Trade a refresh token for a fresh access token.
+///
+/// Refresh tokens are single-use: the presented token is deleted and a new one is returned
+/// alongside the access token. Expired tokens are dropped and rejected with a 401.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/refresh",
@@ -157,6 +170,10 @@ pub async fn refresh(
 
 // ── Me ────────────────────────────────────────────────────────────────────────
 
+/// Return the signed-in user's profile.
+///
+/// Guest sessions — issued when someone opens a share link without an account — have no user
+/// row, so they get a minimal synthetic profile with the `guest` role instead of a 401.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/me",
@@ -189,6 +206,11 @@ pub async fn me(
     Ok(web::Json(profile))
 }
 
+/// Delete the caller's own account.
+///
+/// Soft-deletes the user row so it can no longer sign in or be found, then revokes every
+/// refresh token so the still-valid access token cannot mint a new session. Guest sessions
+/// have no account to delete and get a 403.
 #[utoipa::path(
     delete,
     path = "/api/v1/auth/me",
@@ -227,6 +249,10 @@ pub struct LookupByEmailQuery {
     pub email: String,
 }
 
+/// Find a user by their exact email address.
+///
+/// Used when sharing, to resolve a typed address to the user ID and public key a share is
+/// granted to. Returns 404 when no account matches.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/users/lookup",
@@ -252,6 +278,10 @@ pub async fn lookup_user_by_email(
     }
 }
 
+/// Search users by partial email or name.
+///
+/// Case-insensitive substring match against both fields, for recipient pickers that resolve
+/// a half-typed name to a user ID. Returns the matches as a plain list.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/users/search",
@@ -278,6 +308,10 @@ pub async fn search_users(
     Ok(web::Json(results))
 }
 
+/// Look up a single user by ID.
+///
+/// Returns the same minimal record as the email lookup, for resolving IDs stored on shares,
+/// comments and activity entries into something displayable.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/users/{user_id}",
@@ -302,6 +336,10 @@ pub async fn get_user_by_id(
     }
 }
 
+/// Fetch another user's public profile.
+///
+/// Returns only the fields safe to show any signed-in user — name, bio, avatar, website,
+/// social links, language and country. Email preferences and private fields are omitted.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/users/{user_id}/profile",
@@ -326,6 +364,10 @@ pub async fn get_user_public_profile(
 
 // ── 2FA ───────────────────────────────────────────────────────────────────────
 
+/// Report whether TOTP two-factor is enabled for the caller.
+///
+/// A cheap check the settings screen uses to decide between offering enrollment and offering
+/// to disable.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/2fa/status",
@@ -344,6 +386,10 @@ pub async fn two_factor_status(
     Ok(web::Json(status))
 }
 
+/// Begin TOTP enrollment.
+///
+/// Generates a secret, returns its `otpauth://` URI for the authenticator app to scan, and
+/// issues ten single-use backup codes. Two-factor is not active until the code is confirmed.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/2fa/enroll",
@@ -364,6 +410,10 @@ pub async fn two_factor_enroll(
     Ok(web::Json(result))
 }
 
+/// Finish TOTP enrollment by verifying a code.
+///
+/// Checks the supplied code against the secret minted at enrollment and, if it matches,
+/// switches two-factor on for the account.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/2fa/confirm",
@@ -387,6 +437,10 @@ pub async fn two_factor_confirm(
     Ok(web::Json(TwoFactorStatusResponse { enabled: true }))
 }
 
+/// Turn off TOTP two-factor for the caller.
+///
+/// Requires the account password as well as a current code, and clears the stored secret and
+/// backup codes.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/2fa/disable",
@@ -412,6 +466,10 @@ pub async fn two_factor_disable(
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
 
+/// List the caller's active sessions.
+///
+/// Each entry is a live refresh token with the device name, user agent, IP and last-used time
+/// recorded at login.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/sessions",
@@ -430,6 +488,10 @@ pub async fn list_sessions(
     Ok(web::Json(result))
 }
 
+/// Revoke a single session.
+///
+/// Deletes that session's refresh token, so the device cannot renew once its access token
+/// expires.
 #[utoipa::path(
     delete,
     path = "/api/v1/auth/sessions/{session_id}",
@@ -454,6 +516,10 @@ pub async fn revoke_session(
     Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
+/// Revoke every session for the caller.
+///
+/// Drops all refresh tokens, including the one belonging to the calling device — the sign out
+/// everywhere action.
 #[utoipa::path(
     delete,
     path = "/api/v1/auth/sessions",
@@ -499,6 +565,10 @@ pub struct AdminListQuery {
     pub include_deleted: Option<bool>,
 }
 
+/// List all accounts, paginated. Admin only.
+///
+/// Page size is clamped to 100. Pass `includeDeleted` to also return soft-deleted accounts
+/// along with the date they will be purged.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/users",
@@ -528,6 +598,10 @@ pub async fn admin_list_users(
     Ok(web::Json(result))
 }
 
+/// Fetch one account's admin view. Admin only.
+///
+/// Includes the fields hidden from the public profile — role, two-factor state, and deletion
+/// and purge timestamps.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/users/{user_id}",
@@ -551,6 +625,10 @@ pub async fn admin_get_user(
     Ok(web::Json(result))
 }
 
+/// Change an account's role or force two-factor off. Admin only.
+///
+/// The role must be `user` or `admin`. Setting `totpEnabled` to false clears the stored TOTP
+/// secret, which is the recovery path for a user who has lost their authenticator.
 #[utoipa::path(
     patch,
     path = "/api/v1/admin/users/{user_id}",
@@ -578,6 +656,10 @@ pub async fn admin_update_user(
     Ok(web::Json(result))
 }
 
+/// Soft-delete an account. Admin only.
+///
+/// Leaves the user in the same state as self-serve deletion — invisible to every lookup, with
+/// all refresh tokens revoked — and starts the purge clock rather than erasing rows outright.
 #[utoipa::path(
     delete,
     path = "/api/v1/admin/users/{user_id}",
@@ -601,6 +683,10 @@ pub async fn admin_delete_user(
     Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
+/// Undo a soft deletion. Admin only.
+///
+/// Works only while the account is still inside its purge window; restoring an account that
+/// is not deleted returns 400 and one already purged returns 404.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/users/{user_id}/restore",
@@ -627,6 +713,10 @@ pub async fn admin_restore_user(
 
 // ── Extended Profile ──────────────────────────────────────────────────────────
 
+/// Fetch the caller's extended profile.
+///
+/// Covers the fields `/auth/me` leaves out — theme, bio, avatar, website, social links,
+/// language, timezone, country and email preferences.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/profile",
@@ -645,6 +735,10 @@ pub async fn get_profile_details(
     Ok(web::Json(profile))
 }
 
+/// Update the caller's extended profile.
+///
+/// Every field is optional; only the ones supplied are written. Returns the full profile as
+/// stored.
 #[utoipa::path(
     put,
     path = "/api/v1/auth/profile",
@@ -824,6 +918,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         me,
         delete_own_account,
         lookup_user_by_email,
+        search_users,
         get_user_by_id,
         get_user_public_profile,
         two_factor_status,
@@ -874,7 +969,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         LookupByEmailQuery,
         AdminListQuery,
     )),
-    tags((name = "auth", description = "Authentication endpoints")),
+    tags((
+        name = "auth",
+        description = "Accounts and sessions: registration, password login with optional TOTP two-factor, refresh-token rotation, profile reads and writes, and per-device session management. It also serves the append-only Curve25519 public keyring that end-to-end encryption seals file keys to, and the admin-only user console endpoints under /api/v1/admin/users."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct AuthApiDoc;

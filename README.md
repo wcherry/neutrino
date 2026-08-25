@@ -1,123 +1,223 @@
 # Neutrino
 
-A self-hosted productivity suite. Single binary: a Rust API server that also serves the Next.js frontend as static files.
+A self-hosted, end-to-end encrypted productivity suite. The server is a single Rust
+binary that serves the API *and* the exported Next.js frontend; a second binary
+(`worker`) runs background jobs. SQLite is the only datastore, and its migrations are
+embedded in the binary, so a first run needs no database setup at all.
 
 ## Apps
 
 | App | Description |
 |-----|-------------|
-| **Calendar** | Event scheduling with recurring events, reminders, ICS import/export, and Google/Outlook calendar sync |
-| **Docs** | Collaborative document editing (real-time via Yjs) |
-| **Drive** | File storage and management |
-| **Notes** | Quick notes (Keep-style) |
-| **Photos** | Photo library |
-| **Sheets** | Spreadsheet editor |
-| **Slides** | Presentation editor |
+| **Drive** | File storage — folders, tags, stars, shortcuts, trash, shared drives, share links, comments, activity trail |
+| **Docs** | Rich-text documents with real-time co-editing, outline, version history, and Word/PDF round-trips |
+| **Sheets** | Spreadsheets with a formula engine, named ranges, conditional formatting, charts, and `.xlsx` round-trips |
+| **Slides** | Presentations with themes, master slides, speaker notes, presenter mode, and PowerPoint round-trips |
+| **Notes** | Block-based quick notes that sync live across devices |
+| **Photos** | Photo library with albums, favourites, archive, memories, and on-device face grouping |
+| **Calendar** | Month/week/agenda views, recurring events, reminders, task lists, ICS import/export, Google and Outlook sync |
+| **Diagrams** | Flowchart, UML, BPMN, ERD and cloud shape libraries, with real-time co-editing |
+| **Drawing** | Freehand vector canvas with layers |
+
+Notes, Docs, Sheets, Slides, Diagrams and Drawings are all **Drive files** — the editors
+write into the same storage, quota and search index as anything else you upload. There
+is no separate per-app content store in the backend.
+
+## Encryption
+
+User content is encrypted in the browser before it is uploaded. The server stores
+ciphertext and cannot read it.
+
+- Every file gets its own AES-GCM data key (DEK), sealed to the account's public key.
+- The identity keypair is held in a **wrapped key vault**. New keyrings are wrapped to
+  the device, so there is no passphrase prompt on unlock; devices enrolled under an
+  older passphrase or passkey unlock the old way once and are converted on the way out.
+- **Key rotation** archives retired secret keys into a key file sealed to the *active*
+  public key, so older files stay openable. Settings shows any versions the server is
+  missing and offers a retry.
+- A device is enrolled with a **PIN-protected QR key code** that the phone scans. The
+  code expires after two minutes and on session lock. iOS holds one key at a time, so a
+  rotated account's older files will not open there.
+- There is **no plaintext write path to Drive**. The plaintext writers were deleted
+  rather than guarded; `api-drive/src/encryptedWrites.ts` is the only way in, and it
+  raises `MissingEncryptionKeyError` instead of degrading. `noPlaintextWrites.test.ts`
+  scans the workspace and fails if a plaintext writer is referenced again.
+
+Because content is encrypted, search runs **locally in the browser** against an
+IndexedDB index (`packages/search`) that every app writes to, and is shared between
+devices as an encrypted snapshot. Nothing is searched server-side.
+
+## Clients
+
+| Client | Status |
+|--------|--------|
+| Web (installable PWA, works offline) | Shipped |
+| macOS desktop — menu-bar app with a Finder File Provider extension | Shipped |
+| iOS — Notes, Docs | Shipped |
+| iOS — Drive | In development |
+| iOS — Sheets | In development |
+| Android, Windows, Linux | Planned |
 
 ## Stack
 
-- **Backend** — Rust, Actix-web 4, SQLite (Diesel + WAL mode), Argon2 password hashing, JWT auth, TOTP 2FA, AES-GCM end-to-end encryption
-- **Frontend** — Next.js 15 (App Router), pnpm workspaces, Turborepo
-- **Database** — SQLite (single file, bundled `libsqlite3`)
-- **Storage** — Local filesystem
+- **Backend** — Rust, Actix-web 4, Diesel + SQLite (bundled `libsqlite3`, WAL mode),
+  Argon2 password hashing, JWT auth, TOTP 2FA, AES-GCM
+- **Worker** — separate Rust binary; face detection (`rustface`) and other background jobs
+  over the shared SQLite jobs table
+- **Frontend** — Next.js 15 (App Router, static export), pnpm workspaces, Turborepo
+- **Collaboration** — Yjs over WebSockets, with server-side Y.Doc rooms for Docs and Diagrams
+- **Storage** — local filesystem
 
 ## Project Layout
 
 ```
 src/                  # Rust backend
-  auth/               # Auth, sessions, 2FA, user profiles
-  calendar/           # Events, reminders, task lists, external connections
-  docs/               # Document CRUD and real-time collaboration
-  drive/              # File upload, download, folders
-  notes/              # Notes CRUD
-  photos/             # Photo library
-  sheets/             # Spreadsheet data
-  slides/             # Presentation data
-  shared/             # DB pool, extractors, error types
-  config.rs           # All config loaded from environment
+  auth/               # Auth, sessions, TOTP 2FA, profiles, key vault
+  calendar/           # Events, reminders, tasks, Google/Outlook connections
+  diagrams/           # Diagram CRUD, collab rooms, private shape library
+  docs/               # Document CRUD, collab rooms, permissions, templates
+  drive/              # Files, folders, sharing, shared drives, permissions,
+                      # encryption + key files, comments, tags, activity,
+                      # notifications, admin, compliance, security, fonts
+  jobs/               # Background job queue (consumed by worker/)
+  links/              # Link previews / link management
+  oauth/              # OAuth clients (native app sign-in)
+  photos/             # Library, albums, faces, persons, suggestions, AI
+  search/             # Search support endpoints (index itself is client-side)
+  sheets/             # Named ranges, presence, AI
+  slides/             # Presentations, presence, AI
+  themes/             # Theme catalogue
+  shared/             # DB pool, extractors, errors, presence rooms, file events
+  config.rs           # All config loaded from the environment
   main.rs             # Server setup, routing, migration runner
-migrations/           # Diesel migrations (run automatically on startup)
+worker/               # Background worker binary (face detection, job processing)
+xtask/                # Dev tasks: cargo xtask dev | build-web | e2e | docker | ...
+migrations/           # Diesel migrations (embedded; run automatically on startup)
 web/                  # Frontend monorepo (see web/README.md)
   apps/web/           # Next.js app — all user-facing routes
-  packages/           # Shared packages (ui, tokens, hooks, api-*, auth, etc.)
-Dockerfile            # Single-container build (web → Rust binary)
+  packages/           # api-*, ui, tokens, layout, hooks, auth, e2e-crypto,
+                      # search, offline, collab-core, markdown, utils, …
+e2e/                  # Playwright end-to-end suite (isolated Docker stack per run)
+Dockerfile            # Single-image build (web → Rust binaries)
 ```
 
 ## Getting Started
 
 ### Local development
 
-**Backend**
+The fastest path starts the backend, the worker and the frontend together, and fetches
+the worker's face-detection model on first run:
 
 ```bash
-cp .env.example .env   # fill in required values (see Configuration below)
-cargo run
+cargo xtask dev
 ```
 
-The server starts on `http://localhost:8080` by default.
+Other tasks: `cargo xtask build-web`, `cargo xtask e2e`, `cargo xtask docker`,
+`cargo xtask storybook`, `cargo xtask fetch-model`.
 
-**Frontend**
+To run the pieces by hand instead, create a `.env` in the repo root with at least:
 
 ```bash
-cd web
-pnpm install
-pnpm dev        # starts the Next.js dev server (port 3000)
+JWT_SECRET=$(openssl rand -hex 32)
+WORKER_SECRET=$(openssl rand -hex 32)
 ```
 
-In dev mode, point `NEXT_PUBLIC_API_URL` at the running backend (`http://localhost:8080`).
+then:
+
+```bash
+cargo run                 # API server on http://localhost:8080
+cargo run -p worker       # background worker (needs the face model — cargo xtask fetch-model)
+cd web && pnpm install && pnpm dev   # Next.js dev server on port 3000
+```
+
+In dev, point `NEXT_PUBLIC_API_URL` at the backend (`http://localhost:8080`).
 
 ### Docker
 
 ```bash
-# Or pull the pre-built image from GitHub Container Registry:
-# docker pull ghcr.io/wcherry/neutrino:latest
+docker pull ghcr.io/wcherry/neutrino:latest
+# or build it yourself: docker build -t neutrino .
 
-docker build -t neutrino .
-docker run -p 8080:8080 \
-  --env-file .env \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/logs:/app/logs \
-  neutrino
+docker run -d --name neutrino -p 8080:8080 \
+  -e JWT_SECRET="$(openssl rand -hex 32)" \
+  -e WORKER_SECRET="$(openssl rand -hex 32)" \
+  -e DATABASE_URL=/usr/local/data/neutrino.db \
+  -e STORAGE_PATH=/usr/local/data/storage \
+  -v neutrino-data:/usr/local/data \
+  -v neutrino-logs:/usr/local/logs \
+  ghcr.io/wcherry/neutrino:latest
 ```
 
-The container serves everything (API + frontend) on port 8080.
+The container serves the API and the frontend on port 8080. Its default command runs
+the **server only**; the `worker` binary is in the image at `/usr/local/bin/worker`, so
+run a second container from the same image and volume — with the same `DATABASE_URL`,
+`STORAGE_PATH` and `WORKER_SECRET` — to get face detection and background jobs.
 
 ## Configuration
 
-All settings are read from environment variables (or a `.env` file in the working directory).
+Everything is read from the environment (or a `.env` file in the working directory).
+Secrets additionally accept a `<NAME>_PATH` variant that reads the value from a file,
+which is how Docker/Kubernetes secrets are mounted — e.g. `JWT_SECRET_PATH=/run/secrets/jwt`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `8080` | HTTP listen port |
-| `LOG_LEVEL` | `info` | Tracing log level (`error`, `warn`, `info`, `debug`, `trace`) |
-| `LOG_PATH` | *(stdout only)* | Directory for log files |
-| `JWT_SECRET` | **required** | Secret used to sign JWT access and refresh tokens |
-| `JWT_ACCESS_EXPIRY_SECS` | `900` | Access token lifetime (seconds) |
-| `JWT_REFRESH_EXPIRY_SECS` | `604800` | Refresh token lifetime (seconds, default 7 days) |
-| `WORKER_SECRET` | **required** | Internal secret for background worker authentication |
-| `JOBS_PER_WORKER` | `4` | Maximum concurrent background jobs per worker |
+| `JWT_SECRET` | **required** | Signs JWT access and refresh tokens. Changing it signs everyone out |
+| `WORKER_SECRET` | **required** | Shared secret the background worker authenticates with. Do not reuse `JWT_SECRET` |
 | `DATABASE_URL` | `./data/neutrino.db` | SQLite database file path |
-| `STORAGE_PATH` | `./data/storage` | Root directory for uploaded files |
-| `MAX_UPLOAD_BYTES` | `10737418240` | Maximum single-file upload size (default 10 GiB) |
-| `DRIVE_URL` | `http://localhost:<PORT>` | Public URL of the Drive service |
-| `SELF_URL` | `http://localhost:<PORT>` | Public base URL of this server |
-| `APP_BASE_URL` | `http://localhost:<PORT>` | Base URL used in links sent to users |
-| `WEB_DIR` | `web/apps/web/out` | Path to the built Next.js static export |
-| `GOOGLE_CLIENT_ID` | *(optional)* | Google OAuth client ID (calendar sync) |
-| `GOOGLE_CLIENT_SECRET` | *(optional)* | Google OAuth client secret |
+| `STORAGE_PATH` | `./storage` | Root directory for uploaded files |
+| `WEB_DIR` | `web/apps/web/out` | Path to the built Next.js static export (preset in the Docker image) |
+| `DRIVE_URL` | `http://localhost:<PORT>` | Public base URL of this server; used for share links and OAuth callbacks |
+| `MAX_UPLOAD_BYTES` | `10737418240` | Largest single-file upload (default 10 GiB) |
+| `JWT_ACCESS_EXPIRY_SECS` | `900` | Access token lifetime |
+| `JWT_REFRESH_EXPIRY_SECS` | `604800` | Refresh token lifetime (7 days) |
+| `JOBS_PER_WORKER` | `4` | Maximum concurrent background jobs per worker |
+| `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug`, `trace` |
+| `LOG_PATH` | *(stdout only)* | Directory for log files |
+| `TEMP_SWEEP_INTERVAL_SECS` | `3600` | How often to sweep upload staging files that never committed (floor: 60) |
+| `TEMP_MAX_AGE_SECS` | `21600` | How long a staging file must be untouched before a sweep removes it |
+| `REPROCESS_INTERVAL_SECS` | `1800` | How often Photos reprocesses pending face-learning work |
+| `STORAGE_ENCRYPTION_KEY` | *(optional)* | Base64 32 bytes; enables AES-GCM at-rest encryption for the server-side private store |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | *(optional)* | Google OAuth, for calendar sync |
 | `GOOGLE_REDIRECT_URI` | `<DRIVE_URL>/api/v1/connections/google/callback` | Google OAuth redirect URI |
-| `OUTLOOK_CLIENT_ID` | *(optional)* | Microsoft OAuth client ID (calendar sync) |
-| `OUTLOOK_CLIENT_SECRET` | *(optional)* | Microsoft OAuth client secret |
-| `ANTHROPIC_API_KEY` | *(optional)* | Anthropic API key for AI features |
+| `OUTLOOK_CLIENT_ID` / `OUTLOOK_CLIENT_SECRET` | *(optional)* | Microsoft OAuth, for calendar sync |
+| `OUTLOOK_REDIRECT_URI` | `<DRIVE_URL>/api/v1/connections/outlook/callback` | Microsoft OAuth redirect URI |
+| `ANTHROPIC_API_KEY` | *(optional)* | Enables the AI features in Sheets, Slides and Photos |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | *(optional)* | Outbound email for notifications. All five must be set or email is disabled |
+| `FACE_MODEL_PATH` | `models/seeta_fd_frontal_v1.0.bin` | Face-detection model, read by the worker (preset in the Docker image) |
 
 ## Database Migrations
 
-Migrations in `migrations/` are embedded in the binary and run automatically on startup. No manual migration step is needed.
+Migrations in `migrations/` are embedded in the binary and run automatically on
+startup. There is no manual migration step.
+
+## Testing
+
+```bash
+cd web && pnpm test        # Vitest unit/component tests
+cargo test                 # Rust tests
+cargo xtask e2e            # Playwright E2E against an isolated Docker stack
+```
+
+See [e2e/README.md](e2e/README.md) for the E2E harness.
 
 ## API Documentation
 
-Swagger UI is available at `/swagger-ui/` when the server is running.
+Swagger UI is served at `/swagger-ui/` whenever the server is running — the assets are
+baked into the binary, so it works from any working directory.
 
 ## Frontend Docs
 
-See [web/README.md](web/README.md) for the frontend monorepo structure, scripts, and Storybook setup.
+See [web/README.md](web/README.md) for the frontend monorepo structure, scripts, and
+Storybook setup.
+
+## Self-hosting
+
+The full guide — Docker Compose, systemd, TLS, backups, upgrades and troubleshooting —
+is at [`/self-host`](web/apps/web/src/app/self-host/page.tsx) in the running app.
+
+## Licence
+
+The site and the docs describe Neutrino as MIT licensed, but **no `LICENSE` file is
+committed yet** and GitHub reports no licence for the repository. Add one before
+relying on that claim.

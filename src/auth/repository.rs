@@ -640,6 +640,16 @@ impl AuthRepository {
     /// one must not be separable, or the partial unique index on "one active
     /// version per user" would reject the insert and leave the user with no
     /// active key at all.
+    ///
+    /// `BEGIN IMMEDIATE`, not the plain deferred `BEGIN` a bare `transaction`
+    /// would emit. The body reads before it writes, and SQLite does not run the
+    /// busy handler when a deferred transaction upgrades a read lock to a write
+    /// lock — waiting there could deadlock two readers, so it returns
+    /// `SQLITE_BUSY` at once instead, and `PRAGMA busy_timeout` never applies.
+    /// Under a concurrent write that surfaced as a 500 on first-run encryption
+    /// setup, which leaves the account with no published key and therefore
+    /// nothing able to seal a DEK. Taking the write lock up front is what the
+    /// timeout can actually wait on.
     pub fn publish_public_key(
         &self,
         user_id: &str,
@@ -652,7 +662,7 @@ impl AuthRepository {
             ApiError::internal("Database connection error")
         })?;
 
-        conn.transaction::<UserPublicKey, diesel::result::Error, _>(|conn| {
+        conn.immediate_transaction::<UserPublicKey, diesel::result::Error, _>(|conn| {
             let active: Option<UserPublicKey> = upk::table
                 .filter(upk::user_id.eq(user_id))
                 .filter(upk::retired_at.is_null())
@@ -853,5 +863,44 @@ mod public_key_tests {
 
         assert_eq!(u2.version, 1, "u2's numbering is independent of u1's");
         assert_eq!(repo.list_public_keys("u2").expect("list").len(), 1);
+    }
+
+    /// The regression: this reads before it writes, and SQLite will not run the
+    /// busy handler when a *deferred* transaction upgrades a read lock to a
+    /// write lock — it returns `SQLITE_BUSY` at once, so `busy_timeout` never
+    /// gets a chance. Under a concurrent writer that surfaced as a 500 from
+    /// `POST /api/v1/auth/keys`, which is first-run encryption setup: the
+    /// account ends up with no published key, and nothing that seals a DEK —
+    /// every editor's first save, every upload — can run.
+    #[test]
+    fn concurrent_first_publishes_all_succeed() {
+        use crate::search::repository::test_file_pool;
+        use std::sync::Arc;
+
+        const USERS: usize = 8;
+
+        let (pool, _db) = test_file_pool("auth-keys");
+        for i in 0..USERS {
+            insert_test_user(&pool, &format!("u{i}"));
+        }
+        let repo = Arc::new(AuthRepository::new(pool));
+
+        let handles: Vec<_> = (0..USERS)
+            .map(|i| {
+                let repo = Arc::clone(&repo);
+                std::thread::spawn(move || {
+                    repo.publish_public_key(&format!("u{i}"), &format!("key-{i}"))
+                        .map(|k| k.version)
+                })
+            })
+            .collect();
+
+        for (i, handle) in handles.into_iter().enumerate() {
+            let version = handle
+                .join()
+                .expect("publishing thread")
+                .unwrap_or_else(|e| panic!("u{i} could not publish its first key: {e:?}"));
+            assert_eq!(version, 1);
+        }
     }
 }

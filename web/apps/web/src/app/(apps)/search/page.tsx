@@ -18,18 +18,29 @@ export default function SearchPage() {
   /** The query the results belong to, for re-running it when the index moves. */
   const queryRef = useRef('');
 
+  // Switching user invalidates an engine built for the previous one.
   useEffect(() => {
-    if (!user?.id) return;
-    const kp = loadKeyPair(user.id);
-    if (!kp) return;
-    engineRef.current = new IndexEngine();
+    engineRef.current = null;
   }, [user?.id]);
 
   const handleSearch = useCallback(
     async (value: string) => {
       setQuery(value);
       queryRef.current = value;
+
+      // Built here rather than in a mount effect, the way the topbar's
+      // `useClientSearch` does it. `loadKeyPair` reads the *in-memory* session
+      // keyring, which is unlocked asynchronously from IndexedDB after the
+      // page mounts — so a mount-time check loses the race on a fresh load,
+      // and with nothing to retry it the engine stayed null and every query on
+      // this page returned nothing at all. Checking per search means the first
+      // query after the keyring lands builds it.
+      const userId = user?.id;
+      if (userId && !engineRef.current && loadKeyPair(userId)) {
+        engineRef.current = new IndexEngine();
+      }
       const engine = engineRef.current;
+
       // Terms are prefix-matched, so a one or two letter query would scan a
       // large slice of the index — the same floor the topbar search uses.
       if (!engine || value.trim().length < MIN_SEARCH_LENGTH) {
@@ -45,7 +56,7 @@ export default function SearchPage() {
         setSearching(false);
       }
     },
-    [],
+    [user?.id],
   );
 
   // Editors index as they save, and the sync and snapshot pull rewrite whole

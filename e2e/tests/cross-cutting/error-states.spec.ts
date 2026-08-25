@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
@@ -24,11 +25,12 @@ async function registerAndLogin(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
   return { email, password };
 }
 
 test.describe('Error states — Drive', () => {
-  test('a fresh account has an empty drive with no file list items', async ({
+  test('a fresh account has an empty drive apart from its Attachments folder', async ({
     page,
     request,
   }) => {
@@ -40,8 +42,14 @@ test.describe('Error states — Drive', () => {
       page.getByRole('button', { name: 'Create new item' }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // A brand-new account has no files — there must be zero listitems in the file list
-    await expect(page.locator('[role="listitem"]')).toHaveCount(0, { timeout: 10_000 });
+    // A brand-new account owns exactly one thing, and it is not content: the
+    // Attachments folder, which `register` provisions so an editor inserting an
+    // image has somewhere to put it (`ATTACHMENTS_FOLDER_NAME` in
+    // `src/auth/api.rs`). Anything beyond that row is a real leak of content
+    // into a new account, which is what this test is for.
+    const rows = page.locator('[role="listitem"]');
+    await expect(rows).toHaveCount(1, { timeout: 10_000 });
+    await expect(rows).toHaveText(/Attachments/);
   });
 
   test('navigating to a non-existent doc ID does not redirect to sign-in', async ({

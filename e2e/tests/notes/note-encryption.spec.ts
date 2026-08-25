@@ -16,7 +16,9 @@
  */
 
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption, waitForKeyring } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { createNoteViaApi } from '../../fixtures/notes';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -41,6 +43,7 @@ async function registerAndLogin(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 async function getAuthToken(page: Page): Promise<string> {
@@ -56,21 +59,6 @@ async function getUserId(request: APIRequestContext, token: string): Promise<str
   expect(res.ok(), `profile fetch failed: ${res.status()}`).toBeTruthy();
   const profile = await res.json() as { id: string };
   return profile.id;
-}
-
-/** Create a note via the API and return its ID. */
-async function createNoteViaApi(
-  request: APIRequestContext,
-  token: string,
-  title: string,
-): Promise<string> {
-  const res = await request.post(`${BASE_URL}/api/v1/notes`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
-  });
-  expect(res.ok(), `create note failed: ${res.status()} ${await res.text()}`).toBeTruthy();
-  const data = await res.json() as { id: string };
-  return data.id;
 }
 
 /** Click the first block view area to enter edit mode and fill it with content, then blur. */
@@ -93,11 +81,7 @@ test.describe('Notes E2EE encryption', () => {
     const userId = await getUserId(request, token);
 
     // Wait for the E2EE keypair so the note editor's DEK resolution uses the encrypted path.
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     await page.goto('/notes');
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Notes', {
@@ -142,11 +126,7 @@ test.describe('Notes E2EE encryption', () => {
     const token = await getAuthToken(page);
     const userId = await getUserId(request, token);
 
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     const noteId = await createNoteViaApi(request, token, 'Encryption Target Note');
 
@@ -165,7 +145,9 @@ test.describe('Notes E2EE encryption', () => {
     const secretPhrase = `confidential-note-${Date.now()}-secret-payload`;
 
     const saveResPromise = page.waitForResponse(
-      (r) => r.url().includes(`/api/v1/notes/${noteId}`) && r.request().method() === 'PATCH',
+      (r) =>
+        r.url().includes(`/api/v1/drive/files/${noteId}/autosave`) &&
+        r.request().method() === 'PUT',
       { timeout: 30_000 },
     );
 
@@ -194,11 +176,7 @@ test.describe('Notes E2EE encryption', () => {
     const token = await getAuthToken(page);
     const userId = await getUserId(request, token);
 
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     const targetTitle = `Backlink Target ${Date.now()}`;
     const targetId = await createNoteViaApi(request, token, targetTitle);
@@ -214,14 +192,16 @@ test.describe('Notes E2EE encryption', () => {
     await keyPutPromise;
 
     const saveResPromise = page.waitForResponse(
-      (r) => r.url().includes(`/api/v1/notes/${sourceId}`) && r.request().method() === 'PATCH',
+      (r) =>
+        r.url().includes(`/api/v1/drive/files/${sourceId}/autosave`) &&
+        r.request().method() === 'PUT',
       { timeout: 30_000 },
     );
 
     await typeInFirstBlock(page, `See [[${targetTitle}]] for more.`);
     await saveResPromise;
 
-    const backlinksRes = await request.get(`${BASE_URL}/api/v1/notes/${targetId}/backlinks`, {
+    const backlinksRes = await request.get(`${BASE_URL}/api/v1/links/${targetId}/backlinks`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(backlinksRes.ok(), `backlinks fetch failed: ${backlinksRes.status()}`).toBeTruthy();
@@ -243,20 +223,25 @@ test.describe('Notes E2EE encryption', () => {
     const token = await getAuthToken(page);
     const userId = await getUserId(request, token);
 
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     const noteId = await createNoteViaApi(request, token, 'Legacy Note');
     const legacyContent = JSON.stringify([
       { id: 'legacy1', type: 'paragraph', content: 'Legacy plaintext content' },
     ]);
-    const patchRes = await request.patch(`${BASE_URL}/api/v1/notes/${noteId}`, {
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      data: { content: legacyContent },
-    });
+    const patchRes = await request.put(
+      `${BASE_URL}/api/v1/drive/files/${noteId}/autosave`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        multipart: {
+          file: {
+            name: 'note.json',
+            mimeType: 'application/json',
+            buffer: Buffer.from(legacyContent, 'utf8'),
+          },
+        },
+      },
+    );
     expect(patchRes.ok(), `legacy content seed failed: ${patchRes.status()}`).toBeTruthy();
 
     // First open: no key ref exists yet, so a DEK gets generated and

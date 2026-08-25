@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
@@ -24,6 +25,7 @@ async function registerAndLogin(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
   return { email, password };
 }
 
@@ -138,9 +140,14 @@ test.describe('Accessibility — file list', () => {
       page.getByRole('listitem', { name: filename }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // The "More options" button must have an accessible label referencing the file name
+    // The "More options" button must have an accessible label referencing the
+    // file name — which is the point of the label, and also what keeps this
+    // unambiguous: a fresh account already owns an Attachments folder (created
+    // by `register`, see `ATTACHMENTS_FOLDER_NAME`), whose row has a menu
+    // button of its own. Matching the bare prefix resolves to both and fails on
+    // strict mode rather than on anything being wrong.
     await expect(
-      page.getByLabel(new RegExp(`More options for`, 'i')),
+      page.getByLabel(new RegExp(`More options for ${filename}`, 'i')),
     ).toBeVisible({ timeout: 5_000 });
   });
 });

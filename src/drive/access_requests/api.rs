@@ -14,6 +14,10 @@ pub struct AccessRequestsApiState {
     pub service: Arc<AccessRequestsService>,
 }
 
+/// Ask the owner of a file for access to it.
+///
+/// What someone who lands on a file they cannot open sends; the request shows up in the
+/// owner's pending list until it is approved or denied.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{file_id}/request-access",
@@ -44,6 +48,10 @@ pub async fn request_file_access(
     Ok(HttpResponse::Created().json(result))
 }
 
+/// Ask the owner of a folder for access to it.
+///
+/// The folder counterpart of the file request; approving it grants a role that the folder's
+/// contents inherit.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/folders/{folder_id}/request-access",
@@ -74,6 +82,10 @@ pub async fn request_folder_access(
     Ok(HttpResponse::Created().json(result))
 }
 
+/// List the pending access requests on things the caller owns.
+///
+/// Only requests still awaiting a decision are returned — approving or denying takes a request
+/// off this list.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/access-requests",
@@ -92,6 +104,10 @@ pub async fn list_access_requests(
     Ok(web::Json(result))
 }
 
+/// Approve an access request and grant the role it asked for.
+///
+/// Owners only. Grants the permission and marks the request resolved; a request that has
+/// already been decided returns 400.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/access-requests/{request_id}/approve",
@@ -119,6 +135,10 @@ pub async fn approve_access_request(
     Ok(web::Json(result))
 }
 
+/// Decline an access request.
+///
+/// Owners only. Marks the request resolved without granting anything, so it stops appearing in
+/// the pending list.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/access-requests/{request_id}/deny",
@@ -165,7 +185,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         CreateAccessRequestRequest,
         ApproveAccessRequestRequest,
     )),
-    tags((name = "access-requests", description = "Access request management")),
+    tags((
+        name = "access-requests",
+        description = "The \"request access\" path for someone who opens a file or folder they cannot see. A request sits pending in the owner's queue until the owner approves it — which grants the role and resolves the request in one step — or denies it."
+    )),
     modifiers(&SecurityAddon)
 )]
 pub struct AccessRequestsApiDoc;

@@ -17,6 +17,11 @@ pub struct PhotosApiState {
     pub photos_service: Arc<PhotosService>,
 }
 
+/// List the caller's photo library.
+///
+/// Newest first, excluding trashed photos and — unless `archivedOnly` is set — archived ones.
+/// `starredOnly` narrows to favourites, and `personIds`/`excludePersonIds` filter by who appears
+/// in the photo, with the included IDs ANDed together.
 #[utoipa::path(
     get,
     path = "/api/v1/photos",
@@ -75,6 +80,11 @@ pub async fn list_photos(
     Ok(web::Json(result))
 }
 
+/// Register an already-uploaded Drive file as a photo.
+///
+/// Photos live in Drive like any other file; this adds the library record that carries starring,
+/// archiving, capture date and the extracted metadata. Thumbnailing then happens in the
+/// background.
 #[utoipa::path(
     post,
     path = "/api/v1/photos",
@@ -99,6 +109,10 @@ pub async fn register_photo(
     Ok(HttpResponse::Created().json(photo))
 }
 
+/// Fetch one photo's library record.
+///
+/// Includes its content URL, thumbnail, capture date and — once the worker has run — the
+/// extracted image metadata.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/{id}",
@@ -122,6 +136,10 @@ pub async fn get_photo(
     Ok(web::Json(photo))
 }
 
+/// Star or archive a photo.
+///
+/// Patches only the flags supplied. Archiving hides a photo from the main grid without deleting
+/// it.
 #[utoipa::path(
     patch,
     path = "/api/v1/photos/{id}",
@@ -150,6 +168,10 @@ pub async fn update_photo(
     Ok(web::Json(photo))
 }
 
+/// Move a photo to the trash.
+///
+/// A soft delete: the record keeps a `deletedAt` stamp that the clients count down from, and the
+/// Drive file is left alone until the photo is purged.
 #[utoipa::path(
     delete,
     path = "/api/v1/photos/{id}",
@@ -173,6 +195,9 @@ pub async fn trash_photo(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Restore a trashed photo.
+///
+/// Clears the deletion stamp and returns the photo to the library.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/{id}/restore",
@@ -195,6 +220,9 @@ pub async fn restore_photo(
     Ok(web::Json(photo))
 }
 
+/// List the caller's trashed photos.
+///
+/// Each one carries the `deletedAt` stamp the client's retention countdown reads.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/trash",
@@ -213,6 +241,10 @@ pub async fn list_trash(
     Ok(web::Json(result))
 }
 
+/// Permanently delete every trashed photo.
+///
+/// Deletes the underlying Drive files as well as the library records, so the bytes and the quota
+/// they consumed are actually released. Not recoverable.
 #[utoipa::path(
     delete,
     path = "/api/v1/photos/trash",
@@ -231,6 +263,10 @@ pub async fn empty_trash(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Permanently delete one trashed photo.
+///
+/// Deletes the Drive file along with the record. The photo must already be in the trash — a live
+/// photo returns 400 rather than being destroyed in one step.
 #[utoipa::path(
     delete,
     path = "/api/v1/photos/{id}/permanent",
@@ -257,8 +293,10 @@ pub async fn delete_photo_permanently(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// Worker endpoint — stores extracted image metadata for a photo.
-/// Accepts a JSON body. No user auth required (worker-to-service call).
+/// Store extracted image metadata for a photo. Worker endpoint.
+///
+/// Called service-to-service once the worker has read dimensions and EXIF out of the image, with
+/// the metadata as a raw JSON body. Carries no user auth.
 #[utoipa::path(
     put,
     path = "/api/v1/photos/{id}/metadata",
@@ -285,6 +323,10 @@ pub async fn put_metadata(
 
 // ---- 6.7.1 Photo Map ----
 
+/// List photos that have GPS coordinates, for the map view.
+///
+/// Pass `bbox` as `minLat,minLon,maxLat,maxLon` to fetch only what is in view; results are capped
+/// at `limit` (500 by default).
 #[utoipa::path(
     get,
     path = "/api/v1/photos/map",
@@ -315,6 +357,10 @@ pub async fn get_photo_map(
 
 // ---- 6.7.2 Photo Edits ----
 
+/// Save non-destructive edits for a photo.
+///
+/// Stores the adjustment parameters — brightness, contrast, crop, rotation, filter and the rest —
+/// rather than a rendered image, so the original is never touched and the edits stay reversible.
 #[utoipa::path(
     put,
     path = "/api/v1/photos/{id}/edits",
@@ -342,6 +388,10 @@ pub async fn put_photo_edits(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Fetch the saved edits for a photo.
+///
+/// Returns the adjustment parameters the client re-applies when it opens the editor. A photo
+/// that has never been edited returns 404.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/{id}/edits",
@@ -367,6 +417,9 @@ pub async fn get_photo_edits(
     }
 }
 
+/// Discard a photo's saved edits.
+///
+/// Reverts it to the original, since the edits were only ever stored as parameters.
 #[utoipa::path(
     delete,
     path = "/api/v1/photos/{id}/edits",
@@ -392,6 +445,10 @@ pub async fn delete_photo_edits(
 
 // ---- 6.7.3 Memories ----
 
+/// Fetch "on this day" memories.
+///
+/// Groups the caller's photos taken on today's month and day in previous years, one group per
+/// year.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/memories",
@@ -410,11 +467,15 @@ pub async fn get_memories(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Fetch a year-in-review collection.
+///
+/// Returns a sample of the caller's photos from the requested year, defaulting to the current
+/// year.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/year-in-review",
     params(
-        ("year" = Option<i32>, Query, description = "Year to review (defaults to most recent year with photos)"),
+        ("year" = Option<i32>, Query, description = "Year to review (defaults to the current year)"),
     ),
     responses(
         (status = 200, description = "Year-in-review photo collection", body = YearInReviewResponse),
@@ -435,6 +496,9 @@ pub async fn get_year_in_review(
 
 // ---- 6.7.4 Locked Folder ----
 
+/// Set the PIN for the locked folder.
+///
+/// Enables the locked folder and stores a hash of the PIN. Call it again to change the PIN.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/locked-folder/setup",
@@ -456,6 +520,10 @@ pub async fn setup_locked_folder(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Exchange the locked-folder PIN for a short-lived unlock token.
+///
+/// The token, not the PIN, is what subsequent access to locked photos presents, so the PIN
+/// travels once per session. A wrong PIN is rejected without unlocking anything.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/locked-folder/unlock",
@@ -479,6 +547,9 @@ pub async fn unlock_locked_folder(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Move a photo into the locked folder.
+///
+/// It then stays out of the main grid, searches and albums until the folder is unlocked.
 #[utoipa::path(
     put,
     path = "/api/v1/photos/{id}/lock",
@@ -502,6 +573,9 @@ pub async fn lock_photo_endpoint(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Move a photo back out of the locked folder.
+///
+/// The photo returns to the ordinary library views.
 #[utoipa::path(
     put,
     path = "/api/v1/photos/{id}/unlock-photo",
@@ -527,6 +601,10 @@ pub async fn unlock_photo_endpoint(
 
 // ---- 6.7.5 Location Privacy ----
 
+/// Set whether a photo's GPS data is stripped when it is shared.
+///
+/// A per-photo location-privacy switch: with `stripGps` on, the coordinates are removed from
+/// copies handed out through sharing.
 #[utoipa::path(
     put,
     path = "/api/v1/photos/{id}/share-settings",
@@ -556,6 +634,10 @@ pub async fn update_share_settings(
 
 // ---- 6.7.6 Free Up Space ----
 
+/// List photos confirmed to be backed up on the server.
+///
+/// What the mobile apps read before offering to free up space, so they only delete a local copy
+/// the server actually holds.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/backed-up",
@@ -646,7 +728,10 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
         crate::photos::photos::dto::BackedUpPhotoItem,
         BackedUpPhotosResponse,
     )),
-    tags((name = "photos", description = "Media library")),
+    tags((
+        name = "photos",
+        description = "The photo library layered over Drive: the bytes are ordinary Drive files, and a photo record adds capture date, starring, archiving, extracted EXIF and a thumbnail. Deletes are soft and counted down against a retention window before the Drive file goes with them, edits are stored as reversible adjustment parameters rather than rendered images, and a PIN-gated locked folder keeps chosen photos out of every other view."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct PhotosApiDoc;

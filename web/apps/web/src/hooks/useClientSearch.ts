@@ -1,11 +1,11 @@
 'use client';
 
 import type React from 'react';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, Calendar, File as FileIcon } from 'lucide-react';
 import { IndexEngine, type SearchableDocType } from '@neutrino/search';
-import { loadKeyPair } from '@neutrino/e2e-crypto';
+import { loadKeyPair, subscribeToLockState } from '@neutrino/e2e-crypto';
 import { tagsApi, useUser, type TaggedFile, type Tag } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import {
@@ -154,6 +154,20 @@ export function useClientSearch() {
   const queryClient = useQueryClient();
   const engineRef = useRef<IndexEngine | null>(null);
 
+  /**
+   * Bumped when the vault locks or unlocks, so `search` gets a new identity and
+   * callers that re-run it on change (the Drive search view keys its effect on
+   * exactly this) search again once there is a key.
+   *
+   * `loadKeyPair` reads the *in-memory* session keyring, which is unwrapped
+   * from IndexedDB a moment after the page loads. Landing on `/drive?q=…`
+   * searches before that lands, and without this the empty result was final:
+   * the box would find the note a second later while the page it navigated to
+   * still said "No matches".
+   */
+  const [unlockEpoch, setUnlockEpoch] = useState(0);
+  useEffect(() => subscribeToLockState(() => setUnlockEpoch((n) => n + 1)), []);
+
   const { data: tagsData } = useQuery({
     queryKey: ['tags'],
     queryFn: () => tagsApi.list(),
@@ -285,7 +299,10 @@ export function useClientSearch() {
 
       return hits.slice(0, MAX_SEARCH_RESULTS);
     },
-    [tags, fetchTaggedFiles, user?.id],
+    // `unlockEpoch` is not read in the body — it is here to give `search` a new
+    // identity when the vault unlocks, which is the signal callers re-run on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tags, fetchTaggedFiles, user?.id, unlockEpoch],
   );
 
   return { search };

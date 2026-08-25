@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
@@ -21,6 +22,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 async function getAuthToken(page: Page): Promise<string> {
@@ -130,7 +132,14 @@ test.describe('Drawing lifecycle', () => {
     await page.goto(`/drawing/editor?id=${id}`);
     await expect(page.getByLabel('Drawing title')).toBeVisible({ timeout: 15_000 });
 
-    const delRes = await request.delete(`${BASE_URL}/api/v1/drive/files/${id}`, {
+    // Trash, then empty it: a drawing is a Drive file, and `DELETE
+    // /drive/files/{id}` only moves one to the trash — from where it is still
+    // readable, so the editor would reopen it rather than report it gone.
+    const trashRes = await request.delete(`${BASE_URL}/api/v1/drive/files/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(trashRes.ok(), `trash failed: ${trashRes.status()}`).toBeTruthy();
+    const delRes = await request.delete(`${BASE_URL}/api/v1/drive/trash/files/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(delRes.ok(), `delete failed: ${delRes.status()}`).toBeTruthy();

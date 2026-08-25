@@ -15,6 +15,10 @@ pub struct ConnectionsApiState {
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
+/// List the caller's connected external calendars.
+///
+/// Returns one entry per linked Google, Outlook or Apple CalDAV account, including its last
+/// sync time and status.
 #[utoipa::path(
     get,
     path = "/api/v1/connections",
@@ -35,6 +39,10 @@ pub async fn list_connections(
 
 // ── Google ────────────────────────────────────────────────────────────────────
 
+/// Start the Google Calendar OAuth flow.
+///
+/// Returns the Google authorization URL the browser should be sent to; the resulting code
+/// is handed back to `/connections/google/complete`.
 #[utoipa::path(
     post,
     path = "/api/v1/connections/google",
@@ -61,6 +69,11 @@ pub struct OAuthCallbackQuery {
     pub error: Option<String>,
 }
 
+/// Handle the redirect Google sends back after the user grants access.
+///
+/// Unauthenticated, because the browser arrives here without a Bearer token: the caller is
+/// identified from the `state` parameter minted by `POST /connections/google`. On success it
+/// stores the connection and 302s to `/calendar/settings`.
 #[utoipa::path(
     get,
     path = "/api/v1/connections/google/callback",
@@ -106,9 +119,12 @@ pub async fn google_callback(
         .finish())
 }
 
-/// Authenticated endpoint: the frontend POSTs the authorization code it captured
-/// from the OAuth redirect URL.  This avoids requiring a Bearer token on the
-/// raw redirect URI that Google calls (where the browser has no JWT header).
+/// Finish the Google Calendar OAuth flow.
+///
+/// The frontend POSTs the authorization code it captured from the OAuth redirect URL,
+/// which avoids requiring a Bearer token on the raw redirect URI that Google calls
+/// (where the browser has no JWT header). Exchanges the code for tokens and stores the
+/// connection.
 #[utoipa::path(
     post,
     path = "/api/v1/connections/google/complete",
@@ -135,6 +151,9 @@ pub async fn complete_google(
 
 // ── Outlook ───────────────────────────────────────────────────────────────────
 
+/// Start the Outlook Calendar OAuth flow.
+///
+/// Returns the Microsoft authorization URL to redirect the browser to.
 #[utoipa::path(
     post,
     path = "/api/v1/connections/outlook",
@@ -154,6 +173,10 @@ pub async fn initiate_outlook(
     Ok(web::Json(result))
 }
 
+/// Complete the Outlook Calendar OAuth flow.
+///
+/// Exchanges the authorization code Microsoft returned for tokens and stores the resulting
+/// connection.
 #[utoipa::path(
     get,
     path = "/api/v1/connections/outlook/callback",
@@ -189,6 +212,10 @@ pub async fn outlook_callback(
 
 // ── Apple ─────────────────────────────────────────────────────────────────────
 
+/// Connect an Apple Calendar over CalDAV.
+///
+/// Validates the supplied CalDAV URL and app-specific password before storing the
+/// credentials as a connection.
 #[utoipa::path(
     post,
     path = "/api/v1/connections/apple",
@@ -215,6 +242,9 @@ pub async fn connect_apple(
 
 // ── Disconnect ────────────────────────────────────────────────────────────────
 
+/// Remove a connected external calendar.
+///
+/// Deletes the stored credentials and stops any further syncing from that provider.
 #[utoipa::path(
     delete,
     path = "/api/v1/connections/{id}",
@@ -240,6 +270,10 @@ pub async fn disconnect_connection(
 
 // ── Sync trigger ──────────────────────────────────────────────────────────────
 
+/// Run a calendar sync now.
+///
+/// Pulls events from the requested connection (or all of them) immediately instead of
+/// waiting for the scheduled background sync, and reports what changed.
 #[utoipa::path(
     post,
     path = "/api/v1/sync/trigger",
@@ -299,7 +333,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         TriggerSyncRequest,
         TriggerSyncResponse,
     )),
-    tags((name = "connections", description = "External calendar provider connections")),
+    tags((
+        name = "connections",
+        description = "Links to external calendars — Google and Outlook over OAuth 2.0, Apple over CalDAV. Each connection stores the credentials needed to pull events in, and sync runs on a schedule or on demand through the trigger endpoint."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct ConnectionsApiDoc;

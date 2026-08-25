@@ -281,7 +281,7 @@ impl StorageService {
         }
 
         // Create version 1 snapshot (best-effort; failure doesn't block upload)
-        self.create_version_snapshot(&user.user_id, &file_id, &final_path, size_bytes, 1, false);
+        self.create_version_snapshot(&user.user_id, &file_id, &final_path, size_bytes, false);
 
         Ok(FileMetadataResponse::from(file))
     }
@@ -365,14 +365,7 @@ impl StorageService {
         let existing_count = self.repo.count_versions(file_id)?;
         if existing_count == 0 && !file.storage_path.is_empty() {
             let current_path = self.store.resolve(&file.storage_path);
-            self.create_version_snapshot(
-                owner_id,
-                file_id,
-                &current_path,
-                file.size_bytes,
-                1,
-                false,
-            );
+            self.create_version_snapshot(owner_id, file_id, &current_path, file.size_bytes, false);
         }
 
         // Overwrite the main file with new content.
@@ -394,9 +387,8 @@ impl StorageService {
         )?;
 
         // Create the named snapshot.
-        let next_num = self.repo.max_version_number(file_id)? + 1;
         let version = self.create_version_snapshot_record(
-            owner_id, file_id, &main_path, size_bytes, next_num, true, label,
+            owner_id, file_id, &main_path, size_bytes, true, label,
         )?;
 
         Ok(FileVersionResponse::from(version))
@@ -498,13 +490,11 @@ impl StorageService {
         let main_path = self.store.file_path(user_id, file_id);
 
         // Snapshot the current content before restoring (best-effort)
-        let next_num = self.repo.max_version_number(file_id)? + 1;
         self.create_version_snapshot(
             user_id,
             file_id,
             &self.store.resolve(&current.storage_path),
             current.size_bytes,
-            next_num,
             false,
         );
 
@@ -871,34 +861,27 @@ impl StorageService {
         file_id: &str,
         source: &Path,
         size_bytes: i64,
-        version_number: i32,
         is_named: bool,
     ) {
-        if let Err(e) = self.create_version_snapshot_record(
-            user_id,
-            file_id,
-            source,
-            size_bytes,
-            version_number,
-            is_named,
-            None,
-        ) {
+        if let Err(e) =
+            self.create_version_snapshot_record(user_id, file_id, source, size_bytes, is_named, None)
+        {
             tracing::error!(
-                "Failed to create version {} snapshot for file {}: {:?}",
-                version_number,
+                "Failed to create version snapshot for file {}: {:?}",
                 file_id,
                 e
             );
         }
     }
 
+    /// The snapshot's version number is assigned by the insert, not here — see
+    /// `StorageRepository::insert_version`.
     fn create_version_snapshot_record(
         &self,
         user_id: &str,
         file_id: &str,
         source: &Path,
         size_bytes: i64,
-        version_number: i32,
         is_named: bool,
         label: Option<&str>,
     ) -> Result<crate::drive::storage::model::FileVersionRecord, ApiError> {
@@ -919,7 +902,6 @@ impl StorageService {
             id: &version_id,
             file_id,
             user_id,
-            version_number,
             size_bytes,
             storage_path: &version_key,
             label,

@@ -208,6 +208,72 @@ pub(crate) fn test_pool() -> DbPool {
     pool
 }
 
+/// A scratch database file that deletes itself, WAL sidecars included.
+///
+/// The project has no `tempfile` dependency; see `private_store::tests` for the
+/// directory-shaped twin.
+#[cfg(test)]
+pub(crate) struct TestDbFile(std::path::PathBuf);
+
+#[cfg(test)]
+impl Drop for TestDbFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+        for suffix in ["-wal", "-shm"] {
+            let mut sidecar = self.0.clone().into_os_string();
+            sidecar.push(suffix);
+            let _ = std::fs::remove_file(sidecar);
+        }
+    }
+}
+
+/// A *concurrent* pool with the schema applied, for tests about two writers.
+///
+/// `test_pool` cannot serve those: `:memory:` gives every connection its own
+/// private database, so it is pinned to `max_size(1)` and nothing ever
+/// contends. This one is file-backed, hands out several connections, and
+/// carries the same `busy_timeout` / WAL pragmas `main.rs` puts on every
+/// pooled connection — without them writers collide instead of queueing, and
+/// the test would be measuring the missing pragma rather than the code.
+///
+/// The returned guard owns the file: hold it for the length of the test.
+#[cfg(test)]
+pub(crate) fn test_file_pool(label: &str) -> (DbPool, TestDbFile) {
+    use crate::MIGRATIONS;
+    use diesel::r2d2::CustomizeConnection;
+    use diesel_migrations::MigrationHarness;
+
+    #[derive(Debug)]
+    struct Pragmas;
+    impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for Pragmas {
+        fn on_acquire(&self, conn: &mut SqliteConnection) -> Result<(), diesel::r2d2::Error> {
+            for pragma in ["PRAGMA busy_timeout = 5000", "PRAGMA journal_mode = WAL"] {
+                diesel::sql_query(pragma)
+                    .execute(conn)
+                    .map_err(diesel::r2d2::Error::QueryError)?;
+            }
+            Ok(())
+        }
+    }
+
+    let path =
+        std::env::temp_dir().join(format!("neutrino-{label}-{}.sqlite", uuid::Uuid::new_v4()));
+    let guard = TestDbFile(path.clone());
+
+    let manager =
+        ConnectionManager::<SqliteConnection>::new(path.to_str().expect("utf-8 temp path"));
+    let pool = Pool::builder()
+        .max_size(8)
+        .connection_customizer(Box::new(Pragmas))
+        .build(manager)
+        .expect("test file pool");
+    pool.get()
+        .expect("conn")
+        .run_pending_migrations(MIGRATIONS)
+        .expect("migrations");
+    (pool, guard)
+}
+
 /// `search_index_snapshots.user_id` is a real foreign key and SQLite enforces
 /// it here, so a snapshot needs an owner before it can be inserted.
 #[cfg(test)]

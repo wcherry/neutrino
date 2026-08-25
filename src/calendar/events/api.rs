@@ -13,6 +13,11 @@ pub struct EventsApiState {
     pub events_service: Arc<EventsService>,
 }
 
+/// List the caller's calendar events.
+///
+/// Returns every event the user owns, optionally narrowed to an ISO 8601 UTC window with
+/// `from`/`to`. Recurring events are returned once carrying their recurrence rule; the
+/// client expands the occurrences.
 #[utoipa::path(
     get,
     path = "/api/v1/events",
@@ -38,6 +43,10 @@ pub async fn list_events(
     Ok(web::Json(result))
 }
 
+/// Create a calendar event.
+///
+/// Accepts a title, start/end instants, and optional recurrence, location and attendee
+/// details, and returns the stored event with its generated ID.
 #[utoipa::path(
     post,
     path = "/api/v1/events",
@@ -61,6 +70,9 @@ pub async fn create_event(
     Ok(HttpResponse::Created().json(event))
 }
 
+/// Fetch a single calendar event by ID.
+///
+/// Returns 404 when the event does not exist or does not belong to the caller.
 #[utoipa::path(
     get,
     path = "/api/v1/events/{id}",
@@ -82,6 +94,10 @@ pub async fn get_event(
     Ok(web::Json(event))
 }
 
+/// Update a calendar event.
+///
+/// Replaces the mutable fields of an existing event — timing, recurrence, description and
+/// attendees — and returns the updated record.
 #[utoipa::path(
     put,
     path = "/api/v1/events/{id}",
@@ -107,6 +123,10 @@ pub async fn update_event(
     Ok(web::Json(event))
 }
 
+/// Delete a calendar event.
+///
+/// Removes the event and cascade-deletes its attendee rows. Returns 404 when the event
+/// does not belong to the caller.
 #[utoipa::path(
     delete,
     path = "/api/v1/events/{id}",
@@ -148,7 +168,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         EventResponse,
         ListEventsResponse,
     )),
-    tags((name = "events", description = "Calendar events")),
+    tags((
+        name = "events",
+        description = "The entries on a user's calendar. Events are stored per user with a start and end instant, an optional IANA timezone, and an optional RFC 5545 recurrence rule that clients expand for display. Attendees are stored alongside each event and are cascade-deleted with it."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct EventsApiDoc;

@@ -34,6 +34,10 @@ pub struct TaggedFilesQuery {
 
 // ── Tag CRUD ──────────────────────────────────────────────────────────────────
 
+/// Create a tag.
+///
+/// Tags are per user and their names are unique within an account, so re-creating an existing
+/// name returns 409 rather than a duplicate.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/tags",
@@ -56,6 +60,9 @@ pub async fn create_tag(
     Ok(HttpResponse::Created().json(tag))
 }
 
+/// List the caller's tags.
+///
+/// Pass `q` to filter by partial name — what the tag picker's type-ahead calls.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/tags",
@@ -78,6 +85,9 @@ pub async fn list_tags(
     Ok(web::Json(response))
 }
 
+/// Fetch one tag by ID.
+///
+/// Returns 404 for a tag belonging to another user, since tags are not shared.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/tags/{id}",
@@ -100,6 +110,10 @@ pub async fn get_tag(
     Ok(web::Json(tag))
 }
 
+/// Rename a tag.
+///
+/// Every file carrying the tag follows the new name automatically. Colliding with an existing
+/// tag name returns 409.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/tags/{id}",
@@ -127,6 +141,9 @@ pub async fn rename_tag(
     Ok(web::Json(tag))
 }
 
+/// Delete a tag.
+///
+/// Removes it from every file it was applied to. The files themselves are untouched.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/tags/{id}",
@@ -151,6 +168,10 @@ pub async fn delete_tag(
 
 // ── Files by tag ──────────────────────────────────────────────────────────────
 
+/// List the files carrying a tag, paginated.
+///
+/// The tag-as-a-view endpoint: page size defaults to 50 and is capped at 200, and `type`
+/// narrows the results to one kind of Drive file.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/tags/{id}/files",
@@ -187,6 +208,9 @@ pub async fn get_files_for_tag(
 
 // ── File-Tag operations ───────────────────────────────────────────────────────
 
+/// List the tags applied to one file.
+///
+/// Requires read access to the file; the tags returned are the caller's own.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/tags",
@@ -210,6 +234,10 @@ pub async fn get_file_tags(
     Ok(web::Json(tags))
 }
 
+/// Replace the full set of tags on a file.
+///
+/// The list sent becomes the file's tags exactly — anything omitted is removed. Requires edit
+/// access, and every tag ID must belong to the caller.
 #[utoipa::path(
     put,
     path = "/api/v1/drive/files/{id}/tags",
@@ -237,6 +265,10 @@ pub async fn set_file_tags(
     Ok(web::Json(tags))
 }
 
+/// Apply one tag to a file.
+///
+/// The incremental counterpart of the replace-all endpoint. Requires edit access on the file
+/// and ownership of the tag.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{id}/tags/{tag_id}",
@@ -263,6 +295,9 @@ pub async fn add_file_tag(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Remove one tag from a file.
+///
+/// Unlinks the pair only — the tag itself and the file both survive.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{id}/tags/{tag_id}",
@@ -320,7 +355,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         crate::drive::tags::dto::TaggedFileResponse,
     )),
     tags(
-        (name = "tags", description = "Tag management and file tagging endpoints"),
+        (
+            name = "tags",
+            description = "Per-user labels applied to Drive files. A tag belongs to one account and its name is unique within that account, so tags are private even when the files they mark are shared. Applying or removing a tag needs edit access on the file; listing a tag's files turns the tag into a saved view."
+        ),
     ),
 )]
 pub struct TagsApiDoc;

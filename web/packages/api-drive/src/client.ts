@@ -496,8 +496,29 @@ export const sharedDrivesApi = {
 // Drive content helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Read a document's stored text content, treating "never written" as empty.
+ *
+ * A file whose content has never been uploaded answers this endpoint with 409
+ * `NO_CONTENT` (see `no_content_error` in `src/drive/storage/service.rs`), and
+ * that is the *normal* state of a document between being created and being
+ * saved for the first time: `createNote`, and the create path of every other
+ * editor, insert the Drive row with no body. Letting the 409 reject made the
+ * open-a-brand-new-document case an error the editor retried three times and
+ * then sat on, never leaving its loading state — so a new note could not be
+ * typed into at all.
+ *
+ * Only `NO_CONTENT` is swallowed. `CONTENT_MISSING` — the row outliving its
+ * blob — is a real fault and still throws, which is the distinction the server
+ * introduced those two codes to preserve.
+ */
 export async function driveReadContent(path: string): Promise<string> {
-  return request<string>(path, {}, { responseType: 'text' });
+  try {
+    return await request<string>(path, {}, { responseType: 'text' });
+  } catch (err) {
+    if (err instanceof ApiClientError && err.code === 'NO_CONTENT') return '';
+    throw err;
+  }
 }
 
 // `driveWriteContent`, `driveAutosaveContent` and `driveCreateVersion` used to

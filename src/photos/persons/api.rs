@@ -19,7 +19,10 @@ pub struct PersonsApiState {
     pub albums_service: Arc<crate::photos::albums::service::AlbumsService>,
 }
 
-/// List all person clusters for the authenticated user.
+/// List the caller's people.
+///
+/// One entry per cluster of faces the grouping decided belong to the same person, each with its
+/// name if one has been given and a representative face thumbnail.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/persons/list",
@@ -38,7 +41,10 @@ pub async fn list_persons(
     Ok(web::Json(result))
 }
 
-/// Rename a person cluster.
+/// Name or rename a person.
+///
+/// Clusters start unnamed; giving one a name is what makes it addressable in filters and lets it
+/// have a smart album.
 #[utoipa::path(
     patch,
     path = "/api/v1/photos/persons/{personId}",
@@ -67,7 +73,10 @@ pub async fn rename_person(
     Ok(web::Json(result))
 }
 
-/// Merge another person cluster into this one (source is absorbed and deleted).
+/// Merge one person into another.
+///
+/// Moves every face from the source cluster to the one in the path and deletes the source — how
+/// a user fixes clustering that split one person in two.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/persons/{personId}/merge",
@@ -96,7 +105,9 @@ pub async fn merge_persons(
     Ok(web::Json(result))
 }
 
-/// Move a face from this person to a different person.
+/// Reassign a single face to a different person.
+///
+/// For the one-off mistake, as opposed to merging two clusters wholesale.
 #[utoipa::path(
     patch,
     path = "/api/v1/photos/persons/{personId}/faces/{faceId}",
@@ -127,7 +138,10 @@ pub async fn reassign_face(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// Remove a face from this person (unassigns it; person deleted if now empty).
+/// Remove a face from a person.
+///
+/// Unassigns the face rather than deleting it, and deletes the person if that leaves the cluster
+/// empty.
 #[utoipa::path(
     delete,
     path = "/api/v1/photos/persons/{personId}/faces/{faceId}",
@@ -156,7 +170,10 @@ pub async fn remove_face(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// Get photos for a specific person cluster.
+/// List the photos a person appears in.
+///
+/// Resolves the person's faces back to full photo records, so the client can render the grid
+/// directly.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/persons/{personId}/photos",
@@ -186,7 +203,10 @@ pub async fn list_person_photos(
     Ok(web::Json(result))
 }
 
-/// Get photos of a person in chronological timeline groups.
+/// List a person's photos grouped into a chronological timeline.
+///
+/// The same photos as the plain listing, bucketed by period so the client can render a "through
+/// the years" view without regrouping them itself.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/persons/{personId}/timeline",
@@ -222,7 +242,10 @@ pub async fn get_person_timeline(
     Ok(web::Json(result))
 }
 
-/// Get relationship insights: persons who frequently co-appear in photos.
+/// Report which people frequently appear together.
+///
+/// Counts co-appearances across the library and returns the strongest pairings, which is what
+/// the relationship insights view reads.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/persons/relationships",
@@ -241,7 +264,10 @@ pub async fn get_person_relationships(
     Ok(web::Json(result))
 }
 
-/// Create or refresh a smart album for a named person.
+/// Create or refresh a person's smart album.
+///
+/// Builds an auto album holding every photo that person appears in, and re-syncs it if one
+/// already exists. The person must have a name — an unnamed cluster returns 404.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/persons/{personId}/smart-album",
@@ -279,7 +305,10 @@ pub async fn create_person_smart_album(
 
 // ── Internal endpoints (called by the worker, no JWT) ────────────────────────
 
-/// Return all user_ids that have face embeddings (used by worker to trigger cluster-all).
+/// List the user IDs that have face embeddings. Internal.
+///
+/// How the clustering worker finds which accounts have work waiting, without enumerating every
+/// user.
 #[utoipa::path(
     get,
     path = "/api/v1/internal/users-with-faces",
@@ -296,7 +325,10 @@ pub async fn list_users_with_faces(
     Ok(web::Json(result))
 }
 
-/// Return all face embeddings for a user so the worker can run clustering.
+/// Fetch every face embedding for one user. Internal.
+///
+/// The input to a clustering run: the worker groups these vectors and posts the result back to
+/// the clusters endpoint.
 #[utoipa::path(
     get,
     path = "/api/v1/internal/users/{userId}/face-embeddings",
@@ -316,7 +348,10 @@ pub async fn get_face_embeddings(
     Ok(web::Json(result))
 }
 
-/// Accept clustering results from the worker and persist persons.
+/// Save clustering results. Internal.
+///
+/// Takes the groupings the worker computed and turns them into person records with their faces
+/// attached, which is what makes new people appear in the library.
 #[utoipa::path(
     post,
     path = "/api/v1/internal/persons/clusters",
@@ -388,8 +423,14 @@ pub fn configure_persons(cfg: &mut web::ServiceConfig) {
         crate::photos::albums::dto::AlbumResponse,
     )),
     tags(
-        (name = "persons", description = "Face clustering and person management"),
-        (name = "internal", description = "Internal worker endpoints"),
+        (
+            name = "persons",
+            description = "People in the photo library — clusters of detected faces that grouping decided belong to the same person. Users name them, merge clusters the grouping split, move individual faces between them, and browse a person's photos as a grid or a timeline. Naming a person also unlocks a smart album that keeps itself in sync."
+        ),
+        (
+            name = "internal",
+            description = "Service-to-service endpoints for the face-clustering worker, under /api/v1/internal. The worker asks which accounts have embeddings, pulls one account's embeddings, runs the grouping off-box, and posts the resulting clusters back. Not for browser clients."
+        ),
     ),
     security(("bearer_auth" = []))
 )]

@@ -61,6 +61,11 @@ fn parse_message(data: &[u8]) -> Option<ParsedMessage> {
 
 // --- WebSocket handler ---
 
+/// Open the real-time collaboration socket for a document.
+///
+/// Speaks the y-websocket protocol, so edits and cursors are exchanged as CRDT updates and
+/// converge without a server-side merge. Authenticates from `?token=<jwt>`, since a browser
+/// cannot set headers on a WebSocket handshake.
 #[utoipa::path(
     get,
     path = "/api/v1/docs/{id}/ws",
@@ -246,6 +251,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(collab_ws),
-    tags((name = "docs-collab", description = "Docs real-time collaboration endpoints"))
+    tags((
+        name = "docs-collab",
+        description = "The real-time editing channel for documents. It is a WebSocket speaking the y-websocket protocol rather than a REST surface: clients exchange CRDT updates and awareness state directly, so concurrent edits converge without the server merging anything. The handshake authenticates from a `token` query parameter because browsers cannot set headers on a WebSocket."
+    ))
 )]
 pub struct CollabApiDoc;

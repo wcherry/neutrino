@@ -44,6 +44,10 @@ pub struct ScreenshotIntelResponse {
     pub result: String,
 }
 
+/// Extract the text visible in an image.
+///
+/// Takes the image as base64 with its media type and returns the text, keeping line breaks and
+/// structure where it can.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/ai/ocr",
@@ -68,6 +72,10 @@ async fn ocr(
     Ok(web::Json(OcrResponse { text }))
 }
 
+/// Turn a screenshot into structured Markdown.
+///
+/// The `outputType` picks the shape: a Markdown table, a clean Markdown document, or a Mermaid
+/// diagram of the structure shown.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/ai/screenshot-intel",
@@ -124,6 +132,10 @@ pub struct DetectObjectsResponse {
     pub objects: Vec<DetectedObjectDto>,
 }
 
+/// Locate objects of a given kind in an image.
+///
+/// Returns bounding boxes for the requested target — people, cars, power lines or background
+/// clutter — which is what the cleanup and redaction tools work from.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/ai/detect-objects",
@@ -156,14 +168,20 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(ocr, screenshot_intel),
+    paths(ocr, screenshot_intel, detect_objects),
     components(schemas(
         OcrRequest,
         OcrResponse,
         ScreenshotIntelRequest,
         ScreenshotIntelResponse,
+        DetectObjectsRequest,
+        DetectedObjectDto,
+        DetectObjectsResponse,
     )),
-    tags((name = "photos-ai", description = "Photos AI endpoints")),
+    tags((
+        name = "photos-ai",
+        description = "Claude vision applied to a single image the client uploads inline as base64: reading its text, converting a screenshot into a Markdown table, document or Mermaid diagram, and locating objects such as people or power lines with bounding boxes. Nothing is stored — the image is sent with the request and the result is returned — and all of it needs ANTHROPIC_API_KEY configured."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct PhotosAIApiDoc;

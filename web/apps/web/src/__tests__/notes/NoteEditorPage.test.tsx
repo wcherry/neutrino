@@ -250,3 +250,47 @@ describe('NoteEditorPage — current-note operations', () => {
     await waitFor(() => expect(getBacklinksMock).toHaveBeenCalledWith(NOTE_ID));
   });
 });
+
+describe('NoteEditorPage — Ctrl+A', () => {
+  it('leaves the title field\'s native select-all alone', async () => {
+    const { container } = await renderEditorPage();
+    const title = await waitFor(() => {
+      const el = container.querySelector('input[aria-label="Note title"]') as HTMLInputElement;
+      if (!el) throw new Error('title input not rendered');
+      return el;
+    });
+
+    title.focus();
+    expect(document.activeElement).toBe(title);
+
+    const evt = new KeyboardEvent('keydown', {
+      key: 'a',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(evt);
+
+    // Not prevented => the browser's own select-all runs inside the input.
+    expect(evt.defaultPrevented).toBe(false);
+  });
+
+  it('takes over Ctrl+A when focus is outside the title field', async () => {
+    const { container } = await renderEditorPage();
+    await waitFor(() => {
+      if (!container.querySelector('input[aria-label="Note title"]')) {
+        throw new Error('title input not rendered');
+      }
+    });
+
+    const evt = new KeyboardEvent('keydown', {
+      key: 'a',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(evt);
+
+    expect(evt.defaultPrevented).toBe(true);
+  });
+});

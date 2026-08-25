@@ -46,6 +46,10 @@ pub struct InsightsRequest {
 
 // ── Endpoints ────────────────────────────────────────────────────────────────
 
+/// Predict the rest of a column from a few worked examples.
+///
+/// The Flash-Fill-style completion: send the input/output pairs the user has already typed and
+/// the inputs still to fill, and get back the predicted values.
 #[utoipa::path(
     post,
     path = "/api/v1/sheets/{id}/ai/smart-fill",
@@ -80,6 +84,10 @@ pub async fn smart_fill(
     Ok(HttpResponse::Ok().json(SmartFillResponse { values }))
 }
 
+/// Answer a natural-language question about a sheet's data.
+///
+/// Returns a prose answer and, where one applies, a formula or a chart configuration the client
+/// can drop straight into the sheet.
 #[utoipa::path(
     post,
     path = "/api/v1/sheets/{id}/ai/explore",
@@ -109,6 +117,10 @@ pub async fn explore(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Suggest a pivot table configuration for a range.
+///
+/// Returns which fields to use as rows, columns and values rather than computing the pivot
+/// itself.
 #[utoipa::path(
     post,
     path = "/api/v1/sheets/{id}/ai/pivot",
@@ -138,6 +150,10 @@ pub async fn pivot(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Surface notable patterns in a sheet's data.
+///
+/// Returns per-cell insights — outliers, trends and the like — each anchored to a row and column
+/// so the client can flag them in place.
 #[utoipa::path(
     post,
     path = "/api/v1/sheets/{id}/ai/insights",
@@ -184,7 +200,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         PivotRequest,
         InsightsRequest,
     )),
-    tags((name = "sheets-ai", description = "Sheets AI endpoints")),
+    tags((
+        name = "sheets-ai",
+        description = "Claude-backed analysis over spreadsheet data: predicting the rest of a column from examples, answering questions in natural language, proposing a pivot configuration, and surfacing per-cell insights. These endpoints return suggestions for the client to apply — none of them write to the sheet — and all need the server to have ANTHROPIC_API_KEY configured."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct SheetsAIApiDoc;

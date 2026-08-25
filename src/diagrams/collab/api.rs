@@ -57,6 +57,10 @@ fn parse_message(data: &[u8]) -> Option<ParsedMessage> {
 
 // ── WebSocket handler ─────────────────────────────────────────────────────────
 
+/// Open the real-time collaboration socket for a diagram.
+///
+/// The same y-websocket CRDT protocol the document editor uses, so two people can move shapes
+/// at once. Authenticates from `?token=<jwt>` rather than a header.
 #[utoipa::path(
     get,
     path = "/api/v1/diagrams/{id}/ws",
@@ -245,6 +249,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(diagram_collab_ws),
-    tags((name = "diagrams-collab", description = "Diagrams real-time collaboration endpoints"))
+    tags((
+        name = "diagrams-collab",
+        description = "The real-time editing channel for diagrams — the same y-websocket CRDT protocol the document editor uses, so several people can move shapes on one canvas at once. Authenticates from a `token` query parameter on the handshake."
+    ))
 )]
 pub struct DiagramsCollabApiDoc;

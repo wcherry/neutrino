@@ -48,7 +48,19 @@ function BlockEditor({
       const selection = window.getSelection();
       if (!container || !selection) return;
       const range = document.createRange();
-      range.selectNodeContents(container);
+      // From the first block's content to the last block's, rather than the
+      // whole container: each row also holds a drag handle and a bullet/number
+      // prefix, and although both are `user-select: none`, a range that crosses
+      // them still serialises their empty boxes as line breaks — so copying a
+      // whole note pasted with a blank line in front of it.
+      const wrappers = container.querySelectorAll<HTMLElement>('[data-block-id]');
+      const last = wrappers[wrappers.length - 1];
+      if (last) {
+        range.setStart(wrappers[0], 0);
+        range.setEnd(last, last.childNodes.length);
+      } else {
+        range.selectNodeContents(container);
+      }
       selection.removeAllRanges();
       selection.addRange(range);
     },

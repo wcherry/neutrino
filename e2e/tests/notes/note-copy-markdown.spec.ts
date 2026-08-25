@@ -1,5 +1,7 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { createNoteViaApi } from '../../fixtures/notes';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -20,18 +22,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
-}
-
-async function createNoteViaApi(request: APIRequestContext, page: Page, title: string): Promise<string> {
-  const token = await page.evaluate(() => localStorage.getItem('access_token'));
-  if (!token) throw new Error('access_token not found in localStorage');
-  const res = await request.post(`${BASE_URL}/api/v1/notes`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
-  });
-  expect(res.ok(), `create note failed: ${res.status()} ${await res.text()}`).toBeTruthy();
-  const data = (await res.json()) as { id: string };
-  return data.id;
+  await setUpEncryption(page);
 }
 
 /**
@@ -76,11 +67,13 @@ test.describe('Notes — copying a multi-block selection writes Markdown', () =>
 
     // Confirm the bullets actually auto-converted (sanity check before the
     // real assertion — a raw "- " literal in the markdown would otherwise
-    // look identical to a real bullet).
-    await expect(page.locator('[class*="blockPrefix"]').first()).toBeVisible({ timeout: 5_000 });
+    // look identical to a real bullet). The bullet glyph, not the prefix
+    // column: every block has one of those, paragraphs included, so the
+    // original check passed whether or not anything had converted.
+    await expect(page.locator('[class*="prefixBullet"]')).toHaveCount(2, { timeout: 5_000 });
 
-    await page.keyboard.press('Control+a');
-    await page.keyboard.press('Control+c');
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+c');
     await page.waitForTimeout(200);
 
     const clipboard = await page.evaluate(() => navigator.clipboard.readText());
@@ -107,8 +100,8 @@ test.describe('Notes — copying a multi-block selection writes Markdown', () =>
     await block1.fill('Just one plain paragraph');
     await block1.press('End');
 
-    await page.keyboard.press('Control+a');
-    await page.keyboard.press('Control+c');
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+c');
     await page.waitForTimeout(200);
 
     // Native copy of a single block's own textarea selection — its exact

@@ -25,6 +25,10 @@ struct UpdateFlagsRequest {
     auto_update: Option<bool>,
 }
 
+/// Register a companion service with the server. Internal.
+///
+/// A sidecar posts its name, endpoint, version and health-check URL on startup; re-registering
+/// the same name refreshes the entry rather than duplicating it.
 #[utoipa::path(
     post,
     path = "/api/v1/internal/services/register",
@@ -62,6 +66,10 @@ async fn register_service(
     Ok(HttpResponse::Ok().json(info))
 }
 
+/// List every registered companion service. Internal.
+///
+/// Returns each service's endpoint, version, health-check URL and its enabled and auto-update
+/// flags.
 #[utoipa::path(
     get,
     path = "/api/v1/internal/services",
@@ -78,6 +86,9 @@ async fn list_services(state: web::Data<ServiceRegistryState>) -> Result<HttpRes
     Ok(HttpResponse::Ok().json(services))
 }
 
+/// Turn a registered service on or off, or change its auto-update flag. Internal.
+///
+/// Patches only the flags supplied; the registration itself is left alone.
 #[utoipa::path(
     patch,
     path = "/api/v1/internal/services/{name}",
@@ -117,6 +128,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(register_service, list_services, update_service_flags),
     components(schemas(RegisterRequest, UpdateFlagsRequest, ServiceInfo)),
-    tags((name = "drive-service-registry", description = "Drive service registry endpoints"))
+    tags((
+        name = "drive-service-registry",
+        description = "An in-process registry of companion services running alongside the server. A sidecar registers its endpoint, version and health-check URL on startup and can be enabled, disabled or set to auto-update. These routes are internal — meant for services on the same host, not for browser clients."
+    ))
 )]
 pub struct ServiceRegistryApiDoc;

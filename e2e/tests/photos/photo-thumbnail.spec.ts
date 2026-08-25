@@ -8,6 +8,7 @@
  */
 
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption, waitForKeyring } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
@@ -30,6 +31,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 async function getAuthToken(page: Page): Promise<string> {
@@ -84,11 +86,7 @@ test.describe('Photo thumbnail generation', () => {
     const userId = await getUserId(request, token);
 
     // Wait for the E2EE keypair so the upload uses the encrypted path.
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     await page.goto('/photos');
     await expect(page.getByRole('button', { name: 'User menu' })).toBeVisible({ timeout: 15_000 });

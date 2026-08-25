@@ -7,6 +7,10 @@ pub struct SecurityApiState {
     pub service: Arc<SecurityService>,
 }
 
+/// List detected ransomware events. Admin only.
+///
+/// Each event records the user, when the pattern tripped, how many files were involved, and
+/// whether an admin has reviewed it.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/security/ransomware/events",
@@ -25,6 +29,9 @@ pub async fn list_ransomware_events(
     Ok(web::Json(result))
 }
 
+/// Mark a ransomware event as reviewed. Admin only.
+///
+/// Stamps the event with the admin who resolved it and when, which takes it off the open list.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/security/ransomware/events/{id}/resolve",
@@ -48,6 +55,9 @@ pub async fn resolve_ransomware_event(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// List the configured SIEM forwarding targets. Admin only.
+///
+/// One entry per endpoint audit events are shipped to, with its wire format and active flag.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/security/siem",
@@ -66,6 +76,9 @@ pub async fn list_siem_configs(
     Ok(web::Json(result))
 }
 
+/// Add a SIEM forwarding target. Admin only.
+///
+/// Stores the endpoint URL, its optional API key, and the format events are serialized in.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/security/siem",
@@ -87,6 +100,9 @@ pub async fn create_siem_config(
     Ok(web::Json(result))
 }
 
+/// Remove a SIEM forwarding target. Admin only.
+///
+/// Exports stop going to that endpoint; audit events themselves are still recorded locally.
 #[utoipa::path(
     delete,
     path = "/api/v1/admin/security/siem/{id}",
@@ -108,6 +124,10 @@ pub async fn delete_siem_config(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Ship the latest audit events to every active SIEM target now. Admin only.
+///
+/// Pushes the most recent file-activity entries instead of waiting for the scheduled export,
+/// and returns how many events were sent. A no-op when no target is active.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/security/siem/export",
@@ -126,6 +146,10 @@ pub async fn trigger_siem_export(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "exported": count })))
 }
 
+/// Register a customer-managed encryption key. Admin only.
+///
+/// Currently a stub: it validates and echoes back the key ARN and provider without registering
+/// anything with a KMS or re-wrapping existing data keys.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/security/cmek",
@@ -178,7 +202,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         CmekKeyRequest,
         CmekKeyResponse,
     )),
-    tags((name = "drive-security", description = "Drive security endpoints")),
+    tags((
+        name = "drive-security",
+        description = "Admin-only security operations: reviewing ransomware events raised when an upload pattern looks like mass encryption, forwarding the audit log to external SIEM endpoints on a schedule or on demand, and registering a customer-managed encryption key (currently a stub)."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct SecurityApiDoc;

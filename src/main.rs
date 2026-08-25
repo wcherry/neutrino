@@ -975,7 +975,28 @@ async fn main() -> std::io::Result<()> {
     // ── Combined OpenAPI spec ─────────────────────────────────────────────────
 
     #[derive(OpenApi)]
-    #[openapi(info(title = "Neutrino API", version = "0.1.0"), tags())]
+    #[openapi(
+        info(
+            title = "Neutrino API",
+            version = "0.1.0",
+            description = "The HTTP API of a self-hosted, end-to-end encrypted productivity suite. \
+One Rust binary serves everything below and the exported frontend; a second binary runs the \
+background jobs under the `drive-jobs` tag.\n\n\
+Almost every app — Notes, Docs, Sheets, Slides, Diagrams, Drawings and Photos — stores its content as \
+an ordinary Drive file, so uploads, downloads, sharing, trash and quota are handled once under the \
+`storage`, `filesystem`, `permissions` and `sharing` tags rather than per app. What each app-specific \
+tag adds is only what is particular to it.\n\n\
+User content is encrypted in the browser before it is uploaded. Bodies that cross this API are \
+therefore ciphertext the server cannot read: per-file data keys live under `drive-encryption`, the \
+identity keys that open them under `auth-keyvault` and `drive-key-files`, and search runs client-side \
+against an encrypted index synced through `search`.\n\n\
+Requests authenticate with a bearer access token from `POST /api/v1/auth/login`. WebSocket endpoints \
+cannot send headers, so they take the same token as a `token` query parameter. Endpoints marked \
+admin-only require an account with the admin role; the routes under `/api/v1/internal` and the \
+`drive-jobs` worker routes authenticate service-to-service and are not meant for browser clients."
+        ),
+        tags()
+    )]
     struct NeutrinoApiDoc;
 
     let openapi = {
@@ -1015,6 +1036,7 @@ async fn main() -> std::io::Result<()> {
         doc.merge(photos::persons::api::PersonsApiDoc::openapi());
         doc.merge(photos::photos::api::PhotosApiDoc::openapi());
         doc.merge(photos::suggestions::api::SuggestionsApiDoc::openapi());
+        doc.merge(photos::ai::api::PhotosAIApiDoc::openapi());
         doc.merge(sheets::named_ranges::api::NamedRangesApiDoc::openapi());
         doc.merge(sheets::ai::api::SheetsAIApiDoc::openapi());
         doc.merge(sheets::presence::api::SheetsPresenceApiDoc::openapi());

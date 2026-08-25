@@ -28,6 +28,7 @@
  */
 
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -54,6 +55,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 async function getAuthToken(page: Page): Promise<string> {

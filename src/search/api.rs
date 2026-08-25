@@ -114,7 +114,10 @@ pub async fn upload_snapshot(
     }
 }
 
-/// Discard the stored snapshot. Local indexes are untouched.
+/// Discard the stored search snapshot.
+///
+/// Removes the server's copy only — the IndexedDB index in each browser is untouched, and the
+/// next upload starts the version counter over.
 #[utoipa::path(
     delete,
     path = "/api/v1/search/index",
@@ -142,7 +145,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(get_snapshot_meta, download_snapshot, upload_snapshot, delete_snapshot),
     components(schemas(SnapshotMetaResponse)),
-    tags((name = "search", description = "Encrypted client search index sync")),
+    tags((
+        name = "search",
+        description = "Sync for the client-side search index. Because file content is encrypted, nothing is searched server-side: each browser builds its own IndexedDB index and shares it with the user's other devices as an encrypted snapshot stored here. The server keeps an opaque blob and a version number, and never holds a key that opens it; the version is the concurrency token that stops a device with a partial index overwriting a fuller one."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct SearchApiDoc;

@@ -20,6 +20,9 @@ pub struct SlidesApiState {
     pub slides_service: Arc<SlidesService>,
 }
 
+/// List the caller's presentation themes.
+///
+/// Slide themes are per user and separate from the app-shell themes under `/api/v1/themes`.
 #[utoipa::path(
     get,
     path = "/api/v1/slides/themes",
@@ -38,6 +41,10 @@ pub async fn list_themes(
     Ok(web::Json(result))
 }
 
+/// Create a presentation theme.
+///
+/// Takes a name plus primary, background, text and accent colours, each validated as a hex
+/// colour literal.
 #[utoipa::path(
     post,
     path = "/api/v1/slides/themes",
@@ -61,6 +68,10 @@ pub async fn create_theme(
     Ok(HttpResponse::Created().json(theme))
 }
 
+/// Update a presentation theme the caller owns.
+///
+/// Patches the supplied fields; colours are validated the same way as on create. Another user's
+/// theme is a 404.
 #[utoipa::path(
     patch,
     path = "/api/v1/slides/themes/{id}",
@@ -87,6 +98,9 @@ pub async fn update_theme(
     Ok(web::Json(theme))
 }
 
+/// Delete a presentation theme the caller owns.
+///
+/// Presentations already using it keep the colours baked into their own content.
 #[utoipa::path(
     delete,
     path = "/api/v1/slides/themes/{id}",
@@ -125,7 +139,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         ThemeResponse,
         ListThemesResponse,
     )),
-    tags((name = "slides", description = "Presentation themes")),
+    tags((
+        name = "slides",
+        description = "Colour themes for presentations — a name plus primary, background, text and accent colours, owned by one user and validated as hex literals. Slide content itself is a Drive file, so this covers only the reusable look applied to it, and is separate from the app-shell themes under /api/v1/themes."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct SlidesApiDoc;

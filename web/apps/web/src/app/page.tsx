@@ -23,6 +23,17 @@ function IconLock() {
   );
 }
 
+function IconKey() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="7.5" cy="15.5" r="4.5"/>
+      <path d="m10.7 12.3 8.8-8.8"/>
+      <path d="m17 6 2.5 2.5"/>
+      <path d="m14.5 8.5 2.5 2.5"/>
+    </svg>
+  );
+}
+
 function IconUsers() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -265,15 +276,21 @@ const showcaseApps: ShowcaseApp[] = [
 const features = [
   {
     icon: <IconLock />,
-    title: 'End-to-end encrypted',
+    title: 'Encrypted, with no way around it',
     description:
-      'Documents, sheets, slides and notes are encrypted in the browser. Your key never leaves your device, so a server operator — including you — only ever sees ciphertext.',
+      'Every write to your drive is encrypted in the browser first — documents, notes, uploads, photos and imports alike. There is no plaintext path left to fall back to, so a server operator, including you, only ever sees ciphertext.',
+  },
+  {
+    icon: <IconKey />,
+    title: 'Keys you actually control',
+    description:
+      'No passphrase to forget: your keyring unlocks with the device. Add a phone by scanning a PIN-protected code, and rotate your identity whenever you like — retired keys are archived so older files keep opening.',
   },
   {
     icon: <IconUsers />,
     title: 'Real-time collaboration',
     description:
-      'Docs, Sheets and Slides carry live presence and co-editing. Notes sync between your own devices the moment a save lands.',
+      'Docs, Sheets, Slides and Diagrams carry live presence and co-editing. Notes sync between your own devices the moment a save lands.',
   },
   {
     icon: <IconSearch />,
@@ -291,13 +308,13 @@ const features = [
     icon: <IconShare />,
     title: 'Sharing and permissions',
     description:
-      'Share links with roles and expiry, shared drives for teams, access requests, comments and rights management on sensitive files.',
+      'Share links with roles and expiry, shared drives for teams, access requests, comments and an activity trail on every file.',
   },
   {
     icon: <IconImport />,
     title: 'Bring your data with you',
     description:
-      'Import a Google Takeout archive straight from the browser — Keep becomes Notes, Drive documents and spreadsheets become Docs and Sheets, Google Photos becomes Photos, folder tree intact.',
+      'Import a Google Takeout archive straight from the browser — Keep becomes Notes, Drive documents and spreadsheets become Docs and Sheets, Google Photos becomes Photos. Folder tree intact, and every file keeps the dates it already had.',
   },
   {
     icon: <IconZap />,
@@ -338,7 +355,7 @@ const platforms = [
     description:
       'A native menu-bar app with a Finder File Provider extension, so your drive is a folder like any other and syncs in the background.',
     shape: 'wide' as const,
-    image: { src: '/screenshots/desktop-macos.png', alt: 'Neutrino Drive for macOS', hasImage: false },
+    image: { src: '/screenshots/desktop-macos.png', alt: 'Neutrino Drive for macOS', hasImage: true },
   },
   {
     icon: <IconSmartphone />,
@@ -356,7 +373,7 @@ const platforms = [
     status: 'progress' as const,
     statusLabel: 'In development',
     description:
-      'The mobile file browser: offline files, search and settings are done; the browser, viewers and transfers are in progress.',
+      'The mobile file browser — browsing, uploads, viewers, version history, offline files, search and photo sync, with the key imported by scanning the code from the web app. In testing ahead of release.',
     shape: 'tall' as const,
     image: { src: '/screenshots/ios-drive.png', alt: 'Neutrino Drive for iOS', hasImage: false },
   },
@@ -374,11 +391,12 @@ const selfHostBenefits = [
 const roadmapShipped = [
   { label: 'Accounts & security', desc: 'Auth, sessions, TOTP two-factor, per-user quotas, admin panel' },
   { label: 'Drive', desc: 'Streaming upload and download, folders, trash, stars, tags, shortcuts, bulk operations' },
-  { label: 'Sharing', desc: 'Share links with roles, shared drives, access requests, comments, rights management' },
+  { label: 'Sharing', desc: 'Share links with roles, shared drives, access requests, comments, per-file activity trail' },
   { label: 'Office suite', desc: 'Docs, Sheets and Slides with real-time collaboration and Office file round-trips' },
   { label: 'Notes, Photos & Calendar', desc: 'Block notes, photo library with albums and people, calendar with reminders and tasks' },
   { label: 'Diagrams & Drawings', desc: 'Flowchart, UML, BPMN, ERD and cloud shape libraries, plus a freehand canvas' },
-  { label: 'End-to-end encryption', desc: 'Client-side keys across Docs, Sheets, Slides and Notes, with key rotation' },
+  { label: 'End-to-end encryption', desc: 'Every write to Drive encrypted in the browser, with no plaintext path left behind' },
+  { label: 'Key management', desc: 'Device-wrapped key vault with no passphrase prompt, QR device enrolment, and rotation that archives retired keys' },
   { label: 'Search & offline', desc: 'Local encrypted index across every app, offline editing and a cross-device snapshot' },
   { label: 'Google Takeout import', desc: 'Keep, Drive documents and spreadsheets, and Google Photos — entirely in the browser' },
   { label: 'macOS desktop client', desc: 'Menu-bar app with a File Provider extension and a background sync agent' },
@@ -387,7 +405,8 @@ const roadmapShipped = [
 
 const roadmapNext = [
   { label: 'iOS — Drive', desc: 'Full mobile file browser with viewers, uploads and downloads', status: 'In development' },
-  { label: 'iOS — Sheets, Slides & Photos', desc: 'The rest of the suite on iPhone and iPad', status: 'Planned' },
+  { label: 'iOS — Sheets', desc: 'The spreadsheet editor on iPhone and iPad — cell editing and formatting are in', status: 'In development' },
+  { label: 'iOS — Slides & Photos', desc: 'The rest of the suite on iPhone and iPad', status: 'Planned' },
   { label: 'Android apps', desc: 'Drive, Notes and Docs for Android, sharing the same encryption model', status: 'Planned' },
   { label: 'Windows client', desc: 'Native sync client with Explorer integration', status: 'Planned' },
   { label: 'Linux client', desc: 'Native sync client with a virtual filesystem mount', status: 'Planned' },
@@ -516,6 +535,10 @@ export default function LandingPage() {
             </p>
           </div>
           <AppShowcase apps={showcaseApps} />
+          <p className={styles.platformFootnote}>
+            Diagrams and Drawing round out the nine — flowchart, UML, BPMN, ERD and cloud
+            shape libraries, plus a freehand canvas, both saving into the same drive.
+          </p>
         </div>
       </section>
 
@@ -641,7 +664,7 @@ export default function LandingPage() {
                   <span className={styles.dot} style={{ background: '#28c840' }} />
                   <span className={styles.codeWindowTitle}>Terminal</span>
                 </div>
-                <pre className={styles.code}><code>{`# One container — API, web app and worker
+                <pre className={styles.code}><code>{`# One container — API and web app on one port
 docker run -d --name neutrino -p 8080:8080 \\
   -e JWT_SECRET="$(openssl rand -hex 32)" \\
   -e WORKER_SECRET="$(openssl rand -hex 32)" \\

@@ -219,7 +219,7 @@ export function DiagramEditor() {
 
   // ── Load diagram from server ───────────────────────────────────────────────
 
-  const { isLoading } = useQuery({
+  const { isLoading: contentLoading } = useQuery({
     queryKey: ['diagram', diagramId, dekResolved],
     queryFn: async () => {
       const diagram = await diagramsApi.getDiagram(diagramId);
@@ -276,6 +276,13 @@ export function DiagramEditor() {
     refetchOnWindowFocus: false,
     retry: false,
   });
+
+  // The read above is gated on `dekResolved`, and React Query reports a query
+  // it has not started as "not loading" — so without counting that the canvas
+  // was interactive before the diagram it is about to show had been read, and
+  // `editor.setDocument` then replaced whatever had been drawn in the meantime.
+  // A page added in that window simply vanished.
+  const isLoading = contentLoading || (!!diagramId && !dekResolved);
 
   // ── Save / autosave ────────────────────────────────────────────────────────
 

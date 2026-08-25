@@ -19,6 +19,11 @@ pub struct DocsApiState {
     pub docs_service: Arc<DocsService>,
 }
 
+/// Fetch a document's page setup.
+///
+/// Margins, orientation and page size — what the editor lays the page out from and what a PDF
+/// export prints to. A document that has never been customised gets the defaults rather than a
+/// 404.
 #[utoipa::path(
     get,
     path = "/api/v1/docs/{id}/page-setup",
@@ -42,6 +47,10 @@ pub async fn get_page_setup(
     Ok(web::Json(setup))
 }
 
+/// Save a document's page setup.
+///
+/// Replaces the whole setup — margins, orientation and page size are all sent together.
+/// Requires edit access.
 #[utoipa::path(
     put,
     path = "/api/v1/docs/{id}/page-setup",
@@ -70,6 +79,10 @@ pub async fn update_page_setup(
     Ok(web::Json(setup))
 }
 
+/// Export a document as plain text.
+///
+/// Flattens the stored rich-text tree to text and returns it with word and character counts,
+/// which is what the word-count readout and plain-text export both use.
 #[utoipa::path(
     get,
     path = "/api/v1/docs/{id}/export/text",
@@ -105,7 +118,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(get_page_setup, update_page_setup, export_text),
     components(schemas(PageSetup, ExportTextResponse)),
-    tags((name = "docs", description = "Native document editor")),
+    tags((
+        name = "docs",
+        description = "The document-level settings and exports that sit beside a Doc's content. The content itself is a Drive file edited over the collaboration socket, so what lives here is page setup and the plain-text projection used for word counts and text export."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct DocsApiDoc;

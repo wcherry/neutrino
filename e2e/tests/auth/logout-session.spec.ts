@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -32,6 +33,7 @@ async function loginViaUi(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 test.describe('Session persistence', () => {

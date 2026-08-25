@@ -2,14 +2,20 @@
  * E2EE encryption tests.
  *
  * Validates two properties:
- *   1. After login, the Curve25519 keypair is stored in localStorage under
- *      `neutrino_e2e_{userId}` and contains a distinct secretKey (private key).
+ *   1. Setting up encryption stores a Curve25519 keyring in this device's key
+ *      store, sealed, with a secretKey distinct from the published publicKey.
  *   2. Files uploaded via the UI are encrypted: the server holds an opaque
  *      encrypted DEK for the file, and the raw stored bytes are not the
  *      original plaintext.
  */
 
 import { test, expect } from '../../fixtures/base';
+import {
+  setUpEncryption,
+  waitForKeyring,
+  readKeystoreRecord,
+  activeKeyPair,
+} from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -74,6 +80,7 @@ async function registerAndLogin(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 
   return { email, password };
 }
@@ -145,9 +152,9 @@ async function findFileId(
 // ---------------------------------------------------------------------------
 
 test.describe('E2EE key lifecycle and file encryption', () => {
-  // ── 1. Keypair stored in localStorage ─────────────────────────────────────
+  // ── 1. Keyring stored on the device ───────────────────────────────────────
 
-  test('neutrino_e2e_{userId} is written to localStorage after login', async ({
+  test('setting up encryption writes a keyring to this device’s key store', async ({
     page,
     request,
   }) => {
@@ -155,25 +162,25 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     const token = await getAuthToken(page);
     const userId = await getUserId(request, token);
 
-    // ensureE2EKeys fires async after login — wait until the key appears.
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
-    const raw = await page.evaluate(
-      (key) => localStorage.getItem(key),
-      `neutrino_e2e_${userId}`,
-    );
-    expect(raw, 'keypair entry must exist in localStorage').not.toBeNull();
+    const record = await readKeystoreRecord(page, userId);
+    expect(record, 'a keystore record must exist for the signed-in user').not.toBeNull();
+    expect(record!.userId, 'the record must be keyed by user id').toBe(userId);
+    expect(
+      record!.method,
+      'a keyring created in the browser is device-wrapped',
+    ).toBe('device');
 
-    const stored = JSON.parse(raw!) as { publicKey: string; secretKey: string };
-    expect(typeof stored.publicKey, 'publicKey must be a string').toBe('string');
-    expect(typeof stored.secretKey, 'secretKey must be a string').toBe('string');
+    // What reaches disk is a sealed blob, never the serialised keyring: a
+    // record whose secret keys could be read straight out of it would defeat
+    // the point of wrapping it at all.
+    expect(typeof record!.blob, 'the stored keyring must be a sealed blob').toBe('string');
+    expect(record!.blob.length, 'the sealed blob must be non-empty').toBeGreaterThan(0);
+    expect(record!.blob, 'the stored blob must not be readable JSON').not.toContain('"entries"');
   });
 
-  test('stored entry contains a secretKey (private key) distinct from publicKey', async ({
+  test('the stored keyring holds a secretKey distinct from its published publicKey', async ({
     page,
     request,
   }) => {
@@ -181,25 +188,29 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     const token = await getAuthToken(page);
     const userId = await getUserId(request, token);
 
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
+    const { publicKey, secretKey } = await activeKeyPair(page, userId);
 
-    const raw = await page.evaluate(
-      (key) => localStorage.getItem(key),
-      `neutrino_e2e_${userId}`,
-    );
-    const stored = JSON.parse(raw!) as { publicKey: string; secretKey: string };
+    // Both keys are base64url of 32 bytes — ceil(32 * 4/3) = 43 characters
+    // without padding.
+    expect(publicKey.length, 'publicKey should be 43 chars (32-byte Curve25519)').toBe(43);
+    expect(secretKey.length, 'secretKey should be 43 chars (32-byte Curve25519)').toBe(43);
+    expect(secretKey, 'secretKey must differ from publicKey').not.toBe(publicKey);
 
-    // Both keys should be non-empty base64url strings of 43 chars
-    // (ceil(32 bytes * 4/3) without padding = 43 characters)
-    expect(stored.publicKey.length, 'publicKey should be 43 chars (32-byte Curve25519)').toBe(43);
-    expect(stored.secretKey.length, 'secretKey should be 43 chars (32-byte Curve25519)').toBe(43);
-
-    // The private key must be distinct from the public key
-    expect(stored.secretKey, 'secretKey must differ from publicKey').not.toBe(stored.publicKey);
+    // The public half must reach the server's directory, or nothing can seal a
+    // DEK to this user — including their own editors, on their first save.
+    const keyRes = await request.get(`${BASE_URL}/api/v1/auth/users/${userId}/public-key`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(
+      keyRes.ok(),
+      `the active public key must be published (got ${keyRes.status()})`,
+    ).toBeTruthy();
+    const published = await keyRes.json() as { publicKey: string };
+    expect(
+      published.publicKey,
+      'the published key must be the active half of the stored keyring',
+    ).toBe(publicKey);
   });
 
   // ── 2. Uploaded files are encrypted ───────────────────────────────────────
@@ -213,11 +224,7 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     const userId = await getUserId(request, token);
 
     // Wait for the keypair to be ready so the upload uses the E2EE path.
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     await page.goto('/drive');
     const fileName = uniqueFilename();
@@ -251,11 +258,7 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     const token = await getAuthToken(page);
     const userId = await getUserId(request, token);
 
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     await page.goto('/drive');
     const fileName = uniqueFilename();
@@ -296,11 +299,7 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     const userId = await getUserId(request, token);
 
     // Wait for keypair so the upload uses the E2EE path.
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     await page.goto('/drive');
     const fileName = uniqueFilename();
@@ -342,11 +341,7 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     const token = await getAuthToken(page);
     const userId = await getUserId(request, token);
 
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
 
     await page.goto('/drive');
     const fileName = uniqueFilename();
@@ -404,13 +399,7 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     ).toBe(true);
 
     // ── E2EE round-trip: client can decrypt server bytes back to plaintext ───
-    const storedKeyPairRaw = await page.evaluate(
-      (currentUserId) => localStorage.getItem(`neutrino_e2e_${currentUserId}`),
-      userId,
-    );
-    expect(storedKeyPairRaw, 'client keypair must remain available for decryption').not.toBeNull();
-
-    const storedKeyPair = JSON.parse(storedKeyPairRaw!) as { publicKey: string; secretKey: string };
+    const storedKeyPair = await activeKeyPair(page, userId);
     await initSodium();
 
     const keyRes = await request.get(`${BASE_URL}/api/v1/drive/files/${fileId}/key`, {
@@ -441,11 +430,7 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     const ownerToken = await getAuthToken(page);
     const ownerId = await getUserId(request, ownerToken);
 
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${ownerId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, ownerId);
 
     await page.goto('/drive');
     const fileName = uniqueFilename();
@@ -492,11 +477,7 @@ test.describe('E2EE for sheets, docs, slides, and photos', () => {
     await registerAndLogin(request, page);
     const token = await getAuthToken(page);
     const userId = await getUserId(request, token);
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 10_000 },
-    );
+    await waitForKeyring(page, userId);
     return { token, userId };
   }
 

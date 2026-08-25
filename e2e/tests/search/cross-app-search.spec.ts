@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption, hasAnyKeyring } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
@@ -20,27 +21,20 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 /**
  * Get the page ready to hold seeded index entries.
  *
- * Waits for `ensureE2EKeys` to store the keypair, since the search page only
- * builds its engine when one exists. Then turns off the background index sync
+ * Waits for the keyring to reach this device's key store, since the search page
+ * only builds its engine when one exists. Then turns off the background index sync
  * through the same localStorage flag Settings → Advanced writes: the sync
  * reconciles the index against the server's listing and drops entries for
  * anything it does not find, which is every document these tests seed.
  */
 async function prepareForSeeding(page: Page): Promise<void> {
-  await page.waitForFunction(
-    () => {
-      for (let i = 0; i < localStorage.length; i++) {
-        if (localStorage.key(i)?.startsWith('neutrino_e2e_')) return true;
-      }
-      return false;
-    },
-    { timeout: 15_000 },
-  );
+  await expect.poll(() => hasAnyKeyring(page), { timeout: 15_000 }).toBe(true);
   await page.evaluate(() => localStorage.setItem('neutrino:search:syncDisabled', 'true'));
 }
 

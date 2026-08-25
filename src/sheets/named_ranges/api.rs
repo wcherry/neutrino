@@ -11,6 +11,10 @@ pub struct NamedRangesApiState {
     pub service: Arc<NamedRangesService>,
 }
 
+/// Name a rectangular range of cells in a spreadsheet.
+///
+/// Bounds are 0-based and inclusive, and `sheetId` picks the tab (first tab by default). The
+/// GUID returned is what an embed elsewhere points at, so the embed keeps working when rows move.
 #[utoipa::path(
     post,
     path = "/api/v1/sheets/{id}/named-ranges",
@@ -40,6 +44,11 @@ pub async fn create_named_range(
     Ok(HttpResponse::Created().json(result))
 }
 
+/// Read the current cell values behind a named range.
+///
+/// What a live embed in a doc or slide polls. Authentication is optional — the named range GUID
+/// is itself the capability, so a public embed works without a token, while a bearer token, if
+/// present, is honoured for private sheets.
 #[utoipa::path(
     get,
     path = "/api/v1/sheets/{id}/embed/{named_range_id}",
@@ -100,7 +109,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         NamedRangeResponse,
         SheetEmbedResponse,
     )),
-    tags((name = "named_ranges", description = "Named range management for live embeds")),
+    tags((
+        name = "named_ranges",
+        description = "Named rectangular ranges within a spreadsheet, and the read endpoint that turns one into a live embed elsewhere. Naming a range gives it a stable GUID that survives rows and columns moving, and that GUID doubles as the capability an embed presents — so an embedded range can be read without a session when the sheet allows it."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct NamedRangesApiDoc;

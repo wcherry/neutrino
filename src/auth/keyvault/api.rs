@@ -77,6 +77,10 @@ impl From<crate::auth::keyvault::model::UserKeyUnlock> for UnlockMethodResponse 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 /// Fetch the caller's wrapped identity key and every enrolled unlock method.
+///
+/// Returns the encrypted Curve25519 secret key together with one entry per unlock method, each
+/// carrying its own wrapped copy of the master key and the parameters needed to re-derive it. A
+/// device unlocks by picking a method it can satisfy and decrypting locally.
 #[utoipa::path(
     get,
     path = "/api/v1/auth/keyvault",
@@ -106,6 +110,9 @@ pub async fn get_vault(
 }
 
 /// Create or replace the caller's vault along with its unlock methods.
+///
+/// The request carries the whole set, not a delta, so the supplied unlock methods replace any
+/// existing ones. This is what runs at first setup and after a key rotation.
 #[utoipa::path(
     put,
     path = "/api/v1/auth/keyvault",
@@ -145,7 +152,10 @@ pub async fn put_vault(
     }))
 }
 
-/// Enrol an additional unlock method (a new passkey, say) against the vault.
+/// Enrol an additional unlock method against the vault.
+///
+/// Adds one method — a new passkey, say — without touching the others, so a second device can
+/// be given its own way in. The client wraps the master key to the new method before calling.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/keyvault/unlocks",
@@ -175,7 +185,10 @@ pub async fn add_unlock(
     Ok(web::Json(unlock.into()))
 }
 
-/// Revoke an unlock method. Refused if it is the last one.
+/// Revoke an unlock method.
+///
+/// Refused when it is the last one left, since removing it would lock the account out of its own
+/// identity key with no way back.
 #[utoipa::path(
     delete,
     path = "/api/v1/auth/keyvault/unlocks/{id}",
@@ -201,6 +214,9 @@ pub async fn remove_unlock(
 }
 
 /// Record that an unlock method was just used successfully.
+///
+/// Stamps `lastUsedAt` so settings can show which method a device actually unlocks with, and
+/// which have gone stale.
 #[utoipa::path(
     post,
     path = "/api/v1/auth/keyvault/unlocks/{id}/used",
@@ -238,7 +254,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         UnlockMethodResponse,
         VaultResponse
     )),
-    tags((name = "auth-keyvault", description = "Wrapped E2EE identity key storage")),
+    tags((
+        name = "auth-keyvault",
+        description = "Server-side storage for the caller's wrapped end-to-end encryption identity. The vault holds the Curve25519 secret key encrypted under a master key, plus one entry per enrolled unlock method (password, passkey or recovery code), each carrying its own copy of the master key and the parameters needed to re-derive it. The server only ever sees ciphertext and never the master key itself."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct KeyVaultApiDoc;

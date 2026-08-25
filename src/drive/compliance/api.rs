@@ -8,6 +8,9 @@ pub struct ComplianceApiState {
 }
 
 // Legal Holds
+/// List every legal hold. Admin only.
+///
+/// Returns both active and inactive holds with the custodians each one names.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/compliance/holds",
@@ -26,6 +29,10 @@ pub async fn list_holds(
     Ok(web::Json(result))
 }
 
+/// Create a legal hold. Admin only.
+///
+/// Names the matter and the custodians whose files it covers; the hold starts active and
+/// records the admin who opened it.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/compliance/holds",
@@ -49,6 +56,9 @@ pub async fn create_hold(
     Ok(web::Json(result))
 }
 
+/// Fetch one legal hold. Admin only.
+///
+/// Includes its custodian list and whether it is still active.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/compliance/holds/{id}",
@@ -70,6 +80,10 @@ pub async fn get_hold(
     Ok(web::Json(result))
 }
 
+/// Update a legal hold. Admin only.
+///
+/// Patches the name, description or custodian list, and setting `isActive: false` is how a hold
+/// is lifted without losing the record of it.
 #[utoipa::path(
     put,
     path = "/api/v1/admin/compliance/holds/{id}",
@@ -95,6 +109,9 @@ pub async fn update_hold(
     Ok(web::Json(result))
 }
 
+/// Delete a legal hold. Admin only.
+///
+/// Removes the hold itself; prefer deactivating it if the matter needs an audit trail.
 #[utoipa::path(
     delete,
     path = "/api/v1/admin/compliance/holds/{id}",
@@ -116,6 +133,10 @@ pub async fn delete_hold(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Place a specific file under a legal hold. Admin only.
+///
+/// Used to cover a file the hold's custodian rules do not already reach. Idempotent per
+/// file/hold pair.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/compliance/holds/{id}/files/{file_id}",
@@ -140,6 +161,9 @@ pub async fn apply_hold_to_file(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Release one file from a legal hold. Admin only.
+///
+/// Removes only that file's link — the hold and its other files are unaffected.
 #[utoipa::path(
     delete,
     path = "/api/v1/admin/compliance/holds/{id}/files/{file_id}",
@@ -165,6 +189,9 @@ pub async fn remove_hold_from_file(
 }
 
 // Retention Policies
+/// List every retention policy. Admin only.
+///
+/// Each policy carries its retention window and the mime type or user it is scoped to.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/compliance/retention",
@@ -183,6 +210,10 @@ pub async fn list_policies(
     Ok(web::Json(result))
 }
 
+/// Create a retention policy. Admin only.
+///
+/// A policy keeps matching files for `retainForDays` and can be narrowed to one mime type,
+/// one user, or both; leaving both unset makes it apply everywhere.
 #[utoipa::path(
     post,
     path = "/api/v1/admin/compliance/retention",
@@ -204,6 +235,9 @@ pub async fn create_policy(
     Ok(web::Json(result))
 }
 
+/// Fetch one retention policy. Admin only.
+///
+/// Returns its window, scope and whether it is active.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/compliance/retention/{id}",
@@ -225,6 +259,9 @@ pub async fn get_policy(
     Ok(web::Json(result))
 }
 
+/// Delete a retention policy. Admin only.
+///
+/// Files it was protecting fall back to whatever other policies still match them.
 #[utoipa::path(
     delete,
     path = "/api/v1/admin/compliance/retention/{id}",
@@ -285,7 +322,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         RetentionPolicyResponse,
         RetentionPolicyListResponse,
     )),
-    tags((name = "drive-compliance", description = "Drive compliance endpoints")),
+    tags((
+        name = "drive-compliance",
+        description = "Admin-only retention and legal-hold controls. A legal hold names custodians and can pin individual files so they survive normal deletion for the life of a matter; a retention policy keeps matching files for a fixed number of days, optionally scoped to one mime type or one user. Both are deactivatable so the record of them outlives their effect."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct ComplianceApiDoc;
