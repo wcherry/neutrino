@@ -81,6 +81,11 @@ async fn authenticate(
     Ok(user)
 }
 
+/// Open the per-file event socket.
+///
+/// Relays presence and "this file changed" signals to everyone with the file open, whatever its
+/// type, so a client can refresh without polling. Access is checked on connect and the token
+/// comes from `?token=<jwt>`.
 #[utoipa::path(
     get,
     path = "/api/v1/files/{id}/ws",
@@ -182,7 +187,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(file_events_ws),
-    tags((name = "file-events", description = "Generic cross-file-type \"this file changed\" signal relay"))
+    tags((
+        name = "file-events",
+        description = "A per-file WebSocket that relays presence and \"this file changed\" signals to everyone who has the file open, whatever its type. It carries signals rather than content, so a client knows to refetch without polling; access is checked on connect and the token arrives as a query parameter."
+    ))
 )]
 pub struct FileEventsApiDoc;
 

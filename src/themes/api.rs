@@ -18,6 +18,10 @@ pub struct ThemesApiState {
     pub service: Arc<CustomThemesService>,
 }
 
+/// List the themes visible to the caller.
+///
+/// Their own themes plus everyone else's public ones, each flagged with `isOwner` so the client
+/// knows which it may edit.
 #[utoipa::path(
     get,
     path = "/api/v1/themes",
@@ -37,6 +41,11 @@ pub async fn list_themes(
     Ok(web::Json(result))
 }
 
+/// Create a custom theme.
+///
+/// Takes a name, a colour scheme and a map of design tokens; `isPublic` decides whether other
+/// users see it in their list. Token keys must come from the canonical allowlist and values
+/// must be strict CSS colour literals, so a theme cannot smuggle in arbitrary CSS.
 #[utoipa::path(
     post,
     path = "/api/v1/themes",
@@ -59,6 +68,10 @@ pub async fn create_theme(
     Ok(HttpResponse::Created().json(theme))
 }
 
+/// Update a theme the caller owns.
+///
+/// Patches only the supplied fields. Someone else's theme returns 404 rather than 403, so the
+/// endpoint does not confirm that an unowned ID exists.
 #[utoipa::path(
     patch,
     path = "/api/v1/themes/{id}",
@@ -87,6 +100,9 @@ pub async fn update_theme(
     Ok(web::Json(theme))
 }
 
+/// Delete a theme the caller owns.
+///
+/// Same ownership rule as the update endpoint: a theme the caller does not own is a 404.
 #[utoipa::path(
     delete,
     path = "/api/v1/themes/{id}",
@@ -121,7 +137,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(list_themes, create_theme, update_theme, delete_theme),
     components(schemas(CreateThemeRequest, UpdateThemeRequest, ThemeResponse, ListThemesResponse)),
-    tags((name = "themes", description = "User-owned custom themes — own+public list, owner-only mutate")),
+    tags((
+        name = "themes",
+        description = "User-authored colour themes for the app shell. A theme is a name, a colour scheme and a map of design tokens, and can be kept private or published for other users to pick up. Everyone sees their own themes plus every public one, but only the owner can change or delete a theme; token values are validated against a strict allowlist so a shared theme cannot carry arbitrary CSS."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct ThemesApiDoc;

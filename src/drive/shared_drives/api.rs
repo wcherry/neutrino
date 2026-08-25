@@ -7,6 +7,9 @@ pub struct SharedDrivesApiState {
     pub service: Arc<SharedDrivesService>,
 }
 
+/// List the shared drives the caller belongs to.
+///
+/// Each entry carries the drive's member count and the role the caller holds in it.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/shared-drives",
@@ -33,7 +36,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(list_drives),
     components(schemas(SharedDriveResponse, SharedDriveListResponse)),
-    tags((name = "drive-shared-drives", description = "Shared drives endpoints")),
+    tags((
+        name = "drive-shared-drives",
+        description = "Team-owned drives whose contents belong to the drive rather than to an individual, so membership rather than per-file sharing decides who can see what. Currently read-only over HTTP: this lists the drives the caller is a member of, with each one's member count and the caller's role."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct SharedDrivesApiDoc;

@@ -14,6 +14,10 @@ pub struct RemindersApiState {
     pub reminders_service: Arc<RemindersService>,
 }
 
+/// List the caller's reminders.
+///
+/// Pass `eventId` to return only the reminders attached to one event; without it every
+/// reminder the user owns is returned.
 #[utoipa::path(
     get,
     path = "/api/v1/reminders",
@@ -38,6 +42,10 @@ pub async fn list_reminders(
     Ok(web::Json(result))
 }
 
+/// Create a reminder.
+///
+/// Takes a title and a due time, plus an optional recurrence rule and linked event. The
+/// reminder engine picks it up in the background and notifies the user when it comes due.
 #[utoipa::path(
     post,
     path = "/api/v1/reminders",
@@ -61,6 +69,9 @@ pub async fn create_reminder(
     Ok(HttpResponse::Created().json(reminder))
 }
 
+/// Fetch a single reminder by ID.
+///
+/// Returns 404 when the reminder does not exist or belongs to another user.
 #[utoipa::path(
     get,
     path = "/api/v1/reminders/{id}",
@@ -84,6 +95,10 @@ pub async fn get_reminder(
     Ok(web::Json(reminder))
 }
 
+/// Update a reminder.
+///
+/// Patches only the supplied fields, so this is also how a reminder is marked completed or
+/// reopened. Clearing `notified_at` lets the reminder engine fire it again.
 #[utoipa::path(
     patch,
     path = "/api/v1/reminders/{id}",
@@ -110,6 +125,10 @@ pub async fn update_reminder(
     Ok(web::Json(reminder))
 }
 
+/// Delete a reminder.
+///
+/// Removes the record so the reminder engine will not fire it. Returns 404 when the
+/// reminder belongs to another user.
 #[utoipa::path(
     delete,
     path = "/api/v1/reminders/{id}",
@@ -150,7 +169,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         ReminderResponse,
         ListRemindersResponse,
     )),
-    tags((name = "reminders", description = "Reminders and tasks")),
+    tags((
+        name = "reminders",
+        description = "Standalone, optionally recurring reminders that can be linked to a calendar event. The background reminder engine polls for reminders that have come due and notifies the owner, recording when it did so."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct RemindersApiDoc;

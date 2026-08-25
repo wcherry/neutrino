@@ -36,6 +36,10 @@ pub struct AutoFormatRequest {
 
 // ── Endpoints ────────────────────────────────────────────────────────────────
 
+/// Complete or tighten the text on a slide.
+///
+/// Sends the slide's text to Claude and returns an improved version. Requires the server to have
+/// `ANTHROPIC_API_KEY` configured.
 #[utoipa::path(
     post,
     path = "/api/v1/slides/{id}/ai/complete",
@@ -65,6 +69,10 @@ pub async fn smart_compose(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "text": completed })))
 }
 
+/// Find images in the caller's Drive to put on a slide.
+///
+/// Searches Drive by name for image files rather than the public web, and degrades to an empty
+/// result list if Drive is unreachable instead of failing the request.
 #[utoipa::path(
     post,
     path = "/api/v1/slides/{id}/ai/image-search",
@@ -94,6 +102,10 @@ pub async fn image_search(
     Ok(HttpResponse::Ok().json(serde_json::json!({ "images": results })))
 }
 
+/// Suggest a layout for a slide.
+///
+/// Returns a layout name, a colour scheme, font suggestions and a list of tips. Requires the
+/// server to have `ANTHROPIC_API_KEY` configured.
 #[utoipa::path(
     post,
     path = "/api/v1/slides/{id}/ai/design",
@@ -123,6 +135,10 @@ pub async fn help_design(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Rebalance a slide's layout.
+///
+/// Takes the slide's JSON and returns the same structure with element positions, sizes and text
+/// scales adjusted for spacing and visual hierarchy.
 #[utoipa::path(
     post,
     path = "/api/v1/slides/{id}/ai/autoformat",
@@ -168,7 +184,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         DesignRequest,
         AutoFormatRequest,
     )),
-    tags((name = "slides-ai", description = "Slides AI endpoints")),
+    tags((
+        name = "slides-ai",
+        description = "Claude-backed authoring help for a presentation: completing slide text, suggesting a layout and colour scheme, rebalancing a slide's geometry, and finding images to use. All of it needs the server to have ANTHROPIC_API_KEY configured; image search reads the caller's own Drive rather than the public web."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct SlidesAIApiDoc;

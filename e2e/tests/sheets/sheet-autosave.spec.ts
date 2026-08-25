@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption, waitForKeyring } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page, Request } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
@@ -24,6 +25,7 @@ async function registerAndLogin(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 /**
@@ -260,7 +262,7 @@ test.describe('Sheets autosave — no spurious save on load', () => {
     await registerAndLogin(request, page, 'nosave_enc');
 
     // Resolve the user ID via the profile endpoint so we can wait for the E2EE
-    // keypair (stored under `neutrino_e2e_<userId>` in localStorage).
+    // keyring (stored in the `neutrino-keystore` IndexedDB database).
     const token = await page.evaluate(() => localStorage.getItem('access_token'));
     if (!token) throw new Error('access_token not found in localStorage');
     const profileRes = await request.get(`${BASE_URL}/api/v1/auth/me`, {
@@ -270,11 +272,7 @@ test.describe('Sheets autosave — no spurious save on load', () => {
     const { id: userId } = await profileRes.json() as { id: string };
 
     // Wait for the browser to generate and store the E2EE keypair.
-    await page.waitForFunction(
-      (key) => localStorage.getItem(key) !== null,
-      `neutrino_e2e_${userId}`,
-      { timeout: 15_000 },
-    );
+    await waitForKeyring(page, userId);
 
     const sheetId = await createSheetAndGetId(page);
 

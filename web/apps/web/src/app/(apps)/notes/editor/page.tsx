@@ -10,13 +10,14 @@ import {
   storageApi,
   driveReadContent,
   driveAutosaveEncryptedContent,
+  encryptionApi,
   mintFileKey,
   canEncryptFor,
   isMissingEncryptionKey,
 } from '@neutrino/api-drive';
 import { linksApi } from '@neutrino/api-links';
 import { createNote, extractNoteText, listAllNotes } from '@/lib/noteFiles';
-import { initSodium, decryptFile, fromBase64url } from '@neutrino/e2e-crypto';
+import { initSodium, decryptFile, fromBase64url, isUnlocked } from '@neutrino/e2e-crypto';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -43,6 +44,21 @@ function downloadBlob(blob: Blob, filename: string) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Whether these bytes could be a note's body rather than its ciphertext.
+ *
+ * A note body is `JSON.stringify(Block[])` or, for the oldest notes, plain
+ * text — either way ordinary printable characters. Ciphertext decoded as UTF-8
+ * is full of control bytes and replacement characters, so this separates the
+ * two well enough to decide whether showing the bytes would be help or
+ * gibberish. Tabs and newlines are legitimate note text; the rest of the C0
+ * range is not.
+ */
+function looksLikeNoteText(raw: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFD]/.test(raw);
 }
 
 function printNote(title: string, blocks: Block[]) {
@@ -103,7 +119,7 @@ export default function NoteEditorPage() {
   /** `updatedAt` of the revision currently in the editor. */
   const appliedUpdatedAtRef = useRef<string | null>(null);
 
-  const { dekRef, dekResolved, isNewEncryption, awaitDek } = useEncryptedDocumentContent({
+  const { dekResolved, isNewEncryption, awaitDek } = useEncryptedDocumentContent({
     id: noteId,
     filename: 'note.json',
   });
@@ -139,30 +155,70 @@ export default function NoteEditorPage() {
   const { data: noteContent, isLoading: contentLoading } = useQuery({
     queryKey: ['note-content', noteId, dekResolved],
     queryFn: async () => {
-      if (dekRef.current && !isNewEncryption) {
+      // `awaitDek`, not `dekRef.current` — the same reason the save path below
+      // uses it. The ref is empty while the key is still being fetched, and on
+      // a reload this query is gated on `dekResolved`, which only means the
+      // *attempt* has finished. Sampling the ref there reported "no key" for a
+      // perfectly readable note and dropped through to the raw read below,
+      // which for an encrypted note hands back its ciphertext — rendered as
+      // the note's text, and then saved back over the real content by the next
+      // autosave.
+      const dek = await awaitDek();
+      if (dek && !isNewEncryption) {
+        await initSodium();
+        const blob = await storageApi.downloadFile(noteId);
+        const stored = new Uint8Array(await blob.arrayBuffer());
+        // Saves write raw ciphertext bytes. A note saved by the old
+        // notes-CRUD API before it was fixed wrote the base64url *text* of
+        // the ciphertext instead — decode that first, and fall back to the
+        // raw bytes for everything saved since.
         try {
-          await initSodium();
-          const blob = await storageApi.downloadFile(noteId);
-          const stored = new Uint8Array(await blob.arrayBuffer());
-          // Saves write raw ciphertext bytes. A note saved by the old
-          // notes-CRUD API before it was fixed wrote the base64url *text* of
-          // the ciphertext instead — decode that first, and fall back to the
-          // raw bytes for everything saved since.
-          let plainBytes: Uint8Array;
-          try {
-            plainBytes = decryptFile(
-              fromBase64url(new TextDecoder().decode(stored)),
-              dekRef.current,
-            );
-          } catch {
-            plainBytes = decryptFile(stored, dekRef.current);
-          }
-          return new TextDecoder().decode(plainBytes);
+          return new TextDecoder().decode(
+            decryptFile(fromBase64url(new TextDecoder().decode(stored)), dek),
+          );
         } catch {
-          // Corrupt ciphertext or a stale/expired key ref — fall back to the
-          // raw content rather than crashing the editor.
+          try {
+            return new TextDecoder().decode(decryptFile(stored, dek));
+          } catch {
+            // Neither encoding opened with this key, and two very different
+            // situations land here. One: a note whose body predates encryption
+            // — opening it minted a key ref, but nothing has rewritten the
+            // content, so `isNewEncryption` is false on every later visit while
+            // the stored bytes are still plain text. Two: real ciphertext this
+            // key cannot open. Only the first is safe to show, so the bytes
+            // have to actually look like note text.
+            const raw = new TextDecoder().decode(stored);
+            if (!looksLikeNoteText(raw)) {
+              throw new Error('stored note content could not be decrypted');
+            }
+            return raw;
+          }
         }
       }
+      // No DEK in hand. Raw bytes are only this note's text if it was never
+      // encrypted — and a locked session cannot tell the difference, because
+      // the key resolution that would have said so never ran.
+      //
+      // This is reachable on an ordinary reload: the keyring is unwrapped from
+      // IndexedDB asynchronously, `useEncryptedDocumentContent` reports
+      // `dekResolved` immediately while the session is still locked, and this
+      // query is enabled off that. Reading raw there handed back the note's
+      // ciphertext, which was rendered as its text — and would then be written
+      // back over the real content by the next autosave. Failing instead is
+      // recoverable: unlocking re-resolves the key, which flips `dekResolved`
+      // and refetches this query with a DEK.
+      if (currentUser?.id && !isUnlocked(currentUser.id)) {
+        // A locked session has not minted anything, so a key ref on the server
+        // means this note really was encrypted and these bytes really are its
+        // ciphertext. (Once unlocked the check is useless: resolution mints a
+        // key ref for a legacy note the moment it is opened, so every note has
+        // one from then on — which is why this is asked only while locked.)
+        const keyRef = await encryptionApi.getFileKey(noteId);
+        if (keyRef) {
+          throw new Error('note content is unreadable until the vault is unlocked');
+        }
+      }
+      // Never encrypted — a legacy note stored as plaintext.
       return driveReadContent(`/api/v1/drive/files/${noteId}`);
     },
     enabled: !!note && dekResolved,

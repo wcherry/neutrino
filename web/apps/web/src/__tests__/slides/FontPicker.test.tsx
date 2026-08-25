@@ -118,10 +118,11 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
     dekRef: { current: null },
     dekResolved: true,
     isNewEncryption: false,
+    awaitDek: async () => null,
   }),
 }));
 
-vi.mock('@neutrino/e2e-crypto', () => ({ decryptFile: vi.fn() }));
+vi.mock('@neutrino/e2e-crypto', () => ({ decryptFile: vi.fn(), isUnlocked: () => true }));
 
 vi.mock('@/hooks/useSpellCheck', () => ({ useSpellCheck: () => ({ spellCheck: false }) }));
 

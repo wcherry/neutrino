@@ -87,13 +87,19 @@ pub struct FileVersionRecord {
     pub is_named: bool,
 }
 
+/// A new snapshot row, minus its `version_number`.
+///
+/// The number is deliberately not a field: it has to be read off the existing
+/// rows and written in the same transaction as the insert, so only
+/// `StorageRepository::insert_version` is in a position to pick one. A
+/// caller that computed it first would be racing every other writer on the file
+/// for the same value — see the unique index on `(file_id, version_number)`.
 #[derive(Debug, Insertable)]
 #[diesel(table_name = crate::schema::file_versions)]
 pub struct NewFileVersionRecord<'a> {
     pub id: &'a str,
     pub file_id: &'a str,
     pub user_id: &'a str,
-    pub version_number: i32,
     pub size_bytes: i64,
     pub storage_path: &'a str,
     pub label: Option<&'a str>,

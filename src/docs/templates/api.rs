@@ -16,7 +16,10 @@ pub struct TemplatesApiState {
 
 // ── Endpoints ─────────────────────────────────────────────────────────────────
 
-/// GET /api/v1/docs/templates
+/// List the document templates available.
+///
+/// Covers both the system templates shipped with the server and any added since; each entry
+/// carries its category and its stored content.
 #[utoipa::path(
     get,
     path = "/api/v1/docs/templates",
@@ -35,7 +38,10 @@ pub async fn list_templates(
     Ok(web::Json(result))
 }
 
-/// POST /api/v1/docs/templates
+/// Create a document template.
+///
+/// Takes a name, an optional category and description, and the template body as rich-text JSON.
+/// Omitting the content creates an empty template.
 #[utoipa::path(
     post,
     path = "/api/v1/docs/templates",
@@ -57,7 +63,10 @@ pub async fn create_template(
     Ok(HttpResponse::Created().json(template))
 }
 
-/// GET /api/v1/docs/templates/{id}
+/// Fetch one template, including its content.
+///
+/// The list endpoint is enough to render a picker; this is what the client reads when it needs
+/// the body itself.
 #[utoipa::path(
     get,
     path = "/api/v1/docs/templates/{id}",
@@ -80,7 +89,10 @@ pub async fn get_template(
     Ok(web::Json(template))
 }
 
-/// PATCH /api/v1/docs/templates/{id}
+/// Update a template's name, description, category or default flag.
+///
+/// Patches only the fields supplied. Marking one as default is what preselects it in the
+/// new-document picker.
 #[utoipa::path(
     patch,
     path = "/api/v1/docs/templates/{id}",
@@ -107,7 +119,10 @@ pub async fn update_template(
     Ok(web::Json(template))
 }
 
-/// DELETE /api/v1/docs/templates/{id}
+/// Delete a template.
+///
+/// Documents already created from it are unaffected — a template is copied at use time, not
+/// linked.
 #[utoipa::path(
     delete,
     path = "/api/v1/docs/templates/{id}",
@@ -130,7 +145,11 @@ pub async fn delete_template(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// POST /api/v1/docs/templates/{id}/use
+/// Create a new document from a template.
+///
+/// Creates a Drive file with the native document type and seeds it with the template's content,
+/// returning the new document. Supply a `title` in the body, or one is derived from the
+/// template's name.
 #[utoipa::path(
     post,
     path = "/api/v1/docs/templates/{id}/use",
@@ -187,7 +206,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         UpdateTemplateRequest,
         UseTemplateResponse,
     )),
-    tags((name = "docs-templates", description = "Docs templates endpoints")),
+    tags((
+        name = "docs-templates",
+        description = "Reusable starting points for new documents — a name, a category and a body of rich-text JSON, shipped with the server or added afterwards. Using a template copies its content into a new Drive file rather than linking to it, so editing or deleting a template never disturbs the documents already made from it."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct TemplatesApiDoc;

@@ -88,6 +88,9 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   encryptFileKey: vi.fn(),
   encryptMetadata: vi.fn(),
   loadKeyPair: vi.fn(() => null),
+  // The search box re-runs its query when the vault unlocks, so the hook behind
+  // it subscribes to lock state on mount.
+  subscribeToLockState: vi.fn(() => () => {}),
 }));
 
 // UI package — minimal stubs to avoid CSS module issues in jsdom

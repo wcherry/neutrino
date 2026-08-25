@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
@@ -24,11 +25,16 @@ async function registerAndLogin(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 /**
  * Create a new presentation and return its ID. Waits for the initial encrypted
  * content upload so that the DEK is confirmed ready before any test edits.
+ *
+ * That upload is the editor re-sealing the plaintext body Drive seeds from the
+ * mime type at creation (`NATIVE_TYPES` in `src/drive/storage/native_types.rs`);
+ * `slide-encryption.spec.ts` is what asserts the result is ciphertext.
  */
 async function createSlideAndGetId(page: Page): Promise<string> {
   await page.goto('/drive');

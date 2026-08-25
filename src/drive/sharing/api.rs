@@ -21,6 +21,10 @@ pub struct SharingApiState {
 
 // ── File share link endpoints ─────────────────────────────────────────────────
 
+/// Fetch the share link for a file, creating a default one if it has none.
+///
+/// So the share dialog always has a token to show: a file with no link yet gets one minted at
+/// anyone-with-the-link / viewer rather than a 404.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{file_id}/share-link",
@@ -63,6 +67,10 @@ pub async fn get_file_share_link(
     ))
 }
 
+/// Create or replace a file's share link settings.
+///
+/// Sets visibility, the role a visitor gets, and an optional expiry in one call; defaults are
+/// anyone-with-the-link and viewer. Owners only.
 #[utoipa::path(
     put,
     path = "/api/v1/drive/files/{file_id}/share-link",
@@ -92,6 +100,11 @@ pub async fn upsert_file_share_link(
     Ok(web::Json(link))
 }
 
+/// Patch a file's existing share link.
+///
+/// Changes only the supplied fields — visibility, role, expiry or the active flag. Passing
+/// `expiresAt: null` removes the expiry, and setting `isActive: false` kills the link without
+/// deleting it.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/files/{file_id}/share-link",
@@ -122,6 +135,10 @@ pub async fn update_file_share_link(
     Ok(web::Json(link))
 }
 
+/// Delete a file's share link.
+///
+/// The token stops resolving immediately. Direct per-user permissions on the file are
+/// unaffected.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{file_id}/share-link",
@@ -149,6 +166,9 @@ pub async fn delete_file_share_link(
 
 // ── Folder share link endpoints ───────────────────────────────────────────────
 
+/// Fetch the share link for a folder, creating a default one if it has none.
+///
+/// The folder counterpart of the file endpoint, with the same mint-on-first-read behaviour.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/folders/{folder_id}/share-link",
@@ -179,6 +199,10 @@ pub async fn get_folder_share_link(
     }
 }
 
+/// Create or replace a folder's share link settings.
+///
+/// A visitor following the link gets the configured role on the folder and, by inheritance,
+/// on everything inside it. Owners only.
 #[utoipa::path(
     put,
     path = "/api/v1/drive/folders/{folder_id}/share-link",
@@ -208,6 +232,10 @@ pub async fn upsert_folder_share_link(
     Ok(web::Json(link))
 }
 
+/// Patch a folder's existing share link.
+///
+/// Same partial-update semantics as the file endpoint: null `expiresAt` clears the expiry and
+/// `isActive: false` disables the link without deleting it.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/folders/{folder_id}/share-link",
@@ -238,6 +266,9 @@ pub async fn update_folder_share_link(
     Ok(web::Json(link))
 }
 
+/// Delete a folder's share link.
+///
+/// Revokes link access to the folder and its contents; per-user grants stay in place.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/folders/{folder_id}/share-link",
@@ -265,6 +296,11 @@ pub async fn delete_folder_share_link(
 
 // ── Public resolution endpoint ────────────────────────────────────────────────
 
+/// Resolve a share token into what it points at. Public.
+///
+/// Unauthenticated, so a visitor can see the resource name, type and the role the link grants
+/// before signing in. Returns 404 if the link is unknown or disabled and 410 once it has
+/// expired, and flags links a workspace restricts to a single email domain.
 #[utoipa::path(
     get,
     path = "/api/v1/share/{token}",
@@ -286,6 +322,10 @@ pub async fn resolve_share_link(
     Ok(web::Json(resolved))
 }
 
+/// Download the file behind a share token. Public.
+///
+/// Needs no account — the token is the credential. Returns 400 if the link points at a folder
+/// rather than a file.
 #[utoipa::path(
     get,
     path = "/api/v1/share/{token}/download",
@@ -338,6 +378,10 @@ pub async fn download_shared_file(
     Ok(named_file.into_response(&req))
 }
 
+/// Serve the file behind a share token inline for preview. Public.
+///
+/// The same bytes as the shared download, with a disposition the browser renders instead of
+/// saving.
 #[utoipa::path(
     get,
     path = "/api/v1/share/{token}/preview",
@@ -399,6 +443,11 @@ pub fn configure_drive(conf: &mut web::ServiceConfig) {
         .service(delete_folder_share_link);
 }
 
+/// Trade a share token for a short-lived guest access token. Public.
+///
+/// Gives an unauthenticated visitor a bearer token scoped to the link's role, so the normal
+/// APIs work for them without an account. Guest subjects are synthetic, which is why
+/// `/auth/me` answers them with a placeholder profile.
 #[utoipa::path(
     post,
     path = "/api/v1/share/{token}/session",
@@ -452,7 +501,10 @@ pub fn configure_public(conf: &mut web::ServiceConfig) {
         crate::drive::sharing::dto::LinkVisibility,
         crate::drive::sharing::dto::LinkRole,
     )),
-    tags((name = "sharing", description = "Link sharing endpoints")),
+    tags((
+        name = "sharing",
+        description = "Sharing a file or folder by link rather than by naming a user. A link carries a token, a visibility, the role it grants and an optional expiry, and can be disabled without being deleted. The public endpoints under /api/v1/share/{token} let someone with the token resolve, preview or download the resource, or exchange it for a short-lived guest session that works against the normal APIs."
+    )),
     modifiers(&SecurityAddon)
 )]
 pub struct SharingApiDoc;

@@ -11,7 +11,10 @@ pub struct PrivateLibraryApiState {
     pub service: Arc<PrivateLibraryService>,
 }
 
-/// List all cached third-party shape libraries.
+/// List the caller's cached third-party shape libraries.
+///
+/// Metadata only — name and source URL — for populating the shape palette. Fetch a library's ID
+/// to get its XML.
 #[utoipa::path(
     get,
     path = "/api/v1/diagrams/private-libraries",
@@ -30,7 +33,10 @@ pub async fn list_libraries(
     Ok(web::Json(result))
 }
 
-/// Fetch a drawio library from the given URL and store it in the private store.
+/// Add a third-party shape library by URL.
+///
+/// Fetches the drawio library once and caches it in the caller's private store, so the editor
+/// never has to reach out to the third-party host again. Re-adding the same URL returns 409.
 #[utoipa::path(
     post,
     path = "/api/v1/diagrams/private-libraries",
@@ -53,7 +59,9 @@ pub async fn add_library(
     Ok(HttpResponse::Created().json(lib))
 }
 
-/// Get the XML content of a cached third-party library by ID.
+/// Fetch a cached library's metadata and XML content.
+///
+/// The shapes themselves, served from the local cache rather than the original host.
 #[utoipa::path(
     get,
     path = "/api/v1/diagrams/private-libraries/{id}",
@@ -76,7 +84,10 @@ pub async fn get_library_content(
     Ok(web::Json(result))
 }
 
-/// Remove a cached third-party library by ID.
+/// Remove a cached shape library.
+///
+/// Drops the cached copy; diagrams that already used its shapes keep them, since shapes are
+/// copied into the diagram.
 #[utoipa::path(
     delete,
     path = "/api/v1/diagrams/private-libraries/{id}",
@@ -110,7 +121,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(list_libraries, add_library, get_library_content, remove_library),
     components(schemas(AddLibraryRequest, LibraryMeta, LibraryContent, ListLibrariesResponse)),
-    tags((name = "diagrams", description = "Neutrino diagramming editor")),
     security(("bearer_auth" = []))
 )]
 pub struct PrivateLibraryApiDoc;

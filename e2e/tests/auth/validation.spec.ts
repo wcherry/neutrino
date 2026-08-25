@@ -61,7 +61,10 @@ test.describe('Register form validation', () => {
     const wasRequested = trackRegisterRequests(page);
 
     await page.getByLabel('Email').fill('user@example.com');
-    await page.getByLabel('Password').fill('Password123!');
+    // Every field but the one under test, so the empty name is what blocks the
+    // submit. `exact` because "Confirm password" also contains "Password".
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
+    await page.getByLabel('Confirm password').fill('Password123!');
     await page.getByRole('button', { name: 'Create free account' }).click();
 
     await page.waitForTimeout(1000);
@@ -75,7 +78,8 @@ test.describe('Register form validation', () => {
 
     await page.getByLabel('Name').fill('Test User');
     await page.getByLabel('Email').fill('not-an-email');
-    await page.getByLabel('Password').fill('Password123!');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
+    await page.getByLabel('Confirm password').fill('Password123!');
     await page.getByRole('button', { name: 'Create free account' }).click();
 
     await page.waitForTimeout(1000);

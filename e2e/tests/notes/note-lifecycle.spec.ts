@@ -1,5 +1,7 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { createNoteViaApi, deleteNoteViaApi } from '../../fixtures/notes';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -23,27 +25,13 @@ async function registerAndLogin(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 async function getAuthToken(page: Page): Promise<string> {
   const token = await page.evaluate(() => localStorage.getItem('access_token'));
   if (!token) throw new Error('access_token not found in localStorage');
   return token;
-}
-
-/** Create a note via the API and return its ID. */
-async function createNoteViaApi(
-  request: APIRequestContext,
-  token: string,
-  title: string,
-): Promise<string> {
-  const res = await request.post(`${BASE_URL}/api/v1/notes`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
-  });
-  expect(res.ok(), `create note failed: ${res.status()} ${await res.text()}`).toBeTruthy();
-  const data = await res.json() as { id: string };
-  return data.id;
 }
 
 /** Click the first block view area to enter edit mode and fill it with content, then blur. */
@@ -90,9 +78,10 @@ test.describe('Notes lifecycle', () => {
     const titleInput = page.getByLabel('Note title');
     await titleInput.fill('My First Note');
 
-    // Wait for the autosave PATCH
+    // Wait for the autosave PATCH — a note is a Drive file, so the rename goes
+    // through `filesystemApi.updateFile`.
     const titleSaved = page.waitForResponse(
-      (r) => r.url().includes('/api/v1/notes/') && r.request().method() === 'PATCH',
+      (r) => r.url().includes('/api/v1/drive/files/') && r.request().method() === 'PATCH',
       { timeout: 15_000 },
     );
     await titleInput.blur();
@@ -121,10 +110,7 @@ test.describe('Notes lifecycle', () => {
     });
 
     // Delete via API
-    const delRes = await request.delete(`${BASE_URL}/api/v1/notes/${noteId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(delRes.ok(), `delete failed: ${delRes.status()}`).toBeTruthy();
+    await deleteNoteViaApi(request, token, noteId);
 
     await page.reload();
     await expect(page.getByRole('listitem', { name: 'Note To Delete' })).not.toBeVisible({

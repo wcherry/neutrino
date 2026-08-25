@@ -42,6 +42,9 @@ vi.mock('@neutrino/api-drive', () => ({
     downloadFile: vi.fn(),
   },
   driveReadContent: (...args: unknown[]) => driveReadContentMock(...args),
+  // The editor checks for a key ref before it will read raw bytes as note
+  // text; these notes are unencrypted, so there is none.
+  encryptionApi: { getFileKey: vi.fn(() => Promise.resolve(null)) },
   driveAutosaveEncryptedContent: (...args: unknown[]) =>
     driveAutosaveEncryptedContentMock(...args),
   mintFileKey: vi.fn(),

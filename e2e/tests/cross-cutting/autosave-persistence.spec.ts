@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:9880';
@@ -24,6 +25,7 @@ async function registerAndLogin(
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
   return { email, password };
 }
 
@@ -127,10 +129,11 @@ test.describe('Autosave persistence — notes', () => {
     // Blur back to title to trigger save
     await page.getByLabel('Note title').click();
 
-    // Wait for the API save
+    // Wait for the API save. A note is a Drive file: the body goes through the
+    // encrypted autosave and the title through a rename, both on /drive/files.
     await page.waitForResponse(
       (r) =>
-        r.url().includes('/api/v1/notes/') &&
+        r.url().includes('/api/v1/drive/files/') &&
         ['PUT', 'PATCH', 'POST'].includes(r.request().method()),
       { timeout: 15_000 },
     );

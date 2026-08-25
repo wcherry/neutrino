@@ -67,7 +67,11 @@ pub struct JobsApiState {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-/// Create a job (called by other services, e.g. photos when a photo is registered).
+/// Enqueue a background job. Worker secret required.
+///
+/// Called by other services — Photos queues thumbnail work here, for instance. An attached
+/// `file` is encrypted with a one-time key into the owner's temp storage, and the payload
+/// records where it landed.
 #[utoipa::path(
     post,
     path = "/api/v1/jobs",
@@ -88,7 +92,10 @@ async fn create_job(
     Ok(web::Json(resp))
 }
 
-/// List all jobs in the table (newest first).
+/// List every job, newest first.
+///
+/// The whole queue, whatever its state — pending, running, completed or errored — for
+/// monitoring rather than for claiming work.
 #[utoipa::path(
     get,
     path = "/api/v1/jobs",
@@ -106,7 +113,9 @@ async fn list_jobs(
     Ok(web::Json(state.jobs_service.list_jobs()?))
 }
 
-/// Fetch a single job by ID.
+/// Fetch one job by ID.
+///
+/// Returns its type, payload, status, assigned worker and any error message.
 #[utoipa::path(
     get,
     path = "/api/v1/jobs/{id}",
@@ -127,7 +136,10 @@ async fn get_job(
     Ok(web::Json(state.jobs_service.get_job(&path.into_inner())?))
 }
 
-/// Update a job's mutable fields (partial update; omitted fields are unchanged).
+/// Update a job's mutable fields.
+///
+/// A partial update: omitted fields are left as they are. Workers reporting an outcome should
+/// use the status endpoint instead.
 #[utoipa::path(
     put,
     path = "/api/v1/jobs/{id}",
@@ -154,7 +166,9 @@ async fn update_job(
     Ok(web::Json(resp))
 }
 
-/// Delete a job by ID.
+/// Delete a job.
+///
+/// Removes the row outright — used to clear finished or stuck work out of the queue.
 #[utoipa::path(
     delete,
     path = "/api/v1/jobs/{id}",
@@ -176,7 +190,10 @@ async fn delete_job(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// Worker pulls up to `limit` pending jobs on startup and claims them immediately.
+/// Claim up to `limit` pending jobs. Worker secret required.
+///
+/// Claiming happens in the same call as fetching, so two workers polling at once cannot pick
+/// up the same job.
 #[utoipa::path(
     get,
     path = "/api/v1/jobs/pending",
@@ -208,7 +225,10 @@ async fn get_pending_jobs(
     Ok(web::Json(jobs))
 }
 
-/// Worker reports job completion (status C) or failure (status E).
+/// Report a job's outcome. Worker secret required.
+///
+/// Status `C` marks it completed and `E` failed, with an optional error message stored
+/// alongside for whoever is watching the queue.
 #[utoipa::path(
     patch,
     path = "/api/v1/jobs/{id}/status",
@@ -234,7 +254,10 @@ async fn update_job_status(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// Worker fetches raw file bytes to process (e.g. generate a thumbnail).
+/// Fetch the bytes of a file a job refers to. Worker secret required.
+///
+/// How a worker gets at the content it was queued to process, such as the image it must build
+/// a thumbnail from.
 #[utoipa::path(
     get,
     path = "/api/v1/jobs/file-content/{file_id}",
@@ -259,7 +282,10 @@ async fn get_file_content(
     Ok(HttpResponse::Ok().content_type(mime_type).body(bytes))
 }
 
-/// Worker registers itself and provides a callback URL for job dispatch.
+/// Register a worker and its dispatch callback. Worker secret required.
+///
+/// Announces that the worker is available and where to reach it, so jobs can be pushed rather
+/// than only polled for.
 #[utoipa::path(
     post,
     path = "/api/v1/jobs/workers",
@@ -280,7 +306,10 @@ async fn register_worker(
     Ok(web::Json(RegisterWorkerResponse { worker_id }))
 }
 
-/// Worker deregisters itself (clean shutdown).
+/// Deregister a worker. Worker secret required.
+///
+/// Sent on a clean shutdown so no further work is dispatched to an endpoint that has gone
+/// away.
 #[utoipa::path(
     delete,
     path = "/api/v1/jobs/workers/{id}",
@@ -301,8 +330,10 @@ async fn deregister_worker(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// Worker uploads a generated cover thumbnail for a file.
-/// Accepts image bytes as the raw request body; Content-Type is used as MIME type.
+/// Upload a generated cover thumbnail for a file. Worker secret required.
+///
+/// Takes the image bytes as the raw request body and uses the request's `Content-Type` as the
+/// thumbnail's MIME type.
 #[utoipa::path(
     put,
     path = "/api/v1/jobs/files/{file_id}/thumbnail",
@@ -375,6 +406,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         RegisterWorkerResponse,
         PendingJobsQuery,
     )),
-    tags((name = "drive-jobs", description = "Drive background jobs endpoints"))
+    tags((
+        name = "drive-jobs",
+        description = "The queue the worker binary pulls from — thumbnailing, indexing and other out-of-band work. Producers enqueue jobs and workers claim, execute and report on them; the worker-facing routes authenticate with a shared worker secret rather than a user token. Workers can also register a callback URL so jobs are dispatched to them instead of only polled for."
+    ))
 )]
 pub struct JobsApiDoc;

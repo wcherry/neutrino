@@ -37,6 +37,10 @@ struct FolderPermissionPath {
 
 // ── File permission endpoints ─────────────────────────────────────────────────
 
+/// List who has been granted access to a file.
+///
+/// Returns the direct grants on the file itself; access someone holds by inheritance from an
+/// ancestor folder is not repeated here.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{file_id}/permissions",
@@ -62,6 +66,10 @@ pub async fn list_file_permissions(
     Ok(web::Json(result))
 }
 
+/// Grant a user a role on a file.
+///
+/// Owners only. The `owner` role cannot be granted directly — use transfer-ownership — and a
+/// workspace with a domain restriction will reject a recipient outside it.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{file_id}/permissions",
@@ -116,6 +124,10 @@ pub async fn grant_file_permission(
     Ok(HttpResponse::Created().json(perm))
 }
 
+/// Change a user's role on a file.
+///
+/// Owners only, and an owner cannot change their own row; promoting someone to owner goes
+/// through transfer-ownership instead.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/files/{file_id}/permissions/{user_id}",
@@ -151,6 +163,10 @@ pub async fn update_file_permission(
     Ok(web::Json(perm))
 }
 
+/// Revoke a user's access to a file.
+///
+/// Removes the direct grant. If they still hold a role on an ancestor folder they keep access
+/// through inheritance.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{file_id}/permissions/{user_id}",
@@ -202,6 +218,10 @@ pub async fn revoke_file_permission(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Hand ownership of a file to another user.
+///
+/// The new owner is upserted as `owner` and the caller is downgraded to `editor` in the same
+/// operation, so the file is never left without an owner.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{file_id}/transfer-ownership",
@@ -234,6 +254,10 @@ pub async fn transfer_file_ownership(
 
 // ── Folder permission endpoints ───────────────────────────────────────────────
 
+/// List who has been granted access to a folder.
+///
+/// Returns direct grants on the folder; everything inside it inherits these unless it carries a
+/// grant of its own.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/folders/{folder_id}/permissions",
@@ -259,6 +283,10 @@ pub async fn list_folder_permissions(
     Ok(web::Json(result))
 }
 
+/// Grant a user a role on a folder.
+///
+/// Owners only. The grant cascades to everything inside the folder by inheritance, so this is
+/// the cheapest way to share a whole subtree.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/folders/{folder_id}/permissions",
@@ -316,6 +344,10 @@ pub async fn grant_folder_permission(
     Ok(HttpResponse::Created().json(perm))
 }
 
+/// Change a user's role on a folder.
+///
+/// Owners only. The new role takes effect throughout the subtree that inherits from this
+/// folder.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/folders/{folder_id}/permissions/{user_id}",
@@ -351,6 +383,10 @@ pub async fn update_folder_permission(
     Ok(web::Json(perm))
 }
 
+/// Revoke a user's access to a folder.
+///
+/// Removes the grant and, with it, the inherited access to everything beneath the folder that
+/// has no grant of its own.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/folders/{folder_id}/permissions/{user_id}",
@@ -408,6 +444,9 @@ pub async fn revoke_folder_permission(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Hand ownership of a folder to another user.
+///
+/// Upserts the new owner and downgrades the caller to `editor`, matching the file endpoint.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/folders/{folder_id}/transfer-ownership",
@@ -473,7 +512,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         TransferOwnershipRequest,
         crate::drive::permissions::dto::Role,
     )),
-    tags((name = "permissions", description = "Permission management endpoints")),
+    tags((
+        name = "permissions",
+        description = "Who may read or edit a file or folder. Roles are granted per resource and inherit down the folder tree — a lookup walks up to the nearest ancestor carrying a grant — so sharing a folder shares everything under it. Only an owner may grant, change or revoke, and ownership itself moves through the transfer-ownership endpoints rather than by granting the owner role."
+    )),
     modifiers(&SecurityAddon)
 )]
 pub struct PermissionsApiDoc;

@@ -69,7 +69,7 @@ import { useUser } from '@neutrino/auth';
 import {
   slidesApi, driveReadContent, driveAutosaveEncryptedContent,
   driveAutosaveEncryptedBytes, mintFileKey, canEncryptFor, extractSlideText,
-  storageApi, filesystemApi, ApiClientError, type FileItem,
+  storageApi, filesystemApi, encryptionApi, ApiClientError, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
@@ -78,7 +78,7 @@ import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeF
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
-import { decryptFile } from '@neutrino/e2e-crypto';
+import { decryptFile, isUnlocked } from '@neutrino/e2e-crypto';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme, CreateThemeRequest, UpdateThemeRequest } from '@neutrino/api-slides';
 import { ThemeEditorDialog, type ThemeEditorMode } from './ThemeEditorDialog';
@@ -340,7 +340,7 @@ export function SlideEditor() {
     setAuthToken(localStorage.getItem('access_token'));
   }, []);
 
-  const { dekRef, dekResolved, isNewEncryption } =
+  const { dekRef, dekResolved, isNewEncryption, awaitDek } =
     useEncryptedDocumentContent({ id: slideId, filename: 'slide.json' });
   const toast = useToast();
   // Rejects a save that would overwrite a revision written elsewhere since this
@@ -454,15 +454,35 @@ export function SlideEditor() {
     queryKey: ['slide-content', slideId, dekResolved],
     queryFn: async () => {
       if (!slideData?.contentUrl) return null;
-      if (dekRef.current) {
+      // `awaitDek`, not `dekRef.current`. `dekResolved` only means the *attempt*
+      // has finished, and on a reload the attempt finishes immediately with no
+      // key: the keyring is unwrapped from IndexedDB a moment later. Sampling
+      // the ref there reported "no key" for a perfectly readable deck and fell
+      // through to the raw read below, which hands back ciphertext — JSON.parse
+      // rejects it and the editor shows the empty default deck instead of the
+      // presentation. Re-resolving on unlock flips `dekResolved` false and back
+      // to true, which is the same query key, so the bad result stayed cached
+      // for its whole `staleTime` rather than being retried.
+      const dek = await awaitDek();
+      if (dek) {
         const blob = await storageApi.downloadFile(slideId);
         const cipherBytes = new Uint8Array(await blob.arrayBuffer());
         try {
-          const plainBytes = decryptFile(cipherBytes, dekRef.current);
+          const plainBytes = decryptFile(cipherBytes, dek);
           return new TextDecoder().decode(plainBytes);
         } catch {
           if (isNewEncryption) return null;
           return driveReadContent(slideData.contentUrl);
+        }
+      }
+      // No key in hand. A deck with a key ref on the server really is
+      // encrypted, so reading it raw would render its ciphertext; failing
+      // instead leaves an errored query, which refetches once the vault is
+      // unlocked and the key resolution runs again.
+      if (currentUser?.id && !isUnlocked(currentUser.id)) {
+        const keyRef = await encryptionApi.getFileKey(slideId);
+        if (keyRef) {
+          throw new Error('presentation content is unreadable until the vault is unlocked');
         }
       }
       return driveReadContent(slideData.contentUrl);
@@ -511,7 +531,13 @@ export function SlideEditor() {
     onError: () => toast.error('Failed to delete theme'),
   });
 
-  const isLoading = metaLoading || contentLoading || (slide404 && officeFallbackLoading);
+  // `contentUnread`: the content query is gated on `dekResolved`, and React
+  // Query reports a query it has not started as "not loading" — so without it
+  // the editor was interactive before the deck it is about to show had been
+  // read, and the read then replaced whatever had been added in the meantime.
+  const contentUnread = !!slideData?.contentUrl && !dekResolved;
+  const isLoading = metaLoading || contentLoading || contentUnread
+    || (slide404 && officeFallbackLoading);
 
   useEffect(() => {
     if (!slideData) return;
@@ -583,16 +609,31 @@ export function SlideEditor() {
     }
   }, [slideContent]);
 
-  // After DEK resolves and the content query settles, do a one-time encrypted autosave
-  // when this is a new encryption (no prior key on the server) and no content loaded.
-  // Guard on isNewEncryption: never overwrite when the DEK came from the server,
-  // because null/undefined content there means decryption failed on existing data.
+  // After the DEK resolves and the content query settles, seal whatever the
+  // server is holding in plaintext.
+  //
+  // `isNewEncryption` is the whole condition: it means the DEK was minted here
+  // because the file had no key ref, which by that hook's contract means the
+  // stored bytes are plaintext. Never act when it is false — there the DEK came
+  // from the server, so a decryption failure means corrupt ciphertext, and
+  // writing would destroy real content.
+  //
+  // This used to also require `lastSavedRef.current === ''` — "and nothing
+  // loaded". That made sense when a new deck had no body at all, but Drive now
+  // seeds the empty-deck JSON itself from the mime type (`NATIVE_TYPES` in
+  // `src/drive/storage/native_types.rs`), so a load always produces content and
+  // the condition never held. A newly created presentation therefore kept its
+  // body in plaintext on the server indefinitely — the one thing E2EE is for —
+  // while sheets, which tracks this as `serverHasPlaintextContent`, re-sealed
+  // its own seed correctly.
   useEffect(() => {
     if (!dekRef.current || !slideData || contentLoading) return;
     if (!isNewEncryption) return;
-    if (initialSaveDoneRef.current || lastSavedRef.current !== '') return;
+    if (initialSaveDoneRef.current) return;
     initialSaveDoneRef.current = true;
-    const content = JSON.stringify(presentation);
+    // Prefer the body just read from the server, so this re-seals exactly what
+    // is stored rather than replacing it with the client's default deck.
+    const content = lastSavedRef.current || JSON.stringify(presentationRef.current);
     driveAutosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current)
       // This write bumps `contentVersion` just like any other, and nothing
       // re-reads the metadata query afterwards — so without feeding the result
@@ -601,7 +642,8 @@ export function SlideEditor() {
       .then((saved) => versionGuard.observe(saved?.contentVersion))
       .catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
-  // presentation intentionally omitted: we capture the default once, not on every change.
+  // `presentation` is read through presentationRef, so it is deliberately not a
+  // dependency: this runs once, not on every edit.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dekResolved, isNewEncryption, slideData, contentLoading, slideContent]);
 

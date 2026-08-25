@@ -24,6 +24,9 @@ pub struct FilesystemApiState {
 
 // ── Folder endpoints ──────────────────────────────────────────────────────────
 
+/// Create a folder.
+///
+/// Omit `parentId` to create it at the drive root. Returns the folder with its generated ID.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/folders",
@@ -48,6 +51,11 @@ pub async fn create_folder(
     Ok(HttpResponse::Created().json(folder))
 }
 
+/// List the files, folders and shortcuts inside one folder.
+///
+/// Paginated and sortable. A user's root folder has no ID of its own — pass the caller's own
+/// user ID to list the root. The `type` filter narrows the files returned while always
+/// listing subfolders.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/folders/{id}",
@@ -81,6 +89,10 @@ pub async fn get_folder_contents(
     Ok(web::Json(contents))
 }
 
+/// List the most recently modified files across the whole drive.
+///
+/// Ignores folder structure and returns files only, newest first, capped by `limit`
+/// (default 50).
 #[utoipa::path(
     get,
     path = "/api/v1/drive/recent",
@@ -108,6 +120,10 @@ pub async fn get_recent(
     Ok(web::Json(contents))
 }
 
+/// Rename, recolour or star a folder.
+///
+/// Patches only the supplied fields; sending `color: null` clears the colour label rather
+/// than leaving it alone.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/folders/{id}",
@@ -135,6 +151,10 @@ pub async fn update_folder(
     Ok(web::Json(folder))
 }
 
+/// Move a folder to the trash.
+///
+/// A soft delete — the folder and everything under it stay recoverable until the trash is
+/// emptied or the 30-day purge runs.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/folders/{id}",
@@ -161,6 +181,10 @@ pub async fn trash_folder(
 
 // ── File endpoints ────────────────────────────────────────────────────────────
 
+/// Rename, move or star a file.
+///
+/// Patches only the supplied fields. Sending `folderId: null` moves the file to the drive
+/// root, as distinct from omitting it, which leaves the file where it is.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/files/{id}",
@@ -187,6 +211,10 @@ pub async fn update_file(
     Ok(web::Json(file))
 }
 
+/// Move a file to the trash.
+///
+/// A soft delete: the bytes stay on disk and the file can be restored until the trash is
+/// emptied or the 30-day purge runs.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{id}",
@@ -212,6 +240,10 @@ pub async fn trash_file(
 
 // ── Shortcut endpoints ────────────────────────────────────────────────────────
 
+/// Create a shortcut to a file in another folder.
+///
+/// A shortcut is a pointer, so the target file keeps its single copy of the bytes and counts
+/// against quota once.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/shortcuts",
@@ -235,6 +267,9 @@ pub async fn create_shortcut(
     Ok(HttpResponse::Created().json(shortcut))
 }
 
+/// Delete a shortcut.
+///
+/// Removes only the pointer; the file it targets is untouched.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/shortcuts/{id}",
@@ -259,6 +294,10 @@ pub async fn delete_shortcut(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// List every shortcut the caller owns.
+///
+/// Returns them across the whole drive rather than per folder, so a client can resolve
+/// shortcut targets in one call.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/shortcuts",
@@ -279,6 +318,10 @@ pub async fn list_shortcuts(
 
 // ── Bulk endpoints ────────────────────────────────────────────────────────────
 
+/// Move many files and folders into one target folder.
+///
+/// Takes both ID lists in a single request and returns how many items were affected; a null
+/// `targetFolderId` moves them to the drive root.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/bulk/move",
@@ -301,6 +344,10 @@ pub async fn bulk_move(
     Ok(web::Json(result))
 }
 
+/// Move many files and folders to the trash at once.
+///
+/// The multi-select counterpart of the per-item trash endpoints; returns how many items were
+/// affected.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/bulk/trash",
@@ -325,6 +372,10 @@ pub async fn bulk_trash(
 
 // ── Trash endpoints ───────────────────────────────────────────────────────────
 
+/// List the caller's trashed files and folders.
+///
+/// Paginated and sortable in the same way as folder contents, so the trash view can page
+/// through a large backlog.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/trash",
@@ -351,6 +402,10 @@ pub async fn list_trash(
     Ok(web::Json(contents))
 }
 
+/// Permanently delete everything in the trash.
+///
+/// Removes the rows and erases the stored bytes from disk. Not recoverable; returns how many
+/// files were deleted.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/trash",
@@ -369,6 +424,9 @@ pub async fn empty_trash(
     Ok(web::Json(result))
 }
 
+/// Restore a trashed file.
+///
+/// Puts it back in the folder it was trashed from.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/trash/files/{id}/restore",
@@ -392,6 +450,10 @@ pub async fn restore_file(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Permanently delete one trashed file.
+///
+/// Erases the row and the bytes on disk. Returns 404 when the file is not in the trash, so a
+/// live file cannot be destroyed this way.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/trash/files/{id}",
@@ -416,6 +478,9 @@ pub async fn delete_file_permanently(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Restore a trashed folder.
+///
+/// Puts the folder, and the contents trashed along with it, back where they were.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/trash/folders/{id}/restore",
@@ -439,6 +504,9 @@ pub async fn restore_folder(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Permanently delete one trashed folder and its contents.
+///
+/// Erases the rows and the stored bytes. Returns 404 when the folder is not in the trash.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/trash/folders/{id}",
@@ -474,6 +542,10 @@ pub struct StarredQuery {
     pub file_type: Option<DriveFileType>,
 }
 
+/// List the caller's starred files and folders, most recently starred first.
+///
+/// Backs the quick-access row, so `limit` defaults to a small number (5) rather than a full
+/// page.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/starred",
@@ -510,6 +582,10 @@ pub struct SharedWithMeResponse {
     pub folders: Vec<FolderResponse>,
 }
 
+/// List the files and folders other users have shared with the caller.
+///
+/// These live outside the caller's own tree, so they are returned as a flat list rather than
+/// through the folder endpoints.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/shared-with-me",
@@ -637,7 +713,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         StarredContentsResponse,
         crate::drive::filesystem::dto::DriveFileType,
     )),
-    tags((name = "filesystem", description = "File system organization endpoints")),
+    tags((
+        name = "filesystem",
+        description = "The shape of a user's drive: folders, shortcuts, stars, bulk move and trash. Deletes here are soft — items carry a `deleted_at` stamp and stay restorable until the trash is emptied or the 30-day purge runs — and the same stamp is what lets restoring a folder undo exactly the cascade that trashing it caused. File bytes and uploads live under the `storage` tag."
+    )),
     modifiers(&SecurityAddon)
 )]
 pub struct FilesystemApiDoc;

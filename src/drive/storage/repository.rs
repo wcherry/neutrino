@@ -374,28 +374,50 @@ impl StorageRepository {
 
     // ── Version methods ────────────────────────────────────────────────────────
 
+    /// Insert `new_version` as the file's next snapshot, numbering it here.
+    ///
+    /// The number is `max(version_number) + 1` over the file's existing rows,
+    /// read and written under one `BEGIN IMMEDIATE`. Both halves have to be in
+    /// the same write transaction: two saves of the same file used to read the
+    /// same maximum on separate pooled connections and then both insert it,
+    /// which the unique index on `(file_id, version_number)` rejected — a 500
+    /// on save, and a lost snapshot, for whichever writer came second.
+    ///
+    /// `IMMEDIATE` rather than a deferred `BEGIN` because the body reads before
+    /// it writes, and SQLite refuses to run the busy handler for that upgrade;
+    /// see `AuthRepository::publish_public_key` for the same reasoning.
     pub fn insert_version(
         &self,
         new_version: NewFileVersionRecord,
     ) -> Result<FileVersionRecord, ApiError> {
+        use diesel::dsl::max;
+
         let mut conn = self.get_conn()?;
 
-        diesel::insert_into(file_versions::table)
-            .values(&new_version)
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB insert version error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
+        conn.immediate_transaction::<FileVersionRecord, diesel::result::Error, _>(|conn| {
+            let next_number = file_versions::table
+                .filter(file_versions::file_id.eq(new_version.file_id))
+                .select(max(file_versions::version_number))
+                .first::<Option<i32>>(conn)?
+                .unwrap_or(0)
+                + 1;
 
-        file_versions::table
-            .filter(file_versions::id.eq(new_version.id))
-            .select(FileVersionRecord::as_select())
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB query after version insert error: {:?}", e);
-                ApiError::internal("Database error")
-            })
+            diesel::insert_into(file_versions::table)
+                .values((
+                    &new_version,
+                    file_versions::version_number.eq(next_number),
+                ))
+                .execute(conn)?;
+
+            file_versions::table
+                .filter(file_versions::id.eq(new_version.id))
+                .select(FileVersionRecord::as_select())
+                .first(conn)
+        })
+        .map_err(|e| {
+            tracing::error!("DB insert version error: {:?}", e);
+            ApiError::internal("Database error")
+        })
     }
 
     pub fn list_versions(&self, file_id: &str) -> Result<Vec<FileVersionRecord>, ApiError> {
@@ -442,21 +464,6 @@ impl StorageRepository {
             .get_result(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB count versions error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
-    pub fn max_version_number(&self, file_id: &str) -> Result<i32, ApiError> {
-        use diesel::dsl::max;
-        let mut conn = self.get_conn()?;
-
-        file_versions::table
-            .filter(file_versions::file_id.eq(file_id))
-            .select(max(file_versions::version_number))
-            .first::<Option<i32>>(&mut conn)
-            .map(|v| v.unwrap_or(0))
-            .map_err(|e| {
-                tracing::error!("DB max version number error: {:?}", e);
                 ApiError::internal("Database error")
             })
     }
@@ -948,19 +955,19 @@ mod tests {
         .expect("insert file");
     }
 
+    /// Version numbers are assigned by `insert_version`, so calls here just run
+    /// in the order the numbering should come out.
     fn insert_sized_version(
         repo: &StorageRepository,
         id: &str,
         file_id: &str,
         user_id: &str,
-        version_number: i32,
         size_bytes: i64,
     ) {
         repo.insert_version(NewFileVersionRecord {
             id,
             file_id,
             user_id,
-            version_number,
             size_bytes,
             storage_path: "",
             label: None,
@@ -981,8 +988,8 @@ mod tests {
     fn calculate_used_bytes_sums_file_content_and_version_snapshots() {
         let repo = StorageRepository::new(test_pool());
         insert_sized_file(&repo, "file-q1", "user-1", 1000);
-        insert_sized_version(&repo, "ver-q1", "file-q1", "user-1", 1, 1000);
-        insert_sized_version(&repo, "ver-q2", "file-q1", "user-1", 2, 250);
+        insert_sized_version(&repo, "ver-q1", "file-q1", "user-1", 1000);
+        insert_sized_version(&repo, "ver-q2", "file-q1", "user-1", 250);
 
         assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 2250);
     }
@@ -991,9 +998,9 @@ mod tests {
     fn calculate_used_bytes_is_scoped_to_one_user() {
         let repo = StorageRepository::new(test_pool());
         insert_sized_file(&repo, "file-q2", "user-1", 1000);
-        insert_sized_version(&repo, "ver-q3", "file-q2", "user-1", 1, 1000);
+        insert_sized_version(&repo, "ver-q3", "file-q2", "user-1", 1000);
         insert_sized_file(&repo, "file-q3", "user-2", 9999);
-        insert_sized_version(&repo, "ver-q4", "file-q3", "user-2", 1, 9999);
+        insert_sized_version(&repo, "ver-q4", "file-q3", "user-2", 9999);
 
         assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 2000);
     }
@@ -1018,7 +1025,7 @@ mod tests {
         let repo = StorageRepository::new(test_pool());
         repo.get_or_create_quota("user-1").expect("quota row");
         insert_sized_file(&repo, "file-q5", "user-1", 1000);
-        insert_sized_version(&repo, "ver-q5", "file-q5", "user-1", 1, 1000);
+        insert_sized_version(&repo, "ver-q5", "file-q5", "user-1", 1000);
 
         let refreshed = repo.refresh_used_bytes("user-1", 1000).expect("refresh");
 
@@ -1096,5 +1103,84 @@ mod tests {
             )
             .expect("update content");
         assert_eq!(updated.content_version, 2);
+    }
+
+    // ── Version numbering ────────────────────────────────────────────────────
+
+    #[test]
+    fn insert_version_numbers_snapshots_sequentially_per_file() {
+        let repo = StorageRepository::new(test_pool());
+        insert_sized_file(&repo, "file-v1", "user-1", 10);
+        insert_sized_file(&repo, "file-v2", "user-1", 10);
+
+        insert_sized_version(&repo, "ver-v1", "file-v1", "user-1", 10);
+        insert_sized_version(&repo, "ver-v2", "file-v1", "user-1", 10);
+        insert_sized_version(&repo, "ver-v3", "file-v2", "user-1", 10);
+
+        let numbers = |file_id: &str| {
+            let mut nums: Vec<i32> = repo
+                .list_versions(file_id)
+                .expect("list")
+                .iter()
+                .map(|v| v.version_number)
+                .collect();
+            nums.sort_unstable();
+            nums
+        };
+
+        assert_eq!(numbers("file-v1"), vec![1, 2]);
+        assert_eq!(
+            numbers("file-v2"),
+            vec![1],
+            "numbering restarts per file, not per table"
+        );
+    }
+
+    /// The regression: two saves of one file used to read `max(version_number)`
+    /// on separate pooled connections, both compute the same next number, and
+    /// both insert it — the second losing its snapshot to a `UNIQUE constraint
+    /// failed: file_versions.file_id, file_versions.version_number` surfaced as
+    /// a 500. Needs a real file database and more than one connection, since
+    /// the `:memory:` pool the other tests use is capped at one.
+    #[test]
+    fn concurrent_inserts_on_one_file_all_get_distinct_numbers() {
+        use crate::search::repository::test_file_pool;
+        use std::sync::Arc;
+
+        let (pool, _db) = test_file_pool("file-versions");
+        let repo = Arc::new(StorageRepository::new(pool));
+        insert_sized_file(&repo, "file-race", "user-1", 10);
+
+        const WRITERS: usize = 8;
+        let handles: Vec<_> = (0..WRITERS)
+            .map(|i| {
+                let repo = Arc::clone(&repo);
+                std::thread::spawn(move || {
+                    let id = format!("ver-race-{i}");
+                    repo.insert_version(NewFileVersionRecord {
+                        id: &id,
+                        file_id: "file-race",
+                        user_id: "user-1",
+                        size_bytes: 10,
+                        storage_path: "",
+                        label: None,
+                        is_named: false,
+                    })
+                    .map(|v| v.version_number)
+                })
+            })
+            .collect();
+
+        let mut numbers: Vec<i32> = handles
+            .into_iter()
+            .map(|h| h.join().expect("writer thread").expect("insert version"))
+            .collect();
+        numbers.sort_unstable();
+
+        assert_eq!(
+            numbers,
+            (1..=WRITERS as i32).collect::<Vec<_>>(),
+            "every concurrent writer must land its own snapshot number"
+        );
     }
 }

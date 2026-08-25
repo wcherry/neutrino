@@ -10,12 +10,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 
-const { loadKeyPair, isSyncDue, syncSearchIndex, pullSnapshot, syncSnapshot, calls } =
-  vi.hoisted(() => {
+const {
+  loadKeyPair,
+  lockListeners,
+  isSyncDue,
+  syncSearchIndex,
+  pullSnapshot,
+  syncSnapshot,
+  calls,
+} = vi.hoisted(() => {
     const calls: string[] = [];
     return {
       calls,
       loadKeyPair: vi.fn(),
+      // The hook re-checks the keyring whenever the session locks or unlocks;
+      // `notifyUnlock` is how a test plays that transition.
+      lockListeners: new Set<() => void>(),
       isSyncDue: vi.fn(),
       syncSearchIndex: vi.fn(async () => {
         calls.push('index');
@@ -32,7 +42,18 @@ const { loadKeyPair, isSyncDue, syncSearchIndex, pullSnapshot, syncSnapshot, cal
     };
   });
 
-vi.mock('@neutrino/e2e-crypto', () => ({ loadKeyPair }));
+vi.mock('@neutrino/e2e-crypto', () => ({
+  loadKeyPair,
+  subscribeToLockState: (listener: () => void) => {
+    lockListeners.add(listener);
+    return () => lockListeners.delete(listener);
+  },
+}));
+
+/** Fire a lock-state transition, as unlocking the keyring does. */
+function notifyUnlock() {
+  lockListeners.forEach((l) => l());
+}
 vi.mock('@/lib/searchIndexer', () => ({ isSyncDue, syncSearchIndex }));
 vi.mock('@/lib/searchIndexSnapshot', () => ({ pullSnapshot, syncSnapshot }));
 
@@ -47,6 +68,7 @@ async function freshHook() {
 beforeEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
+  lockListeners.clear();
   localStorage.clear();
   loadKeyPair.mockReturnValue({ publicKey: new Uint8Array(), secretKey: new Uint8Array() });
   isSyncDue.mockReturnValue(true);
@@ -77,6 +99,39 @@ describe('useSearchIndexSync', () => {
 
     expect(pullSnapshot).not.toHaveBeenCalled();
     expect(syncSearchIndex).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The regression: the keyring is unwrapped from IndexedDB asynchronously, so
+   * on a fresh load this hook's effect runs while the session is still locked.
+   * Sampling `loadKeyPair` once and returning meant the sync never ran — and,
+   * because the early return came first, the visibility listener was never
+   * registered either, so nothing retried for the life of the page. The index
+   * stayed empty and every search matched nothing.
+   */
+  it('syncs when the keyring is unlocked after mount', async () => {
+    loadKeyPair.mockReturnValue(null);
+    const useSearchIndexSync = await freshHook();
+    renderHook(() => useSearchIndexSync('user-1'));
+
+    expect(pullSnapshot).not.toHaveBeenCalled();
+
+    loadKeyPair.mockReturnValue({ publicKey: new Uint8Array(), secretKey: new Uint8Array() });
+    notifyUnlock();
+
+    await waitFor(() => expect(calls).toEqual(['pull', 'index', 'push']));
+  });
+
+  it('stops listening for unlocks once unmounted', async () => {
+    loadKeyPair.mockReturnValue(null);
+    const useSearchIndexSync = await freshHook();
+    const { unmount } = renderHook(() => useSearchIndexSync('user-1'));
+
+    unmount();
+    loadKeyPair.mockReturnValue({ publicKey: new Uint8Array(), secretKey: new Uint8Array() });
+    notifyUnlock();
+
+    expect(pullSnapshot).not.toHaveBeenCalled();
   });
 
   it('respects the Settings toggle that disables background syncing', async () => {

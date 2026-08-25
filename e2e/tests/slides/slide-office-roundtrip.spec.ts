@@ -9,6 +9,7 @@
  */
 
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption, downloadDecrypted } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -34,12 +35,21 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+  await setUpEncryption(page);
 }
 
 async function getAuthToken(page: Page): Promise<string> {
   const token = await page.evaluate(() => localStorage.getItem('access_token'));
   if (!token) throw new Error('access_token not found in localStorage');
   return token;
+}
+
+async function getUserId(request: APIRequestContext, token: string): Promise<string> {
+  const res = await request.get(`${BASE_URL}/api/v1/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(res.ok(), `profile fetch failed: ${res.status()}`).toBeTruthy();
+  return ((await res.json()) as { id: string }).id;
 }
 
 async function uploadSamplePptx(request: APIRequestContext, token: string): Promise<string> {
@@ -112,12 +122,13 @@ test.describe('Slides — office round-trip editing', () => {
     // The edited title renders both in the canvas and the slide-panel thumbnail.
     await expect(page.getByText('(edited)', { exact: false }).first()).toBeVisible({ timeout: 15_000 });
 
-    const download = await request.get(`${BASE_URL}/api/v1/drive/files/${fileId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(download.ok()).toBeTruthy();
-    const buffer = Buffer.from(await download.body());
-    assertValidOoxmlZip(buffer);
+    // Decrypted, because an office-mode save is E2EE like every other save
+    // (issue #95): the bytes in storage are ciphertext, and the OOXML the user
+    // gets is what Drive's download produces after decrypting them here.
+    const userId = await getUserId(request, token);
+    assertValidOoxmlZip(
+      await downloadDecrypted(page, request, { baseUrl: BASE_URL, token, userId, fileId }),
+    );
   });
 
   test('the file keeps the same id, name, and mimetype after editing (native round-trip)', async ({ page, request }) => {

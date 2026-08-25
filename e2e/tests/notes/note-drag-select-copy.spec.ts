@@ -1,5 +1,7 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { createNoteViaApi } from '../../fixtures/notes';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -20,18 +22,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
-}
-
-async function createNoteViaApi(request: APIRequestContext, page: Page, title: string): Promise<string> {
-  const token = await page.evaluate(() => localStorage.getItem('access_token'));
-  if (!token) throw new Error('access_token not found in localStorage');
-  const res = await request.post(`${BASE_URL}/api/v1/notes`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
-  });
-  expect(res.ok(), `create note failed: ${res.status()} ${await res.text()}`).toBeTruthy();
-  const data = (await res.json()) as { id: string };
-  return data.id;
+  await setUpEncryption(page);
 }
 
 test.describe('Notes — dragging to select rendered (view-mode) text', () => {
@@ -105,13 +96,16 @@ test.describe('Notes — dragging to select rendered (view-mode) text', () => {
     const box = await textEl.boundingBox();
     if (!box) throw new Error('rendered block text has no bounding box');
 
-    // Drag-select just "CopyMe" at the start of the line.
+    // Drag-select the whole line rather than a fixed number of pixels into it:
+    // where 55px lands depends on the font the machine running this renders
+    // with, and one machine's "CopyMe" is another's "CopyM" — a selection the
+    // assertion below does not match.
     await page.mouse.move(box.x + 2, box.y + box.height / 2);
     await page.mouse.down();
-    await page.mouse.move(box.x + 55, box.y + box.height / 2, { steps: 10 });
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 10 });
     await page.mouse.up();
 
-    await page.keyboard.press('Control+c');
+    await page.keyboard.press('ControlOrMeta+c');
     await page.waitForTimeout(200);
 
     // Paste into the title field rather than reading the OS clipboard —
@@ -121,7 +115,7 @@ test.describe('Notes — dragging to select rendered (view-mode) text', () => {
     // is not dependable under automation even when the copy itself worked.
     await titleInput.click();
     await titleInput.selectText();
-    await page.keyboard.press('Control+v');
+    await page.keyboard.press('ControlOrMeta+v');
 
     await expect(titleInput).toHaveValue(/CopyMe/, { timeout: 5_000 });
   });

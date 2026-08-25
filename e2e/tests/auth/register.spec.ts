@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { finishRegistrationEncryption } from '../../fixtures/e2ee';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -25,9 +26,13 @@ test.describe('Register', () => {
 
     await page.getByLabel('Name').fill('Test User');
     await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password').fill('Password123!');
+    // `exact` because "Confirm password" also contains "Password".
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
+    await page.getByLabel('Confirm password').fill('Password123!');
     await page.getByRole('button', { name: 'Create free account' }).click();
 
+    // The redirect is on the far side of the recovery kit.
+    await finishRegistrationEncryption(page);
     await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
 
     const accessToken = await page.evaluate(() => localStorage.getItem('access_token'));
@@ -50,7 +55,8 @@ test.describe('Register', () => {
 
     await page.getByLabel('Name').fill('Duplicate User');
     await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password').fill('Password123!');
+    await page.getByLabel('Password', { exact: true }).fill('Password123!');
+    await page.getByLabel('Confirm password').fill('Password123!');
     await page.getByRole('button', { name: 'Create free account' }).click();
 
     // Should stay on register page and show an error
@@ -63,8 +69,10 @@ test.describe('Register', () => {
 
     await page.getByLabel('Name').fill('Short Pass User');
     await page.getByLabel('Email').fill(uniqueEmail());
-    // 7 characters — below the minLength=8 requirement
-    await page.getByLabel('Password').fill('Short1!');
+    // 7 characters — below the minLength=8 requirement. Both fields, so that
+    // minLength is what blocks the submit rather than an empty required field.
+    await page.getByLabel('Password', { exact: true }).fill('Short1!');
+    await page.getByLabel('Confirm password').fill('Short1!');
 
     // Intercept any outgoing register request
     let requestMade = false;

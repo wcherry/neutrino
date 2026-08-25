@@ -142,7 +142,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     )),
     tags((
         name = "drive-key-files",
-        description = "Retired identity keys, and which files still need them"
+        description = "The archive of a user's retired identity keys, itself sealed to their active public key. Rotation retires a key rather than destroying it, so older files stay openable; the key file is stored whole rather than merged, because dropping an entry is how a client retires a key. The key-versions endpoint reports how many files each version still opens, so a client can see what it would lose before dropping one."
     )),
     security(("bearer_auth" = []))
 )]

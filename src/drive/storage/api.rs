@@ -106,6 +106,11 @@ async fn stream_field_to_file(
     Ok(size)
 }
 
+/// Convert an uploaded file into a native Neutrino document in place.
+///
+/// The client does the parsing — OOXML never reaches the backend — and POSTs the already
+/// converted body plus the target native mime type. Requires edit access, and a file that has
+/// already been converted returns 409.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{id}/convert",
@@ -160,9 +165,13 @@ pub async fn convert_file(
     }))
 }
 
+/// Upload a file as multipart form data.
+///
+/// Streams the body to disk, charges it against the caller's storage quota (413 when it would
+/// not fit) and the daily upload allowance (429), and returns the new file's metadata.
 #[utoipa::path(
     post,
-    path = "/api/v1/drive/files",
+    path = "/api/v1/drive/files/upload",
     responses(
         (status = 201, description = "File uploaded successfully", body = FileMetadataResponse),
         (status = 400, description = "No file provided or invalid multipart data"),
@@ -311,6 +320,11 @@ pub async fn upload_file(
     Err(ApiError::bad_request("No file provided in multipart body"))
 }
 
+/// Create an empty file record without uploading bytes.
+///
+/// How the editors make a new document: the client picks the ID, and a native Neutrino type is
+/// seeded with its default content so a new spreadsheet opens as a valid empty workbook rather
+/// than a zero-byte read.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files",
@@ -390,6 +404,11 @@ pub async fn create_file_record(
     Ok(HttpResponse::Created().json(response))
 }
 
+/// Record the original dates and provenance of an imported file.
+///
+/// Called once per file *after* its content is written, since the write is what stamps
+/// `updatedAt` — setting the dates at creation would only have them overwritten a moment
+/// later.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/files/{id}/import-metadata",
@@ -418,6 +437,10 @@ pub async fn set_import_metadata(
     Ok(web::Json(response))
 }
 
+/// Fetch a file's metadata together with the caller's effective role on it.
+///
+/// The variant the editors open with, because it answers both "what is this file" and "may I
+/// edit it" in one round trip.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/info",
@@ -474,6 +497,10 @@ pub async fn get_file_info(
     }))
 }
 
+/// List the caller's files, flat and paginated.
+///
+/// Ignores folder structure — use the filesystem endpoints to walk the tree — and sorts by the
+/// requested field, defaulting to 50 per page.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files",
@@ -501,6 +528,10 @@ pub async fn list_files(
     Ok(web::Json(response))
 }
 
+/// Fetch one file's metadata.
+///
+/// Name, size, mime type, folder and timestamps, without the permission role that
+/// `/files/{id}/info` adds.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/metadata",
@@ -525,6 +556,11 @@ pub async fn get_file_metadata(
     Ok(web::Json(metadata))
 }
 
+/// Download a file's bytes.
+///
+/// Serves the stored content as an attachment and honours HTTP `Range` requests, so an
+/// interrupted download can resume. For end-to-end encrypted files this is ciphertext — the
+/// client decrypts it.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}",
@@ -580,6 +616,10 @@ pub async fn download_file(
     Ok(response)
 }
 
+/// Serve a file's bytes inline for in-browser preview.
+///
+/// The same content as the download endpoint but with a `Content-Disposition` the browser will
+/// render rather than save.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/preview",
@@ -632,6 +672,10 @@ pub async fn preview_file(
     Ok(response)
 }
 
+/// List the entries inside a stored ZIP archive.
+///
+/// Reads the archive's central directory without extracting it, so a client can show what is
+/// inside before deciding to download. Paginated and sortable.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/zip-contents",
@@ -705,6 +749,9 @@ pub async fn zip_contents(
     Ok(web::Json(ZipContentsResponse { entries }))
 }
 
+/// Report the caller's storage usage and limit.
+///
+/// What the storage meter reads, and what an upload is checked against before it is accepted.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/quota",
@@ -723,6 +770,11 @@ pub async fn get_quota(
     Ok(web::Json(quota))
 }
 
+/// Overwrite a file's content from the editor's autosave loop.
+///
+/// Optimistic concurrency: pass `expectedContentVersion` and the write is rejected with 409 if
+/// the file moved on server-side, so a stale tab cannot clobber a newer save. A rename sent
+/// alongside the body is applied only once the content lands.
 #[utoipa::path(
     put,
     path = "/api/v1/drive/files/{id}/autosave",
@@ -858,6 +910,10 @@ pub async fn autosave_file(
     Ok(web::Json(response))
 }
 
+/// Save the uploaded bytes as a named version in the file's history.
+///
+/// Snapshots the content under an optional label, leaving the live file as it is. Requires edit
+/// access.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{id}/versions",
@@ -957,6 +1013,9 @@ pub async fn save_version(
     Err(ApiError::bad_request("No file provided in multipart body"))
 }
 
+/// List a file's saved versions, paginated.
+///
+/// Backs the version-history panel; each entry carries its label, size and when it was saved.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/versions",
@@ -988,6 +1047,9 @@ pub async fn list_versions(
     Ok(web::Json(response))
 }
 
+/// Fetch one saved version's metadata.
+///
+/// The metadata only — use the download endpoint for the version's bytes.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/versions/{vid}",
@@ -1015,6 +1077,9 @@ pub async fn get_version(
     Ok(web::Json(response))
 }
 
+/// Rename a saved version.
+///
+/// Changes only the human-readable label; the snapshot's content is immutable.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/files/{id}/versions/{vid}",
@@ -1047,6 +1112,10 @@ pub async fn update_version_label(
     Ok(web::Json(response))
 }
 
+/// Roll a file back to one of its saved versions.
+///
+/// Snapshots the current content as a new version first, then copies the chosen snapshot over
+/// the live file — so a restore is itself undoable. The restored version stays in the history.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{id}/versions/{vid}/restore",
@@ -1074,6 +1143,10 @@ pub async fn restore_version(
     Ok(web::Json(response))
 }
 
+/// Download the bytes of one saved version.
+///
+/// Serves the snapshot rather than the live file, so an older revision can be exported without
+/// disturbing the current one.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/versions/{vid}/download",
@@ -1128,6 +1201,9 @@ pub async fn download_version(
     Ok(response)
 }
 
+/// Delete a saved version from a file's history.
+///
+/// Removes that snapshot only; the live file and the remaining versions are untouched.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{id}/versions/{vid}",
@@ -1203,8 +1279,14 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         DocFileMetadataResponse,
     )),
     tags(
-        (name = "storage", description = "File storage endpoints"),
-        (name = "versioning", description = "File version history endpoints"),
+        (
+            name = "storage",
+            description = "The bytes behind a Drive file: multipart upload, download and inline preview, quota accounting, editor autosave, and conversion of an uploaded office file into a native Neutrino document. Content is encrypted client-side, so what these endpoints store and serve is ciphertext the server cannot read."
+        ),
+        (
+            name = "versioning",
+            description = "Point-in-time snapshots of a file's content. Versions are saved explicitly or captured automatically before a restore, can be labelled, downloaded and deleted independently of the live file, and restoring one snapshots the current content first so the restore is itself undoable."
+        ),
     ),
     modifiers(&SecurityAddon)
 )]

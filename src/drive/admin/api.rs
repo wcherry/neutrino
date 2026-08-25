@@ -27,7 +27,10 @@ struct UpdateServiceFlagsRequest {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-/// Return process information. Requires admin auth.
+/// List the processes running on the host. Admin only.
+///
+/// What the admin dashboard's process table reads, so an operator can see what the box is doing
+/// without shelling into it.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/processes",
@@ -51,7 +54,10 @@ async fn get_processes(
     Ok(HttpResponse::Ok().json(procs))
 }
 
-/// Return disk usage for the configured storage path. Requires admin auth.
+/// Report disk usage for the configured storage path. Admin only.
+///
+/// Measures the volume the file store actually lives on, which is what fills up first on a
+/// self-hosted install.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/disk",
@@ -75,7 +81,10 @@ async fn get_disk_usage(
     Ok(HttpResponse::Ok().json(info))
 }
 
-/// List all registered services. Requires admin auth.
+/// List the companion services registered with this server. Admin only.
+///
+/// The same registry the internal `/api/v1/internal/services` endpoints write to, surfaced for
+/// the admin dashboard.
 #[utoipa::path(
     get,
     path = "/api/v1/admin/services",
@@ -99,7 +108,10 @@ async fn list_services(
     Ok(HttpResponse::Ok().json(services))
 }
 
-/// Enable/disable or toggle auto_update on a registered service. Requires admin auth.
+/// Enable, disable or change auto-update on a registered service. Admin only.
+///
+/// The admin-facing twin of the internal service-registry endpoint; patches only the flags
+/// supplied.
 #[utoipa::path(
     patch,
     path = "/api/v1/admin/services/{name}",
@@ -156,7 +168,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         UpdateServiceFlagsRequest,
         crate::drive::service_registry::ServiceInfo,
     )),
-    tags((name = "admin", description = "Admin dashboard endpoints — process info, disk usage, service management")),
+    tags((
+        name = "admin",
+        description = "The operator dashboard for a self-hosted install: host process list, disk usage on the storage volume, and enable/disable control over registered companion services. Every route requires an admin account."
+    )),
     modifiers(&SecurityAddon)
 )]
 pub struct AdminApiDoc;

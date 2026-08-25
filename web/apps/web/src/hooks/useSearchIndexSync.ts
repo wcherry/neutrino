@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { loadKeyPair } from '@neutrino/e2e-crypto';
+import { loadKeyPair, subscribeToLockState } from '@neutrino/e2e-crypto';
 import { isSyncDue, syncSearchIndex } from '@/lib/searchIndexer';
 import { pullSnapshot, syncSnapshot } from '@/lib/searchIndexSnapshot';
 
@@ -82,16 +82,30 @@ function runSync(userId: string): void {
 export function useSearchIndexSync(userId: string | undefined): void {
   useEffect(() => {
     if (!userId) return;
+
     // The index stores decrypted text, so it only makes sense once the user's
     // E2EE keys are on this device — the same gate the search engine uses.
-    if (!loadKeyPair(userId)) return;
+    // `loadKeyPair` reads the *in-memory* session keyring, which is unlocked
+    // asynchronously from IndexedDB, so on a fresh load this effect usually
+    // runs before it lands. Sampling it once and returning meant the sync
+    // never ran and the visibility listener was never even registered — the
+    // index stayed empty and search matched nothing until someone hit
+    // "Rebuild index" in Settings. So the unlock is subscribed to instead.
+    function syncIfUnlocked() {
+      if (userId && loadKeyPair(userId)) runSync(userId);
+    }
 
-    runSync(userId);
+    syncIfUnlocked();
+
+    const unsubscribe = subscribeToLockState(syncIfUnlocked);
 
     function onVisibilityChange() {
-      if (document.visibilityState === 'visible' && userId) runSync(userId);
+      if (document.visibilityState === 'visible') syncIfUnlocked();
     }
     document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      unsubscribe();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [userId]);
 }

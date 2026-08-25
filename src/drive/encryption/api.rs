@@ -53,7 +53,10 @@ pub struct ShareFileKeyRequest {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-/// Get the caller's encrypted file key for a file.
+/// Fetch the caller's sealed data key for a file.
+///
+/// Returns the file's AES-GCM DEK sealed to the caller's Curve25519 public key, plus the
+/// keyring version that opens it. The client unseals it locally; the server cannot.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/key",
@@ -85,7 +88,10 @@ pub async fn get_file_key(
     }))
 }
 
-/// Store or update the caller's encrypted file key.
+/// Store or replace the caller's sealed data key for a file.
+///
+/// Written once at upload, and again after a key rotation reseals the DEK to a newer keyring
+/// version. The body is ciphertext the server only files away.
 #[utoipa::path(
     put,
     path = "/api/v1/drive/files/{id}/key",
@@ -131,8 +137,10 @@ pub async fn set_file_key(
     }))
 }
 
-/// Share a file key with another user.
-/// The client seals the DEK with the recipient's public key before calling this.
+/// Give another user their own sealed copy of a file's data key.
+///
+/// The client fetches the recipient's public key, seals the DEK to it, and posts the result —
+/// which is what makes a share readable without the server ever holding the plaintext key.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{id}/key/share",
@@ -181,7 +189,10 @@ pub async fn share_file_key(
     }))
 }
 
-/// Delete the caller's own key ref (e.g. on leaving a shared file).
+/// Delete the caller's sealed key for a file.
+///
+/// Removes only the caller's copy, for instance on leaving a shared file; every other
+/// recipient's key and the file itself are untouched.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{id}/key",
@@ -217,7 +228,10 @@ pub fn configure(conf: &mut web::ServiceConfig) {
 #[openapi(
     paths(get_file_key, set_file_key, share_file_key, delete_file_key),
     components(schemas(SetFileKeyRequest, FileKeyResponse, ShareFileKeyRequest)),
-    tags((name = "drive-encryption", description = "Drive client-side encryption endpoints")),
+    tags((
+        name = "drive-encryption",
+        description = "Per-file data keys for end-to-end encryption. Every file has its own AES-GCM DEK, and this stores one sealed copy of that DEK per user who may open the file, tagged with the keyring version it was sealed to. Everything crossing this boundary is ciphertext — sharing a file means adding a copy sealed to the recipient's public key, and revoking means deleting theirs."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct EncryptionApiDoc;

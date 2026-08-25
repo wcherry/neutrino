@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -40,6 +41,7 @@ test.describe('Login', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+    await setUpEncryption(page);
 
     const accessToken = await page.evaluate(() => localStorage.getItem('access_token'));
     const refreshToken = await page.evaluate(() => localStorage.getItem('refresh_token'));
@@ -94,6 +96,7 @@ test.describe('Login', () => {
     await page.getByLabel('Password').fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
+    await setUpEncryption(page);
 
     // Call logout endpoint directly (simulates the app calling authApi.logout())
     const accessToken = await page.evaluate(() => localStorage.getItem('access_token'));

@@ -12,7 +12,10 @@ pub struct SuggestionsApiState {
     pub suggestions_service: Arc<SuggestionsService>,
 }
 
-/// List all pending face suggestions for the authenticated user.
+/// List the caller's pending face-identification suggestions.
+///
+/// Each one proposes that an unassigned face belongs to an existing person, waiting for the user
+/// to confirm or reject it.
 #[utoipa::path(
     get,
     path = "/api/v1/photos/suggestions",
@@ -31,7 +34,10 @@ pub async fn list_suggestions(
     Ok(web::Json(result))
 }
 
-/// Accept a suggestion: assign the face to the suggested person.
+/// Accept a face suggestion.
+///
+/// Assigns the face to the suggested person and clears the suggestion, which is what folds the
+/// photo into that person's album.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/suggestions/{id}/accept",
@@ -54,7 +60,10 @@ pub async fn accept_suggestion(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// Reject a suggestion: prevents this face from being re-suggested for this person.
+/// Reject a face suggestion.
+///
+/// Records the rejection so the same face is not proposed for that person again, rather than
+/// simply dropping the suggestion for clustering to re-raise.
 #[utoipa::path(
     post,
     path = "/api/v1/photos/suggestions/{id}/reject",
@@ -87,7 +96,10 @@ pub fn configure_suggestions(cfg: &mut web::ServiceConfig) {
 #[openapi(
     paths(list_suggestions, accept_suggestion, reject_suggestion),
     components(schemas(SuggestionResponse, ListSuggestionsResponse)),
-    tags((name = "suggestions", description = "Face identification suggestions")),
+    tags((
+        name = "suggestions",
+        description = "Proposals that an unassigned face belongs to a person the library already knows, waiting on the user to decide. Accepting one assigns the face; rejecting it is recorded so the same pairing is not proposed again on the next clustering run."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct SuggestionsApiDoc;

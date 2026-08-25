@@ -39,6 +39,11 @@ fn parse_message(data: &[u8]) -> ParsedMessage {
 
 // ── WebSocket handler ──────────────────────────────────────────────────────────
 
+/// Open the presence socket for a spreadsheet.
+///
+/// Awareness only: it carries who is here and where their selection is, not cell edits — a
+/// sheet's content is saved through the Drive autosave endpoint rather than merged as a CRDT.
+/// Authenticates from `?token=<jwt>`.
 #[utoipa::path(
     get,
     path = "/api/v1/sheets/{id}/ws",
@@ -165,6 +170,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(sheet_presence_ws),
-    tags((name = "sheets-presence", description = "Sheets real-time presence endpoints"))
+    tags((
+        name = "sheets-presence",
+        description = "The awareness channel for a spreadsheet: a WebSocket that relays who has the sheet open and where their selection is. It deliberately carries no cell data — sheet content is saved through the Drive autosave endpoint rather than merged as a CRDT — and authenticates from a `token` query parameter."
+    ))
 )]
 pub struct SheetsPresenceApiDoc;

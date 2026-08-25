@@ -13,6 +13,10 @@ pub struct CommentsApiState {
     pub comments_service: Arc<CommentsService>,
 }
 
+/// List the comments on a file.
+///
+/// Each comment comes back with its replies inlined. Pass `status` to show only `open` or only
+/// `resolved` threads.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files/{id}/comments",
@@ -42,6 +46,10 @@ pub async fn list_comments(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Start a comment thread on a file.
+///
+/// `anchorJson` is opaque to the server — the editor decides what a comment is pinned to — and
+/// `assigneeId` turns the thread into an action item for that user.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{id}/comments",
@@ -69,6 +77,10 @@ pub async fn create_comment(
     Ok(HttpResponse::Created().json(result))
 }
 
+/// Edit a comment or change its status.
+///
+/// Sending `status: "resolved"` is how a thread is resolved, which records who resolved it and
+/// when.
 #[utoipa::path(
     patch,
     path = "/api/v1/drive/files/{id}/comments/{cid}",
@@ -100,6 +112,9 @@ pub async fn update_comment(
     Ok(HttpResponse::Ok().json(result))
 }
 
+/// Delete a comment thread.
+///
+/// Takes its replies with it.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{id}/comments/{cid}",
@@ -128,6 +143,10 @@ pub async fn delete_comment(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Reply to a comment thread.
+///
+/// Appends to the thread; replies come back inlined on the parent comment rather than through
+/// a list endpoint of their own.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/{id}/comments/{cid}/replies",
@@ -159,6 +178,9 @@ pub async fn add_reply(
     Ok(HttpResponse::Created().json(result))
 }
 
+/// Delete one reply from a thread.
+///
+/// The thread and its remaining replies stay in place.
 #[utoipa::path(
     delete,
     path = "/api/v1/drive/files/{id}/comments/{cid}/replies/{rid}",
@@ -215,7 +237,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         CommentReplyResponse,
         CommentListResponse,
     )),
-    tags((name = "drive-comments", description = "Drive file comments endpoints")),
+    tags((
+        name = "drive-comments",
+        description = "Threaded comments on a Drive file. Each thread carries an opaque `anchorJson` that the editor uses to pin it to a place in the document, an optional assignee, and a status that moves from open to resolved. Replies are returned inlined on their parent thread."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct CommentsApiDoc;

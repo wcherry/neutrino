@@ -1,5 +1,7 @@
 import { test, expect } from '../../fixtures/base';
+import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
+import { createNoteViaApi } from '../../fixtures/notes';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -20,22 +22,7 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/drive/, { timeout: 15_000 });
-}
-
-async function createNoteViaApi(
-  request: APIRequestContext,
-  page: Page,
-  title: string,
-): Promise<string> {
-  const token = await page.evaluate(() => localStorage.getItem('access_token'));
-  if (!token) throw new Error('access_token not found in localStorage');
-  const res = await request.post(`${BASE_URL}/api/v1/notes`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { title },
-  });
-  expect(res.ok(), `create note failed: ${res.status()} ${await res.text()}`).toBeTruthy();
-  const data = (await res.json()) as { id: string };
-  return data.id;
+  await setUpEncryption(page);
 }
 
 /**
@@ -85,7 +72,7 @@ test.describe('Notes — Select all spans the whole note body', () => {
 
     // Focus is still in block 2's <textarea> — this is exactly the case that
     // used to select only "Beta block content".
-    await page.keyboard.press('Control+a');
+    await page.keyboard.press('ControlOrMeta+a');
 
     const selected = await currentSelectionText(page);
     expect(selected).toContain('Alpha block content');
@@ -125,7 +112,7 @@ test.describe('Notes — Select all spans the whole note body', () => {
     await fillTwoBlocksAndFocusSecond(page, 'Body block one', 'Body block two');
 
     await titleInput.click();
-    await page.keyboard.press('Control+a');
+    await page.keyboard.press('ControlOrMeta+a');
 
     // Native input select-all: the whole title string, selected inside the
     // <input>'s own selection — not a window Selection spanning the blocks.

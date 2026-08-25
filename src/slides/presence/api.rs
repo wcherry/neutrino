@@ -26,6 +26,10 @@ fn parse_message(data: &[u8]) -> ParsedMessage {
     }
 }
 
+/// Open the presence socket for a presentation.
+///
+/// Awareness only — collaborator cursors and selections, not slide content. Authenticates from
+/// `?token=<jwt>` because the handshake carries no headers.
 #[utoipa::path(
     get,
     path = "/api/v1/slides/{id}/ws",
@@ -140,6 +144,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(slide_presence_ws),
-    tags((name = "slides-presence", description = "Slides real-time presence endpoints"))
+    tags((
+        name = "slides-presence",
+        description = "The awareness channel for a presentation — collaborator cursors, selections and which slide each person is on, relayed over a WebSocket. Slide content is not carried here; the handshake authenticates from a `token` query parameter."
+    ))
 )]
 pub struct SlidesPresenceApiDoc;

@@ -11,6 +11,10 @@ pub struct AttachmentsApiState {
     pub attachments_service: Arc<AttachmentsService>,
 }
 
+/// List the attachments and notes on an event.
+///
+/// Attachments reference Drive files by ID; the file bytes themselves stay in Drive and
+/// are fetched separately.
 #[utoipa::path(
     get,
     path = "/api/v1/events/{event_id}/attachments",
@@ -33,6 +37,10 @@ pub async fn list_attachments(
     Ok(web::Json(result))
 }
 
+/// Attach a file or note to an event.
+///
+/// Links an existing Drive file (or a free-text note) to the event and returns the created
+/// attachment record.
 #[utoipa::path(
     post,
     path = "/api/v1/events/{event_id}/attachments",
@@ -58,6 +66,9 @@ pub async fn create_attachment(
     Ok(HttpResponse::Created().json(attachment))
 }
 
+/// Remove an attachment from an event.
+///
+/// Only the link is removed — the underlying Drive file is left untouched.
 #[utoipa::path(
     delete,
     path = "/api/v1/events/{event_id}/attachments/{attachment_id}",
@@ -99,7 +110,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         crate::calendar::attachments::dto::AttachmentResponse,
         ListAttachmentsResponse,
     )),
-    tags((name = "attachments", description = "Event attachments and notes")),
+    tags((
+        name = "attachments",
+        description = "Files and notes hung off a calendar event. Attachments reference Drive files by ID rather than storing bytes, so deleting an attachment never touches the underlying file."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct AttachmentsApiDoc;

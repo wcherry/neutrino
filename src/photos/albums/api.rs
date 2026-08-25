@@ -19,6 +19,10 @@ pub struct AlbumsApiState {
     pub photos_service: Arc<PhotosService>,
 }
 
+/// List the caller's albums.
+///
+/// Covers both hand-made albums and the automatic ones the library generates, each with its
+/// photo count and cover photo ID.
 #[utoipa::path(
     get,
     path = "/api/v1/albums",
@@ -37,6 +41,10 @@ pub async fn list_albums(
     Ok(web::Json(result))
 }
 
+/// Create an album.
+///
+/// Takes a title and an optional description; the album starts empty and its cover follows the
+/// most recently added photo.
 #[utoipa::path(
     post,
     path = "/api/v1/albums",
@@ -60,6 +68,10 @@ pub async fn create_album(
     Ok(HttpResponse::Created().json(album))
 }
 
+/// Fetch one album.
+///
+/// Returns its title, description, photo count and cover photo ID — the metadata, not the photos
+/// themselves.
 #[utoipa::path(
     get,
     path = "/api/v1/albums/{id}",
@@ -83,6 +95,9 @@ pub async fn get_album(
     Ok(web::Json(album))
 }
 
+/// Rename an album or change its description.
+///
+/// Patches only the fields supplied. Auto-generated albums can be renamed like any other.
 #[utoipa::path(
     patch,
     path = "/api/v1/albums/{id}",
@@ -110,6 +125,9 @@ pub async fn update_album(
     Ok(web::Json(album))
 }
 
+/// Delete an album.
+///
+/// Removes the album and its membership rows; the photos stay in the library.
 #[utoipa::path(
     delete,
     path = "/api/v1/albums/{id}",
@@ -133,6 +151,10 @@ pub async fn delete_album(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// List the photos in an album.
+///
+/// Returns full photo records rather than IDs, so a client can render the grid straight from the
+/// response.
 #[utoipa::path(
     get,
     path = "/api/v1/albums/{id}/items",
@@ -162,6 +184,10 @@ pub async fn list_album_photos(
     Ok(web::Json(result))
 }
 
+/// Add a photo to an album.
+///
+/// A photo can sit in several albums at once, so this records a membership rather than moving
+/// anything.
 #[utoipa::path(
     post,
     path = "/api/v1/albums/{id}/items",
@@ -189,6 +215,9 @@ pub async fn add_photo_to_album(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Remove a photo from an album.
+///
+/// Drops the membership only — the photo stays in the library and in any other albums.
 #[utoipa::path(
     delete,
     path = "/api/v1/albums/{id}/items/{photoId}",
@@ -247,7 +276,10 @@ pub fn configure_albums(cfg: &mut web::ServiceConfig) {
         AlbumResponse,
         ListAlbumsResponse,
     )),
-    tags((name = "albums", description = "Photo albums")),
+    tags((
+        name = "albums",
+        description = "Named collections of photos. A photo can belong to several albums at once, so membership is recorded rather than moved and deleting an album never deletes photos. Some albums are generated automatically — per detected person, for instance — and carry an `isAuto` flag alongside the hand-made ones."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct AlbumsApiDoc;

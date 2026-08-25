@@ -16,6 +16,10 @@ pub struct TasksApiState {
 
 // ── Task Lists ────────────────────────────────────────────────────────────────
 
+/// List the caller's task lists.
+///
+/// Task lists group tasks the way calendars group events; every user starts with a default
+/// list.
 #[utoipa::path(
     get,
     path = "/api/v1/tasks/lists",
@@ -34,6 +38,9 @@ pub async fn list_task_lists(
     Ok(web::Json(result))
 }
 
+/// Create a task list.
+///
+/// Returns the new list with its generated ID, ready for tasks to be added to it.
 #[utoipa::path(
     post,
     path = "/api/v1/tasks/lists",
@@ -59,6 +66,10 @@ pub async fn create_task_list(
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 
+/// List tasks.
+///
+/// Returns the caller's tasks in display order. Pass `list_id` to restrict the result to a
+/// single task list; without it every task the user owns is returned.
 #[utoipa::path(
     get,
     path = "/api/v1/tasks",
@@ -82,6 +93,10 @@ pub async fn list_tasks(
     Ok(web::Json(tasks))
 }
 
+/// Create a task.
+///
+/// Accepts a title with optional notes, due date and parent list, and returns the stored
+/// task.
 #[utoipa::path(
     post,
     path = "/api/v1/tasks",
@@ -103,6 +118,10 @@ pub async fn create_task(
     Ok(HttpResponse::Created().json(task))
 }
 
+/// Update a task.
+///
+/// Patches only the supplied fields, so this is also how a task is marked complete or
+/// reopened.
 #[utoipa::path(
     patch,
     path = "/api/v1/tasks/{id}",
@@ -132,6 +151,10 @@ pub async fn update_task(
 
 // ── Reorder ───────────────────────────────────────────────────────────────────
 
+/// Reorder the tasks in a list.
+///
+/// Takes the full ordered list of task IDs and rewrites their sort positions in one
+/// transaction; every ID must already belong to the list.
 #[utoipa::path(
     post,
     path = "/api/v1/tasks/reorder",
@@ -158,6 +181,10 @@ pub async fn reorder_tasks(
 
 // ── List Membership ───────────────────────────────────────────────────────────
 
+/// Add an existing task to a task list.
+///
+/// A task can belong to more than one list, so this records a membership rather than moving
+/// the task. Adding a membership that already exists succeeds silently.
 #[utoipa::path(
     post,
     path = "/api/v1/tasks/{id}/lists/{list_id}",
@@ -215,7 +242,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         ReorderTasksRequest,
         TaskResponse,
     )),
-    tags((name = "tasks", description = "Task lists and tasks")),
+    tags((
+        name = "tasks",
+        description = "To-do items and the lists that group them. A task carries a title, notes, a due date and a done flag, and can belong to several lists at once through membership rows; positions within a list are rewritten in bulk by the reorder endpoint."
+    )),
     security(("bearer_auth" = []))
 )]
 pub struct TasksApiDoc;
