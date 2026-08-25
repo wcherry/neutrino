@@ -15,20 +15,21 @@ Backend routes with no caller in the web app or any native client.
 > `PATCH /tasks/{id}` look identical to a text search. Anything acted on below
 > was additionally verified by reading the client method that builds the call.
 
-Last verified: 2026-08-24, against 301 backend routes.
+Last verified: 2026-08-25, against 298 backend routes.
 
 ---
 
 ## Removed
 
-37 routes deleted — see the commits on this branch. Four whole modules went with
-them (`docs::ai`, `drive::ai`, `drive::priority`, `drive::suggestions`); the
-rest lost routes while keeping the service behind them, because something else
-still calls it.
+40 routes deleted — see the commits on this branch. Five whole modules went with
+them (`docs::ai`, `docs::docs`, `drive::ai`, `drive::priority`,
+`drive::suggestions`); the rest lost routes while keeping the service behind
+them, because something else still calls it.
 
 | Area | Routes | Note |
 |------|--------|------|
 | `docs::ai` | 7 | Whole module. Took the OpenAI/Claude/Gemini provider clients with it — nothing else imported them. |
+| `docs::docs` | 3 | Whole module, and the `docs` table with it. Page setup moved into the document body's `_meta` block, which retired `GET`/`PUT /docs/{id}/page-setup` — the only two routes here that ever had a caller. `GET /docs/{id}/export/text` had none, and this audit missed it: path matching found `exportText` in `packages/api-docs` and counted the route as called, but nothing in the app calls that wrapper — only four Vitest mocks name it. It was also already broken, parsing an encrypted body as Tiptap JSON and reporting every document as empty. |
 | `drive::shared_drives` | 9 | Only `GET /shared-drives` survives. Create, update, delete, the whole member sub-resource, and analytics had no caller. |
 | `calendar::tasks` | 7 | Task-list read/update/delete, `POST /tasks/bulk`, `GET`/`DELETE /tasks/{id}`, and `DELETE /tasks/{id}/lists/{list_id}`. |
 | `drive::suggestions` | 4 | Whole module. Distinct from access requests, which are used. |
@@ -40,7 +41,9 @@ still calls it.
 | `drive::filesystem` | 1 | `GET /bulk/download`. |
 
 Tables behind the deleted modules (`doc_suggestions`, and the priority/AI ones)
-are left in place, as the IRM removal did with `irm_policies`.
+are left in place, as the IRM removal did with `irm_policies`. `docs` is the
+exception — it held page setup and nothing else, so it is dropped in migration
+00114 rather than left behind empty.
 
 ---
 
@@ -98,8 +101,8 @@ not re-raise them.
 
 | | Routes |
 |---|---|
-| Backend routes | 301 |
-| With a client caller | 266 |
+| Backend routes | 298 |
+| With a client caller | 263 |
 | Unused — enterprise scaffolding | 22 |
 | Unused — not client-facing by design | 12 |
 | Unused — new, not yet wired | 1 |

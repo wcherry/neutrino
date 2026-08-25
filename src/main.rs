@@ -637,8 +637,6 @@ async fn main() -> std::io::Result<()> {
     use crate::shared::drive_client::DriveClient;
     use docs::collab::repository::CollabRepository;
     use docs::collab::state::CollabState;
-    use docs::docs::repository::DocsRepository;
-    use docs::docs::service::DocsService;
     use docs::templates::repository::TemplatesRepository;
     use docs::templates::service::TemplatesService;
 
@@ -647,12 +645,6 @@ async fn main() -> std::io::Result<()> {
         drive_permissions_service.clone(),
         drive_fs_repo.clone(),
     ));
-    let docs_repo = Arc::new(DocsRepository::new(pool.clone()));
-    let docs_service = Arc::new(DocsService::new(
-        docs_repo,
-        drive_client_for_docs.clone(),
-    ));
-    let docs_state = web::Data::new(docs::docs::api::DocsApiState { docs_service });
 
     let templates_repo = Arc::new(TemplatesRepository::new(pool.clone()));
     let templates_service = Arc::new(TemplatesService::new(templates_repo, drive_client_for_docs));
@@ -1008,7 +1000,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(calendar::attachments::api::AttachmentsApiDoc::openapi());
         doc.merge(calendar::connections::api::ConnectionsApiDoc::openapi());
         doc.merge(calendar::tasks::api::TasksApiDoc::openapi());
-        doc.merge(docs::docs::api::DocsApiDoc::openapi());
         doc.merge(docs::collab::api::CollabApiDoc::openapi());
         doc.merge(docs::templates::api::TemplatesApiDoc::openapi());
         doc.merge(drive::access_requests::api::AccessRequestsApiDoc::openapi());
@@ -1072,7 +1063,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(cal_connections_state.clone())
             .app_data(cal_tasks_state.clone())
             // Docs
-            .app_data(docs_state.clone())
             .app_data(templates_state.clone())
             .app_data(docs_collab_repo.clone())
             .app_data(docs_collab_state.clone())

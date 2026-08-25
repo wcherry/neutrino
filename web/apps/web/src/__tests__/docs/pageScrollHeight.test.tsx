@@ -67,6 +67,10 @@ vi.mock('@/providers/FeatureFlagsProvider', () => ({
 const mockGetDoc = vi.fn();
 
 vi.mock('@/lib/api', () => ({
+  DEFAULT_PAGE_SETUP: {
+    marginTop: 72, marginBottom: 72, marginLeft: 72, marginRight: 72,
+    orientation: 'portrait', pageSize: 'letter',
+  },
   ApiClientError: class ApiClientError extends Error {
     statusCode: number;
     code: string;
@@ -81,7 +85,6 @@ vi.mock('@/lib/api', () => ({
     getDoc: (...args: unknown[]) => mockGetDoc(...args),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveDoc: vi.fn(() => Promise.resolve()),
-    exportText: vi.fn(() => Promise.resolve({ text: '' })),
   },
   driveReadContent: vi.fn(() => Promise.resolve('')),
   driveCreateVersion: vi.fn(() => Promise.resolve()),
