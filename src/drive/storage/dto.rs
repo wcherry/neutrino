@@ -164,22 +164,11 @@ pub struct CreateFileRequest {
     pub folder_id: Option<String>,
     /// Body to write at creation time. Omit and a native Neutrino type
     /// (see `native_types`) is seeded with its default content instead, so a
-    /// new spreadsheet opens as a valid empty workbook rather than a
-    /// zero-byte read every editor has to special-case. Non-native types
-    /// stay empty, as before.
+    /// new document opens in a valid state rather than as a zero-byte read
+    /// every editor has to special-case. Non-native types stay empty, as
+    /// before, and so do the OOXML types — an `.xlsx` is a zip, which the
+    /// client builds and seals on its first save.
     pub initial_content: Option<String>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ConvertFileRequest {
-    /// The native Neutrino mime type to convert into, e.g.
-    /// `application/x-neutrino-sheet`.
-    pub target_mime_type: String,
-    /// The file's new body, already converted to the native format.
-    /// Conversion from OOXML happens client-side; the backend never parses
-    /// office bytes.
-    pub content: String,
 }
 
 /// What an importer says about a file it has just finished writing.

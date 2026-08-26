@@ -1,10 +1,29 @@
-import { request, ApiClientError } from '@neutrino/api-core';
+import {
+  request,
+  ApiClientError,
+  ooxmlMimeFor,
+  isOoxmlMime,
+  withOoxmlExtension,
+  stripOoxmlExtension,
+} from '@neutrino/api-core';
 
 /**
- * A file is a native Neutrino document because it carries this mime type.
+ * What a document created today is: a real Word document (issue #127), so
+ * every other office suite can open one and import/export are file copies.
+ */
+export const DOCX_MIME_TYPE = ooxmlMimeFor('docs');
+
+/**
+ * The bespoke JSON documents were written in before OOXML. Still read and
+ * still written — a document created in it stays in it, there is no
+ * migration — which is why the library asks for both types.
+ *
  * Mirrors `src/drive/storage/native_types.rs` on the backend.
  */
 export const DOC_MIME_TYPE = 'application/x-neutrino-doc';
+
+/** Both formats a file may be a native Neutrino document in. */
+export const DOC_MIME_TYPES = [DOCX_MIME_TYPE, DOC_MIME_TYPE] as const;
 
 /**
  * What a document with no stored page setup lays out to.
@@ -127,14 +146,18 @@ export interface ListDocsResponse {
 // ---------------------------------------------------------------------------
 //
 // Document CRUD is served by the generic drive file endpoints; a document is a
-// Drive file whose mime type is `application/x-neutrino-doc`. These functions
-// keep the doc-shaped contract their callers were written against and
-// translate it to and from drive's file DTOs.
+// Drive file whose mime type is one of `DOC_MIME_TYPES`. These functions keep
+// the doc-shaped contract their callers were written against and translate it
+// to and from drive's file DTOs.
 //
 // Nothing here reaches /api/v1/docs any more. Page setup used to be the
 // exception — server-side state with its own endpoint — and now rides in the
 // document body's `_meta` block, which means the editor reads it out of the
 // decrypted content rather than from a metadata call.
+//
+// The extension is part of the file's *name*, not just its mime type, so a
+// download lands on disk as `Report.docx` and opens on a double-click. The
+// title the UI shows has it stripped back off — a document is called "Report".
 
 /** The subset of drive's file DTOs these adapters read. */
 interface DriveFileDto {
@@ -160,7 +183,7 @@ function toIsoUtc(timestamp: string): string {
 function toDocMeta(file: DriveFileDto): DocMetaResponse {
   return {
     id: file.id,
-    title: file.name,
+    title: stripOoxmlExtension(file.name),
     folderId: file.folderId ?? null,
     createdAt: toIsoUtc(file.createdAt),
     updatedAt: toIsoUtc(file.updatedAt),
@@ -178,7 +201,7 @@ function toDoc(file: DriveFileDto): DocResponse {
 
 export const docsApi = {
   async listDocs(): Promise<ListDocsResponse> {
-    const params = new URLSearchParams({ mimeType: DOC_MIME_TYPE, limit: '200' });
+    const params = new URLSearchParams({ mimeType: DOC_MIME_TYPES.join(','), limit: '200' });
     const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
     return { docs: (raw.files ?? []).map(toDocMeta) };
   },
@@ -186,14 +209,18 @@ export const docsApi = {
   async createDoc(body: CreateDocRequest): Promise<DocResponse> {
     const title = body.title.trim();
     if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Document title cannot be empty');
-    // Drive takes a client-supplied id and seeds the empty-document body from
-    // the mime type, so create and first content write are one request.
+    // Created with no body. A `.docx` is a zip, which the server has no
+    // business building and could only write in the clear anyway; the editor
+    // opens the empty file as a blank document and its first save writes a
+    // real, sealed package. The bespoke-JSON types are still seeded server-side
+    // from `native_types` — this is the one place the two formats differ at
+    // creation.
     const file = await request<DriveFileDto>('/api/v1/drive/files', {
       method: 'POST',
       body: JSON.stringify({
         id: crypto.randomUUID(),
-        name: title,
-        mimeType: DOC_MIME_TYPE,
+        name: withOoxmlExtension(title, 'docs'),
+        mimeType: DOCX_MIME_TYPE,
         folderId: body.folderId ?? null,
       }),
     });
@@ -201,11 +228,13 @@ export const docsApi = {
   },
 
   /**
-   * Fetch a file as a native document.
+   * Fetch a file as a document in the *bespoke JSON* format.
    *
-   * Throws 404 for a file that exists but isn't one — a raw .docx, say. That
-   * is load-bearing: the editor's office-mode fallback keys off this 404 to
-   * decide it must download and parse the file as docx instead.
+   * Throws 404 for anything else, `.docx` included. That is load-bearing and
+   * not an oversight: the two formats are read and written by different code
+   * paths in the editor, and this 404 is how it learns to take the OOXML one —
+   * download the package, prefer the model inside it, fall back to parsing the
+   * Word document. See `DocEditor`'s `officeMode`.
    */
   async getDoc(docId: string): Promise<DocResponse> {
     const file = await request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`);
@@ -219,28 +248,27 @@ export const docsApi = {
    * Rename. A document's name is its Drive file's name, so this is a PATCH on
    * the file; with no title supplied it degrades to a metadata read, which is
    * what callers that only want the current `contentVersion` back rely on.
+   *
+   * The read happens either way, because the extension is not the caller's
+   * business: it passes the title the user typed, and whether that has to land
+   * on disk as `Report` or `Report.docx` depends on the format the file is
+   * already in. Renaming a `.docx` to a bare name would leave a Word document
+   * the operating system no longer recognises.
    */
   async saveDoc(docId: string, body: SaveDocRequest): Promise<DocMetaResponse> {
-    const file = body.title !== undefined
-      ? await request<DriveFileDto>(`/api/v1/drive/files/${docId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ name: body.title }),
-        })
-      : await request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`);
-    return toDocMeta(file);
-  },
+    const current = await request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`);
+    if (body.title === undefined) return toDocMeta(current);
 
-  /**
-   * Promote a raw Office (.docx) Drive file in-place into a native Neutrino
-   * doc: uploads `content` (the same JSON shape a normal save would produce)
-   * and flips the file's mime type server-side. Same file id afterwards.
-   */
-  async promoteDoc(docId: string, content: string): Promise<DocResponse> {
-    const file = await request<DriveFileDto>(`/api/v1/drive/files/${docId}/convert`, {
-      method: 'POST',
-      body: JSON.stringify({ targetMimeType: DOC_MIME_TYPE, content }),
+    const name = isOoxmlMime(current.mimeType ?? '')
+      ? withOoxmlExtension(body.title, 'docs')
+      : body.title;
+    if (name === current.name) return toDocMeta(current);
+
+    const file = await request<DriveFileDto>(`/api/v1/drive/files/${docId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
     });
-    return toDoc(file);
+    return toDocMeta(file);
   },
 };
 

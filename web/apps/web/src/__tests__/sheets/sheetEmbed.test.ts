@@ -17,7 +17,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockRequest = vi.fn();
 
-vi.mock('@neutrino/api-core', () => ({
+vi.mock('@neutrino/api-core', async (importOriginal) => ({
+  // Partial mock: api-sheets reads the OOXML format helpers (`ooxmlMimeFor`
+  // and friends) at module init, and those are pure — only `request` needs
+  // stubbing to keep the HTTP calls out.
+  ...(await importOriginal<typeof import('@neutrino/api-core')>()),
   request: mockRequest,
   // api-core also exports a config helper used at module init
   getConfig: () => ({ baseUrl: 'http://localhost', retry: false }),

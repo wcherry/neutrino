@@ -73,17 +73,6 @@ function assertValidOoxmlZip(buffer: Buffer) {
 }
 
 test.describe('Slides — office round-trip editing', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.route('**/api/v1/feature-flags', async route => {
-      const response = await route.fetch();
-      const flags = await response.json();
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ ...flags, officeInPlaceEditing: true }),
-      });
-    });
-  });
-
   test('opening a raw .pptx lands in the Slides editor, not the preview modal', async ({ page, request }) => {
     await registerAndLogin(request, page);
     const token = await getAuthToken(page);

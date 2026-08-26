@@ -21,8 +21,8 @@ import type { SheetRef } from '../formula';
 import { numToAlpha } from '../utils';
 import { buildXlsxWorksheet } from './useExport';
 import { buildRawSheetMap, evaluateSheetMap } from './sheetFileUtils';
-import { officeAppForFile } from '@/lib/officeFormats';
-import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
+import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension } from '@/lib/officeFormats';
+import { packNeutrinoModel, readNeutrinoModel } from '@/lib/ooxmlContainer';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 
 /**
@@ -129,11 +129,6 @@ export function usePersistence({
     sheetsTableRegionsRef,
     flushActiveTableRegions,
     setTableRegions,
-    // Office mode (issue #43). Defaults to true so callers that don't pass it
-    // (and this hook's own unit tests, which render it standalone with no
-    // FeatureFlagsProvider) still get the 404-fallback behavior; SheetEditor.tsx
-    // passes the real `flags.officeInPlaceEditing` value explicitly.
-    officeInPlaceEditingEnabled = true,
 }: {
     sheetId: string;
     dirtyRef: React.MutableRefObject<boolean>;
@@ -161,7 +156,6 @@ export function usePersistence({
     sheetsTableRegionsRef?: React.MutableRefObject<TableRegion[][]>;
     flushActiveTableRegions?: () => void;
     setTableRegions?: React.Dispatch<React.SetStateAction<TableRegion[]>>;
-    officeInPlaceEditingEnabled?: boolean;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
     const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
@@ -172,9 +166,11 @@ export function usePersistence({
     const currentUser = useUser();
     const [title, setTitle] = useState('Untitled');
     const [yourRole, setYourRole] = useState<string>('owner');
-    // ── Office mode (issue #43) ──────────────────────────────────────────────
-    // True when this file is a raw .xlsx being edited in place (no `sheets`
-    // row) rather than a native Neutrino sheet.
+    // ── OOXML mode (issue #127) ──────────────────────────────────────────────
+    // True when this file is an `.xlsx` — which every spreadsheet created since
+    // #127 is, as well as any workbook uploaded to Drive. False only for a
+    // spreadsheet still in the bespoke JSON that predates it. Named `officeMode`
+    // because that is what it was when only uploads took this path.
     const [officeMode, setOfficeMode] = useState(false);
     const officeFileMetaRef = useRef<FileItem | null>(null);
     // loadCount increments every time load() completes successfully.
@@ -242,20 +238,28 @@ export function usePersistence({
         return JSON.stringify({ sheets: fileSheets } as SheetFile);
     };
 
-    // Office mode (issue #43): serialize current sheet data into real XLSX
-    // bytes instead of the native JSON shape, for writing back to the SAME
-    // Drive file id via the binary-safe *Bytes transport.
-    const buildXlsxBytes = (): Uint8Array => {
-        flushActiveSheet();
-        flushActiveCharts?.();
-        flushActiveConditionalFormats?.();
-        flushActiveTableRegions?.();
+    /**
+     * The bytes an `.xlsx` spreadsheet is stored as: a real Excel workbook with
+     * this editor's own model packed in beside it (issue #127).
+     *
+     * Both halves are needed. `buildXlsxWorksheet` writes `{v, t}` per cell and
+     * `!ref`, and nothing else — no column widths, no merges, no cell fills, no
+     * sheet colours, no conditional formats, no charts — so a save that wrote
+     * only the workbook would delete all of that on every autosave tick. Some
+     * of that is ours to fix (`!cols` and `!merges` are things SheetJS would
+     * write if we set them); styles and charts the community build cannot write
+     * at all. Neither is a limit of `.xlsx` itself. Until then: the workbook is
+     * what Excel reads, the model is what this editor reads back. See
+     * `lib/ooxmlContainer.ts`.
+     */
+    const buildXlsxBytes = async (): Promise<Uint8Array> => {
+        const model = serialize();
         const wb = XLSX.utils.book_new();
         sheetNamesRef.current.forEach((name, i) => {
             XLSX.utils.book_append_sheet(wb, buildXlsxWorksheet(sheetsDataRef.current[i]), name || `Sheet${i + 1}`);
         });
         const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-        return new Uint8Array(buf);
+        return packNeutrinoModel(new Uint8Array(buf), 'sheets', model);
     };
 
     const save = async ({ keepalive = false }: SaveOptions = {}) => {
@@ -270,17 +274,46 @@ export function usePersistence({
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
-        if (officeMode) {
-            const meta = officeFileMetaRef.current;
-            if (!meta) return;
-            const bytes = buildXlsxBytes();
+        // The ref, not the `officeMode` state: `load()` writes it and then
+        // saves in the same turn for a newly created spreadsheet, and a state
+        // update is not visible to this closure until the next render — so
+        // reading the state here would send that first save down the JSON path,
+        // which bails on the missing `sheetRef` and writes nothing at all.
+        const meta = officeFileMetaRef.current;
+        if (meta) {
+            const bytes = await buildXlsxBytes();
+            let saved;
             try {
-                await driveAutosaveEncryptedBytes(sheetId, bytes, meta.name, dekRef.current, transport);
-            } catch {
+                saved = await driveAutosaveEncryptedBytes(
+                    sheetId, bytes, meta.name, dekRef.current, versionGuard.check(), transport,
+                );
+            } catch (err) {
+                // A 409 is a decision for the user, not a transport fault —
+                // retrying only fails again against the same stale revision.
+                if (versionGuard.handleError(err)) {
+                    toast.warning(
+                        'This spreadsheet changed elsewhere since you opened it. Reload to get ' +
+                        'the latest version, or save again to keep your copy.',
+                    );
+                    return;
+                }
                 if (keepalive) throw new Error('save-failed-on-unload');
                 await delay(SAVE_RETRY_DELAY_MS);
-                await driveAutosaveEncryptedBytes(sheetId, bytes, meta.name, dekRef.current, transport);
+                saved = await driveAutosaveEncryptedBytes(
+                    sheetId, bytes, meta.name, dekRef.current, versionGuard.check(), transport,
+                );
             }
+            versionGuard.observe(saved?.contentVersion);
+            // Search runs against a client-side index, so a spreadsheet the
+            // editor never announces is one the user cannot find. The JSON path
+            // below has always done this; the OOXML path is the one every new
+            // spreadsheet takes now, so it has to as well.
+            indexOnSave(currentUser?.id, {
+                id: sheetId,
+                type: 'spreadsheet',
+                title: stripOoxmlExtension(meta.name),
+                content: extractSheetText(serialize()),
+            });
             return;
         }
         if (!sheetRef.current) return;
@@ -340,29 +373,14 @@ export function usePersistence({
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
-        if (officeMode) {
-            const meta = officeFileMetaRef.current;
-            if (!meta) return;
-            const bytes = buildXlsxBytes();
+        const meta = officeFileMetaRef.current;
+        if (meta) {
+            const bytes = await buildXlsxBytes();
             await driveCreateEncryptedVersionBytes(sheetId, bytes, meta.name, dekRef.current);
             return;
         }
         if (!sheetRef.current) return;
         await driveCreateEncryptedVersion(sheetId, serialize(), 'sheet.json', dekRef.current);
-    };
-
-    // "Convert to Neutrino Sheet" — one-shot promote of the raw office file
-    // into a native sheet, keeping the same Drive file id.
-    const promote = async () => {
-        try {
-            const content = serialize();
-            await sheetsApi.promoteSheet(sheetId, content);
-            setOfficeMode(false);
-            officeFileMetaRef.current = null;
-            toast.success('Converted to a native Neutrino sheet');
-        } catch {
-            toast.error('Failed to convert to a native Neutrino sheet');
-        }
     };
 
     const timedSave = async () => {
@@ -425,6 +443,82 @@ export function usePersistence({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    /**
+     * Load a serialized `SheetFile` into the editor.
+     *
+     * Shared by both storage formats: it is the body of a bespoke-JSON
+     * spreadsheet, and it is also the model packed inside an `.xlsx` (issue
+     * #127). Throws on unparseable input, which both callers treat as "there is
+     * nothing readable here" rather than as an empty spreadsheet to save over.
+     */
+    const applySheetFileJson = (raw: string): void => {
+        const file = JSON.parse(raw) as SheetFile;
+        const rawSheets = file.sheets ?? [];
+        if (rawSheets.length > 0) {
+            const names = rawSheets.map((s, i) => s.name ?? `Sheet ${i + 1}`);
+            // Pass 1: build raw maps (no formula evaluation yet)
+            const rawMaps = rawSheets.map(buildRawSheetMap);
+            // Pass 2: evaluate formulas with full cross-sheet context
+            const allSheets: SheetRef[] = names.map((name, i) => ({ name, data: rawMaps[i] }));
+            const allData = rawMaps.map(rawMap => evaluateSheetMap(rawMap, allSheets));
+            const allColWidths = rawSheets.map(s => {
+                const m = new Map<number, number>();
+                for (const [k, v] of Object.entries(s.colWidths ?? {})) m.set(Number(k), v);
+                return m;
+            });
+            const allRowHeights = rawSheets.map(s => {
+                const m = new Map<number, number>();
+                for (const [k, v] of Object.entries(s.rowHeights ?? {})) m.set(Number(k), v);
+                return m;
+            });
+            const colors = rawSheets.map(s => s.color ?? null);
+            // Preserve any sheets the user added while the content download
+            // was still in progress — load() is async and the user may have
+            // pushed new entries to the refs before we get here.
+            const extraData = sheetsDataRef.current.slice(allData.length);
+            const extraColWidths = sheetsColWidthsRef.current.slice(allData.length);
+            const extraRowHeights = sheetsRowHeightsRef.current.slice(allData.length);
+            sheetsDataRef.current = [...allData, ...extraData];
+            sheetsColWidthsRef.current = [...allColWidths, ...extraColWidths];
+            sheetsRowHeightsRef.current = [...allRowHeights, ...extraRowHeights];
+            const extraNames = extraData.map((_, i) => `Sheet ${allData.length + i + 1}`);
+            const extraColors = extraData.map(() => null as string | null);
+            setSheetNames([...names, ...extraNames]);
+            setSheetColors([...colors, ...extraColors]);
+            setData(allData[0]);
+            setColWidths(allColWidths[0]);
+            setRowHeights(allRowHeights[0]);
+            // Restore charts if the hook is wired up; preserve any charts
+            // the user placed on sheets they added during the download.
+            if (sheetsChartsRef && setCharts) {
+                const extraCharts = sheetsChartsRef.current.slice(allData.length);
+                sheetsChartsRef.current = [
+                    ...rawSheets.map(s => s.charts ?? []),
+                    ...extraCharts,
+                ];
+                setCharts(sheetsChartsRef.current[0] ?? []);
+            }
+            // Restore conditional formats if the hook is wired up.
+            if (sheetsConditionalFormatsRef && setConditionalFormats) {
+                const extraCF = sheetsConditionalFormatsRef.current.slice(allData.length);
+                sheetsConditionalFormatsRef.current = [
+                    ...rawSheets.map(s => s.conditionalFormats ?? []),
+                    ...extraCF,
+                ];
+                setConditionalFormats(sheetsConditionalFormatsRef.current[0] ?? []);
+            }
+            // Restore table regions if the hook is wired up.
+            if (sheetsTableRegionsRef && setTableRegions) {
+                const extraTableRegions = sheetsTableRegionsRef.current.slice(allData.length);
+                sheetsTableRegionsRef.current = [
+                    ...rawSheets.map(s => s.tables ?? []),
+                    ...extraTableRegions,
+                ];
+                setTableRegions(sheetsTableRegionsRef.current[0] ?? []);
+            }
+        }
+    };
+
     const load = async () => {
         if (!sheetId) return;
 
@@ -439,10 +533,11 @@ export function usePersistence({
             sheet = await sheetsApi.getSheet(sheetId);
         } catch (err) {
             const is404 = err instanceof ApiClientError && err.statusCode === 404;
-            if (!is404 || !officeInPlaceEditingEnabled) throw err;
-            // Raw office file — no `sheets` row for this file id. Fall back to
-            // the generic Drive file metadata to distinguish "raw .xlsx, open
-            // it in place" from a genuinely deleted/missing spreadsheet.
+            if (!is404) throw err;
+            // Not bespoke JSON — so an `.xlsx`, which is what every spreadsheet
+            // created since #127 is. Fall back to the generic Drive file
+            // metadata to tell that apart from a genuinely deleted or missing
+            // spreadsheet.
             let meta: FileItem;
             try {
                 meta = await storageApi.getFileMetadata(sheetId);
@@ -455,42 +550,60 @@ export function usePersistence({
             if (app !== 'sheets') return; // not an .xlsx this editor can open
             officeFileMetaRef.current = meta;
             setOfficeMode(true);
-            setTitle(meta.name);
+            setTitle(stripOoxmlExtension(meta.name));
             setYourRole('owner');
+            // Seed the stale-write guard from the revision this load saw, the
+            // same thing the JSON branch does with `sheet.contentVersion`.
+            versionGuard.observe(meta.contentVersion);
             try {
                 const blob = await storageApi.downloadFile(sheetId);
                 const stored = new Uint8Array(await blob.arrayBuffer());
-                // Office-mode saves are encrypted now, so a file that already
-                // has a key ref holds ciphertext. `isNewEncryption` separates
-                // the two: it means the DEK was just minted for a file that had
-                // none, so the stored bytes are still the plaintext .xlsx it
-                // was uploaded as, and the first save is what encrypts it.
+                // Saves are encrypted, so a file that already has a key ref
+                // holds ciphertext. `isNewEncryption` separates the two: it
+                // means the DEK was just minted for a file that had none, so
+                // the stored bytes are still the plaintext `.xlsx` it was
+                // uploaded as, and the first save is what encrypts it.
                 const plain = dekRef.current && !isNewEncryption
                     ? decryptFile(stored, dekRef.current)
                     : stored;
-                const arrayBuffer = plain.buffer.slice(
-                    plain.byteOffset, plain.byteOffset + plain.byteLength,
-                ) as ArrayBuffer;
-                const parsed = xlsxBufferToSheets(arrayBuffer);
-                if (parsed.length > 0) {
-                    const names = parsed.map((s, i) => s.name || `Sheet ${i + 1}`);
-                    sheetsDataRef.current = parsed.map(s => s.data);
-                    sheetsColWidthsRef.current = parsed.map(() => new Map());
-                    sheetsRowHeightsRef.current = parsed.map(() => new Map());
-                    setSheetNames(names);
-                    setSheetColors(parsed.map(() => null));
-                    setData(parsed[0].data);
-                    setColWidths(new Map());
-                    setRowHeights(new Map());
+
+                // A spreadsheet created here starts with no body at all: an
+                // `.xlsx` is a zip, so the server writes no seed and the first
+                // save below is what makes the file a real workbook. Reading
+                // zero bytes as one would only raise "failed to open" on every
+                // new spreadsheet.
+                if (plain.byteLength === 0) {
+                    setLoadCount(c => c + 1);
+                    await queueSave();
+                    return;
+                }
+
+                // The model packed into the workbook is the lossless copy; the
+                // workbook itself is what Excel reads and what a file from
+                // anywhere else arrives as. Preferring the model is what keeps
+                // charts, conditional formats, column widths and cell styling
+                // across a save — SheetJS carries none of them (issue #127).
+                const model = await readNeutrinoModel(plain, 'sheets');
+                if (model) {
+                    applySheetFileJson(model);
+                } else {
+                    const arrayBuffer = plain.buffer.slice(
+                        plain.byteOffset, plain.byteOffset + plain.byteLength,
+                    ) as ArrayBuffer;
+                    const parsed = xlsxBufferToSheets(arrayBuffer);
+                    if (parsed.length > 0) {
+                        const names = parsed.map((s, i) => s.name || `Sheet ${i + 1}`);
+                        sheetsDataRef.current = parsed.map(s => s.data);
+                        sheetsColWidthsRef.current = parsed.map(() => new Map());
+                        sheetsRowHeightsRef.current = parsed.map(() => new Map());
+                        setSheetNames(names);
+                        setSheetColors(parsed.map(() => null));
+                        setData(parsed[0].data);
+                        setColWidths(new Map());
+                        setRowHeights(new Map());
+                    }
                 }
                 setLoadCount(c => c + 1);
-                // Convert-on-open (global setting) or a one-shot promote request
-                // from the Drive context menu's "Convert to Neutrino Sheet" action:
-                // silently promote right after the initial client-side parse
-                // renders. Non-blocking.
-                if (getOfficeFileMode() === 'convert-on-open' || isOneShotPromoteRequested()) {
-                    void promote();
-                }
             } catch {
                 toast.error('Failed to open this file for editing');
             }
@@ -523,71 +636,7 @@ export function usePersistence({
             } else {
                 raw = await driveReadContent(sheet.contentUrl);
             }
-            const file = JSON.parse(raw) as SheetFile;
-            const rawSheets = file.sheets ?? [];
-            if (rawSheets.length > 0) {
-                const names = rawSheets.map((s, i) => s.name ?? `Sheet ${i + 1}`);
-                // Pass 1: build raw maps (no formula evaluation yet)
-                const rawMaps = rawSheets.map(buildRawSheetMap);
-                // Pass 2: evaluate formulas with full cross-sheet context
-                const allSheets: SheetRef[] = names.map((name, i) => ({ name, data: rawMaps[i] }));
-                const allData = rawMaps.map(rawMap => evaluateSheetMap(rawMap, allSheets));
-                const allColWidths = rawSheets.map(s => {
-                    const m = new Map<number, number>();
-                    for (const [k, v] of Object.entries(s.colWidths ?? {})) m.set(Number(k), v);
-                    return m;
-                });
-                const allRowHeights = rawSheets.map(s => {
-                    const m = new Map<number, number>();
-                    for (const [k, v] of Object.entries(s.rowHeights ?? {})) m.set(Number(k), v);
-                    return m;
-                });
-                const colors = rawSheets.map(s => s.color ?? null);
-                // Preserve any sheets the user added while the content download
-                // was still in progress — load() is async and the user may have
-                // pushed new entries to the refs before we get here.
-                const extraData = sheetsDataRef.current.slice(allData.length);
-                const extraColWidths = sheetsColWidthsRef.current.slice(allData.length);
-                const extraRowHeights = sheetsRowHeightsRef.current.slice(allData.length);
-                sheetsDataRef.current = [...allData, ...extraData];
-                sheetsColWidthsRef.current = [...allColWidths, ...extraColWidths];
-                sheetsRowHeightsRef.current = [...allRowHeights, ...extraRowHeights];
-                const extraNames = extraData.map((_, i) => `Sheet ${allData.length + i + 1}`);
-                const extraColors = extraData.map(() => null as string | null);
-                setSheetNames([...names, ...extraNames]);
-                setSheetColors([...colors, ...extraColors]);
-                setData(allData[0]);
-                setColWidths(allColWidths[0]);
-                setRowHeights(allRowHeights[0]);
-                // Restore charts if the hook is wired up; preserve any charts
-                // the user placed on sheets they added during the download.
-                if (sheetsChartsRef && setCharts) {
-                    const extraCharts = sheetsChartsRef.current.slice(allData.length);
-                    sheetsChartsRef.current = [
-                        ...rawSheets.map(s => s.charts ?? []),
-                        ...extraCharts,
-                    ];
-                    setCharts(sheetsChartsRef.current[0] ?? []);
-                }
-                // Restore conditional formats if the hook is wired up.
-                if (sheetsConditionalFormatsRef && setConditionalFormats) {
-                    const extraCF = sheetsConditionalFormatsRef.current.slice(allData.length);
-                    sheetsConditionalFormatsRef.current = [
-                        ...rawSheets.map(s => s.conditionalFormats ?? []),
-                        ...extraCF,
-                    ];
-                    setConditionalFormats(sheetsConditionalFormatsRef.current[0] ?? []);
-                }
-                // Restore table regions if the hook is wired up.
-                if (sheetsTableRegionsRef && setTableRegions) {
-                    const extraTableRegions = sheetsTableRegionsRef.current.slice(allData.length);
-                    sheetsTableRegionsRef.current = [
-                        ...rawSheets.map(s => s.tables ?? []),
-                        ...extraTableRegions,
-                    ];
-                    setTableRegions(sheetsTableRegionsRef.current[0] ?? []);
-                }
-            }
+            applySheetFileJson(raw);
             loadOk = true;
         } catch {
             // empty sheet, start fresh — but do NOT start autosave if this was a
@@ -619,11 +668,15 @@ export function usePersistence({
         setTitle(newTitle);
         if (officeMode) {
             // Both branches land on the same Drive rename endpoint; they differ
-            // only in the local state they keep in step — office mode tracks the
-            // raw file's metadata, native mode the loaded sheet.
-            if (officeFileMetaRef.current && newTitle !== officeFileMetaRef.current.name) {
-                officeFileMetaRef.current = { ...officeFileMetaRef.current, name: newTitle };
-                await filesystemApi.updateFile(sheetId, { name: newTitle });
+            // only in the local state they keep in step — the OOXML path tracks
+            // the Drive file's metadata, the JSON one the loaded sheet.
+            //
+            // The extension goes back on: the title is what the user typed, and
+            // the file still has to land on disk as a workbook Excel opens.
+            const name = withOoxmlExtension(newTitle, 'sheets');
+            if (officeFileMetaRef.current && name !== officeFileMetaRef.current.name) {
+                officeFileMetaRef.current = { ...officeFileMetaRef.current, name };
+                await filesystemApi.updateFile(sheetId, { name });
             }
             return;
         }
@@ -652,9 +705,7 @@ export function usePersistence({
         activeSheetIndexRef,
         /** True once the E2EE DEK resolution attempt has completed. */
         dekResolved,
-        /** Office mode (issue #43): true when editing a raw .xlsx in place. */
+        /** True when this spreadsheet is stored as `.xlsx` rather than as JSON. */
         officeMode,
-        /** One-shot promote of the raw office file into a native sheet. */
-        promote,
     };
 }

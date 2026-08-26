@@ -1,25 +1,23 @@
 /**
- * Unit tests for routeForFile (issue #43 — in-place editing of MS Office docs).
+ * Unit tests for routeForFile.
  *
  * routeForFile encapsulates the mimetype -> route dispatch previously
  * duplicated 3x in drive/page.tsx (handleGridItemClick, the starred
- * quick-access onClick, and FileContextMenu.onPreview — see page.tsx:289-312,
- * 560-584, 685-704). It must:
- *  - Route native Neutrino mimetypes (doc/sheet/slide/diagram/drawing) exactly
- *    as today, regardless of the office-editing flag.
- *  - When no native mimetype matches AND officeInPlaceEditingEnabled is true,
- *    detect office formats via officeAppForFile and route into the matching
- *    editor (/docs, /sheets, /slides).
- *  - When officeInPlaceEditingEnabled is false, office files must NOT be
- *    routed into an editor — they fall through to the existing image/
- *    preview-fallback behavior, identical to today's (pre-feature) behavior.
- *  - Images always route to the photo editor, independent of the office flag.
- *  - Anything else (and legacy .doc/.xls/.ppt, which officeAppForFile never
- *    matches) calls the onPreviewFallback callback instead of navigating.
- *
- * This module does not exist yet (red phase / TDD) — expected to fail with a
- * "Cannot find module" error until routeForFile.ts lands at
- * web/apps/web/src/app/(apps)/drive/routeForFile.ts.
+ * quick-access onClick, and FileContextMenu.onPreview). It must:
+ *  - Route the bespoke-JSON Neutrino mimetypes (doc/sheet/slide/diagram/
+ *    drawing/note) into their editors.
+ *  - Route `.docx`/`.xlsx`/`.pptx` into Docs/Sheets/Slides. Since issue #127
+ *    that is the format those editors *write*, so a file uploaded from Word
+ *    and one created here are the same kind of thing and open the same way.
+ *    This used to be gated behind the `officeInPlaceEditing` flag, which is
+ *    gone: a flag that could turn it off would leave every document created
+ *    from that point on unopenable.
+ *  - Detect the format from the extension when the mimetype is a generic
+ *    `application/octet-stream`, which is what a browser reports for an upload.
+ *  - Route images to the photo editor.
+ *  - Call onPreviewFallback for anything else — including legacy
+ *    `.doc`/`.xls`/`.ppt`, which `officeAppForFile` never matches, since the
+ *    in-browser parsers cannot read them.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -40,14 +38,11 @@ function makeRouter() {
   return { push: vi.fn() };
 }
 
-function makeOpts(officeInPlaceEditingEnabled: boolean) {
-  return {
-    officeInPlaceEditingEnabled,
-    onPreviewFallback: vi.fn(),
-  };
+function makeOpts() {
+  return { onPreviewFallback: vi.fn() };
 }
 
-describe('routeForFile — native mimetypes (unchanged regardless of office flag)', () => {
+describe('routeForFile — bespoke-JSON mimetypes', () => {
   it.each([
     ['doc', DOC_MIME, '/docs/editor?id='],
     ['sheet', SHEET_MIME, '/sheets/editor?id='],
@@ -57,24 +52,18 @@ describe('routeForFile — native mimetypes (unchanged regardless of office flag
     ['note', NOTE_MIME, '/notes/editor?id='],
   ])('routes a native %s file to its editor', (_label, mimeType, expectedPrefix) => {
     const router = makeRouter();
-    const opts = makeOpts(true);
+    const opts = makeOpts();
     routeForFile({ id: 'file-1', mimeType, name: 'Item' }, router, opts);
     expect(router.push).toHaveBeenCalledWith(`${expectedPrefix}file-1`);
     expect(opts.onPreviewFallback).not.toHaveBeenCalled();
   });
 
-  it('routes native files the same way when the office flag is off', () => {
-    const router = makeRouter();
-    const opts = makeOpts(false);
-    routeForFile({ id: 'file-2', mimeType: DOC_MIME, name: 'Item' }, router, opts);
-    expect(router.push).toHaveBeenCalledWith('/docs/editor?id=file-2');
-  });
 });
 
-describe('routeForFile — office formats, flag ON', () => {
+describe('routeForFile — OOXML formats', () => {
   it('routes a .docx file to the docs editor', () => {
     const router = makeRouter();
-    const opts = makeOpts(true);
+    const opts = makeOpts();
     routeForFile({ id: 'file-3', mimeType: DOCX_MIME, name: 'report.docx' }, router, opts);
     expect(router.push).toHaveBeenCalledWith('/docs/editor?id=file-3');
     expect(opts.onPreviewFallback).not.toHaveBeenCalled();
@@ -82,39 +71,27 @@ describe('routeForFile — office formats, flag ON', () => {
 
   it('routes a .xlsx file to the sheets editor', () => {
     const router = makeRouter();
-    const opts = makeOpts(true);
+    const opts = makeOpts();
     routeForFile({ id: 'file-4', mimeType: XLSX_MIME, name: 'budget.xlsx' }, router, opts);
     expect(router.push).toHaveBeenCalledWith('/sheets/editor?id=file-4');
   });
 
   it('routes a .pptx file to the slides editor', () => {
     const router = makeRouter();
-    const opts = makeOpts(true);
+    const opts = makeOpts();
     routeForFile({ id: 'file-5', mimeType: PPTX_MIME, name: 'deck.pptx' }, router, opts);
     expect(router.push).toHaveBeenCalledWith('/slides/editor?id=file-5');
   });
 
   it('detects office format via extension fallback when mimetype is octet-stream', () => {
     const router = makeRouter();
-    const opts = makeOpts(true);
+    const opts = makeOpts();
     routeForFile(
       { id: 'file-6', mimeType: 'application/octet-stream', name: 'report.docx' },
       router,
       opts
     );
     expect(router.push).toHaveBeenCalledWith('/docs/editor?id=file-6');
-  });
-});
-
-describe('routeForFile — office formats, flag OFF', () => {
-  it('does NOT route a .docx file into the docs editor when the flag is off', () => {
-    const router = makeRouter();
-    const opts = makeOpts(false);
-    routeForFile({ id: 'file-7', mimeType: DOCX_MIME, name: 'report.docx' }, router, opts);
-    expect(router.push).not.toHaveBeenCalled();
-    expect(opts.onPreviewFallback).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'file-7' })
-    );
   });
 });
 
@@ -125,7 +102,7 @@ describe('routeForFile — legacy formats are never treated as office files', ()
     ['ppt', 'application/vnd.ms-powerpoint', 'legacy.ppt'],
   ])('falls through to preview for legacy .%s files even with the office flag on', (_label, mimeType, name) => {
     const router = makeRouter();
-    const opts = makeOpts(true);
+    const opts = makeOpts();
     routeForFile({ id: 'file-8', mimeType, name }, router, opts);
     expect(router.push).not.toHaveBeenCalled();
     expect(opts.onPreviewFallback).toHaveBeenCalledWith(
@@ -137,14 +114,14 @@ describe('routeForFile — legacy formats are never treated as office files', ()
 describe('routeForFile — images and fallback', () => {
   it('routes images to the photo editor regardless of the office flag', () => {
     const router = makeRouter();
-    const opts = makeOpts(true);
+    const opts = makeOpts();
     routeForFile({ id: 'file-9', mimeType: 'image/png', name: 'photo.png' }, router, opts);
     expect(router.push).toHaveBeenCalledWith('/photos/editor?fileId=file-9');
   });
 
   it('calls onPreviewFallback for an unrelated file type', () => {
     const router = makeRouter();
-    const opts = makeOpts(true);
+    const opts = makeOpts();
     const file = { id: 'file-10', mimeType: 'application/pdf', name: 'invoice.pdf' };
     routeForFile(file, router, opts);
     expect(router.push).not.toHaveBeenCalled();
@@ -172,6 +149,20 @@ describe('previewKindForMime', () => {
     expect(previewKindForMime(mimeType)).toBe(expectedKind);
   });
 
+  /**
+   * Both formats preview the same way — the modal reads the model out of an
+   * OOXML package and the stored JSON otherwise. These used to return null,
+   * which since issue #127 would take the Preview action away from every
+   * document created from that point on.
+   */
+  it.each([
+    ['doc', DOCX_MIME],
+    ['sheet', XLSX_MIME],
+    ['slide', PPTX_MIME],
+  ])('resolves OOXML mimetypes to the same %s preview kind', (expectedKind, mimeType) => {
+    expect(previewKindForMime(mimeType)).toBe(expectedKind);
+  });
+
   it('resolves images to the "image" preview kind', () => {
     expect(previewKindForMime('image/png')).toBe('image');
     expect(previewKindForMime('image/jpeg')).toBe('image');
@@ -179,6 +170,7 @@ describe('previewKindForMime', () => {
 
   it('returns null for types with no dedicated preview renderer', () => {
     expect(previewKindForMime('application/pdf')).toBeNull();
-    expect(previewKindForMime(DOCX_MIME)).toBeNull();
+    // Legacy binary Office: nothing in the browser can read one.
+    expect(previewKindForMime('application/msword')).toBeNull();
   });
 });

@@ -241,7 +241,10 @@ describe('searchIndexer', () => {
       const jobs = await collectIndexJobs(USER);
       await jobs[0].load();
 
-      expect(readDocumentText).toHaveBeenCalledWith(USER, 'doc-1');
+      // The third argument says which OOXML package to expect. Without it the
+      // read decodes a `.docx` — which every document created since issue #127
+      // is — as UTF-8, and the document is indexed with no text at all.
+      expect(readDocumentText).toHaveBeenCalledWith(USER, 'doc-1', 'docs');
     });
   });
 

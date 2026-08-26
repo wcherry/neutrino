@@ -104,7 +104,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({ decryptFile: vi.fn(), isUnlocked: () =>
 vi.mock('@/hooks/useSpellCheck', () => ({ useSpellCheck: () => ({ spellCheck: false }) }));
 
 vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({ slidesVideoEmbeds: false, officeInPlaceEditing: true }),
+  useFeatureFlags: () => ({ slidesVideoEmbeds: false }),
 }));
 
 vi.mock('@neutrino/sheet-embed', () => ({

@@ -9,11 +9,6 @@
  * just confirms the well-known zip magic bytes and the mandatory
  * `[Content_Types].xml` part are present, per the plan's acceptance criteria).
  *
- * Requires the `officeInPlaceEditing` feature flag. Following the pattern
- * already used by e2e/tests/sheets/sheet-charts.spec.ts (which gates
- * `sheetsCharts` the same way), we intercept `/api/v1/feature-flags` and
- * merge the flag on, since no admin-toggle E2E precedent exists for this
- * flag yet.
  */
 
 import { test, expect } from '../../fixtures/base';
@@ -79,20 +74,14 @@ function assertValidOoxmlZip(buffer: Buffer) {
   expect(['PK\x03\x04', 'PK\x05\x06']).toContain(zipMagic);
   expect(buffer.includes(Buffer.from('[Content_Types].xml'))).toBeTruthy();
   expect(buffer.includes(Buffer.from('word/document.xml'))).toBeTruthy();
+  // No `neutrino/model.json`: a document used to carry a full second copy of
+  // itself beside the Word document, because the writer of the day was a lossy
+  // projection. `word/document.xml` is now the document, and a sidecar here
+  // would mean a save had quietly gone back to writing one.
+  expect(buffer.includes(Buffer.from('neutrino/model.json'))).toBeFalsy();
 }
 
 test.describe('Docs — office round-trip editing', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.route('**/api/v1/feature-flags', async route => {
-      const response = await route.fetch();
-      const flags = await response.json();
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ ...flags, officeInPlaceEditing: true }),
-      });
-    });
-  });
-
   test('opening a raw .docx lands in the Docs editor, not the preview modal', async ({ page, request }) => {
     await registerAndLogin(request, page);
     const token = await getAuthToken(page);

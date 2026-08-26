@@ -693,7 +693,9 @@ export async function downloadAndDecryptFile(
   );
   const cipherBytes = new Uint8Array(await cipherBlob.arrayBuffer());
 
-  return decryptFile(cipherBytes, dek);
+  const doc = decryptFile(cipherBytes, dek);
+  console.log("downloadAndDecryptFile",doc);
+  return doc;
 }
 
 /**
@@ -746,14 +748,22 @@ export async function driveCreateEncryptedVersion(
  * snapshot). Unlike `driveAutosaveEncryptedContent`, the plaintext is passed
  * to `encryptFile` exactly as given — no `TextEncoder` re-encoding, which
  * would corrupt arbitrary binary content (e.g. a zip-based OOXML file).
+ *
+ * `versionCheck` and the returned `FileItem` are what let a binary save chain
+ * the same stale-write guard the text one does. They used not to be here,
+ * which was survivable while this transport only carried uploads being edited
+ * in place; since issue #127 it carries every document Docs, Sheets and Slides
+ * create, so a save that overwrote another device's newer revision in silence
+ * would be the normal case rather than the exotic one.
  */
 export async function driveAutosaveEncryptedBytes(
   fileId: string,
   bytes: Uint8Array | ArrayBuffer,
   filename: string,
   dek: Uint8Array,
+  versionCheck?: ContentVersionCheck,
   transport?: AutosaveTransport,
-): Promise<void> {
+): Promise<FileItem> {
   const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
   const plainBytes = toUint8Array(bytes);
@@ -761,11 +771,10 @@ export async function driveAutosaveEncryptedBytes(
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
   formData.append('file', blob, filename);
-  return request<void>(`/api/v1/drive/files/${fileId}/autosave`, {
-    method: 'PUT',
-    body: formData,
-    ...transportInit(transport, cipherBytes.byteLength),
-  });
+  return request<FileItem>(
+    `/api/v1/drive/files/${fileId}/autosave${contentVersionQuery(versionCheck)}`,
+    { method: 'PUT', body: formData, ...transportInit(transport, cipherBytes.byteLength) },
+  );
 }
 
 /**

@@ -27,6 +27,8 @@ import {
   fromBase64url,
 } from '@neutrino/e2e-crypto';
 import { encryptionApi, storageApi } from '@/lib/api';
+import type { OoxmlApp } from '@neutrino/api-core';
+import { looksLikeOoxml, readNeutrinoModel } from '@/lib/ooxmlContainer';
 
 /** Unwrapped DEK for `fileId`, or `null` when the file isn't encrypted. */
 async function resolveDek(userId: string, fileId: string): Promise<Uint8Array | null> {
@@ -42,18 +44,61 @@ async function resolveDek(userId: string, fileId: string): Promise<Uint8Array | 
  * Decrypt stored bytes with `dek`.
  *
  * Notes send `toBase64url(cipherBytes)` rather than raw ciphertext, so what
- * comes back for them is the *text* of that encoding; every other app writes
+ * is stored for them is the *text* of that encoding; every other app writes
  * raw bytes. Try the encoded form first and fall back, exactly as the note
  * editor does.
  */
-function decryptStored(stored: Uint8Array, dek: Uint8Array): string {
-  let plainBytes: Uint8Array;
+function decryptStored(stored: Uint8Array, dek: Uint8Array): Uint8Array {
   try {
-    plainBytes = decryptFile(fromBase64url(new TextDecoder().decode(stored)), dek);
+    return decryptFile(fromBase64url(new TextDecoder().decode(stored)), dek);
   } catch {
-    plainBytes = decryptFile(stored, dek);
+    return decryptFile(stored, dek);
   }
-  return new TextDecoder().decode(plainBytes);
+}
+
+/**
+ * Decrypted bytes -> the text its editor serialized.
+ *
+ * Docs, Sheets and Slides store OOXML now (issue #127), so for those the body
+ * is a zip and decoding it as UTF-8 gives back noise. What the callers here
+ * want is the model packed inside it — the same JSON the bespoke format stored
+ * directly — so a package is unwrapped and everything else is passed through.
+ *
+ * A package with no model (a Word file, one round-tripped through Word) has no
+ * such JSON to give, so this returns `''` for it rather than noise. The editors
+ * parse the OOXML itself in that case; a preview and a search entry can wait
+ * for the file to be opened and saved once.
+ */
+export async function bodyTextFromStored(
+  plain: Uint8Array,
+  app: OoxmlApp | undefined,
+): Promise<string> {
+  if (!app || !looksLikeOoxml(plain)) return new TextDecoder().decode(plain);
+  return (await readNeutrinoModel(plain, app)) ?? '';
+}
+
+/**
+ * The stored body of one document, as the text its editor serialized, for a
+ * caller that already holds the file's DEK — the preview modal, which gets one
+ * from `useEncryptedDocumentContent`.
+ *
+ * `dek` may be null (an unencrypted file), and decryption failing is not an
+ * error either: a body written before E2EE, or one whose key was minted a
+ * moment ago by the read that is about to seal it, is still plaintext.
+ */
+export async function readStoredDocumentBody(
+  fileId: string,
+  app: OoxmlApp | undefined,
+  dek: Uint8Array | null,
+): Promise<string> {
+  const blob = await storageApi.downloadFile(fileId);
+  const stored = new Uint8Array(await blob.arrayBuffer());
+  if (!dek) return bodyTextFromStored(stored, app);
+  try {
+    return await bodyTextFromStored(decryptFile(stored, dek), app);
+  } catch {
+    return bodyTextFromStored(stored, app);
+  }
 }
 
 /**
@@ -62,8 +107,15 @@ function decryptStored(stored: Uint8Array, dek: Uint8Array): string {
  * Returns `''` rather than throwing when the file can't be read — a document
  * whose ciphertext is corrupt or whose key ref was revoked should drop out of
  * the index, not abort the run that was indexing it.
+ *
+ * `app` says which OOXML package to expect, for the three types that have one.
+ * Omit it and the bytes are read as text, which is what every other type is.
  */
-export async function readDocumentText(userId: string, fileId: string): Promise<string> {
+export async function readDocumentText(
+  userId: string,
+  fileId: string,
+  app?: OoxmlApp,
+): Promise<string> {
   let dek: Uint8Array | null = null;
   try {
     dek = await resolveDek(userId, fileId);
@@ -79,10 +131,10 @@ export async function readDocumentText(userId: string, fileId: string): Promise<
     return '';
   }
 
-  if (!dek) return new TextDecoder().decode(stored);
+  if (!dek) return bodyTextFromStored(stored, app);
 
   try {
-    return decryptStored(stored, dek);
+    return await bodyTextFromStored(decryptStored(stored, dek), app);
   } catch {
     return '';
   }

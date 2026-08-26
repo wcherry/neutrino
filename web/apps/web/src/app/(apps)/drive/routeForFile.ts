@@ -1,13 +1,12 @@
 /**
- * Shared mimetype -> route dispatch for Drive file navigation (issue #43 —
- * in-place editing of MS Office docs).
+ * Shared mimetype -> route dispatch for Drive file navigation.
  *
  * Extracted from the 3x-duplicated dispatch logic that used to live directly
  * in drive/page.tsx (handleGridItemClick, the starred quick-access onClick,
  * and FileContextMenu.onPreview).
  */
 
-import { officeAppForFile, type OfficeApp } from '@/lib/officeFormats';
+import { officeAppForFile, OOXML_MIME } from '@/lib/officeFormats';
 
 export const DOC_MIME = 'application/x-neutrino-doc';
 export const SHEET_MIME = 'application/x-neutrino-sheet';
@@ -27,7 +26,6 @@ export interface RouterLike {
 }
 
 export interface RouteForFileOptions {
-  officeInPlaceEditingEnabled: boolean;
   onPreviewFallback: (file: RoutableFile) => void;
 }
 
@@ -48,13 +46,12 @@ const OFFICE_APP_ROUTE_PREFIX: Record<string, string> = {
 
 /**
  * Routes a Drive file to the appropriate editor, or falls back to
- * `onPreviewFallback` (today's preview-modal behavior) when nothing matches.
+ * `onPreviewFallback` (the preview modal) when nothing matches.
  *
- * Native Neutrino mimetypes (doc/sheet/slide/diagram/drawing) always route,
- * regardless of the office-in-place-editing flag. Images always route to the
- * photo editor. Raw Office files (.docx/.xlsx/.pptx) only route into their
- * matching editor when `officeInPlaceEditingEnabled` is true; legacy binary
- * formats (.doc/.xls/.ppt) never match and always fall through.
+ * `.docx`/`.xlsx`/`.pptx` route into Docs/Sheets/Slides like anything else the
+ * suite owns — since issue #127 that is the format those editors *write*, so a
+ * file uploaded from Word and one created here are the same kind of thing.
+ * Legacy binary formats (.doc/.xls/.ppt) never match and always fall through.
  */
 export function routeForFile(
   file: RoutableFile,
@@ -72,12 +69,10 @@ export function routeForFile(
     return;
   }
 
-  if (opts.officeInPlaceEditingEnabled) {
-    const app = officeAppForFile(file.mimeType, file.name);
-    if (app) {
-      router.push(`${OFFICE_APP_ROUTE_PREFIX[app]}${file.id}`);
-      return;
-    }
+  const app = officeAppForFile(file.mimeType, file.name);
+  if (app) {
+    router.push(`${OFFICE_APP_ROUTE_PREFIX[app]}${file.id}`);
+    return;
   }
 
   opts.onPreviewFallback(file);
@@ -92,6 +87,13 @@ const NATIVE_PREVIEW_KIND: Record<string, PreviewKind> = {
   [NOTE_MIME]: 'note',
   [DIAGRAM_MIME]: 'diagram',
   [DRAWING_MIME]: 'drawing',
+  // Both formats preview the same way — `DocumentPreviewModal` reads the model
+  // out of an OOXML package (issue #127) and the stored JSON otherwise. Leaving
+  // these out would have taken the Preview action away from every document
+  // created from that point on.
+  [OOXML_MIME.docx]: 'doc',
+  [OOXML_MIME.xlsx]: 'sheet',
+  [OOXML_MIME.pptx]: 'slide',
 };
 
 /**
@@ -115,23 +117,16 @@ export function previewKindForMime(mimeType: string): PreviewKind | null {
  * The URL a file opens at, for callers that need a link rather than a
  * navigation (search results, sidebar entries). Falls back to `/drive` for
  * files that have no editor and can only be previewed in place.
+ *
+ * Takes the name as well as the mime type where it has one, because an upload
+ * whose browser reported `application/octet-stream` is still a `.docx` — the
+ * same fallback `officeAppForFile` makes for the click path.
  */
-export function hrefForFile(file: Pick<RoutableFile, 'id' | 'mimeType'>): string {
+export function hrefForFile(file: Pick<RoutableFile, 'id' | 'mimeType'> & { name?: string }): string {
   const nativePrefix = NATIVE_ROUTE_PREFIX[file.mimeType];
   if (nativePrefix) return `${nativePrefix}${file.id}`;
   if (file.mimeType.startsWith('image/')) return `/photos/editor?fileId=${file.id}`;
+  const app = officeAppForFile(file.mimeType, file.name ?? '');
+  if (app) return `${OFFICE_APP_ROUTE_PREFIX[app]}${file.id}`;
   return '/drive';
-}
-
-/**
- * Builds the editor URL for a raw office file, optionally tagged with a
- * one-shot `promote=1` marker. The editors' office-mode load paths check
- * for this marker (alongside the persisted "convert on open" preference) to
- * trigger an immediate promote — used by the Drive context menu's "Convert
- * to Neutrino X" action, which must promote regardless of the global
- * office-file-mode setting.
- */
-export function officeEditorRoute(app: OfficeApp, fileId: string, opts?: { promote?: boolean }): string {
-  const url = `${OFFICE_APP_ROUTE_PREFIX[app]}${fileId}`;
-  return opts?.promote ? `${url}&promote=1` : url;
 }

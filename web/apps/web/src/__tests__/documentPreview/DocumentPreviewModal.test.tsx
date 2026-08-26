@@ -264,19 +264,16 @@ function makeDrawingContent() {
 
 function setupDocQueries() {
   mockUseQuery
-    .mockReturnValueOnce({ data: { id: 'doc-1', contentUrl: '/api/v1/drive/files/doc-1/content' }, isLoading: false, isError: false })
     .mockReturnValueOnce({ data: makeDocContent(), isLoading: false, isError: false });
 }
 
 function setupSheetQueries() {
   mockUseQuery
-    .mockReturnValueOnce({ data: { id: 'sheet-1', contentUrl: '/api/v1/drive/files/sheet-1/content' }, isLoading: false, isError: false })
     .mockReturnValueOnce({ data: makeSheetContent(), isLoading: false, isError: false });
 }
 
 function setupSlideQueries() {
   mockUseQuery
-    .mockReturnValueOnce({ data: { id: 'slide-1', contentUrl: '/api/v1/drive/files/slide-1/content' }, isLoading: false, isError: false })
     .mockReturnValueOnce({ data: makeSlideContent(), isLoading: false, isError: false });
 }
 
@@ -457,7 +454,6 @@ describe('DocumentPreviewModal — "Open in editor" navigation', () => {
 describe('DocPreview', () => {
   it('shows spinner while content is loading', () => {
     mockUseQuery
-      .mockReturnValueOnce({ data: { id: 'doc-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({ data: undefined, isLoading: true, isError: false });
     render(<DocumentPreviewModal id="doc-1" kind="doc" onClose={vi.fn()} />);
     expect(screen.getByTestId('spinner-lg')).toBeInTheDocument();
@@ -478,9 +474,7 @@ describe('DocPreview', () => {
   });
 
   it('shows error state when content fetch fails', () => {
-    // First call: doc metadata; second call: content load with error
     mockUseQuery
-      .mockReturnValueOnce({ data: { id: 'doc-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({ data: null, isLoading: false, isError: true });
     render(<DocumentPreviewModal id="doc-1" kind="doc" onClose={vi.fn()} />);
     expect(screen.getByText('Failed to load document preview.')).toBeInTheDocument();
@@ -493,7 +487,6 @@ describe('DocPreview', () => {
   // blank preview instead of unwrapping to `.doc` first.
   it('unwraps the { doc, _meta } layout-structure envelope before rendering', () => {
     mockUseQuery
-      .mockReturnValueOnce({ data: { id: 'doc-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({
         data: JSON.stringify({
           doc: {
@@ -514,7 +507,7 @@ describe('DocPreview', () => {
 // Regression coverage for https://github.com/wcherry/neutrino/issues/81:
 // previewing an E2EE file must decrypt content via storageApi.downloadFile +
 // decryptFile, not render the raw (still-encrypted) bytes returned by
-// driveReadContent. These drive the real `docsApi`/`storageApi.getFileInfo` + `useQuery`
+// driveReadContent. These drive the real `storageApi` + `useQuery`
 // implementations (rather than short-circuiting via mockReturnValueOnce) so
 // the preview's actual queryFn — and its decrypt branch — executes.
 describe('DocumentPreviewModal — encrypted content', () => {
@@ -530,7 +523,6 @@ describe('DocumentPreviewModal — encrypted content', () => {
       autosaveError: null,
       createVersionError: null,
     });
-    mockGetDoc.mockResolvedValue({ id: 'doc-1', contentUrl: '/content' });
     mockDownloadFile.mockResolvedValue({
       arrayBuffer: () => Promise.resolve(new TextEncoder().encode('ciphertext').buffer),
     });
@@ -608,7 +600,6 @@ describe('SheetPreview', () => {
 
   it('applies cell background color inline (not via CSS class)', () => {
     mockUseQuery
-      .mockReturnValueOnce({ data: { id: 'sheet-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({
         data: JSON.stringify({
           sheets: [{
@@ -633,7 +624,6 @@ describe('SheetPreview', () => {
 
   it('shows empty state when sheet has no cells', () => {
     mockUseQuery
-      .mockReturnValueOnce({ data: { id: 'sheet-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({
         data: JSON.stringify({ sheets: [{ name: 'Sheet1', cells: {} }] }),
         isLoading: false,
@@ -645,7 +635,6 @@ describe('SheetPreview', () => {
 
   it('shows error state when content fetch fails', () => {
     mockUseQuery
-      .mockReturnValueOnce({ data: { id: 'sheet-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({ data: null, isLoading: false, isError: true });
     render(<DocumentPreviewModal id="sheet-1" kind="sheet" onClose={vi.fn()} />);
     expect(screen.getByText('Failed to load spreadsheet preview.')).toBeInTheDocument();
@@ -668,7 +657,6 @@ describe('SlidePreview', () => {
 
   it('shows empty state when no slides exist', () => {
     mockUseQuery
-      .mockReturnValueOnce({ data: { id: 'slide-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({
         data: JSON.stringify({ slides: [], theme: {} }),
         isLoading: false,
@@ -680,7 +668,6 @@ describe('SlidePreview', () => {
 
   it('shows error state when content fetch fails', () => {
     mockUseQuery
-      .mockReturnValueOnce({ data: { id: 'slide-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({ data: null, isLoading: false, isError: true });
     render(<DocumentPreviewModal id="slide-1" kind="slide" onClose={vi.fn()} />);
     expect(screen.getByText('Failed to load presentation preview.')).toBeInTheDocument();

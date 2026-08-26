@@ -90,8 +90,6 @@ type Props = {
     setHamburgerDeleteConfirm: (v: boolean) => void;
     isViewer?: boolean;
     // Office mode (issue #43) — true when editing a raw .xlsx in place.
-    officeMode?: boolean;
-    onConvertToNative?: () => void;
 
     // Edit
     onUndo: () => void;
@@ -125,8 +123,6 @@ export function HamburgerMenu({
     setHamburgerDialog,
     setHamburgerDeleteConfirm,
     isViewer = false,
-    officeMode = false,
-    onConvertToNative,
 
     onUndo,
     onRedo,
@@ -162,7 +158,6 @@ export function HamburgerMenu({
             ],
         }] : []),
         ...(!isViewer ? [{ kind: 'action' as const, label: 'Save', shortcut: 'Ctrl+S', action: () => onSave() }] : []),
-        ...(officeMode ? [{ kind: 'action' as const, label: 'Convert to Neutrino Sheet', action: () => onConvertToNative?.() }] : []),
         {
             kind: 'submenu', label: 'Export', items: [
                 { kind: 'action', label: 'Comma Separated Values (.csv)', action: () => onOpenCsvExport() },

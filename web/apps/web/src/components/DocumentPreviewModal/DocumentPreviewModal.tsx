@@ -19,9 +19,6 @@ import { useRouter } from 'next/navigation';
 import { decryptFile, fromBase64url, initSodium } from '@neutrino/e2e-crypto';
 
 import {
-  docsApi,
-  sheetsApi,
-  slidesApi,
   diagramsApi,
   drawingApi,
   storageApi,
@@ -29,6 +26,7 @@ import {
 } from '@/lib/api';
 
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
+import { readStoredDocumentBody } from '@/lib/documentContent';
 
 import {
   parseBlocks,
@@ -88,36 +86,19 @@ function editorRoute(kind: DocumentKind, id: string): string {
 // ── Doc preview ───────────────────────────────────────────────────────────────
 
 function DocPreview({ id }: { id: string }) {
-  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+  const { dekRef, dekResolved } = useEncryptedDocumentContent({
     id,
     filename: 'doc.json',
   });
 
-  const { data: doc } = useQuery({
-    queryKey: ['doc', id],
-    queryFn: () => docsApi.getDoc(id),
-    staleTime: 0,
-    enabled: !!id,
-  });
-
+  // Deliberately not gated on the app's own metadata call. That answers only
+  // for the bespoke JSON format, so gating on it left every `.docx`/`.xlsx`/
+  // `.pptx` — which is every document created since issue #127 — on a spinner
+  // that never resolved. `readStoredDocumentBody` reads either format.
   const { data: content, isLoading, isError } = useQuery({
-    queryKey: ['doc-content-preview', id, dekResolved, doc?.contentUrl ?? ''],
-    queryFn: async () => {
-      if (!doc?.contentUrl) return null;
-      if (dekRef.current) {
-        const blob = await storageApi.downloadFile(id);
-        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-        try {
-          const plainBytes = decryptFile(cipherBytes, dekRef.current);
-          return new TextDecoder().decode(plainBytes);
-        } catch {
-          if (isNewEncryption) return null;
-          return driveReadContent(doc.contentUrl);
-        }
-      }
-      return driveReadContent(doc.contentUrl);
-    },
-    enabled: !!doc?.contentUrl && dekResolved,
+    queryKey: ['doc-content-preview', id, dekResolved],
+    queryFn: () => readStoredDocumentBody(id, 'docs', dekRef.current),
+    enabled: !!id && dekResolved,
     staleTime: 0,
   });
 
@@ -168,36 +149,19 @@ const PREVIEW_MAX_ROWS = 50;
 const PREVIEW_MAX_COLS = 26;
 
 function SheetPreview({ id }: { id: string }) {
-  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+  const { dekRef, dekResolved } = useEncryptedDocumentContent({
     id,
     filename: 'sheet.json',
   });
 
-  const { data: sheet } = useQuery({
-    queryKey: ['sheet', id],
-    queryFn: () => sheetsApi.getSheet(id),
-    staleTime: 0,
-    enabled: !!id,
-  });
-
+  // Deliberately not gated on the app's own metadata call. That answers only
+  // for the bespoke JSON format, so gating on it left every `.docx`/`.xlsx`/
+  // `.pptx` — which is every document created since issue #127 — on a spinner
+  // that never resolved. `readStoredDocumentBody` reads either format.
   const { data: content, isLoading, isError } = useQuery({
-    queryKey: ['sheet-content-preview', id, dekResolved, sheet?.contentUrl ?? ''],
-    queryFn: async () => {
-      if (!sheet?.contentUrl) return null;
-      if (dekRef.current) {
-        const blob = await storageApi.downloadFile(id);
-        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-        try {
-          const plainBytes = decryptFile(cipherBytes, dekRef.current);
-          return new TextDecoder().decode(plainBytes);
-        } catch {
-          if (isNewEncryption) return null;
-          return driveReadContent(sheet.contentUrl);
-        }
-      }
-      return driveReadContent(sheet.contentUrl);
-    },
-    enabled: !!sheet?.contentUrl && dekResolved,
+    queryKey: ['sheet-content-preview', id, dekResolved],
+    queryFn: () => readStoredDocumentBody(id, 'sheets', dekRef.current),
+    enabled: !!id && dekResolved,
     staleTime: 0,
   });
 
@@ -321,36 +285,19 @@ function SheetPreview({ id }: { id: string }) {
 // ── Slide preview ─────────────────────────────────────────────────────────────
 
 function SlidePreview({ id }: { id: string }) {
-  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+  const { dekRef, dekResolved } = useEncryptedDocumentContent({
     id,
     filename: 'slide.json',
   });
 
-  const { data: slide } = useQuery({
-    queryKey: ['slide', id],
-    queryFn: () => slidesApi.getSlide(id),
-    staleTime: 0,
-    enabled: !!id,
-  });
-
+  // Deliberately not gated on the app's own metadata call. That answers only
+  // for the bespoke JSON format, so gating on it left every `.docx`/`.xlsx`/
+  // `.pptx` — which is every document created since issue #127 — on a spinner
+  // that never resolved. `readStoredDocumentBody` reads either format.
   const { data: content, isLoading, isError } = useQuery({
-    queryKey: ['slide-content-preview', id, dekResolved, slide?.contentUrl ?? ''],
-    queryFn: async () => {
-      if (!slide?.contentUrl) return null;
-      if (dekRef.current) {
-        const blob = await storageApi.downloadFile(id);
-        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-        try {
-          const plainBytes = decryptFile(cipherBytes, dekRef.current);
-          return new TextDecoder().decode(plainBytes);
-        } catch {
-          if (isNewEncryption) return null;
-          return driveReadContent(slide.contentUrl);
-        }
-      }
-      return driveReadContent(slide.contentUrl);
-    },
-    enabled: !!slide?.contentUrl && dekResolved,
+    queryKey: ['slide-content-preview', id, dekResolved],
+    queryFn: () => readStoredDocumentBody(id, 'slides', dekRef.current),
+    enabled: !!id && dekResolved,
     staleTime: 0,
   });
 

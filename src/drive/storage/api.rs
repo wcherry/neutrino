@@ -2,7 +2,7 @@ use crate::drive::filesystem::repository::FilesystemRepository;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
-        AutosaveMetadata, ConvertFileRequest, CreateFileRequest, DocFileMetadataResponse,
+        AutosaveMetadata, CreateFileRequest, DocFileMetadataResponse,
         FileMetadataResponse, FileOrderField, FileVersionResponse, ImportMetadataRequest,
         ListFilesResponse, ListVersionsResponse, QuotaResponse, SaveVersionRequest,
         UpdateVersionLabelRequest, VersionOrderField, ZipContentsResponse, ZipEntry,
@@ -104,65 +104,6 @@ async fn stream_field_to_file(
     })?;
 
     Ok(size)
-}
-
-/// Convert an uploaded file into a native Neutrino document in place.
-///
-/// The client does the parsing — OOXML never reaches the backend — and POSTs the already
-/// converted body plus the target native mime type. Requires edit access, and a file that has
-/// already been converted returns 409.
-#[utoipa::path(
-    post,
-    path = "/api/v1/drive/files/{id}/convert",
-    params(("id" = String, Path, description = "File ID")),
-    request_body = ConvertFileRequest,
-    responses(
-        (status = 200, description = "File converted to a native Neutrino document", body = DocFileMetadataResponse),
-        (status = 400, description = "Source or target type cannot be converted"),
-        (status = 403, description = "Edit access required"),
-        (status = 404, description = "File not found"),
-        (status = 409, description = "File has already been converted"),
-    ),
-    security(("bearer_auth" = [])),
-    tag = "storage"
-)]
-#[post("/files/{id}/convert")]
-pub async fn convert_file(
-    state: web::Data<StorageApiState>,
-    user: AuthenticatedUser,
-    path: web::Path<String>,
-    body: web::Json<ConvertFileRequest>,
-) -> Result<web::Json<DocFileMetadataResponse>, ApiError> {
-    let file_id = path.into_inner();
-    let req = body.into_inner();
-    let file = state
-        .storage_service
-        .convert_to_native(&user, &file_id, &req.target_mime_type, &req.content)
-        .await?;
-    let tags = state
-        .tags_service
-        .get_tag_names_for_file(&file_id, &user.user_id)
-        .unwrap_or_default();
-    Ok(web::Json(DocFileMetadataResponse {
-        id: file.id,
-        name: file.name,
-        size_bytes: file.size_bytes,
-        folder_id: file.folder_id,
-        deleted_at: file.deleted_at,
-        your_role: state
-            .permissions_service
-            .get_effective_role(&user.user_id, "file", &file_id)?
-            .unwrap_or_else(|| "owner".to_string()),
-        storage_path: (!file.storage_path.is_empty()).then_some(file.storage_path),
-        mime_type: (!file.mime_type.is_empty()).then_some(file.mime_type),
-        created_at: file.created_at,
-        updated_at: file.updated_at,
-        cover_thumbnail: file.cover_thumbnail,
-        cover_thumbnail_mime_type: file.cover_thumbnail_mime_type,
-        tags,
-        encrypted_metadata: file.encrypted_metadata,
-        content_version: file.content_version,
-    }))
 }
 
 /// Upload a file as multipart form data.
@@ -1243,7 +1184,6 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         .service(download_file)
         .service(get_quota)
         .service(autosave_file)
-        .service(convert_file)
         .service(save_version)
         .service(list_versions)
         .service(get_version)
@@ -1257,7 +1197,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
 #[openapi(
     paths(
         upload_file, create_file_record, set_import_metadata, get_file_info, list_files, get_file_metadata,
-        preview_file, zip_contents, download_file, get_quota, autosave_file, convert_file, save_version,
+        preview_file, zip_contents, download_file, get_quota, autosave_file, save_version,
         list_versions, get_version, update_version_label, restore_version, download_version, delete_version,
     ),
     components(schemas(
@@ -1274,7 +1214,6 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         UpdateVersionLabelRequest,
         SaveVersionRequest,
         CreateFileRequest,
-        ConvertFileRequest,
         ImportMetadataRequest,
         DocFileMetadataResponse,
     )),

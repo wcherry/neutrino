@@ -21,3 +21,15 @@ export type {
   RequestConfig,
   ContentVersionCheck,
 } from './client';
+
+export {
+  OOXML_MIME,
+  OOXML_EXTENSION,
+  ooxmlMimeFor,
+  ooxmlAppForMime,
+  isOoxmlMime,
+  withOoxmlExtension,
+  stripOoxmlExtension,
+} from './ooxml';
+
+export type { OoxmlApp } from './ooxml';

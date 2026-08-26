@@ -20,7 +20,6 @@ import {
 } from '@neutrino/ui';
 import { ArrowLeft, Check, Pencil, Tag as TagIcon, Trash2, X } from 'lucide-react';
 import { tagsApi, type FileItem } from '@/lib/api';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { fileToGridItem } from '../gridItems';
 import { routeForFile } from '../routeForFile';
 import { PreviewModal } from '../PreviewModal';
@@ -46,7 +45,6 @@ function TagDetail() {
   const router = useRouter();
   const toast = useToast();
   const queryClient = useQueryClient();
-  const flags = useFeatureFlags();
 
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -102,7 +100,6 @@ function TagDetail() {
     const file = files.find((f) => f.id === item.id);
     if (!file) return;
     routeForFile(file, router, {
-      officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
       onPreviewFallback: () => setPreviewFile(file),
     });
   }

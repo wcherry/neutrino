@@ -65,10 +65,12 @@ export async function exportAsPptx(title: string, presentation: SlidePresentatio
 }
 
 /**
- * Build raw .pptx bytes without triggering a browser download — used by
- * office-mode save (issue #43) to write the same file id back to Drive via
- * the binary-safe transport, and by the manual "Convert to Neutrino Slide"
- * / autosave paths.
+ * Build raw .pptx bytes without triggering a browser download.
+ *
+ * This is the deck half of what a presentation is stored as: the save path
+ * packs the editor's own model in beside it before writing (issue #127 — see
+ * `lib/ooxmlContainer.ts`), because everything below survives the trip out of
+ * here and nothing else does.
  */
 export async function exportAsPptxBytes(presentation: SlidePresentation): Promise<Uint8Array> {
   const prs = await buildPptx(presentation);

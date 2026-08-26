@@ -9,8 +9,8 @@
  * falling back to `storageApi.getFileMetadata`:
  *   - If the fallback metadata identifies an office format (docx mimetype or
  *     .docx extension), the editor enters "office mode": it downloads the raw
- *     file bytes and renders them via mammoth's HTML conversion instead of
- *     showing a not-found state.
+ *     file bytes and parses them with `readDocx` instead of showing a
+ *     not-found state.
  *   - If the fallback ALSO 404s, a genuine not-found state renders.
  *
  * Per the plan's guidance we keep this focused on the detection/fallback
@@ -21,10 +21,6 @@
  * every dependency mocked (API layer, tiptap, extensions) and observe the
  * fallback wiring — mirroring the mocking approach already used for DocEditor
  * in autosaveEncryptionWarning.test.tsx.
- *
- * Expected to fail right now (red phase): DocEditor has no 404 handling or
- * fallback path at all today, so `storageApi.getFileMetadata` is never
- * called, and mammoth's `convertToHtml` is never invoked.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -75,7 +71,6 @@ vi.mock('@/providers/FeatureFlagsProvider', () => ({
     docsDistractionFree: false,
     sheetLiveEmbed: false,
     colorPickerAlpha: false,
-    officeInPlaceEditing: true,
   }),
 }));
 
@@ -145,12 +140,30 @@ vi.mock('@neutrino/sheet-embed', () => ({
   PasteChoiceDialog: () => null,
 }));
 
-// mammoth is dynamically imported (`await import('mammoth')`) by the existing
-// manual-Import path — office mode is expected to reuse the same conversion.
-const mockConvertToHtml = vi.fn(() => Promise.resolve({ value: '<p>Hello from docx</p>' }));
-vi.mock('mammoth', () => ({
-  convertToHtml: (...args: unknown[]) => mockConvertToHtml(...args),
+/**
+ * The legacy OOXML container (issue #127). A `.docx` saved before the docx
+ * writer was complete carries the editor's own model beside a Word document
+ * that was only a projection of it, so the load path still prefers that model
+ * where it exists. Nothing writes one any more. `readModel` is a handle so a
+ * test can put the editor on either side of that fork; the container itself is
+ * covered by `__tests__/ooxml/container.test.ts`.
+ */
+const mockReadNeutrinoModel = vi.fn<[], Promise<string | null>>(() => Promise.resolve(null));
+vi.mock('@/lib/ooxmlContainer', () => ({
+  readNeutrinoModel: () => mockReadNeutrinoModel(),
+  looksLikeOoxml: () => true,
 }));
+
+/**
+ * The docx parser, dynamically imported by the load path. Mocked rather than
+ * run, because these tests hand the editor a Blob of `'fake docx bytes'` — the
+ * parser's own behaviour on a real package is `__tests__/ooxml/`'s job.
+ */
+const mockReadDocx = vi.fn(() => Promise.resolve({
+  doc: { type: 'doc', content: [] },
+  meta: { pageSetup: { pageSize: 'letter' } },
+}));
+vi.mock('@/lib/ooxml/docx/read', () => ({ readDocx: () => mockReadDocx() }));
 
 // The editor pulls in custom extensions from @/lib/extensions, which build on
 // Extension/Node/Mark at module scope — so those have to exist on the mock even
@@ -273,7 +286,11 @@ function renderDocEditor() {
 describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockConvertToHtml.mockResolvedValue({ value: '<p>Hello from docx</p>' });
+    mockReadDocx.mockResolvedValue({
+      doc: { type: 'doc', content: [] },
+      meta: { pageSetup: { pageSize: 'letter' } },
+    });
+    mockReadNeutrinoModel.mockResolvedValue(null);
   });
 
   it('falls back to storageApi.getFileMetadata when docsApi.getDoc 404s', async () => {
@@ -290,7 +307,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
     await waitFor(() => expect(mockGetFileMetadata).toHaveBeenCalledWith('test-doc-id'));
   });
 
-  it('enters office mode and renders mammoth-converted content for a raw .docx file', async () => {
+  it('enters office mode and parses the Word document for a raw .docx file', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileMetadata.mockResolvedValue({
       id: 'test-doc-id',
@@ -301,10 +318,38 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
 
     renderDocEditor();
 
-    // Office mode must convert the downloaded raw bytes via mammoth rather
-    // than treating the missing `docs` row as a genuine not-found state.
-    await waitFor(() => expect(mockConvertToHtml).toHaveBeenCalled(), { timeout: 3000 });
+    // Office mode must parse the downloaded raw bytes rather than treating the
+    // missing `docs` row as a genuine not-found state.
+    await waitFor(() => expect(mockReadDocx).toHaveBeenCalled(), { timeout: 3000 });
     expect(screen.queryByText(/document not found/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * A document last saved before the docx writer was complete. Parsing its
+   * Word document would work — and would silently drop the footnotes, section
+   * breaks, watermark, page setup and embedded sheets that the writer of the
+   * day could not express — so the packed model still has to win for as long
+   * as one is there.
+   */
+  it('prefers a legacy packed model over parsing the Word document', async () => {
+    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
+    mockGetFileMetadata.mockResolvedValue({
+      id: 'test-doc-id',
+      name: 'report.docx',
+      mimeType: DOCX_MIME,
+    });
+    mockDownloadFile.mockResolvedValue(new Blob(['a packed .docx']));
+    mockReadNeutrinoModel.mockResolvedValue(
+      JSON.stringify({ doc: { type: 'doc', content: [] }, _meta: { pageSize: 'a4' } }),
+    );
+
+    renderDocEditor();
+
+    await waitFor(() => expect(mockReadNeutrinoModel).toHaveBeenCalled());
+    // The read resolving is the fork: everything after it is synchronous, so
+    // one flush is enough to know the parser was not the branch taken.
+    await Promise.resolve();
+    expect(mockReadDocx).not.toHaveBeenCalled();
   });
 
   it('shows a genuine not-found state when the storage fallback ALSO 404s', async () => {
@@ -316,7 +361,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
     await waitFor(() => expect(screen.getByText(/document not found/i)).toBeInTheDocument(), {
       timeout: 3000,
     });
-    expect(mockConvertToHtml).not.toHaveBeenCalled();
+    expect(mockReadDocx).not.toHaveBeenCalled();
   });
 
   it('does NOT enter office mode for a fallback file that is not an office format', async () => {
@@ -330,6 +375,6 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
     renderDocEditor();
 
     await waitFor(() => expect(mockGetFileMetadata).toHaveBeenCalled());
-    expect(mockConvertToHtml).not.toHaveBeenCalled();
+    expect(mockReadDocx).not.toHaveBeenCalled();
   });
 });

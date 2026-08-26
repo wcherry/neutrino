@@ -4,9 +4,11 @@
  *
  * Covers the `routeForFile` contract end-to-end: grid click, starred
  * quick-access, and the context-menu "Preview" action must all route a raw
- * .docx file into the Docs editor when `officeInPlaceEditing` is on (mirrors
- * the existing native-mimetype dispatch at drive/page.tsx's
- * handleGridItemClick / starred onClick / FileContextMenu.onPreview).
+ * .docx file into the Docs editor (mirroring the existing native-mimetype
+ * dispatch at drive/page.tsx's handleGridItemClick / starred onClick /
+ * FileContextMenu.onPreview). Since issue #127 that is the format the Docs
+ * editor writes, so an uploaded Word file and one created here open the same
+ * way.
  */
 
 import { test, expect } from '../../fixtures/base';
@@ -67,17 +69,6 @@ async function starFile(request: APIRequestContext, token: string, fileId: strin
 }
 
 test.describe('Drive — office file routing', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.route('**/api/v1/feature-flags', async route => {
-      const response = await route.fetch();
-      const flags = await response.json();
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ ...flags, officeInPlaceEditing: true }),
-      });
-    });
-  });
-
   test('clicking a .docx file in the grid opens the Docs editor', async ({ page, request }) => {
     await registerAndLogin(request, page);
     const token = await getAuthToken(page);

@@ -46,7 +46,6 @@ vi.mock('@/lib/api', () => ({
   sheetsApi: {
     getSheet: (...a: unknown[]) => getSheet(...a),
     saveSheet: vi.fn(() => Promise.resolve()),
-    promoteSheet: vi.fn(() => Promise.resolve()),
   },
   driveReadContent: vi.fn(() => Promise.resolve('{"sheets":[]}')),
   driveCreateEncryptedVersion: vi.fn(() => Promise.resolve()),
@@ -96,6 +95,17 @@ const xlsxRead = vi.fn((_buffer: ArrayBuffer | Uint8Array) => ({
   SheetNames: ['Sheet1'],
   Sheets: { Sheet1: {} },
 }));
+/**
+ * The OOXML container is exercised by `lib/__tests__/ooxmlContainer.test.ts`;
+ * here it is stubbed so the fake `RAW_XLSX` bytes below don't have to be a real
+ * zip. What this file is about is which transport the bytes go out on and
+ * whether they are encrypted, not what is inside the package.
+ */
+vi.mock('@/lib/ooxmlContainer', () => ({
+  packNeutrinoModel: (ooxml: Uint8Array) => Promise.resolve(ooxml),
+  readNeutrinoModel: () => Promise.resolve(null),
+}));
+
 vi.mock('xlsx', () => ({
   read: (buffer: ArrayBuffer | Uint8Array) => xlsxRead(buffer),
   write: () => new ArrayBuffer(8),

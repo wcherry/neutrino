@@ -1,31 +1,44 @@
 /**
- * Modern OOXML (MS Office) format detection helpers (issue #43 — in-place
- * editing of MS Office docs).
+ * OOXML format detection for Drive files.
+ *
+ * The mime types and the name/extension helpers live in `@neutrino/api-core`
+ * (`ooxml.ts`) because the api-* packages need them too — a document is created
+ * with one of these mime types now, so they are part of the wire contract, not
+ * a UI detail. This module is the app-side view of them: which editor opens a
+ * given file.
  *
  * Scope is intentionally narrow: only the modern, zip-based OOXML formats
  * (.docx/.xlsx/.pptx). Legacy binary formats (.doc/.xls/.ppt) are never
  * matched — those aren't handled by the in-browser conversion libraries
- * (mammoth, xlsx, pptxImport) this feature relies on.
+ * (mammoth, xlsx, pptxImport) the editors read them with.
  */
 
-export const OFFICE_MIME = {
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-} as const;
+import {
+  OOXML_MIME,
+  OOXML_EXTENSION,
+  ooxmlAppForMime,
+  type OoxmlApp,
+} from '@neutrino/api-core';
 
-export type OfficeApp = 'docs' | 'sheets' | 'slides';
+export {
+  OOXML_MIME,
+  OOXML_EXTENSION,
+  ooxmlMimeFor,
+  ooxmlAppForMime,
+  isOoxmlMime,
+  withOoxmlExtension,
+  stripOoxmlExtension,
+} from '@neutrino/api-core';
 
-const MIME_TO_APP: Record<string, OfficeApp> = {
-  [OFFICE_MIME.docx]: 'docs',
-  [OFFICE_MIME.xlsx]: 'sheets',
-  [OFFICE_MIME.pptx]: 'slides',
-};
+/** Kept as the app's own spelling of the same three mime types. */
+export const OFFICE_MIME = OOXML_MIME;
+
+export type OfficeApp = OoxmlApp;
 
 const EXTENSION_TO_APP: Record<string, OfficeApp> = {
-  docx: 'docs',
-  xlsx: 'sheets',
-  pptx: 'slides',
+  [OOXML_EXTENSION.docs]: 'docs',
+  [OOXML_EXTENSION.sheets]: 'sheets',
+  [OOXML_EXTENSION.slides]: 'slides',
 };
 
 function extensionOf(name: string): string | null {
@@ -44,7 +57,7 @@ function extensionOf(name: string): string | null {
  * extension fallback.
  */
 export function officeAppForFile(mimeType: string, name: string): OfficeApp | null {
-  const byMime = MIME_TO_APP[mimeType];
+  const byMime = ooxmlAppForMime(mimeType);
   if (byMime) return byMime;
 
   const ext = extensionOf(name);

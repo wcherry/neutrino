@@ -31,6 +31,7 @@ import {
 } from '@/lib/api';
 import { extractNoteText, listAllNotes } from '@/lib/noteFiles';
 import { readDocumentText } from '@/lib/documentContent';
+import { OOXML_MIME, type OoxmlApp } from '@neutrino/api-core';
 import {
   DIAGRAM_MIME,
   DOC_MIME,
@@ -107,6 +108,12 @@ const APP_OWNED_MIMES = new Set([
   NOTE_MIME,
   DIAGRAM_MIME,
   DRAWING_MIME,
+  // The OOXML types belong to Docs, Sheets and Slides just as much (issue
+  // #127) — a `.docx` in Drive is a document, and the name-only pass must not
+  // overwrite the full-text entry the docs pass just wrote for the same id.
+  OOXML_MIME.docx,
+  OOXML_MIME.xlsx,
+  OOXML_MIME.pptx,
 ]);
 
 function toMillis(iso: string): number {
@@ -147,13 +154,21 @@ interface DocumentSource {
   list: () => Promise<DocumentMeta[]>;
   /** Stored (decrypted) body -> searchable plain text. */
   extract: (raw: string) => string;
+  /**
+   * Which OOXML package this app's documents may be stored in (issue #127).
+   * Without it the read decodes a zip as UTF-8 and `extract` finds no text —
+   * so every document created since would be indexed empty, overwriting the
+   * good entry its own editor wrote on save. Notes, diagrams and drawings have
+   * no OOXML form and leave it unset.
+   */
+  ooxmlApp?: OoxmlApp;
 }
 
 const DOCUMENT_SOURCES: DocumentSource[] = [
   { type: 'note', list: listAllNotes, extract: extractNoteText },
-  { type: 'document', list: async () => (await docsApi.listDocs()).docs, extract: extractDocText },
-  { type: 'spreadsheet', list: async () => (await sheetsApi.listSheets()).sheets, extract: extractSheetText },
-  { type: 'slide', list: async () => (await slidesApi.listSlides()).slides, extract: extractSlideText },
+  { type: 'document', list: async () => (await docsApi.listDocs()).docs, extract: extractDocText, ooxmlApp: 'docs' },
+  { type: 'spreadsheet', list: async () => (await sheetsApi.listSheets()).sheets, extract: extractSheetText, ooxmlApp: 'sheets' },
+  { type: 'slide', list: async () => (await slidesApi.listSlides()).slides, extract: extractSlideText, ooxmlApp: 'slides' },
   { type: 'diagram', list: async () => (await diagramsApi.listDiagrams()).diagrams, extract: extractDiagramText },
   { type: 'drawing', list: async () => (await drawingApi.listDrawings()).drawings, extract: extractDrawingText },
 ];
@@ -188,7 +203,7 @@ export async function collectIndexJobs(userId: string): Promise<IndexJob[]> {
           id: item.id,
           type: source.type,
           title: item.title,
-          content: source.extract(await readDocumentText(userId, item.id)),
+          content: source.extract(await readDocumentText(userId, item.id, source.ooxmlApp)),
           updatedAt,
         }),
       });

@@ -47,8 +47,6 @@ type PlannedProps = {
     setHamburgerDialog: (dialog: string | null) => void;
     setHamburgerDeleteConfirm: (v: boolean) => void;
     isViewer?: boolean;
-    officeMode?: boolean;
-    onConvertToNative?: () => void;
 
     onUndo: () => void;
     onRedo: () => void;
@@ -80,8 +78,6 @@ function baseProps(overrides: Partial<PlannedProps> = {}): PlannedProps {
         setHamburgerDialog: vi.fn(),
         setHamburgerDeleteConfirm: vi.fn(),
         isViewer: false,
-        officeMode: false,
-        onConvertToNative: vi.fn(),
 
         onUndo: vi.fn(),
         onRedo: vi.fn(),
@@ -347,15 +343,6 @@ describe('sheets HamburgerMenu — category reorganisation (planned)', () => {
             expect(screen.queryByText('Edit')).not.toBeInTheDocument();
             expect(screen.queryByText('Format')).not.toBeInTheDocument();
             expect(screen.queryByText('Insert')).not.toBeInTheDocument();
-        });
-    });
-
-    describe('officeMode (regression)', () => {
-        it('shows "Convert to Neutrino Sheet" inside File when officeMode is true', () => {
-            render(<HamburgerMenu {...baseProps({ officeMode: true, onConvertToNative: vi.fn() })} />);
-            openMenuAndHover('File');
-
-            expect(screen.getByText('Convert to Neutrino Sheet')).toBeInTheDocument();
         });
     });
 

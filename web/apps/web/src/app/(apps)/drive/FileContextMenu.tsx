@@ -1,16 +1,9 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eye, Info, Pencil, Star, StarOff, Download, Trash2, Link, Share2, FolderInput, FileCog, Tag } from 'lucide-react';
+import { Eye, Info, Pencil, Star, StarOff, Download, Trash2, Link, Share2, FolderInput, Tag } from 'lucide-react';
 import { type FileItem } from '@/lib/api';
-import { officeAppForFile, type OfficeApp } from '@/lib/officeFormats';
 import styles from './FileContextMenu.module.css';
-
-const CONVERT_LABEL: Record<OfficeApp, string> = {
-  docs: 'Convert to Neutrino Doc',
-  sheets: 'Convert to Neutrino Sheet',
-  slides: 'Convert to Neutrino Slide',
-};
 
 interface Props {
   file: FileItem;
@@ -29,7 +22,6 @@ interface Props {
   onManageTags: () => void;
   /** Present only when `file` is a raw, not-yet-promoted office file and the
    *  office-in-place-editing flag is on (issue #43). */
-  onConvert?: () => void;
 }
 
 export function FileContextMenu({
@@ -47,7 +39,6 @@ export function FileContextMenu({
   onShare,
   onMove,
   onManageTags,
-  onConvert,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
@@ -76,8 +67,6 @@ export function FileContextMenu({
     setPos({ x: Math.max(4, clampedX), y: Math.max(4, clampedY) });
   }, [x, y]);
 
-  const convertApp = onConvert ? officeAppForFile(file.mimeType, file.name) : null;
-
   const items = [
     ...(onPreview ? [{ icon: <Eye size={14} />, label: 'Preview', action: onPreview }] : []),
     { icon: <Info size={14} />, label: 'File info', action: onInfo },
@@ -92,9 +81,6 @@ export function FileContextMenu({
     { icon: <Link size={14} />, label: 'Copy link', action: onCopyLink },
     { icon: <FolderInput size={14} />, label: 'Move to', action: onMove },
     { icon: <Download size={14} />, label: 'Download', action: onDownload },
-    ...(convertApp && onConvert
-      ? [{ icon: <FileCog size={14} />, label: CONVERT_LABEL[convertApp], action: onConvert }]
-      : []),
     null,
     { icon: <Trash2 size={14} />, label: 'Move to trash', action: onDelete, danger: true },
   ] as const;

@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { Heading, EmptyState, FileGrid, type GridItem, type SortDir, type SortField } from '@neutrino/ui';
 import { Clock } from 'lucide-react';
 import { filesystemApi, type FileItem } from '@/lib/api';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { fileToGridItem, sortEntries } from '../gridItems';
 import { routeForFile } from '../routeForFile';
 import { PreviewModal } from '../PreviewModal';
@@ -14,7 +13,6 @@ import styles from '../shared/page.module.css';
 
 export default function RecentPage() {
   const router = useRouter();
-  const flags = useFeatureFlags();
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [sortBy, setSortBy] = useState<SortField>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -34,7 +32,6 @@ export default function RecentPage() {
     const file = files.find((f) => f.id === item.id);
     if (!file) return;
     routeForFile(file, router, {
-      officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
       onPreviewFallback: () => setPreviewFile(file),
     });
   }

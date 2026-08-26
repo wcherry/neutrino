@@ -39,9 +39,7 @@ import { ShareDialog } from './ShareDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { routeForFile, officeEditorRoute, previewKindForMime } from './routeForFile';
-import { officeAppForFile } from '@/lib/officeFormats';
+import { routeForFile, previewKindForMime } from './routeForFile';
 import {
   fileToGridItem,
   folderToGridItem,
@@ -82,7 +80,6 @@ function DriveContent() {
   const toast = useToast();
   const router = useRouter();
   const currentUser = useUser();
-  const flags = useFeatureFlags();
   const searchParams = useSearchParams();
   const searchTerm = (searchParams.get(DRIVE_SEARCH_PARAM) ?? '').trim();
 
@@ -356,10 +353,9 @@ function DriveContent() {
     const file = fileMap.get(item.id);
     if (!file) return;
     routeForFile(file, router, {
-      officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
       onPreviewFallback: () => setPreviewFile(file),
     });
-  }, [fileMap, folderMap, openFolder, router, flags.officeInPlaceEditing]);
+  }, [fileMap, folderMap, openFolder, router]);
 
   const handleGridItemMenuOpen = useCallback((item: GridItem, e: React.MouseEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -631,8 +627,7 @@ function DriveContent() {
                   coverThumbnailMimeType: file.coverThumbnailMimeType,
                   onClick: () => {
                     routeForFile(file, router, {
-                      officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
-                      onPreviewFallback: () => setPreviewFile(file),
+                                      onPreviewFallback: () => setPreviewFile(file),
                     });
                   },
                 }));
@@ -782,8 +777,7 @@ function DriveContent() {
               return () => { setDocPreview({ id: f.id, kind }); setContextMenu(null); };
             return () => {
               routeForFile(f, router, {
-                officeInPlaceEditingEnabled: flags.officeInPlaceEditing,
-                onPreviewFallback: () => setPreviewFile(f),
+                          onPreviewFallback: () => setPreviewFile(f),
               });
               setContextMenu(null);
             };
@@ -797,16 +791,6 @@ function DriveContent() {
           onDelete={() => { deleteMutation.mutate(contextMenu.file.id); setContextMenu(null); }}
           onCopyLink={() => { handleCopyLink(contextMenu.file); setContextMenu(null); }}
           onMove={() => { setMoveFile(contextMenu.file); setContextMenu(null); }}
-          onConvert={
-            flags.officeInPlaceEditing && officeAppForFile(contextMenu.file.mimeType, contextMenu.file.name)
-              ? () => {
-                  const f = contextMenu.file;
-                  const app = officeAppForFile(f.mimeType, f.name)!;
-                  router.push(officeEditorRoute(app, f.id, { promote: true }));
-                  setContextMenu(null);
-                }
-              : undefined
-          }
         />
       )}
 
