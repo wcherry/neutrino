@@ -2,7 +2,6 @@ pub mod access_requests;
 pub mod activity;
 pub mod admin;
 pub mod comments;
-pub mod compliance;
 pub mod encryption;
 pub mod feature_flags;
 pub mod filesystem;
