@@ -100,8 +100,21 @@ impl StorageRepository {
             .offset(query.offset)
             .into_boxed();
 
+        // `mimeType` takes a comma-separated list, not just one value. Docs,
+        // Sheets and Slides each span two formats now — the OOXML one every
+        // new document is created in, and the bespoke JSON that predates it
+        // (see `native_types`) — and a library that asked for only one of them
+        // would show half a user's documents.
         if let Some(mt) = query.filters.get("mimeType") {
-            base = base.filter(files::mime_type.eq(mt.clone()));
+            let wanted: Vec<String> = mt
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect();
+            if !wanted.is_empty() {
+                base = base.filter(files::mime_type.eq_any(wanted));
+            }
         }
 
         let result = match (order_by, direction) {
@@ -331,43 +344,6 @@ impl StorageRepository {
             .first(&mut conn)
             .map_err(|e| {
                 tracing::error!("DB fetch updated file error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
-    /// Flips a file's stored mime type (used by the per-app `promote` flow to
-    /// convert a raw office file into a native Neutrino doc/sheet/slide).
-    /// Scoped to `owner_id` the same way `update_file_content` is, so a
-    /// caller passing the wrong owner id silently updates nothing.
-    pub fn update_file_mime_type(
-        &self,
-        file_id: &str,
-        owner_id: &str,
-        mime_type: &str,
-    ) -> Result<FileRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-
-        diesel::update(
-            files::table
-                .filter(files::id.eq(file_id))
-                .filter(files::user_id.eq(owner_id)),
-        )
-        .set((
-            files::mime_type.eq(mime_type),
-            files::updated_at.eq(Utc::now().naive_utc()),
-        ))
-        .execute(&mut conn)
-        .map_err(|e| {
-            tracing::error!("DB update file mime type error: {:?}", e);
-            ApiError::internal("Database error")
-        })?;
-
-        files::table
-            .filter(files::id.eq(file_id))
-            .select(FileRecord::as_select())
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB fetch mime-type-updated file error: {:?}", e);
                 ApiError::internal("Database error")
             })
     }
@@ -660,7 +636,7 @@ impl StorageRepository {
             .set((
                 files::cover_thumbnail.eq(Some(thumbnail)),
                 files::cover_thumbnail_mime_type.eq(Some(mime_type)),
-                files::updated_at.eq(chrono::Utc::now().naive_utc()),
+                files::updated_at.eq(Utc::now().naive_utc()),
             ))
             .execute(&mut conn)
             .map_err(|e| {
@@ -681,24 +657,12 @@ impl StorageRepository {
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
-//
-// Covers `update_file_mime_type` (issue #43 — in-place editing of MS Office
-// docs). This method does not exist yet (TDD red phase): it is the plumbing
-// step that lets the "convert on open" flow flip a raw .docx/.xlsx/.pptx
-// file's stored mimetype to the matching native Neutrino type once a
-// doc/sheet/slide row has been created for it (see the per-app `promote`
-// service methods). These tests reference `update_file_mime_type` directly,
-// so this file (and therefore the crate) will fail to *compile* until the
-// method is implemented — the expected and normal shape of Rust TDD red phase
-// for a method that doesn't exist yet, as opposed to a runtime assertion
-// failure. Run with `cargo test --lib drive::storage::repository::tests`.
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    const NATIVE_DOC_MIME: &str = "application/x-neutrino-doc";
 
     fn test_pool() -> DbPool {
         use crate::MIGRATIONS;
@@ -728,64 +692,73 @@ mod tests {
         .expect("insert file")
     }
 
-    #[test]
-    fn update_file_mime_type_changes_the_stored_mime_type() {
-        let repo = StorageRepository::new(test_pool());
-        insert_test_file(&repo, "file-1", "user-1", DOCX_MIME);
+    // ── The mimeType filter (issue #127) ──────────────────────────────────────
+    //
+    // Docs, Sheets and Slides create OOXML now but still open the bespoke JSON
+    // written before that, so each library asks for both of its mime types in
+    // one call. A filter that only understood a single value would show half a
+    // user's documents and hide the rest with no error anywhere.
 
-        let updated = repo
-            .update_file_mime_type("file-1", "user-1", NATIVE_DOC_MIME)
-            .expect("update mime type");
+    const NATIVE_DOC_MIME: &str = "application/x-neutrino-doc";
 
-        assert_eq!(updated.mime_type, NATIVE_DOC_MIME);
+    fn mime_filter_query(mime_type: &str) -> ListQuery<FileOrderField> {
+        ListQuery {
+            limit: 50,
+            offset: 0,
+            order_by: None,
+            direction: None,
+            filters: std::collections::HashMap::from([(
+                "mimeType".to_string(),
+                mime_type.to_string(),
+            )]),
+        }
     }
 
     #[test]
-    fn update_file_mime_type_persists_across_a_fresh_lookup() {
+    fn one_mime_type_lists_only_files_of_that_type() {
         let repo = StorageRepository::new(test_pool());
-        insert_test_file(&repo, "file-2", "user-1", DOCX_MIME);
+        insert_test_file(&repo, "docx-1", "user-1", DOCX_MIME);
+        insert_test_file(&repo, "json-1", "user-1", NATIVE_DOC_MIME);
 
-        repo.update_file_mime_type("file-2", "user-1", NATIVE_DOC_MIME)
-            .expect("update mime type");
+        let listed = repo
+            .list_files_by_user("user-1", &mime_filter_query(DOCX_MIME))
+            .expect("list files");
 
-        let refetched = repo
-            .find_file_by_id("file-2")
-            .expect("find file")
-            .expect("file exists");
-        assert_eq!(refetched.mime_type, NATIVE_DOC_MIME);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, "docx-1");
     }
 
     #[test]
-    fn update_file_mime_type_does_not_affect_other_files() {
+    fn a_comma_separated_mime_type_lists_every_type_in_the_list() {
         let repo = StorageRepository::new(test_pool());
-        insert_test_file(&repo, "file-3", "user-1", DOCX_MIME);
-        insert_test_file(&repo, "file-4", "user-1", DOCX_MIME);
+        insert_test_file(&repo, "docx-1", "user-1", DOCX_MIME);
+        insert_test_file(&repo, "json-1", "user-1", NATIVE_DOC_MIME);
+        insert_test_file(&repo, "other-1", "user-1", "text/plain");
 
-        repo.update_file_mime_type("file-3", "user-1", NATIVE_DOC_MIME)
-            .expect("update mime type");
+        let listed = repo
+            .list_files_by_user(
+                "user-1",
+                &mime_filter_query(&format!("{DOCX_MIME},{NATIVE_DOC_MIME}")),
+            )
+            .expect("list files");
 
-        let untouched = repo
-            .find_file_by_id("file-4")
-            .expect("find file")
-            .expect("file exists");
-        assert_eq!(untouched.mime_type, DOCX_MIME);
+        let mut ids: Vec<&str> = listed.iter().map(|f| f.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["docx-1", "json-1"]);
     }
 
+    /// An empty or all-separator value must not silently narrow the listing to
+    /// nothing — a query string built from an empty array would do exactly that.
     #[test]
-    fn update_file_mime_type_scoped_to_owner_does_not_update_other_users_file() {
-        // Mirrors update_file_content's owner-scoping: the changeset filters
-        // by (file_id, user_id), so calling with the wrong owner id must not
-        // silently mutate a file owned by someone else.
+    fn an_empty_mime_type_filter_is_ignored_rather_than_matching_nothing() {
         let repo = StorageRepository::new(test_pool());
-        insert_test_file(&repo, "file-5", "owner-a", DOCX_MIME);
+        insert_test_file(&repo, "docx-1", "user-1", DOCX_MIME);
 
-        let _ = repo.update_file_mime_type("file-5", "owner-b", NATIVE_DOC_MIME);
+        let listed = repo
+            .list_files_by_user("user-1", &mime_filter_query(" , "))
+            .expect("list files");
 
-        let untouched = repo
-            .find_file_by_id("file-5")
-            .expect("find file")
-            .expect("file exists");
-        assert_eq!(untouched.mime_type, DOCX_MIME);
+        assert_eq!(listed.len(), 1);
     }
 
     #[test]

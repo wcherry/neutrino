@@ -35,7 +35,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/api', () => api);
 
 vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({ officeInPlaceEditing: false }),
+  useFeatureFlags: () => ({}),
 }));
 
 // The preview modal pulls in the download/decrypt stack, which these tests

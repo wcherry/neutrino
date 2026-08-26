@@ -2,15 +2,31 @@ import {
   request,
   contentVersionQuery,
   ApiClientError,
+  ooxmlMimeFor,
+  isOoxmlMime,
+  withOoxmlExtension,
+  stripOoxmlExtension,
   type ContentVersionCheck,
 } from '@neutrino/api-core';
 
 /**
- * A file is a native Neutrino spreadsheet because it carries this mime type —
- * there is no `sheets` table behind it any more. Mirrors
- * `src/drive/storage/native_types.rs` on the backend.
+ * What a spreadsheet created today is: a real Excel workbook (issue #127), so
+ * every other office suite can open one and import/export are file copies.
+ */
+export const XLSX_MIME_TYPE = ooxmlMimeFor('sheets');
+
+/**
+ * The bespoke JSON spreadsheets were written in before OOXML. Still read and
+ * still written — a spreadsheet created in it stays in it, there is no
+ * migration — which is why the library asks for both types.
+ *
+ * There is no `sheets` table behind either of them; the mime type is the whole
+ * marker. Mirrors `src/drive/storage/native_types.rs` on the backend.
  */
 export const SHEET_MIME_TYPE = 'application/x-neutrino-sheet';
+
+/** Both formats a file may be a native Neutrino spreadsheet in. */
+export const SHEET_MIME_TYPES = [XLSX_MIME_TYPE, SHEET_MIME_TYPE] as const;
 
 // ---------------------------------------------------------------------------
 // Sheet text extraction helpers
@@ -182,7 +198,7 @@ function toIsoUtc(timestamp: string): string {
 function toSheetMeta(file: DriveFileDto): SheetMetaResponse {
   return {
     id: file.id,
-    title: file.name,
+    title: stripOoxmlExtension(file.name),
     folderId: file.folderId ?? null,
     createdAt: toIsoUtc(file.createdAt),
     updatedAt: toIsoUtc(file.updatedAt),
@@ -201,7 +217,7 @@ function toSheet(file: DriveFileDto): SheetResponse {
 
 export const sheetsApi = {
   async listSheets(): Promise<ListSheetsResponse> {
-    const params = new URLSearchParams({ mimeType: SHEET_MIME_TYPE, limit: '200' });
+    const params = new URLSearchParams({ mimeType: SHEET_MIME_TYPES.join(','), limit: '200' });
     const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
     return { sheets: (raw.files ?? []).map(toSheetMeta) };
   },
@@ -210,15 +226,16 @@ export const sheetsApi = {
     const title = body.title.trim();
     if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Spreadsheet title cannot be empty');
     // Drive takes a client-supplied id so the caller can navigate to the
-    // editor without waiting for the response, and seeds the empty-workbook
-    // body itself from the mime type — the create and the first content write
-    // are one request rather than two.
+    // editor without waiting for the response. The record is created with no
+    // body: an `.xlsx` is a zip, which the server has no business building and
+    // could only write in the clear anyway, so the editor opens the empty file
+    // as a blank workbook and its first save writes a real, sealed package.
     const file = await request<DriveFileDto>('/api/v1/drive/files', {
       method: 'POST',
       body: JSON.stringify({
         id: crypto.randomUUID(),
-        name: title,
-        mimeType: SHEET_MIME_TYPE,
+        name: withOoxmlExtension(title, 'sheets'),
+        mimeType: XLSX_MIME_TYPE,
         folderId: body.folderId ?? null,
       }),
     });
@@ -226,12 +243,13 @@ export const sheetsApi = {
   },
 
   /**
-   * Fetch a file as a native spreadsheet.
+   * Fetch a file as a spreadsheet in the *bespoke JSON* format.
    *
-   * Throws 404 for a file that exists but isn't one — a raw .xlsx, say. That
-   * is load-bearing, not incidental: the editor's office-mode fallback keys
-   * off this 404 to decide it must download and parse the file as xlsx
-   * instead. Drive's `/info` answers for any file type, so the type check
+   * Throws 404 for anything else, `.xlsx` included. That is load-bearing and
+   * not an oversight: the two formats are read and written by different code
+   * paths in the editor, and this 404 is how it learns to take the OOXML one —
+   * download the package, prefer the model inside it, fall back to parsing the
+   * workbook. Drive's `/info` answers for any file type, so the type check
    * lives here.
    */
   async getSheet(sheetId: string): Promise<SheetResponse> {
@@ -242,10 +260,26 @@ export const sheetsApi = {
     return toSheet(file);
   },
 
+  /**
+   * Rename.
+   *
+   * Reads the file first, because the extension is not the caller's business:
+   * it passes the title the user typed, and whether that has to land on disk
+   * as `Budget` or `Budget.xlsx` depends on the format the file is already in.
+   * Renaming an `.xlsx` to a bare name would leave a workbook the operating
+   * system no longer recognises.
+   */
   async saveSheet(sheetId: string, body: SaveSheetRequest): Promise<SheetMetaResponse> {
+    const current = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}/info`);
+    if (body.title === undefined) return toSheetMeta(current);
+    const name = isOoxmlMime(current.mimeType ?? '')
+      ? withOoxmlExtension(body.title, 'sheets')
+      : body.title;
+    if (name === current.name) return toSheetMeta(current);
+
     const file = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name: body.title }),
+      body: JSON.stringify({ name }),
     });
     return toSheetMeta(file);
   },
@@ -288,20 +322,6 @@ export const sheetsApi = {
       { method: 'PUT', body: formData },
     );
     return toSheetMeta(file);
-  },
-
-  /**
-   * Promote a raw Office (.xlsx) Drive file in-place into a native Neutrino
-   * sheet: uploads `content` (the same JSON shape a normal save would
-   * produce) and flips the file's mime type server-side. Same file id
-   * afterwards.
-   */
-  async promoteSheet(sheetId: string, content: string): Promise<SheetResponse> {
-    const file = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}/convert`, {
-      method: 'POST',
-      body: JSON.stringify({ targetMimeType: SHEET_MIME_TYPE, content }),
-    });
-    return toSheet(file);
   },
 
   /** Create a named range for a cell selection, returning a stable GUID.

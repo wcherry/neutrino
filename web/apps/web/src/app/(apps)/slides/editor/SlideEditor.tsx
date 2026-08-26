@@ -73,8 +73,8 @@ import {
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
-import { officeAppForFile } from '@/lib/officeFormats';
-import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
+import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension } from '@/lib/officeFormats';
+import { packNeutrinoModel, readNeutrinoModel } from '@/lib/ooxmlContainer';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -385,10 +385,11 @@ export function SlideEditor() {
   // the second one on a reload, which returns the same text as the first (that
   // read runs while the vault is still locked).
   const serverPlaintextRef = useRef(false);
-  // Forward-ref to the promote mutation trigger (issue #43) — set once
-  // promoteMutation is defined below; read from the office-mode load effect,
-  // which runs before that definition point.
-  const promoteMutationRef = useRef<() => void>(() => {});
+  // Forward-ref to the content autosave — set once `contentMutation` is defined
+  // below, and read from the OOXML load effect, which runs before that
+  // definition point. That effect needs it for one case: a deck created here
+  // and never saved, whose empty record has to become a real package.
+  const contentMutationRef = useRef<(content: string) => void>(() => {});
   // Office mode (issue #43) — declared here (before useSlidePresence, which
   // needs it to skip presence for office-mode files) since `officeMode`
   // itself isn't known until the getSlide query settles, later in this
@@ -410,10 +411,12 @@ export function SlideEditor() {
     slideId,
     userName: currentUser?.name ?? 'Anonymous',
     authToken,
-    // Office-mode files have no `slides` row / collab room — presence is out
-    // of scope for them (plan section 4). officeModeRef lags one render at
-    // most (office mode isn't known until later in this component).
-    enabled: !!slideId && !officeModeRef.current,
+    // Presence is keyed on the Drive file id and carries the editor's own
+    // presentation model, so it does not care which format the file is stored
+    // in. It used to be skipped for `.pptx` files back when those were only
+    // ever uploads (issue #43); leaving it that way now would mean no deck
+    // created from this point on could be co-edited.
+    enabled: !!slideId,
     selectedSlideIndex: selectedSlideIdx,
     onRemotePresentationRef,
   });
@@ -429,11 +432,13 @@ export function SlideEditor() {
     versionGuard.observe(slideData?.contentVersion);
   }, [slideData?.contentVersion, versionGuard]);
 
-  // ── Office mode (issue #43) ────────────────────────────────────────────────
-  // A raw .pptx Drive file has no `slides` row, so slidesApi.getSlide 404s.
-  // Fall back to the generic Drive file metadata to distinguish "raw pptx,
-  // open it in place" from a genuinely deleted/missing presentation.
-  const slide404 = flags.officeInPlaceEditing && metaIsError
+  // ── OOXML mode (issues #43, #127) ──────────────────────────────────────────
+  // `slidesApi.getSlide` answers only for the bespoke JSON format, so it 404s
+  // for a `.pptx` — which is every presentation created since #127, as well as
+  // any deck uploaded to Drive. Fall back to the generic Drive file metadata to
+  // tell that apart from a genuinely deleted or missing presentation. Named
+  // `officeMode` because that is what it was when only uploads took this path.
+  const slide404 = metaIsError
     && metaError instanceof ApiClientError && metaError.statusCode === 404;
 
   const {
@@ -451,6 +456,13 @@ export function SlideEditor() {
   const officeApp = officeFileMeta ? officeAppForFile(officeFileMeta.mimeType, officeFileMeta.name) : null;
   const officeMode = slide404 && officeApp === 'slides';
   const slideNotFound = slide404 && (officeFallbackIsError || (!!officeFileMeta && officeApp !== 'slides'));
+
+  // Seed the stale-write guard from the revision this load saw. The effect
+  // above does it from `slideData`, which a `.pptx` never has — without this
+  // every OOXML save would assert no revision at all.
+  useEffect(() => {
+    if (officeMode) versionGuard.observe(officeFileMeta?.contentVersion);
+  }, [officeMode, officeFileMeta?.contentVersion, versionGuard]);
 
   useEffect(() => { officeModeRef.current = officeMode; }, [officeMode]);
   const officeFileMetaRef = useRef<FileItem | null>(null);
@@ -571,7 +583,7 @@ export function SlideEditor() {
 
   // ── Office mode: title + content load (issue #43) ───────────────────────
   useEffect(() => {
-    if (officeMode && officeFileMeta) setTitle(officeFileMeta.name);
+    if (officeMode && officeFileMeta) setTitle(stripOoxmlExtension(officeFileMeta.name));
   }, [officeMode, officeFileMeta]);
 
   const officeContentLoadStartedRef = useRef(false);
@@ -593,6 +605,29 @@ export function SlideEditor() {
         const plain = dekRef.current && !isNewEncryption
           ? decryptFile(stored, dekRef.current)
           : stored;
+        // A presentation created here starts with no body at all: a `.pptx` is
+        // a zip, so the server writes no seed. The default deck already on
+        // screen is what it should look like, and this save is what turns the
+        // empty record into a real package — now rather than on the first edit,
+        // or a deck opened and closed again stays a zero-byte file.
+        if (plain.byteLength === 0) {
+          contentMutationRef.current(JSON.stringify(presentationRef.current));
+          return;
+        }
+
+        // The model packed into the deck is the lossless copy; the deck itself
+        // is what PowerPoint reads and what a file from anywhere else arrives
+        // as. Preferring the model is what keeps themes, transitions, gradient
+        // backgrounds and speaker-note formatting across a save — pptxgenjs
+        // carries none of them (issue #127).
+        const model = await readNeutrinoModel(plain, 'slides');
+        if (cancelled) return;
+        if (model) {
+          setPresentation(JSON.parse(model) as SlidePresentation);
+          lastSavedRef.current = model;
+          return;
+        }
+
         const file = new File(
           [plain.buffer.slice(plain.byteOffset, plain.byteOffset + plain.byteLength) as ArrayBuffer],
           officeFileMeta.name,
@@ -604,13 +639,6 @@ export function SlideEditor() {
         if (cancelled) return;
         setPresentation(imported);
         lastSavedRef.current = JSON.stringify(imported);
-        // Convert-on-open (global setting) or a one-shot promote request from
-        // the Drive context menu's "Convert to Neutrino Slide" action:
-        // silently promote right after the initial client-side import
-        // renders. Non-blocking.
-        if (getOfficeFileMode() === 'convert-on-open' || isOneShotPromoteRequested()) {
-          promoteMutationRef.current();
-        }
       } catch {
         if (!cancelled) toast.error('Failed to open this file for editing');
       }
@@ -685,15 +713,21 @@ export function SlideEditor() {
         const meta = officeFileMetaRef.current;
         if (!meta) throw new Error('office-meta-missing');
         if (!dekRef.current) throw new Error('no-dek');
-        const bytes = await exportAsPptxBytes(presentationRef.current);
-        // Office-mode bytes are encrypted like everything else. They used not
-        // to be, on the grounds that "downloading the raw file must open in
-        // real PowerPoint" (issue #43, criterion 3) — but Drive's download
-        // decrypts client-side, so the .pptx that reaches the user's disk is
-        // the same either way. What the plaintext write bought was a readable
-        // deck in object storage: issue #95.
-        await driveAutosaveEncryptedBytes(slideId, bytes, meta.name, dekRef.current);
-        return;
+        // The package carries both halves: the PowerPoint deck other tools
+        // read, and this editor's own presentation model, which is what keeps
+        // themes, transitions and gradient backgrounds — none of which survive
+        // pptxgenjs — across a save. See `lib/ooxmlContainer.ts`.
+        const deck = await exportAsPptxBytes(presentationRef.current);
+        const bytes = await packNeutrinoModel(deck, 'slides', content);
+        // Those bytes are encrypted like everything else. They used not to be,
+        // on the grounds that "downloading the raw file must open in real
+        // PowerPoint" (issue #43, criterion 3) — but Drive's download decrypts
+        // client-side, so the .pptx that reaches the user's disk is the same
+        // either way. What the plaintext write bought was a readable deck in
+        // object storage: issue #95.
+        return driveAutosaveEncryptedBytes(
+          slideId, bytes, meta.name, dekRef.current, versionGuard.check(),
+        );
       }
       if (!dekRef.current) throw new Error('no-dek');
       return driveAutosaveEncryptedContent(
@@ -733,7 +767,9 @@ export function SlideEditor() {
       // Office mode: no `slides` row to PATCH — rename through the generic
       // Drive rename call (same one FileContextMenu's rename action uses).
       if (officeModeRef.current) {
-        await filesystemApi.updateFile(slideId, { name: t });
+        // The extension goes back on: the title is what the user typed, and the
+        // file still has to land on disk as a deck PowerPoint opens.
+        await filesystemApi.updateFile(slideId, { name: withOoxmlExtension(t, 'slides') });
         return;
       }
       await slidesApi.saveSlide(slideData!.id, { title: t });
@@ -741,28 +777,9 @@ export function SlideEditor() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['slides'] }),
   });
 
-  // "Convert to Neutrino Slide" — one-shot promote of the raw office file
-  // into a native slide deck, keeping the same Drive file id.
-  const promoteMutation = useMutation({
-    mutationFn: async () => {
-      const content = JSON.stringify(presentationRef.current);
-      return slidesApi.promoteSlide(slideId, content);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['slide', slideId] });
-      queryClient.invalidateQueries({ queryKey: ['slide-content', slideId] });
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      queryClient.invalidateQueries({ queryKey: ['slides'] });
-      toast.success('Converted to a native Neutrino slide deck');
-    },
-    onError: () => toast.error('Failed to convert to a native Neutrino slide deck'),
-  });
   useEffect(() => {
-    promoteMutationRef.current = () => { promoteMutation.mutate(); };
-  }, [promoteMutation]);
-  const handleConvertToNative = useCallback(() => {
-    promoteMutation.mutate();
-  }, [promoteMutation]);
+    contentMutationRef.current = (content: string) => { contentMutation.mutate({ content }); };
+  }, [contentMutation]);
 
   const scheduleAutoSave = useCallback((pres: SlidePresentation) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -1449,8 +1466,6 @@ export function SlideEditor() {
           onImport={() => importInputRef.current?.click()}
           onExportPptx={() => { void exportAsPptx(title || 'presentation', presentationRef.current); }}
           onShare={() => setShowShareDialog(true)}
-          officeMode={officeMode}
-          onConvertToNative={handleConvertToNative}
           onNewSlide={addSlide}
           onDuplicateSlide={duplicateSlide}
           onDeleteSlide={deleteSlide}
@@ -1501,11 +1516,6 @@ export function SlideEditor() {
         <span className={`${styles.saveStatus} ${saveStatusClass}`}>{saveStatusText}</span>
 
         <div className={styles.actions}>
-          {officeMode && (
-            <Button variant="secondary" onClick={handleConvertToNative} title="Convert to Neutrino Slide">
-              Convert to Neutrino Slide
-            </Button>
-          )}
           {/* Master toggle */}
           <Button
             variant={masterMode ? 'primary' : 'secondary'}

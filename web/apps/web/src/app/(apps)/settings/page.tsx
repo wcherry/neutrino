@@ -14,7 +14,6 @@ import { requestEncryptionGate } from '@/components/E2EEUnlockGate';
 import { KeyManagementPanel } from './KeyManagementPanel';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
-import { getOfficeFileMode, OFFICE_FILE_MODE_KEY, type OfficeFileMode } from '@/hooks/useOfficeFileMode';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { ThemeGrid } from '@/components/theme/ThemeGrid';
 import { useFeatureFlags, type FeatureFlags } from '@/providers/FeatureFlagsProvider';
@@ -37,11 +36,6 @@ const WEEK_START_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: 'Sunday' },
   { value: 1, label: 'Monday' },
   { value: 6, label: 'Saturday' },
-];
-
-const OFFICE_FILE_MODE_OPTIONS: { value: OfficeFileMode; label: string }[] = [
-  { value: 'native-roundtrip', label: 'Keep as Office file' },
-  { value: 'convert-on-open', label: 'Convert on open' },
 ];
 
 function fmtHour(h: number): string {
@@ -77,14 +71,13 @@ const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
 /** Read by `useSearchIndexSync` to skip the periodic background index sync. */
 const SEARCH_SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
 
-type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'drive' | 'advanced';
+type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'advanced';
 
 const TABS: { id: Tab; label: string; flag?: keyof FeatureFlags }[] = [
   { id: 'ai', label: 'AI Assistant' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'calendar', label: 'Calendar' },
-  { id: 'drive', label: 'Drive', flag: 'officeInPlaceEditing' },
   { id: 'account', label: 'Account' },
   { id: 'advanced', label: 'Advanced' },
 ];
@@ -260,9 +253,6 @@ const qc = useQueryClient();
   const [dayEndHour, setDayEndHourState] = useState<number>(DEFAULT_DAY_END_HOUR);
   const [showAppleModal, setShowAppleModal] = useState(false);
 
-  // ── Drive state ─────────────────────────────────────────────────────────
-  const [officeFileMode, setOfficeFileModeState] = useState<OfficeFileMode>('native-roundtrip');
-
   /**
    * Whether a key exists is partly a local question (does this device hold a
    * wrapped copy?) and partly a server one (has the account published a public
@@ -341,8 +331,6 @@ const qc = useQueryClient();
     if (storedEnd !== null) setDayEndHourState(Number(storedEnd));
 
     setSearchSyncDisabled(localStorage.getItem(SEARCH_SYNC_DISABLED_KEY) === 'true');
-
-    setOfficeFileModeState(getOfficeFileMode());
   }, []);
 
   async function handleExportKey() {
@@ -429,11 +417,6 @@ const qc = useQueryClient();
   function handleWeekStartChange(value: number) {
     setWeekStart(value);
     localStorage.setItem(WEEK_START_KEY, String(value));
-  }
-
-  function handleOfficeFileModeChange(value: OfficeFileMode) {
-    setOfficeFileModeState(value);
-    localStorage.setItem(OFFICE_FILE_MODE_KEY, value);
   }
 
   function handleDayStartHourChange(value: number) {
@@ -873,35 +856,6 @@ const qc = useQueryClient();
                 })}
               </div>
             )}
-          </section>
-        </div>
-      )}
-
-      {/* ── Drive tab ────────────────────────────────────────────────────── */}
-      {activeTab === 'drive' && (
-        <div className={styles.content}>
-          <section className={styles.section}>
-            <h2 className={styles.sectionTitle}>Office documents</h2>
-            <div className={styles.settingRow}>
-              <div className={styles.settingInfo}>
-                <div className={styles.settingName}>Office file editing</div>
-                <div className={styles.settingDesc}>
-                  How Word, Excel, and PowerPoint files behave when opened in Drive
-                </div>
-              </div>
-              <div className={styles.segmented}>
-                {OFFICE_FILE_MODE_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`${styles.segmentedBtn} ${officeFileMode === opt.value ? styles.segmentedBtnActive : ''}`}
-                    onClick={() => handleOfficeFileModeChange(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </section>
         </div>
       )}

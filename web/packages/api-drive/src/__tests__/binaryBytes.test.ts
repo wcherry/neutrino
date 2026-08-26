@@ -37,6 +37,10 @@ vi.mock('@neutrino/api-core', () => ({
   },
   BASE_URL: '',
   buildQuery: () => '',
+  // The binary autosave carries the stale-write guard's expected revision in
+  // the query string, the same way the text one does. Stubbed to the empty
+  // string so the path assertions below stay about the endpoint.
+  contentVersionQuery: () => '',
 }));
 
 import { request } from '@neutrino/api-core';

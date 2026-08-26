@@ -8,6 +8,13 @@
  * (FootnoteRegistry) rather than inside ProseMirror, because editing nested
  * inline documents would require a full sub-editor setup.
  *
+ * The text is *also* a node attribute, and that is where it is persisted. The
+ * registry alone is module-scoped and empty on the next page load, so every
+ * footnote in a reopened document read back blank — and, once documents became
+ * `.docx` (issue #127), there was nothing for the writer to put in
+ * `word/footnotes.xml` either. The attribute is the record; the registry is a
+ * live cache in front of it, seeded on render and written through on edit.
+ *
  * Usage:
  *   editor.chain().focus().insertContent({ type: 'footnote', attrs: { id: uuid(), text: 'Note text' } }).run()
  *
@@ -47,7 +54,9 @@ export function getFootnoteItems(editor: import('@tiptap/react').Editor): Footno
       items.push({
         id,
         number: counter,
-        text: FootnoteRegistry.get(id) ?? '',
+        // The attribute is the record; the registry is a cache that may hold a
+        // fresher value from an edit made in this session.
+        text: FootnoteRegistry.get(id) ?? (node.attrs.text as string) ?? '',
       });
     }
   });
@@ -58,8 +67,12 @@ export function getFootnoteItems(editor: import('@tiptap/react').Editor): Footno
 // Node view
 // ---------------------------------------------------------------------------
 
-function FootnoteNodeView({ node, editor }: ReactNodeViewProps) {
+function FootnoteNodeView({ node, editor, updateAttributes }: ReactNodeViewProps) {
   const id = node.attrs.id as string;
+
+  // Seed the cache from what was stored, so a footnote opened in a new session
+  // shows its text rather than an empty prompt.
+  if (!FootnoteRegistry.has(id)) FootnoteRegistry.set(id, (node.attrs.text as string) ?? '');
 
   // Compute the sequential number for this node by walking the doc.
   let number = 1;
@@ -89,8 +102,10 @@ function FootnoteNodeView({ node, editor }: ReactNodeViewProps) {
     const newText = window.prompt('Edit footnote text:', existing);
     if (newText !== null) {
       FootnoteRegistry.set(id, newText);
-      // Force a re-render by triggering a no-op transaction.
-      editor.view.dispatch(editor.state.tr.setMeta('footnote-edit', id));
+      // Write through to the attribute, which is what autosave persists. This
+      // also re-renders, so the no-op transaction that used to force one is
+      // no longer needed.
+      updateAttributes({ text: newText });
     }
   };
 
@@ -131,6 +146,13 @@ export const FootnoteExtension = Node.create({
         renderHTML: (attrs: Record<string, unknown>) => ({
           'data-footnote-id': attrs.id,
         }),
+      },
+      /** The note itself. Persisted here — see the note at the top of the file. */
+      text: {
+        default: '',
+        parseHTML: (el: HTMLElement) => el.getAttribute('data-footnote-text') ?? '',
+        renderHTML: (attrs: Record<string, unknown>) =>
+          attrs.text ? { 'data-footnote-text': String(attrs.text) } : {},
       },
     };
   },

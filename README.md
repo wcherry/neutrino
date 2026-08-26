@@ -10,9 +10,9 @@ embedded in the binary, so a first run needs no database setup at all.
 | App | Description |
 |-----|-------------|
 | **Drive** | File storage — folders, tags, stars, shortcuts, trash, shared drives, share links, comments, activity trail |
-| **Docs** | Rich-text documents with real-time co-editing, outline, version history, and Word/PDF round-trips |
-| **Sheets** | Spreadsheets with a formula engine, named ranges, conditional formatting, charts, and `.xlsx` round-trips |
-| **Slides** | Presentations with themes, master slides, speaker notes, presenter mode, and PowerPoint round-trips |
+| **Docs** | Rich-text documents (`.docx`) with real-time co-editing, outline, version history, and PDF export |
+| **Sheets** | Spreadsheets (`.xlsx`) with a formula engine, named ranges, conditional formatting and charts |
+| **Slides** | Presentations (`.pptx`) with themes, master slides, speaker notes and presenter mode |
 | **Notes** | Block-based quick notes that sync live across devices |
 | **Photos** | Photo library with albums, favourites, archive, memories, and on-device face grouping |
 | **Calendar** | Month/week/agenda views, recurring events, reminders, task lists, ICS import/export, Google and Outlook sync |
@@ -22,6 +22,48 @@ embedded in the binary, so a first run needs no database setup at all.
 Notes, Docs, Sheets, Slides, Diagrams and Drawings are all **Drive files** — the editors
 write into the same storage, quota and search index as anything else you upload. There
 is no separate per-app content store in the backend.
+
+## Document formats
+
+Docs, Sheets and Slides store their documents as **OOXML** — a document is a real
+`.docx`, a spreadsheet a real `.xlsx`, a deck a real `.pptx`. So Word, Excel,
+PowerPoint, LibreOffice and Google's editors open a Neutrino document directly, and
+"import" and "export" are a file copy rather than a conversion. Uploading an Office
+file and creating a document here produce the same kind of thing, and open the same way.
+
+**Docs is fully OOXML.** Page setup, headers and footers, footnotes, watermarks, field
+codes, cross-references, tracked changes, lists, tables and document properties are all
+written as the OOXML elements that mean them, and read back the same way
+(`web/apps/web/src/lib/ooxml/docx/`). Word sees the document, not an approximation of it,
+and a `.docx` from Word or Google Docs opens here with its layout intact. Three things
+have no OOXML equivalent — they are live pointers at other Drive files: `neutrino-drive:`
+image references, sheet and diagram embeds, and the theme preset name. Those ride in a
+`customXml/` part, which Word preserves across an edit.
+
+Sheets and Slides are not there yet. What those editors can *write* is narrower than what
+they can hold — not because the format is narrow, but because their serializers do not
+emit it: `buildXlsxWorksheet` writes cell values and nothing else, so column widths, cell
+fills, charts and conditional formats have nowhere to go. Storing only the OOXML would
+delete all of that on the first autosave.
+
+So an `.xlsx` or `.pptx` also carries one extra part, `neutrino/model.json`, with the
+editor's full-fidelity model, and those editors prefer it on open — nothing is lost saving
+in Neutrino, and nothing is lost opening a file from elsewhere either, since a package
+without that part is simply parsed as OOXML. A workbook round-tripped through Excel comes
+back without it (Excel discards parts it does not recognise) and is read the same way. A
+model that no longer matches the package around it is ignored rather than trusted;
+`web/apps/web/src/lib/ooxmlContainer.ts` has the details.
+
+That extra part is a stopgap, not the design — Docs has already left it behind, and a
+`.docx` saved before it did is migrated by its next save. Every field the remaining
+writers learn to emit improves what Excel and PowerPoint see, with no risk to what
+Neutrino reads back, and the model can shrink as they catch up. Until then a Neutrino
+spreadsheet opened elsewhere is correct values with no formatting —
+**interoperability is bounded by the writers, not by the storage format.**
+
+Documents written before this — `application/x-neutrino-doc` and friends — are still
+read and written in that format. Nothing is migrated. Diagrams and Drawing have no
+OOXML counterpart and keep their own JSON.
 
 ## Encryption
 

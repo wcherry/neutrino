@@ -93,8 +93,6 @@ export interface HamburgerMenuProps {
   onShare: () => void;
   // Office mode (issue #43) — true when this file is a raw .pptx being edited
   // in place rather than a native Neutrino presentation.
-  officeMode?: boolean;
-  onConvertToNative?: () => void;
   // Slide operations
   onNewSlide: () => void;
   onDuplicateSlide: () => void;
@@ -139,8 +137,6 @@ export function HamburgerMenu({
   onImport,
   onExportPptx,
   onShare,
-  officeMode,
-  onConvertToNative,
   onNewSlide,
   onDuplicateSlide,
   onDeleteSlide,
@@ -198,10 +194,6 @@ export function HamburgerMenu({
         { kind: 'separator' },
         { kind: 'action', label: 'Save',            shortcut: 'Ctrl+S', action: () => onSave() },
         { kind: 'separator' },
-        ...(officeMode ? [
-          { kind: 'action' as const, label: 'Convert to Neutrino Slide', action: () => onConvertToNative?.() },
-          { kind: 'separator' as const },
-        ] : []),
         { kind: 'action', label: 'Import (.pptx)',                      action: () => onImport() },
         {
           kind: 'submenu', label: 'Export as…', items: [

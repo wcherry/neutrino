@@ -1,10 +1,29 @@
-import { request, ApiClientError } from '@neutrino/api-core';
+import {
+  request,
+  ApiClientError,
+  ooxmlMimeFor,
+  isOoxmlMime,
+  withOoxmlExtension,
+  stripOoxmlExtension,
+} from '@neutrino/api-core';
 
 /**
- * A file is a native Neutrino presentation because it carries this mime type.
+ * What a presentation created today is: a real PowerPoint deck (issue #127),
+ * so every other office suite can open one and import/export are file copies.
+ */
+export const PPTX_MIME_TYPE = ooxmlMimeFor('slides');
+
+/**
+ * The bespoke JSON presentations were written in before OOXML. Still read and
+ * still written — a deck created in it stays in it, there is no migration —
+ * which is why the library asks for both types.
+ *
  * Mirrors `src/drive/storage/native_types.rs` on the backend.
  */
 export const SLIDE_MIME_TYPE = 'application/x-neutrino-slide';
+
+/** Both formats a file may be a native Neutrino presentation in. */
+export const SLIDE_MIME_TYPES = [PPTX_MIME_TYPE, SLIDE_MIME_TYPE] as const;
 
 // ---------------------------------------------------------------------------
 // Slide text extraction helpers
@@ -171,7 +190,7 @@ function toIsoUtc(timestamp: string): string {
 function toSlideMeta(file: DriveFileDto): SlideMetaResponse {
   return {
     id: file.id,
-    title: file.name,
+    title: stripOoxmlExtension(file.name),
     folderId: file.folderId ?? null,
     createdAt: toIsoUtc(file.createdAt),
     updatedAt: toIsoUtc(file.updatedAt),
@@ -189,7 +208,7 @@ function toSlide(file: DriveFileDto): SlideResponse {
 
 export const slidesApi = {
   async listSlides(): Promise<ListSlidesResponse> {
-    const params = new URLSearchParams({ mimeType: SLIDE_MIME_TYPE, limit: '200' });
+    const params = new URLSearchParams({ mimeType: SLIDE_MIME_TYPES.join(','), limit: '200' });
     const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
     return { slides: (raw.files ?? []).map(toSlideMeta) };
   },
@@ -197,14 +216,16 @@ export const slidesApi = {
   async createSlide(body: CreateSlideRequest): Promise<SlideResponse> {
     const title = body.title.trim();
     if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Presentation title cannot be empty');
-    // Drive takes a client-supplied id and seeds the empty-deck body from the
-    // mime type, so create and first content write are one request.
+    // Created with no body. A `.pptx` is a zip, which the server has no
+    // business building and could only write in the clear anyway; the editor
+    // opens the empty file as the default one-slide deck and its first save
+    // writes a real, sealed package.
     const file = await request<DriveFileDto>('/api/v1/drive/files', {
       method: 'POST',
       body: JSON.stringify({
         id: crypto.randomUUID(),
-        name: title,
-        mimeType: SLIDE_MIME_TYPE,
+        name: withOoxmlExtension(title, 'slides'),
+        mimeType: PPTX_MIME_TYPE,
         folderId: body.folderId ?? null,
       }),
     });
@@ -212,11 +233,13 @@ export const slidesApi = {
   },
 
   /**
-   * Fetch a file as a native presentation.
+   * Fetch a file as a presentation in the *bespoke JSON* format.
    *
-   * Throws 404 for a file that exists but isn't one — a raw .pptx, say. That
-   * is load-bearing: the editor's office-mode fallback keys off this 404 to
-   * decide it must download and parse the file as pptx instead.
+   * Throws 404 for anything else, `.pptx` included. That is load-bearing and
+   * not an oversight: the two formats are read and written by different code
+   * paths in the editor, and this 404 is how it learns to take the OOXML one —
+   * download the package, prefer the model inside it, fall back to parsing the
+   * deck.
    */
   async getSlide(slideId: string): Promise<SlideResponse> {
     const file = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}/info`);
@@ -226,26 +249,28 @@ export const slidesApi = {
     return toSlide(file);
   },
 
+  /**
+   * Rename.
+   *
+   * Reads the file first, because the extension is not the caller's business:
+   * it passes the title the user typed, and whether that has to land on disk
+   * as `Kickoff` or `Kickoff.pptx` depends on the format the file is already
+   * in. Renaming a `.pptx` to a bare name would leave a deck the operating
+   * system no longer recognises.
+   */
   async saveSlide(slideId: string, body: SaveSlideRequest): Promise<SlideMetaResponse> {
+    const current = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}/info`);
+    if (body.title === undefined) return toSlideMeta(current);
+    const name = isOoxmlMime(current.mimeType ?? '')
+      ? withOoxmlExtension(body.title, 'slides')
+      : body.title;
+    if (name === current.name) return toSlideMeta(current);
+
     const file = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name: body.title }),
+      body: JSON.stringify({ name }),
     });
     return toSlideMeta(file);
-  },
-
-  /**
-   * Promote a raw Office (.pptx) Drive file in-place into a native Neutrino
-   * slide deck: uploads `content` (the same JSON shape a normal save would
-   * produce) and flips the file's mime type server-side. Same file id
-   * afterwards.
-   */
-  async promoteSlide(slideId: string, content: string): Promise<SlideResponse> {
-    const file = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}/convert`, {
-      method: 'POST',
-      body: JSON.stringify({ targetMimeType: SLIDE_MIME_TYPE, content }),
-    });
-    return toSlide(file);
   },
 
   // ── Themes ────────────────────────────────────────────────────────────────

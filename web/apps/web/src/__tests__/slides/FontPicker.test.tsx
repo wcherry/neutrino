@@ -127,7 +127,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({ decryptFile: vi.fn(), isUnlocked: () =>
 vi.mock('@/hooks/useSpellCheck', () => ({ useSpellCheck: () => ({ spellCheck: false }) }));
 
 vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({ slidesVideoEmbeds: false, officeInPlaceEditing: false }),
+  useFeatureFlags: () => ({ slidesVideoEmbeds: false }),
 }));
 
 const CUSTOM_FONT_OPTION = { label: 'My Custom Font', value: 'My Custom Font' };

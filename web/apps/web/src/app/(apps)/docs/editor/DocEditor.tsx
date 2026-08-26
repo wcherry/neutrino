@@ -79,8 +79,9 @@ import { decryptFile } from '@neutrino/e2e-crypto';
 import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
-import { officeAppForFile } from '@/lib/officeFormats';
-import { getOfficeFileMode, isOneShotPromoteRequested } from '@/hooks/useOfficeFileMode';
+import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension, OFFICE_MIME } from '@/lib/officeFormats';
+import { readNeutrinoModel } from '@/lib/ooxmlContainer';
+import type { DocModel } from '@/lib/ooxml/docx/mapping';
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
 import { DocOutline } from './DocOutline';
@@ -394,171 +395,22 @@ async function buildPdfBlob(
 }
 
 /**
- * Convert raw .docx bytes into HTML via mammoth. Shared by the manual Import
- * button (handleImport) and office-mode's initial load path (issue #43).
+ * The editor's model as `.docx` bytes.
+ *
+ * One writer for both destinations — the autosave that stores the document and
+ * the Save As that exports it — because a document is *stored* as `.docx` now
+ * (issue #127), so an export that produced anything different would mean two
+ * writers to keep in step and a downloaded copy that did not match the stored
+ * one. `writeDocx` maps every construct the editor holds onto the OOXML element
+ * that means it; see `lib/ooxml/docx/`.
  */
-export async function docxBytesToHtml(arrayBuffer: ArrayBuffer): Promise<string> {
-  const { convertToHtml } = await import('mammoth');
-  const result = await convertToHtml({ arrayBuffer });
-  return result.value;
-}
-
-async function buildDocxBlob(html: string): Promise<Blob> {
-  const {
-    Document, Packer, Paragraph, TextRun, ExternalHyperlink,
-    HeadingLevel, AlignmentType, LevelFormat,
-  } = await import('docx');
-
-  type DocxChild = InstanceType<typeof Paragraph>;
-  type RunChild = InstanceType<typeof TextRun> | InstanceType<typeof ExternalHyperlink>;
-
-  // Parse inline nodes into TextRun / ExternalHyperlink children
-  function parseInlineNodes(el: Element, inherited: {
-    bold?: boolean; italics?: boolean; underline?: boolean; strike?: boolean;
-    color?: string; size?: number;
-  } = {}): RunChild[] {
-    const runs: RunChild[] = [];
-    for (const node of Array.from(el.childNodes)) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent ?? '';
-        if (text) {
-          runs.push(new TextRun({
-            text,
-            bold: inherited.bold,
-            italics: inherited.italics,
-            underline: inherited.underline ? {} : undefined,
-            strike: inherited.strike,
-            color: inherited.color,
-            size: inherited.size,
-          }));
-        }
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        const child = node as Element;
-        const tag = child.tagName.toLowerCase();
-        const style = (child as HTMLElement).style;
-
-        const next = { ...inherited };
-        if (tag === 'strong' || tag === 'b') next.bold = true;
-        if (tag === 'em' || tag === 'i') next.italics = true;
-        if (tag === 'u') next.underline = true;
-        if (tag === 's' || tag === 'del' || tag === 'strike') next.strike = true;
-        if (tag === 'br') { runs.push(new TextRun({ text: '', break: 1 })); continue; }
-        if (style?.fontWeight === 'bold' || style?.fontWeight === '700') next.bold = true;
-        if (style?.fontStyle === 'italic') next.italics = true;
-        if (style?.textDecoration?.includes('underline')) next.underline = true;
-        if (style?.color) next.color = style.color.replace('#', '');
-        if (style?.fontSize) {
-          const pt = parseFloat(style.fontSize);
-          if (!isNaN(pt)) next.size = Math.round(pt * 2); // half-points
-        }
-
-        if (tag === 'a') {
-          const href = child.getAttribute('href') ?? '';
-          const innerRuns = parseInlineNodes(child, { ...next, color: '1155CC', underline: true });
-          if (href && innerRuns.length) {
-            runs.push(new ExternalHyperlink({ link: href, children: innerRuns as InstanceType<typeof TextRun>[] }));
-          } else {
-            runs.push(...innerRuns);
-          }
-        } else {
-          runs.push(...parseInlineNodes(child, next));
-        }
-      }
-    }
-    return runs;
-  }
-
-  // Convert a block element to one or more Paragraph instances
-  function parseBlock(el: Element, numbering?: {
-    reference: string; level: number;
-  }): DocxChild[] {
-    const tag = el.tagName.toLowerCase();
-    const style = (el as HTMLElement).style;
-
-    const headingMap: Record<string, typeof HeadingLevel[keyof typeof HeadingLevel]> = {
-      h1: HeadingLevel.HEADING_1, h2: HeadingLevel.HEADING_2,
-      h3: HeadingLevel.HEADING_3, h4: HeadingLevel.HEADING_4,
-      h5: HeadingLevel.HEADING_5, h6: HeadingLevel.HEADING_6,
-    };
-
-    const alignMap: Record<string, typeof AlignmentType[keyof typeof AlignmentType]> = {
-      left: AlignmentType.LEFT, center: AlignmentType.CENTER,
-      right: AlignmentType.RIGHT, justify: AlignmentType.BOTH,
-    };
-
-    // Lists — recurse into li items
-    if (tag === 'ul' || tag === 'ol') {
-      const refId = tag === 'ol' ? 'ol-numbering' : 'ul-numbering';
-      const paras: DocxChild[] = [];
-      for (const child of Array.from(el.children)) {
-        if (child.tagName.toLowerCase() === 'li') {
-          paras.push(...parseBlock(child, { reference: refId, level: 0 }));
-        }
-      }
-      return paras;
-    }
-
-    // Blockquote — indent
-    if (tag === 'blockquote') {
-      const paras: DocxChild[] = [];
-      for (const child of Array.from(el.children)) {
-        const inner = parseBlock(child);
-        inner.forEach(p => paras.push(p));
-      }
-      if (paras.length === 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const P = Paragraph as any;
-        paras.push(new P({ children: parseInlineNodes(el), indent: { left: 720 } }));
-      }
-      return paras;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const inlineChildren = parseInlineNodes(el) as any[];
-    const alignment = alignMap[style?.textAlign ?? ''];
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const P = Paragraph as any;
-    return [new P({
-      children: inlineChildren,
-      ...(headingMap[tag] ? { heading: headingMap[tag] } : {}),
-      ...(alignment ? { alignment } : {}),
-      ...(numbering ? { numbering } : {}),
-    })];
-  }
-
-  const container = document.createElement('div');
-  container.innerHTML = html;
-
-  const children: DocxChild[] = [];
-  for (const node of Array.from(container.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = (node.textContent ?? '').trim();
-      if (text) children.push(new Paragraph({ children: [new TextRun(text)] }));
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      children.push(...parseBlock(node as Element));
-    }
-  }
-
-  const doc = new Document({
-    numbering: {
-      config: [
-        {
-          reference: 'ul-numbering',
-          levels: [{ level: 0, format: LevelFormat.BULLET, text: '•', alignment: AlignmentType.LEFT,
-            style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
-        },
-        {
-          reference: 'ol-numbering',
-          levels: [{ level: 0, format: LevelFormat.DECIMAL, text: '%1.', alignment: AlignmentType.LEFT,
-            style: { paragraph: { indent: { left: 720, hanging: 360 } } } }],
-        },
-      ],
-    },
-    sections: [{ children }],
-  });
-
-  return Packer.toBlob(doc);
+async function buildDocxBytes(
+  model: DocModel,
+  title: string,
+): Promise<Uint8Array> {
+  const { writeDocx } = await import('@/lib/ooxml/docx/write');
+  const { collectImageBytes } = await import('@/lib/ooxml/docx/images');
+  return writeDocx(model, { title, images: await collectImageBytes(model) });
 }
 
 function buildHtmlBlob(title: string, html: string): Blob {
@@ -855,12 +707,15 @@ export function DocEditor() {
     versionGuard.observe(doc?.contentVersion);
   }, [doc?.contentVersion, versionGuard]);
 
-  // ── Office mode (issue #43) ────────────────────────────────────────────────
-  // A raw .docx Drive file has no `docs` row, so docsApi.getDoc 404s. When
-  // that happens (and the flag is on) fall back to the generic Drive file
-  // metadata to distinguish "raw office file, open it in place" from a
-  // genuinely deleted/missing document.
-  const doc404 = flags.officeInPlaceEditing && metaIsError
+  // ── OOXML mode (issues #43, #127) ──────────────────────────────────────────
+  // `docsApi.getDoc` answers only for the bespoke JSON format, so it 404s for a
+  // `.docx` — which is every document created since #127, as well as any Word
+  // file uploaded to Drive. Named `officeMode` because that is what it was when
+  // only uploads took this path. When
+  // that happens, fall back to the generic Drive file metadata to distinguish
+  // "this is a `.docx`" — which every document created since #127 is — from a
+  // genuinely deleted or missing document.
+  const doc404 = metaIsError
     && metaError instanceof ApiClientError && metaError.statusCode === 404;
 
   const {
@@ -877,6 +732,13 @@ export function DocEditor() {
 
   const officeApp = officeFileMeta ? officeAppForFile(officeFileMeta.mimeType, officeFileMeta.name) : null;
   const officeMode = doc404 && officeApp === 'docs';
+
+  // Seed the stale-write guard from the revision this load saw. The effect
+  // above does it from `doc`, which a `.docx` never has — without this every
+  // OOXML save would assert no revision at all.
+  useEffect(() => {
+    if (officeMode) versionGuard.observe(officeFileMeta?.contentVersion);
+  }, [officeMode, officeFileMeta?.contentVersion, versionGuard]);
   // Genuinely missing: the doc row is gone AND either the storage fallback
   // also 404d, or it resolved to something that isn't a .docx this editor
   // can open.
@@ -1011,11 +873,22 @@ export function DocEditor() {
     },
   });
 
-  // ── Office mode save mutations (issue #43) ──────────────────────────────
-  // Every autosave/version-save tick in office mode re-serializes the current
-  // editor HTML into real DOCX bytes via buildDocxBlob, then writes those
-  // bytes to the SAME Drive file id using the binary-safe *Bytes transport —
-  // never the string-based helpers above, which would corrupt binary content.
+  // ── OOXML save mutations (issues #43, #127) ─────────────────────────────
+  // Every autosave/version-save tick re-serializes the editor into real DOCX
+  // bytes and writes them to the SAME Drive file id using the binary-safe
+  // *Bytes transport — never the string-based helpers above, which would
+  // corrupt binary content.
+  //
+  // The bytes are the whole document: `writeDocx` maps page setup, headers,
+  // footers, footnotes, columns, watermarks, fields, cross-references and
+  // tracked changes onto the OOXML elements that mean them, and `readDocx`
+  // reads them all back. The `neutrino/model.json` sidecar this used to pack
+  // alongside — a full second copy of the document, needed while the writer was
+  // a lossy projection — is gone; only what OOXML genuinely cannot express (the
+  // embeds, Drive image references, the theme name) still rides along, in the
+  // custom XML part Word preserves. Documents saved before this still carry the
+  // sidecar and the load path still prefers it, so their first save here is
+  // what migrates them.
   //
   // Those bytes are then encrypted, like every other write. They used not to
   // be, on the grounds that "downloading the raw file must open in real Word"
@@ -1023,25 +896,57 @@ export function DocEditor() {
   // (`downloadAndDecryptFile`), so what reaches the user's disk is the same
   // uncorrupted OOXML either way. What the plaintext write actually bought was
   // a .docx sitting readable in object storage, which is issue #95.
+  const buildDocxPackage = useCallback(async (): Promise<Uint8Array> => {
+    const ed = editorRef.current;
+    if (!ed) throw new Error('editor-not-ready');
+    const model: DocModel = {
+      doc: ed.getJSON() as DocModel['doc'],
+      meta: layoutMetaRef.current,
+    };
+    return buildDocxBytes(model, titleRef.current);
+  }, []);
+
   const officeAutosaveMutation = useMutation({
     mutationFn: async () => {
       const ed = editorRef.current;
       if (!ed) throw new Error('editor-not-ready');
       const dek = await awaitDek();
       if (!dek) throw new Error('no-dek');
-      const blob = await buildDocxBlob(ed.getHTML());
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const filename = officeFileMeta?.name ?? `${titleRef.current || 'document'}.docx`;
-      await driveAutosaveEncryptedBytes(docId, bytes, filename, dek);
+      const bytes = await buildDocxPackage();
+      const filename = officeFileMeta?.name ?? withOoxmlExtension(titleRef.current || 'document', 'docs');
+      const saved = await driveAutosaveEncryptedBytes(
+        docId, bytes, filename, dek, versionGuard.check(),
+      );
+      // Search runs against a client-side index, so a document the editor never
+      // announces is one the user cannot find. The JSON save path has always
+      // done this; this is the path every new document takes now.
+      indexOnSave(currentUser?.id, {
+        id: docId,
+        type: 'document',
+        title: titleRef.current,
+        content: ed.getText(),
+      });
+      return saved;
     },
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       setSaveStatus('saved');
+      // Chain the guard: the next save asserts the revision this one produced.
+      versionGuard.observe(saved?.contentVersion);
       queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
     },
     onError: (err) => {
       setSaveStatus('unsaved');
-      if (isMissingEncryptionKey(err)) toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      if (isMissingEncryptionKey(err)) {
+        toast.warning(ENCRYPTION_WARNING_MESSAGE);
+        return;
+      }
+      if (versionGuard.handleError(err)) {
+        toast.warning(
+          'This document changed elsewhere since you opened it. Reload to get the ' +
+            'latest version, or save again to keep your copy.',
+        );
+      }
     },
   });
 
@@ -1051,9 +956,8 @@ export function DocEditor() {
       if (!ed) throw new Error('editor-not-ready');
       const dek = await awaitDek();
       if (!dek) throw new Error('no-dek');
-      const blob = await buildDocxBlob(ed.getHTML());
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      const filename = officeFileMeta?.name ?? `${titleRef.current || 'document'}.docx`;
+      const bytes = await buildDocxPackage();
+      const filename = officeFileMeta?.name ?? withOoxmlExtension(titleRef.current || 'document', 'docs');
       return driveCreateEncryptedVersionBytes(docId, bytes, filename, dek, label);
     },
     onMutate: () => setSaveStatus('saving'),
@@ -1068,25 +972,6 @@ export function DocEditor() {
     },
   });
 
-  // "Convert to Neutrino Doc" — one-shot promote of the raw office file into
-  // a native doc, keeping the same Drive file id. Used by both the manual
-  // menu action and the automatic convert-on-open trigger.
-  const promoteMutation = useMutation({
-    mutationFn: async () => {
-      const ed = editorRef.current;
-      if (!ed) throw new Error('editor-not-ready');
-      const content = serializeContent(ed.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
-      return docsApi.promoteDoc(docId, content);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['doc', docId] });
-      queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
-      queryClient.invalidateQueries({ queryKey: ['contents'] });
-      queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
-      toast.success('Converted to a native Neutrino document');
-    },
-    onError: () => toast.error('Failed to convert to a native Neutrino document'),
-  });
 
   const officeAutosaveRef = useRef<() => void>(() => {});
   useEffect(() => {
@@ -1240,9 +1125,12 @@ export function DocEditor() {
     userName: currentUser?.name ?? 'Anonymous',
     authToken,
     editor,
-    // Office-mode files have no `docs` row / collab room to sync against —
-    // real-time presence is out of scope for this feature (plan section 4).
-    enabled: !!docId && !officeMode,
+    // The collab room is keyed on the Drive file id alone (`src/docs/collab/`
+    // never reads a `docs` row), so it does not care which format the document
+    // is stored in. Presence used to be skipped for `.docx` files back when
+    // those were only ever uploads (issue #43); leaving it that way now would
+    // mean no document created from this point on could be co-edited.
+    enabled: !!docId,
     ydoc,
   });
 
@@ -1315,14 +1203,61 @@ export function DocEditor() {
 
   // ── Office mode: title + content load (issue #43) ───────────────────────
   useEffect(() => {
-    if (officeMode && officeFileMeta) setTitle(officeFileMeta.name);
+    if (officeMode && officeFileMeta) setTitle(stripOoxmlExtension(officeFileMeta.name));
   }, [officeMode, officeFileMeta]);
 
-  // Download the raw .docx bytes and convert to HTML. This is intentionally
-  // NOT gated on `editor` being ready — mammoth conversion is independent of
-  // the tiptap instance's lifecycle; only *applying* the result waits on it.
+  // Download the raw .docx bytes and parse them. This is intentionally NOT
+  // gated on `editor` being ready — parsing is independent of the tiptap
+  // instance's lifecycle; only *applying* the result waits on it.
+  /**
+   * Put a stored layout block on screen — page setup, header/footer bands,
+   * watermark, background, theme and document properties.
+   *
+   * Shared by both storage formats: `_meta` rides in the stored body of a
+   * bespoke-JSON document, and a `.docx` carries the same fields as real OOXML
+   * for `readDocx` to reassemble (issue #127). `null` means the document
+   * carries none — a body written before `_meta` existed — and lays out to the
+   * defaults.
+   */
+  const applyLayoutMeta = useCallback((m: Partial<LayoutMeta> | null) => {
+    if (!m) {
+      setPageSetup(DEFAULT_PAGE_SETUP);
+      return;
+    }
+    // Documents written before the header/footer variants existed carry
+    // only the two flat strings; migrate them rather than dropping them.
+    setHeaderFooter(
+      m.headerFooter
+        ? normalizeHeaderFooterConfig(m.headerFooter)
+        : migrateLegacyHeaderFooter(
+            m.headerText ?? '',
+            m.footerText ?? '',
+            m.showPageNumbers ?? false,
+          ),
+    );
+    setWatermarkText(m.watermarkText ?? '');
+    setBgColor(m.bgColor ?? '');
+    setDocTheme(m.docTheme ?? 'default');
+    setDocProperties(normalizeDocProperties(m.properties));
+    setPageSetup(pageSetupFromMeta(m));
+  }, []);
+
   const officeContentLoadStartedRef = useRef(false);
-  const [officeHtml, setOfficeHtml] = useState<string | null>(null);
+  /**
+   * What the stored `.docx` turned out to hold.
+   *
+   * `doc` is the document model — either parsed out of the Word document by
+   * `readDocx`, which is the case for every `.docx` whatever wrote it, or read
+   * from the `neutrino/model.json` sidecar for a document last saved before
+   * that parser existed. `empty` is a document created here and not yet saved:
+   * the record exists with no body, because a `.docx` is a zip the server
+   * cannot build.
+   */
+  const [officeContent, setOfficeContent] = useState<
+    | { kind: 'doc'; doc: object; meta: Partial<LayoutMeta> | null }
+    | { kind: 'empty' }
+    | null
+  >(null);
 
   /**
    * The stored .docx bytes, decrypted if they are ciphertext.
@@ -1353,9 +1288,32 @@ export function DocEditor() {
         // uploaded as, and the first save is what encrypts it.
         const arrayBuffer = await readOfficeBytes();
         if (cancelled || !arrayBuffer) return;
-        const html = await docxBytesToHtml(arrayBuffer);
+        if (arrayBuffer.byteLength === 0) {
+          setOfficeContent({ kind: 'empty' });
+          return;
+        }
+        // A document last saved before the OOXML writer was complete carries a
+        // `neutrino/model.json` sidecar beside a Word document that was only a
+        // projection of it. Parsing that Word document would lose everything
+        // the projection dropped, so the sidecar still wins where it exists.
+        // Nothing writes one any more, so this shrinks to nothing as documents
+        // are reopened and saved.
+        const legacy = await readNeutrinoModel(new Uint8Array(arrayBuffer), 'docs');
         if (cancelled) return;
-        setOfficeHtml(html);
+        if (legacy) {
+          const parsed = JSON.parse(legacy) as { doc?: object; _meta?: Partial<LayoutMeta> };
+          const wrapped = Boolean(parsed?._meta);
+          setOfficeContent({
+            kind: 'doc',
+            doc: (wrapped ? parsed.doc : parsed) as object,
+            meta: wrapped ? (parsed._meta as Partial<LayoutMeta>) : null,
+          });
+          return;
+        }
+        const { readDocx } = await import('@/lib/ooxml/docx/read');
+        const model = await readDocx(new Uint8Array(arrayBuffer));
+        if (cancelled) return;
+        setOfficeContent({ kind: 'doc', doc: model.doc, meta: model.meta });
       } catch {
         if (!cancelled) toast.error('Failed to open this file for editing');
       }
@@ -1370,21 +1328,36 @@ export function DocEditor() {
 
   const officeContentAppliedRef = useRef(false);
   useEffect(() => {
-    if (!officeMode || !editor || officeHtml === null || officeContentAppliedRef.current) return;
+    if (!officeMode || !editor || officeContent === null || officeContentAppliedRef.current) return;
+    // Wait for the collab room, exactly as the JSON body load below does. The
+    // room holds the body of any document that has been edited before, and
+    // writing the stored copy in on top of it would duplicate the whole
+    // document.
+    if (!syncReady) return;
     officeContentAppliedRef.current = true;
-    editor.commands.setContent(officeHtml, false);
-    // Convert-on-open (global setting) or a one-shot promote request from the
-    // Drive context menu's "Convert to Neutrino Doc" action: silently promote
-    // right after the initial client-side conversion renders. Non-blocking —
-    // the promote mutation's own onSuccess/onError handlers surface a toast
-    // when it settles.
-    if (getOfficeFileMode() === 'convert-on-open' || isOneShotPromoteRequested()) {
-      promoteMutation.mutate();
+
+    // Layout metadata rides on the stored file, never in the Y.Doc, so it is
+    // applied whether or not the body load below happens.
+    applyLayoutMeta(officeContent.kind === 'doc' ? officeContent.meta : null);
+
+    if (officeContent.kind === 'empty') {
+      // Created here and never saved. The blank editor is already what it
+      // should look like; this save is what turns the empty record into a real
+      // package, and it has to happen now rather than on the first keystroke —
+      // otherwise a document opened and closed again stays a zero-byte file.
+      officeAutosaveRef.current();
+      return;
     }
-  // promoteMutation is intentionally omitted: it's a stable useMutation
-  // object whose identity is not meaningful for this one-shot effect.
+
+    if (pendingContent.current !== null) return;
+    if (ydoc.getXmlFragment('default').length > 0) {
+      console.log('[collab] Y.Doc has content from server — skipping stored body load');
+      return;
+    }
+    editor.commands.setContent(officeContent.doc, false);
+  // applyLayoutMeta is stable; officeAutosaveRef and pendingContent are refs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [officeMode, editor, officeHtml]);
+  }, [officeMode, editor, officeContent, syncReady, ydoc]);
 
   // `_meta` is applied once per document — the first stored content we see for
   // it wins. A later refetch must not reapply it, or a stale response would put
@@ -1424,27 +1397,7 @@ export function DocEditor() {
     // down over the stored values.
     if (parsed && !metaAppliedRef.current) {
       metaAppliedRef.current = true;
-      if (wrapped) {
-        const m = parsed._meta as Record<string, never>;
-        // Documents written before the header/footer variants existed carry
-        // only the two flat strings; migrate them rather than dropping them.
-        setHeaderFooter(
-          m.headerFooter
-            ? normalizeHeaderFooterConfig(m.headerFooter)
-            : migrateLegacyHeaderFooter(
-                m.headerText ?? '',
-                m.footerText ?? '',
-                m.showPageNumbers ?? false,
-              ),
-        );
-        setWatermarkText(m.watermarkText ?? '');
-        setBgColor(m.bgColor ?? '');
-        setDocTheme(m.docTheme ?? 'default');
-        setDocProperties(normalizeDocProperties(m.properties));
-        setPageSetup(pageSetupFromMeta(m));
-      } else {
-        setPageSetup(DEFAULT_PAGE_SETUP);
-      }
+      applyLayoutMeta(wrapped ? (parsed._meta as Partial<LayoutMeta>) : null);
     }
 
     // ── Body ─────────────────────────────────────────────────────────────────
@@ -1466,7 +1419,7 @@ export function DocEditor() {
       return;
     }
     editor.commands.setContent((wrapped ? parsed.doc : parsed) as object, false);
-  }, [docContent, editor, syncReady, ydoc, docId]);
+  }, [docContent, editor, syncReady, ydoc, docId, applyLayoutMeta]);
 
   // Seal a body the server is still holding in the clear: the content seeded at
   // creation, or a document written before E2EE. `serverPlaintext` says the
@@ -1544,10 +1497,13 @@ export function DocEditor() {
   const handleTitleBlur = () => {
     if (!title.trim()) return;
     if (officeMode) {
-      // No `docs` row to PATCH — office-mode renames go through the generic
-      // Drive rename call (same one FileContextMenu's rename action uses).
-      if (title === officeFileMeta?.name) return;
-      filesystemApi.updateFile(docId, { name: title }).catch(() => toast.error('Failed to rename file'));
+      // No `docs` row to PATCH — a `.docx` is renamed through the generic Drive
+      // call (the same one FileContextMenu's rename action uses). The extension
+      // goes back on: the title is what the user typed, and the file still has
+      // to land on disk as a Word document.
+      const name = withOoxmlExtension(title, 'docs');
+      if (name === officeFileMeta?.name) return;
+      filesystemApi.updateFile(docId, { name }).catch(() => toast.error('Failed to rename file'));
       return;
     }
     if (title === doc?.title) return;
@@ -1594,10 +1550,6 @@ export function DocEditor() {
     }, flags.docsLayoutStructure);
     versionMutation.mutate(content);
   }, [editor, versionMutation, officeMode, officeVersionMutation, headerFooter, watermarkText, bgColor, docTheme, docProperties, pageSetup]);
-
-  const handleConvertToNative = useCallback(() => {
-    promoteMutation.mutate();
-  }, [promoteMutation]);
 
   // Sync grammar-enabled state into the GrammarCheckExtension plugin
   useEffect(() => {
@@ -2159,12 +2111,21 @@ export function DocEditor() {
     });
   }, [editor, grammarIssue, runAiOperation]);
 
+  /**
+   * Replace the document with a `.docx` picked off disk.
+   *
+   * Read with the same parser the load path uses, so an imported Word file
+   * arrives with its margins, headers, footers and footnotes rather than with
+   * only the parts of it that survive a conversion to HTML. Its layout is
+   * applied for the same reason — page setup is part of what was imported.
+   */
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !editor) return;
-    const arrayBuffer = await file.arrayBuffer();
-    const html = await docxBytesToHtml(arrayBuffer);
-    editor.commands.setContent(html, true);
+    const { readDocx } = await import('@/lib/ooxml/docx/read');
+    const model = await readDocx(new Uint8Array(await file.arrayBuffer()));
+    editor.commands.setContent(model.doc, true);
+    applyLayoutMeta(model.meta);
   };
 
   const handlePrint = useCallback(async () => {
@@ -2174,9 +2135,12 @@ export function DocEditor() {
 
   const handleExport = async (format: string) => {
     if (!editor) return;
-    // PDF/DOCX/HTML all build from this HTML somewhere that has no access to
-    // Drive, so referenced images are inlined on the way out.
-    pendingExportHtmlRef.current = await inlineDriveImagesInHtml(editor.getHTML());
+    // PDF and HTML build from this HTML somewhere that has no access to Drive,
+    // so referenced images are inlined on the way out. The Word export builds
+    // from the model instead and resolves its own images.
+    pendingExportHtmlRef.current = format === 'docx'
+      ? editor.getHTML()
+      : await inlineDriveImagesInHtml(editor.getHTML());
     setSaveAsFormat(format);
     setShowSaveAs(true);
   };
@@ -2208,7 +2172,17 @@ export function DocEditor() {
       });
       console.log('[handleSaveAs] PDF blob built, size:', blob.size);
     } else if (saveAsFormat === 'docx') {
-      blob = await buildDocxBlob(html);
+      // Built from the model rather than from `html`: this is the same writer
+      // the autosave uses, so an exported copy is byte-for-byte the document
+      // that is stored — headers, footnotes, page setup and all. It resolves
+      // its own images, so the inlined export HTML is not what it wants.
+      if (!editor) return;
+      const model: DocModel = {
+        doc: editor.getJSON() as DocModel['doc'],
+        meta: layoutMetaRef.current,
+      };
+      const bytes = await buildDocxBytes(model, title);
+      blob = new Blob([bytes as unknown as BlobPart], { type: OFFICE_MIME.docx });
     } else if (saveAsFormat === 'html') {
       blob = buildHtmlBlob(title, html);
     } else {
@@ -2467,8 +2441,6 @@ export function DocEditor() {
           onToggleSinglePage={() => { setSinglePageMode(v => !v); setCurrentPage(1); }}
           splitParagraphs={splitParagraphs}
           onToggleSplitParagraphs={handleToggleSplitParagraphs}
-          officeMode={officeMode}
-          onConvertToNative={handleConvertToNative}
           onInsertImage={handleInsertImage}
           onHeaderFooter={() => enterHeaderFooterEdit()}
           onInsertFieldDialog={() => setShowInsertField(true)}

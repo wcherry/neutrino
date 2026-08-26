@@ -56,7 +56,6 @@ vi.mock('@/providers/FeatureFlagsProvider', () => ({
     docsDistractionFree: false,
     sheetLiveEmbed: false,
     colorPickerAlpha: false,
-    officeInPlaceEditing: false,
   }),
 }));
 
@@ -114,8 +113,6 @@ vi.mock('@neutrino/sheet-embed', () => ({
   useSheetPasteInterceptor: () => ({ handlePaste: vi.fn(), dialogState: null }),
   PasteChoiceDialog: () => null,
 }));
-
-vi.mock('mammoth', () => ({ convertToHtml: vi.fn() }));
 
 vi.mock('@tiptap/react', () => {
   const stub = { create: (config?: unknown) => ({ config, extend: () => stub }), extend: () => stub };
