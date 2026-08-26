@@ -191,25 +191,30 @@ test.describe('Notes E2EE encryption', () => {
     await expect(page.getByLabel('Note title')).toBeVisible({ timeout: 10_000 });
     await keyPutPromise;
 
-    const saveResPromise = page.waitForResponse(
-      (r) =>
-        r.url().includes(`/api/v1/drive/files/${sourceId}/autosave`) &&
-        r.request().method() === 'PUT',
-      { timeout: 30_000 },
-    );
-
     await typeInFirstBlock(page, `See [[${targetTitle}]] for more.`);
-    await saveResPromise;
 
-    const backlinksRes = await request.get(`${BASE_URL}/api/v1/links/${targetId}/backlinks`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(backlinksRes.ok(), `backlinks fetch failed: ${backlinksRes.status()}`).toBeTruthy();
-    const data = await backlinksRes.json() as { backlinks: { id: string; title: string }[] };
-    expect(
-      data.backlinks.map((b) => b.id),
-      'encrypted source note must still register as a backlink on the target note',
-    ).toContain(sourceId);
+    // Polled, not read once behind the autosave response. The link graph is
+    // written by a `PATCH /api/v1/links/{id}` the editor fires *after* the
+    // content save resolves and deliberately does not await — it is metadata,
+    // saved best-effort beside the version-guarded content write. So the
+    // autosave landing does not mean the backlink exists yet, and reading
+    // immediately after it is a race the editor can lose by a few ms.
+    await expect
+      .poll(
+        async () => {
+          const res = await request.get(`${BASE_URL}/api/v1/links/${targetId}/backlinks`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok()) return [];
+          const data = (await res.json()) as { backlinks: { id: string; title: string }[] };
+          return data.backlinks.map((b) => b.id);
+        },
+        {
+          timeout: 30_000,
+          message: 'encrypted source note must still register as a backlink on the target note',
+        },
+      )
+      .toContain(sourceId);
   });
 
   test('a pre-existing (legacy, unencrypted) note still loads correctly', async ({
