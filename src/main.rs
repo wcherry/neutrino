@@ -343,8 +343,6 @@ async fn main() -> std::io::Result<()> {
     use drive::admin::service::AdminDashboardService;
     use drive::comments::repository::CommentsRepository;
     use drive::comments::service::CommentsService;
-    use drive::compliance::repository::ComplianceRepository;
-    use drive::compliance::service::ComplianceService;
     use drive::encryption::repository::EncryptionRepository;
     use drive::encryption::service::EncryptionService;
     use drive::feature_flags::repository::FeatureFlagsRepository;
@@ -578,13 +576,6 @@ async fn main() -> std::io::Result<()> {
         web::Data::new(drive::shared_drives::api::SharedDrivesApiState {
             service: drive_shared_drives_service,
         });
-
-    let drive_compliance_repo = Arc::new(ComplianceRepository::new(pool.clone()));
-    let drive_compliance_service =
-        Arc::new(ComplianceService::new(drive_compliance_repo));
-    let drive_compliance_state = web::Data::new(drive::compliance::api::ComplianceApiState {
-        service: drive_compliance_service,
-    });
 
     let drive_security_repo = Arc::new(SecurityRepository::new(pool.clone()));
     let drive_security_service = Arc::new(SecurityService::new(drive_security_repo, pool.clone()));
@@ -988,7 +979,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
         doc.merge(drive::fonts::api::FontsApiDoc::openapi());
         doc.merge(drive::comments::api::CommentsApiDoc::openapi());
-        doc.merge(drive::compliance::api::ComplianceApiDoc::openapi());
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
         doc.merge(drive::filesystem::api::FilesystemApiDoc::openapi());
         doc.merge(drive::key_files::api::KeyFilesApiDoc::openapi());
@@ -1057,7 +1047,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(drive_notifications_state.clone())
             .app_data(drive_comments_state.clone())
             .app_data(drive_shared_drives_state.clone())
-            .app_data(drive_compliance_state.clone())
             .app_data(drive_security_state.clone())
             .app_data(drive_tags_state.clone())
             .app_data(drive_encryption_state.clone())
@@ -1132,7 +1121,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     // Admin routes under /admin
                     .service(
                         web::scope("/admin")
-                            .configure(drive::compliance::api::configure)
                             .configure(drive::security::api::configure)
                             .configure(drive::admin::api::configure)
                             .configure(drive::feature_flags::api::configure_admin)

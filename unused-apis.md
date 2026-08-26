@@ -15,21 +15,22 @@ Backend routes with no caller in the web app or any native client.
 > `PATCH /tasks/{id}` look identical to a text search. Anything acted on below
 > was additionally verified by reading the client method that builds the call.
 
-Last verified: 2026-08-25, against 298 backend routes.
+Last verified: 2026-08-25, against 287 backend routes.
 
 ---
 
 ## Removed
 
-40 routes deleted — see the commits on this branch. Five whole modules went with
-them (`docs::ai`, `docs::docs`, `drive::ai`, `drive::priority`,
-`drive::suggestions`); the rest lost routes while keeping the service behind
-them, because something else still calls it.
+51 routes deleted — see the commits on this branch. Six whole modules went with
+them (`docs::ai`, `docs::docs`, `drive::ai`, `drive::compliance`,
+`drive::priority`, `drive::suggestions`); the rest lost routes while keeping the
+service behind them, because something else still calls it.
 
 | Area | Routes | Note |
 |------|--------|------|
 | `docs::ai` | 7 | Whole module. Took the OpenAI/Claude/Gemini provider clients with it — nothing else imported them. |
 | `docs::docs` | 3 | Whole module, and the `docs` table with it. Page setup moved into the document body's `_meta` block, which retired `GET`/`PUT /docs/{id}/page-setup` — the only two routes here that ever had a caller. `GET /docs/{id}/export/text` had none, and this audit missed it: path matching found `exportText` in `packages/api-docs` and counted the route as called, but nothing in the app calls that wrapper — only four Vitest mocks name it. It was also already broken, parsing an encrypted body as Tiptap JSON and reporting every document as empty. |
+| `drive::compliance` | 11 | Whole module — `/admin/compliance/holds*` and `/admin/compliance/retention*`. Listed below as enterprise scaffolding until it was removed on an explicit call; nothing outside the module used `ComplianceService`, so the service, repository, DTOs and models went with the routes. The `legal_holds`, `file_legal_holds` and `retention_policies` tables stay. |
 | `drive::shared_drives` | 9 | Only `GET /shared-drives` survives. Create, update, delete, the whole member sub-resource, and analytics had no caller. |
 | `calendar::tasks` | 7 | Task-list read/update/delete, `POST /tasks/bulk`, `GET`/`DELETE /tasks/{id}`, and `DELETE /tasks/{id}/lists/{list_id}`. |
 | `drive::suggestions` | 4 | Whole module. Distinct from access requests, which are used. |
@@ -40,8 +41,9 @@ them, because something else still calls it.
 | `drive::ai` | 1 | Whole module (`catch-me-up`). |
 | `drive::filesystem` | 1 | `GET /bulk/download`. |
 
-Tables behind the deleted modules (`doc_suggestions`, and the priority/AI ones)
-are left in place, as the IRM removal did with `irm_policies`. `docs` is the
+Tables behind the deleted modules (`doc_suggestions`, the compliance ones, and
+the priority/AI ones) are left in place, as the IRM removal did with
+`irm_policies`. `docs` is the
 exception — it held page setup and nothing else, so it is dropped in migration
 00114 rather than left behind empty.
 
@@ -49,14 +51,14 @@ exception — it held page setup and nothing else, so it is dropped in migration
 
 ## Still unused, kept deliberately
 
-### Enterprise scaffolding — 22 routes
+### Enterprise scaffolding — 11 routes
 
 No caller, no way to reach the feature from any client, but this reads as
-roadmap work rather than abandoned code. Kept pending an explicit call.
+roadmap work rather than abandoned code. Kept pending an explicit call — which
+is what happened to Compliance, now in **Removed** above.
 
 | Area | Routes | Endpoints |
 |------|--------|-----------|
-| Compliance | 11 | `/admin/compliance/holds*`, `/admin/compliance/retention*` |
 | Security | 7 | `/admin/security/{siem*,ransomware*,cmek}` |
 | Two-factor auth | 4 | `/auth/2fa/{status,enroll,confirm,disable}` |
 
@@ -101,8 +103,8 @@ not re-raise them.
 
 | | Routes |
 |---|---|
-| Backend routes | 298 |
+| Backend routes | 287 |
 | With a client caller | 263 |
-| Unused — enterprise scaffolding | 22 |
+| Unused — enterprise scaffolding | 11 |
 | Unused — not client-facing by design | 12 |
 | Unused — new, not yet wired | 1 |
