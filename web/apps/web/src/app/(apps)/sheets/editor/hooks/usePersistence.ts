@@ -11,6 +11,7 @@ import {
     storageApi, filesystemApi, ApiClientError, type SheetResponse, type FileItem,
 } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { readStoredBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -499,11 +500,14 @@ export function usePersistence({
         versionGuard.observe(sheet.contentVersion);
         setTitle(sheet.title);
         setYourRole(sheet.yourRole ?? 'owner');
-        // True only when decryptFile throws on a brand-new file (isNewEncryption),
-        // meaning the server still holds the plaintext default content written at
-        // sheet creation time.  When decryptFile throws for an existing key
-        // (isNewEncryption=false), we fall back to the raw plaintext path so we
-        // never overwrite data we simply cannot decrypt.
+        // True when the stored bytes read back as plaintext with a DEK in hand:
+        // the default content written at sheet creation, or a spreadsheet saved
+        // before E2EE. `readStoredBody` decides that from the bytes rather than
+        // from `isNewEncryption`, which is blind to the case in the middle — a
+        // sheet created and then reloaded before the sealing save landed keeps
+        // its key ref and its plaintext body. Bytes that neither decrypt nor
+        // look like plaintext throw out of here: that is ciphertext this key
+        // cannot open, and it must not be overwritten.
         let serverHasPlaintextContent = false;
         // Set to true only when the try block completes without a download error.
         // Kept false on network failures so autosave never starts after a failed load.
@@ -512,19 +516,10 @@ export function usePersistence({
             let raw: string;
             if (dekRef.current) {
                 const blob = await storageApi.downloadFile(sheetId);
-                const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-                try {
-                    const plainBytes = decryptFile(cipherBytes, dekRef.current);
-                    raw = new TextDecoder().decode(plainBytes);
-                } catch {
-                    if (isNewEncryption) {
-                        serverHasPlaintextContent = true;
-                        throw new Error('plaintext content detected');
-                    }
-                    // Existing key but decryption failed — fall back to raw content
-                    // so we never overwrite data we cannot decrypt.
-                    raw = await driveReadContent(sheet.contentUrl);
-                }
+                const stored = new Uint8Array(await blob.arrayBuffer());
+                const read = readStoredBody(stored, dekRef.current);
+                raw = read.text;
+                serverHasPlaintextContent = read.wasPlaintext;
             } else {
                 raw = await driveReadContent(sheet.contentUrl);
             }
@@ -606,10 +601,11 @@ export function usePersistence({
             setLoadCount(c => c + 1);
         }
 
-        // The server holds plaintext initial content for brand-new encrypted sheets
-        // (seeded as plaintext by POST /api/v1/drive/files on creation); for existing
-        // encrypted sheets decryptFile succeeds and serverHasPlaintextContent stays
-        // false. Routed through queueSave (not called directly) so this request can
+        // Seal whatever the server is holding in the clear — the content seeded by
+        // POST /api/v1/drive/files at creation, or a spreadsheet saved before E2EE.
+        // For a sheet that is already ciphertext the read above decrypts and
+        // serverHasPlaintextContent stays false, so this does not run.
+        // Routed through queueSave (not called directly) so this request can
         // never overlap a save triggered moments later by a fast edit-then-navigate —
         // two autosave PUTs in flight at once have been observed to truncate the
         // second request's body in transit, which would silently drop the user's edit.

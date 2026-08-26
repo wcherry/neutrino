@@ -13,6 +13,13 @@
  * indefinitely. `sheet-encryption.spec.ts` covers the same property for sheets,
  * where it is tracked as `serverHasPlaintextContent`.
  *
+ * What decides it now is the body itself (`readStoredBody`), not the session's
+ * `isNewEncryption` flag. The flag is blind to a deck created and then reloaded
+ * before the sealing write landed: that one has a key ref *and* a plaintext
+ * body, and was never sealed by anything. The last case below is the other half
+ * of the rule — bytes that will not decrypt and do not read as a deck are
+ * ciphertext, and must be left alone.
+ *
  * Mocking follows `officeMode.test.tsx`.
  */
 
@@ -195,11 +202,8 @@ describe('SlideEditor — sealing a newly created deck', () => {
     expect(filename).toBe('slide.json');
     expect(key).toBe(dek);
 
-    // What gets sealed is the deck on screen. When the stored bytes will not
-    // open with the DEK the content query deliberately discards them (see the
-    // `isNewEncryption` branch in SlideEditor's content query), so the body
-    // here is the editor's own deck rather than the server's seed — the two are
-    // the same title slide, and this is the copy the user is looking at.
+    // What gets sealed is the body the read produced — the server's own seed,
+    // handed back as plaintext by `readStoredBody` once decrypting it failed.
     const written = JSON.parse(content as string);
     expect(written.slides).toHaveLength(1);
     expect(written.theme).toBeTruthy();
@@ -251,11 +255,23 @@ describe('SlideEditor — sealing a newly created deck', () => {
     expect(mockAutosaveEncrypted).toHaveBeenCalledTimes(1);
   });
 
-  it('never writes when the DEK came from the server', async () => {
-    // `isNewEncryption: false` means the file already had a key ref, so content
-    // that will not decrypt is corrupt ciphertext — overwriting it would
-    // destroy the user's real work.
+  it('never writes when the stored body is ciphertext it cannot open', async () => {
+    // The other half of the rule. Sealing is decided by what the bytes turn out
+    // to be, so the case it must refuse is a body that will not decrypt *and*
+    // does not read as a deck: ciphertext this key cannot open, whose real
+    // content overwriting would destroy.
+    //
+    // This used to ask `isNewEncryption` instead, which said the same thing for
+    // this fixture and the wrong thing for the one in between — a deck created
+    // and then reloaded before the sealing write landed, which has a key ref
+    // and a plaintext body both.
     encryptionState.isNewEncryption = false;
+    const { storageApi } = (await import('@/lib/api')) as unknown as {
+      storageApi: { downloadFile: { mockResolvedValue: (b: Blob) => void } };
+    };
+    storageApi.downloadFile.mockResolvedValue(
+      new Blob([new Uint8Array([0x8f, 0x1d, 0xff, 0x02, 0xc3, 0x28]).buffer as ArrayBuffer]),
+    );
 
     renderSlideEditor();
 

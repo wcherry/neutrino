@@ -223,13 +223,20 @@ describe('note autosave never writes plaintext', () => {
 
     await typeAndAutosave();
 
-    expect(driveAutosaveEncryptedContent).toHaveBeenCalledTimes(1);
-    const [noteId, content, filename, dek] = driveAutosaveEncryptedContent.mock.calls[0];
+    // Two writes, and the first is not the edit: these notes are stored in the
+    // clear (`getFileKey` returns none), so opening one seals the body it read
+    // before the user has typed anything. The edit is the write after it.
+    expect(driveAutosaveEncryptedContent).toHaveBeenCalledTimes(2);
+    const [noteId, content, filename, dek] = driveAutosaveEncryptedContent.mock.calls.at(-1)!;
     expect(noteId).toBe(NOTE_ID);
     expect(filename).toBe('note.json');
     expect(dek).toBe(DEK);
     // The helper does the encrypting, so what it is handed is plaintext.
     expect(JSON.parse(content as string)).toEqual(EDIT);
+    // The seal wrote the note as it was loaded, through the same encrypted path.
+    expect(JSON.parse(driveAutosaveEncryptedContent.mock.calls[0][1] as string))
+      .toEqual(JSON.parse(CONTENT));
+    expect(driveAutosaveEncryptedContent.mock.calls[0][3]).toBe(DEK);
   });
 
   /**
@@ -249,8 +256,10 @@ describe('note autosave never writes plaintext', () => {
     await settle();
     await typeAndAutosave();
 
-    expect(driveAutosaveEncryptedContent).toHaveBeenCalledTimes(1);
-    expect(driveAutosaveEncryptedContent.mock.calls[0][3]).toBe(DEK);
+    // The load's sealing write, then the edit — both with the key the
+    // resolution was on its way to producing, neither in the clear.
+    expect(driveAutosaveEncryptedContent).toHaveBeenCalledTimes(2);
+    for (const call of driveAutosaveEncryptedContent.mock.calls) expect(call[3]).toBe(DEK);
     expect(toastWarning).not.toHaveBeenCalled();
   });
 
@@ -284,9 +293,11 @@ describe('duplicating a note never writes plaintext', () => {
     // The copy is a new Drive row with no key of its own; without this it has
     // no key ref and nothing ever encrypts it.
     expect(mintFileKey).toHaveBeenCalledWith('user-1', 'note-copy');
-    const [copyId, , , dek] = driveAutosaveEncryptedContent.mock.calls[0];
-    expect(copyId).toBe('note-copy');
-    expect(dek).toBe(DEK);
+    // Picked by id, not by position: opening the original seals it first, since
+    // these notes are stored in the clear.
+    const copyWrite = driveAutosaveEncryptedContent.mock.calls.find((c) => c[0] === 'note-copy');
+    expect(copyWrite).toBeDefined();
+    expect(copyWrite![3]).toBe(DEK);
   });
 
   it('creates nothing at all when the vault is locked', async () => {
@@ -297,9 +308,11 @@ describe('duplicating a note never writes plaintext', () => {
     await act(async () => { await onDuplicate(); });
 
     // Checked before the note exists, so a locked vault does not leave an empty
-    // "(copy)" stranded in Drive for the user to clean up.
+    // "(copy)" stranded in Drive for the user to clean up. Writes against the
+    // original are not this test's subject — `canEncryptFor` is what stands in
+    // for the lock here, and it gates the duplicate alone.
     expect(createNote).not.toHaveBeenCalled();
-    expect(driveAutosaveEncryptedContent).not.toHaveBeenCalled();
+    expect(driveAutosaveEncryptedContent.mock.calls.some((c) => c[0] === 'note-copy')).toBe(false);
     expect(toastWarning).toHaveBeenCalled();
   });
 });

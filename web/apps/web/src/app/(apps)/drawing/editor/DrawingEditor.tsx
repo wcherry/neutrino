@@ -8,7 +8,7 @@ import { Spinner, useToast } from '@neutrino/ui';
 import { drawingApi, extractDrawingText } from '@neutrino/api-drawing';
 import { request } from '@neutrino/api-core';
 import { storageApi, isMissingEncryptionKey } from '@neutrino/api-drive';
-import { decryptFile } from '@neutrino/e2e-crypto';
+import { readStoredBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
@@ -50,13 +50,27 @@ function triggerDownload(blob: Blob, filename: string) {
  * already treats as "empty drawing" — the same as it did for an unreadable
  * plaintext body.
  */
-async function readEncryptedDrawing(drawingId: string, dek: Uint8Array): Promise<string> {
+/**
+ * The stored drawing as text, and whether the server was holding it in the
+ * clear — the content seeded at creation, or a drawing saved before E2EE.
+ *
+ * Which one it is comes off the bytes rather than off `isNewEncryption` (see
+ * `readStoredBody`): a drawing created and then reloaded before anything
+ * encrypted it has a key ref *and* a plaintext body, and the session flag calls
+ * that ciphertext — which used to mean decrypting the plaintext, failing, and
+ * opening the drawing empty.
+ */
+async function readEncryptedDrawing(
+  drawingId: string,
+  dek: Uint8Array,
+): Promise<{ raw: string; wasPlaintext: boolean }> {
   try {
     const blob = await storageApi.downloadFile(drawingId);
-    const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-    return new TextDecoder().decode(decryptFile(cipherBytes, dek));
+    const stored = new Uint8Array(await blob.arrayBuffer());
+    const { text, wasPlaintext } = readStoredBody(stored, dek);
+    return { raw: text, wasPlaintext };
   } catch {
-    return '';
+    return { raw: '', wasPlaintext: false };
   }
 }
 
@@ -82,7 +96,7 @@ export function DrawingEditor() {
   // Drawing content is E2EE like every other app's. It was the one exception
   // until issue #95: `drawingApi.autosaveContent` wrote the body to Drive as
   // readable JSON, so every drawing ever saved sat in storage in the clear.
-  const { dekRef, dekResolved, isNewEncryption, awaitDek } = useEncryptedDocumentContent({
+  const { dekRef, dekResolved, awaitDek } = useEncryptedDocumentContent({
     id: drawingId ?? '',
     filename: 'drawing.json',
   });
@@ -161,13 +175,29 @@ export function DrawingEditor() {
         const drawing = await drawingApi.getDrawing(drawingId!);
         setTitle(drawing.title);
         versionGuard.observe(drawing.contentVersion);
-        // A drawing saved since #95 is ciphertext; one saved before it is the
-        // plaintext JSON it always was. `isNewEncryption` tells them apart — it
-        // means the DEK was minted just now for a file that had no key ref, so
-        // what is stored is still plaintext and the next save encrypts it.
-        const raw = dekRef.current && !isNewEncryption
+        // A drawing saved since #95 is ciphertext; one saved before it — or one
+        // never saved at all, still holding the content seeded at creation — is
+        // the plaintext JSON it always was. `readEncryptedDrawing` tells them
+        // apart from the bytes and reports which it found.
+        const { raw, wasPlaintext } = dekRef.current
           ? await readEncryptedDrawing(drawingId!, dekRef.current)
-          : await request<string>(drawing.contentUrl, {}, { responseType: 'text' }).catch(() => '');
+          : {
+              raw: await request<string>(drawing.contentUrl, {}, { responseType: 'text' })
+                .catch(() => ''),
+              wasPlaintext: false,
+            };
+        // Seal it: nothing else will. The autosave only fires on a user edit, so
+        // a drawing opened and closed untouched keeps its plaintext body. The
+        // write goes out with exactly what was read.
+        if (wasPlaintext && raw && dekRef.current) {
+          drawingApi
+            .autosaveEncryptedContent(
+              drawingId!, raw, 'drawing.json', dekRef.current, { title: drawing.title },
+              versionGuard.check(),
+            )
+            .then((meta) => versionGuard.observe(meta.contentVersion))
+            .catch(() => {});
+        }
         if (raw) {
           try {
             const content = JSON.parse(raw) as DrawingContent;
@@ -214,7 +244,7 @@ export function DrawingEditor() {
     if (!dekResolved) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drawingId, dekResolved, isNewEncryption]);
+  }, [drawingId, dekResolved]);
 
   useEffect(() => {
     if (!hasMounted.current || !drawingId || saveInProgress.current || !isDirtyRef.current) return;

@@ -1,0 +1,21 @@
+-- Drop the `doc_templates` table.
+--
+-- The whole `docs::templates` module goes with it: the six
+-- `/api/v1/docs/templates` routes had exactly one caller, the web
+-- `/docs/templates` page, and nothing in the app ever linked to that page — no
+-- sidebar entry, no button in the docs list or editor — so it was reachable
+-- only by typing the URL. No other client (iOS Docs/Notes/Drive/Sheets, the Mac
+-- desktop app) touched the routes at all.
+--
+-- `POST /docs/templates/{id}/use` was also the last server-side path that wrote
+-- a document body in the clear: it seeded the new Drive file with the
+-- template's stored rich-text JSON, which the server cannot encrypt because it
+-- holds no DEK. Diagrams already avoid this by applying starter content
+-- client-side through the normal encrypted autosave path.
+--
+-- Rows are dropped rather than migrated. The three system templates are seeded
+-- from code on every boot, and any user-created template is starter text with
+-- no document depending on it — using a template copied its content, it never
+-- linked to it.
+
+DROP TABLE IF EXISTS doc_templates;

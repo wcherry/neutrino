@@ -22,6 +22,7 @@ import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessag
 import { useUser } from '@neutrino/auth';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
+import { looksLikeJsonBody } from '@/lib/storedBody';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { useFileSync } from '@/hooks/useFileSync';
 import BlockEditor, { Block, type BlockEditorHandle, parseBlocks, serializeBlocks } from './BlockEditor';
@@ -116,6 +117,13 @@ export default function NoteEditorPage() {
   const savingRef = useRef(false);
   /** The editor has been seeded with server content for this note. */
   const seededRef = useRef(false);
+  // Set when the content read finds the server holding this note in the clear.
+  // A ref, not state: setting state from inside a query function re-renders
+  // mid-fetch and sets a second fetch going. `contentUpdatedAt` below is the
+  // reactive signal instead — it moves on every completed read, including one
+  // that returns the same text as the last.
+  const serverPlaintextRef = useRef(false);
+  const sealDoneRef = useRef(false);
   /** `updatedAt` of the revision currently in the editor. */
   const appliedUpdatedAtRef = useRef<string | null>(null);
 
@@ -152,7 +160,11 @@ export default function NoteEditorPage() {
 
   // Content is fetched directly from the drive API, the same pattern
   // docs/sheets/slides use, rather than embedded in a notes-specific response.
-  const { data: noteContent, isLoading: contentLoading } = useQuery({
+  const {
+    data: noteContent,
+    isLoading: contentLoading,
+    dataUpdatedAt: contentUpdatedAt,
+  } = useQuery({
     queryKey: ['note-content', noteId, dekResolved],
     queryFn: async () => {
       // `awaitDek`, not `dekRef.current` — the same reason the save path below
@@ -191,6 +203,15 @@ export default function NoteEditorPage() {
             if (!looksLikeNoteText(raw)) {
               throw new Error('stored note content could not be decrypted');
             }
+            // A key ref and a plaintext body: the note predates encryption, or
+            // was created and left before anything encrypted it. The effect
+            // below writes it back sealed — nothing else would.
+            //
+            // Sealing is a write, so it asks for stronger evidence than showing
+            // the bytes does: `looksLikeNoteText` passes anything without
+            // control characters, and sealing on that would overwrite real
+            // ciphertext that happened to decode. A note body is JSON.
+            if (looksLikeJsonBody(raw)) serverPlaintextRef.current = true;
             return raw;
           }
         }
@@ -218,8 +239,13 @@ export default function NoteEditorPage() {
           throw new Error('note content is unreadable until the vault is unlocked');
         }
       }
-      // Never encrypted — a legacy note stored as plaintext.
-      return driveReadContent(`/api/v1/drive/files/${noteId}`);
+      // Never encrypted — a legacy note stored as plaintext, or one whose key
+      // was minted a moment ago (`isNewEncryption`), which means the same thing
+      // for the body. With a key in hand that is a note to seal; without one
+      // the session is locked and there is nothing to seal it with.
+      const plain = await driveReadContent(`/api/v1/drive/files/${noteId}`);
+      serverPlaintextRef.current = !!dek && looksLikeJsonBody(plain);
+      return plain;
     },
     enabled: !!note && dekResolved,
   });
@@ -246,6 +272,8 @@ export default function NoteEditorPage() {
     dirtyRef.current = false;
     savingRef.current = false;
     appliedUpdatedAtRef.current = null;
+    sealDoneRef.current = false;
+    serverPlaintextRef.current = false;
   }, [noteId]);
 
   // A newer `updatedAt` than the revision on screen means someone else saved —
@@ -295,6 +323,31 @@ export default function NoteEditorPage() {
 
     apply();
   }, [note, noteContent]);
+
+  // Seal a note the server is holding in the clear. The read above is what
+  // establishes that — plaintext bytes with a key in hand — and this writes
+  // exactly those bytes back encrypted. Ordered after the seeding effect via
+  // `seededRef` so the content on screen is the content being written.
+  useEffect(() => {
+    if (!serverPlaintextRef.current || sealDoneRef.current) return;
+    if (!seededRef.current || noteContent === undefined) return;
+    // The user is already editing: their autosave writes the newer content
+    // encrypted, and this write would put the loaded copy back over it.
+    if (dirtyRef.current || savingRef.current) return;
+    sealDoneRef.current = true;
+    awaitDek()
+      .then((dek) => {
+        if (!dek) return;
+        return driveAutosaveEncryptedContent(
+          noteId, noteContent, 'note.json', dek, versionGuard.check(),
+        ).then((meta) => versionGuard.observe(meta.contentVersion));
+        // `appliedUpdatedAtRef` is deliberately left alone: this write changes
+        // how the body is stored, not what it says, so the revision the editor
+        // is showing is still the one it applied. The re-read the next metadata
+        // refetch triggers returns the same note, now decrypted.
+      })
+      .catch(() => {});
+  }, [contentUpdatedAt, noteContent, noteId, awaitDek, versionGuard]);
 
   const save = useCallback(
     async (serialized: string, nextTitle: string) => {

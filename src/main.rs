@@ -637,24 +637,6 @@ async fn main() -> std::io::Result<()> {
     use crate::shared::drive_client::DriveClient;
     use docs::collab::repository::CollabRepository;
     use docs::collab::state::CollabState;
-    use docs::templates::repository::TemplatesRepository;
-    use docs::templates::service::TemplatesService;
-
-    let drive_client_for_docs = Arc::new(DriveClient::new(
-        drive_storage_service.clone(),
-        drive_permissions_service.clone(),
-        drive_fs_repo.clone(),
-    ));
-
-    let templates_repo = Arc::new(TemplatesRepository::new(pool.clone()));
-    let templates_service = Arc::new(TemplatesService::new(templates_repo, drive_client_for_docs));
-    templates_service
-        .seed_system_templates()
-        .unwrap_or_else(|e| {
-            error!("Failed to seed system templates: {}", e);
-        });
-    let templates_state =
-        web::Data::new(docs::templates::api::TemplatesApiState { templates_service });
 
     let docs_collab_repo = web::Data::new(Arc::new(CollabRepository::new(pool.clone())));
     let docs_collab_state = web::Data::new(Arc::new(CollabState::new()));
@@ -1001,7 +983,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(calendar::connections::api::ConnectionsApiDoc::openapi());
         doc.merge(calendar::tasks::api::TasksApiDoc::openapi());
         doc.merge(docs::collab::api::CollabApiDoc::openapi());
-        doc.merge(docs::templates::api::TemplatesApiDoc::openapi());
         doc.merge(drive::access_requests::api::AccessRequestsApiDoc::openapi());
         doc.merge(drive::admin::api::AdminApiDoc::openapi());
         doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
@@ -1063,7 +1044,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(cal_connections_state.clone())
             .app_data(cal_tasks_state.clone())
             // Docs
-            .app_data(templates_state.clone())
             .app_data(docs_collab_repo.clone())
             .app_data(docs_collab_state.clone())
             // Drive
