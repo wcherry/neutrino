@@ -333,7 +333,11 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
     await settle();
 
-    expect(driveAutosaveEncryptedContentMock).toHaveBeenCalledTimes(1);
+    // Two writes: opening a note the server holds in the clear seals it, and
+    // then the edit is saved. Only the edit is broadcast — the seal changes how
+    // the body is stored, not what it says, so other viewers have nothing to
+    // re-read for it.
+    expect(driveAutosaveEncryptedContentMock).toHaveBeenCalledTimes(2);
     expect(broadcastFileUpdateMock).toHaveBeenCalledTimes(1);
   });
 
@@ -349,7 +353,9 @@ describe('NoteEditorPage — live updates from other users/devices', () => {
 
     act(() => latestProps().onChange(LOCAL_EDIT));
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
-    expect(driveAutosaveEncryptedContentMock).toHaveBeenCalledTimes(1);
+    // The first write is the seal of the plaintext body this note was loaded
+    // from; the edit is the second, and it is the one left in flight below.
+    expect(driveAutosaveEncryptedContentMock).toHaveBeenCalledTimes(2);
 
     // The user keeps typing before that save comes back.
     act(() => latestProps().onChange(LATER_LOCAL_EDIT));

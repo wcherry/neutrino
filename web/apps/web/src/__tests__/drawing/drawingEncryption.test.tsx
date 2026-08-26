@@ -50,8 +50,14 @@ vi.mock('@neutrino/api-drive', () => ({
 
 vi.mock('@neutrino/e2e-crypto', () => ({
   // Ciphertext here is the plaintext with a marker prefix, so a test can tell
-  // "decrypted correctly" from "read the raw bytes and got lucky".
-  decryptFile: (bytes: Uint8Array) => bytes.slice(4),
+  // "decrypted correctly" from "read the raw bytes and got lucky". Bytes
+  // without the marker throw, as real decryption does on anything that is not
+  // ciphertext — which is how the editor recognises a body still in the clear.
+  decryptFile: (bytes: Uint8Array) => {
+    const marker = [0xc1, 0xc2, 0xc3, 0xc4];
+    if (marker.some((b, i) => bytes[i] !== b)) throw new Error('not ciphertext');
+    return bytes.slice(4);
+  },
 }));
 
 let dekNow: Uint8Array | null = DEK;
@@ -179,16 +185,40 @@ describe('loading a drawing', () => {
   /**
    * A drawing saved before this change is still plaintext, and
    * `useEncryptedDocumentContent` hands out a freshly minted DEK for it — so
-   * "has a DEK" cannot be the test for "is encrypted". `isNewEncryption` is,
-   * and getting it wrong empties the user's canvas on open.
+   * "has a DEK" cannot be the test for "is encrypted", and getting it wrong
+   * empties the user's canvas on open.
+   *
+   * What tells them apart is the body: the download is the same request either
+   * way, and bytes that will not decrypt but do read as a drawing are one still
+   * in the clear. That replaces `isNewEncryption`, which only knows about the
+   * session that minted the key — not about a drawing created in an earlier one
+   * and never written since.
    */
   it('reads a pre-existing plaintext drawing as text', async () => {
-    isNewEncryption = true;
+    downloadFile.mockResolvedValue(new Blob([BODY]));
 
     await renderEditor();
 
-    await waitFor(() => expect(readContentAsText).toHaveBeenCalled());
-    expect(downloadFile).not.toHaveBeenCalled();
+    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled());
+    // Read as a drawing, then sealed: the body goes back encrypted, unchanged.
+    const [id, content, filename, dek] = autosaveEncryptedContent.mock.calls[0];
+    expect(id).toBe(DRAWING_ID);
+    expect(filename).toBe('drawing.json');
+    expect(dek).toBe(DEK);
+    expect(JSON.parse(content as string)).toEqual(JSON.parse(BODY));
+  });
+
+  it('leaves a body it cannot decrypt alone', async () => {
+    // Neither decryptable nor a drawing: ciphertext this key cannot open, whose
+    // content sealing would destroy.
+    downloadFile.mockResolvedValue(
+      new Blob([new Uint8Array([0x8f, 0x1d, 0xff, 0x02, 0xc3, 0x28]).buffer as ArrayBuffer]),
+    );
+
+    await renderEditor();
+
+    await new Promise((r) => setTimeout(r, 200));
+    expect(autosaveEncryptedContent).not.toHaveBeenCalled();
   });
 });
 

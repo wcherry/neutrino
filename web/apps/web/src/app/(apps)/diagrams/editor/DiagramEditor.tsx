@@ -14,7 +14,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToast, Modal, ModalHeader, ModalBody, ModalFooter, Button } from '@neutrino/ui';
 import { diagramsApi, extractDiagramText } from '@neutrino/api-diagrams';
 import { authApi, useUser } from '@neutrino/auth';
-import { decryptFile } from '@neutrino/e2e-crypto';
+import { readStoredBody } from '@/lib/storedBody';
 import { storageApi, type FileItem } from '@/lib/api';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -219,6 +219,10 @@ export function DiagramEditor() {
 
   // ── Load diagram from server ───────────────────────────────────────────────
 
+  // Set by the read below when the server turns out to be holding this diagram
+  // in the clear; cleared by the effect that writes it back encrypted.
+  const sealPlaintextRef = useRef(false);
+
   const { isLoading: contentLoading } = useQuery({
     queryKey: ['diagram', diagramId, dekResolved],
     queryFn: async () => {
@@ -230,30 +234,16 @@ export function DiagramEditor() {
           let raw: string;
           if (dekRef.current) {
             const blob = await storageApi.downloadFile(diagramId);
-            const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-            let decryptOk = false;
-            try {
-              const plainBytes = decryptFile(cipherBytes, dekRef.current);
-              raw = new TextDecoder().decode(plainBytes);
-              decryptOk = true;
-            } catch {
-              // Decryption failed. For new files (isNewEncryption) the server
-              // holds plaintext — fall through to the token-based fetch below.
-              // For existing files with a server-side key, fall back to raw
-              // content to avoid showing an empty diagram when the real data exists.
-            }
-            if (!decryptOk) {
-              if (!isNewEncryption) {
-                const token = localStorage.getItem('access_token') ?? '';
-                const res = await fetch(diagram.contentUrl, {
-                  headers: { Authorization: `Bearer ${token}` },
-                });
-                if (!res.ok) return diagram;
-                raw = await res.text();
-              } else {
-                return diagram;
-              }
-            }
+            const stored = new Uint8Array(await blob.arrayBuffer());
+            // Plaintext-or-ciphertext is decided from the bytes rather than from
+            // `isNewEncryption` — see `readStoredBody`. A diagram created and
+            // then reloaded before anything encrypted it has a key ref and a
+            // plaintext body, and the session flag calls that ciphertext. Bytes
+            // that neither decrypt nor look like a diagram throw out of here,
+            // into the catch below that leaves the canvas empty.
+            const read = readStoredBody(stored, dekRef.current);
+            raw = read.text;
+            if (read.wasPlaintext) sealPlaintextRef.current = true;
           } else {
             // Read token directly from storage — the authToken state may still be
             // null on first render since it's set by an async useEffect.
@@ -423,6 +413,22 @@ export function DiagramEditor() {
     saveMutation.mutate();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor.document]);
+
+  // Seal a diagram the server is still holding in the clear — the content
+  // seeded at creation, or one saved before E2EE. Nothing else does it: the
+  // autosave is gated on canUndo, so a diagram that is opened and closed
+  // without an edit keeps its plaintext body indefinitely. Waiting on
+  // `editor.document` is what orders this after the load has applied the body,
+  // so the save writes back exactly what was read.
+  useEffect(() => {
+    if (!sealPlaintextRef.current || contentLoading || !dekRef.current) return;
+    // canUndo means the user has already drawn something, and their own save
+    // encrypts the newer content anyway.
+    if (editor.canUndo) return;
+    sealPlaintextRef.current = false;
+    saveMutation.mutate();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor.document, contentLoading]);
 
   // Broadcast local edits to connected peers in real time.
   // Gated on editor.canUndo for the same reason as autosave: canUndo is false

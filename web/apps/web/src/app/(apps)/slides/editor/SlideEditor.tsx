@@ -79,6 +79,7 @@ import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { decryptFile, isUnlocked } from '@neutrino/e2e-crypto';
+import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme, CreateThemeRequest, UpdateThemeRequest } from '@neutrino/api-slides';
 import { ThemeEditorDialog, type ThemeEditorMode } from './ThemeEditorDialog';
@@ -377,6 +378,13 @@ export function SlideEditor() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const dragSrcIdx = useRef<number | null>(null);
   const initialSaveDoneRef = useRef(false);
+  // Set when the content read finds the server still holding this deck in the
+  // clear. A ref, not state: setting state from inside a query function
+  // re-renders mid-fetch and sets a second fetch going. `contentUpdatedAt` is
+  // the reactive signal instead — it moves on every completed read, including
+  // the second one on a reload, which returns the same text as the first (that
+  // read runs while the vault is still locked).
+  const serverPlaintextRef = useRef(false);
   // Forward-ref to the promote mutation trigger (issue #43) — set once
   // promoteMutation is defined below; read from the office-mode load effect,
   // which runs before that definition point.
@@ -450,7 +458,11 @@ export function SlideEditor() {
   const presentationRef = useRef<SlidePresentation>(presentation);
   presentationRef.current = presentation;
 
-  const { isLoading: contentLoading, data: slideContent } = useQuery({
+  const {
+    isLoading: contentLoading,
+    data: slideContent,
+    dataUpdatedAt: contentUpdatedAt,
+  } = useQuery({
     queryKey: ['slide-content', slideId, dekResolved],
     queryFn: async () => {
       if (!slideData?.contentUrl) return null;
@@ -466,14 +478,17 @@ export function SlideEditor() {
       const dek = await awaitDek();
       if (dek) {
         const blob = await storageApi.downloadFile(slideId);
-        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-        try {
-          const plainBytes = decryptFile(cipherBytes, dek);
-          return new TextDecoder().decode(plainBytes);
-        } catch {
-          if (isNewEncryption) return null;
-          return driveReadContent(slideData.contentUrl);
-        }
+        const stored = new Uint8Array(await blob.arrayBuffer());
+        // Plaintext-or-ciphertext is decided from the bytes, not from
+        // `isNewEncryption` — see `readStoredBody`. A deck created and then
+        // reloaded before the sealing write landed has a key ref and a
+        // plaintext body, and the session flag calls that ciphertext.
+        const { text, wasPlaintext } = readStoredBody(stored, dek);
+        // Tracks the read that produced the deck on screen, both ways: a later
+        // read that decrypts means the body is sealed and the effect below must
+        // not fire again.
+        serverPlaintextRef.current = wasPlaintext;
+        return text;
       }
       // No key in hand. A deck with a key ref on the server really is
       // encrypted, so reading it raw would render its ciphertext; failing
@@ -485,7 +500,17 @@ export function SlideEditor() {
           throw new Error('presentation content is unreadable until the vault is unlocked');
         }
       }
-      return driveReadContent(slideData.contentUrl);
+      // This read is routine for a brand-new deck: `dekResolved` means the
+      // resolution attempt finished, not that a key exists, so the first read
+      // of a file whose key is still being minted lands here. Such a deck needs
+      // sealing as much as one read through the branch above — the effect below
+      // waits for the key. Which it is comes off the bytes, not off reaching
+      // this line: the check above catches a locked session, but a session that
+      // is unlocked with the resolution not yet started reads a real deck's
+      // ciphertext as text, and marking *that* for sealing would overwrite it.
+      const raw = await driveReadContent(slideData.contentUrl);
+      serverPlaintextRef.current = looksLikeJsonBody(raw);
+      return raw;
     },
     enabled: !!slideData?.contentUrl && dekResolved,
     staleTime: 30_000,
@@ -612,11 +637,15 @@ export function SlideEditor() {
   // After the DEK resolves and the content query settles, seal whatever the
   // server is holding in plaintext.
   //
-  // `isNewEncryption` is the whole condition: it means the DEK was minted here
-  // because the file had no key ref, which by that hook's contract means the
-  // stored bytes are plaintext. Never act when it is false — there the DEK came
-  // from the server, so a decryption failure means corrupt ciphertext, and
-  // writing would destroy real content.
+  // `serverPlaintext` is the whole condition: the read above got the body back
+  // without decrypting it, which is the only evidence that it is not ciphertext.
+  // This used to ask `isNewEncryption` — "the DEK was minted here, so the file
+  // had no key ref, so the bytes are plaintext". True as far as it goes, but
+  // blind to the case in between: a deck created and then reloaded before this
+  // write landed has a key ref *and* a plaintext body, and was never sealed.
+  // Bytes that neither decrypt nor look like plaintext are ciphertext this key
+  // cannot open; `readStoredBody` throws on those rather than reporting them as
+  // content, so this never runs for them and real content is never overwritten.
   //
   // This used to also require `lastSavedRef.current === ''` — "and nothing
   // loaded". That made sense when a new deck had no body at all, but Drive now
@@ -628,7 +657,7 @@ export function SlideEditor() {
   // its own seed correctly.
   useEffect(() => {
     if (!dekRef.current || !slideData || contentLoading) return;
-    if (!isNewEncryption) return;
+    if (!serverPlaintextRef.current) return;
     if (initialSaveDoneRef.current) return;
     initialSaveDoneRef.current = true;
     // Prefer the body just read from the server, so this re-seals exactly what
@@ -645,7 +674,7 @@ export function SlideEditor() {
   // `presentation` is read through presentationRef, so it is deliberately not a
   // dependency: this runs once, not on every edit.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dekResolved, isNewEncryption, slideData, contentLoading, slideContent]);
+  }, [dekResolved, contentUpdatedAt, slideData, contentLoading, slideContent]);
 
   const contentMutation = useMutation({
     mutationFn: async ({ content }: { content: string }) => {

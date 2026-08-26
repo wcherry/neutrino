@@ -76,6 +76,7 @@ import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { officeAppForFile } from '@/lib/officeFormats';
@@ -816,6 +817,15 @@ export function DocEditor() {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const pageResizeObsRef = useRef<ResizeObserver | null>(null);
   const initialSaveDoneRef = useRef(false);
+  // True once the content query has read a body the server holds in the clear —
+  // the default content `POST /api/v1/drive/files` seeds at creation, which the
+  // sealing save below replaces with ciphertext. A ref, not state: setting
+  // state from inside a query function re-renders mid-fetch and sets a second
+  // fetch going. `contentUpdatedAt` is the reactive signal instead — it moves on
+  // every completed read, including the second one on a reload, which returns
+  // the same text as the first (that read runs while the vault is still locked)
+  // and so changes nothing else the effect could depend on.
+  const serverPlaintextRef = useRef(false);
   // Stable ref to latest layout metadata — read inside the useEditor onUpdate
   // closure so we always serialise the most recent values without needing to
   // re-create the editor.
@@ -875,19 +885,46 @@ export function DocEditor() {
   const officeModeRef = useRef(false);
   useEffect(() => { officeModeRef.current = officeMode; }, [officeMode]);
 
-  const { data: docContent, isLoading: contentLoading, isError: contentError } = useQuery({
+  const {
+    data: docContent,
+    isLoading: contentLoading,
+    isError: contentError,
+    dataUpdatedAt: contentUpdatedAt,
+  } = useQuery({
     // Include contentUrl in the key so the queryFn closure is always consistent
     // with the key and the query re-fires if the URL changes (e.g. after restore).
     queryKey: ['doc-content', docId, dekResolved, doc?.contentUrl ?? ''],
     queryFn: async () => {
       if (!doc?.contentUrl) return null;
-      if (dekRef.current) {
+      // `awaitDek`, not `dekRef.current` — the rule slides and notes already
+      // follow. `dekResolved` means the resolution *attempt* finished, and for
+      // a brand-new document the key is still being minted when this first
+      // runs; sampling the ref there reports "no key" for a document that is
+      // about to have one.
+      const dek = await awaitDek();
+      if (dek) {
         const blob = await storageApi.downloadFile(docId);
-        const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-        const plainBytes = decryptFile(cipherBytes, dekRef.current);
-        return new TextDecoder().decode(plainBytes);
+        const stored = new Uint8Array(await blob.arrayBuffer());
+        // Whether the body is still plaintext is read off the bytes, not off
+        // `isNewEncryption` — see `readStoredBody`. A document created and then
+        // reloaded before the sealing write landed has a key ref and a
+        // plaintext body, and the session flag calls that ciphertext.
+        const { text, wasPlaintext } = readStoredBody(stored, dek);
+        // Tracks the read that produced the content on screen, both ways: a
+        // later read that decrypts means the body is sealed and the effect
+        // below must not fire again.
+        serverPlaintextRef.current = wasPlaintext;
+        return text;
       }
-      return driveReadContent(doc.contentUrl);
+      // No key, and none on the way: the resolution finished without one, or it
+      // never started because auth had not settled when this query was enabled.
+      // Read the body as it is stored and judge it by the same evidence — a
+      // document that parses is one still in the clear, waiting to be sealed by
+      // a key that may land a moment from now. Ciphertext read as text does not
+      // parse, so a locked session cannot mark a real document for sealing.
+      const raw = await driveReadContent(doc.contentUrl);
+      serverPlaintextRef.current = looksLikeJsonBody(raw);
+      return raw;
     },
     enabled: !!doc?.contentUrl && dekResolved,
     staleTime: 0,
@@ -1353,7 +1390,10 @@ export function DocEditor() {
   // it wins. A later refetch must not reapply it, or a stale response would put
   // the server's older margins back over a change just made on screen.
   const metaAppliedRef = useRef(false);
-  useEffect(() => { metaAppliedRef.current = false; }, [docId]);
+  useEffect(() => {
+    metaAppliedRef.current = false;
+    serverPlaintextRef.current = false;
+  }, [docId]);
 
   useEffect(() => {
     if (!docContent || !editor || !syncReady) return;
@@ -1428,24 +1468,28 @@ export function DocEditor() {
     editor.commands.setContent((wrapped ? parsed.doc : parsed) as object, false);
   }, [docContent, editor, syncReady, ydoc, docId]);
 
-  // After the DEK is resolved and the content query has settled, do a one-time
-  // encrypted autosave when no valid content was loaded (new file or failed
-  // decryption of server-stored plaintext).  This overwrites the server's
-  // plaintext initial content so the stored bytes are always ciphertext.
-  // Guard on contentError: a failed download leaves docContent undefined, which
-  // is indistinguishable from "no content yet" — never write an empty file over
-  // content we simply failed to fetch.
-  // Exception: when isNewEncryption is true and contentError is true, decryptFile
-  // threw on the server's plaintext initial content (expected for brand-new files).
-  // In that case we must still do the initial encrypted save.
+  // Seal a body the server is still holding in the clear: the content seeded at
+  // creation, or a document written before E2EE. `serverPlaintext` says the
+  // stored bytes read back as plaintext with a DEK in hand, which is the only
+  // evidence that matters — a body that failed to decrypt and does *not* look
+  // like plaintext is ciphertext this key cannot open, and `readStoredBody`
+  // reports that as an error rather than as content, so this never runs for it.
+  // Guard on contentError for the same reason: a failed download is
+  // indistinguishable from "the server holds nothing", and writing there would
+  // put an empty document over a body we simply failed to fetch.
   useEffect(() => {
     if (!dekRef.current || !editor || !doc || contentLoading) return;
-    if (contentError && !isNewEncryption) return;
+    if (!serverPlaintextRef.current || contentError) return;
     if (initialSaveDoneRef.current) return;
-    if (docContent !== null && docContent !== undefined) return;
     if (!isLocalWriterRef.current) return;
+    // The user got there first: their edit is already queued for the encrypted
+    // autosave, and re-writing what we loaded would undo it.
+    if (pendingContent.current !== null) return;
     initialSaveDoneRef.current = true;
-    const content = JSON.stringify(editor.getJSON());
+    // Re-encrypt exactly what was read rather than re-serialising the editor:
+    // the body reaches the editor from a separate effect that waits on collab
+    // sync, so its JSON is not necessarily this document's content yet.
+    const content = docContent ?? JSON.stringify(editor.getJSON());
     driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current)
       // This write bumps `contentVersion` just like any other, and nothing
       // re-reads the metadata query afterwards — so without feeding the result
@@ -1455,7 +1499,7 @@ export function DocEditor() {
       .catch(() => {});
   // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dekResolved, editor, doc, contentLoading, contentError, isNewEncryption, docContent, docId]);
+  }, [dekResolved, editor, doc, contentLoading, contentError, contentUpdatedAt, docContent, docId]);
 
   useEffect(() => {
     const flush = () => {
