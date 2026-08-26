@@ -174,20 +174,6 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    doc_templates (id) {
-        id -> Text,
-        name -> Text,
-        description -> Nullable<Text>,
-        is_system -> Integer,
-        is_default -> Integer,
-        category -> Nullable<Text>,
-        content_json -> Text,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
 // ── Notes ────────────────────────────────────────────────────────────────────
 
 diesel::table! {
@@ -983,7 +969,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     task_list_memberships,
     // Docs
     doc_yjs_state,
-    doc_templates,
     // Notes
     notes,
     // Links

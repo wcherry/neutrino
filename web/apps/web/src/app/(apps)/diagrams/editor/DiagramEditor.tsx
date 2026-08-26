@@ -394,8 +394,8 @@ export function DiagramEditor() {
   // Apply a template's starter content, stashed in sessionStorage by the
   // "New diagram" picker for a freshly created (still-blank) diagram.
   // Applied client-side and saved through the normal encrypted autosave path
-  // rather than written as plaintext on the server (see project notes on the
-  // docs-templates encryption pitfall this deliberately avoids).
+  // rather than seeded server-side, which would write the starter content in
+  // the clear — the server holds no DEK, so it cannot encrypt what it seeds.
   const pendingTemplateSaveRef = useRef(false);
 
   useEffect(() => {
