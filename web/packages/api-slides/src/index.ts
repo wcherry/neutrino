@@ -1,4 +1,5 @@
 import {
+  aiCredentials,
   request,
   ApiClientError,
   ooxmlMimeFor,
@@ -318,7 +319,7 @@ export const slidesAI = {
   async complete(slideId: string, slideText: string): Promise<{ text: string }> {
     return request<{ text: string }>(`/api/v1/slides/${slideId}/ai/complete`, {
       method: 'POST',
-      body: JSON.stringify({ slideText }),
+      body: JSON.stringify({ ...aiCredentials(), slideText }),
     });
   },
 
@@ -332,14 +333,14 @@ export const slidesAI = {
   async design(slideId: string, slideContent: string): Promise<unknown> {
     return request<unknown>(`/api/v1/slides/${slideId}/ai/design`, {
       method: 'POST',
-      body: JSON.stringify({ slideContent }),
+      body: JSON.stringify({ ...aiCredentials(), slideContent }),
     });
   },
 
   async autoformat(slideId: string, slideJson: string): Promise<unknown> {
     return request<unknown>(`/api/v1/slides/${slideId}/ai/autoformat`, {
       method: 'POST',
-      body: JSON.stringify({ slideJson }),
+      body: JSON.stringify({ ...aiCredentials(), slideJson }),
     });
   },
 };

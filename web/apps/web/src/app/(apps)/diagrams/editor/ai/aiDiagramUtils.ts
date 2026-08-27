@@ -1,4 +1,10 @@
-import type { DiagramShape, DiagramConnector, DiagramPage } from '../../types';
+import type {
+  DiagramShape,
+  DiagramConnector,
+  DiagramPage,
+  ShapeType,
+  ConnectorType,
+} from '../../types';
 import { defaultShapeStyle, defaultConnectorStyle } from '../utils/shapeUtils';
 
 export interface DiagramAnalysis {
@@ -8,13 +14,49 @@ export interface DiagramAnalysis {
   isolatedClusters: number;
 }
 
-export function parseAiDiagramResponse(json: string): { shapes: DiagramShape[]; connectors: DiagramConnector[] } {
-  const data = JSON.parse(json) as { shapes?: Partial<DiagramShape>[]; connectors?: Partial<DiagramConnector>[] };
+/**
+ * What the generator sends back.
+ *
+ * `type` is a plain string rather than the editor's unions: it comes off the wire, and the
+ * backend — not TypeScript — is what holds it to the set of types the canvas can draw.
+ */
+export interface AiDiagramResponse {
+  shapes?: {
+    id?: string;
+    type?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    label?: string;
+    style?: Partial<DiagramShape['style']>;
+  }[];
+  connectors?: {
+    id?: string;
+    type?: string;
+    sourceId?: string | null;
+    targetId?: string | null;
+    waypoints?: DiagramConnector['waypoints'];
+    label?: string;
+    style?: Partial<DiagramConnector['style']>;
+  }[];
+}
+
+/**
+ * Turn the generator's answer into shapes and connectors the editor can insert.
+ *
+ * The server returns geometry and labels only — no styling, and only the fields it could get the
+ * model to commit to — so every missing field is defaulted here, and a connector naming a shape
+ * that never arrived is left unattached rather than pointing at nothing.
+ */
+export function parseAiDiagramResponse(
+  data: AiDiagramResponse,
+): { shapes: DiagramShape[]; connectors: DiagramConnector[] } {
   const uid = () => crypto.randomUUID();
 
   const shapes: DiagramShape[] = (data.shapes ?? []).map((s, i) => ({
     id: s.id ?? uid(),
-    type: s.type ?? 'rectangle',
+    type: (s.type ?? 'rectangle') as ShapeType,
     x: s.x ?? 60 + (i % 4) * 160,
     y: s.y ?? 60 + Math.floor(i / 4) * 100,
     width: s.width ?? 120,
@@ -27,7 +69,7 @@ export function parseAiDiagramResponse(json: string): { shapes: DiagramShape[]; 
 
   const connectors: DiagramConnector[] = (data.connectors ?? []).map((c) => ({
     id: c.id ?? uid(),
-    type: c.type ?? 'straight',
+    type: (c.type ?? 'straight') as ConnectorType,
     sourceId: c.sourceId && shapeIds.has(c.sourceId) ? c.sourceId : null,
     targetId: c.targetId && shapeIds.has(c.targetId) ? c.targetId : null,
     waypoints: c.waypoints ?? [],

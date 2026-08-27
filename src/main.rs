@@ -660,6 +660,17 @@ async fn main() -> std::io::Result<()> {
     let links_service = Arc::new(LinksService::new(links_repo, drive_client_for_links));
     let links_state = web::Data::new(links::api::LinksApiState { links_service });
 
+    // ── AI ────────────────────────────────────────────────────────────────────
+    //
+    // One client, shared by every app's AI features and by the generic `/ai/complete` route
+    // behind the ones with no server-side logic of their own. It holds no key: the provider and
+    // API key arrive with each request, from the browser, where Settings → AI Assistant put them.
+
+    let ai_client = Arc::new(shared::AiClient::new());
+    let ai_state = web::Data::new(shared::ai::api::AiApiState {
+        client: ai_client.clone(),
+    });
+
     // ── Photos service ────────────────────────────────────────────────────────
 
     use photos::albums::repository::AlbumsRepository;
@@ -762,7 +773,7 @@ async fn main() -> std::io::Result<()> {
     let photos_suggestions_state = web::Data::new(photos::suggestions::api::SuggestionsApiState {
         suggestions_service: photos_suggestions_service,
     });
-    let photos_ai_service = Arc::new(photos::ai::service::PhotosAIService::new());
+    let photos_ai_service = Arc::new(photos::ai::service::PhotosAIService::new(ai_client.clone()));
     let photos_ai_state = web::Data::new(photos::ai::api::PhotosAIState {
         ai_service: photos_ai_service,
     });
@@ -805,10 +816,7 @@ async fn main() -> std::io::Result<()> {
             service: sheets_named_ranges_service,
         });
 
-    let sheets_claude_client = sheets::ai::claude_client::ClaudeClient::from_env();
-    let sheets_ai_service = Arc::new(sheets::ai::service::SheetsAIService::new(
-        sheets_claude_client,
-    ));
+    let sheets_ai_service = Arc::new(sheets::ai::service::SheetsAIService::new(ai_client.clone()));
     let sheets_ai_state = web::Data::new(sheets::ai::api::SheetsAIApiState {
         ai_service: sheets_ai_service,
     });
@@ -830,10 +838,7 @@ async fn main() -> std::io::Result<()> {
     let slides_service = Arc::new(SlidesService::new(slides_slides_repo));
     let slides_state = web::Data::new(slides::slides::api::SlidesApiState { slides_service });
 
-    let slides_claude_client = slides::ai::claude_client::ClaudeClient::from_env();
-    let slides_ai_service = Arc::new(slides::ai::service::SlidesAIService::new(
-        slides_claude_client,
-    ));
+    let slides_ai_service = Arc::new(slides::ai::service::SlidesAIService::new(ai_client.clone()));
     let slides_ai_state = web::Data::new(slides::ai::api::SlidesAIApiState {
         ai_service: slides_ai_service,
     });
@@ -863,6 +868,12 @@ async fn main() -> std::io::Result<()> {
         web::Data::new(diagrams::diagrams::api::DiagramsApiState { diagrams_service });
     let diagrams_collab_repo = web::Data::new(Arc::new(DiagramCollabRepository::new(pool.clone())));
     let diagrams_collab_state = web::Data::new(Arc::new(DiagramCollabState::new()));
+
+    let diagrams_ai_service =
+        Arc::new(diagrams::ai::service::DiagramsAIService::new(ai_client.clone()));
+    let diagrams_ai_state = web::Data::new(diagrams::ai::api::DiagramsAIApiState {
+        ai_service: diagrams_ai_service,
+    });
 
     use diagrams::private_library::repository::PrivateLibraryRepository;
     use diagrams::private_library::service::PrivateLibraryService;
@@ -992,6 +1003,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(drive::storage::api::StorageApiDoc::openapi());
         doc.merge(drive::tags::api::TagsApiDoc::openapi());
         doc.merge(shared::file_events::api::FileEventsApiDoc::openapi());
+        doc.merge(shared::ai::api::AiApiDoc::openapi());
         doc.merge(links::api::LinksApiDoc::openapi());
         doc.merge(photos::albums::api::AlbumsApiDoc::openapi());
         doc.merge(photos::faces::api::FacesApiDoc::openapi());
@@ -1008,6 +1020,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(diagrams::diagrams::api::DiagramsApiDoc::openapi());
         doc.merge(diagrams::collab::api::DiagramsCollabApiDoc::openapi());
         doc.merge(diagrams::private_library::api::PrivateLibraryApiDoc::openapi());
+        doc.merge(diagrams::ai::api::DiagramsAIApiDoc::openapi());
         doc.merge(oauth::api::OauthApiDoc::openapi());
         doc.merge(themes::api::ThemesApiDoc::openapi());
         doc.merge(search::api::SearchApiDoc::openapi());
@@ -1060,6 +1073,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(file_events_drive_data.clone())
             // Links
             .app_data(links_state.clone())
+            // AI
+            .app_data(ai_state.clone())
             // Photos
             .app_data(photos_state.clone())
             .app_data(photos_albums_state.clone())
@@ -1080,6 +1095,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(diagrams_state.clone())
             .app_data(diagrams_collab_repo.clone())
             .app_data(diagrams_collab_state.clone())
+            .app_data(diagrams_ai_state.clone())
             .app_data(private_lib_state.clone())
             // Themes
             .app_data(themes_state.clone())
@@ -1134,6 +1150,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     .configure(shared::file_events::api::configure)
                     // Links
                     .configure(links::api::configure)
+                    // AI — the provider-agnostic completion route
+                    .configure(shared::ai::api::configure)
                     // Photos
                     .configure(photos::photos::api::configure_photos)
                     .configure(photos::albums::api::configure_albums)

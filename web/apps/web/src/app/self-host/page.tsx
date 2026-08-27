@@ -68,7 +68,6 @@ const optionalVars = [
   { name: 'GOOGLE_REDIRECT_URI', default: '<DRIVE_URL>/api/v1/connections/google/callback', desc: 'OAuth redirect URI registered with Google.' },
   { name: 'OUTLOOK_CLIENT_ID', default: '(optional)', desc: 'Microsoft OAuth client ID, for calendar sync.' },
   { name: 'OUTLOOK_CLIENT_SECRET', default: '(optional)', desc: 'Microsoft OAuth client secret.' },
-  { name: 'ANTHROPIC_API_KEY', default: '(optional)', desc: 'Enables the AI-assisted features in Docs, Sheets and Slides.' },
 ];
 
 function VarTable({ rows }: { rows: { name: string; default: string; desc: string }[] }) {

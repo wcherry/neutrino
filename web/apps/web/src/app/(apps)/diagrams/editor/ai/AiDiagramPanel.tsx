@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import type { DiagramPage, DiagramShape, DiagramConnector } from '../../types';
+import { diagramsAI } from '../../api';
 import { analyzeDiagram, parseAiDiagramResponse } from './aiDiagramUtils';
 import styles from './AiDiagramPanel.module.css';
 
@@ -15,8 +16,9 @@ const EXAMPLE_PROMPTS = [
 
 interface AiDiagramPanelProps {
   activePage: DiagramPage;
+  /** Drop a generated diagram onto the page — shapes and the connectors between them together. */
+  onInsertGenerated: (shapes: DiagramShape[], connectors: DiagramConnector[]) => void;
   onAddShapes: (shapes: DiagramShape[]) => void;
-  onAddConnectors: (connectors: DiagramConnector[]) => void;
   onSetSelection: (shapeIds: string[]) => void;
   onRunLayout: () => void;
 }
@@ -25,8 +27,8 @@ type Tab = 'generate' | 'analyze' | 'refactor';
 
 export function AiDiagramPanel({
   activePage,
+  onInsertGenerated,
   onAddShapes,
-  onAddConnectors,
   onSetSelection,
   onRunLayout,
 }: AiDiagramPanelProps) {
@@ -41,18 +43,9 @@ export function AiDiagramPanel({
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch('/api/ai/diagram-generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim() }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? `Request failed ${res.status}`);
-      }
-      const data = await res.json() as { shapes: DiagramShape[]; connectors: DiagramConnector[] };
-      onAddShapes(data.shapes);
-      onAddConnectors(data.connectors);
+      const data = await diagramsAI.generate(prompt.trim());
+      const { shapes, connectors } = parseAiDiagramResponse(data);
+      onInsertGenerated(shapes, connectors);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'AI request failed');
     } finally {

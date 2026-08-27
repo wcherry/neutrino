@@ -632,6 +632,12 @@ const qc = useQueryClient();
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>AI assistant</h2>
 
+            <p className={styles.hint}>
+              Used by every AI feature in Neutrino — generating diagrams, exploring a sheet,
+              writing slides, reading text out of a photo. The key stays in this browser and is
+              sent with each request; the server keeps no key of its own.
+            </p>
+
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Provider</label>
               <select

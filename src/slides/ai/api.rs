@@ -1,4 +1,4 @@
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{AiCredentials, ApiError, AuthenticatedUser};
 use crate::slides::ai::service::SlidesAIService;
 use actix_web::{post, web, HttpResponse};
 use serde::Deserialize;
@@ -13,6 +13,9 @@ pub struct SlidesAIApiState {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SmartComposeRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub slide_text: String,
 }
 
@@ -25,12 +28,18 @@ pub struct ImageSearchRequest {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DesignRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub slide_content: String,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AutoFormatRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub slide_json: String,
 }
 
@@ -38,8 +47,8 @@ pub struct AutoFormatRequest {
 
 /// Complete or tighten the text on a slide.
 ///
-/// Sends the slide's text to Claude and returns an improved version. Requires the server to have
-/// `ANTHROPIC_API_KEY` configured.
+/// Sends the slide's text to the caller's configured provider and returns an improved version.
+/// The provider and key come with the request, from Settings → AI Assistant.
 #[utoipa::path(
     post,
     path = "/api/v1/slides/{id}/ai/complete",
@@ -62,7 +71,7 @@ pub async fn smart_compose(
 
     let completed = state
         .ai_service
-        .smart_compose(&req.slide_text)
+        .smart_compose(&req.credentials, &req.slide_text)
         .await
         .map_err(|e| ApiError::new(503, "AI_UNAVAILABLE", e))?;
 
@@ -104,8 +113,8 @@ pub async fn image_search(
 
 /// Suggest a layout for a slide.
 ///
-/// Returns a layout name, a colour scheme, font suggestions and a list of tips. Requires the
-/// server to have `ANTHROPIC_API_KEY` configured.
+/// Returns a layout name, a colour scheme, font suggestions and a list of tips. The provider and
+/// key come with the request, from Settings → AI Assistant.
 #[utoipa::path(
     post,
     path = "/api/v1/slides/{id}/ai/design",
@@ -128,7 +137,7 @@ pub async fn help_design(
 
     let result = state
         .ai_service
-        .help_design(&req.slide_content)
+        .help_design(&req.credentials, &req.slide_content)
         .await
         .map_err(|e| ApiError::new(503, "AI_UNAVAILABLE", e))?;
 
@@ -161,7 +170,7 @@ pub async fn auto_format(
 
     let result = state
         .ai_service
-        .auto_format(&req.slide_json)
+        .auto_format(&req.credentials, &req.slide_json)
         .await
         .map_err(|e| ApiError::new(503, "AI_UNAVAILABLE", e))?;
 
@@ -183,10 +192,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         ImageSearchRequest,
         DesignRequest,
         AutoFormatRequest,
+        AiCredentials,
     )),
     tags((
         name = "slides-ai",
-        description = "Claude-backed authoring help for a presentation: completing slide text, suggesting a layout and colour scheme, rebalancing a slide's geometry, and finding images to use. All of it needs the server to have ANTHROPIC_API_KEY configured; image search reads the caller's own Drive rather than the public web."
+        description = "Authoring help for a presentation: completing slide text, suggesting a layout and colour scheme, rebalancing a slide's geometry, and finding images to use. The model-backed routes carry the provider and API key set in Settings → AI Assistant; image search calls no model at all — it reads the caller's own Drive rather than the public web."
     )),
     security(("bearer_auth" = []))
 )]

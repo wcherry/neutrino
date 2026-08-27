@@ -224,9 +224,25 @@ which is how Docker/Kubernetes secrets are mounted — e.g. `JWT_SECRET_PATH=/ru
 | `GOOGLE_REDIRECT_URI` | `<DRIVE_URL>/api/v1/connections/google/callback` | Google OAuth redirect URI |
 | `OUTLOOK_CLIENT_ID` / `OUTLOOK_CLIENT_SECRET` | *(optional)* | Microsoft OAuth, for calendar sync |
 | `OUTLOOK_REDIRECT_URI` | `<DRIVE_URL>/api/v1/connections/outlook/callback` | Microsoft OAuth redirect URI |
-| `ANTHROPIC_API_KEY` | *(optional)* | Enables the AI features in Sheets, Slides and Photos |
+| `ANTHROPIC_API_KEY` | *(deprecated)* | No longer read. The AI features take their provider and API key from **Settings → AI Assistant**, per user — see [AI features](#ai-features) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | *(optional)* | Outbound email for notifications. All five must be set or email is disabled |
 | `FACE_MODEL_PATH` | `models/seeta_fd_frontal_v1.0.bin` | Face-detection model, read by the worker (preset in the Docker image) |
+
+### AI features
+
+Nothing needs configuring on the server. Every AI feature — the Diagrams generator, the Sheets
+Explore panel and conditional-formatting rule builder, the Slides authoring help, the Photos
+vision tools, the Docs grammar fix — reads the provider and API key from **Settings → AI
+Assistant**, where each person sets their own. The choices are Google Gemini, Anthropic Claude
+and OpenAI; the key is kept in that browser and sent with the request, and the server proxies the
+call to the provider without storing it.
+
+A key set that way is used by everything, so it is the one place to change providers. Leave it
+blank and the AI features say so instead of failing at the provider.
+
+`ANTHROPIC_API_KEY` was the old, server-wide version of this and is no longer read anywhere.
+Setting it does nothing; remove it from your deployment. It made a single account pay for every
+user's requests and pinned the whole product to one provider.
 
 ## Database Migrations
 

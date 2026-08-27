@@ -1,4 +1,5 @@
 import {
+  aiCredentials,
   request,
   contentVersionQuery,
   ApiClientError,
@@ -375,28 +376,28 @@ export const sheetsAI = {
   ): Promise<SmartFillResponse> {
     return request<SmartFillResponse>(`/api/v1/sheets/${sheetId}/ai/smart-fill`, {
       method: 'POST',
-      body: JSON.stringify({ columnValues, examples }),
+      body: JSON.stringify({ ...aiCredentials(), columnValues, examples }),
     });
   },
 
   async explore(sheetId: string, question: string, sheetData: string): Promise<ExploreResponse> {
     return request<ExploreResponse>(`/api/v1/sheets/${sheetId}/ai/explore`, {
       method: 'POST',
-      body: JSON.stringify({ question, sheetData }),
+      body: JSON.stringify({ ...aiCredentials(), question, sheetData }),
     });
   },
 
   async pivot(sheetId: string, prompt: string, sheetData: string): Promise<unknown> {
     return request<unknown>(`/api/v1/sheets/${sheetId}/ai/pivot`, {
       method: 'POST',
-      body: JSON.stringify({ prompt, sheetData }),
+      body: JSON.stringify({ ...aiCredentials(), prompt, sheetData }),
     });
   },
 
   async insights(sheetId: string, sheetData: string): Promise<Insight[]> {
     return request<Insight[]>(`/api/v1/sheets/${sheetId}/ai/insights`, {
       method: 'POST',
-      body: JSON.stringify({ sheetData }),
+      body: JSON.stringify({ ...aiCredentials(), sheetData }),
     });
   },
 };
