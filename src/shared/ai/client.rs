@@ -5,10 +5,33 @@ use tracing::error;
 /// The model each provider is called with.
 ///
 /// One place for all three, so a model move is a line here rather than a hunt through four app
-/// modules. These are the same models the product has been using.
+/// modules. Each is that provider's small, fast tier: every one of these prompts is short and
+/// wants a quick, cheaply-priced answer, and the bill lands on the user's own key.
+///
+/// Pinned to explicit versions, deliberately. Google publishes a `gemini-flash-latest` alias, but
+/// it can point at a preview or experimental release and is hot-swapped with two weeks' notice —
+/// a product default should not move under a deployment that way. The cost of pinning is that a
+/// retired model 404s until this line is updated, which is what happened to `gemini-1.5-flash`.
 const CLAUDE_MODEL: &str = "claude-haiku-4-5-20251001";
 const OPENAI_MODEL: &str = "gpt-4o-mini";
-const GEMINI_MODEL: &str = "gemini-1.5-flash";
+const GEMINI_MODEL: &str = "gemini-3.5-flash";
+
+/// Extra output budget handed to Gemini on top of what the caller asked for.
+///
+/// Gemini 3 thinks before it answers and the thinking counts against `maxOutputTokens`, so
+/// asking for exactly the caller's budget spends most of it before the answer starts and returns
+/// a reply cut off mid-sentence — for a diagram, JSON that ends part-way through an array. The
+/// thinking gets its own allowance instead, and is kept short: these prompts are mechanical
+/// (fill in a shape, fix a sentence, emit a config), not problems to reason about.
+const GEMINI_THINKING_HEADROOM: u32 = 8192;
+
+/// Gemini's `generationConfig`, sized for a caller that wants `max_tokens` of actual answer.
+fn gemini_generation_config(max_tokens: u32) -> Value {
+    json!({
+        "maxOutputTokens": max_tokens.saturating_add(GEMINI_THINKING_HEADROOM),
+        "thinkingConfig": { "thinkingLevel": "low" },
+    })
+}
 
 /// A prompt sent to whichever provider the caller configured.
 ///
@@ -87,7 +110,7 @@ impl AiClient {
             AiProvider::Gemini => {
                 let mut body = json!({
                     "contents": [{ "parts": [{ "text": user_message }] }],
-                    "generationConfig": { "maxOutputTokens": max_tokens },
+                    "generationConfig": gemini_generation_config(max_tokens),
                 });
                 if !system_prompt.is_empty() {
                     body["systemInstruction"] = json!({ "parts": [{ "text": system_prompt }] });
@@ -166,7 +189,7 @@ impl AiClient {
                                 { "inline_data": { "mime_type": media_type, "data": image_base64 } },
                             ]
                         }],
-                        "generationConfig": { "maxOutputTokens": max_tokens },
+                        "generationConfig": gemini_generation_config(max_tokens),
                     }),
                 )
                 .await
@@ -188,16 +211,7 @@ impl AiClient {
             )
             .await?;
 
-        json["content"]
-            .as_array()
-            .and_then(|blocks| {
-                blocks
-                    .iter()
-                    .find(|b| b["type"] == "text")
-                    .and_then(|b| b["text"].as_str())
-            })
-            .map(|text| text.trim().to_string())
-            .ok_or_else(|| "Unexpected response from Anthropic Claude".to_string())
+        extract_claude(&json)
     }
 
     async fn call_openai(&self, api_key: &str, body: Value) -> Result<String, String> {
@@ -211,10 +225,7 @@ impl AiClient {
             )
             .await?;
 
-        json["choices"][0]["message"]["content"]
-            .as_str()
-            .map(|text| text.trim().to_string())
-            .ok_or_else(|| "Unexpected response from OpenAI".to_string())
+        extract_openai(&json)
     }
 
     async fn call_gemini(&self, api_key: &str, body: Value) -> Result<String, String> {
@@ -233,18 +244,7 @@ impl AiClient {
             )
             .await?;
 
-        json["candidates"][0]["content"]["parts"]
-            .as_array()
-            .map(|parts| {
-                parts
-                    .iter()
-                    .filter_map(|p| p["text"].as_str())
-                    .collect::<Vec<_>>()
-                    .join("")
-            })
-            .filter(|text| !text.is_empty())
-            .map(|text| text.trim().to_string())
-            .ok_or_else(|| "Unexpected response from Google Gemini".to_string())
+        extract_gemini(&json)
     }
 
     /// Send a built request and read the JSON body, turning a transport or HTTP failure into a
@@ -278,6 +278,73 @@ impl AiClient {
     }
 }
 
+/// What a provider says when it stopped because the answer hit the output budget.
+///
+/// A truncated answer is a success as far as HTTP is concerned, and the caller only finds out
+/// when whatever it parses out of the text ends mid-structure — "EOF while parsing a list" from a
+/// half-written diagram, which says nothing about what went wrong or what to do. Every provider
+/// reports it, under its own name, so it is read here and reported as itself.
+fn truncation_error(provider: AiProvider) -> String {
+    format!(
+        "{} ran out of room before finishing its answer. Try a shorter or simpler request.",
+        provider.label()
+    )
+}
+
+fn extract_claude(json: &Value) -> Result<String, String> {
+    if json["stop_reason"] == "max_tokens" {
+        return Err(truncation_error(AiProvider::Claude));
+    }
+
+    json["content"]
+        .as_array()
+        .and_then(|blocks| {
+            blocks
+                .iter()
+                .find(|b| b["type"] == "text")
+                .and_then(|b| b["text"].as_str())
+        })
+        .map(|text| text.trim().to_string())
+        .ok_or_else(|| "Unexpected response from Anthropic Claude".to_string())
+}
+
+fn extract_openai(json: &Value) -> Result<String, String> {
+    let choice = &json["choices"][0];
+    if choice["finish_reason"] == "length" {
+        return Err(truncation_error(AiProvider::Openai));
+    }
+
+    choice["message"]["content"]
+        .as_str()
+        .map(|text| text.trim().to_string())
+        .ok_or_else(|| "Unexpected response from OpenAI".to_string())
+}
+
+fn extract_gemini(json: &Value) -> Result<String, String> {
+    let candidate = &json["candidates"][0];
+    // `MAX_TOKENS` covers the thinking having eaten the budget as well as a genuinely long
+    // answer — either way what came back is a fragment, so it is not worth parsing.
+    if candidate["finishReason"] == "MAX_TOKENS" {
+        return Err(truncation_error(AiProvider::Gemini));
+    }
+
+    candidate["content"]["parts"]
+        .as_array()
+        .map(|parts| {
+            parts
+                .iter()
+                // A thinking model returns its reasoning as parts marked `thought`; only the
+                // answer belongs to the caller.
+                .filter(|p| p["thought"] != true)
+                .filter_map(|p| p["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .filter(|text| !text.trim().is_empty())
+        .map(|text| text.trim().to_string())
+        .ok_or_else(|| "Unexpected response from Google Gemini".to_string())
+}
+
 /// Pull the human-readable half out of a provider's error body.
 ///
 /// All three nest it under `error`, either as a string or as an object with a `message`; anything
@@ -295,6 +362,85 @@ fn provider_error_message(body: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gemini_gets_its_thinking_paid_for_on_top_of_the_answer() {
+        // Asking Gemini for exactly the caller's budget is what truncated a diagram mid-array.
+        let config = gemini_generation_config(4096);
+        assert_eq!(config["maxOutputTokens"], 4096 + GEMINI_THINKING_HEADROOM);
+        assert_eq!(config["thinkingConfig"]["thinkingLevel"], "low");
+    }
+
+    #[test]
+    fn reports_a_truncated_answer_as_truncation() {
+        // Each provider says it differently, and none of them fail the HTTP request over it.
+        let gemini = extract_gemini(&json!({
+            "candidates": [{
+                "finishReason": "MAX_TOKENS",
+                "content": { "parts": [{ "text": "{\"shapes\": [" }] },
+            }]
+        }));
+        let claude = extract_claude(&json!({
+            "stop_reason": "max_tokens",
+            "content": [{ "type": "text", "text": "{\"shapes\": [" }],
+        }));
+        let openai = extract_openai(&json!({
+            "choices": [{ "finish_reason": "length", "message": { "content": "{" } }],
+        }));
+
+        for (err, provider) in [
+            (gemini, "Google Gemini"),
+            (claude, "Anthropic Claude"),
+            (openai, "OpenAI"),
+        ] {
+            let err = err.expect_err("truncated");
+            assert!(err.contains(provider), "{err}");
+            assert!(err.contains("ran out of room"), "{err}");
+        }
+    }
+
+    #[test]
+    fn reads_a_complete_answer_from_each_provider() {
+        assert_eq!(
+            extract_gemini(&json!({
+                "candidates": [{
+                    "finishReason": "STOP",
+                    "content": { "parts": [{ "text": " done " }] },
+                }]
+            })),
+            Ok("done".to_string())
+        );
+        assert_eq!(
+            extract_claude(&json!({
+                "stop_reason": "end_turn",
+                "content": [{ "type": "text", "text": " done " }],
+            })),
+            Ok("done".to_string())
+        );
+        assert_eq!(
+            extract_openai(&json!({
+                "choices": [{ "finish_reason": "stop", "message": { "content": " done " } }],
+            })),
+            Ok("done".to_string())
+        );
+    }
+
+    #[test]
+    fn keeps_geminis_reasoning_out_of_the_answer() {
+        // A thinking model marks its reasoning parts; returning them would put prose in front of
+        // the JSON every caller parses.
+        let text = extract_gemini(&json!({
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": { "parts": [
+                    { "thought": true, "text": "First I will lay out the shapes…" },
+                    { "text": "{\"shapes\":[]}" },
+                ] },
+            }]
+        }))
+        .expect("answer");
+        assert_eq!(text, "{\"shapes\":[]}");
+    }
 
     #[test]
     fn extracts_the_message_from_a_provider_error_body() {

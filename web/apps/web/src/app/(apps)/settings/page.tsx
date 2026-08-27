@@ -72,6 +72,19 @@ const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
 /** Read by `useSearchIndexSync` to skip the periodic background index sync. */
 const SEARCH_SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
 
+/**
+ * Where each provider hands out an API key.
+ *
+ * Every one of them needs a key — Gemini included. Its free tier is a free *key* with rate
+ * limits, not anonymous access, and this field used to say "optional" for it, which sent people
+ * to a request that could only fail at Google.
+ */
+const AI_KEY_PAGES: Record<AiSettings['provider'], { url: string; label: string }> = {
+  gemini: { url: 'https://aistudio.google.com/apikey', label: 'Google AI Studio' },
+  claude: { url: 'https://console.anthropic.com/settings/keys', label: 'Anthropic Console' },
+  openai: { url: 'https://platform.openai.com/api-keys', label: 'OpenAI Platform' },
+};
+
 type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'advanced';
 
 const TABS: { id: Tab; label: string; flag?: keyof FeatureFlags }[] = [
@@ -658,14 +671,17 @@ const qc = useQueryClient();
                 type="password"
                 value={aiApiKey}
                 onChange={(e) => setAiApiKey(e.target.value)}
-                placeholder={aiProvider === 'gemini' ? 'Optional — Gemini has a free tier' : 'Required'}
+                placeholder="Required"
                 autoComplete="off"
               />
-              {aiProvider === 'gemini' && (
-                <p className={styles.hint}>
-                  Leave blank to use Gemini&apos;s free tier with rate limits.
-                </p>
-              )}
+              <p className={styles.hint}>
+                {aiProvider === 'gemini'
+                  ? 'Gemini has a free tier, but it still needs a key — creating one is free: '
+                  : 'Create a key here: '}
+                <a href={AI_KEY_PAGES[aiProvider].url} target="_blank" rel="noopener noreferrer">
+                  {AI_KEY_PAGES[aiProvider].label}
+                </a>
+              </p>
             </div>
 
             <div className={styles.saveBar}>
