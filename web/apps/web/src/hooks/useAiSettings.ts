@@ -1,53 +1,23 @@
 /**
- * Hook for persisting AI provider settings in localStorage.
+ * Read and write the AI provider settings behind Settings → AI Assistant.
  *
- * Settings are stored under the key "neutrino.ai.settings" and include:
- *   - provider: 'claude' | 'openai' | 'gemini' (default: 'gemini' for free tier)
- *   - apiKey: string (optional — Gemini works without a key on free tier)
+ * The storage itself lives in `@neutrino/api-core` (`neutrino.ai.settings`), because that is where
+ * the API clients read it from when they attach credentials to an AI request — this hook is the
+ * settings page's view of the same value, not a second copy of it.
  */
 'use client';
 
 import { useState, useCallback } from 'react';
+import { readAiSettings, writeAiSettings } from '@neutrino/api-core';
+import type { AiProvider, AiSettings } from '@neutrino/api-core';
 
-export type AiProvider = 'gemini' | 'claude' | 'openai';
-
-export interface AiSettings {
-  provider: AiProvider;
-  apiKey: string;
-}
-
-const STORAGE_KEY = 'neutrino.ai.settings';
-
-const DEFAULT_SETTINGS: AiSettings = {
-  provider: 'gemini',
-  apiKey: '',
-};
-
-function readSettings(): AiSettings {
-  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-}
-
-function writeSettings(settings: AiSettings): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // Ignore storage errors
-  }
-}
+export type { AiProvider, AiSettings };
 
 export function useAiSettings() {
-  const [settings, setSettingsState] = useState<AiSettings>(readSettings);
+  const [settings, setSettingsState] = useState<AiSettings>(readAiSettings);
 
   const setSettings = useCallback((next: AiSettings) => {
-    writeSettings(next);
+    writeAiSettings(next);
     setSettingsState(next);
   }, []);
 

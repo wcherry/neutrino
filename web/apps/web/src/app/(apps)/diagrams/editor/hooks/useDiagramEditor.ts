@@ -75,6 +75,11 @@ export interface DiagramEditorActions {
   ) => string;
   updateConnector: (id: string, changes: Partial<DiagramConnector>) => void;
   removeConnectors: (ids: string[]) => void;
+  /**
+   * Add shapes and the connectors between them in one undoable step, rewriting the incoming ids
+   * so a generated or pasted set can't collide with what is already on the page.
+   */
+  insertElements: (shapes: DiagramShape[], connectors: DiagramConnector[]) => void;
 
   // Layer order
   bringForward: (ids: string[]) => void;
@@ -406,6 +411,38 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
     [updatePage, document, activePageIndex],
   );
 
+  const insertElements = useCallback(
+    (shapes: DiagramShape[], connectors: DiagramConnector[]) => {
+      if (shapes.length === 0 && connectors.length === 0) return;
+      const page = activePage();
+
+      // Fresh ids, because the caller's are only unique within its own set — a generated
+      // "shape-1" would otherwise land on top of a "shape-1" already on the page.
+      const idMap = new Map<string, string>();
+      const newShapes = shapes.map((s) => {
+        const id = uuidv4();
+        idMap.set(s.id, id);
+        return { ...s, id };
+      });
+
+      // A connector is only worth adding once both of its ends came across with it.
+      const newConnectors = connectors.flatMap((c) => {
+        const sourceId = c.sourceId ? idMap.get(c.sourceId) : null;
+        const targetId = c.targetId ? idMap.get(c.targetId) : null;
+        if (!sourceId || !targetId) return [];
+        return [{ ...c, id: uuidv4(), sourceId, targetId }];
+      });
+
+      updatePage(page.id, (p) => ({
+        ...p,
+        shapes: [...p.shapes, ...newShapes],
+        connectors: [...p.connectors, ...newConnectors],
+      }));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [updatePage, document, activePageIndex],
+  );
+
   // ── Layer order ────────────────────────────────────────────────────────────
 
   const reorderShapes = useCallback(
@@ -652,6 +689,7 @@ export function useDiagramEditor(initial: DiagramDocument): DiagramEditorState &
     addConnector,
     updateConnector,
     removeConnectors,
+    insertElements,
     // Layer
     bringForward,
     sendBackward,

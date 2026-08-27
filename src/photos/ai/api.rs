@@ -1,5 +1,5 @@
 use super::service::{DetectedObject, PhotosAIService};
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{AiCredentials, ApiError, AuthenticatedUser};
 use actix_web::{post, web};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -11,6 +11,9 @@ pub struct PhotosAIState {
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     /// Base64-encoded image data (no data-URL prefix).
     pub image_base64: String,
     /// MIME type, e.g. "image/png" or "image/jpeg".
@@ -31,6 +34,9 @@ pub struct OcrResponse {
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenshotIntelRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub image_base64: String,
     #[serde(default = "default_media_type")]
     pub media_type: String,
@@ -67,7 +73,7 @@ async fn ocr(
     let body = body.into_inner();
     let text = state
         .ai_service
-        .ocr(&body.image_base64, &body.media_type)
+        .ocr(&body.credentials, &body.image_base64, &body.media_type)
         .await?;
     Ok(web::Json(OcrResponse { text }))
 }
@@ -95,7 +101,12 @@ async fn screenshot_intel(
     let body = body.into_inner();
     let result = state
         .ai_service
-        .screenshot_intelligence(&body.image_base64, &body.media_type, &body.output_type)
+        .screenshot_intelligence(
+            &body.credentials,
+            &body.image_base64,
+            &body.media_type,
+            &body.output_type,
+        )
         .await?;
     Ok(web::Json(ScreenshotIntelResponse { result }))
 }
@@ -103,6 +114,9 @@ async fn screenshot_intel(
 #[derive(Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectObjectsRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub image_base64: String,
     #[serde(default = "default_media_type")]
     pub media_type: String,
@@ -155,7 +169,12 @@ async fn detect_objects(
     let body = body.into_inner();
     let objects = state
         .ai_service
-        .detect_objects(&body.image_base64, &body.media_type, &body.target)
+        .detect_objects(
+            &body.credentials,
+            &body.image_base64,
+            &body.media_type,
+            &body.target,
+        )
         .await?;
     Ok(web::Json(DetectObjectsResponse {
         objects: objects.into_iter().map(DetectedObjectDto::from).collect(),
@@ -177,10 +196,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         DetectObjectsRequest,
         DetectedObjectDto,
         DetectObjectsResponse,
+        AiCredentials,
     )),
     tags((
         name = "photos-ai",
-        description = "Claude vision applied to a single image the client uploads inline as base64: reading its text, converting a screenshot into a Markdown table, document or Mermaid diagram, and locating objects such as people or power lines with bounding boxes. Nothing is stored — the image is sent with the request and the result is returned — and all of it needs ANTHROPIC_API_KEY configured."
+        description = "Vision applied to a single image the client uploads inline as base64: reading its text, converting a screenshot into a Markdown table, document or Mermaid diagram, and locating objects such as people or power lines with bounding boxes. Nothing is stored — the image is sent with the request and the result is returned — and each request carries the provider and API key set in Settings → AI Assistant."
     )),
     security(("bearer_auth" = []))
 )]

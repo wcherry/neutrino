@@ -1,4 +1,4 @@
-import { request, buildQuery, ApiClientError, getCurrentUserId } from '@neutrino/api-core';
+import { aiCredentials, request, buildQuery, ApiClientError, getCurrentUserId } from '@neutrino/api-core';
 import { filesystemApi } from '@neutrino/api-drive';
 import type { FileItem } from '@neutrino/api-drive';
 
@@ -589,7 +589,7 @@ export const photosAiApi = {
   async ocr(imageBase64: string, mediaType = 'image/png'): Promise<string> {
     const resp = await request<{ text: string }>('/api/v1/photos/ai/ocr', {
       method: 'POST',
-      body: JSON.stringify({ imageBase64, mediaType }),
+      body: JSON.stringify({ ...aiCredentials(), imageBase64, mediaType }),
     });
     return resp.text;
   },
@@ -602,7 +602,7 @@ export const photosAiApi = {
   ): Promise<string> {
     const resp = await request<{ result: string }>('/api/v1/photos/ai/screenshot-intel', {
       method: 'POST',
-      body: JSON.stringify({ imageBase64, mediaType, outputType }),
+      body: JSON.stringify({ ...aiCredentials(), imageBase64, mediaType, outputType }),
     });
     return resp.result;
   },
@@ -615,7 +615,7 @@ export const photosAiApi = {
   ): Promise<DetectedObject[]> {
     const resp = await request<{ objects: DetectedObject[] }>('/api/v1/photos/ai/detect-objects', {
       method: 'POST',
-      body: JSON.stringify({ imageBase64, mediaType, target }),
+      body: JSON.stringify({ ...aiCredentials(), imageBase64, mediaType, target }),
     });
     return resp.objects;
   },

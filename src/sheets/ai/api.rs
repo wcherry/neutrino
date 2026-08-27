@@ -1,4 +1,4 @@
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::shared::{AiCredentials, ApiError, AuthenticatedUser};
 use crate::sheets::ai::service::SheetsAIService;
 use actix_web::{post, web, HttpResponse};
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,9 @@ pub struct SheetsAIApiState {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SmartFillRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub column_values: Vec<String>,
     /// Each element is a [input, output] pair
     pub examples: Vec<[String; 2]>,
@@ -27,6 +30,9 @@ pub struct SmartFillResponse {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ExploreRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub question: String,
     pub sheet_data: String,
 }
@@ -34,6 +40,9 @@ pub struct ExploreRequest {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PivotRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub prompt: String,
     pub sheet_data: String,
 }
@@ -41,6 +50,9 @@ pub struct PivotRequest {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct InsightsRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
     pub sheet_data: String,
 }
 
@@ -77,7 +89,7 @@ pub async fn smart_fill(
 
     let values = state
         .ai_service
-        .smart_fill(req.column_values, examples)
+        .smart_fill(&req.credentials, req.column_values, examples)
         .await
         .map_err(|e| ApiError::new(503, "AI_UNAVAILABLE", e))?;
 
@@ -110,7 +122,7 @@ pub async fn explore(
 
     let result = state
         .ai_service
-        .explore(&req.question, &req.sheet_data)
+        .explore(&req.credentials, &req.question, &req.sheet_data)
         .await
         .map_err(|e| ApiError::new(503, "AI_UNAVAILABLE", e))?;
 
@@ -143,7 +155,7 @@ pub async fn pivot(
 
     let result = state
         .ai_service
-        .generate_pivot(&req.prompt, &req.sheet_data)
+        .generate_pivot(&req.credentials, &req.prompt, &req.sheet_data)
         .await
         .map_err(|e| ApiError::new(503, "AI_UNAVAILABLE", e))?;
 
@@ -176,7 +188,7 @@ pub async fn insights(
 
     let result = state
         .ai_service
-        .get_insights(&req.sheet_data)
+        .get_insights(&req.credentials, &req.sheet_data)
         .await
         .map_err(|e| ApiError::new(503, "AI_UNAVAILABLE", e))?;
 
@@ -199,10 +211,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         ExploreRequest,
         PivotRequest,
         InsightsRequest,
+        AiCredentials,
     )),
     tags((
         name = "sheets-ai",
-        description = "Claude-backed analysis over spreadsheet data: predicting the rest of a column from examples, answering questions in natural language, proposing a pivot configuration, and surfacing per-cell insights. These endpoints return suggestions for the client to apply — none of them write to the sheet — and all need the server to have ANTHROPIC_API_KEY configured."
+        description = "Analysis over spreadsheet data: predicting the rest of a column from examples, answering questions in natural language, proposing a pivot configuration, and surfacing per-cell insights. These endpoints return suggestions for the client to apply — none of them write to the sheet — and all carry the provider and API key set in Settings → AI Assistant."
     )),
     security(("bearer_auth" = []))
 )]

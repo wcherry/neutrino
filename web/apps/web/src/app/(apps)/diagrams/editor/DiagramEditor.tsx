@@ -776,15 +776,13 @@ export function DiagramEditor() {
         ) : showAi && activePage ? (
           <AiDiagramPanel
             activePage={activePage}
+            // One call, so the connectors land with the shapes they name and the whole
+            // generated diagram comes back off a single undo.
+            onInsertGenerated={(shapes, connectors) => editor.insertElements(shapes, connectors)}
             onAddShapes={(shapes) => {
               shapes.forEach((s) => {
                 const id = editor.addShape(s.type, s.x, s.y, s.width, s.height);
                 editor.updateShape(id, { label: s.label, style: s.style });
-              });
-            }}
-            onAddConnectors={(connectors) => {
-              connectors.forEach((c) => {
-                editor.addConnector(c.type, c.sourceId, c.targetId);
               });
             }}
             onSetSelection={(ids) => setSelection({ shapeIds: new Set(ids), connectorIds: new Set() })}

@@ -487,6 +487,15 @@
   margin-top: 4px;
 }
 
+.hint a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.hint a:hover {
+  text-decoration: underline;
+}
+
 /* ── Danger zone ──────────────────────────────────────────────────────────── */
 .dangerZone {
   display: flex;

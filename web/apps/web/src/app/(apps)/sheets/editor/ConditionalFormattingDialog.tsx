@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import { Plus, Trash2, X, ChevronUp, ChevronDown, Save, FolderOpen, Sparkles, Wand2 } from 'lucide-react';
 import { ColorPickerPopover } from '@neutrino/ui';
+import { aiApi } from '@neutrino/api-core';
 import { HEAT_MAP_PRESETS, expandRange } from './conditionalFormatting';
 import type { CellProps } from './types';
 import type {
@@ -205,14 +206,7 @@ function makeSuggestions(type: ColumnType): Suggestion[] {
 
 // ── Item 23: AI rule builder helpers ─────────────────────────────────────────
 
-function readAiSettings(): { provider: string; apiKey: string } {
-    try {
-        return { provider: 'gemini', apiKey: '', ...JSON.parse(localStorage.getItem('neutrino.ai.settings') ?? '{}') };
-    } catch { return { provider: 'gemini', apiKey: '' }; }
-}
-
 async function callAiRuleBuilder(description: string): Promise<{ rule: CFRuleSpec; explanation: string }> {
-    const { provider, apiKey } = readAiSettings();
     const systemPrompt = `You are a spreadsheet conditional formatting expert. Convert a user's natural language description into a conditional formatting rule.
 
 Return ONLY a single valid JSON object — no markdown, no code fences, no explanation outside the JSON.
@@ -229,16 +223,8 @@ Color guide: danger/overdue → bg #fce8e6 text #c5221f; warning → bg #fef9e7 
 
 Formulas start with = and evaluate to TRUE/FALSE. Use TODAY() for date math, column letters like A1, $A1 for absolute columns.`;
 
-    const res = await fetch('/api/ai/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey: apiKey || undefined, systemPrompt, userMessage: description }),
-    });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? `AI error ${res.status}`);
-    }
-    const { text } = await res.json() as { text: string };
+    // The provider and key come from Settings → AI Assistant; `aiApi` attaches them.
+    const text = await aiApi.complete(description, { systemPrompt, maxTokens: 1024 });
 
     // Strip potential markdown code fences
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();

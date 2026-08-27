@@ -6,7 +6,6 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useNspell } from '@/hooks/useNspell';
-import { useAiSettings } from '@/hooks/useAiSettings';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
 import { DiagramEmbedExtension } from '@/lib/extensions/DiagramEmbedExtension';
@@ -76,6 +75,7 @@ import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { aiApi } from '@neutrino/api-core';
 import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
@@ -552,7 +552,6 @@ export function DocEditor() {
   const queryClient = useQueryClient();
   const { spellCheck } = useSpellCheck();
   const nspell = useNspell();
-  const { getProviderOptions } = useAiSettings();
 
   const { dekRef, dekResolved, isNewEncryption, awaitDek } =
     useEncryptedDocumentContent({ id: docId, filename: 'doc.json' });
@@ -2000,23 +1999,17 @@ export function DocEditor() {
 
       if (op === 'grammar-fix' && grammarContext) {
         const { message, issueText, suggestion, category } = grammarContext;
-        const { provider, apiKey } = getProviderOptions();
 
         try {
-          const res = await fetch('/api/ai/complete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              provider,
-              apiKey,
+          // The provider and key are the ones from Settings → AI Assistant; `aiApi` attaches
+          // them, so nothing here has to carry them through.
+          const aiFixed = (await aiApi.complete(
+            `Grammar issue: ${message}\nText to fix: "${issueText}"`,
+            {
               systemPrompt:
                 'You are a precise grammar editor. When given a grammar issue and the problematic text, return ONLY the corrected version of that text. No explanation. No quotation marks. No extra words. Just the corrected text itself.',
-              userMessage: `Grammar issue: ${message}\nText to fix: "${issueText}"`,
-            }),
-          });
-          const data = await res.json() as { text?: string; error?: string };
-          if (data.error) throw new Error(data.error);
-          const aiFixed = data.text?.trim() ?? '';
+            },
+          )).trim();
           if (!aiFixed) throw new Error('Empty response from AI');
 
           result = `Issue: ${message}\n\nOriginal: "${issueText}"\nAI fix: "${aiFixed}"`;
@@ -2073,7 +2066,7 @@ export function DocEditor() {
     } finally {
       setAiLoading(false);
     }
-  }, [editor, getProviderOptions]);
+  }, [editor]);
 
   const handleAiInsert = useCallback(() => {
     if (!editor || !aiInsertTextRef.current) return;

@@ -1,6 +1,6 @@
-use super::claude_client::ClaudeClient;
-use crate::shared::ApiError;
+use crate::shared::{AiClient, AiCredentials, ApiError};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DetectedObject {
@@ -12,33 +12,49 @@ pub struct DetectedObject {
 }
 
 pub struct PhotosAIService {
-    claude: Option<ClaudeClient>,
+    ai: Arc<AiClient>,
 }
 
 impl PhotosAIService {
-    pub fn new() -> Self {
-        Self {
-            claude: ClaudeClient::from_env(),
-        }
+    pub fn new(ai: Arc<AiClient>) -> Self {
+        Self { ai }
     }
 
-    fn claude(&self) -> Result<&ClaudeClient, ApiError> {
-        self.claude
-            .as_ref()
-            .ok_or_else(|| ApiError::internal("ANTHROPIC_API_KEY not configured"))
+    /// Ask the caller's configured provider about an image.
+    ///
+    /// Every route here is a vision prompt, and every one of them fails the same way — no key
+    /// configured, or the provider refusing the call — so they all report it as `AI_UNAVAILABLE`
+    /// rather than as a fault of this server.
+    async fn ask(
+        &self,
+        credentials: &AiCredentials,
+        image_base64: &str,
+        media_type: &str,
+        prompt: &str,
+        max_tokens: u32,
+    ) -> Result<String, ApiError> {
+        self.ai
+            .complete_with_vision(credentials, image_base64, media_type, prompt, max_tokens)
+            .await
+            .map_err(|e| ApiError::new(503, "AI_UNAVAILABLE", e))
     }
 
-    pub async fn ocr(&self, image_base64: &str, media_type: &str) -> Result<String, ApiError> {
+    pub async fn ocr(
+        &self,
+        credentials: &AiCredentials,
+        image_base64: &str,
+        media_type: &str,
+    ) -> Result<String, ApiError> {
         let prompt = "Extract all text visible in this image. \
             Output only the extracted text, preserving line breaks and structure where possible. \
             If no text is found, respond with an empty string.";
-        self.claude()?
-            .complete_with_vision(image_base64, media_type, prompt, 2048)
+        self.ask(credentials, image_base64, media_type, prompt, 2048)
             .await
     }
 
     pub async fn screenshot_intelligence(
         &self,
+        credentials: &AiCredentials,
         image_base64: &str,
         media_type: &str,
         output_type: &str,
@@ -52,13 +68,13 @@ impl PhotosAIService {
                 Output only the Mermaid code block (```mermaid ... ```), nothing else.",
             _ => return Err(ApiError::bad_request("Invalid output_type")),
         };
-        self.claude()?
-            .complete_with_vision(image_base64, media_type, prompt, 4096)
+        self.ask(credentials, image_base64, media_type, prompt, 4096)
             .await
     }
 
     pub async fn detect_objects(
         &self,
+        credentials: &AiCredentials,
         image_base64: &str,
         media_type: &str,
         target: &str,
@@ -82,8 +98,7 @@ impl PhotosAIService {
             target_desc
         );
         let raw = self
-            .claude()?
-            .complete_with_vision(image_base64, media_type, &prompt, 1024)
+            .ask(credentials, image_base64, media_type, &prompt, 1024)
             .await?;
 
         let trimmed = raw.trim();

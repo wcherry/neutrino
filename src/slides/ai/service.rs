@@ -1,5 +1,6 @@
-use crate::slides::ai::claude_client::ClaudeClient;
+use crate::shared::{AiClient, AiCredentials};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::error;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -13,37 +14,33 @@ pub struct ImageResult {
 }
 
 pub struct SlidesAIService {
-    claude: Option<ClaudeClient>,
+    ai: Arc<AiClient>,
     drive_url: String,
     http_client: reqwest::Client,
 }
 
 impl SlidesAIService {
-    pub fn new(claude: Option<ClaudeClient>) -> Self {
+    pub fn new(ai: Arc<AiClient>) -> Self {
         let drive_url =
             std::env::var("DRIVE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
         SlidesAIService {
-            claude,
+            ai,
             drive_url,
             http_client: reqwest::Client::new(),
         }
     }
 
-    fn get_claude(&self) -> Result<&ClaudeClient, String> {
-        self.claude
-            .as_ref()
-            .ok_or_else(|| "AI features require ANTHROPIC_API_KEY to be configured".to_string())
-    }
-
-    pub async fn smart_compose(&self, slide_text: &str) -> Result<String, String> {
-        let claude = self.get_claude()?;
-
+    pub async fn smart_compose(
+        &self,
+        credentials: &AiCredentials,
+        slide_text: &str,
+    ) -> Result<String, String> {
         let prompt = format!(
             "You are a presentation writing assistant. Complete or improve the following slide text to make it more professional and concise:\n\n{}\n\nReturn only the completed/improved text, no explanation.",
             slide_text
         );
 
-        claude.complete(&prompt, 512).await
+        self.ai.complete(credentials, &prompt, 512).await
     }
 
     pub async fn search_images(
@@ -111,15 +108,17 @@ impl SlidesAIService {
         }
     }
 
-    pub async fn help_design(&self, slide_content: &str) -> Result<serde_json::Value, String> {
-        let claude = self.get_claude()?;
-
+    pub async fn help_design(
+        &self,
+        credentials: &AiCredentials,
+        slide_content: &str,
+    ) -> Result<serde_json::Value, String> {
         let prompt = format!(
             "You are a presentation design assistant. Analyze the following slide content and suggest an optimal layout:\n\n{}\n\nReturn a JSON object with these fields:\n- layout: string (one of: 'title', 'title-content', 'two-column', 'blank', 'image-text')\n- colorScheme: object with 'primary', 'secondary', 'accent', 'background' hex color strings\n- fontSuggestions: object with 'heading' and 'body' font family strings\n- tips: array of strings (design improvement tips)\n\nReturn only the JSON object, no explanation.",
             slide_content
         );
 
-        let response = claude.complete(&prompt, 1024).await?;
+        let response = self.ai.complete(credentials, &prompt, 1024).await?;
 
         let trimmed = response.trim();
         let json_start = trimmed.find('{').unwrap_or(0);
@@ -132,15 +131,17 @@ impl SlidesAIService {
         })
     }
 
-    pub async fn auto_format(&self, slide_json: &str) -> Result<serde_json::Value, String> {
-        let claude = self.get_claude()?;
-
+    pub async fn auto_format(
+        &self,
+        credentials: &AiCredentials,
+        slide_json: &str,
+    ) -> Result<serde_json::Value, String> {
         let prompt = format!(
             "You are a presentation layout optimizer. Here is a slide in JSON format:\n{}\n\nReturn an improved version of this slide JSON with balanced layout, proper spacing, and visual hierarchy. Adjust element positions (x, y, w, h as percentages 0-100) and text sizes for best readability. Return only the JSON object matching the same structure, no explanation.",
             slide_json
         );
 
-        let response = claude.complete(&prompt, 2048).await?;
+        let response = self.ai.complete(credentials, &prompt, 2048).await?;
 
         let trimmed = response.trim();
         let json_start = trimmed.find('{').unwrap_or(0);

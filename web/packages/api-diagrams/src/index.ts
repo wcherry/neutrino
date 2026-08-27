@@ -1,4 +1,4 @@
-import { request, contentVersionQuery, ApiClientError, type ContentVersionCheck } from '@neutrino/api-core';
+import { aiCredentials, request, contentVersionQuery, ApiClientError, type ContentVersionCheck } from '@neutrino/api-core';
 
 /**
  * A file is a native Neutrino diagram because it carries this mime type.
@@ -275,6 +275,49 @@ export const diagramsApi = {
   async deleteComment(diagramId: string, commentId: string): Promise<void> {
     await request<void>(`/api/v1/diagrams/${diagramId}/comments/${commentId}`, {
       method: 'DELETE',
+    });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Diagrams AI
+// ---------------------------------------------------------------------------
+
+/** A shape as the generator returns it — geometry and label only, no styling. */
+export interface GeneratedShape {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+}
+
+/** A connector as the generator returns it; the ids name shapes in the same response. */
+export interface GeneratedConnector {
+  type: string;
+  sourceId: string;
+  targetId: string;
+  label: string;
+}
+
+export interface GenerateDiagramResponse {
+  shapes: GeneratedShape[];
+  connectors: GeneratedConnector[];
+}
+
+export const diagramsAI = {
+  /**
+   * Draw a diagram from a plain-language description.
+   *
+   * Takes no diagram id: generation reads nothing from the stored file, which is E2EE and so
+   * unreadable by the server in any case.
+   */
+  async generate(prompt: string): Promise<GenerateDiagramResponse> {
+    return request<GenerateDiagramResponse>('/api/v1/diagrams/ai/generate', {
+      method: 'POST',
+      body: JSON.stringify({ ...aiCredentials(), prompt }),
     });
   },
 };
