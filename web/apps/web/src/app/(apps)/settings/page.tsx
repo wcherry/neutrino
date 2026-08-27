@@ -18,6 +18,7 @@ import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { ThemeGrid } from '@/components/theme/ThemeGrid';
 import { useFeatureFlags, type FeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { rebuildSearchIndex } from '@/lib/searchIndexer';
+import { APP_VERSION, BUILD_ID } from '@/lib/version';
 import { forceUploadSnapshot } from '@/lib/searchIndexSnapshot';
 import {
   WEEK_START_KEY,
@@ -1140,6 +1141,38 @@ const qc = useQueryClient();
                   : 'Rebuild index'}
               </button>
             </div>
+          </section>
+
+          {/* ── About ────────────────────────────────────────────────── */}
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>About</h2>
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <div className={styles.settingName}>Version</div>
+                <div className={styles.settingDesc}>
+                  The version of Neutrino this browser is running — quote it when reporting a bug.
+                </div>
+                {/* Only a released image carries a version; a build made
+                    outside a container says so instead of inventing one. */}
+                <div className={styles.fingerprint}>
+                  {APP_VERSION ? `v${APP_VERSION}` : 'Development build'}
+                </div>
+              </div>
+            </div>
+
+            {/* Only when the build could name the commit it came from —
+                see `lib/version.ts`. */}
+            {BUILD_ID && (
+              <div className={styles.settingRow}>
+                <div className={styles.settingInfo}>
+                  <div className={styles.settingName}>Build</div>
+                  <div className={styles.settingDesc}>
+                    The commit this build was made from.
+                  </div>
+                  <div className={styles.fingerprint}>{BUILD_ID}</div>
+                </div>
+              </div>
+            )}
           </section>
         </div>
       )}

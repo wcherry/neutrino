@@ -9,6 +9,12 @@ permissions:
   contents: read
   packages: write
 
+env:
+  # Major and minor for the version the UI reports; the patch is the run number,
+  # so every published image gets its own without anything being committed back.
+  # Bump this by hand when a release calls for it.
+  BASE_VERSION: "0.1"
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -43,6 +49,9 @@ jobs:
           context: .
           file: Dockerfile
           push: true
+          build-args: |
+            APP_VERSION=${{ env.BASE_VERSION }}.${{ github.run_number }}
+            BUILD_COMMIT=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

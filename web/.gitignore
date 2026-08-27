@@ -10,3 +10,6 @@ dist/
 apps/web/out/
 tsconfig.tsbuildinfo
 **/.DS_Store
+
+# Written per image by apps/web/scripts/write-version.mjs — never committed.
+version.txt

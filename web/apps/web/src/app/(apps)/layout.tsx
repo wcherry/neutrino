@@ -37,6 +37,7 @@ import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import { driveSearchHref } from './drive/searchParams';
 import { bugReportHref } from '@/lib/bugReport';
 import { signInHref } from '@/lib/signInRedirect';
+import { FULL_VERSION_LABEL, VERSION_LABEL } from '@/lib/version';
 import { clearDriveImageCache } from '@/lib/driveImages';
 
 /** Search hits carry an icon *component* so Drive can size it its own way. */
@@ -266,6 +267,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       sections={navSections}
       quota={auth.quota}
       onUpload={handleUpload}
+      version={VERSION_LABEL}
+      versionTitle={FULL_VERSION_LABEL ? `Neutrino ${FULL_VERSION_LABEL}` : undefined}
     />
   );
 

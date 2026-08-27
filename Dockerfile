@@ -42,6 +42,17 @@ RUN pnpm install --prod=false
 # Copy the rest of the web source and build
 COPY web/ .
 
+# Stamp the image's identity into web/version.txt, which the Next build reads
+# and inlines into the bundle (next.config.ts → src/lib/version.ts) for the
+# sidebar footer and Settings → About. The file is generated here rather than
+# committed: outside an image build there is no version to report, and a stale
+# checked-in one would have every developer's browser claiming to be a release.
+# Both args are optional — an unstamped build reports no version rather than
+# failing, and this stage has no `.git` to fall back to.
+ARG APP_VERSION=""
+ARG BUILD_COMMIT=""
+RUN node apps/web/scripts/write-version.mjs
+
 WORKDIR /app/apps/web
 RUN pnpm build
 
