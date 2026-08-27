@@ -1,5 +1,5 @@
 import type { CellProps } from './types';
-import { expandRange, parseDeps, alphaToNum, numToAlpha, dateStringToSerial } from './utils';
+import { expandRange, parseDeps, alphaToNum, numToAlpha, dateStringToSerial, parseCellDateValue } from './utils';
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -160,19 +160,22 @@ function isErrorVal(v: FuncArg): boolean {
 // ── Date utilities ──────────────────────────────────────────────────────────
 
 /**
- * Parse a date string into a UTC-midnight Date, avoiding timezone offset issues.
- * ISO strings like "2024-06-15" are parsed as UTC so all subsequent getUTC* calls
- * return the correct calendar values in any local timezone.
+ * Parse a date-valued argument into a UTC-anchored Date, avoiding timezone
+ * offset issues. Delegates to the display layer's parseCellDateValue so a date
+ * means the same thing in a formula as it does on screen, which is what makes
+ * two cases work that a bare `new Date(s)` got wrong:
+ *
+ *  - An **Excel serial**. Date arithmetic produces serials (`=A1+30` → 45822 via
+ *    cellScalar), so any serial fed back into MONTH/YEAR/DATEDIF/EOMONTH used to
+ *    be read by `new Date("45822")` as the *year* 45822.
+ *  - A **US "MM/DD/YYYY" string**, which `new Date` parses at local midnight; read
+ *    back with the getUTC* calls below that is the previous day in any timezone
+ *    ahead of UTC — so 11/01/2025 reported October.
  */
 function parseDate(arg: FuncArg, data: Map<string, CellProps>): Date | null {
     const s = isRange(arg) ? (data.get(arg[0])?.value ?? '') : String(arg);
-    if (!s) return null;
-    // Parse YYYY-MM-DD (with optional time component) as UTC midnight
-    const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (iso) {
-        return new Date(Date.UTC(parseInt(iso[1]), parseInt(iso[2]) - 1, parseInt(iso[3])));
-    }
-    const d = new Date(s);
+    if (!s.trim()) return null;
+    const d = parseCellDateValue(s);
     return isNaN(d.getTime()) ? null : d;
 }
 
@@ -992,7 +995,13 @@ class FormulaParser {
                 const now = new Date();
                 return dateToStr(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())));
             }
-            case 'NOW':   return new Date().toISOString().replace('T', ' ').slice(0, 19);
+            // Local wall clock, not toISOString() (which is UTC) — TODAY() is already
+            // local, so a UTC NOW() disagreed with it either side of local midnight.
+            case 'NOW': {
+                const n = new Date();
+                return `${dateToStr(new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())))} `
+                    + timeToStr((n.getHours() * 3600 + n.getMinutes() * 60 + n.getSeconds()) / 86400);
+            }
             case 'DATE': {
                 const y = num(args[0]), mo = num(args[1]), d2 = num(args[2]);
                 return dateToStr(new Date(Date.UTC(y, mo - 1, d2)));
