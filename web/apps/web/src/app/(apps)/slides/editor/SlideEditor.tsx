@@ -373,6 +373,18 @@ export function SlideEditor() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef('');
+  // True once the user has changed the deck through `updatePresentation`. The
+  // flush on leave is gated on it, because "what is on screen differs from what
+  // was loaded" is also true of a deck whose content query has not come back
+  // yet — flushing *that* would write the empty default over a real
+  // presentation. Remote presence updates go through `setPresentation`
+  // directly, so they never set it.
+  const hasEditedRef = useRef(false);
+  // The deck handed to the most recent flush write. `pagehide` and the unmount
+  // cleanup both fire on a tab close, and this is what stops the pair writing
+  // the same content twice — the second write would carry the revision the
+  // first one superseded and be rejected as stale.
+  const lastFlushedRef = useRef('');
   const exportRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -704,36 +716,50 @@ export function SlideEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dekResolved, contentUpdatedAt, slideData, contentLoading, slideContent]);
 
-  const contentMutation = useMutation({
-    mutationFn: async ({ content }: { content: string }) => {
-      // Office mode (issue #43): re-serialize the current presentation into
-      // real PPTX bytes and write them to the SAME Drive file id via the
-      // binary-safe transport, instead of the native JSON autosave path.
-      if (officeModeRef.current) {
-        const meta = officeFileMetaRef.current;
-        if (!meta) throw new Error('office-meta-missing');
-        if (!dekRef.current) throw new Error('no-dek');
-        // The package carries both halves: the PowerPoint deck other tools
-        // read, and this editor's own presentation model, which is what keeps
-        // themes, transitions and gradient backgrounds — none of which survive
-        // pptxgenjs — across a save. See `lib/ooxmlContainer.ts`.
-        const deck = await exportAsPptxBytes(presentationRef.current);
-        const bytes = await packNeutrinoModel(deck, 'slides', content);
-        // Those bytes are encrypted like everything else. They used not to be,
-        // on the grounds that "downloading the raw file must open in real
-        // PowerPoint" (issue #43, criterion 3) — but Drive's download decrypts
-        // client-side, so the .pptx that reaches the user's disk is the same
-        // either way. What the plaintext write bought was a readable deck in
-        // object storage: issue #95.
-        return driveAutosaveEncryptedBytes(
-          slideId, bytes, meta.name, dekRef.current, versionGuard.check(),
-        );
-      }
+  /**
+   * Write `content` to Drive — the one place a presentation is persisted.
+   *
+   * Split out of the mutation below because the flush-on-leave path (issue #12)
+   * has to reach it directly: a React Query mutation is driven by an observer
+   * this component owns, and the flush's last call happens while that component
+   * is being torn down.
+   *
+   * `keepalive` lets the request outlive the document, for the save fired as the
+   * user navigates away — see `AutosaveTransport` in `@neutrino/api-drive`.
+   */
+  async function writeContent(content: string, keepalive = false): Promise<FileItem> {
+    const transport = keepalive ? { keepalive: true } : undefined;
+    // Office mode (issue #43): re-serialize the current presentation into
+    // real PPTX bytes and write them to the SAME Drive file id via the
+    // binary-safe transport, instead of the native JSON autosave path.
+    if (officeModeRef.current) {
+      const meta = officeFileMetaRef.current;
+      if (!meta) throw new Error('office-meta-missing');
       if (!dekRef.current) throw new Error('no-dek');
-      return driveAutosaveEncryptedContent(
-        slideData!.id, content, 'slide.json', dekRef.current, versionGuard.check(),
+      // The package carries both halves: the PowerPoint deck other tools
+      // read, and this editor's own presentation model, which is what keeps
+      // themes, transitions and gradient backgrounds — none of which survive
+      // pptxgenjs — across a save. See `lib/ooxmlContainer.ts`.
+      const deck = await exportAsPptxBytes(presentationRef.current);
+      const bytes = await packNeutrinoModel(deck, 'slides', content);
+      // Those bytes are encrypted like everything else. They used not to be,
+      // on the grounds that "downloading the raw file must open in real
+      // PowerPoint" (issue #43, criterion 3) — but Drive's download decrypts
+      // client-side, so the .pptx that reaches the user's disk is the same
+      // either way. What the plaintext write bought was a readable deck in
+      // object storage: issue #95.
+      return driveAutosaveEncryptedBytes(
+        slideId, bytes, meta.name, dekRef.current, versionGuard.check(), transport,
       );
-    },
+    }
+    if (!dekRef.current) throw new Error('no-dek');
+    return driveAutosaveEncryptedContent(
+      slideData!.id, content, 'slide.json', dekRef.current, versionGuard.check(), transport,
+    );
+  }
+
+  const contentMutation = useMutation({
+    mutationFn: ({ content }: { content: string }) => writeContent(content),
     onMutate: () => setSaveStatus('saving'),
     onSuccess: (saved, { content }) => {
       setSaveStatus('saved');
@@ -762,18 +788,21 @@ export function SlideEditor() {
     },
   });
 
+  /** Rename the presentation. Split out for the same reason as `writeContent`. */
+  async function writeTitle(t: string): Promise<void> {
+    // Office mode: no `slides` row to PATCH — rename through the generic
+    // Drive rename call (same one FileContextMenu's rename action uses).
+    if (officeModeRef.current) {
+      // The extension goes back on: the title is what the user typed, and the
+      // file still has to land on disk as a deck PowerPoint opens.
+      await filesystemApi.updateFile(slideId, { name: withOoxmlExtension(t, 'slides') });
+      return;
+    }
+    await slidesApi.saveSlide(slideData!.id, { title: t });
+  }
+
   const titleMutation = useMutation({
-    mutationFn: async ({ title: t }: { title: string }): Promise<void> => {
-      // Office mode: no `slides` row to PATCH — rename through the generic
-      // Drive rename call (same one FileContextMenu's rename action uses).
-      if (officeModeRef.current) {
-        // The extension goes back on: the title is what the user typed, and the
-        // file still has to land on disk as a deck PowerPoint opens.
-        await filesystemApi.updateFile(slideId, { name: withOoxmlExtension(t, 'slides') });
-        return;
-      }
-      await slidesApi.saveSlide(slideData!.id, { title: t });
-    },
+    mutationFn: ({ title: t }: { title: string }) => writeTitle(t),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['slides'] }),
   });
 
@@ -783,6 +812,7 @@ export function SlideEditor() {
 
   const scheduleAutoSave = useCallback((pres: SlidePresentation) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    hasEditedRef.current = true;
     setSaveStatus('unsaved');
     saveTimerRef.current = setTimeout(() => {
       const content = JSON.stringify(pres);
@@ -878,10 +908,100 @@ export function SlideEditor() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // ── Flush pending edits on the way out (issue #12) ─────────────────────────
+  //
+  // Autosave is debounced by 2s and `handleBack` was the only path that cancelled
+  // the timer and wrote before navigating — so every other way out of the editor
+  // (the browser's back button, a closed or reloaded tab, a typed URL, any
+  // `router.push` that is not the back button) dropped the last two seconds of
+  // work, because the unmount cleanup only cleared the timer.
+  //
+  // Reassigned every render rather than captured in the effect below, so the
+  // flush always sees the current handlers and title without the effect having
+  // to re-subscribe — a re-subscribe would run its own cleanup, and the cleanup
+  // is one of the things that flushes.
+  const flushPendingSavesRef = useRef<() => void>(() => {});
+  // Cleared before the teardown flush, so the write it fires does not report
+  // its progress into a component that is already gone.
+  const mountedRef = useRef(true);
+  flushPendingSavesRef.current = () => {
+    const setStatus = (s: SaveStatus) => { if (mountedRef.current) setSaveStatus(s); };
+    if (titleSaveTimerRef.current) {
+      clearTimeout(titleSaveTimerRef.current);
+      titleSaveTimerRef.current = null;
+      const trimmed = title.trim();
+      // `writeTitle`/`writeContent` directly, not the mutations: a mutation is
+      // driven by an observer this component owns, and by the time the unmount
+      // cleanup runs that observer is gone.
+      if (trimmed) {
+        writeTitle(trimmed)
+          .then(() => queryClient.invalidateQueries({ queryKey: ['slides'] }))
+          .catch(() => {});
+      }
+    }
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!hasEditedRef.current) return;
+    const content = JSON.stringify(presentationRef.current);
+    if (content === lastSavedRef.current || content === lastFlushedRef.current) return;
+    lastFlushedRef.current = content;
+    setStatus('saving');
+    writeContent(content, true)
+      .then((saved) => {
+        lastSavedRef.current = content;
+        versionGuard.observe(saved?.contentVersion);
+        setStatus('saved');
+        queryClient.invalidateQueries({ queryKey: ['slides'] });
+        indexOnSave(currentUser?.id, {
+          id: slideId,
+          type: 'slide',
+          title,
+          content: extractSlideText(content),
+        });
+      })
+      .catch(() => {
+        // Let the next flush try again. Only the tab-hidden path has a next
+        // one, but that is exactly the path where the editor lives on and the
+        // user has no idea the write failed.
+        lastFlushedRef.current = '';
+        setStatus('error');
+      });
+  };
+
+  /** Whether anything on screen has yet to reach the server. */
+  const hasUnsavedWorkRef = useRef<() => boolean>(() => false);
+  hasUnsavedWorkRef.current = () =>
+    titleSaveTimerRef.current !== null
+    || (hasEditedRef.current && JSON.stringify(presentationRef.current) !== lastSavedRef.current);
+
   useEffect(() => {
+    const flush = () => flushPendingSavesRef.current();
+    const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      const dirty = hasUnsavedWorkRef.current();
+      flush();
+      // The flush is best-effort on this path. It asks for `keepalive`, which
+      // the browser only honours up to a 64 KB body (`KEEPALIVE_MAX_BYTES` in
+      // api-drive) — a deck with images, or any `.pptx`, which is a zip, goes
+      // over that and degrades to an ordinary request racing the unload. Worse,
+      // the OOXML branch has to build the package first, and that is async. So
+      // the user gets the browser's own "leave site?" prompt and, with it, the
+      // chance to stay while the save lands.
+      if (dirty) e.preventDefault();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', onBeforeUnload);
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      if (titleSaveTimerRef.current) clearTimeout(titleSaveTimerRef.current);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      mountedRef.current = false;
+      // Every in-app navigation ends here — the page lives on, so this write
+      // has the whole session to complete.
+      flush();
     };
   }, []);
 
