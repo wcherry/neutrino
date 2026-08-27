@@ -236,13 +236,22 @@ function isDateOrTimeFormatStr(fmt: string): boolean {
 // Parses a cell's raw value into a Date, treating a purely numeric value as an
 // Excel serial (whose fractional part encodes time-of-day), a recognized date/
 // time/datetime string as a serial via dateStringToSerial, and anything else as
-// a native Date-parseable string. Shared by both custom-format and preset rendering.
-function parseCellDateValue(value: string): Date {
+// a native Date-parseable string. Shared by custom-format rendering, preset
+// rendering and the formula engine's date functions, so a date reads the same
+// on screen as it does inside MONTH()/DATEDIF()/EOMONTH().
+export function parseCellDateValue(value: string): Date {
     const trimmed = value.trim();
-    if (/^\d+(\.\d+)?$/.test(trimmed)) return excelSerialToDate(parseFloat(trimmed));
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return excelSerialToDate(parseFloat(trimmed));
     const serial = dateStringToSerial(trimmed);
     if (serial !== null) return excelSerialToDate(serial);
-    return new Date(value);
+    // Last resort: let the engine parse it ("May 15, 2025", "2025-11-01T13:30:00Z").
+    // A date-only string with no zone is parsed at *local* midnight, but every reader
+    // of this Date uses UTC getters — so re-anchor it to UTC midnight, otherwise the
+    // day (and, on the 1st, the month) reads one early anywhere east of Greenwich.
+    // Strings carrying a time-of-day are left alone: their offset is meaningful.
+    const d = new Date(value);
+    if (isNaN(d.getTime()) || trimmed.includes(':')) return d;
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 }
 
 export function applyCustomFormat(value: string, fmt: string): string {
