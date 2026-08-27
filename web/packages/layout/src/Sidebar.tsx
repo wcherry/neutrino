@@ -35,6 +35,13 @@ export interface SidebarProps {
   quota?: StorageQuota;
   onUpload?: (files: FileList) => void;
   className?: string;
+  /**
+   * Shown in the sidebar footer, e.g. `v0.1.0`. Omitted when absent rather than
+   * rendered empty, so an embedder with no version to report shows no footer.
+   */
+  version?: string;
+  /** Longer form for the footer's tooltip, e.g. `v0.1.0 (a1b2c3d)`. */
+  versionTitle?: string;
 }
 
 function formatBytes(bytes: number): string {
@@ -51,6 +58,8 @@ export function Sidebar({
   quota,
   onUpload,
   className = '',
+  version,
+  versionTitle,
 }: SidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -221,6 +230,14 @@ export function Sidebar({
         </div>
       )}
 
+      {/* Version — the one place the running build names itself without the
+          user having to open Settings. Hidden when collapsed, as the quota is:
+          the rail is too narrow to read it in. */}
+      {version && !collapsed && (
+        <div className={styles.version}>
+          <span title={versionTitle ?? version}>{version}</span>
+        </div>
+      )}
     </aside>
   );
 }

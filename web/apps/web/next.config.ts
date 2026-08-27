@@ -1,5 +1,7 @@
 import type { NextConfig } from 'next';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -36,6 +38,58 @@ const configDir = path.dirname(fileURLToPath(import.meta.url));
  */
 const DEV_PROXY_MAX_BODY_BYTES = 2 * 1024 * 1024 * 1024;
 
+/**
+ * What the UI shows as "the version you are running" — see `src/lib/version.ts`.
+ *
+ * The numbers come from `web/version.txt` (`version=` / `commit=`), which the
+ * Dockerfile's web stage generates per image — see `scripts/write-version.mjs`.
+ * That file is deliberately not in the repo, so a build outside a container
+ * falls back to no version and whatever commit git will name.
+ *
+ * Inlined here rather than read at runtime because a production build is
+ * `output: 'export'`: there is no server process left to hold `process.env`.
+ * Both values are best-effort — an unstamped build reports no version rather
+ * than failing.
+ */
+const VERSION_FILE = path.resolve(configDir, '../../version.txt');
+
+/**
+ * Present only in an image build, where `scripts/write-version.mjs` wrote it
+ * from the Dockerfile's build args. Absent everywhere else.
+ */
+function readVersionFile(): { version: string; commit: string } | null {
+  let text: string;
+  try {
+    text = readFileSync(VERSION_FILE, 'utf8');
+  } catch {
+    return null;
+  }
+  const field = (key: string): string =>
+    new RegExp(`^${key}=(.*)$`, 'm').exec(text)?.[1].trim() ?? '';
+  return { version: field('version'), commit: field('commit') };
+}
+
+/**
+ * A local build has no version — it is not a release and should not claim to
+ * be one — but the commit is worth having and is one cheap command away, so
+ * a dev build still identifies itself in the UI by what it was built from.
+ */
+function commitFromGit(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', {
+      cwd: configDir,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
+  } catch {
+    return '';
+  }
+}
+
+const { version: appVersion, commit: buildCommit } =
+  readVersionFile() ?? { version: '', commit: commitFromGit() };
+
 const libsodiumWrappersCjs = path.resolve(
   configDir,
   '../../packages/e2e-crypto/node_modules/libsodium-wrappers/dist/modules/libsodium-wrappers.js',
@@ -43,6 +97,10 @@ const libsodiumWrappersCjs = path.resolve(
 
 const nextConfig: NextConfig = {
   outputFileTracingRoot: path.resolve(configDir, '../..'),
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+    NEXT_PUBLIC_BUILD_ID: buildCommit,
+  },
   output: isDev ? undefined : 'export',
   ...(isDev && {
     async rewrites() {
