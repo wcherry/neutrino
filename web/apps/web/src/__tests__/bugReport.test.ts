@@ -1,23 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { bugReportHref } from '@/lib/bugReport';
+import { BUG_REPORT_URL } from '@/lib/bugReport';
 
-describe('bugReportHref', () => {
-  it('prefills the issue with the report template and the page in question', () => {
-    const url = new URL(bugReportHref('/docs/editor?id=doc-1'));
+describe('BUG_REPORT_URL', () => {
+  it('opens the issue-type chooser', () => {
+    const url = new URL(BUG_REPORT_URL);
 
-    expect(url.origin + url.pathname).toBe('https://github.com/wcherry/neutrino/issues/new');
-    expect(url.searchParams.get('body')).toBe(
-      [
-        'Description:',
-        '',
-        'Steps:',
-        '',
-        'Expected Outcome:',
-        '',
-        'Actual Outcome:',
-        '',
-        'Page: /docs/editor?id=doc-1',
-      ].join('\n')
-    );
+    expect(url.origin + url.pathname).toBe('https://github.com/wcherry/neutrino/issues/new/choose');
+  });
+
+  it('carries no prefill, which would skip the chooser and the issue forms', () => {
+    expect(new URL(BUG_REPORT_URL).search).toBe('');
   });
 });

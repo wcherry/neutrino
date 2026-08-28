@@ -35,7 +35,7 @@ import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
 import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
 import { driveSearchHref } from './drive/searchParams';
-import { bugReportHref } from '@/lib/bugReport';
+import { BUG_REPORT_URL } from '@/lib/bugReport';
 import { signInHref } from '@/lib/signInRedirect';
 import { FULL_VERSION_LABEL, VERSION_LABEL } from '@/lib/version';
 import { clearDriveImageCache } from '@/lib/driveImages';
@@ -120,18 +120,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
 
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
-
-  // The bug report carries the page it was filed from. Read off `window` rather
-  // than `usePathname` alone so the query string comes with it (`?id=…` is what
-  // identifies the document an editor bug happened in), and off an effect
-  // because this layout is prerendered — no `location` on the server. No dep
-  // array: a re-render is the only signal we get for a query-only navigation.
-  const [reportPage, setReportPage] = useState(pathname);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- the equality guard is what stops the loop
-  useEffect(() => {
-    const current = window.location.pathname + window.location.search;
-    setReportPage((prev) => (prev === current ? prev : current));
-  });
 
   async function handleUpload(files: FileList) {
     const fileArr = Array.from(files);
@@ -285,7 +273,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       unreadNotificationCount={unreadCount}
       onNotificationRead={markRead}
       onMarkAllNotificationsRead={markAllRead}
-      bugReportHref={bugReportHref(reportPage)}
+      bugReportHref={BUG_REPORT_URL}
       onSettings={() => router.push('/settings')}
       onImport={() => router.push('/import')}
       onSignOut={handleSignOut}

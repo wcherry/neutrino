@@ -1,31 +1,16 @@
 /**
  * "Report a bug" link for the topbar.
  *
- * GitHub prefills a new issue from query parameters, so the whole template can
- * be baked into the href — no issue-form YAML in the repo and nothing to keep
- * in sync. The page the reporter was on is the one detail they can't be
- * expected to remember accurately, so it is filled in for them.
+ * Points at the new-issue chooser, not at a prefilled blank issue. The repo now
+ * carries issue forms (`.github/ISSUE_TEMPLATE/`) with `blank_issues_enabled:
+ * false`, so a `?body=` prefill is asking for the one thing the repo no longer
+ * accepts: it skips the form that gathers the version, the install method and
+ * the affected app, and skips the Security Vulnerability contact link that
+ * exists to keep those reports out of public issues.
+ *
+ * That means the reporter picks a type and fills the form in themselves — the
+ * page they were on included, which the prefill used to carry. A template
+ * cannot be preselected without bypassing the chooser again, which is the
+ * behaviour being removed.
  */
-const ISSUES_NEW_URL = 'https://github.com/wcherry/neutrino/issues/new';
-
-function issueBody(page: string): string {
-  return [
-    'Description:',
-    '',
-    'Steps:',
-    '',
-    'Expected Outcome:',
-    '',
-    'Actual Outcome:',
-    '',
-    `Page: ${page}`,
-  ].join('\n');
-}
-
-/**
- * @param page Where the bug was seen — a path such as `/docs/editor?id=abc`.
- */
-export function bugReportHref(page: string): string {
-  const params = new URLSearchParams({ body: issueBody(page) });
-  return `${ISSUES_NEW_URL}?${params.toString()}`;
-}
+export const BUG_REPORT_URL = 'https://github.com/wcherry/neutrino/issues/new/choose';
