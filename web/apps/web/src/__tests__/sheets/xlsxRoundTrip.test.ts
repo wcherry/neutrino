@@ -21,6 +21,9 @@ const DEK = new Uint8Array(32).fill(6);
 const getSheet = vi.fn();
 const getFileMetadata = vi.fn();
 const downloadFile = vi.fn();
+// The office-mode read goes through `driveReadBytes`, which reads a file whose
+// body was never written as zero bytes rather than letting its 409 throw.
+const readBytes = vi.fn();
 const driveAutosaveEncryptedBytes = vi.fn();
 
 vi.mock('@/lib/api', () => ({
@@ -36,6 +39,7 @@ vi.mock('@/lib/api', () => ({
   },
   sheetsApi: { getSheet: (...a: unknown[]) => getSheet(...a), saveSheet: vi.fn() },
   driveReadContent: vi.fn(),
+  driveReadBytes: (...a: unknown[]) => readBytes(...a),
   driveCreateEncryptedVersion: vi.fn(),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve({ contentVersion: 2 })),
   driveAutosaveEncryptedBytes: (...a: unknown[]) => driveAutosaveEncryptedBytes(...a),
@@ -169,6 +173,7 @@ beforeEach(() => {
 });
 
 async function storedBytes(bytes: Uint8Array) {
+  readBytes.mockResolvedValue(bytes);
   downloadFile.mockResolvedValue(new Blob([bytes.buffer as ArrayBuffer]));
 }
 

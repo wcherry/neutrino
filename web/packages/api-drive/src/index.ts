@@ -10,6 +10,7 @@ export {
   sharedWithMeApi,
   sharedDrivesApi,
   driveReadContent,
+  driveReadBytes,
   driveAutosaveEncryptedContent,
   driveCreateEncryptedVersion,
   driveAutosaveEncryptedBytes,

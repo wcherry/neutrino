@@ -65,7 +65,7 @@ import {
 import { ShareButton, Spinner, useToast, ZoomSlider } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import {
-  docsApi, driveReadContent, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
+  docsApi, driveReadContent, driveReadBytes, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
   driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes, extractDocText,
   uploadDriveFile, mintFileKey, canEncryptFor, isMissingEncryptionKey,
   storageApi, filesystemApi, ApiClientError, DEFAULT_PAGE_SETUP,
@@ -1267,8 +1267,14 @@ export function DocEditor() {
    * bytes fails; reading a real ciphertext as a zip fails just as loudly.
    */
   const readOfficeBytes = useCallback(async (): Promise<ArrayBuffer | null> => {
-    const blob = await storageApi.downloadFile(docId);
-    const bytes = new Uint8Array(await blob.arrayBuffer());
+    // `driveReadBytes`, not `downloadFile`: a document created a moment ago has
+    // no body yet, and that answers the download endpoint with 409
+    // `NO_CONTENT`. It reads as the zero bytes the caller below already knows
+    // how to open as a blank document.
+    const bytes = await driveReadBytes(docId);
+    // No body is never ciphertext — decrypting it would fail and report a new
+    // document as an unopenable one.
+    if (bytes.byteLength === 0) return new ArrayBuffer(0);
     if (!dekRef.current || isNewEncryption) return bytes.buffer as ArrayBuffer;
     const plain = decryptFile(bytes, dekRef.current);
     return plain.buffer.slice(plain.byteOffset, plain.byteOffset + plain.byteLength) as ArrayBuffer;

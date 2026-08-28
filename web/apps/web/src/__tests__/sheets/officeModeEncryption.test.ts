@@ -28,6 +28,9 @@ const DEK = new Uint8Array(32).fill(6);
 const getSheet = vi.fn();
 const getFileMetadata = vi.fn();
 const downloadFile = vi.fn();
+// The office-mode read goes through `driveReadBytes` — see the module comment
+// on it for why a plain download is not enough.
+const readBytes = vi.fn();
 const driveAutosaveEncryptedBytes = vi.fn();
 const driveCreateEncryptedVersionBytes = vi.fn();
 const toastWarning = vi.fn();
@@ -48,6 +51,7 @@ vi.mock('@/lib/api', () => ({
     saveSheet: vi.fn(() => Promise.resolve()),
   },
   driveReadContent: vi.fn(() => Promise.resolve('{"sheets":[]}')),
+  driveReadBytes: (...a: unknown[]) => readBytes(...a),
   driveCreateEncryptedVersion: vi.fn(() => Promise.resolve()),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve({ contentVersion: 2 })),
   driveAutosaveEncryptedBytes: (...a: unknown[]) => driveAutosaveEncryptedBytes(...a),
@@ -167,6 +171,7 @@ beforeEach(() => {
   isNewEncryption = false;
   getSheet.mockRejectedValue(new ApiClientError(404, 'not_found', 'no sheets row'));
   getFileMetadata.mockResolvedValue({ id: 'file-1', name: 'Budget.xlsx', mimeType: XLSX_MIME });
+  readBytes.mockResolvedValue(asCiphertext(RAW_XLSX));
   downloadFile.mockResolvedValue(new Blob([asCiphertext(RAW_XLSX).buffer as ArrayBuffer]));
 });
 
@@ -186,7 +191,7 @@ describe('opening an office-mode file', () => {
 
   it('reads a legacy plaintext file as-is despite holding a fresh key', async () => {
     isNewEncryption = true;
-    downloadFile.mockResolvedValue(new Blob([RAW_XLSX.buffer as ArrayBuffer]));
+    readBytes.mockResolvedValue(RAW_XLSX);
 
     await loadInOfficeMode();
 

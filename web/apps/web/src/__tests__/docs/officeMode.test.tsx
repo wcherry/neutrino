@@ -39,10 +39,13 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
+// A stable handle, so a test can assert the editor did *not* report a failure.
+const mockToastError = vi.fn();
+
 vi.mock('@neutrino/ui', () => ({
   Spinner: ({ overlay }: { overlay?: boolean }) =>
     React.createElement('div', { 'data-testid': 'spinner', 'data-overlay': overlay }),
-  useToast: () => ({ warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ warning: vi.fn(), success: vi.fn(), error: mockToastError, info: vi.fn() }),
   ShareButton: () => null,
   ZoomSlider: () => null,
 }));
@@ -82,6 +85,13 @@ vi.mock('@/providers/FeatureFlagsProvider', () => ({
 const mockGetDoc = vi.fn();
 const mockGetFileMetadata = vi.fn();
 const mockDownloadFile = vi.fn();
+/**
+ * The office load path reads through `driveReadBytes`, not `downloadFile`
+ * directly: a document that has just been created has no body at all, and the
+ * download endpoint answers that with 409 `NO_CONTENT`. See the empty-document
+ * test at the bottom of this file.
+ */
+const mockReadBytes = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   DEFAULT_PAGE_SETUP: {
@@ -106,6 +116,7 @@ vi.mock('@/lib/api', () => ({
     saveDoc: vi.fn(() => Promise.resolve()),
   },
   driveReadContent: vi.fn(() => Promise.resolve('')),
+  driveReadBytes: (...args: unknown[]) => mockReadBytes(...args),
   driveCreateVersion: vi.fn(() => Promise.resolve()),
   driveCreateEncryptedVersion: vi.fn(() => Promise.resolve()),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve()),
@@ -300,7 +311,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
       name: 'report.docx',
       mimeType: DOCX_MIME,
     });
-    mockDownloadFile.mockResolvedValue(new Blob(['fake docx bytes']));
+    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake docx bytes'));
 
     renderDocEditor();
 
@@ -314,7 +325,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
       name: 'report.docx',
       mimeType: DOCX_MIME,
     });
-    mockDownloadFile.mockResolvedValue(new Blob(['fake docx bytes']));
+    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake docx bytes'));
 
     renderDocEditor();
 
@@ -338,7 +349,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
       name: 'report.docx',
       mimeType: DOCX_MIME,
     });
-    mockDownloadFile.mockResolvedValue(new Blob(['a packed .docx']));
+    mockReadBytes.mockResolvedValue(new TextEncoder().encode('a packed .docx'));
     mockReadNeutrinoModel.mockResolvedValue(
       JSON.stringify({ doc: { type: 'doc', content: [] }, _meta: { pageSize: 'a4' } }),
     );
@@ -362,6 +373,33 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
       timeout: 3000,
     });
     expect(mockReadDocx).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The state every document is in for the moment between "New document" and
+   * its first save: `createDoc` inserts the Drive row with no body, because a
+   * `.docx` is a zip the server has no business building. The download endpoint
+   * answers that with 409 `NO_CONTENT`, which used to throw straight past the
+   * empty branch and end on "Failed to open this file for editing" — so a new
+   * document could not be opened at all. `driveReadBytes` reads it as no bytes.
+   */
+  it('opens a document whose body has never been written', async () => {
+    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
+    mockGetFileMetadata.mockResolvedValue({
+      id: 'test-doc-id',
+      name: 'Untitled document.docx',
+      mimeType: DOCX_MIME,
+    });
+    mockReadBytes.mockResolvedValue(new Uint8Array(0));
+
+    renderDocEditor();
+
+    await waitFor(() => expect(mockReadBytes).toHaveBeenCalledWith('test-doc-id'));
+    // Nothing to parse, and nothing to report: the blank document already on
+    // screen is what an empty record should look like.
+    await waitFor(() => expect(mockToastError).not.toHaveBeenCalled());
+    expect(mockReadDocx).not.toHaveBeenCalled();
+    expect(screen.queryByText(/document not found/i)).not.toBeInTheDocument();
   });
 
   it('does NOT enter office mode for a fallback file that is not an office format', async () => {
