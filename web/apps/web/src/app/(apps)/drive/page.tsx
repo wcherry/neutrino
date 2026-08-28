@@ -4,7 +4,7 @@
 // There is no static server shell of non-trivial size to extract.
 
 import React, { Suspense, useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Heading,
   Text,
@@ -48,6 +48,8 @@ import {
 } from './gridItems';
 import styles from './page.module.css';
 
+/** Items fetched per request; more are pulled in as the grid is scrolled. */
+const CONTENTS_PAGE_SIZE = 200;
 
 function triggerBlobDownload(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -228,20 +230,55 @@ function DriveContent() {
     queryFn: () => filesystemApi.getStarred(5),
   });
 
-  const { data: contentsData, isLoading, isError } = useQuery({
+  const {
+    data: contentsData,
+    isLoading,
+    isError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['contents', currentFolderId, currentUser?.id, { orderBy: sortBy, direction: sortDir }],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       filesystemApi.getFolderContents(currentFolderId ?? currentUser!.id, {
-        limit: 200,
-        offset: 0,
+        limit: CONTENTS_PAGE_SIZE,
+        offset: pageParam,
         orderBy: sortBy,
         direction: sortDir,
       }),
+    initialPageParam: 0,
+    // The endpoint paginates subfolders and files independently — the same
+    // offset is applied to each list — so a page is only the last one when
+    // both came back short.
+    getNextPageParam: (lastPage, _pages, lastOffset) =>
+      lastPage.folders.length === CONTENTS_PAGE_SIZE || lastPage.files.length === CONTENTS_PAGE_SIZE
+        ? lastOffset + CONTENTS_PAGE_SIZE
+        : undefined,
     enabled: !!currentFolderId || !!currentUser,
   });
 
-  const folders: FolderItem[] = contentsData?.folders ?? [];
-  const files: FileItem[] = contentsData?.files ?? [];
+  // Folders across all pages first, then files across all pages: the grid puts
+  // folders ahead of files, and concatenating page by page would interleave the
+  // two once a second page arrived.
+  const pages = contentsData?.pages;
+  const folders: FolderItem[] = useMemo(() => pages?.flatMap((p) => p.folders) ?? [], [pages]);
+  const files: FileItem[] = useMemo(() => pages?.flatMap((p) => p.files) ?? [], [pages]);
+
+  // ── Infinite scroll ──────────────────────────────────────────────────────
+  // The sentinel sits after the last item inside the grid, so it works in the
+  // detailed list (which scrolls itself) as well as the card views (where the
+  // page scrolls). Held in state rather than a ref so the observer is attached
+  // as soon as the node mounts.
+  const [loadMoreEl, setLoadMoreEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!loadMoreEl || !hasNextPage || isFetchingNextPage) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries.some((e) => e.isIntersecting)) fetchNextPage(); },
+      { rootMargin: '400px' }
+    );
+    observer.observe(loadMoreEl);
+    return () => observer.disconnect();
+  }, [loadMoreEl, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Build lookup maps for context menu callbacks (need original objects)
   const fileMap = useMemo(() => new Map(files.map((f) => [f.id, f])), [files]);
@@ -738,6 +775,13 @@ function DriveContent() {
             searchTerm
               ? searchHits?.length
               : isLoading ? undefined : folders.length + files.length
+          }
+          footer={
+            !searchTerm && hasNextPage ? (
+              <div ref={setLoadMoreEl} className={styles['load-more']} aria-live="polite">
+                {isFetchingNextPage && <Text size="sm" color="muted">Loading more…</Text>}
+              </div>
+            ) : undefined
           }
         />
       </section>

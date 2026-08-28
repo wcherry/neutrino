@@ -503,3 +503,13 @@
   justify-content: flex-end;
   gap: var(--space-2);
 }
+
+/* Infinite-scroll sentinel. Tall enough that the next page starts loading
+   before the user reaches the very bottom of the list. */
+.load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: var(--space-3);
+}
