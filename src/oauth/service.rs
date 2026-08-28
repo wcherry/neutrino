@@ -1,6 +1,7 @@
 use super::dto::{AuthorizeQuery, RevokeRequest, TokenRequest, TokenResponse};
 use super::repository::{NewOauthAuthorizationCode, OauthRepository};
 use crate::auth::repository::{AuthRepository, NewRefreshToken};
+use crate::auth::service::refresh_reuse_grace;
 use crate::auth::tokens::hash_token;
 use crate::shared::{ApiError, auth::tokens::TokenService};
 use base64::Engine as _;
@@ -174,22 +175,15 @@ impl OauthService {
     pub fn refresh_token(&self, refresh_token: &str) -> Result<TokenResponse, ApiError> {
         let token_hash = hash_token(refresh_token);
 
+        let now = Utc::now().naive_utc();
         let stored = self
             .auth_repo
-            .find_refresh_token_by_hash(&token_hash)?
-            .ok_or_else(|| ApiError::unauthorized("Invalid refresh token"))?;
-
-        if stored.expires_at < Utc::now().naive_utc() {
-            let _ = self.auth_repo.delete_refresh_token(&stored.id);
-            return Err(ApiError::unauthorized("Refresh token has expired"));
-        }
+            .consume_refresh_token(&token_hash, now, refresh_reuse_grace())?;
 
         let user = self
             .auth_repo
             .find_user_by_id(&stored.user_id)?
             .ok_or_else(|| ApiError::unauthorized("User not found"))?;
-
-        self.auth_repo.delete_refresh_token(&stored.id)?;
 
         let is_admin = user.role == "admin";
         let access_token =

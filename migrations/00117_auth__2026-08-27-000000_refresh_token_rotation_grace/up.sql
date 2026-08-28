@@ -1,0 +1,33 @@
+-- Give a rotated refresh token a short grace period instead of deleting it.
+--
+-- Refresh is rotating: presenting a refresh token returns a new pair and the
+-- old token is retired. Until now "retired" meant the row was deleted in the
+-- same request, so a second presentation of that token — even one millisecond
+-- later — was answered with 401 "Invalid refresh token", and the browser
+-- answers a failed refresh by wiping both tokens out of `localStorage` and
+-- hard-redirecting to /sign-in.
+--
+-- That is a race any client with more than one thing in flight will lose. It
+-- was found during a Google Takeout import: the run is hours long and the
+-- access token lives fifteen minutes, so every quarter of an hour a
+-- clutch of requests 401s at once and races to refresh — and it only takes a
+-- second browser tab, a phone signed into the same account, or a request that
+-- 401s while another refresh is already in flight for two of them to present
+-- the same token. One wins; the loser signs the account out, taking the import
+-- down with it.
+--
+--   rotated_at  when this token was exchanged for a new pair. NULL for a token
+--               that has not been used yet — which is what every existing row
+--               is, correctly, since rotation deleted the others.
+--
+-- A row with `rotated_at` set is still accepted for a short window (see
+-- `REFRESH_REUSE_GRACE_SECS`), after which it is refused and deleted. The
+-- window is measured from the first rotation, so a chain of replays cannot
+-- keep a token alive indefinitely, and rows past it are purged on the next
+-- refresh rather than lingering.
+--
+-- Sessions are listed from this table, so `list_refresh_tokens_for_user`
+-- filters rotated rows out: a rotated row is the previous step of a session
+-- that is still listed under its current token, not a second device.
+
+ALTER TABLE refresh_tokens ADD COLUMN rotated_at TIMESTAMP;

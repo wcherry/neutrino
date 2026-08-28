@@ -68,7 +68,9 @@ const PUBLIC_PATHS = [
   '/self-host/',
   '/share',
 ];
-let refreshInFlight: Promise<{ accessToken: string; refreshToken: string; tokenType: string; expiresIn: number } | null> | null = null;
+type Tokens = { accessToken: string; refreshToken: string; tokenType: string; expiresIn: number };
+
+let refreshInFlight: Promise<Tokens | null> | null = null;
 
 export function getAuthHeader(): Record<string, string> {
   if (typeof window === 'undefined') return {};
@@ -117,11 +119,13 @@ export function clearAuthAndRedirect(): void {
   }
 }
 
-export async function refreshTokens(refreshToken?: string): Promise<{ accessToken: string; refreshToken: string; tokenType: string; expiresIn: number } | null> {
-  if (typeof window === 'undefined') return null;
-  const token = refreshToken ?? localStorage.getItem('refresh_token');
+function storedRefreshToken(): string | null {
+  const token = localStorage.getItem('refresh_token');
   if (!token || token === 'undefined' || token === 'null') return null;
+  return token;
+}
 
+async function postRefresh(token: string): Promise<Tokens | null> {
   try {
     const res = await fetch(`${BASE_URL}${AUTH_REFRESH_PATH}`, {
       method: 'POST',
@@ -130,7 +134,7 @@ export async function refreshTokens(refreshToken?: string): Promise<{ accessToke
     });
 
     if (!res.ok) return null;
-    const tokens = await res.json() as { accessToken: string; refreshToken: string; tokenType: string; expiresIn: number };
+    const tokens = await res.json() as Tokens;
     localStorage.setItem('access_token', tokens.accessToken);
     localStorage.setItem('refresh_token', tokens.refreshToken);
     return tokens;
@@ -139,7 +143,37 @@ export async function refreshTokens(refreshToken?: string): Promise<{ accessToke
   }
 }
 
-export async function refreshTokensOnce(): Promise<{ accessToken: string; refreshToken: string; tokenType: string; expiresIn: number } | null> {
+/**
+ * Trade the stored refresh token for a new pair.
+ *
+ * Refresh is rotating, so the token that was sent is spent whether or not this
+ * caller is the one that used it. `refreshTokensOnce` keeps one tab from
+ * racing itself, but nothing keeps a *second* tab — or the phone signed into
+ * the same account — from refreshing at the same moment, and the loser of that
+ * race would report failure, which every caller answers by clearing the
+ * session and bouncing to sign-in. That is what stopped a Google Takeout
+ * import mid-run: hours of uploads across a fifteen-minute access token, so
+ * the race comes up every quarter of an hour.
+ *
+ * The server now honours a token replayed within a short grace window, and
+ * this is the other half: if the request failed and the stored refresh token
+ * has changed underneath us, someone else has already rotated it, so retry
+ * once with what they left rather than declaring the session dead.
+ */
+export async function refreshTokens(refreshToken?: string): Promise<Tokens | null> {
+  if (typeof window === 'undefined') return null;
+  const token = refreshToken ?? storedRefreshToken();
+  if (!token) return null;
+
+  const tokens = await postRefresh(token);
+  if (tokens) return tokens;
+
+  const rotated = storedRefreshToken();
+  if (!rotated || rotated === token) return null;
+  return postRefresh(rotated);
+}
+
+export async function refreshTokensOnce(): Promise<Tokens | null> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
     try {
