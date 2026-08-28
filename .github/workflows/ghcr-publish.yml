@@ -10,10 +10,14 @@ permissions:
   packages: write
 
 env:
-  # Major and minor for the version the UI reports; the patch is the run number,
-  # so every published image gets its own without anything being committed back.
-  # Bump this by hand when a release calls for it.
-  BASE_VERSION: "0.1"
+  # Major and minor for the version the UI reports; the patch is the run number
+  # offset by BASE_NUMBER, so every published image gets its own patch without
+  # anything being committed back, and the count restarts near zero for each
+  # minor rather than carrying the whole repo's build history forward.
+  # Bump both by hand when a release calls for it: BASE_NUMBER is the run number
+  # of the last build on the *previous* minor.
+  BASE_VERSION: "0.2"
+  BASE_NUMBER: 125
 
 jobs:
   build-and-push:
@@ -38,7 +42,7 @@ jobs:
       # `web/version.txt` are the same string.
       - name: Resolve app version
         id: version
-        run: echo "version=${BASE_VERSION}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+        run: echo "version=${BASE_VERSION}.$(( GITHUB_RUN_NUMBER - BASE_NUMBER ))" >> "$GITHUB_OUTPUT"
 
       - name: Extract Docker metadata
         id: meta
