@@ -1,4 +1,4 @@
-import { request, ApiClientError, refreshTokens } from '@neutrino/api-core';
+import { request, ApiClientError, refreshTokens, refreshTokensOnce } from '@neutrino/api-core';
 import { emitAuthChanged } from './authEvents';
 import type {
   RegisterRequest,
@@ -40,6 +40,15 @@ export const authApi = {
     return tokens;
   },
 
+  /**
+   * Refresh the session by hand, for the caller that has to do it outside a
+   * request — `(apps)/layout.tsx` on a cold load.
+   *
+   * With no token given this goes through `refreshTokensOnce`, which shares one
+   * refresh with whatever `request()` has already started. Rotation spends the
+   * token, so two independent refreshes are a race the loser used to answer by
+   * signing the user out — see `refreshTokens`.
+   */
   async refresh(refreshToken?: string): Promise<AuthTokens> {
     const token =
       refreshToken ??
@@ -47,7 +56,7 @@ export const authApi = {
     if (!token || token === 'undefined' || token === 'null') {
       throw new ApiClientError(401, 'NO_REFRESH_TOKEN', 'No refresh token available');
     }
-    const tokens = await refreshTokens(token);
+    const tokens = refreshToken ? await refreshTokens(refreshToken) : await refreshTokensOnce();
     if (!tokens) {
       throw new ApiClientError(401, 'REFRESH_FAILED', 'Unable to refresh session');
     }

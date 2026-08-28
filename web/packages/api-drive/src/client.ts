@@ -521,6 +521,36 @@ export async function driveReadContent(path: string): Promise<string> {
   }
 }
 
+/**
+ * Read a file's stored bytes, treating "never written" as zero bytes.
+ *
+ * `driveReadContent`'s counterpart for the editors that store an OOXML package
+ * rather than text, and it exists for the same reason. A `.docx`, `.xlsx` or
+ * `.pptx` is a zip, so `createDoc`/`createSheet`/`createSlide` deliberately
+ * insert the Drive row with no body at all — the server has no business
+ * building a package, and could only write one in the clear. The row's
+ * `storage_path` is therefore empty until the editor's first save, and the
+ * download endpoint answers an empty path with 409 `NO_CONTENT`.
+ *
+ * Each office-mode reader already had a branch for "zero bytes: open the blank
+ * default and let the first save write a real package" — but the 409 threw
+ * before that branch could be reached, so creating a document ended on "Failed
+ * to open this file for editing" instead. Reading no content as no bytes is
+ * what makes those branches reachable.
+ *
+ * As with `driveReadContent`, only `NO_CONTENT` is swallowed: `CONTENT_MISSING`
+ * means the row outlived its blob, which is a real fault and still throws.
+ */
+export async function driveReadBytes(fileId: string): Promise<Uint8Array> {
+  try {
+    const blob = await storageApi.downloadFile(fileId);
+    return new Uint8Array(await blob.arrayBuffer());
+  } catch (err) {
+    if (err instanceof ApiClientError && err.code === 'NO_CONTENT') return new Uint8Array(0);
+    throw err;
+  }
+}
+
 // `driveWriteContent`, `driveAutosaveContent` and `driveCreateVersion` used to
 // sit here. All three wrote a document's JSON to Drive as plaintext, and every
 // editor called one of them as the `else` branch of a key check — which is how

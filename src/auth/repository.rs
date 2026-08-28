@@ -60,6 +60,9 @@ pub struct RefreshToken {
     pub user_agent: Option<String>,
     pub ip_address: Option<String>,
     pub last_used_at: Option<NaiveDateTime>,
+    /// When this token was exchanged for a new pair. NULL until it is used.
+    /// See `consume_refresh_token` for why a spent token is kept for a while.
+    pub rotated_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Insertable)]
@@ -340,6 +343,107 @@ impl AuthRepository {
         Ok(result)
     }
 
+    /// Present a refresh token for rotation, returning the row it names.
+    ///
+    /// Both refresh endpoints — `/api/v1/auth/refresh` and the OAuth token
+    /// endpoint — go through here so the rules stay in one place:
+    ///
+    /// * an unknown token is rejected, as before;
+    /// * an expired token is rejected and deleted, as before;
+    /// * the **first** presentation marks the row rotated and hands it back;
+    /// * a **repeat** presentation inside `grace` is still honoured, because
+    ///   it is a client that had two requests in flight when its access token
+    ///   expired, not an attacker — and refusing it signs the user out
+    ///   (see migration 00117);
+    /// * a repeat presentation after `grace` is rejected and the row deleted.
+    ///
+    /// The claim is a conditional `UPDATE … WHERE rotated_at IS NULL`, so two
+    /// requests racing on the same token cannot both be the first: SQLite
+    /// serialises the writes and the loser is told it is a replay.
+    ///
+    /// Rows whose grace has run out are purged on the way in, which is what
+    /// keeps spent tokens from accumulating in a table that is also the user's
+    /// session list.
+    ///
+    /// Every statement runs on the one connection this takes out. Calling
+    /// `delete_refresh_token` from here instead would ask the pool for a second
+    /// connection while still holding the first, which is a deadlock the moment
+    /// the pool is that small — the test pool is exactly one.
+    pub fn consume_refresh_token(
+        &self,
+        token_hash_val: &str,
+        now: NaiveDateTime,
+        grace: chrono::Duration,
+    ) -> Result<RefreshToken, ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        diesel::delete(
+            refresh_tokens::table.filter(refresh_tokens::rotated_at.lt(Some(now - grace))),
+        )
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB delete error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+
+        let claimed = diesel::update(
+            refresh_tokens::table
+                .filter(refresh_tokens::token_hash.eq(token_hash_val))
+                .filter(refresh_tokens::rotated_at.is_null()),
+        )
+        .set(refresh_tokens::rotated_at.eq(Some(now)))
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB update error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+
+        let stored = refresh_tokens::table
+            .filter(refresh_tokens::token_hash.eq(token_hash_val))
+            .select(RefreshToken::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB query error: {:?}", e);
+                ApiError::internal("Database query error")
+            })?
+            .ok_or_else(|| ApiError::unauthorized("Invalid refresh token"))?;
+
+        let discard = |conn: &mut SqliteConnection| {
+            if let Err(e) =
+                diesel::delete(refresh_tokens::table.filter(refresh_tokens::id.eq(&stored.id)))
+                    .execute(conn)
+            {
+                tracing::error!("DB delete error: {:?}", e);
+            }
+        };
+
+        if stored.expires_at < now {
+            discard(&mut conn);
+            return Err(ApiError::unauthorized("Refresh token has expired"));
+        }
+
+        if claimed == 0 {
+            // Rotated by an earlier request. The purge above already removed
+            // anything past the window, so reaching here with a rotation older
+            // than the grace means the clock moved between the two statements.
+            let rotated_at = stored.rotated_at.unwrap_or(now);
+            if now - rotated_at > grace {
+                discard(&mut conn);
+                return Err(ApiError::unauthorized("Refresh token has already been used"));
+            }
+            tracing::debug!(
+                token_id = %stored.id,
+                "refresh token replayed inside the rotation grace window"
+            );
+        }
+
+        Ok(stored)
+    }
+
     pub fn delete_refresh_token(&self, token_id: &str) -> Result<(), ApiError> {
         let mut conn = self.pool.get().map_err(|e| {
             tracing::error!("DB pool error: {:?}", e);
@@ -365,8 +469,12 @@ impl AuthRepository {
             ApiError::internal("Database connection error")
         })?;
 
+        // Rotated rows are the spent previous steps of sessions that are still
+        // listed under their current token — showing them would turn one
+        // browser into a new "device" every fifteen minutes.
         let tokens = refresh_tokens::table
             .filter(refresh_tokens::user_id.eq(user_id_val))
+            .filter(refresh_tokens::rotated_at.is_null())
             .select(RefreshToken::as_select())
             .load(&mut conn)
             .map_err(|e| {
@@ -901,6 +1009,171 @@ mod public_key_tests {
                 .expect("publishing thread")
                 .unwrap_or_else(|e| panic!("u{i} could not publish its first key: {e:?}"));
             assert_eq!(version, 1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod refresh_token_tests {
+    use super::*;
+    use crate::search::repository::{insert_test_user, test_pool};
+    use chrono::Duration;
+
+    const GRACE: Duration = Duration::seconds(60);
+
+    fn repo_with_user(user_id: &str) -> AuthRepository {
+        let pool = test_pool();
+        insert_test_user(&pool, user_id);
+        AuthRepository::new(pool)
+    }
+
+    fn at(minutes: i64) -> NaiveDateTime {
+        NaiveDateTime::parse_from_str("2026-08-27 12:00:00", "%Y-%m-%d %H:%M:%S").expect("base time")
+            + Duration::minutes(minutes)
+    }
+
+    fn issue(repo: &AuthRepository, user_id: &str, hash: &str, expires_at: NaiveDateTime) -> String {
+        repo.create_refresh_token(NewRefreshToken {
+            id: &format!("tok-{hash}"),
+            user_id,
+            token_hash: hash,
+            expires_at,
+            device_name: Some("Test"),
+            user_agent: None,
+            ip_address: None,
+        })
+        .expect("issue token")
+        .id
+    }
+
+    #[test]
+    fn an_unknown_token_is_refused() {
+        let repo = repo_with_user("u1");
+
+        let err = repo
+            .consume_refresh_token("no-such-hash", at(0), GRACE)
+            .unwrap_err();
+
+        assert_eq!(err.status, 401);
+    }
+
+    #[test]
+    fn an_expired_token_is_refused_and_deleted() {
+        let repo = repo_with_user("u1");
+        issue(&repo, "u1", "h", at(-1));
+
+        let err = repo.consume_refresh_token("h", at(0), GRACE).unwrap_err();
+
+        assert_eq!(err.status, 401);
+        assert!(repo
+            .find_refresh_token_by_hash("h")
+            .expect("lookup")
+            .is_none());
+    }
+
+    #[test]
+    fn a_token_replayed_inside_its_grace_is_still_accepted() {
+        // The concurrency case behind the failure: two requests 401 together,
+        // both refresh, and the second must not be told its session is gone.
+        let repo = repo_with_user("u1");
+        let id = issue(&repo, "u1", "h", at(60));
+
+        let first = repo.consume_refresh_token("h", at(0), GRACE).expect("first");
+        let replay = repo
+            .consume_refresh_token("h", at(0), GRACE)
+            .expect("replay inside the grace window");
+
+        assert_eq!(first.id, id);
+        assert_eq!(replay.id, id);
+    }
+
+    #[test]
+    fn refresh_token_is_refused_once_its_grace_expires() {
+        let repo = repo_with_user("u1");
+        issue(&repo, "u1", "h", at(600));
+
+        repo.consume_refresh_token("h", at(0), GRACE).expect("first");
+        let err = repo.consume_refresh_token("h", at(5), GRACE).unwrap_err();
+
+        assert_eq!(err.status, 401);
+        assert!(
+            repo.find_refresh_token_by_hash("h")
+                .expect("lookup")
+                .is_none(),
+            "a token refused after its grace should not be left on the row"
+        );
+    }
+
+    #[test]
+    fn the_grace_runs_from_the_first_rotation_not_from_each_replay() {
+        // Otherwise a client that kept presenting the same spent token would
+        // hold it open forever.
+        let repo = repo_with_user("u1");
+        issue(&repo, "u1", "h", at(600));
+
+        repo.consume_refresh_token("h", at(0), GRACE).expect("first");
+        repo.consume_refresh_token("h", at(0), GRACE).expect("replay");
+        let err = repo.consume_refresh_token("h", at(2), GRACE).unwrap_err();
+
+        assert_eq!(err.status, 401);
+    }
+
+    #[test]
+    fn spent_tokens_are_purged_on_the_next_refresh() {
+        let repo = repo_with_user("u1");
+        issue(&repo, "u1", "spent", at(600));
+        issue(&repo, "u1", "live", at(600));
+        repo.consume_refresh_token("spent", at(0), GRACE)
+            .expect("spend the first token");
+
+        repo.consume_refresh_token("live", at(10), GRACE)
+            .expect("refresh with the live token");
+
+        assert!(
+            repo.find_refresh_token_by_hash("spent")
+                .expect("lookup")
+                .is_none(),
+            "the spent row should not outlive its grace window"
+        );
+    }
+
+    #[test]
+    fn a_rotated_token_is_not_listed_as_a_session() {
+        // Sessions are rows in this table, and a browser rotates every fifteen
+        // minutes — listing the spent rows would show one device as dozens.
+        let repo = repo_with_user("u1");
+        issue(&repo, "u1", "old", at(600));
+        repo.consume_refresh_token("old", at(0), GRACE)
+            .expect("rotate");
+        issue(&repo, "u1", "new", at(600));
+
+        let sessions = repo.list_refresh_tokens_for_user("u1").expect("list");
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].token_hash, "new");
+    }
+
+    #[test]
+    fn racing_threads_agree_on_who_rotated_the_token() {
+        // The claim is a conditional UPDATE precisely so two requests cannot
+        // both be the first; both are still served, from the same row.
+        use std::sync::Arc;
+
+        let repo = Arc::new(repo_with_user("u1"));
+        issue(&repo, "u1", "h", at(600));
+
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let repo = Arc::clone(&repo);
+                std::thread::spawn(move || {
+                    repo.consume_refresh_token("h", at(0), GRACE).map(|t| t.id)
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            let id = handle.join().expect("thread").expect("every racer is served");
+            assert_eq!(id, "tok-h");
         }
     }
 }

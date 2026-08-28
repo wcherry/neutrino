@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   ApiClientError,
   buildQuery,
   shouldSkipRefresh,
   getAuthHeader,
   clearAuthAndRedirect,
+  refreshTokens,
+  refreshTokensOnce,
 } from '../client';
 
 // ---------------------------------------------------------------------------
@@ -180,4 +182,132 @@ describe('clearAuthAndRedirect', () => {
       expect(assigned).toEqual([]);
     },
   );
+});
+
+// ---------------------------------------------------------------------------
+// refreshTokens
+// ---------------------------------------------------------------------------
+
+describe('refreshTokens', () => {
+  const tokens = (n: number) => ({
+    accessToken: `access-${n}`,
+    refreshToken: `refresh-${n}`,
+    tokenType: 'Bearer',
+    expiresIn: 900,
+  });
+
+  function respond(body: unknown) {
+    return { ok: true, json: async () => body } as Response;
+  }
+
+  function reject() {
+    return { ok: false, json: async () => ({}) } as Response;
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('refresh_token', 'refresh-1');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('stores the new pair and returns it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond(tokens(2))));
+
+    const result = await refreshTokens();
+
+    expect(result).toEqual(tokens(2));
+    expect(localStorage.getItem('access_token')).toBe('access-2');
+    expect(localStorage.getItem('refresh_token')).toBe('refresh-2');
+  });
+
+  it('sends the stored token, or the one it is given', async () => {
+    const fetchMock = vi.fn(async () => respond(tokens(2)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await refreshTokens();
+    await refreshTokens('handed-in');
+
+    const sent = fetchMock.mock.calls.map(
+      ([, init]) => JSON.parse((init as RequestInit).body as string).refreshToken,
+    );
+    expect(sent).toEqual(['refresh-1', 'handed-in']);
+  });
+
+  // Rotation spends the token, so a second tab (or a phone on the same
+  // account) refreshing at the same moment leaves this one holding a token the
+  // server has already retired. Reporting failure would sign the user out and
+  // take any long-running work — a Takeout import — down with it.
+  it('retries with the newer token when another tab rotated underneath it', async () => {
+    const fetchMock = vi
+      .fn<(input: unknown, init?: RequestInit) => Promise<Response>>()
+      // Stand in for the other tab: it wins the race and stores its pair while
+      // our request is in flight, so ours comes back refused.
+      .mockImplementationOnce(async () => {
+        localStorage.setItem('refresh_token', 'refresh-9');
+        return reject();
+      })
+      .mockImplementationOnce(async () => respond(tokens(10)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await refreshTokens();
+
+    expect(result).toEqual(tokens(10));
+    expect(
+      JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string).refreshToken,
+    ).toBe('refresh-9');
+  });
+
+  it('gives up when the refresh fails and nothing else rotated the token', async () => {
+    const fetchMock = vi.fn(async () => reject());
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await refreshTokens()).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call the server without a stored token', async () => {
+    localStorage.removeItem('refresh_token');
+    const fetchMock = vi.fn(async () => respond(tokens(2)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await refreshTokens()).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('refreshTokensOnce', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem('refresh_token', 'refresh-1');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // One tab refreshing itself twice is the race we *can* prevent, and must:
+  // the second call would present a token the first has already spent.
+  it('shares one request between concurrent callers', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          json: async () => ({
+            accessToken: 'access-2',
+            refreshToken: 'refresh-2',
+            tokenType: 'Bearer',
+            expiresIn: 900,
+          }),
+        }) as Response,
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const [a, b] = await Promise.all([refreshTokensOnce(), refreshTokensOnce()]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(a).toEqual(b);
+  });
 });

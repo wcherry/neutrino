@@ -58,6 +58,8 @@ vi.mock('@neutrino/auth', () => ({
 const mockGetSlide = vi.fn();
 const mockGetFileMetadata = vi.fn();
 const mockDownloadFile = vi.fn();
+// The office-mode read goes through `driveReadBytes` — see its module comment.
+const mockReadBytes = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   ApiClientError: class ApiClientError extends Error {
@@ -77,6 +79,7 @@ vi.mock('@/lib/api', () => ({
     saveSlide: vi.fn(() => Promise.resolve()),
   },
   driveReadContent: vi.fn(() => Promise.resolve('')),
+  driveReadBytes: (...args: unknown[]) => mockReadBytes(...args),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve()),
   storageApi: {
     getFileMetadata: (...args: unknown[]) => mockGetFileMetadata(...args),
@@ -166,7 +169,7 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
   it('falls back to storageApi.getFileMetadata when slidesApi.getSlide 404s', async () => {
     mockGetSlide.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Presentation not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'deck.pptx', mimeType: PPTX_MIME });
-    mockDownloadFile.mockResolvedValue(new Blob(['fake pptx bytes']));
+    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake pptx bytes'));
 
     renderSlideEditor();
 
@@ -176,7 +179,7 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
   it('enters office mode and imports via importFromPptx for a raw .pptx file', async () => {
     mockGetSlide.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Presentation not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'deck.pptx', mimeType: PPTX_MIME });
-    mockDownloadFile.mockResolvedValue(new Blob(['fake pptx bytes']));
+    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake pptx bytes'));
 
     renderSlideEditor();
 

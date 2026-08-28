@@ -34,6 +34,8 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const mockGetSheet = vi.fn();
 const mockGetFileMetadata = vi.fn();
 const mockDownloadFile = vi.fn();
+// The office-mode read goes through `driveReadBytes` — see its module comment.
+const mockReadBytes = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   ApiClientError: class ApiClientError extends Error {
@@ -51,6 +53,7 @@ vi.mock('@/lib/api', () => ({
     saveSheet: vi.fn(() => Promise.resolve()),
   },
   driveReadContent: vi.fn(() => Promise.resolve('{"sheets":[]}')),
+  driveReadBytes: (...args: unknown[]) => mockReadBytes(...args),
   driveCreateVersion: vi.fn(() => Promise.resolve()),
   driveCreateEncryptedVersion: vi.fn(() => Promise.resolve()),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve()),
@@ -127,7 +130,7 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
   it('falls back to storageApi.getFileMetadata when sheetsApi.getSheet 404s', async () => {
     mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
-    mockDownloadFile.mockResolvedValue(new Blob(['fake xlsx bytes']));
+    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake xlsx bytes'));
 
     const { result } = setupHook();
     await result.current.load();
@@ -138,7 +141,7 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
   it('enters office mode and parses xlsx content via setData for a raw .xlsx file', async () => {
     mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
-    mockDownloadFile.mockResolvedValue(new Blob(['fake xlsx bytes']));
+    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake xlsx bytes'));
 
     const { result, setData } = setupHook();
     await result.current.load();

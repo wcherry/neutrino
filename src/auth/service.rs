@@ -41,6 +41,22 @@ pub fn purge_after(deleted_at: chrono::NaiveDateTime) -> chrono::NaiveDateTime {
     deleted_at + chrono::Duration::days(PURGE_GRACE_DAYS)
 }
 
+/// How long a refresh token stays usable after it has been rotated away.
+///
+/// Refresh is rotating, so presenting a token retires it. Retiring it *and*
+/// refusing it from that instant makes a client with two requests in flight
+/// lose a race it cannot see coming — and the browser answers a failed refresh
+/// by clearing the session, which is why a long-running Takeout import would
+/// stop halfway with "Invalid refresh token". A short window absorbs the
+/// concurrent presentation without letting a spent token live on: it is
+/// measured from the first rotation, not from each replay.
+pub const REFRESH_REUSE_GRACE_SECS: i64 = 60;
+
+/// `REFRESH_REUSE_GRACE_SECS` as a `Duration`, for the repository call.
+pub fn refresh_reuse_grace() -> chrono::Duration {
+    chrono::Duration::seconds(REFRESH_REUSE_GRACE_SECS)
+}
+
 pub struct AuthService {
     repo: Arc<AuthRepository>,
     token_service: Arc<TokenService>,
@@ -172,23 +188,15 @@ impl AuthService {
     pub fn refresh(&self, req: RefreshRequest) -> Result<AuthResponse, ApiError> {
         let token_hash = hash_token(&req.refresh_token);
 
-        let stored_token = self
-            .repo
-            .find_refresh_token_by_hash(&token_hash)?
-            .ok_or_else(|| ApiError::unauthorized("Invalid refresh token"))?;
-
         let now = Utc::now().naive_utc();
-        if stored_token.expires_at < now {
-            let _ = self.repo.delete_refresh_token(&stored_token.id);
-            return Err(ApiError::unauthorized("Refresh token has expired"));
-        }
+        let stored_token =
+            self.repo
+                .consume_refresh_token(&token_hash, now, refresh_reuse_grace())?;
 
         let user = self
             .repo
             .find_user_by_id(&stored_token.user_id)?
             .ok_or_else(|| ApiError::unauthorized("User not found"))?;
-
-        self.repo.delete_refresh_token(&stored_token.id)?;
 
         let is_admin = user.role == "admin";
         let access_token =
@@ -902,7 +910,14 @@ mod tests {
     }
 
     #[test]
-    fn refresh_token_can_only_be_used_once() {
+    fn refresh_token_presented_twice_at_once_is_honoured_both_times() {
+        // Rotation used to make the second presentation a 401, which is a race
+        // any client with two requests in flight loses — and a failed refresh
+        // signs the user out. A Takeout import, which runs for hours across a
+        // fifteen-minute access token, hit it every time. Inside
+        // `REFRESH_REUSE_GRACE_SECS` both callers get a usable session; the
+        // window closing is `refresh_token_is_refused_once_its_grace_expires`
+        // in the repository tests, which can name the clock.
         let svc = make_service();
         svc.register(reg("eve@test.com", "password123", "Eve"))
             .unwrap();
@@ -911,12 +926,31 @@ mod tests {
             .unwrap();
         let refresh_token = login_resp.auth.unwrap().refresh_token;
 
-        svc.refresh(RefreshRequest {
-            refresh_token: refresh_token.clone(),
-        })
-        .unwrap();
-        let err = svc.refresh(RefreshRequest { refresh_token }).unwrap_err();
-        assert_eq!(err.status, 401);
+        let first = svc
+            .refresh(RefreshRequest {
+                refresh_token: refresh_token.clone(),
+            })
+            .unwrap();
+        let second = svc
+            .refresh(RefreshRequest {
+                refresh_token: refresh_token.clone(),
+            })
+            .unwrap();
+
+        assert_ne!(first.refresh_token, refresh_token);
+        assert_ne!(second.refresh_token, refresh_token);
+        assert_ne!(
+            first.refresh_token, second.refresh_token,
+            "each caller should leave with a token of its own"
+        );
+        // Both successors are live sessions, so whichever one the client
+        // happens to store keeps working.
+        for token in [first.refresh_token, second.refresh_token] {
+            svc.refresh(RefreshRequest {
+                refresh_token: token,
+            })
+            .unwrap();
+        }
     }
 
     // ── get_profile ───────────────────────────────────────────────────────────

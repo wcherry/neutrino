@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import type { CellProps, SheetFile, CFRule, TableRegion } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import {
-    sheetsApi, driveReadContent, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
+    sheetsApi, driveReadContent, driveReadBytes, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
     driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes, extractSheetText,
     storageApi, filesystemApi, ApiClientError, type SheetResponse, type FileItem,
 } from '@/lib/api';
@@ -556,14 +556,19 @@ export function usePersistence({
             // same thing the JSON branch does with `sheet.contentVersion`.
             versionGuard.observe(meta.contentVersion);
             try {
-                const blob = await storageApi.downloadFile(sheetId);
-                const stored = new Uint8Array(await blob.arrayBuffer());
+                // `driveReadBytes`, not `downloadFile`: a workbook created a
+                // moment ago has no body, and the download endpoint answers
+                // that with 409 `NO_CONTENT` rather than with the zero bytes
+                // the empty branch below is written for.
+                const stored = await driveReadBytes(sheetId);
                 // Saves are encrypted, so a file that already has a key ref
                 // holds ciphertext. `isNewEncryption` separates the two: it
                 // means the DEK was just minted for a file that had none, so
                 // the stored bytes are still the plaintext `.xlsx` it was
-                // uploaded as, and the first save is what encrypts it.
-                const plain = dekRef.current && !isNewEncryption
+                // uploaded as, and the first save is what encrypts it. No body
+                // at all is neither, and decrypting it would report a new
+                // workbook as an unreadable one.
+                const plain = stored.byteLength > 0 && dekRef.current && !isNewEncryption
                     ? decryptFile(stored, dekRef.current)
                     : stored;
 

@@ -67,7 +67,7 @@ import {
 } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
 import {
-  slidesApi, driveReadContent, driveAutosaveEncryptedContent,
+  slidesApi, driveReadContent, driveReadBytes, driveAutosaveEncryptedContent,
   driveAutosaveEncryptedBytes, mintFileKey, canEncryptFor, extractSlideText,
   storageApi, filesystemApi, encryptionApi, ApiClientError, type FileItem,
 } from '@/lib/api';
@@ -605,16 +605,19 @@ export function SlideEditor() {
     let cancelled = false;
     (async () => {
       try {
-        const blob = await storageApi.downloadFile(slideId);
+        // `driveReadBytes`, not `downloadFile`: the record this deck was just
+        // created as has no body, which the download endpoint answers with 409
+        // `NO_CONTENT` rather than with the zero bytes the empty branch below
+        // is written for.
+        const stored = await driveReadBytes(slideId);
         if (cancelled) return;
         // Office-mode saves are encrypted now, so a file that already has a key
         // ref holds ciphertext. `isNewEncryption` separates the two: it means
         // the DEK was just minted for a file that had none, so what is stored
         // is still the plaintext .pptx it was uploaded as, and the first save
-        // is what encrypts it.
-        const stored = new Uint8Array(await blob.arrayBuffer());
-        if (cancelled) return;
-        const plain = dekRef.current && !isNewEncryption
+        // is what encrypts it. No body at all is neither, and decrypting it
+        // would report a new deck as an unreadable one.
+        const plain = stored.byteLength > 0 && dekRef.current && !isNewEncryption
           ? decryptFile(stored, dekRef.current)
           : stored;
         // A presentation created here starts with no body at all: a `.pptx` is

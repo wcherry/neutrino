@@ -29,6 +29,7 @@ diesel::table! {
         user_agent -> Nullable<Text>,
         ip_address -> Nullable<Text>,
         last_used_at -> Nullable<Timestamp>,
+        rotated_at -> Nullable<Timestamp>,
     }
 }
 
