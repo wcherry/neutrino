@@ -119,7 +119,10 @@ vi.mock('@neutrino/sheet-embed', () => ({
 }));
 
 vi.mock('@tiptap/react', () => {
-  const stub = { create: (config?: unknown) => ({ config, extend: () => stub }), extend: () => stub };
+  // `configure` is part of the surface too: DocEditor configures its own
+  // extensions (PaginationExtension takes the page-count callback that way).
+  const made = (config?: unknown) => ({ config, extend: () => stub, configure: () => made(config) });
+  const stub = { create: made, extend: () => stub, configure: () => made(undefined) };
   return {
     useEditor: () => null,
     EditorContent: () => React.createElement('div', { 'data-testid': 'editor-content' }),
@@ -221,9 +224,7 @@ const ONE_PAGE_PX = 11 * 96;
 /** 0.5in of blank space between two sheets (DocEditor's PAGE_GAP_PX). */
 const GAP_PX = 48;
 /** A document three sheets long, as the observer would report it. */
-const THREE_PAGES_PX = ONE_PAGE_PX * 3;
-/** Three sheets plus the two gaps between them — the rendered stack. */
-const THREE_PAGE_STACK_PX = ONE_PAGE_PX * 3 + GAP_PX * 2;
+const THREE_PAGES_PX = ONE_PAGE_PX * 3 + GAP_PX * 2;
 
 type Observed = { el: Element; owner: FakeResizeObserver; notify: () => void };
 
@@ -304,8 +305,9 @@ describe('DocEditor — page height measurement', () => {
     });
 
     // Regression: stuck at 0, this fell back to one page height and clipped
-    // pages 2-3 behind `overflow: hidden`. Three sheets and the two gaps
-    // between them, since pages are laid out on a page+gap stride.
-    expect(zoomWrapEl(container)!.style.height).toBe(`${THREE_PAGE_STACK_PX}px`);
+    // pages 2-3 behind `overflow: hidden`. The wrapper follows what the sheet
+    // actually renders — how many pages that is, is PaginationExtension's
+    // answer, not this measurement's (issue #136).
+    expect(zoomWrapEl(container)!.style.height).toBe(`${THREE_PAGES_PX}px`);
   });
 });

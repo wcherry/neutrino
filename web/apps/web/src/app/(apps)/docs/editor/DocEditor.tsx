@@ -656,6 +656,13 @@ export function DocEditor() {
   // survives a reload and reaches the other tabs.
   const [splitParagraphs, setSplitParagraphs] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  // How many pages the content covers, reported by PaginationExtension after it
+  // measures the blocks. Deliberately not derived from the sheet's rendered
+  // height: the sheet is `min-height`ed to this many pages, so measuring it
+  // measures our own answer back and a count that ever goes up can never come
+  // back down — issue #136, where a new document opened on two pages and turning
+  // it landscape made three.
+  const [contentPages, setContentPages] = useState(1);
   const [pageScrollHeight, setPageScrollHeight] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
   const editorScrollRef = useRef<HTMLDivElement>(null);
@@ -1054,8 +1061,9 @@ export function DocEditor() {
       // (and pasted data URLs) still parse.
       DriveImageExtension,
       // Pushes any block that would straddle a page boundary onto the next
-      // page, so nothing renders in the margins or the gap between sheets.
-      PaginationExtension,
+      // page, so nothing renders in the margins or the gap between sheets, and
+      // reports how many pages that comes to.
+      PaginationExtension.configure({ onPageCount: setContentPages }),
       // `{{title}}`, `{{page}}`, `{{author:My Self}}` — codes that stand for a
       // value resolved when they are drawn. Registered after pagination
       // because `{{page}}` is measured against the pages pagination decides.
@@ -2233,7 +2241,7 @@ export function DocEditor() {
   // so page k starts at k * pageStride. PaginationExtension breaks content on
   // the same stride — the two must agree or text lands in the gap.
   const pageStride = heightPx + PAGE_GAP_PX;
-  const totalPages = Math.max(1, Math.ceil((pageScrollHeight + PAGE_GAP_PX) / pageStride));
+  const totalPages = Math.max(1, contentPages);
   // Height of the whole stack of sheets: N pages with N-1 gaps between them.
   const pageStackHeight = totalPages * pageStride - PAGE_GAP_PX;
 
@@ -2347,7 +2355,11 @@ export function DocEditor() {
     });
   }, []);
 
-  // Track page div scroll height for total page count.
+  // Track the page div's scroll height, so pageZoomWrap can be sized to hold
+  // whatever the sheet actually renders. Content no spacer can rescue — a
+  // full-page image, a table taller than the printable area — runs past the
+  // stack of sheets, and the wrapper has to grow with it rather than clip it.
+  // Not what the page count is measured from; see `contentPages`.
   // Attached via a callback ref rather than an effect: the page div does not
   // exist on first render (the loading spinner is returned instead), so a
   // mount-time effect would find a null ref, never observe anything, and leave
@@ -2368,6 +2380,13 @@ export function DocEditor() {
     pageResizeObsRef.current?.disconnect();
     pageResizeObsRef.current = null;
   }, []);
+
+  // The page count can now fall as well as rise — deleting content or turning a
+  // document landscape both shorten it — so the page being viewed has to come
+  // back with it, or single page mode snaps the scroll past the last sheet.
+  useEffect(() => {
+    setCurrentPage(p => Math.min(p, totalPages));
+  }, [totalPages]);
 
   // Snap scroll position when single page mode, current page, or zoom changes
   useEffect(() => {
