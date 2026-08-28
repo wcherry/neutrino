@@ -212,6 +212,28 @@ describe('session key resolution', () => {
     );
   });
 
+  it('returns the same keypair object on every read', () => {
+    // `useSessionKeyPair` feeds this to `useSyncExternalStore`, which compares
+    // snapshots by identity — a fresh object per read is an infinite render
+    // loop and the photo editor never mounts (issue #149).
+    const keyring = rotateKeyring(createKeyring(USER));
+    setSessionKeyring(keyring);
+
+    expect(getSessionKeyPair(USER)).toBe(getSessionKeyPair(USER));
+    expect(getSessionKeyPairForVersion(USER, 1)).toBe(getSessionKeyPairForVersion(USER, 1));
+    expect(getSessionKeyPair(USER)).toBe(getSessionKeyPairForVersion(USER, 2));
+  });
+
+  it('hands out a fresh keypair object after the session is replaced', () => {
+    setSessionKeyring(createKeyring(USER));
+    const first = getSessionKeyPair(USER);
+
+    clearSession();
+    setSessionKeyring(createKeyring(USER));
+
+    expect(getSessionKeyPair(USER)).not.toBe(first);
+  });
+
   it('does not serve one account’s keyring to another', () => {
     // On a shared machine a stale keyring would decrypt into the wrong session
     // and re-seal DEKs to the wrong identity.

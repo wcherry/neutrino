@@ -14,7 +14,13 @@
  * the keyring it protects — both are memory-only, both are wiped on lock.
  */
 
-import { activeEntry, entryForVersion, wipeKeyring, type Keyring } from './keyring';
+import {
+  activeEntry,
+  entryForVersion,
+  wipeKeyring,
+  type Keyring,
+  type KeyringEntry,
+} from './keyring';
 
 export interface SessionKeyPair {
   publicKey: Uint8Array;
@@ -71,18 +77,43 @@ export function getSessionKeyring(userId: string): Keyring | null {
 }
 
 /**
+ * The `SessionKeyPair` view of an entry, cached so repeated reads return the
+ * *same* object.
+ *
+ * `useSessionKeyPair` hands these to `useSyncExternalStore`, which compares
+ * snapshots by identity: minting a fresh `{ publicKey, secretKey }` per call
+ * makes every read a new snapshot, so React re-renders forever and the photo
+ * editor — the one component that subscribes — dies on mount with "Maximum
+ * update depth exceeded" (issue #149). Keying off the entry object rather than
+ * its version means a pair can never outlive the keyring it came from: a new
+ * keyring brings new entries, and the old ones (secrets already zeroed by
+ * `wipeKeyring`) become unreachable here as well.
+ */
+const keyPairViews = new WeakMap<KeyringEntry, SessionKeyPair>();
+
+function keyPairFor(entry: KeyringEntry): SessionKeyPair {
+  let view = keyPairViews.get(entry);
+  if (!view) {
+    view = { publicKey: entry.publicKey, secretKey: entry.secretKey };
+    keyPairViews.set(entry, view);
+  }
+  return view;
+}
+
+/**
  * The *active* keypair — what new work is sealed to.
  *
  * Synchronous on purpose. A dozen call sites across Drive, Docs, Notes, Photos
  * and search depend on that, and unlocking is gated at the app shell, so by the
  * time those run the keyring is already in memory. A locked session returns
  * null, which is the same "no key" branch those call sites already handled.
+ *
+ * Referentially stable between lock transitions — see `keyPairFor`.
  */
 export function getSessionKeyPair(userId: string): SessionKeyPair | null {
   const keyring = getSessionKeyring(userId);
   if (!keyring) return null;
-  const active = activeEntry(keyring);
-  return { publicKey: active.publicKey, secretKey: active.secretKey };
+  return keyPairFor(activeEntry(keyring));
 }
 
 /**
@@ -99,7 +130,7 @@ export function getSessionKeyPairForVersion(
   if (!keyring) return null;
   const entry = entryForVersion(keyring, version);
   if (!entry) return null;
-  return { publicKey: entry.publicKey, secretKey: entry.secretKey };
+  return keyPairFor(entry);
 }
 
 /** The version new work should be sealed to, or null while locked. */
