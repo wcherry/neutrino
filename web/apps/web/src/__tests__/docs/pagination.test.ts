@@ -13,6 +13,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import {
   computePageBreaks,
   measureBlocks,
+  paginate,
   type BlockBox,
   type PageBreak,
   type PageMetrics,
@@ -271,6 +272,114 @@ describe('computePageBreaks — paragraph splitting', () => {
   it('is stable across re-runs', () => {
     const blocks = [paragraph(0, 0, 5), paragraph(500, 130, 12), paragraph(1500, 450, 30)];
     expect(computePageBreaks(blocks, SPLIT)).toEqual(computePageBreaks(blocks, SPLIT));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A paragraph that cannot fit a page at all (issue #136)
+// ---------------------------------------------------------------------------
+
+describe('computePageBreaks — paragraphs taller than the page', () => {
+  // Letter landscape: a 672px printable column, which four lines of the largest
+  // font size overrun on their own.
+  const LANDSCAPE: PageMetrics = { pageHeight: 816, marginTop: 72, marginBottom: 72, gap: 48 };
+  const LANDSCAPE_USABLE = 672;
+
+  /** A paragraph of `lineCount` lines at `lineHeight`, starting at the top. */
+  function bigText(lineCount: number, lineHeight: number): BlockBox {
+    const lines = Array.from({ length: lineCount }, (_, i) => ({
+      pos: 1 + i * 50,
+      offset: i * lineHeight,
+      height: lineHeight,
+    }));
+    return { pos: 0, top: 0, height: lineCount * lineHeight, lines };
+  }
+
+  it('splits one even with the setting off — there is no page to keep it on', () => {
+    // Four 205px lines: 820px of text in a 672px column. Kept together it runs
+    // through the bottom margin, the grey gap and off the next sheet, which is
+    // what the bug report describes; the setting cannot be the deciding factor
+    // when moving the paragraph whole fixes nothing.
+    const block = bigText(4, 205);
+    const breaks = computePageBreaks([block], LANDSCAPE);
+
+    expect(breaks).toHaveLength(1);
+    // Inside the paragraph, in front of the first line that does not fit.
+    expect(breaks[0].pos).toBe(block.lines![3].pos);
+
+    for (const line of layoutLines([block], LANDSCAPE)) {
+      const page = Math.floor(line.top / (LANDSCAPE.pageHeight + LANDSCAPE.gap));
+      const start = page * (LANDSCAPE.pageHeight + LANDSCAPE.gap);
+      expect(line.top).toBeGreaterThanOrEqual(start);
+      expect(line.bottom).toBeLessThanOrEqual(start + LANDSCAPE_USABLE);
+    }
+  });
+
+  it('still keeps a paragraph that does fit a page whole', () => {
+    // Three of the same lines fit the column, so this one only straddles the
+    // boundary — the "keep lines together" trade still applies and the whole
+    // paragraph moves down.
+    const blocks = [
+      { pos: 0, top: 0, height: LANDSCAPE_USABLE - 100 },
+      { ...bigText(3, 205), pos: 500, top: LANDSCAPE_USABLE - 100 },
+    ];
+    const breaks = computePageBreaks(blocks, LANDSCAPE);
+
+    expect(breaks.map(b => b.pos)).toEqual([500]);
+  });
+
+  it('leaves a single line taller than the page to overflow', () => {
+    // Nothing to break between: one line is one line whatever its font size.
+    expect(computePageBreaks([bigText(1, LANDSCAPE_USABLE + 200)], LANDSCAPE)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Page count (issue #136)
+// ---------------------------------------------------------------------------
+
+describe('paginate — page count', () => {
+  it('counts an empty document as one page', () => {
+    expect(paginate([], LETTER).pages).toBe(1);
+    // One empty paragraph, which is what a new document actually contains.
+    expect(paginate(stack([28]), LETTER).pages).toBe(1);
+  });
+
+  it('counts a document that exactly fills the printable column as one page', () => {
+    expect(paginate(stack([USABLE]), LETTER).pages).toBe(1);
+  });
+
+  it('counts the page the content ends on, not the sheets it is drawn over', () => {
+    // Two columns' worth of blocks: the second column's blocks are pushed onto
+    // page 2 by the spacers, so the document is two pages.
+    expect(paginate(stack(Array(12).fill(100)), LETTER).pages).toBe(2);
+    expect(paginate(stack(Array(20).fill(100)), LETTER).pages).toBe(3);
+  });
+
+  it('falls as well as rises when the geometry changes', () => {
+    // Turning a document landscape shortens the column, so the same content
+    // covers more pages; turning it back has to give the pages up again. The
+    // count used to be read off the sheet's own height, which is min-heighted to
+    // the count — a loop that could only ever ratchet upwards.
+    const landscape: PageMetrics = { pageHeight: 816, marginTop: 72, marginBottom: 72, gap: 48 };
+    const blocks = stack(Array(8).fill(100));
+
+    expect(paginate(blocks, landscape).pages).toBe(2);
+    expect(paginate(blocks, LETTER).pages).toBe(1);
+  });
+
+  it('counts the pages a block too tall to break runs over', () => {
+    // No spacer can rescue it, so the pages it covers are counted from where it
+    // actually ends — otherwise the sheet under it is not drawn.
+    const { breaks, pages } = paginate(stack([USABLE * 2 + 676]), LETTER);
+
+    expect(breaks).toEqual([]);
+    expect(pages).toBe(3);
+  });
+
+  it('produces one page for degenerate metrics instead of zero', () => {
+    const noRoom: PageMetrics = { pageHeight: 100, marginTop: 60, marginBottom: 60, gap: 48 };
+    expect(paginate(stack([50, 50]), noRoom).pages).toBe(1);
   });
 });
 

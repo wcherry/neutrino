@@ -180,7 +180,10 @@ vi.mock('@/lib/ooxml/docx/read', () => ({ readDocx: () => mockReadDocx() }));
 // Extension/Node/Mark at module scope — so those have to exist on the mock even
 // though no real editor is instantiated here.
 vi.mock('@tiptap/react', () => {
-  const stub = { create: (config?: unknown) => ({ config, extend: () => stub }), extend: () => stub };
+  // `configure` is part of the surface too: DocEditor configures its own
+  // extensions (PaginationExtension takes the page-count callback that way).
+  const made = (config?: unknown) => ({ config, extend: () => stub, configure: () => made(config) });
+  const stub = { create: made, extend: () => stub, configure: () => made(undefined) };
   return {
     useEditor: () => null,
     EditorContent: () => React.createElement('div', { 'data-testid': 'editor-content' }),

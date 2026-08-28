@@ -24,10 +24,20 @@
  * only ever happens between line boxes, so the text reflows identically either
  * way; nothing re-wraps.
  *
- * The one case neither mode can fix: a block taller than the printable area — a
- * full-page image, a long table, a single line in a huge font. No spacer
- * rescues it, so it is left to overflow and the pages after it are counted from
- * where it actually ends.
+ * A paragraph *taller than a whole page* splits whichever way the setting is
+ * left: keeping it together is not a trade at that point but an impossibility,
+ * and a paragraph with nowhere to be kept together just runs off the sheet.
+ *
+ * The one case neither mode can fix: a block with no line boxes to break
+ * between that is still taller than the printable area — a full-page image, a
+ * long table, a single line in a huge font. No spacer rescues it, so it is left
+ * to overflow and the pages after it are counted from where it actually ends.
+ *
+ * The plugin also owns the **page count**, reported through the `onPageCount`
+ * option. It is the only measurement that can be right: the editor's own sheet
+ * has a `min-height` derived from the page count, so counting pages from that
+ * element's height is a loop that can only ratchet upwards — one page too many
+ * makes the sheet taller, which keeps the count there for good.
  */
 
 import { Extension } from '@tiptap/react';
@@ -94,6 +104,21 @@ interface PaginationState {
   decorations: DecorationSet;
 }
 
+export interface PaginationOptions {
+  /**
+   * Called with the number of pages the content occupies whenever it changes.
+   * The editor draws that many sheets; see the module comment for why it cannot
+   * work the number out from the rendered height itself.
+   */
+  onPageCount: ((pages: number) => void) | null;
+}
+
+/** The spacers a document needs, and how many pages it ends up occupying. */
+export interface Pagination {
+  breaks: PageBreak[];
+  pages: number;
+}
+
 /**
  * Where each page's content band starts and ends, in flow coordinates whose
  * origin is the top of page 1's content area. Page k occupies
@@ -118,9 +143,18 @@ function bands(m: PageMetrics): { stride: number; usable: number } {
  * oscillating.
  */
 export function computePageBreaks(blocks: BlockBox[], metrics: PageMetrics): PageBreak[] {
+  return paginate(blocks, metrics).breaks;
+}
+
+/**
+ * `computePageBreaks` plus the page count that falls out of the same walk — the
+ * page the last block ends on, which is the only place that knows where the
+ * content really finishes once every spacer is in.
+ */
+export function paginate(blocks: BlockBox[], metrics: PageMetrics): Pagination {
   const { stride, usable } = bands(metrics);
   const breaks: PageBreak[] = [];
-  if (!(stride > 0) || !(usable > 0)) return breaks;
+  if (!(stride > 0) || !(usable > 0)) return { breaks, pages: 1 };
 
   let page = 0;
   let shift = 0;
@@ -159,8 +193,8 @@ export function computePageBreaks(blocks: BlockBox[], metrics: PageMetrics): Pag
           if (spacer > EPSILON) {
             // Breaking before the *first* line is not a split — there is
             // nothing above it to leave behind — so the spacer goes in front of
-            // the block and the paragraph moves whole, as it would with the
-            // setting off.
+            // the block and the paragraph moves whole. Its later lines are
+            // still split off from wherever it lands.
             breaks.push({ pos: index === 0 ? block.pos : line.pos, height: spacer });
             inner += spacer;
           }
@@ -182,18 +216,26 @@ export function computePageBreaks(blocks: BlockBox[], metrics: PageMetrics): Pag
     while (top + block.height > page * stride + usable + EPSILON) page += 1;
   }
 
-  return breaks;
+  // `page` is the page the last block ends on; pages are counted from it rather
+  // than from the document's rendered height, which the sheet's own min-height
+  // inflates.
+  return { breaks, pages: page + 1 };
 }
 
 /**
  * Whether a block can be broken between its lines rather than moved whole.
- * Needs the setting on, at least two lines to break between, and lines that
- * each fit a page on their own.
+ * Needs at least two lines to break between and lines that each fit a page on
+ * their own.
+ *
+ * The setting only governs paragraphs that *could* be moved whole. One taller
+ * than the printable area could not: "keep lines together" has no page to keep
+ * them together on, and honouring it there means the paragraph runs through the
+ * bottom margin, the gap and every sheet after it — so it splits either way.
  */
 function canSplit(block: BlockBox, usable: number, enabled?: boolean): boolean {
-  if (!enabled) return false;
   const lines = block.lines;
   if (!lines || lines.length < 2) return false;
+  if (!enabled && block.height <= usable + EPSILON) return false;
   return lines.every(l => l.height <= usable + EPSILON);
 }
 
@@ -243,8 +285,15 @@ function sameBreaks(a: PageBreak[], b: PageBreak[]): boolean {
 export function measureBlocks(
   view: EditorView,
   breaks: PageBreak[],
-  splitParagraphs = false,
+  metrics?: PageMetrics | null,
 ): BlockBox[] {
+  // Lines cost a tree walk and a rect per text node, so they are measured only
+  // where they can be used: everywhere when splitting is on, and otherwise only
+  // for a block too tall to fit a page whole, which `canSplit` breaks up
+  // whatever the setting says.
+  const usable = metrics ? metrics.pageHeight - metrics.marginTop - metrics.marginBottom : 0;
+  const splitParagraphs = metrics?.splitParagraphs === true;
+
   const rootRect = view.dom.getBoundingClientRect();
   // DocEditor scales the whole page with a CSS transform, which scales every
   // rect with it; offsetWidth is the unscaled width, so their ratio recovers
@@ -274,9 +323,12 @@ export function measureBlocks(
     }
 
     const top = (rect.top - rootRect.top) / scale - spacerShift;
-    const box: BlockBox = { pos: offset, top, height: rect.height / scale - inner };
+    const height = rect.height / scale - inner;
+    const box: BlockBox = { pos: offset, top, height };
 
-    if (splitParagraphs && node.isTextblock) {
+    const wantsLines =
+      splitParagraphs || (usable > 0 && height > usable + EPSILON);
+    if (wantsLines && node.isTextblock) {
       const lines = measureLines(view, dom as HTMLElement, offset, rect.top, scale, breaks);
       if (lines.length > 1) box.lines = lines;
     }
@@ -366,10 +418,16 @@ export function setPageMetrics(editor: Editor, metrics: PageMetrics): void {
   editor.view.dispatch(editor.state.tr.setMeta(paginationPluginKey, { metrics }));
 }
 
-export const PaginationExtension = Extension.create({
+export const PaginationExtension = Extension.create<PaginationOptions>({
   name: 'pagination',
 
+  addOptions() {
+    return { onPageCount: null };
+  },
+
   addProseMirrorPlugins() {
+    const { onPageCount } = this.options;
+
     return [
       new Plugin<PaginationState>({
         key: paginationPluginKey,
@@ -414,6 +472,7 @@ export const PaginationExtension = Extension.create({
 
         view(view) {
           let frame = 0;
+          let reportedPages = 0;
 
           const recalculate = () => {
             frame = 0;
@@ -424,10 +483,17 @@ export const PaginationExtension = Extension.create({
             if (view.composing) return;
             const state = paginationPluginKey.getState(view.state);
             if (!state?.metrics) return;
-            const blocks = measureBlocks(view, state.breaks, state.metrics.splitParagraphs);
-            const next = computePageBreaks(blocks, state.metrics);
-            if (sameBreaks(next, state.breaks)) return;
-            view.dispatch(view.state.tr.setMeta(paginationPluginKey, { breaks: next }));
+            const blocks = measureBlocks(view, state.breaks, state.metrics);
+            const { breaks, pages } = paginate(blocks, state.metrics);
+            // Reported before the early return: a block too tall to break
+            // changes how many pages the content covers without changing a
+            // single spacer.
+            if (pages !== reportedPages) {
+              reportedPages = pages;
+              onPageCount?.(pages);
+            }
+            if (sameBreaks(breaks, state.breaks)) return;
+            view.dispatch(view.state.tr.setMeta(paginationPluginKey, { breaks }));
           };
 
           const schedule = () => {
