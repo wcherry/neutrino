@@ -205,6 +205,12 @@
   padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
+/* Spans the whole row so the footer (e.g. an infinite-scroll sentinel) is not
+   laid out as one more card in the grid. */
+.grid-footer {
+  grid-column: 1 / -1;
+}
+
 /* ── Small grid ── */
 .grid-small {
   display: grid;

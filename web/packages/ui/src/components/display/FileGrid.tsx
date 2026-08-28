@@ -118,6 +118,12 @@ export interface FileGridProps {
   selectedIds?: Set<string>;
   /** Called when the user Cmd/Ctrl+clicks an item to toggle its selection */
   onItemSelect?: (item: GridItem) => void;
+  /**
+   * Rendered after the last item, inside the scrolling container — that is
+   * where an infinite-scroll sentinel has to sit, since the detailed list
+   * scrolls itself rather than the page.
+   */
+  footer?: React.ReactNode;
 }
 
 export function FileGrid({
@@ -142,6 +148,7 @@ export function FileGrid({
   isDraggingOver,
   selectedIds,
   onItemSelect,
+  footer,
 }: FileGridProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
   const [filter, setFilter] = useState<FilterType>('all');
@@ -233,7 +240,12 @@ export function FileGrid({
       )}
 
       {(isError || filteredItems.length === 0) ? (
-        emptyState ?? null
+        <>
+          {emptyState ?? null}
+          {/* Still shown when a filter hides every loaded item, so scrolling
+              can reach the pages that do match. */}
+          {!isError && footer}
+        </>
       ) : viewMode === 'large' ? (
         /* ── Large grid ── */
         <div className={styles['grid-large']} role="list">
@@ -298,6 +310,7 @@ export function FileGrid({
               )}
             </Card>
           ); })}
+          {footer && <div className={styles['grid-footer']}>{footer}</div>}
         </div>
       ) : viewMode === 'small' ? (
         /* ── Small grid ── */
@@ -360,6 +373,7 @@ export function FileGrid({
               )}
             </Card>
           ); })}
+          {footer && <div className={styles['grid-footer']}>{footer}</div>}
         </div>
       ) : (
         /* ── Detailed list ── */
@@ -441,6 +455,7 @@ export function FileGrid({
               </div>
               ); })}
           </div>
+          {footer}
         </div>
       )}
     </div>
