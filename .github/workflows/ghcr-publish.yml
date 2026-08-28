@@ -34,6 +34,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Resolved once so the image tag and the version stamped into
+      # `web/version.txt` are the same string.
+      - name: Resolve app version
+        id: version
+        run: echo "version=${BASE_VERSION}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -42,6 +48,7 @@ jobs:
           tags: |
             type=ref,event=branch
             type=sha
+            type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -50,7 +57,7 @@ jobs:
           file: Dockerfile
           push: true
           build-args: |
-            APP_VERSION=${{ env.BASE_VERSION }}.${{ github.run_number }}
+            APP_VERSION=${{ steps.version.outputs.version }}
             BUILD_COMMIT=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
