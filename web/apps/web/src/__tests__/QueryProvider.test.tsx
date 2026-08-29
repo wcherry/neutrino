@@ -94,6 +94,40 @@ describe('QueryProvider', () => {
     }
   });
 
+  /**
+   * The shape that actually reaches this predicate. Every `@neutrino/api-*`
+   * client throws `ApiClientError`, which names the status `statusCode`; the
+   * check above only looked for `status`, so no real 4xx ever matched and all
+   * of them were retried twice. The docs editor probes with a 404 to recognise
+   * a `.docx`, which made opening one wait on three round trips (issue #141).
+   */
+  it('does not retry an ApiClientError, which carries statusCode', () => {
+    let capturedClient: ReturnType<typeof useQueryClient> | null = null;
+
+    function Consumer() {
+      capturedClient = useQueryClient();
+      return null;
+    }
+
+    render(
+      <QueryProvider>
+        <Consumer />
+      </QueryProvider>
+    );
+
+    const retryFn = capturedClient!.getDefaultOptions().queries?.retry;
+    expect(typeof retryFn).toBe('function');
+    const notFound = Object.assign(new Error('Document not found'), {
+      name: 'ApiClientError',
+      statusCode: 404,
+      code: 'NOT_FOUND',
+    });
+    expect((retryFn as (n: number, e: unknown) => boolean)(0, notFound)).toBe(false);
+    // A 5xx still retries, whichever name it goes by.
+    const serverError = Object.assign(new Error('Boom'), { statusCode: 503 });
+    expect((retryFn as (n: number, e: unknown) => boolean)(0, serverError)).toBe(true);
+  });
+
   it('retries up to 2 times on 5xx errors', () => {
     let capturedClient: ReturnType<typeof useQueryClient> | null = null;
 

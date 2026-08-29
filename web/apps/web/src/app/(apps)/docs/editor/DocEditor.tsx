@@ -699,11 +699,24 @@ export function DocEditor() {
   // own: it rides in `layoutMetaRef` with the rest of the layout metadata.
   const titleRef = useRef<string>('');
 
+  // `refetchOnWindowFocus`/`refetchOnReconnect` are off on every query in this
+  // component, and this one is why (issue #141). `getDoc` 404s for a `.docx` —
+  // which every document created since #127 is — so the query holds no data,
+  // and a query holding no data is *permanently* stale whatever its staleTime:
+  // React Query refetches it on every return to the tab. Worse, a refetch of a
+  // dataless query resets its status to `pending`, which puts `isLoading` back
+  // up and swaps the whole editor for the spinner below — so alt-tabbing tore
+  // the open document down and rebuilt it. Nothing here wants a background
+  // refetch anyway: the document is loaded once and from then on it is the
+  // collab room and the autosave that keep it current, which is also why the
+  // body load below has to guard against a stale refetch clobbering live edits.
   const { data: doc, isLoading: metaLoading, isError: metaIsError, error: metaError } = useQuery({
     queryKey: ['doc', docId],
     queryFn: () => docsApi.getDoc(docId),
     staleTime: 0,
     enabled: !!docId,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   // Rejects a save that would overwrite a revision written elsewhere since this
@@ -734,6 +747,8 @@ export function DocEditor() {
     enabled: doc404,
     staleTime: 0,
     retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const officeApp = officeFileMeta ? officeAppForFile(officeFileMeta.mimeType, officeFileMeta.name) : null;
@@ -799,9 +814,28 @@ export function DocEditor() {
     // Omit retry:0 — use the global retry policy so transient failures
     // (e.g. a race on first load or a brief network hiccup) are retried,
     // matching the try/catch fallback in sheets' usePersistence.load().
+    //
+    // No background refetch, for the reason on the metadata query above: this
+    // one re-downloads and re-decrypts the entire body, and the only thing it
+    // could do with the result is fight the copy the user is editing.
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
-  const isLoading = metaLoading || contentLoading || (doc404 && officeFallbackLoading);
+  const isFetchingDoc = metaLoading || contentLoading || (doc404 && officeFallbackLoading);
+  // Latches once the document has been resolved — as a native doc, as a `.docx`
+  // or as genuinely missing. The gate at the foot of this component replaces the
+  // entire editor with a spinner, so it has to mean "nothing has loaded yet"
+  // rather than "a request is in flight": every later fetch of these queries
+  // happens with a document already open, and unmounting it would throw away the
+  // scroll position, the caret and the measured page layout to show a spinner
+  // over an answer we already have. The refetch flags above stop the two ways
+  // that used to happen; this stops the rest of them (issue #141).
+  const docSettledRef = useRef(false);
+  if (!isFetchingDoc && (doc || officeFileMeta || officeFallbackIsError)) {
+    docSettledRef.current = true;
+  }
+  const isLoading = isFetchingDoc && !docSettledRef.current;
 
   const contentMutation = useMutation({
     mutationFn: async ({ content }: { content: string }) => {
