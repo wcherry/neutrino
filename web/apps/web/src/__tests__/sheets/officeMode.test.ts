@@ -73,7 +73,7 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   useEncryptedDocumentContent: () => ({
     dekRef: { current: null },
     dekResolved: true,
-    isNewEncryption: false,
+    awaitDek: async () => null,
   }),
 }));
 

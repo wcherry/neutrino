@@ -32,6 +32,7 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   useEncryptedDocumentContent: () => ({
     dekRef: { current: null },
     dekResolved: true,
+    awaitDek: async () => null,
     autosave: vi.fn(),
     createVersion: vi.fn(),
     isAutosaving: false,
