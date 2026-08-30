@@ -130,7 +130,10 @@ async function listDriveFiles(): Promise<FileItem[]> {
       offset: page * DRIVE_PAGE_SIZE,
     });
     files.push(...res.items);
-    if (res.items.length < DRIVE_PAGE_SIZE) break;
+    // `total` is every file the listing matched, so a full page that already
+    // covers it is the last one — asking for the next offset would only fetch
+    // an empty page to learn that.
+    if (res.items.length < DRIVE_PAGE_SIZE || files.length >= res.total) break;
   }
   return files;
 }
