@@ -78,6 +78,31 @@ function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
     return Promise.race([promise, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
 }
 
+/** The four bytes every zip — and so every `.xlsx` — opens with. */
+const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
+
+function looksLikeWorkbook(bytes: Uint8Array): boolean {
+    return bytes.byteLength >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => bytes[i] === b);
+}
+
+/**
+ * The stored bytes of an `.xlsx`, decrypted when they need it.
+ *
+ * Which of the two they are is read off the bytes, the same rule
+ * `readStoredBody` follows for the JSON format and for the same reason. This
+ * used to ask `isNewEncryption` — "this session minted the key, so what is
+ * stored must still be plaintext" — which reads the session rather than the
+ * file and is wrong at both ends: a workbook created and then reopened before
+ * the sealing save landed has a key ref and a plaintext body, and a load that
+ * runs while the key is still being minted has the flag not yet set for a body
+ * that is already ciphertext. A workbook is a zip, and ciphertext opening with
+ * the zip magic is a 1-in-2^32 accident.
+ */
+function readStoredWorkbook(stored: Uint8Array, dek: Uint8Array | null): Uint8Array {
+    if (stored.byteLength === 0 || !dek || looksLikeWorkbook(stored)) return stored;
+    return decryptFile(stored, dek);
+}
+
 /**
  * Parse raw .xlsx bytes into per-sheet cell maps — office-mode counterpart of
  * `parseXlsxToSheets` in SheetEditor.tsx (kept separate to avoid a hook ->
@@ -158,7 +183,13 @@ export function usePersistence({
     setTableRegions?: React.Dispatch<React.SetStateAction<TableRegion[]>>;
 }) {
     const sheetRef = useRef<SheetResponse | null>(null);
-    const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
+    // `awaitDek`, not `dekRef` — the rule docs, slides, notes and drawing
+    // already follow. `dekResolved` means the resolution *attempt* finished,
+    // and for a spreadsheet created a moment ago the key is still being minted
+    // when the editor's load effect first fires; sampling the ref there reports
+    // "no key" for a file that is about to have one, and every save made in
+    // that window warned the user their changes were not saved (issue #157).
+    const { dekResolved, awaitDek } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
     const toast = useToast();
     // Rejects a save that would overwrite a revision written elsewhere since
     // this spreadsheet was loaded. See `useContentVersionGuard`.
@@ -270,7 +301,8 @@ export function usePersistence({
         // Drive's download decrypts client-side, so the .xlsx that reaches the
         // user's disk is identical either way. What the plaintext write bought
         // was a readable spreadsheet in object storage: issue #95.
-        if (!dekRef.current) {
+        const dek = await awaitDek();
+        if (!dek) {
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
@@ -285,7 +317,7 @@ export function usePersistence({
             let saved;
             try {
                 saved = await driveAutosaveEncryptedBytes(
-                    sheetId, bytes, meta.name, dekRef.current, versionGuard.check(), transport,
+                    sheetId, bytes, meta.name, dek, versionGuard.check(), transport,
                 );
             } catch (err) {
                 // A 409 is a decision for the user, not a transport fault —
@@ -300,7 +332,7 @@ export function usePersistence({
                 if (keepalive) throw new Error('save-failed-on-unload');
                 await delay(SAVE_RETRY_DELAY_MS);
                 saved = await driveAutosaveEncryptedBytes(
-                    sheetId, bytes, meta.name, dekRef.current, versionGuard.check(), transport,
+                    sheetId, bytes, meta.name, dek, versionGuard.check(), transport,
                 );
             }
             versionGuard.observe(saved?.contentVersion);
@@ -335,7 +367,7 @@ export function usePersistence({
         let saved;
         try {
             saved = await driveAutosaveEncryptedContent(
-                sheetId, content, 'sheet.json', dekRef.current, versionGuard.check(), transport,
+                sheetId, content, 'sheet.json', dek, versionGuard.check(), transport,
             );
         } catch (err) {
             if (versionGuard.handleError(err)) {
@@ -350,7 +382,7 @@ export function usePersistence({
             if (keepalive) throw err;
             await delay(SAVE_RETRY_DELAY_MS);
             saved = await driveAutosaveEncryptedContent(
-                sheetId, content, 'sheet.json', dekRef.current, versionGuard.check(), transport,
+                sheetId, content, 'sheet.json', dek, versionGuard.check(), transport,
             );
         }
         versionGuard.observe(saved.contentVersion);
@@ -369,18 +401,19 @@ export function usePersistence({
         // spreadsheet, which is a file with no key ref and so no way back
         // (issue #95). The content is still in the editor, so unlocking and
         // pressing save again loses nothing.
-        if (!dekRef.current) {
+        const dek = await awaitDek();
+        if (!dek) {
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
         const meta = officeFileMetaRef.current;
         if (meta) {
             const bytes = await buildXlsxBytes();
-            await driveCreateEncryptedVersionBytes(sheetId, bytes, meta.name, dekRef.current);
+            await driveCreateEncryptedVersionBytes(sheetId, bytes, meta.name, dek);
             return;
         }
         if (!sheetRef.current) return;
-        await driveCreateEncryptedVersion(sheetId, serialize(), 'sheet.json', dekRef.current);
+        await driveCreateEncryptedVersion(sheetId, serialize(), 'sheet.json', dek);
     };
 
     const timedSave = async () => {
@@ -406,7 +439,7 @@ export function usePersistence({
                 intervalRef.current = null;
             }
         };
-    // timedSave captures refs (dirtyRef, sheetRef, dekRef) that never change identity,
+    // timedSave captures refs (dirtyRef, sheetRef) and awaitDek, none of which change identity,
     // so it is safe to omit it from the deps array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadCount]);
@@ -519,15 +552,18 @@ export function usePersistence({
         }
     };
 
-    const load = async () => {
+    const runLoad = async () => {
         if (!sheetId) return;
 
         // Reset dirty so a reload (e.g. version restore) doesn't trigger the
         // colWidths/rowHeights save-on-change effect with stale unsaved state.
         dirtyRef.current = false;
 
-        // DEK resolution is handled by useEncryptedDocumentContent; dekRef is
-        // already populated by the time the editor calls load().
+        // Waited for, not sampled: the editor fires this off `dekResolved`,
+        // which is true while a brand-new spreadsheet's key is still being
+        // minted. Reading the ref there reports "no key" and the whole load
+        // then treats ciphertext as plaintext (issue #157).
+        const dek = await awaitDek();
         let sheet: SheetResponse;
         try {
             sheet = await sheetsApi.getSheet(sheetId);
@@ -562,15 +598,12 @@ export function usePersistence({
                 // the empty branch below is written for.
                 const stored = await driveReadBytes(sheetId);
                 // Saves are encrypted, so a file that already has a key ref
-                // holds ciphertext. `isNewEncryption` separates the two: it
-                // means the DEK was just minted for a file that had none, so
-                // the stored bytes are still the plaintext `.xlsx` it was
-                // uploaded as, and the first save is what encrypts it. No body
-                // at all is neither, and decrypting it would report a new
-                // workbook as an unreadable one.
-                const plain = stored.byteLength > 0 && dekRef.current && !isNewEncryption
-                    ? decryptFile(stored, dekRef.current)
-                    : stored;
+                // holds ciphertext — but one uploaded before this, or created
+                // and not yet sealed, is still the plaintext workbook it
+                // arrived as. Which it is comes off the bytes; no body at all
+                // is neither, and decrypting that would report a new workbook
+                // as an unreadable one.
+                const plain = readStoredWorkbook(stored, dek);
 
                 // A spreadsheet created here starts with no body at all: an
                 // `.xlsx` is a zip, so the server writes no seed and the first
@@ -632,10 +665,10 @@ export function usePersistence({
         let loadOk = false;
         try {
             let raw: string;
-            if (dekRef.current) {
+            if (dek) {
                 const blob = await storageApi.downloadFile(sheetId);
                 const stored = new Uint8Array(await blob.arrayBuffer());
-                const read = readStoredBody(stored, dekRef.current);
+                const read = readStoredBody(stored, dek);
                 raw = read.text;
                 serverHasPlaintextContent = read.wasPlaintext;
             } else {
@@ -663,9 +696,32 @@ export function usePersistence({
         // never overlap a save triggered moments later by a fast edit-then-navigate —
         // two autosave PUTs in flight at once have been observed to truncate the
         // second request's body in transit, which would silently drop the user's edit.
-        if (serverHasPlaintextContent && dekRef.current) {
+        if (serverHasPlaintextContent && dek) {
             await queueSave();
         }
+    };
+
+    /**
+     * The load in flight, if any.
+     *
+     * The editor fires `load()` from an effect keyed on `dekResolved`, and for
+     * a spreadsheet created a moment ago that flips true, back to false, and
+     * true again as the key is minted — so the same file is asked for twice,
+     * moments apart (issue #157). Handing the second caller the first one's
+     * promise keeps its read from landing *after* the first one's opening save
+     * and painting the blank workbook back over anything typed in between. A
+     * later reload — a version restore — starts a fresh one, since nothing is
+     * in flight by then.
+     */
+    const loadInFlightRef = useRef<Promise<void> | null>(null);
+
+    const load = (): Promise<void> => {
+        if (loadInFlightRef.current) return loadInFlightRef.current;
+        const inFlight = runLoad().finally(() => {
+            if (loadInFlightRef.current === inFlight) loadInFlightRef.current = null;
+        });
+        loadInFlightRef.current = inFlight;
+        return inFlight;
     };
 
     const updateTitle = async (event: React.FocusEvent<HTMLElement>) => {

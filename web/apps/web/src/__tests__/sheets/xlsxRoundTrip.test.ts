@@ -52,8 +52,8 @@ vi.mock('@/lib/api', () => ({
   filesystemApi: { updateFile: vi.fn() },
 }));
 
-// The bytes on the wire are plaintext here: `isNewEncryption` is true, which is
-// the hook's signal that the stored bytes have not been encrypted yet.
+// The bytes on the wire are plaintext here — real zips, which is how the load
+// path knows they have not been encrypted yet — so decryption is a pass-through.
 vi.mock('@neutrino/e2e-crypto', () => ({ decryptFile: (b: Uint8Array) => b }));
 vi.mock('@neutrino/auth', () => ({ useUser: () => ({ id: 'user-1' }) }));
 vi.mock('@/lib/searchIndexUpdate', () => ({ indexOnSave: vi.fn() }));
@@ -69,7 +69,7 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   useEncryptedDocumentContent: () => ({
     dekRef: { current: DEK },
     dekResolved: true,
-    isNewEncryption: true,
+    awaitDek: async () => DEK,
   }),
 }));
 

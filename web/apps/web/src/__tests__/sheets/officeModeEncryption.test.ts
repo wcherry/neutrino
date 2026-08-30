@@ -12,11 +12,14 @@
  * was a readable spreadsheet in object storage, with no key ref and so no way
  * to ever encrypt it.
  *
- * The load side moves with it, and `isNewEncryption` is the hinge: a legacy
+ * The load side moves with it, and telling the two apart is the hinge: a legacy
  * .xlsx uploaded before this is still plaintext but is handed a freshly minted
  * DEK by `useEncryptedDocumentContent`, so "we have a key" cannot mean "the
  * bytes are ciphertext". Get that backwards and every existing office file
- * opens as an empty grid.
+ * opens as an empty grid. The answer is read off the bytes — a workbook is a
+ * zip and opens with the zip magic — rather than off the session's
+ * `isNewEncryption` flag, which is blind to a file created in one session and
+ * reopened in the next before its sealing save landed (issue #157).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -85,12 +88,11 @@ vi.mock('@neutrino/ui', () => ({
 }));
 
 let dekNow: Uint8Array | null = DEK;
-let isNewEncryption = false;
 vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   useEncryptedDocumentContent: () => ({
     dekRef: { get current() { return dekNow; } },
     dekResolved: true,
-    isNewEncryption,
+    awaitDek: async () => dekNow,
   }),
 }));
 
@@ -168,7 +170,6 @@ async function loadInOfficeMode() {
 beforeEach(() => {
   vi.clearAllMocks();
   dekNow = DEK;
-  isNewEncryption = false;
   getSheet.mockRejectedValue(new ApiClientError(404, 'not_found', 'no sheets row'));
   getFileMetadata.mockResolvedValue({ id: 'file-1', name: 'Budget.xlsx', mimeType: XLSX_MIME });
   readBytes.mockResolvedValue(asCiphertext(RAW_XLSX));
@@ -190,7 +191,6 @@ describe('opening an office-mode file', () => {
   });
 
   it('reads a legacy plaintext file as-is despite holding a fresh key', async () => {
-    isNewEncryption = true;
     readBytes.mockResolvedValue(RAW_XLSX);
 
     await loadInOfficeMode();
