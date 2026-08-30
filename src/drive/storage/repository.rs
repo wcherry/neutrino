@@ -11,6 +11,26 @@ use diesel::r2d2::{ConnectionManager, Pool};
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
+/// The `mimeType` types a listing query asks for, or `None` for "any".
+///
+/// `mimeType` takes a comma-separated list, not just one value. Docs, Sheets
+/// and Slides each span two formats now — the OOXML one every new document is
+/// created in, and the bespoke JSON that predates it (see `native_types`) —
+/// and a library that asked for only one of them would show half a user's
+/// documents. Shared by the listing and its count so the two cannot disagree
+/// about what they are paging over.
+fn mime_type_filter(query: &ListQuery<FileOrderField>) -> Option<Vec<String>> {
+    let wanted: Vec<String> = query
+        .filters
+        .get("mimeType")?
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    (!wanted.is_empty()).then_some(wanted)
+}
+
 pub struct StorageRepository {
     pool: DbPool,
 }
@@ -82,6 +102,34 @@ impl StorageRepository {
             })
     }
 
+    /// How many files the same query matches, ignoring its `limit`/`offset`.
+    ///
+    /// The listing endpoint reports this as `total`, which is what lets a
+    /// paging client stop after the last page instead of asking for one more
+    /// to discover it is empty (issue: a repeated `?limit=200&offset=200` on
+    /// a drive holding exactly 200 files).
+    pub fn count_files_by_user(
+        &self,
+        user_id: &str,
+        query: &ListQuery<FileOrderField>,
+    ) -> Result<i64, ApiError> {
+        let mut conn = self.get_conn()?;
+
+        let mut base = files::table
+            .filter(files::user_id.eq(user_id))
+            .filter(files::deleted_at.is_null())
+            .into_boxed();
+
+        if let Some(wanted) = mime_type_filter(query) {
+            base = base.filter(files::mime_type.eq_any(wanted));
+        }
+
+        base.count().get_result(&mut conn).map_err(|e| {
+            tracing::error!("DB count files error: {:?}", e);
+            ApiError::internal("Database error")
+        })
+    }
+
     pub fn list_files_by_user(
         &self,
         user_id: &str,
@@ -100,21 +148,8 @@ impl StorageRepository {
             .offset(query.offset)
             .into_boxed();
 
-        // `mimeType` takes a comma-separated list, not just one value. Docs,
-        // Sheets and Slides each span two formats now — the OOXML one every
-        // new document is created in, and the bespoke JSON that predates it
-        // (see `native_types`) — and a library that asked for only one of them
-        // would show half a user's documents.
-        if let Some(mt) = query.filters.get("mimeType") {
-            let wanted: Vec<String> = mt
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-                .collect();
-            if !wanted.is_empty() {
-                base = base.filter(files::mime_type.eq_any(wanted));
-            }
+        if let Some(wanted) = mime_type_filter(query) {
+            base = base.filter(files::mime_type.eq_any(wanted));
         }
 
         let result = match (order_by, direction) {
@@ -759,6 +794,72 @@ mod tests {
             .expect("list files");
 
         assert_eq!(listed.len(), 1);
+    }
+
+    // ── The listing count ─────────────────────────────────────────────────────
+    //
+    // `total` used to be the length of the page just built, so a client paging
+    // with `offset` could only discover the end by fetching one more page and
+    // finding it empty.
+
+    fn page_query(limit: i64, offset: i64) -> ListQuery<FileOrderField> {
+        ListQuery {
+            limit,
+            offset,
+            order_by: None,
+            direction: None,
+            filters: std::collections::HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn the_count_ignores_the_page_and_reports_every_matching_file() {
+        let repo = StorageRepository::new(test_pool());
+        for i in 0..5 {
+            insert_test_file(&repo, &format!("file-{i}"), "user-1", DOCX_MIME);
+        }
+        insert_test_file(&repo, "other-user", "user-2", DOCX_MIME);
+
+        let page = repo
+            .list_files_by_user("user-1", &page_query(2, 0))
+            .expect("list files");
+        let total = repo
+            .count_files_by_user("user-1", &page_query(2, 0))
+            .expect("count files");
+
+        assert_eq!(page.len(), 2);
+        assert_eq!(total, 5);
+    }
+
+    #[test]
+    fn the_count_applies_the_same_mime_type_filter_as_the_listing() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "docx-1", "user-1", DOCX_MIME);
+        insert_test_file(&repo, "docx-2", "user-1", DOCX_MIME);
+        insert_test_file(&repo, "json-1", "user-1", NATIVE_DOC_MIME);
+
+        let total = repo
+            .count_files_by_user("user-1", &mime_filter_query(DOCX_MIME))
+            .expect("count files");
+
+        assert_eq!(total, 2);
+    }
+
+    #[test]
+    fn the_count_leaves_out_trashed_files() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "kept", "user-1", DOCX_MIME);
+        insert_test_file(&repo, "binned", "user-1", DOCX_MIME);
+        diesel::update(files::table.filter(files::id.eq("binned")))
+            .set(files::deleted_at.eq(Some(Utc::now().naive_utc())))
+            .execute(&mut repo.get_conn().expect("conn"))
+            .expect("trash");
+
+        let total = repo
+            .count_files_by_user("user-1", &page_query(50, 0))
+            .expect("count files");
+
+        assert_eq!(total, 1);
     }
 
     #[test]

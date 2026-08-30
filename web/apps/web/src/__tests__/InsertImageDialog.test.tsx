@@ -108,10 +108,12 @@ describe('InsertImageDialog', () => {
       driveFile({ id: `doc-${i}`, name: `note-${i}.txt`, mimeType: 'application/x-neutrino-note' }));
     listFiles.mockReset();
     listFiles
-      .mockResolvedValueOnce({ items: documents, total: 200, page: 1, pageSize: 200, totalPages: 1 })
+      // `total` counts every file the listing matched, not the page — 200
+      // documents with one image behind them.
+      .mockResolvedValueOnce({ items: documents, total: 201, page: 1, pageSize: 200, totalPages: 2 })
       .mockResolvedValueOnce({
         items: [driveFile({ id: 'img-late', name: 'buried.png', mimeType: 'image/png' })],
-        total: 1, page: 2, pageSize: 200, totalPages: 1,
+        total: 201, page: 2, pageSize: 200, totalPages: 2,
       });
 
     render(<InsertImageDialog onInsert={vi.fn()} onClose={vi.fn()} />);
@@ -119,6 +121,21 @@ describe('InsertImageDialog', () => {
     expect(await screen.findByTitle('buried.png')).toBeInTheDocument();
     expect(listFiles).toHaveBeenCalledTimes(2);
     expect(listFiles.mock.calls[1][0]).toMatchObject({ offset: 200 });
+  });
+
+  /** Issue: a drive of exactly one page still fetched `?offset=200` to find it empty. */
+  it('stops at a full page that already covers the total', async () => {
+    const documents = Array.from({ length: 200 }, (_, i) =>
+      driveFile({ id: `doc-${i}`, name: `note-${i}.txt`, mimeType: 'application/x-neutrino-note' }));
+    listFiles.mockReset();
+    listFiles.mockResolvedValue({
+      items: documents, total: 200, page: 1, pageSize: 200, totalPages: 1,
+    });
+
+    render(<InsertImageDialog onInsert={vi.fn()} onClose={vi.fn()} />);
+
+    await screen.findByText(/no images/i);
+    expect(listFiles).toHaveBeenCalledTimes(1);
   });
 
   it('returns the Drive file id so the caller can store a reference', async () => {

@@ -79,7 +79,7 @@ export function InsertImageDialog({
     const images: ImagePickerDriveItem[] = [];
 
     for (let page = 0; page < MAX_PAGES; page++) {
-      const { items } = await storageApi.listFiles({
+      const { items, total } = await storageApi.listFiles({
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
         orderBy: 'updatedAt',
@@ -88,10 +88,11 @@ export function InsertImageDialog({
 
       images.push(...items.filter(isImageFile).map(toPickerItem));
 
-      // A short page means the listing is exhausted. The response's `total` is
-      // no help — the backend sets it to the length of the page it just built,
-      // not the number of files that matched.
-      if (items.length < PAGE_SIZE || images.length >= TARGET_IMAGES) break;
+      // A short page means the listing is exhausted, and so does a full page
+      // that already reaches `total` — the count of every file that matched,
+      // which is what stops the loop fetching one more empty page to find out.
+      const scanned = page * PAGE_SIZE + items.length;
+      if (items.length < PAGE_SIZE || scanned >= total || images.length >= TARGET_IMAGES) break;
     }
 
     return images.slice(0, TARGET_IMAGES);

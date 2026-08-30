@@ -46,7 +46,9 @@ export async function listAllNotes(): Promise<NoteMeta[]> {
         notes.push({ id: f.id, title: f.name, createdAt: f.createdAt, updatedAt: f.updatedAt });
       }
     }
-    if (res.items.length < LIST_PAGE_SIZE) break;
+    // A full page that already covers `total` is the last one; without the
+    // check the loop asks for the next offset just to be told it is empty.
+    if (res.items.length < LIST_PAGE_SIZE || (page + 1) * LIST_PAGE_SIZE >= res.total) break;
   }
   return notes;
 }

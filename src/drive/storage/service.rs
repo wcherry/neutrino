@@ -623,7 +623,10 @@ impl StorageService {
         query: &ListQuery<FileOrderField>,
     ) -> Result<ListFilesResponse, ApiError> {
         let files = self.repo.list_files_by_user(user_id, query)?;
-        let total = files.len();
+        // Every file the query matches, not the length of the page just built:
+        // a client paging with `offset` has no other way to know it has reached
+        // the end, and used to find out by fetching one more empty page.
+        let total = self.repo.count_files_by_user(user_id, query)? as usize;
         Ok(ListFilesResponse {
             files: files.into_iter().map(FileMetadataResponse::from).collect(),
             total,
