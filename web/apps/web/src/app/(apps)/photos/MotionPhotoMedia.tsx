@@ -1,13 +1,20 @@
 'use client';
 
 /**
- * The picture on a library tile, and the Live Photo motion behind it.
+ * The picture on a library tile, and the motion behind it.
  *
- * A Live Photo tile shows its still like any other, with a LIVE badge, and
- * plays the paired clip over the top while the pointer is on the card — the
- * clip is never listed as a tile of its own, which is what issue #154 asked
- * for. Nothing is fetched until the first hover: the clip is a megabyte or two
- * and a library screen holds dozens of them.
+ * A motion photo tile shows its still like any other, with a LIVE or MOTION
+ * badge, and plays the clip over the top while the pointer is on the card. The
+ * clip is never listed as a tile of its own, which is what issues #154 and #156
+ * asked for. Nothing is fetched until the first hover: a clip is a megabyte or
+ * two and a library screen holds dozens of them.
+ *
+ * The motion comes from one of two places and this component hides the
+ * difference. Apple splits a Live Photo into two Drive files, so the clip is
+ * downloaded on its own; Google appends the MP4 to the JPEG's own bytes, so the
+ * still is downloaded and the clip sliced out of it at the offset recorded at
+ * upload time. Either way the original file is untouched — nothing is
+ * re-encoded, and the still keeps being the still.
  *
  * Playback has to decrypt. Photos are E2EE, so `contentUrl` serves ciphertext
  * and a `<video>` pointed straight at it plays nothing and reports no error —
@@ -21,28 +28,40 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { storageApi, encryptionApi } from '@neutrino/api-drive';
 import { initSodium, openSealedFileKey, decryptFile } from '@neutrino/e2e-crypto';
-import type { LibraryItem, PhotoResponse } from '@neutrino/api-photos';
+import { motionPhotoLabel, type LibraryItem, type PhotoResponse } from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
 import { useSessionKeyPair } from '@/hooks/useSessionKeyPair';
 import styles from './page.module.css';
 
-async function loadPlayableBlob(
-  photo: PhotoResponse,
-  userId: string,
-  unlocked: boolean,
-): Promise<Blob> {
-  const mimeType = photo.mimeType.startsWith('video/') ? photo.mimeType : 'video/quicktime';
-  const downloaded = await storageApi.downloadFile(photo.fileId);
-  if (!unlocked) return new Blob([downloaded], { type: mimeType });
+/** Download one Drive file and decrypt it, when the session can. */
+async function loadPlainBlob(fileId: string, userId: string, unlocked: boolean): Promise<Blob> {
+  const downloaded = await storageApi.downloadFile(fileId);
+  if (!unlocked) return downloaded;
 
   await initSodium();
-  const keyRef = await encryptionApi.getFileKey(photo.fileId);
+  const keyRef = await encryptionApi.getFileKey(fileId);
   // No key on the server means the file was stored in the clear.
-  if (!keyRef) return new Blob([downloaded], { type: mimeType });
+  if (!keyRef) return downloaded;
 
   const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
   const plain = decryptFile(new Uint8Array(await downloaded.arrayBuffer()), dek);
-  return new Blob([plain.buffer as ArrayBuffer], { type: mimeType });
+  return new Blob([plain.buffer as ArrayBuffer]);
+}
+
+/** The playable clip for a tile, from whichever file is carrying it. */
+async function loadMotionBlob(item: LibraryItem, userId: string, unlocked: boolean): Promise<Blob> {
+  const { photo, motion, embedded } = item;
+  if (motion) {
+    const mimeType = motion.mimeType.startsWith('video/') ? motion.mimeType : 'video/quicktime';
+    const blob = await loadPlainBlob(motion.fileId, userId, unlocked);
+    return new Blob([blob], { type: mimeType });
+  }
+  if (embedded) {
+    // Google's MP4 is appended to the still, so the clip is a slice of it.
+    const blob = await loadPlainBlob(photo.fileId, userId, unlocked);
+    return blob.slice(embedded.offset, embedded.offset + embedded.length, 'video/mp4');
+  }
+  throw new Error('no motion to load');
 }
 
 /**
@@ -51,19 +70,20 @@ async function loadPlayableBlob(
  * The URL outlives the hover on purpose — moving on and off a tile is cheap
  * after the first pass, and the blob is released when the tile unmounts.
  */
-function useMotionUrl(motion: PhotoResponse | null, wanted: boolean): string | null {
+function useMotionUrl(item: LibraryItem, wanted: boolean): string | null {
   const user = useUser();
   const keyPair = useSessionKeyPair(user?.id);
   const [url, setUrl] = useState<string | null>(null);
   const urlRef = useRef<string | null>(null);
   const startedRef = useRef(false);
   const mountedRef = useRef(true);
+  const playable = item.motion !== null || item.embedded !== null;
 
   useEffect(() => {
-    if (!wanted || !motion || !user?.id || startedRef.current) return;
+    if (!wanted || !playable || !user?.id || startedRef.current) return;
     startedRef.current = true;
 
-    loadPlayableBlob(motion, user.id, keyPair !== null)
+    loadMotionBlob(item, user.id, keyPair !== null)
       .then((blob) => {
         const objectUrl = URL.createObjectURL(blob);
         // Unmounting mid-download is the pointer leaving a tile that then
@@ -78,10 +98,10 @@ function useMotionUrl(motion: PhotoResponse | null, wanted: boolean): string | n
       .catch((err) => {
         // A clip that will not decrypt just means no motion; the still stays.
         // Clearing the guard lets the next hover try again.
-        console.warn('[photos] live photo motion could not be loaded', err);
+        console.warn('[photos] motion photo clip could not be loaded', err);
         startedRef.current = false;
       });
-  }, [wanted, motion, user?.id, keyPair]);
+  }, [wanted, playable, item, user?.id, keyPair]);
 
   useEffect(
     () => () => {
@@ -103,13 +123,13 @@ interface Props {
   active: boolean;
 }
 
-export function LivePhotoMedia({ item, imgSrc, active }: Props) {
-  const { photo, motion, isLive } = item;
-  const motionUrl = useMotionUrl(motion, active);
+export function MotionPhotoMedia({ item, imgSrc, active }: Props) {
+  const { photo, isMotionPhoto, subtype } = item;
+  const motionUrl = useMotionUrl(item, active);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playing = active && motionUrl !== null;
 
-  // `autoPlay` only fires for the first source a element is given, so playback
+  // `autoPlay` only fires for the first source an element is given, so playback
   // is driven explicitly — a tile is hovered many times over its life.
   useEffect(() => {
     const video = videoRef.current;
@@ -153,10 +173,13 @@ export function LivePhotoMedia({ item, imgSrc, active }: Props) {
         />
       )}
 
-      {isLive && (
-        <span className={styles.liveBadge} title="Live Photo">
+      {isMotionPhoto && (
+        <span
+          className={styles.liveBadge}
+          title={subtype === 'motion_photo_google' ? 'Google Motion Photo' : 'Apple Live Photo'}
+        >
           <span className={styles.liveBadgeDot} aria-hidden="true" />
-          LIVE
+          {motionPhotoLabel(subtype)}
         </span>
       )}
     </>

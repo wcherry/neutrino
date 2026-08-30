@@ -37,14 +37,15 @@ import { readAutoFaceDetect } from '@/hooks/usePhotoSettings';
 import {
   generateThumbnail,
   generateVideoThumbnail,
-  readLivePhotoInfo,
-  pairLivePhotos,
+  readMotionPhotoInfo,
+  stillFrameSeconds,
+  pairMotionPhotos,
   type LibraryItem,
   type PhotoMetadata,
 } from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
 import { initSodium, generateFileKey, encryptFileKey, encryptMetadata, loadKeyPair, activeKeyVersion } from '@neutrino/e2e-crypto';
-import { LivePhotoMedia } from './LivePhotoMedia';
+import { MotionPhotoMedia } from './MotionPhotoMedia';
 import { PhotoInfoPanel } from './PhotoInfoPanel';
 import { PersonPhotosPanel } from './PersonPhotosPanel';
 import { SuggestionsPanel, SuggestionsBadge } from './SuggestionsPanel';
@@ -62,19 +63,6 @@ function formatDate(iso: string): string {
 
 function isImageMime(mime: string): boolean {
   return mime.startsWith('image/');
-}
-
-/**
- * Worth checking for Live Photo metadata? Only QuickTime and MP4 carry it, and
- * a browser that guesses no MIME type at all for a `.mov` is common enough that
- * the extension has to be consulted too.
- */
-function isMovieFile(file: File): boolean {
-  return (
-    file.type === 'video/quicktime' ||
-    file.type === 'video/mp4' ||
-    /\.(mov|mp4|m4v)$/i.test(file.name)
-  );
 }
 
 
@@ -141,7 +129,7 @@ function PhotoCard({
       onFocus={() => setActive(true)}
       onBlur={() => setActive(false)}
     >
-      <LivePhotoMedia item={item} imgSrc={imgSrc} active={active} />
+      <MotionPhotoMedia item={item} imgSrc={imgSrc} active={active} />
 
       <div className={styles.photoOverlay}>
         <div className={styles.photoOverlayTop}>
@@ -271,8 +259,8 @@ export default function PhotosPage() {
     enabled: activeTab !== 'albums' && activeTab !== 'people',
   });
 
-  // The movies that may be the motion half of a Live Photo. They are never
-  // listed on their own — `pairLivePhotos` folds them into their stills and
+  // The movies that may be the motion half of a motion photo. They are never
+  // listed on their own — `pairMotionPhotos` folds them into their stills and
   // drops the rest — so this is fetched alongside every photo listing.
   const motionQuery = useQuery({
     queryKey: ['photo-motion'],
@@ -328,17 +316,29 @@ export default function PhotosPage() {
         { name: file.name, mimeType: file.type || 'application/octet-stream' },
         dek,
       );
-      // Read the Live Photo marker here, while the bytes are still plaintext —
-      // the server only ever sees ciphertext and cannot look for itself.
-      const livePhoto = isMovieFile(file) ? await readLivePhotoInfo(file) : null;
-      const metadata: PhotoMetadata | null = livePhoto ? { livePhoto } : null;
+      // Classify here, while the bytes are still plaintext — the server only
+      // ever sees ciphertext and cannot look for itself. Every file is checked,
+      // not just the ones whose extension suggests it: a Google Motion Photo is
+      // a `.jpg` with an MP4 inside as often as it is a `.mp4`.
+      const motionPhoto = await readMotionPhotoInfo(file, {
+        fileName: file.name,
+        mimeType: file.type,
+      });
+      if (motionPhoto) {
+        console.log('[photos:upload] classified as a motion photo', {
+          file: file.name,
+          subtype: motionPhoto.subtype,
+          signal: motionPhoto.signal,
+        });
+      }
+      const metadata: PhotoMetadata | null = motionPhoto ? { motionPhoto } : null;
 
       const thumbnailB64 = file.type.startsWith('image/')
         ? await generateThumbnail(file)
-        // A Live Photo with no still beside it would otherwise be a black tile,
-        // so take a frame from the clip and use that as the picture.
-        : livePhoto
-        ? await generateVideoThumbnail(file, { atSeconds: livePhoto.stillImageTime })
+        // A motion photo with no still beside it would otherwise be a black
+        // tile, so take a frame from the clip and use that as the picture.
+        : motionPhoto
+        ? await generateVideoThumbnail(file, { atSeconds: stillFrameSeconds(motionPhoto) })
         : null;
       console.log('[photos:upload] thumbnailB64 present:', thumbnailB64 !== null, 'length:', thumbnailB64?.length ?? 0);
       const fileItem = await uploadEncryptedFile(
@@ -409,14 +409,14 @@ export default function PhotosPage() {
     setShowUploadModal(false);
   }, [uploadMutation]);
 
-  const photos = photosQuery.data?.photos ?? [];
+  const photoList = photosQuery.data?.photos;
   const motionFiles = motionQuery.data;
-  // Memoised because a tile holds its motion clip against this object's
-  // identity: rebuilding the list on every hover would drop each download the
-  // moment the pointer arrived.
+  // Memoised on the query results themselves, empty fallbacks included, because
+  // a tile holds its motion clip against this object's identity: rebuilding the
+  // list on every hover would drop each download the moment the pointer arrived.
   const items = React.useMemo(
-    () => pairLivePhotos(photos, motionFiles ?? []),
-    [photos, motionFiles],
+    () => pairMotionPhotos(photoList ?? [], motionFiles ?? []),
+    [photoList, motionFiles],
   );
   const albums = albumsQuery.data?.albums ?? [];
   const persons = personsQuery.data?.persons ?? [];
@@ -764,7 +764,8 @@ export default function PhotosPage() {
         <PhotoInfoPanel
           photo={selectedItem.photo}
           motion={selectedItem.motion}
-          isLive={selectedItem.isLive}
+          isMotionPhoto={selectedItem.isMotionPhoto}
+          subtype={selectedItem.subtype}
           onClose={() => setSelectedItem(null)}
         />
       )}

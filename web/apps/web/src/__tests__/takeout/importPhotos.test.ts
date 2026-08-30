@@ -42,11 +42,17 @@ vi.mock('@/lib/api', () => ({
 
 const generateThumbnail = vi.fn();
 const generateVideoThumbnail = vi.fn();
-const readLivePhotoInfo = vi.fn();
+const readMotionPhotoInfo = vi.fn();
 vi.mock('@neutrino/api-photos', () => ({
   generateThumbnail: (...args: unknown[]) => generateThumbnail(...args),
   generateVideoThumbnail: (...args: unknown[]) => generateVideoThumbnail(...args),
-  readLivePhotoInfo: (...args: unknown[]) => readLivePhotoInfo(...args),
+  readMotionPhotoInfo: (...args: unknown[]) => readMotionPhotoInfo(...args),
+  // Pure, and the runner's choice of seek point is what is under test here.
+  stillFrameSeconds: (info: { stillImageTime?: number; presentationTimestampUs?: number }) =>
+    info.stillImageTime ??
+    (info.presentationTimestampUs !== undefined
+      ? info.presentationTimestampUs / 1_000_000
+      : undefined),
 }));
 
 const loadKeyPair = vi.fn();
@@ -109,7 +115,7 @@ beforeEach(() => {
   loadKeyPair.mockReturnValue(KEY_PAIR);
   generateThumbnail.mockResolvedValue('thumb-b64');
   generateVideoThumbnail.mockResolvedValue('frame-b64');
-  readLivePhotoInfo.mockResolvedValue(null);
+  readMotionPhotoInfo.mockResolvedValue(null);
   uploadEncryptedFile.mockImplementation(async (file: File) => ({ id: `file-${file.name}` }));
   storageApi.uploadFile.mockImplementation(async (file: File) => ({ id: `file-${file.name}` }));
   photosApi.registerPhoto.mockImplementation(async ({ fileId }: { fileId: string }) => ({
@@ -229,7 +235,13 @@ describe('runPhotosImport', () => {
    * the library as a black tile whenever its still is missing (issue #154).
    */
   it('records a Live Photo clip’s content identifier and gives it a frame', async () => {
-    readLivePhotoInfo.mockResolvedValue({ contentIdentifier: 'ABC-123', stillImageTime: 1.5 });
+    const motionPhoto = {
+      subtype: 'live_photo_apple',
+      signal: 'com.apple.quicktime.content.identifier',
+      contentIdentifier: 'ABC-123',
+      stillImageTime: 1.5,
+    };
+    readMotionPhotoInfo.mockResolvedValue(motionPhoto);
 
     await run([photo('IMG_1.mov', { kind: 'video', mimeType: 'video/quicktime' })]);
 
@@ -238,8 +250,46 @@ describe('runPhotosImport', () => {
     expect(photosApi.registerPhoto).toHaveBeenCalledWith({
       fileId: 'file-IMG_1.mov',
       captureDate: null,
-      metadata: { livePhoto: { contentIdentifier: 'ABC-123', stillImageTime: 1.5 } },
+      metadata: { motionPhoto },
     });
+  });
+
+  /**
+   * A Google Motion Photo is a `.jpg` with an MP4 appended, so the classifier
+   * has to be asked about images too — the runner used to skip them (#156).
+   * Its still is already a picture, so it keeps the ordinary image thumbnail.
+   */
+  it('records a Google Motion Photo jpeg, keeping its own still as the preview', async () => {
+    const motionPhoto = {
+      subtype: 'motion_photo_google',
+      signal: 'GCamera:MotionPhoto',
+      presentationTimestampUs: 500000,
+      embedded: { offset: 900, length: 100 },
+    };
+    readMotionPhotoInfo.mockResolvedValue(motionPhoto);
+
+    await run([photo('PXL_1.MP.jpg')]);
+
+    expect(generateThumbnail).toHaveBeenCalledTimes(1);
+    expect(generateVideoThumbnail).not.toHaveBeenCalled();
+    expect(uploadEncryptedFile.mock.calls[0][6]).toBe('thumb-b64');
+    expect(photosApi.registerPhoto).toHaveBeenCalledWith({
+      fileId: 'file-PXL_1.MP.jpg',
+      captureDate: null,
+      metadata: { motionPhoto },
+    });
+  });
+
+  it('seeks a Google clip to the timestamp its XMP names', async () => {
+    readMotionPhotoInfo.mockResolvedValue({
+      subtype: 'motion_photo_google',
+      signal: 'GCamera:MotionPhoto',
+      presentationTimestampUs: 500000,
+    });
+
+    await run([photo('PXL_1.mp4', { kind: 'video', mimeType: 'video/mp4' })]);
+
+    expect(generateVideoThumbnail).toHaveBeenCalledWith(expect.anything(), { atSeconds: 0.5 });
   });
 
   it('imports a picture the browser cannot decode, just without a preview', async () => {

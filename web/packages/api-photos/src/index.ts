@@ -1,6 +1,7 @@
 import { aiCredentials, request, buildQuery, ApiClientError, getCurrentUserId } from '@neutrino/api-core';
 import { filesystemApi } from '@neutrino/api-drive';
 import type { FileItem } from '@neutrino/api-drive';
+import type { MotionPhotoInfo } from './motionPhoto';
 
 // ---------------------------------------------------------------------------
 // Photos types
@@ -18,20 +19,18 @@ export interface PhotoExifData {
   datetimeOriginal?: string;
 }
 
-export interface LivePhotoMetadata {
-  /** Apple's `com.apple.quicktime.content.identifier` — see `livePhoto.ts`. */
-  contentIdentifier: string;
-  /** Seconds into the clip that the still frame sits at, when the file says. */
-  stillImageTime?: number;
-}
-
 export interface PhotoMetadata {
   width?: number;
   height?: number;
   format?: string;
   exif?: PhotoExifData;
-  /** Set on the motion half of a Live Photo, read from the file at upload time. */
-  livePhoto?: LivePhotoMetadata;
+  /**
+   * Set on an Apple Live Photo or a Google Motion Photo, read out of the file
+   * by the browser at upload time — see `motionPhoto.ts`. It records the
+   * subtype and the metadata field that classified it, so a support case can
+   * tell why an asset is a photo rather than a video.
+   */
+  motionPhoto?: MotionPhotoInfo;
 }
 
 export interface PhotoResponse {
@@ -293,22 +292,28 @@ export interface ListSuggestionsResponse {
 export { generateThumbnail } from '@neutrino/utils';
 
 // ---------------------------------------------------------------------------
-// Live Photos
+// Motion photos — Apple Live Photos and Google Motion Photos
 // ---------------------------------------------------------------------------
 
 export {
   CONTENT_IDENTIFIER_KEY,
   STILL_IMAGE_TIME_KEY,
-  readQuickTimeMetadata,
   isLikelyLivePhotoMov,
-  readLivePhotoInfo,
+  readMotionPhotoInfo,
+  stillFrameSeconds,
   generateVideoThumbnail,
-  livePhotoIdentifier,
-  livePhotoStem,
-  pairLivePhotos,
-  type LivePhotoInfo,
+  motionPhotoOf,
+  motionContentIdentifier,
+  motionPhotoStem,
+  motionPhotoLabel,
+  pairMotionPhotos,
+  type MotionPhotoInfo,
+  type MotionPhotoSubtype,
+  type EmbeddedVideo,
   type LibraryItem,
-} from './livePhoto';
+} from './motionPhoto';
+export { readQuickTimeMetadata, readQuickTimeBoxes } from './quicktime';
+export { findXmpInJpeg, readJpegXmp, readGCameraMotion, xmpValue } from './xmp';
 
 // ---------------------------------------------------------------------------
 // Photos API

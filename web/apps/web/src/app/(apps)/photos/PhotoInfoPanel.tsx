@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Text, Heading } from '@neutrino/ui';
 import { facesApi, type PhotoResponse } from '@/lib/api';
+import type { MotionPhotoSubtype } from '@neutrino/api-photos';
 import { LocationMap } from './LocationMap';
 import styles from './PhotoInfoPanel.module.css';
 
@@ -48,16 +49,26 @@ function formatFocalLength(mm: number): string {
 
 interface Props {
   photo: PhotoResponse;
-  /** The motion half of a Live Photo, when the library found one. */
+  /** The motion half held in a separate file, when the library found one. */
   motion?: PhotoResponse | null;
-  /** True for a Live Photo, whether or not both halves are present. */
-  isLive?: boolean;
+  /** True for a motion photo, whether or not both halves are present. */
+  isMotionPhoto?: boolean;
+  /** Which flavour it is, so the panel can name it the way its platform does. */
+  subtype?: MotionPhotoSubtype | null;
   onClose: () => void;
 }
 
-export function PhotoInfoPanel({ photo, motion = null, isLive = false, onClose }: Props) {
+export function PhotoInfoPanel({
+  photo,
+  motion = null,
+  isMotionPhoto = false,
+  subtype = null,
+  onClose,
+}: Props) {
   const meta = photo.metadata;
   const exif = meta?.exif;
+  const motionPhoto = meta?.motionPhoto ?? null;
+  const kind = subtype === 'motion_photo_google' ? 'Motion Photo' : 'Live Photo';
 
   const facesQuery = useQuery({
     queryKey: ['faces', photo.id],
@@ -161,12 +172,25 @@ export function PhotoInfoPanel({ photo, motion = null, isLive = false, onClose }
           </div>
           <div className={styles.row}>
             <dt><Tag size={13} />Type</dt>
-            <dd>{isLive ? `Live Photo (${ext})` : ext}</dd>
+            <dd>{isMotionPhoto ? `${kind} (${ext})` : ext}</dd>
           </div>
           {motion && (
             <div className={styles.row}>
               <dt><Video size={13} />Motion</dt>
               <dd>{motion.fileName} · {formatFileSize(motion.sizeBytes)}</dd>
+            </div>
+          )}
+          {!motion && motionPhoto?.embedded && (
+            <div className={styles.row}>
+              <dt><Video size={13} />Motion</dt>
+              <dd>Embedded · {formatFileSize(motionPhoto.embedded.length)}</dd>
+            </div>
+          )}
+          {/* Why this is a photo and not a video — the diagnostic issue #156 asked for. */}
+          {motionPhoto && (
+            <div className={styles.row}>
+              <dt><Tag size={13} />Detected by</dt>
+              <dd>{motionPhoto.signal}</dd>
             </div>
           )}
           {photo.captureDate && (

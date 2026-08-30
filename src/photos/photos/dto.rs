@@ -10,9 +10,9 @@ pub struct RegisterPhotoRequest {
     /// Metadata the client read out of the file before encrypting it.
     ///
     /// Photo content is end-to-end encrypted, so the server only ever sees ciphertext and cannot
-    /// extract anything itself. Anything the library needs to know about the bytes — a Live Photo's
-    /// `com.apple.quicktime.content.identifier`, for one — has to arrive here, from the browser
-    /// that still held the plaintext.
+    /// extract anything itself. Anything the library needs to know about the bytes — whether this
+    /// is an Apple Live Photo or a Google Motion Photo, and which metadata field said so — has to
+    /// arrive here, from the browser that still held the plaintext.
     #[schema(value_type = Option<Object>)]
     pub metadata: Option<Value>,
 }

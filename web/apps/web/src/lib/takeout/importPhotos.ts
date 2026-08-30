@@ -40,7 +40,8 @@ import {
 import {
   generateThumbnail,
   generateVideoThumbnail,
-  readLivePhotoInfo,
+  readMotionPhotoInfo,
+  stillFrameSeconds,
 } from '@neutrino/api-photos';
 import {
   albumsApi,
@@ -295,24 +296,36 @@ export async function runPhotosImport({
       const blob = await photo.entry.blob();
       const media = new File([blob], title, { type: photo.mimeType });
 
-      // Google exports a Live Photo as two files — the still and the clip —
-      // so read the clip's Apple content identifier here, while the bytes are
-      // plaintext, and record it at registration. It is what the library pairs
-      // the two halves by, and what stops the clip listing as a short movie.
-      step = 'reading its Live Photo metadata';
-      const livePhoto = photo.kind === 'video' ? await readLivePhotoInfo(media) : null;
+      // Classify it here, while the bytes are plaintext, and record it at
+      // registration. Both flavours turn up in a Takeout export: an Apple Live
+      // Photo arrives as two files whose clip carries a content identifier, and
+      // a Google Motion Photo arrives either as a single `.MP.jpg` with an MP4
+      // appended or as a bare `.mp4` carrying GCamera XMP. Every file is asked,
+      // not just the videos — the Google case is an image.
+      step = 'classifying it';
+      const motionPhoto = await readMotionPhotoInfo(media, {
+        fileName: title,
+        mimeType: photo.mimeType,
+      });
+      if (motionPhoto) {
+        logStep('photos', `${title} is a motion photo`, {
+          subtype: motionPhoto.subtype,
+          signal: motionPhoto.signal,
+          embedded: motionPhoto.embedded !== undefined,
+        });
+      }
 
       // Only images have a thumbnail worth making, and only some of those: a
       // format the browser cannot decode (HEIC outside Safari, most raw files)
       // returns nothing rather than failing, and the photo imports without a
-      // preview instead of not at all. A Live Photo clip gets a frame of itself,
-      // for the case where its still never made it into the export.
+      // preview instead of not at all. A motion photo held as a clip gets a
+      // frame of itself, for the case where its still never made it across.
       step = 'making a thumbnail';
       const thumbnail =
         photo.kind === 'image'
           ? await generateThumbnail(media)
-          : livePhoto
-          ? await generateVideoThumbnail(media, { atSeconds: livePhoto.stillImageTime })
+          : motionPhoto
+          ? await generateVideoThumbnail(media, { atSeconds: stillFrameSeconds(motionPhoto) })
           : null;
 
       step = 'uploading it';
@@ -340,7 +353,7 @@ export async function runPhotosImport({
       const registered = await photosApi.registerPhoto({
         fileId,
         captureDate: captureDate ?? null,
-        metadata: livePhoto ? { livePhoto } : null,
+        metadata: motionPhoto ? { motionPhoto } : null,
       });
 
       // Registering always starts a photo unstarred and unarchived, so both
