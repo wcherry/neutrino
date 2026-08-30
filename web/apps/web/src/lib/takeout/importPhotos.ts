@@ -37,7 +37,12 @@ import {
   encryptMetadata,
   type KeyPair,
 } from '@neutrino/e2e-crypto';
-import { generateThumbnail } from '@neutrino/api-photos';
+import {
+  generateThumbnail,
+  generateVideoThumbnail,
+  readMotionPhotoInfo,
+  stillFrameSeconds,
+} from '@neutrino/api-photos';
 import {
   albumsApi,
   filesystemApi,
@@ -291,12 +296,37 @@ export async function runPhotosImport({
       const blob = await photo.entry.blob();
       const media = new File([blob], title, { type: photo.mimeType });
 
+      // Classify it here, while the bytes are plaintext, and record it at
+      // registration. Both flavours turn up in a Takeout export: an Apple Live
+      // Photo arrives as two files whose clip carries a content identifier, and
+      // a Google Motion Photo arrives either as a single `.MP.jpg` with an MP4
+      // appended or as a bare `.mp4` carrying GCamera XMP. Every file is asked,
+      // not just the videos — the Google case is an image.
+      step = 'classifying it';
+      const motionPhoto = await readMotionPhotoInfo(media, {
+        fileName: title,
+        mimeType: photo.mimeType,
+      });
+      if (motionPhoto) {
+        logStep('photos', `${title} is a motion photo`, {
+          subtype: motionPhoto.subtype,
+          signal: motionPhoto.signal,
+          embedded: motionPhoto.embedded !== undefined,
+        });
+      }
+
       // Only images have a thumbnail worth making, and only some of those: a
       // format the browser cannot decode (HEIC outside Safari, most raw files)
       // returns nothing rather than failing, and the photo imports without a
-      // preview instead of not at all.
+      // preview instead of not at all. A motion photo held as a clip gets a
+      // frame of itself, for the case where its still never made it across.
       step = 'making a thumbnail';
-      const thumbnail = photo.kind === 'image' ? await generateThumbnail(media) : null;
+      const thumbnail =
+        photo.kind === 'image'
+          ? await generateThumbnail(media)
+          : motionPhoto
+          ? await generateVideoThumbnail(media, { atSeconds: stillFrameSeconds(motionPhoto) })
+          : null;
 
       step = 'uploading it';
       logStep('photos', `uploading ${title}`, {
@@ -320,7 +350,11 @@ export async function runPhotosImport({
       // by the date of the import. The server may still find something better
       // in the file's own EXIF — the original bytes are what was uploaded.
       const captureDate = info?.takenAt ?? captureDateFromIso(isoFromDate(photo.entry.lastModified));
-      const registered = await photosApi.registerPhoto({ fileId, captureDate: captureDate ?? null });
+      const registered = await photosApi.registerPhoto({
+        fileId,
+        captureDate: captureDate ?? null,
+        metadata: motionPhoto ? { motionPhoto } : null,
+      });
 
       // Registering always starts a photo unstarred and unarchived, so both
       // flags are a second call — made only when there is something to say.

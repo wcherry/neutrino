@@ -1,6 +1,7 @@
 import { aiCredentials, request, buildQuery, ApiClientError, getCurrentUserId } from '@neutrino/api-core';
 import { filesystemApi } from '@neutrino/api-drive';
 import type { FileItem } from '@neutrino/api-drive';
+import type { MotionPhotoInfo } from './motionPhoto';
 
 // ---------------------------------------------------------------------------
 // Photos types
@@ -23,6 +24,13 @@ export interface PhotoMetadata {
   height?: number;
   format?: string;
   exif?: PhotoExifData;
+  /**
+   * Set on an Apple Live Photo or a Google Motion Photo, read out of the file
+   * by the browser at upload time — see `motionPhoto.ts`. It records the
+   * subtype and the metadata field that classified it, so a support case can
+   * tell why an asset is a photo rather than a video.
+   */
+  motionPhoto?: MotionPhotoInfo;
 }
 
 export interface PhotoResponse {
@@ -55,6 +63,12 @@ export interface ListPhotosResponse {
 export interface RegisterPhotoRequest {
   fileId: string;
   captureDate?: string | null;
+  /**
+   * Metadata the browser read out of the file before encrypting it. The server
+   * cannot extract anything from ciphertext, so anything it should know — a
+   * Live Photo's content identifier, for one — has to be sent from here.
+   */
+  metadata?: PhotoMetadata | null;
 }
 
 export interface UpdatePhotoRequest {
@@ -278,6 +292,30 @@ export interface ListSuggestionsResponse {
 export { generateThumbnail } from '@neutrino/utils';
 
 // ---------------------------------------------------------------------------
+// Motion photos — Apple Live Photos and Google Motion Photos
+// ---------------------------------------------------------------------------
+
+export {
+  CONTENT_IDENTIFIER_KEY,
+  STILL_IMAGE_TIME_KEY,
+  isLikelyLivePhotoMov,
+  readMotionPhotoInfo,
+  stillFrameSeconds,
+  generateVideoThumbnail,
+  motionPhotoOf,
+  motionContentIdentifier,
+  motionPhotoStem,
+  motionPhotoLabel,
+  pairMotionPhotos,
+  type MotionPhotoInfo,
+  type MotionPhotoSubtype,
+  type EmbeddedVideo,
+  type LibraryItem,
+} from './motionPhoto';
+export { readQuickTimeMetadata, readQuickTimeBoxes } from './quicktime';
+export { findXmpInJpeg, readJpegXmp, readGCameraMotion, xmpValue } from './xmp';
+
+// ---------------------------------------------------------------------------
 // Photos API
 // ---------------------------------------------------------------------------
 
@@ -340,6 +378,22 @@ export const photosApi = {
       excludePersonIds: opts?.excludePersonIds?.length ? opts.excludePersonIds.join(',') : undefined,
     });
     return request<ListPhotosResponse>(`/api/v1/photos${qs}`);
+  },
+
+  /**
+   * The movies in the library's root, as pairing candidates for `pairLivePhotos`.
+   *
+   * The main listing above asks Drive for `type=photo`, which is `image/%` only,
+   * so a Live Photo's motion half is not in it — the still would show with no
+   * clip attached. These are fetched to be paired, not to be listed: anything
+   * that pairs with nothing is dropped by `pairLivePhotos` rather than turning
+   * the Photos library into a video library.
+   */
+  async listMotionCandidates(): Promise<PhotoResponse[]> {
+    const rootId = getCurrentUserId();
+    if (!rootId) return [];
+    const contents = await filesystemApi.getFolderContents(rootId, { type: 'video' });
+    return contents.files.map(fileToPhoto);
   },
 
   async registerPhoto(body: RegisterPhotoRequest): Promise<PhotoResponse> {

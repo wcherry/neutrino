@@ -61,6 +61,13 @@ impl PhotosService {
             .as_deref()
             .and_then(|s| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S").ok());
 
+        // The client read this out of the plaintext before uploading; the server never can.
+        let metadata = req
+            .metadata
+            .as_ref()
+            .filter(|m| !m.is_null())
+            .map(|m| m.to_string());
+
         let id = Uuid::new_v4().to_string();
         let new_photo = NewPhotoRecord {
             id: &id,
@@ -70,7 +77,7 @@ impl PhotosService {
             is_archived: false,
             deleted_at: None,
             capture_date,
-            metadata: None,
+            metadata: metadata.as_deref(),
         };
         let photo = self.repo.insert_photo(new_photo)?;
 
