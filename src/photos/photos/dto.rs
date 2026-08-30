@@ -7,6 +7,14 @@ use utoipa::ToSchema;
 pub struct RegisterPhotoRequest {
     pub file_id: String,
     pub capture_date: Option<String>,
+    /// Metadata the client read out of the file before encrypting it.
+    ///
+    /// Photo content is end-to-end encrypted, so the server only ever sees ciphertext and cannot
+    /// extract anything itself. Anything the library needs to know about the bytes — a Live Photo's
+    /// `com.apple.quicktime.content.identifier`, for one — has to arrive here, from the browser
+    /// that still held the plaintext.
+    #[schema(value_type = Option<Object>)]
+    pub metadata: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

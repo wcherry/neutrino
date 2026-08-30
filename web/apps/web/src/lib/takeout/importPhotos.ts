@@ -37,7 +37,11 @@ import {
   encryptMetadata,
   type KeyPair,
 } from '@neutrino/e2e-crypto';
-import { generateThumbnail } from '@neutrino/api-photos';
+import {
+  generateThumbnail,
+  generateVideoThumbnail,
+  readLivePhotoInfo,
+} from '@neutrino/api-photos';
 import {
   albumsApi,
   filesystemApi,
@@ -291,12 +295,25 @@ export async function runPhotosImport({
       const blob = await photo.entry.blob();
       const media = new File([blob], title, { type: photo.mimeType });
 
+      // Google exports a Live Photo as two files — the still and the clip —
+      // so read the clip's Apple content identifier here, while the bytes are
+      // plaintext, and record it at registration. It is what the library pairs
+      // the two halves by, and what stops the clip listing as a short movie.
+      step = 'reading its Live Photo metadata';
+      const livePhoto = photo.kind === 'video' ? await readLivePhotoInfo(media) : null;
+
       // Only images have a thumbnail worth making, and only some of those: a
       // format the browser cannot decode (HEIC outside Safari, most raw files)
       // returns nothing rather than failing, and the photo imports without a
-      // preview instead of not at all.
+      // preview instead of not at all. A Live Photo clip gets a frame of itself,
+      // for the case where its still never made it into the export.
       step = 'making a thumbnail';
-      const thumbnail = photo.kind === 'image' ? await generateThumbnail(media) : null;
+      const thumbnail =
+        photo.kind === 'image'
+          ? await generateThumbnail(media)
+          : livePhoto
+          ? await generateVideoThumbnail(media, { atSeconds: livePhoto.stillImageTime })
+          : null;
 
       step = 'uploading it';
       logStep('photos', `uploading ${title}`, {
@@ -320,7 +337,11 @@ export async function runPhotosImport({
       // by the date of the import. The server may still find something better
       // in the file's own EXIF — the original bytes are what was uploaded.
       const captureDate = info?.takenAt ?? captureDateFromIso(isoFromDate(photo.entry.lastModified));
-      const registered = await photosApi.registerPhoto({ fileId, captureDate: captureDate ?? null });
+      const registered = await photosApi.registerPhoto({
+        fileId,
+        captureDate: captureDate ?? null,
+        metadata: livePhoto ? { livePhoto } : null,
+      });
 
       // Registering always starts a photo unstarred and unarchived, so both
       // flags are a second call — made only when there is something to say.

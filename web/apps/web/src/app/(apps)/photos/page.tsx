@@ -34,9 +34,17 @@ import {
   type MemoryYear,
 } from '@/lib/api';
 import { readAutoFaceDetect } from '@/hooks/usePhotoSettings';
-import { generateThumbnail } from '@neutrino/api-photos';
+import {
+  generateThumbnail,
+  generateVideoThumbnail,
+  readLivePhotoInfo,
+  pairLivePhotos,
+  type LibraryItem,
+  type PhotoMetadata,
+} from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
 import { initSodium, generateFileKey, encryptFileKey, encryptMetadata, loadKeyPair, activeKeyVersion } from '@neutrino/e2e-crypto';
+import { LivePhotoMedia } from './LivePhotoMedia';
 import { PhotoInfoPanel } from './PhotoInfoPanel';
 import { PersonPhotosPanel } from './PersonPhotosPanel';
 import { SuggestionsPanel, SuggestionsBadge } from './SuggestionsPanel';
@@ -54,6 +62,19 @@ function formatDate(iso: string): string {
 
 function isImageMime(mime: string): boolean {
   return mime.startsWith('image/');
+}
+
+/**
+ * Worth checking for Live Photo metadata? Only QuickTime and MP4 carry it, and
+ * a browser that guesses no MIME type at all for a `.mov` is common enough that
+ * the extension has to be consulted too.
+ */
+function isMovieFile(file: File): boolean {
+  return (
+    file.type === 'video/quicktime' ||
+    file.type === 'video/mp4' ||
+    /\.(mov|mp4|m4v)$/i.test(file.name)
+  );
 }
 
 
@@ -88,20 +109,22 @@ function useAuthBlobUrl(path: string | null): string | null {
 }
 
 function PhotoCard({
-  photo,
+  item,
   onStar,
   onArchive,
   onTrash,
   onInfo,
   onPreview,
 }: {
-  photo: PhotoResponse;
+  item: LibraryItem;
   onStar: (photo: PhotoResponse) => void;
   onArchive: (photo: PhotoResponse) => void;
   onTrash: (photo: PhotoResponse) => void;
-  onInfo: (photo: PhotoResponse) => void;
+  onInfo: (item: LibraryItem) => void;
   onPreview: (photo: PhotoResponse) => void;
 }) {
+  const photo = item.photo;
+  const [active, setActive] = useState(false);
   const thumbDataUrl = photo.thumbnail && photo.thumbnailMimeType
     ? `data:${photo.thumbnailMimeType};base64,${photo.thumbnail}`
     : null;
@@ -109,15 +132,16 @@ function PhotoCard({
   const imgSrc = thumbDataUrl ?? blobUrl;
 
   return (
-    <div className={styles.photoCard} onClick={() => onPreview(photo)} style={{ cursor: 'pointer' }}>
-      {imgSrc ? (
-        <img src={imgSrc} alt={photo.fileName} className={styles.photoImg} loading="lazy" />
-      ) : (
-        <div className={styles.photoPlaceholder}>
-          <ImageIcon size={32} />
-          <span>{photo.fileName}</span>
-        </div>
-      )}
+    <div
+      className={styles.photoCard}
+      onClick={() => onPreview(photo)}
+      style={{ cursor: 'pointer' }}
+      onPointerEnter={() => setActive(true)}
+      onPointerLeave={() => setActive(false)}
+      onFocus={() => setActive(true)}
+      onBlur={() => setActive(false)}
+    >
+      <LivePhotoMedia item={item} imgSrc={imgSrc} active={active} />
 
       <div className={styles.photoOverlay}>
         <div className={styles.photoOverlayTop}>
@@ -144,7 +168,7 @@ function PhotoCard({
           </button>
           <button
             className={styles.iconBtn}
-            onClick={(e) => { e.stopPropagation(); onInfo(photo); }}
+            onClick={(e) => { e.stopPropagation(); onInfo(item); }}
             title="Photo info"
           >
             <Info size={14} />
@@ -218,7 +242,7 @@ export default function PhotosPage() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [newAlbumTitle, setNewAlbumTitle] = useState('');
   const [showNewAlbum, setShowNewAlbum] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<PhotoResponse | null>(null);
+  const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<PersonResponse | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -245,6 +269,15 @@ export default function PhotosPage() {
       return photosApi.listPhotos();
     },
     enabled: activeTab !== 'albums' && activeTab !== 'people',
+  });
+
+  // The movies that may be the motion half of a Live Photo. They are never
+  // listed on their own — `pairLivePhotos` folds them into their stills and
+  // drops the rest — so this is fetched alongside every photo listing.
+  const motionQuery = useQuery({
+    queryKey: ['photo-motion'],
+    queryFn: () => photosApi.listMotionCandidates(),
+    enabled: activeTab !== 'albums' && activeTab !== 'people' && activeTab !== 'memories',
   });
 
   const albumsQuery = useQuery({
@@ -295,8 +328,17 @@ export default function PhotosPage() {
         { name: file.name, mimeType: file.type || 'application/octet-stream' },
         dek,
       );
+      // Read the Live Photo marker here, while the bytes are still plaintext —
+      // the server only ever sees ciphertext and cannot look for itself.
+      const livePhoto = isMovieFile(file) ? await readLivePhotoInfo(file) : null;
+      const metadata: PhotoMetadata | null = livePhoto ? { livePhoto } : null;
+
       const thumbnailB64 = file.type.startsWith('image/')
         ? await generateThumbnail(file)
+        // A Live Photo with no still beside it would otherwise be a black tile,
+        // so take a frame from the clip and use that as the picture.
+        : livePhoto
+        ? await generateVideoThumbnail(file, { atSeconds: livePhoto.stillImageTime })
         : null;
       console.log('[photos:upload] thumbnailB64 present:', thumbnailB64 !== null, 'length:', thumbnailB64?.length ?? 0);
       const fileItem = await uploadEncryptedFile(
@@ -306,10 +348,11 @@ export default function PhotosPage() {
         thumbnailB64,
         activeKeyVersion(userId) ?? undefined,
       );
-      return photosApi.registerPhoto({ fileId: fileItem.id });
+      return photosApi.registerPhoto({ fileId: fileItem.id, metadata });
     },
     onSuccess: (photo) => {
       queryClient.invalidateQueries({ queryKey: ['photos'] });
+      queryClient.invalidateQueries({ queryKey: ['photo-motion'] });
       setUploadProgress(null);
       setUploadError(null);
       // If the user opted in, kick off background face detection for the new photo.
@@ -367,6 +410,14 @@ export default function PhotosPage() {
   }, [uploadMutation]);
 
   const photos = photosQuery.data?.photos ?? [];
+  const motionFiles = motionQuery.data;
+  // Memoised because a tile holds its motion clip against this object's
+  // identity: rebuilding the list on every hover would drop each download the
+  // moment the pointer arrived.
+  const items = React.useMemo(
+    () => pairLivePhotos(photos, motionFiles ?? []),
+    [photos, motionFiles],
+  );
   const albums = albumsQuery.data?.albums ?? [];
   const persons = personsQuery.data?.persons ?? [];
   const memories = memoriesQuery.data?.memories ?? [];
@@ -671,7 +722,7 @@ export default function PhotosPage() {
             </div>
           )}
         </div>
-      ) : photos.length === 0 ? (
+      ) : items.length === 0 ? (
         <div
           className={styles.uploadZone}
           onClick={() => uploadInputRef.current?.click()}
@@ -693,24 +744,28 @@ export default function PhotosPage() {
         </div>
       ) : (
         <div className={styles.photoGrid}>
-          {photos.map((photo) => (
+          {items.map((item) => (
             <PhotoCard
-              key={photo.id}
-              photo={photo}
+              key={item.photo.id}
+              item={item}
               onStar={(p) => starMutation.mutate(p)}
               onArchive={(p) => archiveMutation.mutate(p)}
               onTrash={(p) => trashMutation.mutate(p)}
-              onInfo={(p) => setSelectedPhoto((prev) => prev?.id === p.id ? null : p)}
+              onInfo={(next) =>
+                setSelectedItem((prev) => (prev?.photo.id === next.photo.id ? null : next))
+              }
               onPreview={(p) => openPreview(p)}
             />
           ))}
         </div>
       )}
 
-      {selectedPhoto && (
+      {selectedItem && (
         <PhotoInfoPanel
-          photo={selectedPhoto}
-          onClose={() => setSelectedPhoto(null)}
+          photo={selectedItem.photo}
+          motion={selectedItem.motion}
+          isLive={selectedItem.isLive}
+          onClose={() => setSelectedItem(null)}
         />
       )}
 

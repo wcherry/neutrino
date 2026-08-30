@@ -18,11 +18,20 @@ export interface PhotoExifData {
   datetimeOriginal?: string;
 }
 
+export interface LivePhotoMetadata {
+  /** Apple's `com.apple.quicktime.content.identifier` — see `livePhoto.ts`. */
+  contentIdentifier: string;
+  /** Seconds into the clip that the still frame sits at, when the file says. */
+  stillImageTime?: number;
+}
+
 export interface PhotoMetadata {
   width?: number;
   height?: number;
   format?: string;
   exif?: PhotoExifData;
+  /** Set on the motion half of a Live Photo, read from the file at upload time. */
+  livePhoto?: LivePhotoMetadata;
 }
 
 export interface PhotoResponse {
@@ -55,6 +64,12 @@ export interface ListPhotosResponse {
 export interface RegisterPhotoRequest {
   fileId: string;
   captureDate?: string | null;
+  /**
+   * Metadata the browser read out of the file before encrypting it. The server
+   * cannot extract anything from ciphertext, so anything it should know — a
+   * Live Photo's content identifier, for one — has to be sent from here.
+   */
+  metadata?: PhotoMetadata | null;
 }
 
 export interface UpdatePhotoRequest {
@@ -278,6 +293,24 @@ export interface ListSuggestionsResponse {
 export { generateThumbnail } from '@neutrino/utils';
 
 // ---------------------------------------------------------------------------
+// Live Photos
+// ---------------------------------------------------------------------------
+
+export {
+  CONTENT_IDENTIFIER_KEY,
+  STILL_IMAGE_TIME_KEY,
+  readQuickTimeMetadata,
+  isLikelyLivePhotoMov,
+  readLivePhotoInfo,
+  generateVideoThumbnail,
+  livePhotoIdentifier,
+  livePhotoStem,
+  pairLivePhotos,
+  type LivePhotoInfo,
+  type LibraryItem,
+} from './livePhoto';
+
+// ---------------------------------------------------------------------------
 // Photos API
 // ---------------------------------------------------------------------------
 
@@ -340,6 +373,22 @@ export const photosApi = {
       excludePersonIds: opts?.excludePersonIds?.length ? opts.excludePersonIds.join(',') : undefined,
     });
     return request<ListPhotosResponse>(`/api/v1/photos${qs}`);
+  },
+
+  /**
+   * The movies in the library's root, as pairing candidates for `pairLivePhotos`.
+   *
+   * The main listing above asks Drive for `type=photo`, which is `image/%` only,
+   * so a Live Photo's motion half is not in it — the still would show with no
+   * clip attached. These are fetched to be paired, not to be listed: anything
+   * that pairs with nothing is dropped by `pairLivePhotos` rather than turning
+   * the Photos library into a video library.
+   */
+  async listMotionCandidates(): Promise<PhotoResponse[]> {
+    const rootId = getCurrentUserId();
+    if (!rootId) return [];
+    const contents = await filesystemApi.getFolderContents(rootId, { type: 'video' });
+    return contents.files.map(fileToPhoto);
   },
 
   async registerPhoto(body: RegisterPhotoRequest): Promise<PhotoResponse> {

@@ -48,10 +48,14 @@ function formatFocalLength(mm: number): string {
 
 interface Props {
   photo: PhotoResponse;
+  /** The motion half of a Live Photo, when the library found one. */
+  motion?: PhotoResponse | null;
+  /** True for a Live Photo, whether or not both halves are present. */
+  isLive?: boolean;
   onClose: () => void;
 }
 
-export function PhotoInfoPanel({ photo, onClose }: Props) {
+export function PhotoInfoPanel({ photo, motion = null, isLive = false, onClose }: Props) {
   const meta = photo.metadata;
   const exif = meta?.exif;
 
@@ -157,8 +161,14 @@ export function PhotoInfoPanel({ photo, onClose }: Props) {
           </div>
           <div className={styles.row}>
             <dt><Tag size={13} />Type</dt>
-            <dd>{ext}</dd>
+            <dd>{isLive ? `Live Photo (${ext})` : ext}</dd>
           </div>
+          {motion && (
+            <div className={styles.row}>
+              <dt><Video size={13} />Motion</dt>
+              <dd>{motion.fileName} · {formatFileSize(motion.sizeBytes)}</dd>
+            </div>
+          )}
           {photo.captureDate && (
             <div className={styles.row}>
               <dt><Calendar size={13} />Captured</dt>

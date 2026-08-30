@@ -41,8 +41,12 @@ vi.mock('@/lib/api', () => ({
 }));
 
 const generateThumbnail = vi.fn();
+const generateVideoThumbnail = vi.fn();
+const readLivePhotoInfo = vi.fn();
 vi.mock('@neutrino/api-photos', () => ({
   generateThumbnail: (...args: unknown[]) => generateThumbnail(...args),
+  generateVideoThumbnail: (...args: unknown[]) => generateVideoThumbnail(...args),
+  readLivePhotoInfo: (...args: unknown[]) => readLivePhotoInfo(...args),
 }));
 
 const loadKeyPair = vi.fn();
@@ -104,6 +108,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   loadKeyPair.mockReturnValue(KEY_PAIR);
   generateThumbnail.mockResolvedValue('thumb-b64');
+  generateVideoThumbnail.mockResolvedValue('frame-b64');
+  readLivePhotoInfo.mockResolvedValue(null);
   uploadEncryptedFile.mockImplementation(async (file: File) => ({ id: `file-${file.name}` }));
   storageApi.uploadFile.mockImplementation(async (file: File) => ({ id: `file-${file.name}` }));
   photosApi.registerPhoto.mockImplementation(async ({ fileId }: { fileId: string }) => ({
@@ -137,6 +143,7 @@ describe('runPhotosImport', () => {
     expect(photosApi.registerPhoto).toHaveBeenCalledWith({
       fileId: 'file-IMG_1.jpg',
       captureDate: null,
+      metadata: null,
     });
   });
 
@@ -147,6 +154,7 @@ describe('runPhotosImport', () => {
       fileId: 'file-a.jpg',
       // Naive UTC, which is the only shape the endpoint parses.
       captureDate: '2019-08-13T12:00:00',
+      metadata: null,
     });
   });
 
@@ -163,6 +171,7 @@ describe('runPhotosImport', () => {
     expect(photosApi.registerPhoto).toHaveBeenCalledWith({
       fileId: 'file-a.jpg',
       captureDate: '2019-08-13T12:00:00',
+      metadata: null,
     });
   });
 
@@ -180,6 +189,7 @@ describe('runPhotosImport', () => {
     expect(photosApi.registerPhoto).toHaveBeenCalledWith({
       fileId: 'file-a.jpg',
       captureDate: '2019-08-13T12:00:00',
+      metadata: null,
     });
   });
 
@@ -209,7 +219,27 @@ describe('runPhotosImport', () => {
     await run([photo('a.jpg'), photo('b.mp4', { kind: 'video', mimeType: 'video/mp4' })]);
 
     expect(generateThumbnail).toHaveBeenCalledTimes(1);
+    expect(generateVideoThumbnail).not.toHaveBeenCalled();
     expect(uploadEncryptedFile.mock.calls[1][6]).toBeNull();
+  });
+
+  /**
+   * A Live Photo's clip is registered with the identifier that ties it to its
+   * still, and given a frame of itself as a preview — without one it lands in
+   * the library as a black tile whenever its still is missing (issue #154).
+   */
+  it('records a Live Photo clip’s content identifier and gives it a frame', async () => {
+    readLivePhotoInfo.mockResolvedValue({ contentIdentifier: 'ABC-123', stillImageTime: 1.5 });
+
+    await run([photo('IMG_1.mov', { kind: 'video', mimeType: 'video/quicktime' })]);
+
+    expect(generateVideoThumbnail).toHaveBeenCalledWith(expect.anything(), { atSeconds: 1.5 });
+    expect(uploadEncryptedFile.mock.calls[0][6]).toBe('frame-b64');
+    expect(photosApi.registerPhoto).toHaveBeenCalledWith({
+      fileId: 'file-IMG_1.mov',
+      captureDate: null,
+      metadata: { livePhoto: { contentIdentifier: 'ABC-123', stillImageTime: 1.5 } },
+    });
   });
 
   it('imports a picture the browser cannot decode, just without a preview', async () => {
