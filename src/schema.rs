@@ -480,6 +480,17 @@ diesel::table! {
     }
 }
 
+// Added in migration 118. One row, keyed 'default'.
+diesel::table! {
+    version_retention_settings (id) {
+        id -> Text,
+        enabled -> Bool,
+        retention_days -> Integer,
+        min_versions -> Integer,
+        updated_at -> Timestamp,
+    }
+}
+
 diesel::table! {
     share_links (id) {
         id -> Text,
@@ -995,6 +1006,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     user_quotas,
     shortcuts,
     file_versions,
+    version_retention_settings,
     share_links,
     permissions,
     access_requests,

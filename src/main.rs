@@ -378,6 +378,12 @@ async fn main() -> std::io::Result<()> {
         }),
     );
 
+    // Bring an older store onto the one-directory-per-file layout. Runs to
+    // completion before the server binds: a request served against a
+    // half-converted store would read a file whose bytes are mid-move.
+    // Self-detecting and idempotent, so a converted store pays one query.
+    drive::storage::layout::migrate_to_file_directories(&pool, &file_store);
+
     // Reap upload staging files that never committed. `TempUpload` cleans up
     // every abort the process survives; this catches what it can't — a crash
     // or a kill mid-upload — so orphans can't accumulate indefinitely. Runs
@@ -608,6 +614,13 @@ async fn main() -> std::io::Result<()> {
     let drive_feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
         repo: drive_feature_flags_repo,
     });
+
+    let drive_version_retention_state =
+        web::Data::new(drive::version_retention::api::VersionRetentionState {
+            repo: Arc::new(drive::version_retention::repository::VersionRetentionRepository::new(
+                pool.clone(),
+            )),
+        });
 
     let drive_fonts_state = web::Data::new(drive::fonts::api::FontsApiState {
         service: drive_fonts_service,
@@ -988,6 +1001,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(drive::access_requests::api::AccessRequestsApiDoc::openapi());
         doc.merge(drive::admin::api::AdminApiDoc::openapi());
         doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
+        doc.merge(drive::version_retention::api::VersionRetentionApiDoc::openapi());
         doc.merge(drive::fonts::api::FontsApiDoc::openapi());
         doc.merge(drive::comments::api::CommentsApiDoc::openapi());
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
@@ -1067,6 +1081,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(drive_service_registry_state.clone())
             .app_data(drive_admin_state.clone())
             .app_data(drive_feature_flags_state.clone())
+            .app_data(drive_version_retention_state.clone())
             .app_data(drive_fonts_state.clone())
             // File events (shared)
             .app_data(file_events_state.clone())
@@ -1140,6 +1155,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                             .configure(drive::security::api::configure)
                             .configure(drive::admin::api::configure)
                             .configure(drive::feature_flags::api::configure_admin)
+                            .configure(drive::version_retention::api::configure_admin)
                             .configure(drive::fonts::api::configure_admin),
                     )
                     // Internal routes

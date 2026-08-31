@@ -3,13 +3,36 @@ use crate::drive::filesystem::model::{
     UpdateFolderRecord,
 };
 use crate::drive::storage::model::FileRecord;
-use crate::schema::{files, folders, shortcuts};
+use crate::schema::{file_versions, files, folders, shortcuts};
 use crate::shared::ApiError;
 use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
+
+/// Drop the version history of files that are about to be deleted for good.
+///
+/// SQLite runs with `foreign_keys` off, so the `ON DELETE CASCADE` declared on
+/// `file_versions.file_id` never fires. Left behind, the rows point at blobs
+/// the caller has just removed and go on counting against the owner's quota,
+/// which is derived from exactly this table.
+fn delete_version_rows(
+    conn: &mut SqliteConnection,
+    files_going: &[FileRecord],
+) -> Result<(), ApiError> {
+    if files_going.is_empty() {
+        return Ok(());
+    }
+    let ids: Vec<&str> = files_going.iter().map(|f| f.id.as_str()).collect();
+    diesel::delete(file_versions::table.filter(file_versions::file_id.eq_any(ids)))
+        .execute(conn)
+        .map_err(|e| {
+            tracing::error!("DB delete file versions error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+    Ok(())
+}
 
 pub struct FilesystemRepository {
     pool: DbPool,
@@ -438,6 +461,17 @@ impl FilesystemRepository {
             })?;
 
         if record.is_some() {
+            // SQLite runs with `foreign_keys` off, so the `ON DELETE CASCADE`
+            // on `file_versions.file_id` never fires — the history rows have
+            // to go by hand, or they outlive the blobs the caller is about to
+            // remove and keep counting against the owner's quota forever.
+            diesel::delete(file_versions::table.filter(file_versions::file_id.eq(file_id)))
+                .execute(&mut conn)
+                .map_err(|e| {
+                    tracing::error!("DB delete file versions error: {:?}", e);
+                    ApiError::internal("Database error")
+                })?;
+
             diesel::delete(
                 files::table
                     .filter(files::id.eq(file_id))
@@ -542,6 +576,8 @@ impl FilesystemRepository {
                 ApiError::internal("Database error")
             })?;
 
+        delete_version_rows(&mut conn, &expired_files)?;
+
         diesel::delete(
             files::table
                 .filter(files::user_id.eq(user_id))
@@ -581,6 +617,8 @@ impl FilesystemRepository {
                 tracing::error!("DB query all trashed files error: {:?}", e);
                 ApiError::internal("Database error")
             })?;
+
+        delete_version_rows(&mut conn, &trashed_files)?;
 
         diesel::delete(
             files::table

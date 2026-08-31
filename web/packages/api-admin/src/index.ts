@@ -11,6 +11,8 @@ export type {
   UpdateAdminUserRequest,
   FeatureFlag,
   UpdateFeatureFlagRequest,
+  VersionRetentionSettings,
+  UpdateVersionRetentionRequest,
   JobResponse,
   FontFormat,
   CustomFont,

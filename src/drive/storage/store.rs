@@ -98,28 +98,41 @@ impl LocalFileStore {
         Ok(LocalFileStore { base_path })
     }
 
-    /// Absolute path to the file on disk — use for filesystem operations.
-    pub fn file_path(&self, user_id: &str, file_id: &str) -> PathBuf {
-        self.base_path.join(user_id).join(file_id)
+    /// Absolute path to a flat blob in a partition — use for filesystem operations.
+    ///
+    /// Drive files are **not** stored this way: they live in a directory of
+    /// their own (see [`Self::file_dir`]). This is for the partitions that hold
+    /// one unversioned blob per name, which today means `fonts`.
+    pub fn file_path(&self, partition: &str, name: &str) -> PathBuf {
+        self.base_path.join(partition).join(name)
     }
 
     /// Relative key stored in the database (independent of STORAGE_PATH).
-    pub fn file_key(&self, user_id: &str, file_id: &str) -> String {
-        format!("{}/{}", user_id, file_id)
+    pub fn file_key(&self, partition: &str, name: &str) -> String {
+        format!("{}/{}", partition, name)
     }
 
-    /// Absolute path to a version snapshot on disk — use for filesystem operations.
+    /// Absolute path to the directory holding every version of one file.
+    ///
+    /// One directory per file, containing the current content *and* its
+    /// history: each entry is named for a `file_versions.id`, and the row the
+    /// file's `storage_path` points at is the live one. Nothing is stored
+    /// twice — the file's current bytes are a version, not a copy of one —
+    /// which is what the older `<user>/<file>` plus `<user>/versions/<file>/`
+    /// layout could not express (every upload wrote its content out twice, and
+    /// a store of freshly uploaded files occupied double what it reported).
+    pub fn file_dir(&self, user_id: &str, file_id: &str) -> PathBuf {
+        self.base_path.join(user_id).join(file_id)
+    }
+
+    /// Absolute path to one version's bytes — use for filesystem operations.
     pub fn version_path(&self, user_id: &str, file_id: &str, version_id: &str) -> PathBuf {
-        self.base_path
-            .join(user_id)
-            .join("versions")
-            .join(file_id)
-            .join(version_id)
+        self.file_dir(user_id, file_id).join(version_id)
     }
 
-    /// Relative key for a version snapshot stored in the database.
+    /// Relative key for one version stored in the database.
     pub fn version_key(&self, user_id: &str, file_id: &str, version_id: &str) -> String {
-        format!("{}/versions/{}/{}", user_id, file_id, version_id)
+        format!("{}/{}/{}", user_id, file_id, version_id)
     }
 
     /// Resolve a relative DB key to its absolute path using STORAGE_PATH.
@@ -190,7 +203,7 @@ impl LocalFileStore {
         let mut report = TempSweepReport::default();
 
         // One level down only: staging files are always created directly in a
-        // user (or `fonts`) partition, never under `versions/`.
+        // user (or `fonts`) partition, never inside a file's own directory.
         let partitions = match std::fs::read_dir(&self.base_path) {
             Ok(entries) => entries,
             Err(e) => {
@@ -259,9 +272,24 @@ impl LocalFileStore {
             .map_err(|e| format!("Failed to create user directory: {}", e))
     }
 
-    pub fn ensure_versions_dir(&self, user_id: &str, file_id: &str) -> Result<(), String> {
-        std::fs::create_dir_all(self.base_path.join(user_id).join("versions").join(file_id))
-            .map_err(|e| format!("Failed to create versions directory: {}", e))
+    pub fn ensure_file_dir(&self, user_id: &str, file_id: &str) -> Result<(), String> {
+        std::fs::create_dir_all(self.file_dir(user_id, file_id))
+            .map_err(|e| format!("Failed to create file directory: {}", e))
+    }
+
+    /// Remove a file's directory and every version in it.
+    ///
+    /// Called when the file itself is deleted for good. Best-effort and
+    /// logged rather than raised: the rows are what make the file exist, and a
+    /// busy handle must not keep a deleted file in the listing.
+    pub fn remove_file_dir(&self, user_id: &str, file_id: &str) {
+        let dir = self.file_dir(user_id, file_id);
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => {}
+            // Never had content uploaded, or a previous delete got there first.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::warn!("Failed to remove file directory {:?}: {:?}", dir, e),
+        }
     }
 
     #[allow(dead_code)]
@@ -404,13 +432,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(base);
     }
 
-    /// Version snapshots live in `<user>/versions/<file>/` and are never
-    /// staging files; the sweep must not descend into them.
+    /// Versions live in the file's own directory and are never staging files;
+    /// the sweep must not descend into them.
     #[test]
     fn sweep_ignores_nested_directories() {
         let (store, base) = temp_store();
-        store.ensure_versions_dir("user1", "file1").expect("mkdir");
-        let nested = base.join("user1/versions/file1/tmp_looks_like_staging");
+        store.ensure_file_dir("user1", "file1").expect("mkdir");
+        let nested = base.join("user1/file1/tmp_looks_like_staging");
         std::fs::write(&nested, b"not a staging file").expect("write");
         age_file(&nested, Duration::from_secs(7200));
 
