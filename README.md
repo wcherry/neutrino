@@ -188,8 +188,21 @@ Dockerfile            # Single-image build (web → Rust binaries)
 
 ### Local development
 
-The fastest path starts the backend, the worker and the frontend together, and fetches
-the worker's face-detection model on first run:
+On a fresh clone, one task does every prerequisite step for the backend, the frontend
+and the E2E suite:
+
+```bash
+cargo xtask setup
+```
+
+It generates the repo-root `.env` secrets, downloads the worker's face-detection model,
+fetches the crates, runs the workspace `pnpm install` (which covers `web/` *and* `e2e/`),
+installs the Playwright browser, and generates the `e2e/secrets/` files the test stack
+mounts. Every step is idempotent — re-run it any time something looks half-installed. It
+needs `pnpm`, `node`, `openssl`, `curl` and `docker` on the PATH, and says which are
+missing rather than failing partway through.
+
+Then start the backend, the worker and the frontend together:
 
 ```bash
 cargo xtask dev

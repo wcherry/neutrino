@@ -14,6 +14,15 @@ Each test run spins up a fully isolated Docker stack, captures all observable st
 
 ## Setup
 
+Every step below is also done for you by one task, run from the repo root:
+
+```bash
+cargo xtask setup
+```
+
+It is idempotent and never overwrites an existing file, so re-running it is safe. The
+manual equivalent follows.
+
 ### 1. Install dependencies — from the repo root
 
 `e2e/` and `web/` are members of one pnpm workspace rooted at the repo root, so
