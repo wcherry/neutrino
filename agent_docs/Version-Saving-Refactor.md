@@ -1,5 +1,20 @@
 # How to Save Document Changes without Creating Versions
 
+> **Status: exploratory notes, not what ships.** Version storage was reworked
+> along different lines — see the *File storage and version history* section of
+> the root `README.md` for what actually exists.
+>
+> What was taken from here: autosave overwrites the live content rather than
+> minting a version, and named versions (`is_named`) are marked and never pruned
+> automatically. What was not: there are no diffs and no coalescing. Every
+> version is a **full copy**, and they all live in one directory per file
+> alongside the current content (`<user>/<file>/<version>`), which is what
+> removed the duplication this document was written to address — the content
+> used to be stored twice, once as the file and once as its own first snapshot.
+> Growth is bounded by an admin-set retention policy the worker sweeps against
+> (an age, plus a floor on how many recent versions survive it) rather than by
+> the merging described below.
+
 1. Continuous autosave (not snapshot-based)
 	•	Every small batch of edits is sent to the server
 	•	Stored as:
