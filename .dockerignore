@@ -1,0 +1,13 @@
+# The build context is the repo root. Without this, `COPY web/ web/` would
+# overwrite the node_modules that `pnpm install` just built in the image with
+# the host's (wrong platform), and the Rust stage would drag in target/.
+.git
+node_modules
+**/node_modules
+target
+**/.next
+**/out
+test-results
+**/test-results
+**/playwright-report
+e2e/secrets

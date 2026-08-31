@@ -8,17 +8,58 @@ Each test run spins up a fully isolated Docker stack, captures all observable st
 
 - Docker
 - Node.js 20+
-- `openssl` (used to generate run IDs)
-- Playwright browsers: `npx playwright install chromium`
+- `pnpm` 10+ — the only package manager used in this repo (`corepack enable`
+  will pick up the pinned version from `packageManager`)
+- `openssl` (used to generate run IDs and the stack secrets)
 
 ## Setup
 
+Every step below is also done for you by one task, run from the repo root:
+
 ```bash
-npm install
-npx playwright install chromium
+cargo xtask setup
 ```
 
-Copy the example env file if you need to override defaults:
+It is idempotent and never overwrites an existing file, so re-running it is safe. The
+manual equivalent follows.
+
+### 1. Install dependencies — from the repo root
+
+`e2e/` and `web/` are members of one pnpm workspace rooted at the repo root, so
+a single install at the root covers both:
+
+```bash
+cd ..           # the repo root, not e2e/
+pnpm install
+```
+
+Installing from inside `e2e/` alone is not enough. The E2EE fixtures import
+`@neutrino/e2e-crypto` straight out of `web/packages/` and resolve its runtime
+dependencies (`libsodium-wrappers`, `hash-wasm`) from that package — a root
+install is what puts them there. Skipping it is what produces
+`Error: Cannot find module 'libsodium-wrappers'` on a fresh clone.
+
+### 2. Install the Playwright browsers
+
+```bash
+pnpm exec playwright install chromium
+```
+
+### 3. Create the stack secrets
+
+`docker-compose-test.yml` mounts two Docker secrets from `secrets/`. That
+directory is gitignored and is never generated for you, so the stack fails to
+start until the files exist:
+
+```bash
+mkdir -p secrets
+openssl rand -hex 32 > secrets/jwt_secret.txt
+openssl rand -hex 32 > secrets/worker_secret.txt
+```
+
+Any non-empty value works — the tests only need the services to agree on it.
+
+### 4. Optional: override the defaults
 
 ```bash
 cp .env.example .env
@@ -78,7 +119,7 @@ If the stack is already running (e.g. started manually):
 
 ```bash
 export RUN_DIR=/tmp/neutrino-e2e/manual
-npx playwright test
+pnpm exec playwright test
 ```
 
 ## Viewing results
@@ -92,7 +133,7 @@ Run artifacts saved to: /tmp/neutrino-e2e/20260328_120000_abc123de
 Open the HTML report:
 
 ```bash
-npx playwright show-report /tmp/neutrino-e2e/<run-id>/playwright-report
+pnpm exec playwright show-report /tmp/neutrino-e2e/<run-id>/playwright-report
 ```
 
 ## Artifact layout

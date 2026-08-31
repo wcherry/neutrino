@@ -81,7 +81,7 @@ Follow the patterns in `neutrino-e2e/tests/drive/file-lifecycle.spec.ts`:
 
 Run the existing tests to confirm the baseline passes before making any changes:
 ```bash
-cd /Users/williamcherry/neutrino-repos/neutrino-e2e && npx playwright test
+cd e2e && pnpm exec playwright test
 ```
 
 ---

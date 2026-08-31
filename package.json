@@ -1,0 +1,26 @@
+{
+  "name": "neutrino",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.4.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "analyze": "turbo run analyze --filter=@neutrino/web",
+    "test": "pnpm --filter neutrino-web test",
+    "e2e": "pnpm --filter neutrino-e2e test",
+    "e2e:skip-build": "pnpm --filter neutrino-e2e test:skip-build"
+  },
+  "devDependencies": {
+    "turbo": "latest"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp",
+      "unrs-resolver"
+    ]
+  }
+}

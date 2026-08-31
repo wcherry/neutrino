@@ -1,5 +1,5 @@
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::{self, Command},
 };
@@ -8,6 +8,14 @@ use std::{
 const FACE_MODEL_URL: &str =
     "https://github.com/atomashpolskiy/rustface/raw/master/model/seeta_fd_frontal_v1.0.bin";
 const FACE_MODEL_REL: &str = "models/seeta_fd_frontal_v1.0.bin";
+
+/// Secrets the backend refuses to start without. `cargo xtask setup` generates a
+/// value for any of these the repo-root `.env` does not already define.
+const REQUIRED_ENV_SECRETS: [&str; 2] = ["JWT_SECRET", "WORKER_SECRET"];
+
+/// Docker secrets `e2e/docker-compose-test.yml` mounts out of `e2e/secrets/`.
+/// The directory is gitignored, so a fresh clone has to generate them.
+const E2E_SECRET_FILES: [&str; 2] = ["jwt_secret.txt", "worker_secret.txt"];
 
 struct Config {
     web_dir: PathBuf,
@@ -20,7 +28,7 @@ fn main() {
     let mut args = env::args().skip(1);
     let task = args.next().unwrap_or_else(|| {
         eprintln!(
-            "Usage: cargo xtask <task> [args...]\n\nTasks:\n  build-web        Build the web app\n  e2e [args...]    Run e2e tests (extra args forwarded to run-tests.sh)\n  docker           Build the Docker image\n  fetch-model      Download the worker's facial-recognition model"
+            "Usage: cargo xtask <task> [args...]\n\nTasks:\n  setup            Run every prerequisite step for backend, web and e2e\n  build-web        Build the web app\n  e2e [args...]    Run e2e tests (extra args forwarded to run-tests.sh)\n  docker           Build the Docker image\n  fetch-model      Download the worker's facial-recognition model"
         );
         process::exit(1);
     });
@@ -28,19 +36,166 @@ fn main() {
     let cfg = config_from_metadata();
 
     match task.as_str() {
-        "build-web" => build_web(&cfg.web_dir),
+        "setup" => setup(&cfg),
+        "build-web" => build_web(&cfg.workspace_root),
         "e2e" => run_e2e(&cfg.e2e_dir, &extra),
         "docker" => build_docker(&cfg.workspace_root, &cfg.docker_image),
-        "dev" => run_dev(&cfg.web_dir, &cfg.workspace_root),
+        "dev" => run_dev(&cfg.workspace_root),
         "storybook" => run_storybook(&cfg.web_dir),
         "fetch-model" => ensure_face_model(&cfg.workspace_root),
         _ => {
             eprintln!(
-                "Unknown task: {task}\n\nTasks: build-web, e2e, docker, dev, storybook, fetch-model"
+                "Unknown task: {task}\n\nTasks: setup, build-web, e2e, docker, dev, storybook, fetch-model"
             );
             process::exit(1);
         }
     }
+}
+
+/// Every prerequisite step a fresh clone needs before `cargo run`, `pnpm dev` or
+/// `cargo xtask e2e` will work. Each step is idempotent: nothing here overwrites a
+/// file that already exists, so it is safe to re-run whenever something looks
+/// half-installed.
+fn setup(cfg: &Config) {
+    let root = &cfg.workspace_root;
+    require_tools(&["pnpm", "node", "openssl", "curl", "docker"]);
+
+    section("Rust backend");
+    ensure_env_secrets(root);
+    ensure_face_model(root);
+    run("cargo", &["fetch"], root);
+
+    // One install at the workspace root covers `web/` and `e2e/` both — the E2EE
+    // fixtures resolve libsodium out of `web/packages/e2e-crypto`, which an install
+    // inside `e2e/` alone never touches.
+    section("Web frontend and e2e dependencies");
+    run("pnpm", &["install"], root);
+
+    section("e2e tests");
+    run(
+        "pnpm",
+        &["exec", "playwright", "install", "chromium"],
+        &cfg.e2e_dir,
+    );
+    ensure_e2e_secrets(&cfg.e2e_dir);
+    ensure_e2e_env(&cfg.e2e_dir);
+
+    section("Setup complete");
+    println!("  cargo xtask dev    backend + worker + frontend");
+    println!("  cargo xtask e2e    Playwright suite against an isolated Docker stack");
+}
+
+fn section(title: &str) {
+    println!("\n== {title} ==");
+}
+
+/// Fails with every missing tool listed at once, rather than one per re-run.
+fn require_tools(tools: &[&str]) {
+    let missing: Vec<&str> = tools.iter().copied().filter(|t| !have_tool(t)).collect();
+    if !missing.is_empty() {
+        eprintln!("Missing required tools: {}", missing.join(", "));
+        eprintln!("Install them and re-run `cargo xtask setup`.");
+        if missing.contains(&"pnpm") {
+            eprintln!("pnpm: `corepack enable` picks up the version pinned in package.json.");
+        }
+        process::exit(1);
+    }
+}
+
+fn have_tool(tool: &str) -> bool {
+    Command::new("sh")
+        .args(["-c", &format!("command -v {tool}")])
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Writes `JWT_SECRET` / `WORKER_SECRET` into the repo-root `.env`, which the server
+/// and worker both refuse to start without. An existing `.env` is appended to, never
+/// rewritten, so local overrides survive.
+fn ensure_env_secrets(root: &Path) {
+    let path = root.join(".env");
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+    let missing: Vec<&str> = REQUIRED_ENV_SECRETS
+        .iter()
+        .copied()
+        .filter(|key| !defines_key(&existing, key))
+        .collect();
+
+    if missing.is_empty() {
+        println!(".env already defines {}", REQUIRED_ENV_SECRETS.join(", "));
+        return;
+    }
+
+    let mut out = existing.clone();
+    if out.is_empty() {
+        out.push_str("# Generated by `cargo xtask setup`.\n");
+    } else if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    for key in &missing {
+        out.push_str(&format!("{key}={}\n", random_hex_32()));
+    }
+    fs::write(&path, out).unwrap_or_else(|e| panic!("failed to write {}: {e}", path.display()));
+    println!("wrote {} to {}", missing.join(", "), path.display());
+}
+
+/// True if `contents` sets `key` on a line of its own, comments aside.
+fn defines_key(contents: &str, key: &str) -> bool {
+    contents.lines().any(|line| {
+        let line = line.trim_start();
+        !line.starts_with('#')
+            && line
+                .strip_prefix(key)
+                .is_some_and(|rest| rest.trim_start().starts_with('='))
+    })
+}
+
+fn ensure_e2e_secrets(e2e_dir: &Path) {
+    let dir = e2e_dir.join("secrets");
+    fs::create_dir_all(&dir).expect("failed to create e2e/secrets");
+    for name in E2E_SECRET_FILES {
+        let path = dir.join(name);
+        // Any non-empty value works; the services only need to agree on it. An empty
+        // file is treated as absent — the stack starts and then fails auth.
+        let filled = fs::read_to_string(&path).is_ok_and(|s| !s.trim().is_empty());
+        if filled {
+            println!("secret already present: {}", path.display());
+            continue;
+        }
+        fs::write(&path, format!("{}\n", random_hex_32()))
+            .unwrap_or_else(|e| panic!("failed to write {}: {e}", path.display()));
+        println!("generated {}", path.display());
+    }
+}
+
+fn ensure_e2e_env(e2e_dir: &Path) {
+    let path = e2e_dir.join(".env");
+    if path.exists() {
+        println!("e2e/.env already present");
+        return;
+    }
+    let example = e2e_dir.join(".env.example");
+    fs::copy(&example, &path)
+        .unwrap_or_else(|e| panic!("failed to copy {}: {e}", example.display()));
+    println!("created {} from .env.example", path.display());
+}
+
+fn random_hex_32() -> String {
+    let out = Command::new("openssl")
+        .args(["rand", "-hex", "32"])
+        .output()
+        .unwrap_or_else(|e| panic!("failed to spawn `openssl`: {e}"));
+    if !out.status.success() {
+        eprintln!("`openssl rand -hex 32` failed");
+        process::exit(out.status.code().unwrap_or(1));
+    }
+    String::from_utf8(out.stdout)
+        .expect("openssl returned non-UTF-8")
+        .trim()
+        .to_string()
 }
 
 /// Downloads the worker's facial-recognition model if it isn't already present.
@@ -89,8 +244,10 @@ fn config_from_metadata() -> Config {
     }
 }
 
-fn build_web(dir: &Path) {
-    run("pnpm", &["build"], dir);
+/// `pnpm build` is a root script — turbo.json and the turbo tasks live at the
+/// pnpm workspace root, which is the repo root.
+fn build_web(root: &Path) {
+    run("pnpm", &["build"], root);
 }
 
 fn run_e2e(dir: &Path, extra: &[String]) {
@@ -108,7 +265,7 @@ fn run_storybook(web_dir: &Path) {
     run("pnpm", &["--filter", "@neutrino/ui", "storybook"], web_dir);
 }
 
-fn run_dev(web_dir: &Path, root: &Path) {
+fn run_dev(root: &Path) {
     // Prereq: make sure the worker's face model is on disk before starting.
     ensure_face_model(root);
 
@@ -126,7 +283,7 @@ fn run_dev(web_dir: &Path, root: &Path) {
 
     let mut frontend = Command::new("pnpm")
         .args(["dev"])
-        .current_dir(web_dir)
+        .current_dir(root)
         .spawn()
         .expect("failed to spawn pnpm dev");
 

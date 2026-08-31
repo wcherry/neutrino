@@ -10,3 +10,7 @@
 /data/
 /test_data/
 /models/
+
+# Node — the pnpm workspace root is the repo root, so the store lands here
+node_modules/
+.turbo/
