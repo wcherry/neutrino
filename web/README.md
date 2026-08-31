@@ -32,12 +32,18 @@ The main app (`apps/web`) includes:
 
 ## Getting Started
 
+This package is a member of the pnpm workspace rooted at the **repo root**, so
+dependencies are installed there once for both `web/` and `e2e/`:
+
 ```bash
-pnpm install
+pnpm install    # from the repo root — installs every workspace member
 pnpm dev        # starts all apps in dev mode
 ```
 
 ## Scripts
+
+`turbo.json` and the turbo tasks live at the repo root, so these run from there
+rather than from `web/`:
 
 | Command                    | Description                        |
 |----------------------------|------------------------------------|
@@ -45,7 +51,12 @@ pnpm dev        # starts all apps in dev mode
 | `pnpm build`               | Build all apps and packages        |
 | `pnpm lint`                | Lint all packages                  |
 | `pnpm type-check`          | Type-check all packages            |
-| `pnpm test`                | Run tests                          |
+| `pnpm test`                | Run the Vitest suite               |
+| `pnpm e2e`                 | Run the Playwright suite in `e2e/` |
+
+`pnpm test` is the one task that is not routed through turbo: `vitest.config.ts`
+resolves its `@neutrino/*` aliases from the working directory, so the root script
+runs it via `pnpm --filter neutrino-web test` to keep the cwd at `web/`.
 
 ## Storybook
 

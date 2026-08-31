@@ -9,38 +9,42 @@ WORKDIR /app
 
 RUN corepack enable
 
-# Copy workspace manifests first (for layer caching)
-COPY web/pnpm-lock.yaml web/pnpm-workspace.yaml web/package.json ./
-COPY web/.npmrc .npmrc
-COPY web/apps/web/package.json apps/web/package.json
-COPY web/packages/api-admin/package.json packages/api-admin/package.json
-COPY web/packages/api-calendar/package.json packages/api-calendar/package.json
-COPY web/packages/api-core/package.json packages/api-core/package.json
-COPY web/packages/api-docs/package.json packages/api-docs/package.json
-COPY web/packages/api-drive/package.json packages/api-drive/package.json
-COPY web/packages/api-links/package.json packages/api-links/package.json
-COPY web/packages/api-photos/package.json packages/api-photos/package.json
-COPY web/packages/api-sheets/package.json packages/api-sheets/package.json
-COPY web/packages/api-slides/package.json packages/api-slides/package.json
-COPY web/packages/api-search/package.json packages/api-search/package.json
-COPY web/packages/api-diagrams/package.json packages/api-diagrams/package.json
-COPY web/packages/api-drawing/package.json packages/api-drawing/package.json
-COPY web/packages/api-themes/package.json packages/api-themes/package.json
-COPY web/packages/sheet-embed/package.json packages/sheet-embed/package.json
-COPY web/packages/e2e-crypto/package.json packages/e2e-crypto/package.json
-COPY web/packages/auth/package.json packages/auth/package.json
-COPY web/packages/hooks/package.json packages/hooks/package.json
-COPY web/packages/layout/package.json packages/layout/package.json
-COPY web/packages/tokens/package.json packages/tokens/package.json
-COPY web/packages/ui/package.json packages/ui/package.json
-COPY web/packages/utils/package.json packages/utils/package.json
-COPY web/packages/markdown/package.json packages/markdown/package.json
-COPY web/packages/search/package.json packages/search/package.json
-COPY web/packages/collab-core/package.json packages/collab-core/package.json
+# Copy workspace manifests first (for layer caching).
+# The workspace root is the repo root, so `web/` and `e2e/` keep their real
+# paths here — the pnpm lockfile keys its importers on them.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY web/package.json web/package.json
+COPY web/apps/web/package.json web/apps/web/package.json
+COPY e2e/package.json e2e/package.json
+COPY web/packages/api-admin/package.json web/packages/api-admin/package.json
+COPY web/packages/api-calendar/package.json web/packages/api-calendar/package.json
+COPY web/packages/api-core/package.json web/packages/api-core/package.json
+COPY web/packages/api-diagrams/package.json web/packages/api-diagrams/package.json
+COPY web/packages/api-docs/package.json web/packages/api-docs/package.json
+COPY web/packages/api-drawing/package.json web/packages/api-drawing/package.json
+COPY web/packages/api-drive/package.json web/packages/api-drive/package.json
+COPY web/packages/api-links/package.json web/packages/api-links/package.json
+COPY web/packages/api-photos/package.json web/packages/api-photos/package.json
+COPY web/packages/api-search/package.json web/packages/api-search/package.json
+COPY web/packages/api-sheets/package.json web/packages/api-sheets/package.json
+COPY web/packages/api-slides/package.json web/packages/api-slides/package.json
+COPY web/packages/api-themes/package.json web/packages/api-themes/package.json
+COPY web/packages/auth/package.json web/packages/auth/package.json
+COPY web/packages/collab-core/package.json web/packages/collab-core/package.json
+COPY web/packages/e2e-crypto/package.json web/packages/e2e-crypto/package.json
+COPY web/packages/hooks/package.json web/packages/hooks/package.json
+COPY web/packages/layout/package.json web/packages/layout/package.json
+COPY web/packages/markdown/package.json web/packages/markdown/package.json
+COPY web/packages/offline/package.json web/packages/offline/package.json
+COPY web/packages/search/package.json web/packages/search/package.json
+COPY web/packages/sheet-embed/package.json web/packages/sheet-embed/package.json
+COPY web/packages/tokens/package.json web/packages/tokens/package.json
+COPY web/packages/ui/package.json web/packages/ui/package.json
+COPY web/packages/utils/package.json web/packages/utils/package.json
 RUN pnpm install --prod=false
 
 # Copy the rest of the web source and build
-COPY web/ .
+COPY web/ web/
 
 # Stamp the image's identity into web/version.txt, which the Next build reads
 # and inlines into the bundle (next.config.ts → src/lib/version.ts) for the
@@ -51,9 +55,9 @@ COPY web/ .
 # failing, and this stage has no `.git` to fall back to.
 ARG APP_VERSION=""
 ARG BUILD_COMMIT=""
-RUN node apps/web/scripts/write-version.mjs
+RUN node web/apps/web/scripts/write-version.mjs
 
-WORKDIR /app/apps/web
+WORKDIR /app/web/apps/web
 RUN pnpm build
 
 # ── Rust Build Stage ──────────────────────────────────────────────────────────
@@ -108,7 +112,7 @@ RUN apt-get update \
 
 COPY --from=rust-builder /app/target/release/neutrino /usr/local/bin/service
 COPY --from=rust-builder /app/target/release/worker /usr/local/bin/worker
-COPY --from=web-builder /app/apps/web/out /app/web
+COPY --from=web-builder /app/web/apps/web/out /app/web
 COPY entrypoint.sh /entrypoint.sh
 COPY start-all.sh /usr/local/bin/start-all
 RUN chmod +x /entrypoint.sh /usr/local/bin/start-all

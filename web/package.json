@@ -2,15 +2,9 @@
   "name": "neutrino-web",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@10.4.0",
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "type-check": "turbo run type-check",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "analyze": "turbo run analyze --filter=@neutrino/web"
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@storybook/addon-themes": "^10.4.1",
@@ -25,14 +19,6 @@
     "jsdom": "^24.1.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "turbo": "latest",
     "vitest": "^2.0.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "sharp",
-      "unrs-resolver"
-    ]
   }
 }

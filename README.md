@@ -210,7 +210,7 @@ then:
 ```bash
 cargo run                 # API server on http://localhost:8080
 cargo run -p worker       # background worker (needs the face model — cargo xtask fetch-model)
-cd web && pnpm install && pnpm dev   # Next.js dev server on port 3000
+pnpm install && pnpm dev   # Next.js dev server on port 3000 (run from the repo root)
 ```
 
 In dev, point `NEXT_PUBLIC_API_URL` at the backend (`http://localhost:8080`).

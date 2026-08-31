@@ -28,10 +28,10 @@ fn main() {
     let cfg = config_from_metadata();
 
     match task.as_str() {
-        "build-web" => build_web(&cfg.web_dir),
+        "build-web" => build_web(&cfg.workspace_root),
         "e2e" => run_e2e(&cfg.e2e_dir, &extra),
         "docker" => build_docker(&cfg.workspace_root, &cfg.docker_image),
-        "dev" => run_dev(&cfg.web_dir, &cfg.workspace_root),
+        "dev" => run_dev(&cfg.workspace_root),
         "storybook" => run_storybook(&cfg.web_dir),
         "fetch-model" => ensure_face_model(&cfg.workspace_root),
         _ => {
@@ -89,8 +89,10 @@ fn config_from_metadata() -> Config {
     }
 }
 
-fn build_web(dir: &Path) {
-    run("pnpm", &["build"], dir);
+/// `pnpm build` is a root script — turbo.json and the turbo tasks live at the
+/// pnpm workspace root, which is the repo root.
+fn build_web(root: &Path) {
+    run("pnpm", &["build"], root);
 }
 
 fn run_e2e(dir: &Path, extra: &[String]) {
@@ -108,7 +110,7 @@ fn run_storybook(web_dir: &Path) {
     run("pnpm", &["--filter", "@neutrino/ui", "storybook"], web_dir);
 }
 
-fn run_dev(web_dir: &Path, root: &Path) {
+fn run_dev(root: &Path) {
     // Prereq: make sure the worker's face model is on disk before starting.
     ensure_face_model(root);
 
@@ -126,7 +128,7 @@ fn run_dev(web_dir: &Path, root: &Path) {
 
     let mut frontend = Command::new("pnpm")
         .args(["dev"])
-        .current_dir(web_dir)
+        .current_dir(root)
         .spawn()
         .expect("failed to spawn pnpm dev");
 

@@ -2,11 +2,12 @@
   "name": "neutrino-e2e",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@10.4.0",
   "scripts": {
     "test": "./scripts/run-tests.sh",
     "test:skip-build": "./scripts/run-tests.sh --skip-build",
-    "playwright": "npx playwright test",
-    "report": "npx playwright show-report"
+    "playwright": "pnpm exec playwright test",
+    "report": "pnpm exec playwright show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
