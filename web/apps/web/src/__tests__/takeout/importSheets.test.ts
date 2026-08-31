@@ -25,16 +25,14 @@ const encryptionApi = {
 const storageApi = {
   setImportMetadata: vi.fn(),
 };
-const driveAutosaveContent = vi.fn();
-const driveAutosaveEncryptedContent = vi.fn();
+const driveAutosaveEncryptedBytes = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   get sheetsApi() { return sheetsApi; },
   get filesystemApi() { return filesystemApi; },
   get encryptionApi() { return encryptionApi; },
   get storageApi() { return storageApi; },
-  driveAutosaveContent: (...args: unknown[]) => driveAutosaveContent(...args),
-  driveAutosaveEncryptedContent: (...args: unknown[]) => driveAutosaveEncryptedContent(...args),
+  driveAutosaveEncryptedBytes: (...args: unknown[]) => driveAutosaveEncryptedBytes(...args),
   // The folder resolver (`lib/takeout/folders.ts`) uses this to address the
   // drive root — a user's root folder id is their own user id.
   getCurrentUserId: () => 'user-1',
@@ -57,13 +55,26 @@ vi.mock('@neutrino/api-sheets', () => ({ extractSheetText: (raw: string) => `tex
 import { runSheetsImport, DEFAULT_SHEETS_IMPORT_OPTIONS } from '@/lib/takeout/importSheets';
 import type { DriveSheetEntry } from '@/lib/takeout/driveSheets';
 import type { TakeoutEntry } from '@/lib/takeout/archive';
+import type { SheetFile } from '@/app/(apps)/sheets/editor/types';
+import { readXlsx } from '@/lib/ooxml/xlsx/read';
 
 const KEY_PAIR = { publicKey: new Uint8Array([9]), secretKey: new Uint8Array([8]) };
 
-/** Real .xlsx bytes for a one-cell workbook. */
-function workbookBytes(value: string): ArrayBuffer {
+/**
+ * Real .xlsx bytes for a one-cell workbook.
+ *
+ * `formula` puts something in it that a workbook rebuilt from the model would
+ * not have — `buildWorkbook` writes a value per cell — so a test can tell the
+ * export's own workbook from a reconstruction of it.
+ */
+function workbookBytes(value: string, formula?: string): ArrayBuffer {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[value]]), 'Data');
+  const ws = XLSX.utils.aoa_to_sheet([[value]]);
+  if (formula) {
+    ws.B1 = { t: 'n', v: 3, f: formula };
+    ws['!ref'] = 'A1:B1';
+  }
+  XLSX.utils.book_append_sheet(wb, ws, 'Data');
   return XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
 }
 
@@ -106,8 +117,16 @@ const run = (sheets: DriveSheetEntry[], options = {}) =>
     userId: 'user-1',
   });
 
-/** The spreadsheet JSON handed to the save call, decoded. */
-const savedContent = (call = 0) => JSON.parse(driveAutosaveEncryptedContent.mock.calls[call][1]);
+/**
+ * The spreadsheet read back out of the `.xlsx` the save call was handed.
+ *
+ * Read rather than asserted against the argument: the whole point of issue #169
+ * is that what is stored has to be a workbook the editor's own reader opens,
+ * and `readXlsx` is that reader.
+ */
+async function savedContent(call = 0): Promise<SheetFile> {
+  return readXlsx(driveAutosaveEncryptedBytes.mock.calls[call][1] as Uint8Array);
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -160,7 +179,7 @@ describe('runSheetsImport', () => {
     await run([sheet('A.csv')]);
 
     expect(storageApi.setImportMetadata.mock.invocationCallOrder[0]).toBeGreaterThan(
-      driveAutosaveEncryptedContent.mock.invocationCallOrder[0],
+      driveAutosaveEncryptedBytes.mock.invocationCallOrder[0],
     );
   });
 
@@ -177,7 +196,7 @@ describe('runSheetsImport', () => {
 
     expect(summary).toMatchObject({ total: 2, imported: 2, skipped: 0, failed: 0 });
     expect(sheetsApi.createSheet).toHaveBeenCalledWith({ title: 'A', folderId: null });
-    expect(savedContent().sheets[0].cells.A1).toMatchObject({ id: 'A1', raw: 'Name' });
+    expect((await savedContent()).sheets[0].cells.A1).toMatchObject({ id: 'A1', raw: 'Name' });
   });
 
   it('converts a .xlsx from the archive’s bytes', async () => {
@@ -185,8 +204,9 @@ describe('runSheetsImport', () => {
       sheet('Budget.xlsx', { format: 'xlsx', entry: takeoutEntry('Budget.xlsx', '', workbookBytes('Total')) }),
     ]);
 
-    expect(savedContent().sheets[0]).toMatchObject({ name: 'Data' });
-    expect(savedContent().sheets[0].cells.A1).toMatchObject({ raw: 'Total' });
+    const stored = await savedContent();
+    expect(stored.sheets[0]).toMatchObject({ name: 'Data' });
+    expect(stored.sheets[0].cells.A1).toMatchObject({ raw: 'Total' });
   });
 
   it('registers a DEK before uploading the ciphertext, as the editor does', async () => {
@@ -194,11 +214,69 @@ describe('runSheetsImport', () => {
 
     expect(encryptionApi.setFileKey).toHaveBeenCalledWith('id-A', { encryptedFileKey: 'encrypted-dek', keyVersion: 1 });
     expect(encryptionApi.setFileKey.mock.invocationCallOrder[0]).toBeLessThan(
-      driveAutosaveEncryptedContent.mock.invocationCallOrder[0],
+      driveAutosaveEncryptedBytes.mock.invocationCallOrder[0],
     );
-    // The editor reads the body back from sheet.json; another name would leave
-    // the spreadsheet looking empty.
-    expect(driveAutosaveEncryptedContent.mock.calls[0][2]).toBe('sheet.json');
+  });
+
+  /**
+   * Issue #169. A spreadsheet is stored as an `.xlsx` now, and the editor reads
+   * the model out of that package — so an import that wrote the bespoke
+   * `sheet.json` body left a file the editor could only parse as a workbook,
+   * and SheetJS reads JSON text as a one-row CSV: the imported spreadsheet
+   * opened as its own source code spread across row 1.
+   */
+  it('stores the spreadsheet as an .xlsx package, not as sheet.json', async () => {
+    await run([sheet('A.csv')]);
+
+    const [fileId, bytes, filename] = driveAutosaveEncryptedBytes.mock.calls[0];
+    expect(fileId).toBe('id-A');
+    expect(filename).toBe('A.xlsx');
+    // A zip's local file header — what is stored really is a package.
+    expect([...(bytes as Uint8Array).slice(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+  });
+
+  /**
+   * A Google Sheet is exported *as* an `.xlsx` and stored as an `.xlsx`, so
+   * there is nothing to convert. Taking it apart and rebuilding it would drop
+   * everything the model does not carry — the styling, the charts, the pivot
+   * tables — for no gain, which is the round trip docs stopped doing.
+   */
+  it('stores a .xlsx export byte for byte, without rewriting it', async () => {
+    const exported = workbookBytes('Total', 'SUM(1,2)');
+    await run([
+      sheet('Budget.xlsx', { format: 'xlsx', entry: takeoutEntry('Budget.xlsx', '', exported) }),
+    ]);
+
+    const bytes = driveAutosaveEncryptedBytes.mock.calls[0][1] as Uint8Array;
+    expect([...bytes]).toEqual([...new Uint8Array(exported)]);
+  });
+
+  /**
+   * A `.csv` has no workbook to keep, so one is written — by the same writer
+   * the editor saves with, which is what makes the result a spreadsheet rather
+   * than a grid of values.
+   */
+  it('writes a workbook for an export that is not one', async () => {
+    await run([sheet('A.csv')]);
+
+    const bytes = driveAutosaveEncryptedBytes.mock.calls[0][1] as Uint8Array;
+    const wb = XLSX.read(bytes, { type: 'array' });
+    expect(wb.SheetNames).toEqual(['A']);
+    expect(wb.Sheets.A.A1).toMatchObject({ v: 'Name' });
+    expect(wb.Sheets.A.B2).toMatchObject({ v: 2 });
+  });
+
+  /**
+   * Excel rejects a tab name that is empty, over 31 characters, duplicated or
+   * holds one of `[]:*?/\` — and a converted `.csv` is named after the file,
+   * which is named by whoever made it. Repairing it is what stops one such file
+   * failing the whole import.
+   */
+  it('repairs a tab name the workbook format will not take', async () => {
+    await run([sheet('Q1 draft.csv', { title: 'Q1/Q2 [draft]' })]);
+
+    const bytes = driveAutosaveEncryptedBytes.mock.calls[0][1] as Uint8Array;
+    expect(XLSX.read(bytes, { type: 'array' }).SheetNames).toEqual(['Q1 Q2  draft']);
   });
 
   // Issue #95. This used to assert the opposite: that the run went ahead and
@@ -214,7 +292,7 @@ describe('runSheetsImport', () => {
     expect(summary).toMatchObject({ imported: 0, unencrypted: true, cancelled: true });
     expect(sheetsApi.createSheet).not.toHaveBeenCalled();
     expect(encryptionApi.setFileKey).not.toHaveBeenCalled();
-    expect(driveAutosaveEncryptedContent).not.toHaveBeenCalled();
+    expect(driveAutosaveEncryptedBytes).not.toHaveBeenCalled();
   });
 
   it('adds each imported spreadsheet to the search index', async () => {
@@ -229,7 +307,7 @@ describe('runSheetsImport', () => {
     const withFormula = sheet('A.csv', { entry: takeoutEntry('A.csv', 'x\n=1+1\n') });
     await run([withFormula], { importFormulas: false });
 
-    expect(savedContent().sheets[0].cells.A2.raw).not.toMatch(/^=/);
+    expect((await savedContent()).sheets[0].cells.A2.raw).not.toMatch(/^=/);
   });
 
   it('prefers the title in the metadata sidecar over the filename', async () => {

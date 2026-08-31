@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import * as XLSX from 'xlsx';
 import type { CellProps, SheetFile, CFRule, TableRegion } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import {
@@ -18,11 +17,11 @@ import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent
 import { useToast } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SheetRef } from '../formula';
-import { numToAlpha } from '../utils';
-import { buildXlsxWorksheet } from './useExport';
 import { buildRawSheetMap, evaluateSheetMap } from './sheetFileUtils';
 import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension } from '@/lib/officeFormats';
-import { packNeutrinoModel, readNeutrinoModel } from '@/lib/ooxmlContainer';
+import { readNeutrinoModel } from '@/lib/ooxmlContainer';
+import { writeXlsx } from '@/lib/ooxml/xlsx/write';
+import { readXlsx } from '@/lib/ooxml/xlsx/read';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 
 /**
@@ -103,32 +102,6 @@ function readStoredWorkbook(stored: Uint8Array, dek: Uint8Array | null): Uint8Ar
     return decryptFile(stored, dek);
 }
 
-/**
- * Parse raw .xlsx bytes into per-sheet cell maps — office-mode counterpart of
- * `parseXlsxToSheets` in SheetEditor.tsx (kept separate to avoid a hook ->
- * top-level-component import).
- */
-function xlsxBufferToSheets(buffer: ArrayBuffer): { name: string; data: Map<string, CellProps> }[] {
-    const wb = XLSX.read(new Uint8Array(buffer));
-    return wb.SheetNames.map(name => {
-        const ws = wb.Sheets[name];
-        const map = new Map<string, CellProps>();
-        const ref = ws['!ref'];
-        if (ref) {
-            const range = XLSX.utils.decode_range(ref);
-            for (let r = range.s.r; r <= range.e.r; r++) {
-                for (let c = range.s.c; c <= range.e.c; c++) {
-                    const cell = ws[XLSX.utils.encode_cell({ r, c })];
-                    if (!cell || cell.v == null) continue;
-                    const id = `${numToAlpha(c + 1)}${r + 1}`;
-                    const val = cell.w ?? String(cell.v);
-                    if (val !== '') map.set(id, { id, raw: val, value: val, edit: false });
-                }
-            }
-        }
-        return { name, data: map };
-    });
-}
 
 export function usePersistence({
     sheetId,
@@ -204,6 +177,16 @@ export function usePersistence({
     // because that is what it was when only uploads took this path.
     const [officeMode, setOfficeMode] = useState(false);
     const officeFileMetaRef = useRef<FileItem | null>(null);
+    /**
+     * The package this spreadsheet was loaded from, decrypted.
+     *
+     * Held for the whole session so each save can hand it to `writeXlsx`, which
+     * copies forward the parts nothing here models — a pivot table, an image, a
+     * chart part written by Excel. Without it every autosave would silently
+     * delete them. It costs one workbook of memory, which is what the load
+     * already had in hand.
+     */
+    const storedPackageRef = useRef<Uint8Array | null>(null);
     // loadCount increments every time load() completes successfully.
     // The autosave useEffect depends on it so it restarts (with cleanup) on each reload.
     const [loadCount, setLoadCount] = useState(0);
@@ -232,7 +215,7 @@ export function usePersistence({
         return saveChainRef.current;
     };
 
-    const serialize = (): string => {
+    const serializeModel = (): SheetFile => {
         flushActiveSheet();
         flushActiveCharts?.();
         flushActiveConditionalFormats?.();
@@ -266,32 +249,30 @@ export function usePersistence({
                 tables: sheetTables && sheetTables.length > 0 ? sheetTables : undefined,
             };
         });
-        return JSON.stringify({ sheets: fileSheets } as SheetFile);
+        return { sheets: fileSheets } as SheetFile;
     };
 
+    /** The model as the string the search index and the JSON format both want. */
+    const serialize = (): string => JSON.stringify(serializeModel());
+
     /**
-     * The bytes an `.xlsx` spreadsheet is stored as: a real Excel workbook with
-     * this editor's own model packed in beside it (issue #127).
+     * The bytes an `.xlsx` spreadsheet is stored as: a real workbook, and only
+     * that.
      *
-     * Both halves are needed. `buildXlsxWorksheet` writes `{v, t}` per cell and
-     * `!ref`, and nothing else — no column widths, no merges, no cell fills, no
-     * sheet colours, no conditional formats, no charts — so a save that wrote
-     * only the workbook would delete all of that on every autosave tick. Some
-     * of that is ours to fix (`!cols` and `!merges` are things SheetJS would
-     * write if we set them); styles and charts the community build cannot write
-     * at all. Neither is a limit of `.xlsx` itself. Until then: the workbook is
-     * what Excel reads, the model is what this editor reads back. See
-     * `lib/ooxmlContainer.ts`.
+     * This used to write a `{v, t}`-per-cell workbook with the whole model
+     * packed in beside it as `neutrino/model.json`, because that was all
+     * SheetJS's community build could write — no widths, no merges, no fills,
+     * no conditional formats — so a save that wrote only the workbook would
+     * have deleted all of it on every tick. `ooxml/xlsx/write.ts` writes them
+     * as the SpreadsheetML they are, so the second copy is gone: what Excel
+     * reads and what this editor reads back are the same bytes.
+     *
+     * The previously stored package is handed over so the parts nothing here
+     * understands — a pivot table, an image, a chart part from Excel — survive
+     * the save rather than being dropped by it.
      */
-    const buildXlsxBytes = async (): Promise<Uint8Array> => {
-        const model = serialize();
-        const wb = XLSX.utils.book_new();
-        sheetNamesRef.current.forEach((name, i) => {
-            XLSX.utils.book_append_sheet(wb, buildXlsxWorksheet(sheetsDataRef.current[i]), name || `Sheet${i + 1}`);
-        });
-        const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
-        return packNeutrinoModel(new Uint8Array(buf), 'sheets', model);
-    };
+    const buildXlsxBytes = async (): Promise<Uint8Array> =>
+        writeXlsx(serializeModel(), storedPackageRef.current ?? undefined);
 
     const save = async ({ keepalive = false }: SaveOptions = {}) => {
         const transport = { signal: abortAfter(SAVE_DEADLINE_MS), keepalive };
@@ -616,31 +597,19 @@ export function usePersistence({
                     return;
                 }
 
-                // The model packed into the workbook is the lossless copy; the
-                // workbook itself is what Excel reads and what a file from
-                // anywhere else arrives as. Preferring the model is what keeps
-                // charts, conditional formats, column widths and cell styling
-                // across a save — SheetJS carries none of them (issue #127).
-                const model = await readNeutrinoModel(plain, 'sheets');
-                if (model) {
-                    applySheetFileJson(model);
-                } else {
-                    const arrayBuffer = plain.buffer.slice(
-                        plain.byteOffset, plain.byteOffset + plain.byteLength,
-                    ) as ArrayBuffer;
-                    const parsed = xlsxBufferToSheets(arrayBuffer);
-                    if (parsed.length > 0) {
-                        const names = parsed.map((s, i) => s.name || `Sheet ${i + 1}`);
-                        sheetsDataRef.current = parsed.map(s => s.data);
-                        sheetsColWidthsRef.current = parsed.map(() => new Map());
-                        sheetsRowHeightsRef.current = parsed.map(() => new Map());
-                        setSheetNames(names);
-                        setSheetColors(parsed.map(() => null));
-                        setData(parsed[0].data);
-                        setColWidths(new Map());
-                        setRowHeights(new Map());
-                    }
-                }
+                // Held for the next save, which hands it to `writeXlsx` so the
+                // parts this does not model — a pivot table, an image — are
+                // still in the file when it goes back to Excel.
+                storedPackageRef.current = plain;
+
+                // A spreadsheet saved before the OOXML writer was complete
+                // carries a `neutrino/model.json` part beside a workbook that
+                // was only a projection of it. Reading that workbook would lose
+                // everything the projection dropped, so the part still wins
+                // where it exists. Nothing writes one any more, so this shrinks
+                // to nothing as spreadsheets are reopened and saved.
+                const legacy = await readNeutrinoModel(plain, 'sheets');
+                applySheetFileJson(legacy ?? JSON.stringify(await readXlsx(plain)));
                 setLoadCount(c => c + 1);
             } catch {
                 toast.error('Failed to open this file for editing');
@@ -762,6 +731,7 @@ export function usePersistence({
         save: queueSave,
         manualSave,
         serialize,
+        serializeModel,
         updateTitle,
         activeSheetIndexRef,
         /** True once the E2EE DEK resolution attempt has completed. */

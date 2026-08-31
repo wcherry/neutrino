@@ -7,9 +7,12 @@
  * would then fail to decrypt.
  *
  * Per spreadsheet the sequence mirrors what the editor does on a first save:
- * convert the file to the editor's `SheetFile` JSON, create the spreadsheet,
- * mint a DEK and register it, upload the ciphertext as `sheet.json`, and hand
- * the flattened cell text to the local search index.
+ * convert the file to the editor's `SheetFile` JSON, pack that model into an
+ * `.xlsx` (`sheetXlsx.ts`), create the spreadsheet, mint a DEK and register it,
+ * upload the ciphertext of the package, and hand the flattened cell text to the
+ * local search index. The package is what the file is stored as now, and
+ * writing the bespoke JSON instead is what left every imported spreadsheet
+ * unopenable — issue #169.
  *
  * What does not come across: cell colours, fonts and borders (Takeout's .xlsx
  * carries them, but the styling SheetJS's community build reads back is too
@@ -34,21 +37,23 @@ import {
 import { extractSheetText } from '@neutrino/api-sheets';
 import {
   sheetsApi,
-  driveAutosaveEncryptedContent,
+  driveAutosaveEncryptedBytes,
   encryptionApi,
 } from '@/lib/api';
 import type { SheetFile } from '@/app/(apps)/sheets/editor/types';
+import { withOoxmlExtension } from '@/lib/officeFormats';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { readSheetInfo, type DriveSheetEntry, type DriveSheetInfo } from './driveSheets';
 import { createFolderResolver } from './folders';
 import { applyImportMetadata, datesFor } from './importMetadata';
-import { delimitedToSheetFile, xlsxToSheetFile, type SheetConversionOptions } from './sheetXlsx';
+import {
+  delimitedToSheetFile,
+  sheetFileToXlsx,
+  type SheetConversionOptions,
+} from './sheetXlsx';
 import { describeError, formatBytes, logFail, logStep, logWarn } from './log';
 import { sanitiseTitle } from './titles';
 import type { ImportItem, ImportProgress, ImportSummary } from './types';
-
-/** The filename every spreadsheet body is stored under, as the editor writes it. */
-const CONTENT_FILENAME = 'sheet.json';
 
 export const UNTITLED_SHEET = 'Untitled spreadsheet';
 
@@ -83,29 +88,64 @@ export interface RunSheetsImportArgs {
 
 // ── Conversion ────────────────────────────────────────────────────────────────
 
-/** Read one exported file and convert it into the editor's spreadsheet JSON. */
-export async function convertDriveSheet(
+/**
+ * One exported file as the `.xlsx` bytes to store for it.
+ *
+ * A Google Sheet is exported as an `.xlsx` and a spreadsheet is stored as an
+ * `.xlsx`, so that case is a copy: the export goes in as it came out, and the
+ * editor opens it with `readXlsx` exactly as it opens any other workbook in
+ * Drive. Nothing is converted, so nothing is lost — the styling, number
+ * formats, charts and pivot tables that only Google put in the file are all
+ * still in it.
+ *
+ * `.csv` and `.tsv` have no workbook to keep, so they convert (`sheetXlsx.ts`)
+ * and are written out by `writeXlsx`.
+ */
+export async function storedXlsxFor(
   sheet: DriveSheetEntry,
   options: SheetConversionOptions,
-): Promise<SheetFile> {
-  switch (sheet.format) {
-    case 'xlsx': {
-      const bytes = await (await sheet.entry.blob()).arrayBuffer();
-      logStep('sheets', `converting ${sheet.entry.path}`, { xlsx: formatBytes(bytes.byteLength) });
-      return xlsxToSheetFile(bytes, options);
-    }
-    case 'csv':
-      return delimitedToSheetFile(
-        await sheet.entry.text(),
-        { name: sheet.title, separator: ',' },
-        options,
-      );
-    case 'tsv':
-      return delimitedToSheetFile(
-        await sheet.entry.text(),
-        { name: sheet.title, separator: '\t' },
-        options,
-      );
+): Promise<Uint8Array> {
+  if (sheet.format === 'xlsx') {
+    const bytes = new Uint8Array(await (await sheet.entry.blob()).arrayBuffer());
+    logStep('sheets', `storing ${sheet.entry.path} as exported`, { xlsx: formatBytes(bytes.byteLength) });
+    return bytes;
+  }
+  const model = await delimitedToSheetFile(
+    await sheet.entry.text(),
+    { name: sheet.title, separator: sheet.format === 'tsv' ? '\t' : ',' },
+    options,
+  );
+  const bytes = await sheetFileToXlsx(model);
+  logStep('sheets', `converted ${sheet.entry.path}`, {
+    from: sheet.format,
+    xlsx: formatBytes(bytes.byteLength),
+  });
+  return bytes;
+}
+
+/**
+ * The text to index a stored spreadsheet by, read back out of the bytes that
+ * were stored.
+ *
+ * Read back rather than kept from the conversion, because for an `.xlsx` export
+ * there is no conversion to keep it from — and reading it with `readXlsx`, the
+ * reader the editor opens the file with, means the index holds what the editor
+ * will show. It doubles as a check that the stored file parses at all.
+ *
+ * A failure here is a warning, not a failed import: the spreadsheet is already
+ * saved by the time this runs, and reporting a stored file as a failed one
+ * invites a second import of the whole archive.
+ */
+async function indexTextFor(bytes: Uint8Array, file: string): Promise<string> {
+  try {
+    const { readXlsx } = await import('@/lib/ooxml/xlsx/read');
+    return extractSheetText(JSON.stringify(await readXlsx(bytes)));
+  } catch (err) {
+    logWarn('sheets', 'could not read the stored spreadsheet back for the search index', {
+      file,
+      error: describeError(err),
+    });
+    return '';
   }
 }
 
@@ -124,12 +164,17 @@ function titleFor(sheet: DriveSheetEntry, info: DriveSheetInfo | null): string {
 // ── The import ────────────────────────────────────────────────────────────────
 
 /**
- * Encrypt a spreadsheet's content the way the editor's first save does, and
+ * Encrypt a spreadsheet's package the way the editor's first save does, and
  * register the DEK so the editor can decrypt it later.
+ *
+ * The bytes go through the binary-safe transport, never the string one: the
+ * package is a zip, and a `TextEncoder` round trip through it is not a package
+ * any more.
  */
 async function saveEncrypted(
   sheetId: string,
-  content: string,
+  bytes: Uint8Array,
+  filename: string,
   keyPair: KeyPair,
   userId: string,
 ): Promise<void> {
@@ -138,7 +183,7 @@ async function saveEncrypted(
     encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
     keyVersion: activeKeyVersion(userId) ?? undefined,
   });
-  await driveAutosaveEncryptedContent(sheetId, content, CONTENT_FILENAME, dek);
+  await driveAutosaveEncryptedBytes(sheetId, bytes, filename, dek);
 }
 
 export async function runSheetsImport({
@@ -231,8 +276,8 @@ export async function runSheetsImport({
         continue;
       }
 
-      step = 'converting the file';
-      const content = JSON.stringify(await convertDriveSheet(sheet, options));
+      step = 'reading the file';
+      const bytes = await storedXlsxFor(sheet, options);
 
       step = 'resolving its folder';
       const parentId =
@@ -246,12 +291,21 @@ export async function runSheetsImport({
       const created = await sheetsApi.createSheet({ title, folderId: parentId });
 
       // Body size is the usual reason a save is rejected where a create was
-      // fine: a spreadsheet is one JSON record per non-empty cell, so a big
-      // export is tens of megabytes of them.
-      logStep('sheets', `saving ${title}`, { id: created.id, body: formatBytes(content.length), encrypted: true });
+      // fine: a big export is tens of megabytes of workbook.
+      logStep('sheets', `saving ${title}`, {
+        id: created.id,
+        body: formatBytes(bytes.byteLength),
+        encrypted: true,
+      });
 
       step = 'saving the encrypted body';
-      await saveEncrypted(created.id, content, encrypting.keyPair, encrypting.userId);
+      await saveEncrypted(
+        created.id,
+        bytes,
+        withOoxmlExtension(title, 'sheets'),
+        encrypting.keyPair,
+        encrypting.userId,
+      );
 
       // After the body, not before: saving it is what stamps the file with the
       // current time, so dates written any earlier would be overwritten here.
@@ -268,7 +322,7 @@ export async function runSheetsImport({
         id: created.id,
         type: 'spreadsheet',
         title,
-        content: extractSheetText(content),
+        content: await indexTextFor(bytes, file),
       });
 
       items.push({ file, title, status: 'imported' });

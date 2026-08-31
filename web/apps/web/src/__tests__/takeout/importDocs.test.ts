@@ -1,11 +1,15 @@
 /**
  * Tests for the Docs import runner (`lib/takeout/importDocs.ts`).
  *
- * The API, crypto and mammoth layers are mocked, as everywhere else in this
- * suite — what is under test is the sequencing: that each document gets a DEK
+ * The API, crypto and OOXML layers are mocked, as everywhere else in this suite
+ * — what is under test is the sequencing: that each document gets a DEK
  * registered before its ciphertext is uploaded, that the export's folder tree
  * is recreated once rather than per file, and that a failure on one document
  * doesn't abandon the rest.
+ *
+ * The one thing here that is about content rather than sequencing is which
+ * bytes get stored: a `.docx` export is stored as itself and only `.html` and
+ * `.txt` go through the writer.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -24,19 +28,33 @@ const encryptionApi = {
 const storageApi = {
   setImportMetadata: vi.fn(),
 };
-const driveAutosaveContent = vi.fn();
-const driveAutosaveEncryptedContent = vi.fn();
+const driveAutosaveEncryptedBytes = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   get docsApi() { return docsApi; },
   get filesystemApi() { return filesystemApi; },
   get encryptionApi() { return encryptionApi; },
   get storageApi() { return storageApi; },
-  driveAutosaveContent: (...args: unknown[]) => driveAutosaveContent(...args),
-  driveAutosaveEncryptedContent: (...args: unknown[]) => driveAutosaveEncryptedContent(...args),
+  driveAutosaveEncryptedBytes: (...args: unknown[]) => driveAutosaveEncryptedBytes(...args),
   // The folder resolver (`lib/takeout/folders.ts`) uses this to address the
   // drive root — a user's root folder id is their own user id.
   getCurrentUserId: () => 'user-1',
+}));
+
+// The OOXML writer and reader are the editor's own and are tested there
+// (`__tests__/ooxml/docxRoundTrip.test.ts`, and `importDocsPackage.test.ts` for
+// what this runner feeds them); what matters here is the model the writer is
+// handed and that the reader is pointed at the stored bytes, so they stand in.
+const writeDocx = vi.fn();
+const readDocx = vi.fn();
+vi.mock('@/lib/ooxml/docx/write', () => ({
+  writeDocx: (...args: unknown[]) => writeDocx(...args),
+}));
+vi.mock('@/lib/ooxml/docx/read', () => ({
+  readDocx: (...args: unknown[]) => readDocx(...args),
+}));
+vi.mock('@/lib/ooxml/docx/images', () => ({
+  collectImageBytes: vi.fn(async () => new Map()),
 }));
 
 const indexOnSave = vi.fn();
@@ -51,10 +69,10 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   activeKeyVersion: () => 1,
 }));
 
-vi.mock('@neutrino/api-docs', () => ({ extractDocText: (raw: string) => `text:${raw.length}` }));
-
-const convertToHtml = vi.fn();
-vi.mock('mammoth', () => ({ convertToHtml: (...args: unknown[]) => convertToHtml(...args) }));
+vi.mock('@neutrino/api-docs', () => ({
+  extractDocText: (raw: string) => `text:${raw.length}`,
+  DEFAULT_PAGE_SETUP: { margin: 96, orientation: 'portrait', pageSize: 'letter' },
+}));
 
 import { runDocsImport, DEFAULT_DOCS_IMPORT_OPTIONS } from '@/lib/takeout/importDocs';
 import type { DriveDocEntry } from '@/lib/takeout/driveDocs';
@@ -62,7 +80,15 @@ import type { TakeoutEntry } from '@/lib/takeout/archive';
 
 const KEY_PAIR = { publicKey: new Uint8Array([9]), secretKey: new Uint8Array([8]) };
 
-function takeoutEntry(path: string, text = '', lastModified: Date | null = null): TakeoutEntry {
+/** Stand-in for the bytes of an exported `.docx`, distinct per file. */
+const EXPORTED_DOCX = (path: string) => new Uint8Array([0x50, 0x4b, 0x03, 0x04, path.length]);
+
+function takeoutEntry(
+  path: string,
+  text = '',
+  lastModified: Date | null = null,
+  bytes: Uint8Array = EXPORTED_DOCX(path),
+): TakeoutEntry {
   return {
     path,
     fullPath: `Takeout/Drive/${path}`,
@@ -72,7 +98,9 @@ function takeoutEntry(path: string, text = '', lastModified: Date | null = null)
     text: async () => text,
     // jsdom's Blob has no arrayBuffer() in this environment, and the runner
     // only ever asks for the bytes.
-    blob: async () => ({ arrayBuffer: async () => new ArrayBuffer(4) }) as unknown as Blob,
+    blob: async () => ({
+      arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    }) as unknown as Blob,
   };
 }
 
@@ -95,29 +123,30 @@ const run = (docs: DriveDocEntry[], options = {}) =>
     userId: 'user-1',
   });
 
-/** The document JSON handed to the save call, decoded. */
-const savedContent = (call = 0) => JSON.parse(driveAutosaveEncryptedContent.mock.calls[call][1]);
+/** The document model an `.html`/`.txt` export was written out from. */
+const savedContent = (call = 0) => writeDocx.mock.calls[call][0].doc;
+
+/** The bytes stored for one document. */
+const savedBytes = (call = 0) => driveAutosaveEncryptedBytes.mock.calls[call][1] as Uint8Array;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  writeDocx.mockResolvedValue(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xff]));
+  readDocx.mockResolvedValue({ doc: { type: 'doc', content: [] }, meta: null });
   loadKeyPair.mockReturnValue(KEY_PAIR);
   docsApi.listDocs.mockResolvedValue({ docs: [] });
   docsApi.createDoc.mockImplementation(async ({ title }: { title: string }) => ({ id: `id-${title}`, title }));
   filesystemApi.getFolderContents.mockResolvedValue({ folders: [], files: [] });
-  convertToHtml.mockResolvedValue({ value: '<p>Hello</p>' });
   storageApi.setImportMetadata.mockResolvedValue({});
 });
 
 describe('runDocsImport', () => {
-  it('creates a document per file and saves its converted content', async () => {
+  it('creates a document per file and saves its content', async () => {
     const summary = await run([doc('A.docx'), doc('B.docx')]);
 
     expect(summary).toMatchObject({ total: 2, imported: 2, skipped: 0, failed: 0 });
     expect(docsApi.createDoc).toHaveBeenCalledWith({ title: 'A', folderId: null });
-    expect(savedContent()).toEqual({
-      type: 'doc',
-      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello' }] }],
-    });
+    expect(driveAutosaveEncryptedBytes).toHaveBeenCalledTimes(2);
   });
 
   it('registers a DEK before uploading the ciphertext, as the editor does', async () => {
@@ -125,11 +154,72 @@ describe('runDocsImport', () => {
 
     expect(encryptionApi.setFileKey).toHaveBeenCalledWith('id-A', { encryptedFileKey: 'encrypted-dek', keyVersion: 1 });
     expect(encryptionApi.setFileKey.mock.invocationCallOrder[0]).toBeLessThan(
-      driveAutosaveEncryptedContent.mock.invocationCallOrder[0],
+      driveAutosaveEncryptedBytes.mock.invocationCallOrder[0],
     );
-    // The editor reads the body back from doc.json; another name would leave
-    // the document looking empty.
-    expect(driveAutosaveEncryptedContent.mock.calls[0][2]).toBe('doc.json');
+  });
+
+  /**
+   * Issue #169. A document is stored as a `.docx` now, and the editor opens
+   * what it finds with `readDocx` — so an import that wrote the bespoke
+   * `doc.json` body, through the string transport that would corrupt a zip
+   * anyway, produced a library of documents that all failed to open.
+   */
+  it('stores the document as .docx bytes, not as doc.json', async () => {
+    await run([doc('A.docx')]);
+
+    const [fileId, bytes, filename] = driveAutosaveEncryptedBytes.mock.calls[0];
+    expect(fileId).toBe('id-A');
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(filename).toBe('A.docx');
+  });
+
+  /**
+   * A Google Doc is exported *as* a `.docx` and stored as a `.docx`, so there
+   * is nothing to convert. Taking it apart and rebuilding it — which is what
+   * the mammoth → HTML → Tiptap → `writeDocx` chain amounted to — dropped every
+   * colour, alignment, indent, header and footnote in the export on the way
+   * through, for no gain.
+   */
+  it('stores a .docx export byte for byte, without rewriting it', async () => {
+    await run([doc('A.docx')]);
+
+    expect(writeDocx).not.toHaveBeenCalled();
+    expect([...savedBytes()]).toEqual([...EXPORTED_DOCX('A.docx')]);
+  });
+
+  it('writes an .html export out as a .docx, since there is nothing else to do with it', async () => {
+    await run([doc('A.html', { format: 'html', entry: takeoutEntry('A.html', '<h1>Title</h1>') })]);
+
+    expect(savedContent().content[0]).toMatchObject({ type: 'heading', attrs: { level: 1 } });
+    expect(writeDocx.mock.calls[0][1]).toMatchObject({ title: 'A' });
+    expect([...savedBytes()]).toEqual([0x50, 0x4b, 0x03, 0x04, 0xff]);
+  });
+
+  /**
+   * The index is built from the stored bytes, read back with the same reader
+   * the editor opens them with — for a `.docx` export there is no conversion to
+   * take the text from, and this way the index holds what the editor will show.
+   */
+  it('indexes a document by what the reader finds in the stored bytes', async () => {
+    readDocx.mockResolvedValue({ doc: { type: 'doc', content: [] }, meta: null });
+    await run([doc('A.docx')]);
+
+    expect([...(readDocx.mock.calls[0][0] as Uint8Array)]).toEqual([...EXPORTED_DOCX('A.docx')]);
+  });
+
+  /**
+   * The document is stored by the time the index is written, so a reader that
+   * cannot parse it costs the document its full-text search and nothing else —
+   * reporting a stored file as a failed one invites a second import of the
+   * whole archive.
+   */
+  it('still counts the document as imported when it cannot be read back for the index', async () => {
+    readDocx.mockRejectedValue(new Error('not a package'));
+
+    const summary = await run([doc('A.docx')]);
+
+    expect(summary).toMatchObject({ imported: 1, failed: 0 });
+    expect(indexOnSave).toHaveBeenCalledWith('user-1', expect.objectContaining({ id: 'id-A', content: '' }));
   });
 
   // Issue #95. This used to assert the opposite: that the run went ahead and
@@ -145,7 +235,7 @@ describe('runDocsImport', () => {
     expect(summary).toMatchObject({ imported: 0, unencrypted: true, cancelled: true });
     expect(docsApi.createDoc).not.toHaveBeenCalled();
     expect(encryptionApi.setFileKey).not.toHaveBeenCalled();
-    expect(driveAutosaveEncryptedContent).not.toHaveBeenCalled();
+    expect(driveAutosaveEncryptedBytes).not.toHaveBeenCalled();
   });
 
   // ── Dates (issue #110) ──────────────────────────────────────────────────
@@ -189,7 +279,7 @@ describe('runDocsImport', () => {
     await run([doc('A.docx')]);
 
     expect(storageApi.setImportMetadata.mock.invocationCallOrder[0]).toBeGreaterThan(
-      driveAutosaveEncryptedContent.mock.invocationCallOrder[0],
+      driveAutosaveEncryptedBytes.mock.invocationCallOrder[0],
     );
   });
 
@@ -213,21 +303,9 @@ describe('runDocsImport', () => {
     );
   });
 
-  it('converts an HTML export without going through mammoth', async () => {
-    await run([doc('A.html', { format: 'html', entry: takeoutEntry('A.html', '<h1>Title</h1>') })]);
-
-    expect(convertToHtml).not.toHaveBeenCalled();
-    expect(savedContent().content[0]).toMatchObject({ type: 'heading', attrs: { level: 1 } });
-  });
-
   it('converts a plain-text export line by line', async () => {
     await run([doc('A.txt', { format: 'text', entry: takeoutEntry('A.txt', 'one\ntwo') })]);
     expect(savedContent().content).toHaveLength(2);
-  });
-
-  it('asks mammoth to keep the underline and strikethrough it drops by default', async () => {
-    await run([doc('A.docx')]);
-    expect(convertToHtml.mock.calls[0][1]).toEqual({ styleMap: ['u => u', 'strike => s'] });
   });
 
   it('prefers the title in the metadata sidecar over the filename', async () => {
@@ -288,8 +366,11 @@ describe('runDocsImport', () => {
   });
 
   it('records a failure and carries on with the rest', async () => {
-    convertToHtml.mockRejectedValueOnce(new Error('not a docx'));
-    const summary = await run([doc('A.docx'), doc('B.docx')]);
+    // An entry that cannot be inflated out of the zip — a corrupt archive is
+    // the one failure that reaches this runner before anything is written.
+    const broken = doc('A.docx');
+    broken.entry = { ...broken.entry, blob: async () => { throw new Error('not a docx'); } };
+    const summary = await run([broken, doc('B.docx')]);
 
     expect(summary).toMatchObject({ imported: 1, failed: 1 });
     expect(summary.items[0]).toMatchObject({ title: 'A', status: 'failed', reason: 'not a docx' });

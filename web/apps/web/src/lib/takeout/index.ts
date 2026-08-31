@@ -33,8 +33,7 @@ export { findDriveDocs, readDocInfo } from './driveDocs';
 export type { DocFormat, DriveDocEntry, DriveDocInfo, DriveDocsSource, UnsupportedDoc } from './driveDocs';
 
 export {
-  convertDriveDoc,
-  docxToHtml,
+  storedDocxFor,
   runDocsImport,
   DEFAULT_DOCS_IMPORT_OPTIONS,
   UNTITLED_DOC,
@@ -49,11 +48,11 @@ export type {
   UnsupportedSheet,
 } from './driveSheets';
 
-export { delimitedToSheetFile, xlsxToSheetFile } from './sheetXlsx';
+export { delimitedToSheetFile } from './sheetXlsx';
 export type { SheetConversionOptions } from './sheetXlsx';
 
 export {
-  convertDriveSheet,
+  storedXlsxFor,
   runSheetsImport,
   DEFAULT_SHEETS_IMPORT_OPTIONS,
   UNTITLED_SHEET,

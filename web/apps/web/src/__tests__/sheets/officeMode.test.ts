@@ -82,19 +82,14 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
 // useExport.ts for import/export. NOTE: usePersistence.ts does not import
 // `xlsx` today — this mock (and the assertion built on it) targets where the
 // plan places the detection/parse responsibility; if the eventual
-// implementation instead does the XLSX.read call in SheetEditor.tsx after
-// receiving raw bytes from the hook, this specific assertion (not the
-// getFileMetadata fallback-call assertions) would need to move accordingly.
-const mockXlsxRead = vi.fn(() => ({
-  SheetNames: ['Sheet1'],
-  Sheets: { Sheet1: {} },
+// implementation instead parses in SheetEditor.tsx after receiving raw bytes
+// from the hook, this specific assertion (not the getFileMetadata
+// fallback-call assertions) would need to move accordingly.
+const mockReadXlsx = vi.fn(() => Promise.resolve({
+  sheets: [{ name: 'Sheet1', cells: {} }],
 }));
-vi.mock('xlsx', () => ({
-  read: (...args: unknown[]) => mockXlsxRead(...args),
-  utils: {
-    decode_range: vi.fn(() => ({ s: { r: 0, c: 0 }, e: { r: 0, c: 0 } })),
-    encode_cell: vi.fn(() => 'A1'),
-  },
+vi.mock('@/lib/ooxml/xlsx/read', () => ({
+  readXlsx: (...args: unknown[]) => mockReadXlsx(...args),
 }));
 
 import { usePersistence } from '../../app/(apps)/sheets/editor/hooks/usePersistence';
@@ -138,7 +133,7 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
     expect(mockGetFileMetadata).toHaveBeenCalledWith('test-sheet-id');
   });
 
-  it('enters office mode and parses xlsx content via setData for a raw .xlsx file', async () => {
+  it('enters office mode and applies the parsed workbook for a raw .xlsx file', async () => {
     mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
     mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake xlsx bytes'));
@@ -174,7 +169,7 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
     const { result, setData } = setupHook();
     await result.current.load();
 
-    expect(mockXlsxRead).not.toHaveBeenCalled();
+    expect(mockReadXlsx).not.toHaveBeenCalled();
     expect(setData).not.toHaveBeenCalled();
   });
 });

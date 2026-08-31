@@ -97,30 +97,21 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
 }));
 
 /** What the office-mode load hands to XLSX.read, captured for assertion. */
-const xlsxRead = vi.fn((_buffer: ArrayBuffer | Uint8Array) => ({
-  SheetNames: ['Sheet1'],
-  Sheets: { Sheet1: {} },
-}));
+const readXlsx = vi.fn((_bytes: Uint8Array) => Promise.resolve({ sheets: [] }));
 /**
- * The OOXML container is exercised by `lib/__tests__/ooxmlContainer.test.ts`;
- * here it is stubbed so the fake `RAW_XLSX` bytes below don't have to be a real
- * zip. What this file is about is which transport the bytes go out on and
- * whether they are encrypted, not what is inside the package.
+ * The container and the workbook reader are stubbed so the fake `RAW_XLSX`
+ * bytes below don't have to be a real zip — they are exercised by
+ * `__tests__/ooxml/xlsxRoundTrip.test.ts`. What this file is about is which
+ * transport the bytes go out on and whether they are encrypted, not what is
+ * inside the package.
  */
 vi.mock('@/lib/ooxmlContainer', () => ({
   packNeutrinoModel: (ooxml: Uint8Array) => Promise.resolve(ooxml),
   readNeutrinoModel: () => Promise.resolve(null),
 }));
 
-vi.mock('xlsx', () => ({
-  read: (buffer: ArrayBuffer | Uint8Array) => xlsxRead(buffer),
-  write: () => new ArrayBuffer(8),
-  utils: {
-    decode_range: vi.fn(() => ({ s: { r: 0, c: 0 }, e: { r: 0, c: 0 } })),
-    encode_cell: vi.fn(() => 'A1'),
-    book_new: vi.fn(() => ({})),
-    book_append_sheet: vi.fn(),
-  },
+vi.mock('@/lib/ooxml/xlsx/read', () => ({
+  readXlsx: (bytes: Uint8Array) => readXlsx(bytes),
 }));
 
 import { usePersistence } from '../../app/(apps)/sheets/editor/hooks/usePersistence';
@@ -185,8 +176,8 @@ describe('opening an office-mode file', () => {
     await loadInOfficeMode();
 
     expect(decryptFile).toHaveBeenCalledTimes(1);
-    // XLSX.read must see the original OOXML, not the ciphertext wrapping it.
-    const parsed = new Uint8Array(xlsxRead.mock.calls[0][0]);
+    // The reader must see the original OOXML, not the ciphertext wrapping it.
+    const parsed = new Uint8Array(readXlsx.mock.calls[0][0]);
     expect(Array.from(parsed)).toEqual(Array.from(RAW_XLSX));
   });
 
@@ -196,7 +187,7 @@ describe('opening an office-mode file', () => {
     await loadInOfficeMode();
 
     expect(decryptFile).not.toHaveBeenCalled();
-    const parsed = new Uint8Array(xlsxRead.mock.calls[0][0]);
+    const parsed = new Uint8Array(readXlsx.mock.calls[0][0]);
     expect(Array.from(parsed)).toEqual(Array.from(RAW_XLSX));
   });
 });
