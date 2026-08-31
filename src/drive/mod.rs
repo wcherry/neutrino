@@ -16,6 +16,7 @@ pub mod shared_drives;
 pub mod sharing;
 pub mod storage;
 pub mod tags;
+pub mod version_retention;
 pub mod workspace;
 
 use actix_web::web;

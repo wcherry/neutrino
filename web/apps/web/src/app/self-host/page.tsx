@@ -55,7 +55,7 @@ const commonVars = [
   { name: 'DRIVE_URL', default: 'http://localhost:<PORT>', desc: 'Public URL of the Drive service.' },
   { name: 'MAX_UPLOAD_BYTES', default: '10737418240', desc: 'Largest single-file upload, in bytes. Defaults to 10 GiB.' },
   { name: 'LOG_LEVEL', default: 'info', desc: 'One of error, warn, info, debug, trace.' },
-  { name: 'LOG_PATH', default: '(stdout only)', desc: 'Directory for log files. Leave unset to log to stdout, which is what you want under Docker.' },
+  { name: 'LOG_PATH', default: '(stdout only)', desc: 'Directory for log files, written as service.<date>.log and worker.<date>.log and rotated daily. Leave unset to log to stdout only, which is what you want if you collect logs off the container.' },
   { name: 'WEB_DIR', default: 'web/apps/web/out', desc: 'Path to the built web app. Already set correctly inside the Docker image.' },
 ];
 
@@ -63,6 +63,7 @@ const optionalVars = [
   { name: 'JWT_ACCESS_EXPIRY_SECS', default: '900', desc: 'Access token lifetime in seconds.' },
   { name: 'JWT_REFRESH_EXPIRY_SECS', default: '604800', desc: 'Refresh token lifetime in seconds. Defaults to 7 days.' },
   { name: 'JOBS_PER_WORKER', default: '4', desc: 'Maximum concurrent background jobs per worker.' },
+  { name: 'FACE_MODEL_PATH', default: 'models/seeta_fd_frontal_v1.0.bin', desc: 'Face-detection model, read by the worker at startup. Already set correctly inside the Docker image; a binary install needs the file on disk and this pointed at it.' },
   { name: 'GOOGLE_CLIENT_ID', default: '(optional)', desc: 'Google OAuth client ID, for calendar sync.' },
   { name: 'GOOGLE_CLIENT_SECRET', default: '(optional)', desc: 'Google OAuth client secret.' },
   { name: 'GOOGLE_REDIRECT_URI', default: '<origin>/calendar/settings/oauth/google/callback', desc: 'OAuth redirect URI. Derived from the address the browser reached the app on, so it normally needs no setting — register that URL in the Google console. Set it only to override.' },
@@ -141,8 +142,8 @@ export default function SelfHostPage() {
           <Link href="/" className={styles.backLink}>← Back to home</Link>
           <h1 className={styles.title}>Self-hosting Neutrino</h1>
           <p className={styles.lede}>
-            Neutrino ships as a single binary that serves the API, the background worker
-            and the web app from one process, backed by SQLite. There is no external
+            Neutrino ships as one container: a binary serving the API and the web app,
+            and a background worker beside it, backed by SQLite. There is no external
             database, message queue or object store to stand up first. A small VPS, a NAS
             or a Raspberry Pi is enough to run the whole suite for a household or a team.
           </p>
@@ -169,7 +170,15 @@ export default function SelfHostPage() {
             <h2 className={styles.h2}>What you need</h2>
             <ul className={styles.list}>
               <li><strong>A Linux host</strong> — x86-64 or ARM64. 1 vCPU and 1 GB of RAM runs a small instance comfortably.</li>
-              <li><strong>Disk space</strong> for whatever you plan to store, plus a little headroom. Files live on the filesystem, not in the database.</li>
+              <li>
+                <strong>Disk space</strong> for whatever you plan to store, plus a little
+                headroom. Files live on the filesystem, not in the database. Budget for
+                version history too: every saved version of a file is a full copy beside
+                the current one, and how much is kept is yours to set under{' '}
+                <strong>Admin → Versions</strong> — an age to keep versions for, and a
+                number of recent versions to keep regardless. The worker prunes to that
+                policy hourly.
+              </li>
               <li><strong>Docker</strong>, if you want the one-command install. Otherwise just the binary.</li>
               <li><strong>A hostname and TLS certificate</strong> if you intend to reach it from outside your network. See <a href="#tls" className={styles.inlineLink}>TLS and reverse proxy</a>.</li>
             </ul>
@@ -186,10 +195,18 @@ export default function SelfHostPage() {
             <h2 className={styles.h2}>Install with Docker</h2>
             <p className={styles.p}>
               The published image contains the Rust server, the background worker and the
-              prebuilt web app. It listens on port 8080 and keeps all state under
+              prebuilt web app, and its default command <strong>runs the server and the
+              worker together</strong>. It listens on port 8080 and keeps all state under
               <code className={styles.inlineCode}>/usr/local/data</code>, which is declared
               as a volume — mount it somewhere durable or an upgrade will take your data with it.
             </p>
+            <div className={styles.callout}>
+              <strong>Give it a restart policy.</strong> If either process stops, the
+              container stops with it, rather than staying up while quietly doing none of
+              the background work — face detection, account deletion and version pruning
+              all live in the worker. <code className={styles.inlineCode}>--restart
+              unless-stopped</code> (below) is what brings it back.
+            </div>
             <Code>{`# Generate your secrets once and keep them
 export JWT_SECRET="$(openssl rand -hex 32)"
 export WORKER_SECRET="$(openssl rand -hex 32)"
@@ -236,11 +253,21 @@ docker run -d --name neutrino \\
       SELF_URL: https://neutrino.example.com
       DRIVE_URL: https://neutrino.example.com
       LOG_LEVEL: info
+      LOG_PATH: /usr/local/logs
     volumes:
       - ./data:/usr/local/data
       - ./logs:/usr/local/logs`}</Code>
             <Code>{`docker compose up -d
 docker compose logs -f neutrino`}</Code>
+            <p className={styles.p}>
+              Both processes log to stdout, so <code className={styles.inlineCode}>docker
+              compose logs</code> shows everything interleaved. Setting
+              <code className={styles.inlineCode}>LOG_PATH</code> additionally gives each
+              its own daily file in <code className={styles.inlineCode}>./logs</code> —
+              <code className={styles.inlineCode}>service.&lt;date&gt;.log</code> and
+              <code className={styles.inlineCode}>worker.&lt;date&gt;.log</code> — which is
+              easier to read back when you want one of them on its own.
+            </p>
           </section>
 
           <section id="binary" className={styles.block}>
@@ -250,11 +277,13 @@ docker compose logs -f neutrino`}</Code>
               it under systemd. The binary needs the built web app on disk and pointed at
               by <code className={styles.inlineCode}>WEB_DIR</code>.
             </p>
-            <Code>{`# Fetch the latest release for your platform
+            <Code>{`# Fetch the latest release for your platform — the server and the worker
 curl -fsSL -o neutrino \\
   ${GITHUB_URL}/releases/latest/download/neutrino-linux-x86_64
-chmod +x neutrino
-sudo mv neutrino /usr/local/bin/neutrino
+curl -fsSL -o neutrino-worker \\
+  ${GITHUB_URL}/releases/latest/download/neutrino-worker-linux-x86_64
+chmod +x neutrino neutrino-worker
+sudo mv neutrino neutrino-worker /usr/local/bin/
 
 # Somewhere for state to live
 sudo mkdir -p /var/lib/neutrino/storage
@@ -297,6 +326,40 @@ WantedBy=multi-user.target`}</Code>
 sudo systemctl daemon-reload
 sudo systemctl enable --now neutrino
 sudo systemctl status neutrino`}</Code>
+            <p className={styles.p}>
+              That unit runs the server only. Unlike the Docker image, a binary install
+              does not start the worker for you, and without it face detection never runs,
+              deleted accounts are never erased and version history is never pruned. Give
+              it a unit of its own, sharing the same environment file so both processes
+              agree on the database and storage paths:
+            </p>
+            <Code title="/etc/systemd/system/neutrino-worker.service">{`[Unit]
+Description=Neutrino background worker
+# The server runs the database migrations, so start after it.
+After=neutrino.service
+Requires=neutrino.service
+
+[Service]
+User=neutrino
+Group=neutrino
+EnvironmentFile=/etc/neutrino/neutrino.env
+ExecStart=/usr/local/bin/neutrino-worker
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/neutrino
+
+[Install]
+WantedBy=multi-user.target`}</Code>
+            <Code>{`sudo systemctl enable --now neutrino-worker
+sudo systemctl status neutrino-worker`}</Code>
+            <p className={styles.p}>
+              The worker needs the face-detection model on disk — point
+              <code className={styles.inlineCode}>FACE_MODEL_PATH</code> at it in the same
+              environment file, or the worker exits on startup saying it could not load it.
+            </p>
           </section>
 
           <section id="first-run" className={styles.block}>
@@ -436,6 +499,26 @@ sudo systemctl start neutrino`}</Code>
               Almost always a missing <code className={styles.inlineCode}>JWT_SECRET</code> or
               <code className={styles.inlineCode}>WORKER_SECRET</code>. Check the first few
               lines of the log — the failure is reported before anything else happens.
+            </p>
+
+            <h3 className={styles.h3}>The container keeps restarting</h3>
+            <p className={styles.p}>
+              The container runs the server and the worker, and stops if either one does,
+              so a crash loop can be coming from either. The last lines before each exit
+              say which: the start script prints{' '}
+              <code className={styles.inlineCode}>worker exited</code> or{' '}
+              <code className={styles.inlineCode}>server exited</code> with its status. A
+              worker that dies at startup is usually the face-detection model — see{' '}
+              <code className={styles.inlineCode}>FACE_MODEL_PATH</code>.
+            </p>
+
+            <h3 className={styles.h3}>Faces, deletions or old versions are never processed</h3>
+            <p className={styles.p}>
+              All three are the worker&apos;s: face grouping, erasing accounts once their
+              deletion grace window closes, and pruning version history. If you overrode the
+              container&apos;s command, or run from a binary install without a second unit for
+              it, the worker is not running. Look for{' '}
+              <code className={styles.inlineCode}>background worker started</code> in the log.
             </p>
 
             <h3 className={styles.h3}>Uploads fail for large files</h3>

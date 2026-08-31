@@ -9,7 +9,7 @@ embedded in the binary, so a first run needs no database setup at all.
 
 | App | Description |
 |-----|-------------|
-| **Drive** | File storage — folders, tags, stars, shortcuts, trash, shared drives, share links, comments, activity trail |
+| **Drive** | File storage — folders, tags, stars, shortcuts, trash, shared drives, share links, comments, activity trail, version history |
 | **Docs** | Rich-text documents (`.docx`) with real-time co-editing, outline, version history, and PDF export |
 | **Sheets** | Spreadsheets (`.xlsx`) with a formula engine, named ranges, conditional formatting and charts |
 | **Slides** | Presentations (`.pptx`) with themes, master slides, speaker notes and presenter mode |
@@ -89,6 +89,43 @@ Because content is encrypted, search runs **locally in the browser** against an
 IndexedDB index (`packages/search`) that every app writes to, and is shared between
 devices as an encrypted snapshot. Nothing is searched server-side.
 
+## File storage and version history
+
+Uploaded content lives on the filesystem under `STORAGE_PATH`, never in the database.
+Each file gets **one directory holding every version of it**, the current content
+included:
+
+```
+<STORAGE_PATH>/<user-id>/<file-id>/<version-id>
+```
+
+The version a file's row points at *is* its current content — not a copy of it — so
+nothing is stored twice, and a new version is one more entry in the same directory.
+Reported quota usage is the sum of those versions, which is what the volume actually
+holds. Uploads, autosaves and named saves all write here; the editors' documents are
+Drive files, so they version like anything else.
+
+Two things follow from the current content being a version. The live version cannot be
+deleted — its bytes are the file — and restoring an old version copies it forward as a
+new one rather than pointing the file back at it, so a later autosave cannot overwrite
+the history it was restored from.
+
+**Version history is pruned by the worker**, hourly, against a policy an admin sets in
+**/admin → Versions**:
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| Prune old versions | on | Off keeps every version of every file forever |
+| Keep versions for | 30 days | How old a version may get before it is eligible for deletion |
+| Always keep at least | 10 versions | The newest versions of each file, kept whatever their age |
+
+The two numbers are one rule, not two: the newest *n* versions of a file are set aside
+first, and age then decides among what is left. So a file edited all week keeps a week
+of history, and a file untouched for two years still has its last *n* versions rather
+than none. A file's current version and any version someone **named** are never pruned.
+
+Deleting a file for good removes its whole directory and its history with it.
+
 ## Clients
 
 | Client | Status |
@@ -104,8 +141,10 @@ devices as an encrypted snapshot. Nothing is searched server-side.
 
 - **Backend** — Rust, Actix-web 4, Diesel + SQLite (bundled `libsqlite3`, WAL mode),
   Argon2 password hashing, JWT auth, TOTP 2FA, AES-GCM
-- **Worker** — separate Rust binary; face detection (`rustface`) and other background jobs
-  over the shared SQLite jobs table
+- **Worker** — separate Rust binary, started alongside the server by the Docker image.
+  Face detection (`rustface`) and other queued jobs over the shared SQLite jobs table,
+  plus two hourly sweeps that derive their own work from the rows: erasing accounts past
+  their deletion grace window, and pruning file version history to the retention policy
 - **Frontend** — Next.js 15 (App Router, static export), pnpm workspaces, Turborepo
 - **Collaboration** — Yjs over WebSockets, with server-side Y.Doc rooms for Docs and Diagrams
 - **Storage** — local filesystem
@@ -120,7 +159,8 @@ src/                  # Rust backend
   docs/               # Document CRUD, collab rooms, permissions, templates
   drive/              # Files, folders, sharing, shared drives, permissions,
                       # encryption + key files, comments, tags, activity,
-                      # notifications, admin, compliance, security, fonts
+                      # notifications, admin, version retention policy,
+                      # compliance, security, fonts
   jobs/               # Background job queue (consumed by worker/)
   links/              # Link previews / link management
   oauth/              # OAuth clients (native app sign-in)
@@ -132,7 +172,8 @@ src/                  # Rust backend
   shared/             # DB pool, extractors, errors, presence rooms, file events
   config.rs           # All config loaded from the environment
   main.rs             # Server setup, routing, migration runner
-worker/               # Background worker binary (face detection, job processing)
+worker/               # Background worker binary — face detection, job processing,
+                      # account purge and version-retention sweeps
 xtask/                # Dev tasks: cargo xtask dev | build-web | e2e | docker | ...
 migrations/           # Diesel migrations (embedded; run automatically on startup)
 web/                  # Frontend monorepo (see web/README.md)
@@ -190,10 +231,20 @@ docker run -d --name neutrino -p 8080:8080 \
   ghcr.io/wcherry/neutrino:latest
 ```
 
-The container serves the API and the frontend on port 8080. Its default command runs
-the **server only**; the `worker` binary is in the image at `/usr/local/bin/worker`, so
-run a second container from the same image and volume — with the same `DATABASE_URL`,
-`STORAGE_PATH` and `WORKER_SECRET` — to get face detection and background jobs.
+The container serves the API and the frontend on port 8080, and its default command
+(`/usr/local/bin/start-all`) runs the **background worker alongside them** — face
+detection, background jobs, account purging and file-version retention all live there.
+The worker starts once the server reports healthy, since the server is what runs the
+database migrations. If either process exits the container exits with it, rather than
+staying up while quietly doing none of the background work; give it a restart policy.
+
+To split them across two containers instead, override the command on each
+(`/usr/local/bin/service` and `/usr/local/bin/worker`) and give both the same
+`DATABASE_URL`, `STORAGE_PATH`, `WORKER_SECRET` and volume.
+
+With `LOG_PATH` set, each process writes its own daily file into that directory —
+`service.<date>.log` and `worker.<date>.log` — so one shared volume does not interleave
+the two. Both also log to stdout, which is what `docker logs` shows.
 
 ## Configuration
 
@@ -214,8 +265,8 @@ which is how Docker/Kubernetes secrets are mounted — e.g. `JWT_SECRET_PATH=/ru
 | `JWT_ACCESS_EXPIRY_SECS` | `900` | Access token lifetime |
 | `JWT_REFRESH_EXPIRY_SECS` | `604800` | Refresh token lifetime (7 days) |
 | `JOBS_PER_WORKER` | `4` | Maximum concurrent background jobs per worker |
-| `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug`, `trace` |
-| `LOG_PATH` | *(stdout only)* | Directory for log files |
+| `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug`, `trace`. Read by both the server and the worker (`RUST_LOG` still overrides it for the worker) |
+| `LOG_PATH` | *(stdout only)* | Directory for log files. Written as `service.<date>.log` and `worker.<date>.log`, rotated daily |
 | `TEMP_SWEEP_INTERVAL_SECS` | `3600` | How often to sweep upload staging files that never committed (floor: 60) |
 | `TEMP_MAX_AGE_SECS` | `21600` | How long a staging file must be untouched before a sweep removes it |
 | `REPROCESS_INTERVAL_SECS` | `1800` | How often Photos reprocesses pending face-learning work |

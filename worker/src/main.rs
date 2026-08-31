@@ -20,9 +20,11 @@ use uuid::Uuid;
 
 mod crypto;
 mod face;
+mod logger;
 mod purge;
 mod schema;
 mod tasks;
+mod versions;
 use face::FaceScanner;
 use schema::worker_jobs;
 use tasks::{FaceScanHandler, TaskHandler};
@@ -66,21 +68,20 @@ impl CustomizeConnection<SqliteConnection, R2D2Error> for SqliteConnectionInit {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    // Same `LOG_LEVEL` / `LOG_PATH` pair the main app reads, so one set of
+    // variables configures both processes. Held for the whole of `main`: the
+    // file writer is non-blocking, and dropping the guard would cut the flush.
+    let log_level = env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
+    let _log_guard = logger::init_logging(&log_level, env::var("LOG_PATH").ok());
 
     let database_url =
         env::var("DATABASE_URL").unwrap_or_else(|_| "./data/neutrino.db".to_string());
     let model_path = env::var("FACE_MODEL_PATH")
         .unwrap_or_else(|_| "./models/seeta_fd_frontal_v1.0.bin".to_string());
     // Same variable and same default as the main app's `Config::storage_path`;
-    // the purge sweep deletes the departing user's directory under it. Pointing
-    // the worker at a different root than the app makes the sweep a no-op that
-    // still deletes the rows, so the bytes would be left orphaned.
+    // the purge and version-retention sweeps delete blobs under it. Pointing
+    // the worker at a different root than the app makes them no-ops that still
+    // delete the rows, so the bytes would be left orphaned.
     let storage_root = PathBuf::from(
         env::var("STORAGE_PATH").unwrap_or_else(|_| "./storage".to_string()),
     );
@@ -117,20 +118,34 @@ fn main() {
         "background worker started",
     );
 
-    // Tracks the account-purge sweep, which runs on a wall-clock interval
-    // rather than per poll. `None` means it has never run, so the first pass
-    // through the loop sweeps immediately — a restart then catches up on
-    // anything whose grace window closed while the process was down.
-    let mut last_sweep: Option<Instant> = None;
+    // Tracks the two sweeps, which run on a wall-clock interval rather than
+    // per poll. `None` means one has never run, so the first pass through the
+    // loop sweeps immediately — a restart then catches up on anything whose
+    // window closed while the process was down.
+    let mut last_purge_sweep: Option<Instant> = None;
+    let mut last_version_sweep: Option<Instant> = None;
 
     // Poll the jobs table forever, claiming and processing one task at a time.
     loop {
-        if last_sweep.is_none_or(|t| t.elapsed() >= purge::SWEEP_INTERVAL) {
-            last_sweep = Some(Instant::now());
+        if last_purge_sweep.is_none_or(|t| t.elapsed() >= purge::SWEEP_INTERVAL) {
+            last_purge_sweep = Some(Instant::now());
             match purge::sweep(&pool, &storage_root) {
                 Ok(0) => {}
                 Ok(n) => tracing::info!("purged {n} expired account(s)"),
                 Err(e) => tracing::error!("account purge sweep failed: {e}"),
+            }
+        }
+
+        if last_version_sweep.is_none_or(|t| t.elapsed() >= versions::SWEEP_INTERVAL) {
+            last_version_sweep = Some(Instant::now());
+            match versions::sweep(&pool, &storage_root) {
+                Ok(r) if r.deleted == 0 => {}
+                Ok(r) => tracing::info!(
+                    "pruned {} file version(s), freeing {} bytes",
+                    r.deleted,
+                    r.bytes_freed,
+                ),
+                Err(e) => tracing::error!("version retention sweep failed: {e}"),
             }
         }
 

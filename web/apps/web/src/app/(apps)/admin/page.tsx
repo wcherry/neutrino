@@ -8,7 +8,7 @@ import { Spinner, Toggle, ProgressBar, useToast, DropZone } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { adminApi, fontsApi } from '@neutrino/api-admin';
 import { ApiClientError } from '@neutrino/api-core';
-import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag, JobResponse, CustomFont } from '@neutrino/api-admin';
+import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -715,6 +715,169 @@ function FontsTab() {
   );
 }
 
+/**
+ * The retention policy for file version history.
+ *
+ * The two numbers are one rule, not two independent settings, so they are
+ * edited and saved together: the age window only decides among the versions
+ * the floor has not already protected. The form is uncontrolled-until-loaded
+ * (a `null` draft) rather than seeded with defaults, so an admin never sees
+ * plausible-looking numbers that are not the ones being enforced.
+ */
+function VersionsTab() {
+  const qc = useQueryClient();
+  const { error: toastError, success: toastSuccess } = useToast();
+  const [draft, setDraft] = useState<VersionRetentionSettings | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['admin-version-retention'],
+    queryFn: () => adminApi.getVersionRetention(),
+  });
+
+  // The server's answer is the starting point for editing, and re-reading it
+  // after a save is what discards a draft the server clamped or rejected.
+  const settings = draft ?? data ?? null;
+
+  const save = useMutation({
+    mutationFn: (next: VersionRetentionSettings) =>
+      adminApi.updateVersionRetention({
+        enabled: next.enabled,
+        retentionDays: next.retentionDays,
+        minVersions: next.minVersions,
+      }),
+    onSuccess: (saved) => {
+      setDraft(null);
+      qc.setQueryData(['admin-version-retention'], saved);
+      toastSuccess('Retention policy saved.');
+    },
+    onError: () => {
+      toastError('Failed to save the retention policy. Please try again.');
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className={styles.loading}>
+        <Spinner size="md" />
+      </div>
+    );
+  }
+
+  if (error || !settings) {
+    return (
+      <div className={styles.error}>
+        Failed to load the version retention policy.
+      </div>
+    );
+  }
+
+  const dirty =
+    draft !== null &&
+    data !== undefined &&
+    (draft.enabled !== data.enabled ||
+      draft.retentionDays !== data.retentionDays ||
+      draft.minVersions !== data.minVersions);
+
+  const patch = (changes: Partial<VersionRetentionSettings>) =>
+    setDraft({ ...settings, ...changes });
+
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.sectionTitle}>File Version Retention</h2>
+      <p className={styles.settingIntro}>
+        Every version of a file is a full copy in that file&apos;s folder, current content
+        included. The background worker prunes the history hourly: versions older than the
+        age below are deleted, but the newest few are always kept, however old they are. A
+        file&apos;s current version and any version someone named are never deleted.
+      </p>
+
+      <div className={styles.serviceList}>
+        <div className={styles.serviceRow}>
+          <div className={styles.serviceInfo}>
+            <span className={styles.serviceName}>Prune old versions</span>
+            <span className={styles.serviceMeta}>
+              Off keeps every version of every file forever.
+            </span>
+          </div>
+          <div className={styles.serviceControls}>
+            <span className={styles.serviceLabel}>
+              {settings.enabled ? 'Enabled' : 'Disabled'}
+            </span>
+            <Toggle
+              checked={settings.enabled}
+              disabled={save.isPending}
+              aria-label="Toggle version pruning"
+              onChange={() => patch({ enabled: !settings.enabled })}
+            />
+          </div>
+        </div>
+
+        <div className={styles.serviceRow}>
+          <div className={styles.serviceInfo}>
+            <span className={styles.serviceName}>Keep versions for</span>
+            <span className={styles.serviceMeta}>
+              Days before a version becomes eligible for deletion.
+            </span>
+          </div>
+          <div className={styles.serviceControls}>
+            <input
+              type="number"
+              min={0}
+              max={36500}
+              className={styles.numberInput}
+              value={settings.retentionDays}
+              disabled={!settings.enabled || save.isPending}
+              aria-label="Days to keep versions"
+              onChange={(e) =>
+                patch({ retentionDays: Math.max(0, Number(e.target.value) || 0) })
+              }
+            />
+            <span className={styles.serviceLabel}>days</span>
+          </div>
+        </div>
+
+        <div className={styles.serviceRow}>
+          <div className={styles.serviceInfo}>
+            <span className={styles.serviceName}>Always keep at least</span>
+            <span className={styles.serviceMeta}>
+              The newest versions of each file, kept regardless of age.
+            </span>
+          </div>
+          <div className={styles.serviceControls}>
+            <input
+              type="number"
+              min={0}
+              max={1000}
+              className={styles.numberInput}
+              value={settings.minVersions}
+              disabled={!settings.enabled || save.isPending}
+              aria-label="Minimum versions to keep"
+              onChange={(e) =>
+                patch({ minVersions: Math.max(0, Number(e.target.value) || 0) })
+              }
+            />
+            <span className={styles.serviceLabel}>versions</span>
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.formActions}>
+        <span className={styles.pageInfo}>
+          Last changed {new Date(settings.updatedAt).toLocaleString()}
+        </span>
+        <button
+          className={styles.pageBtn}
+          type="button"
+          disabled={!dirty || save.isPending}
+          onClick={() => save.mutate(settings)}
+        >
+          {save.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function JobsTab() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['admin-jobs'],
@@ -794,7 +957,7 @@ function JobsTab() {
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = 'processes' | 'disk' | 'services' | 'users' | 'flags' | 'fonts' | 'jobs';
+type Tab = 'processes' | 'disk' | 'services' | 'users' | 'flags' | 'versions' | 'fonts' | 'jobs';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'processes', label: 'Processes' },
@@ -802,6 +965,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'services', label: 'Services' },
   { id: 'users', label: 'Users' },
   { id: 'flags', label: 'Feature Flags' },
+  { id: 'versions', label: 'Versions' },
   { id: 'fonts', label: 'Fonts' },
   { id: 'jobs', label: 'Jobs' },
 ];
@@ -861,6 +1025,7 @@ export default function AdminPage() {
         {activeTab === 'services' && <ServicesTab />}
         {activeTab === 'users' && <UsersTab />}
         {activeTab === 'flags' && <FeatureFlagsTab />}
+        {activeTab === 'versions' && <VersionsTab />}
         {activeTab === 'fonts' && <FontsTab />}
         {activeTab === 'jobs' && <JobsTab />}
       </div>

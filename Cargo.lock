@@ -4165,6 +4165,7 @@ dependencies = [
  "rustface",
  "serde_json",
  "tracing",
+ "tracing-appender",
  "tracing-subscriber",
  "uuid",
 ]

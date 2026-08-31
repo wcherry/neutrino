@@ -60,6 +60,13 @@ const sampleService = {
   autoUpdate: false,
 };
 
+const sampleRetention = {
+  enabled: true,
+  retentionDays: 30,
+  minVersions: 10,
+  updatedAt: '2026-08-30T00:00:00Z',
+};
+
 const sampleFont = {
   id: 'font-1',
   displayName: 'My Custom Font',
@@ -209,6 +216,30 @@ describe('adminApi', () => {
         { method: 'POST' },
       );
       expect(result).toEqual(sampleUser);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // File version retention — the policy the background worker enforces.
+  // ---------------------------------------------------------------------------
+
+  describe('getVersionRetention', () => {
+    it('calls GET /api/v1/admin/version-retention', async () => {
+      mockRequest.mockResolvedValueOnce(sampleRetention);
+      const result = await adminApi.getVersionRetention();
+      expect(mockRequest).toHaveBeenCalledWith('/api/v1/admin/version-retention');
+      expect(result).toEqual(sampleRetention);
+    });
+  });
+
+  describe('updateVersionRetention', () => {
+    it('calls PUT /api/v1/admin/version-retention with the changed fields', async () => {
+      mockRequest.mockResolvedValueOnce({ ...sampleRetention, retentionDays: 90 });
+      await adminApi.updateVersionRetention({ retentionDays: 90 });
+      expect(mockRequest).toHaveBeenCalledWith('/api/v1/admin/version-retention', {
+        method: 'PUT',
+        body: JSON.stringify({ retentionDays: 90 }),
+      });
     });
   });
 

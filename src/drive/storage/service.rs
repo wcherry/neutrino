@@ -23,9 +23,6 @@ use std::path::Path;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[allow(dead_code)]
-const MAX_VERSIONS: i64 = 100;
-
 /// Map a path-resolution failure to a client error instead of handing a
 /// directory (or the storage root) to the file streamer, which crashes the
 /// actix response stream with `IsADirectory (Os code 21)`.
@@ -238,8 +235,15 @@ impl StorageService {
         }
 
         let file_id = Uuid::new_v4().to_string();
-        let final_path = self.store.file_path(&user.user_id, &file_id);
-        let storage_key = self.store.file_key(&user.user_id, &file_id);
+        // The uploaded bytes are version 1, not a file that a copy of itself is
+        // then filed away beside: they are moved straight into the file's own
+        // directory and the row points at them. Nothing is written twice.
+        let version_id = Uuid::new_v4().to_string();
+        self.store
+            .ensure_file_dir(&user.user_id, &file_id)
+            .map_err(ApiError::internal)?;
+        let final_path = self.store.version_path(&user.user_id, &file_id, &version_id);
+        let storage_key = self.store.version_key(&user.user_id, &file_id, &version_id);
 
         std::fs::rename(temp_path, &final_path).map_err(|e| {
             tracing::error!("Failed to move temp file to final path: {:?}", e);
@@ -258,7 +262,7 @@ impl StorageService {
         };
 
         let file = self.repo.insert_file(new_file).inspect_err(|_| {
-            let _ = std::fs::remove_file(&final_path);
+            self.store.remove_file_dir(&user.user_id, &file_id);
         })?;
 
         if let Err(e) = self
@@ -266,7 +270,7 @@ impl StorageService {
             .grant_ownership(user, "file", &file_id)
             .await
         {
-            let _ = std::fs::remove_file(&final_path);
+            self.store.remove_file_dir(&user.user_id, &file_id);
             return Err(e);
         }
 
@@ -280,16 +284,32 @@ impl StorageService {
             tracing::error!("Quota update failed for user {}: {:?}", &user.user_id, e);
         }
 
-        // Create version 1 snapshot (best-effort; failure doesn't block upload)
-        self.create_version_snapshot(&user.user_id, &file_id, &final_path, size_bytes, false);
+        // The version row for the bytes already on disk. Best-effort, as the
+        // snapshot it replaces was: the content is uploaded and reachable
+        // either way, and a missing row only costs the file its history.
+        if let Err(e) = self.repo.insert_version(NewFileVersionRecord {
+            id: &version_id,
+            file_id: &file_id,
+            user_id: &user.user_id,
+            size_bytes,
+            storage_path: &storage_key,
+            label: None,
+            is_named: false,
+        }) {
+            tracing::error!("Failed to record version 1 for file {}: {:?}", file_id, e);
+        }
 
         Ok(FileMetadataResponse::from(file))
     }
 
-    /// Autosave: overwrite the file's current content without necessarily creating a version.
-    /// A version snapshot is created automatically when either:
-    ///   - More than 10 minutes have elapsed since the last version, or
-    ///   - The content size changed by more than 50 KB.
+    /// Autosave: overwrite the file's current content, adding no version.
+    ///
+    /// The newest version *is* the live content now that both live in one
+    /// directory, so an autosave rewrites its bytes in place and leaves the
+    /// history alone. Older versions are immutable; only the live one moves.
+    /// A file with no version rows yet — a record created ahead of its content
+    /// by `save_file` — gets its first one here.
+    ///
     /// Permission check (owner/editor) must be enforced by the caller before calling this.
     ///
     /// `check` carries the client's optimistic-concurrency guard; pass
@@ -322,12 +342,27 @@ impl StorageService {
         }
 
         let owner_id = &file.user_id;
-        let main_path = self.store.file_path(owner_id, file_id);
 
-        std::fs::rename(temp_path, &main_path).map_err(|e| {
-            tracing::error!("Failed to move autosave content to main path: {:?}", e);
-            ApiError::internal("Failed to autosave file")
-        })?;
+        let storage_key = match self
+            .repo
+            .find_current_version(file_id, &file.storage_path)?
+        {
+            Some(current) => {
+                let target = self.store.resolve(&current.storage_path);
+                std::fs::rename(temp_path, &target).map_err(|e| {
+                    tracing::error!("Failed to move autosave content into place: {:?}", e);
+                    ApiError::internal("Failed to autosave file")
+                })?;
+                // The row is where the quota reads occupancy from, so the new
+                // size has to land on it and not only on the file row.
+                self.repo.update_version_size(&current.id, size_bytes)?;
+                current.storage_path
+            }
+            None => {
+                self.commit_new_version(owner_id, file_id, temp_path, size_bytes, false, None)?
+                    .storage_path
+            }
+        };
 
         let now = Utc::now().naive_utc();
         let updated = self.repo.update_file_autosave(
@@ -335,7 +370,7 @@ impl StorageService {
             owner_id,
             AutosaveFileContent {
                 size_bytes,
-                storage_path: self.store.file_key(owner_id, file_id),
+                storage_path: storage_key,
                 updated_at: now,
             },
             check,
@@ -344,8 +379,13 @@ impl StorageService {
         Ok(FileMetadataResponse::from(updated))
     }
 
-    /// Save a named version: always creates a snapshot marked is_named = true.
-    /// Named versions are never pruned automatically.
+    /// Save a named version: the new content becomes a version marked
+    /// `is_named = true`, and the file's live content along with it.
+    ///
+    /// Named versions are never pruned automatically. The content that was
+    /// live until now needs no snapshotting first — it is already a version
+    /// row of its own, which is what the one-directory layout buys.
+    ///
     /// Permission check (owner/editor) must be enforced by the caller before calling this.
     pub fn save_named_version(
         &self,
@@ -361,19 +401,8 @@ impl StorageService {
 
         let owner_id = &file.user_id;
 
-        // If the file has no version history, snapshot the current content as v1 first.
-        let existing_count = self.repo.count_versions(file_id)?;
-        if existing_count == 0 && !file.storage_path.is_empty() {
-            let current_path = self.store.resolve(&file.storage_path);
-            self.create_version_snapshot(owner_id, file_id, &current_path, file.size_bytes, false);
-        }
-
-        // Overwrite the main file with new content.
-        let main_path = self.store.file_path(owner_id, file_id);
-        std::fs::rename(temp_path, &main_path).map_err(|e| {
-            tracing::error!("Failed to move named version to main path: {:?}", e);
-            ApiError::internal("Failed to save named version")
-        })?;
+        let version =
+            self.commit_new_version(owner_id, file_id, temp_path, size_bytes, true, label)?;
 
         let now = Utc::now().naive_utc();
         self.repo.update_file_content(
@@ -381,14 +410,9 @@ impl StorageService {
             owner_id,
             UpdateFileContent {
                 size_bytes,
-                storage_path: self.store.file_key(owner_id, file_id),
+                storage_path: version.storage_path.clone(),
                 updated_at: now,
             },
-        )?;
-
-        // Create the named snapshot.
-        let version = self.create_version_snapshot_record(
-            owner_id, file_id, &main_path, size_bytes, true, label,
         )?;
 
         Ok(FileVersionResponse::from(version))
@@ -477,8 +501,7 @@ impl StorageService {
         file_id: &str,
         version_id: &str,
     ) -> Result<FileMetadataResponse, ApiError> {
-        let current = self
-            .repo
+        self.repo
             .find_file(file_id, user_id)?
             .ok_or_else(|| ApiError::not_found("File not found"))?;
 
@@ -487,34 +510,46 @@ impl StorageService {
             .find_version(version_id, file_id, user_id)?
             .ok_or_else(|| ApiError::not_found("Version not found"))?;
 
-        let main_path = self.store.file_path(user_id, file_id);
+        // The restore lands as a new version rather than by pointing the file
+        // at the old one. Two reasons: the content that was live is already
+        // its own version, so nothing needs snapshotting to preserve it; and
+        // the live version is the one autosave overwrites, so sharing a blob
+        // with a historical version would let the next keystroke rewrite the
+        // history it was restored from.
+        self.store
+            .ensure_file_dir(user_id, file_id)
+            .map_err(ApiError::internal)?;
+        let new_id = Uuid::new_v4().to_string();
+        let new_path = self.store.version_path(user_id, file_id, &new_id);
+        let new_key = self.store.version_key(user_id, file_id, &new_id);
 
-        // Snapshot the current content before restoring (best-effort)
-        self.create_version_snapshot(
-            user_id,
-            file_id,
-            &self.store.resolve(&current.storage_path),
-            current.size_bytes,
-            false,
-        );
-
-        // Copy version snapshot content to the main file path
-        std::fs::copy(self.store.resolve(&version.storage_path), &main_path).map_err(|e| {
-            tracing::error!(
-                "Failed to restore version {} to main path: {:?}",
-                version_id,
-                e
-            );
+        std::fs::copy(self.store.resolve(&version.storage_path), &new_path).map_err(|e| {
+            tracing::error!("Failed to restore version {}: {:?}", version_id, e);
             ApiError::internal("Failed to restore version")
         })?;
+
+        let restored = self
+            .repo
+            .insert_version(NewFileVersionRecord {
+                id: &new_id,
+                file_id,
+                user_id,
+                size_bytes: version.size_bytes,
+                storage_path: &new_key,
+                label: None,
+                is_named: false,
+            })
+            .inspect_err(|_| {
+                let _ = std::fs::remove_file(&new_path);
+            })?;
 
         let now = Utc::now().naive_utc();
         let updated = self.repo.update_file_content(
             file_id,
             user_id,
             UpdateFileContent {
-                size_bytes: version.size_bytes,
-                storage_path: self.store.file_key(user_id, file_id),
+                size_bytes: restored.size_bytes,
+                storage_path: restored.storage_path,
                 updated_at: now,
             },
         )?;
@@ -594,15 +629,35 @@ impl StorageService {
         Ok(FileVersionResponse::from(updated))
     }
 
+    /// Delete one past version.
+    ///
+    /// The live version cannot be deleted: its bytes are the file's content,
+    /// not a spare copy of them, so removing it would empty the file. That was
+    /// impossible to ask for under the old layout — history lived elsewhere —
+    /// and has to be refused explicitly now that the two sit side by side.
     pub fn delete_version(
         &self,
         user_id: &str,
         file_id: &str,
         version_id: &str,
     ) -> Result<(), ApiError> {
-        self.repo
+        let file = self
+            .repo
             .find_file(file_id, user_id)?
             .ok_or_else(|| ApiError::not_found("File not found"))?;
+
+        let version = self
+            .repo
+            .find_version(version_id, file_id, user_id)?
+            .ok_or_else(|| ApiError::not_found("Version not found"))?;
+
+        if version.storage_path == file.storage_path {
+            return Err(ApiError::new(
+                409,
+                "CURRENT_VERSION",
+                "The current version cannot be deleted",
+            ));
+        }
 
         let storage_key = self
             .repo
@@ -792,60 +847,54 @@ impl StorageService {
 
     // ── Private helpers ────────────────────────────────────────────────────────
 
-    /// Copies `source` to a new version snapshot and inserts the DB record.
-    /// Best-effort: logs errors but does not propagate them.
-    fn create_version_snapshot(
-        &self,
-        user_id: &str,
-        file_id: &str,
-        source: &Path,
-        size_bytes: i64,
-        is_named: bool,
-    ) {
-        if let Err(e) =
-            self.create_version_snapshot_record(user_id, file_id, source, size_bytes, is_named, None)
-        {
-            tracing::error!(
-                "Failed to create version snapshot for file {}: {:?}",
-                file_id,
-                e
-            );
-        }
-    }
-
-    /// The snapshot's version number is assigned by the insert, not here — see
+    /// Move staged bytes into the file's directory as a new version.
+    ///
+    /// The bytes are *moved*, not copied: staging happens in the owner's
+    /// partition on the same filesystem, so this is an atomic rename and the
+    /// content exists in exactly one place afterwards. Copying was what the
+    /// old layout forced — the same content had to sit at the file's path and
+    /// again under `versions/` — and is what made a store cost twice what it
+    /// reported.
+    ///
+    /// The version *number* is assigned by the insert, not here — see
     /// `StorageRepository::insert_version`.
-    fn create_version_snapshot_record(
+    fn commit_new_version(
         &self,
         user_id: &str,
         file_id: &str,
-        source: &Path,
+        temp_path: &Path,
         size_bytes: i64,
         is_named: bool,
         label: Option<&str>,
     ) -> Result<crate::drive::storage::model::FileVersionRecord, ApiError> {
-        if let Err(e) = self.store.ensure_versions_dir(user_id, file_id) {
-            return Err(ApiError::internal(e));
-        }
+        self.store
+            .ensure_file_dir(user_id, file_id)
+            .map_err(ApiError::internal)?;
 
         let version_id = Uuid::new_v4().to_string();
         let version_abs_path = self.store.version_path(user_id, file_id, &version_id);
         let version_key = self.store.version_key(user_id, file_id, &version_id);
 
-        std::fs::copy(source, &version_abs_path).map_err(|e| {
-            tracing::error!("Failed to copy file to version snapshot: {:?}", e);
-            ApiError::internal("Failed to create version snapshot")
+        std::fs::rename(temp_path, &version_abs_path).map_err(|e| {
+            tracing::error!("Failed to move content into the file directory: {:?}", e);
+            ApiError::internal("Failed to save file content")
         })?;
 
-        self.repo.insert_version(NewFileVersionRecord {
-            id: &version_id,
-            file_id,
-            user_id,
-            size_bytes,
-            storage_path: &version_key,
-            label,
-            is_named,
-        })
+        self.repo
+            .insert_version(NewFileVersionRecord {
+                id: &version_id,
+                file_id,
+                user_id,
+                size_bytes,
+                storage_path: &version_key,
+                label,
+                is_named,
+            })
+            .inspect_err(|_| {
+                // The row is what makes these bytes reachable; without it they
+                // are an orphan nothing will ever read or clean up.
+                let _ = std::fs::remove_file(&version_abs_path);
+            })
     }
 }
 
@@ -1205,11 +1254,12 @@ mod tests {
 
     // ── Quota accounting (issue #101) ────────────────────────────────────────
     //
-    // The reported usage has to match what the store actually holds. It didn't:
-    // `used_bytes` was a counter incremented by one call site (`finalize_upload`)
-    // with the uploaded size, while `finalize_upload` also writes a full v1
-    // snapshot, so a store of freshly uploaded files reported half its real
-    // footprint. These tests measure the scratch directory on disk and compare.
+    // The reported usage has to match what the store actually holds, whatever
+    // the layout underneath. It didn't: `used_bytes` was a counter incremented
+    // by one call site with the uploaded size, while the upload also wrote a
+    // full v1 snapshot beside it. The snapshot is gone — an upload's bytes are
+    // version 1, written once — but the property is the same one, so these
+    // tests still measure the scratch directory on disk and compare.
 
     /// Total bytes of every regular file under `dir`, versions included.
     fn bytes_on_disk(dir: &Path) -> i64 {
@@ -1254,8 +1304,70 @@ mod tests {
         saved
     }
 
+    /// The storage key of the file's live content. Not on the DTOs — those
+    /// deliberately keep storage layout off the wire — so it comes off the row.
+    fn current_key(repo: &StorageRepository, file_id: &str) -> String {
+        repo.find_file_by_id(file_id)
+            .expect("find file")
+            .expect("file exists")
+            .storage_path
+    }
+
+    /// Every version of a file, newest first.
+    fn list_versions(
+        service: &StorageService,
+        user_id: &str,
+        file_id: &str,
+    ) -> Vec<FileVersionResponse> {
+        service
+            .list_versions(
+                user_id,
+                file_id,
+                &ListQueryParams {
+                    limit: None,
+                    offset: None,
+                    order_by: None,
+                    direction: None,
+                },
+            )
+            .expect("list versions")
+            .versions
+    }
+
+    fn oldest_version_id(service: &StorageService, user_id: &str, file_id: &str) -> String {
+        list_versions(service, user_id, file_id)
+            .last()
+            .expect("at least one version")
+            .id
+            .clone()
+    }
+
+    /// Stage `content` and commit it as a named version of an existing file.
+    fn save_named(
+        service: &StorageService,
+        file_id: &str,
+        content: &[u8],
+        label: Option<&str>,
+    ) -> FileVersionResponse {
+        let owner = service
+            .find_file_any_user(file_id)
+            .expect("find file")
+            .expect("file exists")
+            .user_id;
+        service.store().ensure_user_dir(&owner).expect("mkdir");
+        let temp = service
+            .store()
+            .temp_upload(&owner, &uuid::Uuid::new_v4().to_string());
+        std::fs::write(temp.path(), content).expect("stage");
+        let version = service
+            .save_named_version(file_id, temp.path(), content.len() as i64, label)
+            .expect("save named version");
+        temp.commit();
+        version
+    }
+
     #[tokio::test]
-    async fn reported_usage_counts_the_version_snapshot_written_by_every_upload() {
+    async fn an_upload_stores_and_reports_its_content_once() {
         let (service, _repo, _perms, _pool, base) = test_service_with_permissions();
         let user = test_user_named("user-1");
         let content = vec![7u8; 4096];
@@ -1270,8 +1382,42 @@ mod tests {
         );
         assert_eq!(
             quota.used_bytes,
-            content.len() as i64 * 2,
-            "an upload stores the content plus its v1 snapshot"
+            content.len() as i64,
+            "the uploaded bytes are version 1, not a file plus a copy of it",
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// The current content and the history are one directory, and the file
+    /// row points into it. Nothing sits outside, and nothing is stored twice.
+    #[tokio::test]
+    async fn a_files_versions_live_in_one_directory_with_its_current_content() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+
+        let file = upload(&service, &user, "notes.txt", b"first").await;
+        save_named(&service, &file.id, b"second", Some("draft"));
+
+        let dir = base.join(&user.user_id).join(&file.id);
+        let entries: Vec<_> = std::fs::read_dir(&dir)
+            .expect("file directory")
+            .flatten()
+            .collect();
+        assert_eq!(entries.len(), 2, "both versions belong in the file's folder");
+
+        let key = current_key(&repo, &file.id);
+        assert_eq!(
+            base.join(&key).parent(),
+            Some(dir.as_path()),
+            "the current content must be one of the versions in that folder",
+        );
+        assert_eq!(std::fs::read(base.join(&key)).expect("read"), b"second");
+
+        // No stray `versions/` tree, and no separate copy of the live content.
+        assert!(!base.join(&user.user_id).join("versions").exists());
+        assert_eq!(
+            service.get_quota(&user.user_id).expect("quota").used_bytes,
+            bytes_on_disk(&base),
         );
         let _ = std::fs::remove_dir_all(base);
     }
@@ -1301,21 +1447,12 @@ mod tests {
         let content = vec![7u8; 4096];
 
         let file = upload(&service, &user, "photo.jpg", &content).await;
+        // v1 is the live version now, so there has to be a v2 before v1 is a
+        // past version anybody is allowed to delete.
+        save_named(&service, &file.id, &content, Some("checkpoint"));
         let before = service.get_quota(&user.user_id).expect("quota").used_bytes;
 
-        let versions = service
-            .list_versions(
-                &user.user_id,
-                &file.id,
-                &ListQueryParams {
-                    limit: None,
-                    offset: None,
-                    order_by: None,
-                    direction: None,
-                },
-            )
-            .expect("list versions");
-        let version_id = versions.versions.first().expect("v1 exists").id.clone();
+        let version_id = oldest_version_id(&service, &user.user_id, &file.id);
         service
             .delete_version(&user.user_id, &file.id, &version_id)
             .expect("delete version");
@@ -1323,6 +1460,73 @@ mod tests {
         let after = service.get_quota(&user.user_id).expect("quota").used_bytes;
         assert_eq!(after, before - content.len() as i64);
         assert_eq!(after, bytes_on_disk(&base));
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// The live version's bytes *are* the file, so deleting it would empty the
+    /// file rather than free a spare copy. Only possible to ask for since the
+    /// two started sharing a directory, so it has to be refused explicitly.
+    #[tokio::test]
+    async fn the_current_version_cannot_be_deleted() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+
+        let file = upload(&service, &user, "photo.jpg", b"only content").await;
+        let key = current_key(&repo, &file.id);
+        let live_id = repo
+            .find_current_version(&file.id, &key)
+            .expect("find current version")
+            .expect("the live version is a version row")
+            .id;
+
+        let err = service
+            .delete_version(&user.user_id, &file.id, &live_id)
+            .expect_err("the file's own content must not be deletable");
+
+        assert_eq!(err.status, 409);
+        assert_eq!(err.code, "CURRENT_VERSION");
+        assert_eq!(
+            std::fs::read(base.join(&key)).expect("read"),
+            b"only content",
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A restore lands as a new version rather than repointing the file at an
+    /// old one — sharing a blob with a historical version would let the next
+    /// autosave rewrite the history it was restored from.
+    #[tokio::test]
+    async fn restoring_a_version_copies_it_forward() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+
+        let file = upload(&service, &user, "notes.txt", b"original").await;
+        let original_id = oldest_version_id(&service, &user.user_id, &file.id);
+        let original_key = repo
+            .find_version(&original_id, &file.id, &user.user_id)
+            .expect("find version")
+            .expect("original exists")
+            .storage_path;
+        save_named(&service, &file.id, b"replacement", None);
+
+        service
+            .restore_version(&user.user_id, &file.id, &original_id)
+            .expect("restore");
+
+        let restored_key = current_key(&repo, &file.id);
+        assert_eq!(
+            std::fs::read(base.join(&restored_key)).expect("read"),
+            b"original",
+        );
+        assert_ne!(
+            restored_key, original_key,
+            "the restore must not share bytes with the version it came from",
+        );
+        assert!(
+            base.join(&original_key).exists(),
+            "the version restored from is still in the history",
+        );
+        assert_eq!(list_versions(&service, &user.user_id, &file.id).len(), 3);
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -1335,10 +1539,10 @@ mod tests {
         let content = vec![7u8; 4096];
         upload(&service, &user, "photo.jpg", &content).await;
 
-        // Rewind the column to the pre-fix value: content bytes only, with the
-        // snapshot unaccounted for. This is the state every existing store is
-        // in on upgrade.
-        let stale = content.len() as i64;
+        // Rewind the column to a figure that no longer matches the rows —
+        // which is the state a store is in after any hand-maintained counter
+        // falls behind a delete or a layout change.
+        let stale = content.len() as i64 * 3;
         diesel::update(crate::schema::user_quotas::table)
             .set(crate::schema::user_quotas::used_bytes.eq(stale))
             .execute(&mut pool.get().expect("conn"))
@@ -1359,16 +1563,19 @@ mod tests {
     }
 
     /// The limit has to be checked against real occupancy, or a user whose
-    /// snapshots already fill the store keeps uploading past their quota.
+    /// version history already fills the store keeps uploading past their
+    /// quota.
     #[tokio::test]
     async fn the_quota_limit_is_enforced_against_real_occupancy() {
         let (service, _repo, _perms, pool, base) = test_service_with_permissions();
         let user = test_user_named("user-1");
         let content = vec![7u8; 4096];
-        upload(&service, &user, "photo.jpg", &content).await;
+        let file = upload(&service, &user, "photo.jpg", &content).await;
+        // Two versions on disk now: the upload and the checkpoint over it.
+        save_named(&service, &file.id, &content, Some("checkpoint"));
 
-        // Room for one more copy of the content, but not for the copy *and*
-        // the snapshot the first upload already wrote.
+        // Room for one more copy of the content on top of the *current*
+        // version, but not on top of the history behind it.
         let limit = content.len() as i64 * 2 + 1;
         diesel::update(crate::schema::user_quotas::table)
             .set(crate::schema::user_quotas::quota_bytes.eq(Some(limit)))
@@ -1389,7 +1596,7 @@ mod tests {
                 None,
             )
             .await
-            .expect_err("the snapshot bytes must count against the limit");
+            .expect_err("the history's bytes must count against the limit");
 
         assert_eq!(err.status, 413);
         assert_eq!(err.code, "QUOTA_EXCEEDED");
@@ -1460,11 +1667,12 @@ mod tests {
         let (service, _repo, _perms, pool, base) = test_service_with_permissions();
         let user = test_user_named("user-1");
         let content = vec![7u8; 4096];
-        upload(&service, &user, "photo.jpg", &content).await;
+        let file = upload(&service, &user, "photo.jpg", &content).await;
+        save_named(&service, &file.id, &content, Some("checkpoint"));
 
         // Same arrangement as the commit-time test above: room for one more
-        // copy of the content, but not for the copy and the snapshot already
-        // on disk.
+        // copy of the content on top of the current version, but not on top of
+        // the history behind it.
         let limit = content.len() as i64 * 2 + 1;
         diesel::update(crate::schema::user_quotas::table)
             .set(crate::schema::user_quotas::quota_bytes.eq(Some(limit)))

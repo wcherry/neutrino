@@ -8,6 +8,8 @@ import type {
   UpdateAdminUserRequest,
   FeatureFlag,
   UpdateFeatureFlagRequest,
+  VersionRetentionSettings,
+  UpdateVersionRetentionRequest,
   JobResponse,
   CustomFont,
 } from './types';
@@ -134,6 +136,31 @@ export const adminApi = {
   async updateFeatureFlag(key: string, updates: UpdateFeatureFlagRequest): Promise<FeatureFlag> {
     return request<FeatureFlag>(`/api/v1/admin/feature-flags/${encodeURIComponent(key)}`, {
       method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  /**
+   * Read the file version retention policy.
+   * GET /api/v1/admin/version-retention
+   */
+  async getVersionRetention(): Promise<VersionRetentionSettings> {
+    return request<VersionRetentionSettings>('/api/v1/admin/version-retention');
+  },
+
+  /**
+   * Change the file version retention policy.
+   * PUT /api/v1/admin/version-retention
+   *
+   * Takes effect on the worker's next hourly sweep. Lowering either number
+   * makes versions eligible that were not before, and the sweep deletes them
+   * for good.
+   */
+  async updateVersionRetention(
+    updates: UpdateVersionRetentionRequest,
+  ): Promise<VersionRetentionSettings> {
+    return request<VersionRetentionSettings>('/api/v1/admin/version-retention', {
+      method: 'PUT',
       body: JSON.stringify(updates),
     });
   },

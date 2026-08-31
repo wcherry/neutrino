@@ -252,42 +252,51 @@ impl StorageRepository {
     /// The bytes this user actually occupies in the store, derived from the
     /// rows that own those bytes rather than from a running total.
     ///
-    /// Two things are summed because two things sit on disk: each file's
-    /// current content, and every version snapshot, which is a full copy of the
-    /// content rather than a delta (see
-    /// `StorageService::create_version_snapshot_record`). Every upload creates a
-    /// v1 snapshot immediately, so a store holding only freshly uploaded files
-    /// occupies twice the sum of `files.size_bytes` — the gap reported in #101.
+    /// One byte on disk is counted once.
+    ///
+    /// Every version of a file — the live one included — is a row in
+    /// `file_versions` and a separate blob in the file's directory, so summing
+    /// that table is the whole occupancy. `files.size_bytes` is deliberately
+    /// *not* added to it: it describes the same bytes as the version row
+    /// `files.storage_path` points at, and adding both is what made a store of
+    /// freshly uploaded files report double (#101) back when the current
+    /// content really was written out twice.
+    ///
+    /// The second term covers files with no version rows at all — a record
+    /// created ahead of its content, and any file left over from before
+    /// migration 118 — so their bytes are not silently free.
     ///
     /// Trashed files are included: trashing sets `deleted_at` and leaves the
-    /// blob alone, so those bytes are still spent until the trash is emptied.
+    /// blobs alone, so those bytes are still spent until the trash is emptied.
     pub fn calculate_used_bytes(&self, user_id: &str) -> Result<i64, ApiError> {
+        use diesel::sql_types::{BigInt, Text};
+
+        #[derive(diesel::QueryableByName)]
+        struct Total {
+            #[diesel(sql_type = BigInt)]
+            total: i64,
+        }
+
         let mut conn = self.get_conn()?;
 
-        // `diesel::dsl::sum` over a BigInt column comes back as Numeric, which
-        // sqlite hands out as a float — the wrong shape for byte counts, which
-        // must stay exact past 2^53. COALESCE'd raw SQL keeps it an i64.
-        let total_bytes = diesel::dsl::sql::<diesel::sql_types::BigInt>;
+        // Raw SQL rather than `diesel::dsl::sum`, which comes back as Numeric
+        // and reaches Rust as a float — the wrong shape for byte counts, which
+        // must stay exact past 2^53.
+        let rows: Vec<Total> = diesel::sql_query(
+            "SELECT COALESCE((SELECT SUM(size_bytes) FROM file_versions WHERE user_id = ?), 0) \
+                  + COALESCE((SELECT SUM(size_bytes) FROM files f WHERE f.user_id = ? \
+                       AND NOT EXISTS (SELECT 1 FROM file_versions v WHERE v.file_id = f.id)), 0) \
+                    AS total",
+        )
+        .bind::<Text, _>(user_id)
+        .bind::<Text, _>(user_id)
+        .load(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB sum used bytes error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
 
-        let file_bytes: i64 = files::table
-            .filter(files::user_id.eq(user_id))
-            .select(total_bytes("COALESCE(SUM(size_bytes), 0)"))
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB sum file sizes error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-
-        let version_bytes: i64 = file_versions::table
-            .filter(file_versions::user_id.eq(user_id))
-            .select(total_bytes("COALESCE(SUM(size_bytes), 0)"))
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB sum version sizes error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-
-        Ok(file_bytes + version_bytes)
+        Ok(rows.first().map(|r| r.total).unwrap_or(0))
     }
 
     /// Recompute `used_bytes` and write it back when it has drifted, returning
@@ -466,6 +475,54 @@ impl StorageRepository {
             })
     }
 
+    /// The version row that owns the file's live bytes.
+    ///
+    /// The current content is a version like any other now that both live in
+    /// the same directory, so "which one is current" is answered by the key
+    /// `files.storage_path` holds rather than by a flag that could drift from
+    /// it. Returns `None` for a file that has no content yet (empty key) and
+    /// for one still on the pre-118 layout, whose key names no version row.
+    pub fn find_current_version(
+        &self,
+        file_id: &str,
+        storage_path: &str,
+    ) -> Result<Option<FileVersionRecord>, ApiError> {
+        if storage_path.is_empty() {
+            return Ok(None);
+        }
+        let mut conn = self.get_conn()?;
+
+        file_versions::table
+            .filter(file_versions::file_id.eq(file_id))
+            .filter(file_versions::storage_path.eq(storage_path))
+            .select(FileVersionRecord::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB find current version error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// Record a new byte count against a version whose blob was rewritten.
+    ///
+    /// Autosave writes over the live version rather than adding one, so its
+    /// row is the only place the new size can be recorded — and the quota is
+    /// summed from those rows.
+    pub fn update_version_size(&self, version_id: &str, size_bytes: i64) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+
+        diesel::update(file_versions::table.filter(file_versions::id.eq(version_id)))
+            .set(file_versions::size_bytes.eq(size_bytes))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update version size error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(())
+    }
+
     pub fn count_versions(&self, file_id: &str) -> Result<i64, ApiError> {
         let mut conn = self.get_conn()?;
 
@@ -545,37 +602,11 @@ impl StorageRepository {
         Ok(Some(version.storage_path))
     }
 
-    /// Deletes the oldest non-named version for a file and returns its storage_path for disk
-    /// cleanup. Named versions (is_named = true) are never pruned automatically.
-    #[allow(dead_code)]
-    pub fn delete_oldest_version(&self, file_id: &str) -> Result<Option<String>, ApiError> {
-        let mut conn = self.get_conn()?;
-
-        let oldest = file_versions::table
-            .filter(file_versions::file_id.eq(file_id))
-            .filter(file_versions::is_named.eq(false))
-            .select(FileVersionRecord::as_select())
-            .order(file_versions::version_number.asc())
-            .first(&mut conn)
-            .optional()
-            .map_err(|e| {
-                tracing::error!("DB find oldest version error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-
-        let Some(version) = oldest else {
-            return Ok(None);
-        };
-
-        diesel::delete(file_versions::table.filter(file_versions::id.eq(&version.id)))
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB delete oldest version error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-
-        Ok(Some(version.storage_path))
-    }
+    // A `delete_oldest_version` used to sit here, unused, as half of a
+    // never-wired prune-on-write scheme. Retention is the background worker's
+    // job now (`worker/src/versions.rs`) and its rules come from
+    // `version_retention_settings`, so a second, hardcoded one would only be a
+    // second answer to the same question.
 
     /// Returns the created_at timestamp of the most recent version for a file, or None if no
     /// versions exist yet.
@@ -1056,16 +1087,28 @@ mod tests {
         assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 0);
     }
 
-    /// The core of the bug: version snapshots are full copies on disk, so they
-    /// have to be summed alongside the file content.
+    /// Every version is one blob in the file's directory, current content
+    /// included, so the sum is over the version rows alone. Adding
+    /// `files.size_bytes` on top would count the live version twice.
     #[test]
-    fn calculate_used_bytes_sums_file_content_and_version_snapshots() {
+    fn calculate_used_bytes_sums_every_version_once() {
         let repo = StorageRepository::new(test_pool());
         insert_sized_file(&repo, "file-q1", "user-1", 1000);
         insert_sized_version(&repo, "ver-q1", "file-q1", "user-1", 1000);
         insert_sized_version(&repo, "ver-q2", "file-q1", "user-1", 250);
 
-        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 2250);
+        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 1250);
+    }
+
+    /// A file whose content predates the one-directory layout, or which was
+    /// recorded before its bytes landed, has no version rows — its own size is
+    /// the only figure there is, and dropping it would make the bytes free.
+    #[test]
+    fn calculate_used_bytes_falls_back_to_files_without_versions() {
+        let repo = StorageRepository::new(test_pool());
+        insert_sized_file(&repo, "file-q7", "user-1", 700);
+
+        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 700);
     }
 
     #[test]
@@ -1076,7 +1119,7 @@ mod tests {
         insert_sized_file(&repo, "file-q3", "user-2", 9999);
         insert_sized_version(&repo, "ver-q4", "file-q3", "user-2", 9999);
 
-        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 2000);
+        assert_eq!(repo.calculate_used_bytes("user-1").expect("sum"), 1000);
     }
 
     /// Trashing sets `deleted_at` and leaves the blob in place, so the bytes
@@ -1100,6 +1143,7 @@ mod tests {
         repo.get_or_create_quota("user-1").expect("quota row");
         insert_sized_file(&repo, "file-q5", "user-1", 1000);
         insert_sized_version(&repo, "ver-q5", "file-q5", "user-1", 1000);
+        insert_sized_version(&repo, "ver-q5b", "file-q5", "user-1", 1000);
 
         let refreshed = repo.refresh_used_bytes("user-1", 1000).expect("refresh");
 

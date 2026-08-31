@@ -82,6 +82,37 @@ export interface UpdateFeatureFlagRequest {
   enabled: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// File version retention
+//
+// Mirrors VersionRetentionDto in
+// neutrino-drive/src/drive/version_retention/api.rs.
+//
+// The policy the background worker enforces on file version history, not a
+// preference the frontend acts on: nothing in the browser prunes anything.
+// ---------------------------------------------------------------------------
+
+export interface VersionRetentionSettings {
+  /** Whether the worker prunes version history at all. */
+  enabled: boolean;
+  /** Versions older than this many days are eligible for deletion. */
+  retentionDays: number;
+  /**
+   * How many of the newest versions survive regardless of age. Read together
+   * with `retentionDays` — age only decides among the versions this number has
+   * not already spoken for.
+   */
+  minVersions: number;
+  updatedAt: string;
+}
+
+/** Every field optional: send only what changed. */
+export interface UpdateVersionRetentionRequest {
+  enabled?: boolean;
+  retentionDays?: number;
+  minVersions?: number;
+}
+
 // Mirrors JobResponse in src/jobs/dto.rs (serde rename_all = "camelCase").
 export interface JobResponse {
   id: string;

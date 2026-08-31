@@ -35,6 +35,15 @@ vi.mock('@neutrino/api-admin', () => ({
     updateUser: vi.fn(),
     deleteUser: vi.fn(),
     restoreUser: vi.fn(),
+    getVersionRetention: vi.fn(() =>
+      Promise.resolve({
+        enabled: true,
+        retentionDays: 30,
+        minVersions: 10,
+        updatedAt: '2026-08-30T00:00:00Z',
+      })
+    ),
+    updateVersionRetention: vi.fn(),
   },
 }));
 
@@ -183,6 +192,49 @@ describe('AdminPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /disk space/i }));
     await waitFor(() => {
       expect(screen.getByText(/disk usage/i)).toBeInTheDocument();
+    });
+  });
+
+  it('switches to Versions tab and shows the retention policy', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /^versions$/i }));
+
+    const days = await screen.findByLabelText(/days to keep versions/i);
+    expect(days).toHaveValue(30);
+    expect(screen.getByLabelText(/minimum versions to keep/i)).toHaveValue(10);
+    // Nothing edited yet, so there is nothing to save.
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeDisabled();
+  });
+
+  /**
+   * The two numbers are saved together as one rule, so editing either one is
+   * what arms the button — and what is sent is the whole policy, not a diff.
+   */
+  it('saves an edited retention policy', async () => {
+    const { adminApi } = await import('@neutrino/api-admin');
+    vi.mocked(adminApi.updateVersionRetention).mockResolvedValueOnce({
+      enabled: true,
+      retentionDays: 90,
+      minVersions: 10,
+      updatedAt: '2026-08-30T01:00:00Z',
+    });
+
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /^versions$/i }));
+
+    const days = await screen.findByLabelText(/days to keep versions/i);
+    fireEvent.change(days, { target: { value: '90' } });
+
+    const save = screen.getByRole('button', { name: /^save$/i });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+
+    await waitFor(() => {
+      expect(adminApi.updateVersionRetention).toHaveBeenCalledWith({
+        enabled: true,
+        retentionDays: 90,
+        minVersions: 10,
+      });
     });
   });
 

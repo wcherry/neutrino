@@ -401,10 +401,10 @@ impl FilesystemService {
 
     pub fn permanently_delete_file(&self, user_id: &str, file_id: &str) -> Result<(), ApiError> {
         if let Some(file) = self.repo.permanently_delete_file(file_id, user_id)? {
-            let abs_path = self.store.resolve(&file.storage_path);
-            if let Err(e) = std::fs::remove_file(&abs_path) {
-                tracing::warn!("Failed to remove file from disk {:?}: {:?}", abs_path, e);
-            }
+            // The whole directory, not one blob: the file's history lives
+            // beside its current content, so removing only what
+            // `storage_path` points at would strand every older version.
+            self.store.remove_file_dir(&file.user_id, &file.id);
         } else {
             return Err(ApiError::not_found("File not found in trash"));
         }
@@ -428,14 +428,7 @@ impl FilesystemService {
         let count = deleted_files.len();
 
         for file in deleted_files {
-            let abs_path = self.store.resolve(&file.storage_path);
-            if let Err(e) = std::fs::remove_file(&abs_path) {
-                tracing::warn!(
-                    "Failed to remove trashed file from disk {:?}: {:?}",
-                    abs_path,
-                    e
-                );
-            }
+            self.store.remove_file_dir(&file.user_id, &file.id);
         }
 
         Ok(BulkResult { affected: count })
@@ -449,14 +442,7 @@ impl FilesystemService {
         let count = deleted_files.len();
 
         for file in deleted_files {
-            let abs_path = self.store.resolve(&file.storage_path);
-            if let Err(e) = std::fs::remove_file(&abs_path) {
-                tracing::warn!(
-                    "Failed to remove expired trashed file from disk {:?}: {:?}",
-                    abs_path,
-                    e
-                );
-            }
+            self.store.remove_file_dir(&file.user_id, &file.id);
         }
 
         Ok(BulkResult { affected: count })
