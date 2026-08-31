@@ -11,7 +11,11 @@ const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const SCOPES: &str = "https://www.googleapis.com/auth/calendar";
 
-pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError> {
+pub fn build_auth_url(
+    cfg: &OAuthConfig,
+    redirect_uri: &str,
+    state: &str,
+) -> Result<String, ApiError> {
     let client_id = cfg.google_client_id.as_deref().ok_or_else(|| {
         ApiError::bad_request("Google OAuth not configured (GOOGLE_CLIENT_ID missing)")
     })?;
@@ -19,14 +23,19 @@ pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError
     let mut url = Url::parse(AUTH_URL).unwrap();
     url.query_pairs_mut()
         .append_pair("client_id", client_id)
-        .append_pair("redirect_uri", &cfg.google_redirect_uri)
+        .append_pair("redirect_uri", redirect_uri)
         .append_pair("response_type", "code")
         .append_pair("scope", SCOPES)
         .append_pair("access_type", "offline")
         .append_pair("prompt", "consent")
         .append_pair("state", state);
 
-    tracing::info!("GOOGLE CAL API: {}", &url.to_string());
+    tracing::info!(
+        redirect_uri = redirect_uri,
+        "Google Calendar OAuth: this redirect URI must be registered in the \
+         Google Cloud console, exactly as written, or Google answers with \
+         redirect_uri_mismatch"
+    );
 
     Ok(url.to_string())
 }
@@ -57,9 +66,12 @@ struct RefreshRequest<'a> {
     grant_type: &'a str,
 }
 
+/// `redirect_uri` must be the same one [`build_auth_url`] sent, or Google
+/// rejects the exchange.
 pub async fn exchange_code(
     cfg: &OAuthConfig,
     http: &reqwest::Client,
+    redirect_uri: &str,
     code: &str,
 ) -> Result<TokenResponse, ApiError> {
     let client_id = cfg
@@ -76,7 +88,7 @@ pub async fn exchange_code(
         client_secret,
         code,
         grant_type: "authorization_code",
-        redirect_uri: &cfg.google_redirect_uri,
+        redirect_uri,
     };
 
     let resp = http.post(TOKEN_URL).form(&body).send().await.map_err(|e| {
