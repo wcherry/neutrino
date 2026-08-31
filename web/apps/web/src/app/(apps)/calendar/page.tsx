@@ -341,16 +341,16 @@ export default function CalendarPage() {
         </div>
 
         <div className={styles.toolbarCenter}>
-          <button className={styles.navBtn} onClick={() => navigate(-1)}>
+          <button className={styles.navBtn} aria-label="Previous period" onClick={() => navigate(-1)}>
             <ChevronLeft size={16} />
           </button>
           <button className={styles.todayBtn} onClick={() => setCursor(new Date())}>
             Today
           </button>
-          <button className={styles.navBtn} onClick={() => navigate(1)}>
+          <button className={styles.navBtn} aria-label="Next period" onClick={() => navigate(1)}>
             <ChevronRight size={16} />
           </button>
-          <span className={styles.periodLabel}>{fmtRangeLabel(view, cursor, startDay)}</span>
+          <span className={styles.periodLabel} data-testid="period-label">{fmtRangeLabel(view, cursor, startDay)}</span>
         </div>
 
         <div className={styles.toolbarRight}>
