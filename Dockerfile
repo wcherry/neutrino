@@ -110,7 +110,8 @@ COPY --from=rust-builder /app/target/release/neutrino /usr/local/bin/service
 COPY --from=rust-builder /app/target/release/worker /usr/local/bin/worker
 COPY --from=web-builder /app/apps/web/out /app/web
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY start-all.sh /usr/local/bin/start-all
+RUN chmod +x /entrypoint.sh /usr/local/bin/start-all
 
 # Facial-recognition model for the background worker.
 ARG FACE_MODEL_URL=https://github.com/atomashpolskiy/rustface/raw/master/model/seeta_fd_frontal_v1.0.bin
@@ -126,4 +127,6 @@ EXPOSE 8080
 VOLUME ["/usr/local/data", "/usr/local/logs"]
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/usr/local/bin/service"]
+# Server *and* background worker. Override the command to run one alone, e.g.
+# `docker run … neutrino /usr/local/bin/worker` for a separate worker container.
+CMD ["/usr/local/bin/start-all"]

@@ -190,10 +190,20 @@ docker run -d --name neutrino -p 8080:8080 \
   ghcr.io/wcherry/neutrino:latest
 ```
 
-The container serves the API and the frontend on port 8080. Its default command runs
-the **server only**; the `worker` binary is in the image at `/usr/local/bin/worker`, so
-run a second container from the same image and volume — with the same `DATABASE_URL`,
-`STORAGE_PATH` and `WORKER_SECRET` — to get face detection and background jobs.
+The container serves the API and the frontend on port 8080, and its default command
+(`/usr/local/bin/start-all`) runs the **background worker alongside them** — face
+detection, background jobs, account purging and file-version retention all live there.
+The worker starts once the server reports healthy, since the server is what runs the
+database migrations. If either process exits the container exits with it, rather than
+staying up while quietly doing none of the background work; give it a restart policy.
+
+To split them across two containers instead, override the command on each
+(`/usr/local/bin/service` and `/usr/local/bin/worker`) and give both the same
+`DATABASE_URL`, `STORAGE_PATH`, `WORKER_SECRET` and volume.
+
+With `LOG_PATH` set, each process writes its own daily file into that directory —
+`service.<date>.log` and `worker.<date>.log` — so one shared volume does not interleave
+the two. Both also log to stdout, which is what `docker logs` shows.
 
 ## Configuration
 
@@ -214,8 +224,8 @@ which is how Docker/Kubernetes secrets are mounted — e.g. `JWT_SECRET_PATH=/ru
 | `JWT_ACCESS_EXPIRY_SECS` | `900` | Access token lifetime |
 | `JWT_REFRESH_EXPIRY_SECS` | `604800` | Refresh token lifetime (7 days) |
 | `JOBS_PER_WORKER` | `4` | Maximum concurrent background jobs per worker |
-| `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug`, `trace` |
-| `LOG_PATH` | *(stdout only)* | Directory for log files |
+| `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug`, `trace`. Read by both the server and the worker (`RUST_LOG` still overrides it for the worker) |
+| `LOG_PATH` | *(stdout only)* | Directory for log files. Written as `service.<date>.log` and `worker.<date>.log`, rotated daily |
 | `TEMP_SWEEP_INTERVAL_SECS` | `3600` | How often to sweep upload staging files that never committed (floor: 60) |
 | `TEMP_MAX_AGE_SECS` | `21600` | How long a staging file must be untouched before a sweep removes it |
 | `REPROCESS_INTERVAL_SECS` | `1800` | How often Photos reprocesses pending face-learning work |
