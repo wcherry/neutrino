@@ -155,6 +155,42 @@ async fn immutable_cache_control(
     Ok(res)
 }
 
+/// The suffix Next appends to a route to name its React Server Component payload.
+const RSC_PAYLOAD_SUFFIX: &str = ".txt";
+
+/// Joins a request path onto the web root, refusing anything that could climb out of it.
+///
+/// The RSC fallback below resolves a path by hand, so `actix_files`' own traversal guard is not in
+/// play for it. Anything but a plain segment is rejected outright rather than normalised away.
+fn safe_join(root: &str, relative: &str) -> Option<std::path::PathBuf> {
+    let mut path = std::path::PathBuf::from(root);
+    for segment in relative.split('/') {
+        if segment.is_empty() || segment == "." {
+            continue;
+        }
+        if segment == ".." || segment.contains('\\') || segment.contains('\0') {
+            return None;
+        }
+        path.push(segment);
+    }
+    Some(path)
+}
+
+/// Where the export actually keeps the RSC payload the App Router just asked for, if anywhere.
+///
+/// `output: 'export'` with `trailingSlash: true` writes `/docs`' payload to `docs/index.txt`, but
+/// the router strips the trailing slash before appending the suffix and asks for `/docs.txt` —
+/// whatever `trailingSlash` says. So the direct hit is tried first (it is what `/index.txt` and any
+/// future non-trailing-slash export would use) and the directory form second.
+fn rsc_payload_path(web_dir: &str, request_path: &str) -> Option<std::path::PathBuf> {
+    let direct = safe_join(web_dir, request_path).filter(|p| p.is_file());
+    if direct.is_some() {
+        return direct;
+    }
+    let route = request_path.strip_suffix(RSC_PAYLOAD_SUFFIX)?;
+    safe_join(web_dir, &format!("{}/index{}", route, RSC_PAYLOAD_SUFFIX)).filter(|p| p.is_file())
+}
+
 /// Serves the statically exported Next.js app out of `web_dir`.
 ///
 /// Two mounts, because they want opposite caching. `/_next/static` is content-hashed and cached
@@ -164,11 +200,22 @@ async fn immutable_cache_control(
 /// because HTML in a `<script>` tag is a confusing failure and because the fallback's 200 would
 /// otherwise be cached for a year under a URL that will never hold anything else.
 ///
+/// The default handler has the same rule for a `.txt` it cannot place, and for a bigger reason.
+/// Those are the RSC payloads the App Router fetches to move between routes *without* reloading the
+/// page, and the router only accepts one under an RSC or `text/plain` content type — hand it
+/// `index.html` and it silently abandons the client-side navigation and sets `location.href`
+/// instead. Since `/docs.txt` is a miss against an export written as `docs/index.txt`, that was
+/// *every* navigation in a deployed build: a full page load each time, which is issue #165. It
+/// showed up as a Takeout import dying on an app switch — the import is all in-page JavaScript, so
+/// a reload throws it away — but nothing else in memory survived either, and the run's
+/// `beforeunload` warning was the only reason anyone saw it happen.
+///
 /// Returns a closure because `App` is rebuilt per worker thread and `configure` takes `FnOnce`.
 fn configure_web_app(web_dir: &str) -> impl FnOnce(&mut web::ServiceConfig) {
     let hashed_assets_dir = format!("{}/_next/static", web_dir);
     let index = format!("{}/index.html", web_dir);
     let web_dir = web_dir.to_owned();
+    let fallback_dir = web_dir.clone();
 
     move |cfg: &mut web::ServiceConfig| {
         cfg.service(
@@ -186,9 +233,20 @@ fn configure_web_app(web_dir: &str) -> impl FnOnce(&mut web::ServiceConfig) {
                 .use_last_modified(true)
                 .use_etag(true)
                 // Client-side routing: unknown paths are app routes, not missing files.
-                .default_handler(web::get().to(move || {
+                .default_handler(web::get().to(move |req: actix_web::HttpRequest| {
                     let index = index.clone();
+                    let web_dir = fallback_dir.clone();
                     async move {
+                        let path = req.path();
+                        if path.ends_with(RSC_PAYLOAD_SUFFIX) {
+                            return match rsc_payload_path(&web_dir, path) {
+                                Some(payload) => actix_files::NamedFile::open(&payload)
+                                    .map_err(actix_web::error::ErrorNotFound),
+                                None => Err(actix_web::error::ErrorNotFound(
+                                    "no server component payload for this route",
+                                )),
+                            };
+                        }
                         actix_files::NamedFile::open(&index)
                             .map_err(actix_web::error::ErrorNotFound)
                     }
@@ -1323,6 +1381,16 @@ mod tests {
                 .expect("chunk");
                 std::fs::write(path.join("index.html"), "<!doctype html><title>app</title>")
                     .expect("index");
+                // What `output: 'export'` with `trailingSlash: true` writes for a route: the page
+                // and the RSC payload the router fetches to navigate to it without a reload.
+                std::fs::create_dir_all(path.join("docs")).expect("route dir");
+                std::fs::write(
+                    path.join("docs/index.html"),
+                    "<!doctype html><title>docs</title>",
+                )
+                .expect("route page");
+                std::fs::write(path.join("docs/index.txt"), "3:I[\"docs\"]\n").expect("payload");
+                std::fs::write(path.join("index.txt"), "3:I[\"home\"]\n").expect("root payload");
                 TestWebDir(path)
             }
 
@@ -1422,6 +1490,55 @@ mod tests {
             let dir = TestWebDir::new();
             let resp = get!(dir, "/_next/static/chunks/main-abc123.js");
             assert_eq!(header_of(&resp, header::CONTENT_ENCODING), "");
+        }
+
+        /// The whole of issue #165. The App Router asks for `/docs.txt`; the export wrote
+        /// `docs/index.txt`. Answer the miss with `index.html` and the router abandons the
+        /// client-side navigation and reloads the page, taking a running Takeout import — and
+        /// everything else the app held in memory — with it.
+        #[actix_web::test]
+        async fn serves_the_rsc_payload_a_route_is_navigated_by() {
+            let dir = TestWebDir::new();
+            let resp = get!(dir, "/docs.txt");
+            assert_eq!(resp.status(), 200);
+            assert!(
+                header_of(&resp, header::CONTENT_TYPE).starts_with("text/plain"),
+                "the router rejects a payload that is not text/plain or RSC"
+            );
+            let body = test::read_body(resp).await;
+            assert_eq!(body, "3:I[\"docs\"]\n".as_bytes());
+        }
+
+        /// The root's payload, and any future export that stops using `trailingSlash`, are already
+        /// at the path asked for — the directory form must not be the only one that resolves.
+        #[actix_web::test]
+        async fn serves_a_directly_addressed_rsc_payload() {
+            let dir = TestWebDir::new();
+            for uri in ["/index.txt", "/docs/index.txt"] {
+                let resp = get!(dir, uri);
+                assert_eq!(resp.status(), 200, "{uri}");
+            }
+        }
+
+        /// A payload the export never wrote — a dynamic route, a stale URL from a previous deploy —
+        /// must 404 rather than fall through to the SPA. HTML under a payload URL is the failure
+        /// this whole handler exists to avoid.
+        #[actix_web::test]
+        async fn unresolvable_rsc_payload_is_a_404() {
+            let dir = TestWebDir::new();
+            let resp = get!(dir, "/never/exported.txt");
+            assert_eq!(resp.status(), 404);
+        }
+
+        /// The RSC branch joins paths itself, so it does not inherit `actix_files`' traversal guard.
+        #[actix_web::test]
+        async fn rsc_payload_cannot_escape_the_web_root() {
+            let dir = TestWebDir::new();
+            let outside = dir.0.parent().expect("temp root").join("outside.txt");
+            std::fs::write(&outside, "secret").expect("bait");
+            let resp = get!(dir, "/../outside.txt");
+            assert_ne!(resp.status(), 200);
+            let _ = std::fs::remove_file(&outside);
         }
     }
 
