@@ -11,7 +11,11 @@ const AUTH_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/aut
 const TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 const SCOPES: &str = "offline_access Calendars.ReadWrite User.Read";
 
-pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError> {
+pub fn build_auth_url(
+    cfg: &OAuthConfig,
+    redirect_uri: &str,
+    state: &str,
+) -> Result<String, ApiError> {
     let client_id = cfg.outlook_client_id.as_deref().ok_or_else(|| {
         ApiError::bad_request("Outlook OAuth not configured (OUTLOOK_CLIENT_ID missing)")
     })?;
@@ -19,7 +23,7 @@ pub fn build_auth_url(cfg: &OAuthConfig, state: &str) -> Result<String, ApiError
     let mut url = Url::parse(AUTH_URL).unwrap();
     url.query_pairs_mut()
         .append_pair("client_id", client_id)
-        .append_pair("redirect_uri", &cfg.outlook_redirect_uri)
+        .append_pair("redirect_uri", redirect_uri)
         .append_pair("response_type", "code")
         .append_pair("scope", SCOPES)
         .append_pair("response_mode", "query")
@@ -56,9 +60,12 @@ struct RefreshRequest<'a> {
     scope: &'a str,
 }
 
+/// `redirect_uri` must be the same one [`build_auth_url`] sent, or Microsoft
+/// rejects the exchange.
 pub async fn exchange_code(
     cfg: &OAuthConfig,
     http: &reqwest::Client,
+    redirect_uri: &str,
     code: &str,
 ) -> Result<TokenResponse, ApiError> {
     let client_id = cfg
@@ -75,7 +82,7 @@ pub async fn exchange_code(
         client_secret,
         code,
         grant_type: "authorization_code",
-        redirect_uri: &cfg.outlook_redirect_uri,
+        redirect_uri,
         scope: SCOPES,
     };
 

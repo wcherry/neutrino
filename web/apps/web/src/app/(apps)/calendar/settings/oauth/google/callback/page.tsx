@@ -8,9 +8,13 @@
  *
  * Because this is a browser navigation there is no Authorization header.
  * This page reads the code from the URL, then POSTs it to the authenticated
- * backend endpoint /api/v1/connections/google/complete using the JWT that is
- * already stored in localStorage.  After success the user is redirected back
- * to the calendar settings page.
+ * backend endpoint /api/v1/calendar/connections/google/complete using the JWT
+ * that is already stored in localStorage.  After success the user is redirected
+ * back to the calendar settings page.
+ *
+ * This page's own URL is the redirect URI the backend sends Google, derived
+ * from the origin the browser is on — so it is the URL an admin registers in
+ * the Google Cloud console.
  */
 
 import { useEffect, useState } from 'react';

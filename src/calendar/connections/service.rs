@@ -47,18 +47,28 @@ impl ConnectionsService {
 
     // ── Google OAuth ──────────────────────────────────────────────────────────
 
-    pub fn initiate_google(&self, user_id: &str) -> Result<OAuthInitResponse, ApiError> {
+    /// `origin` is the origin the browser reached us on; it decides the redirect
+    /// URI when the deployment has not pinned one. `connect_google` must be
+    /// called with the same origin, or the code exchange will not match.
+    pub fn initiate_google(
+        &self,
+        user_id: &str,
+        origin: Option<&str>,
+    ) -> Result<OAuthInitResponse, ApiError> {
         let state = format!("{}:{}", user_id, Uuid::new_v4());
-        let auth_url = google::build_auth_url(&self.oauth, &state)?;
+        let redirect_uri = self.oauth.google_redirect_uri(origin);
+        let auth_url = google::build_auth_url(&self.oauth, &redirect_uri, &state)?;
         Ok(OAuthInitResponse { auth_url })
     }
 
     pub async fn connect_google(
         &self,
         user: &AuthenticatedUser,
+        origin: Option<&str>,
         code: &str,
     ) -> Result<ConnectionResponse, ApiError> {
-        let tokens = google::exchange_code(&self.oauth, &self.http, code).await?;
+        let redirect_uri = self.oauth.google_redirect_uri(origin);
+        let tokens = google::exchange_code(&self.oauth, &self.http, &redirect_uri, code).await?;
 
         let email = google::fetch_user_email(&self.http, &tokens.access_token).await;
         let expires_at = tokens
@@ -85,18 +95,21 @@ impl ConnectionsService {
 
     // ── Outlook OAuth ─────────────────────────────────────────────────────────
 
-    pub fn initiate_outlook(&self) -> Result<OAuthInitResponse, ApiError> {
+    pub fn initiate_outlook(&self, origin: Option<&str>) -> Result<OAuthInitResponse, ApiError> {
         let state = Uuid::new_v4().to_string();
-        let auth_url = outlook::build_auth_url(&self.oauth, &state)?;
+        let redirect_uri = self.oauth.outlook_redirect_uri(origin);
+        let auth_url = outlook::build_auth_url(&self.oauth, &redirect_uri, &state)?;
         Ok(OAuthInitResponse { auth_url })
     }
 
     pub async fn connect_outlook(
         &self,
         user: &AuthenticatedUser,
+        origin: Option<&str>,
         code: &str,
     ) -> Result<ConnectionResponse, ApiError> {
-        let tokens = outlook::exchange_code(&self.oauth, &self.http, code).await?;
+        let redirect_uri = self.oauth.outlook_redirect_uri(origin);
+        let tokens = outlook::exchange_code(&self.oauth, &self.http, &redirect_uri, code).await?;
 
         let email = outlook::fetch_user_email(&self.http, &tokens.access_token).await;
         let expires_at = tokens

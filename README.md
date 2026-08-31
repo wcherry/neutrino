@@ -221,9 +221,9 @@ which is how Docker/Kubernetes secrets are mounted — e.g. `JWT_SECRET_PATH=/ru
 | `REPROCESS_INTERVAL_SECS` | `1800` | How often Photos reprocesses pending face-learning work |
 | `STORAGE_ENCRYPTION_KEY` | *(optional)* | Base64 32 bytes; enables AES-GCM at-rest encryption for the server-side private store |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | *(optional)* | Google OAuth, for calendar sync |
-| `GOOGLE_REDIRECT_URI` | `<DRIVE_URL>/api/v1/connections/google/callback` | Google OAuth redirect URI |
+| `GOOGLE_REDIRECT_URI` | `<origin>/calendar/settings/oauth/google/callback` | Google OAuth redirect URI. Derived from the address the browser reached the app on, so it normally needs no setting — register that URL in the Google console. Set it only to override |
 | `OUTLOOK_CLIENT_ID` / `OUTLOOK_CLIENT_SECRET` | *(optional)* | Microsoft OAuth, for calendar sync |
-| `OUTLOOK_REDIRECT_URI` | `<DRIVE_URL>/api/v1/connections/outlook/callback` | Microsoft OAuth redirect URI |
+| `OUTLOOK_REDIRECT_URI` | `<origin>/api/v1/calendar/connections/outlook/callback` | Microsoft OAuth redirect URI, derived the same way |
 | `ANTHROPIC_API_KEY` | *(deprecated)* | No longer read. The AI features take their provider and API key from **Settings → AI Assistant**, per user — see [AI features](#ai-features) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | *(optional)* | Outbound email for notifications. All five must be set or email is disabled |
 | `FACE_MODEL_PATH` | `models/seeta_fd_frontal_v1.0.bin` | Face-detection model, read by the worker (preset in the Docker image) |

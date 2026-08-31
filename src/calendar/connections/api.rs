@@ -5,12 +5,38 @@ use crate::calendar::connections::dto::{
 use crate::calendar::connections::service::ConnectionsService;
 use crate::shared::{ApiError, AuthenticatedUser};
 use actix_web::http::header;
-use actix_web::{delete, get, post, web, HttpResponse};
+use actix_web::{delete, get, post, web, HttpRequest, HttpResponse};
 use std::sync::Arc;
 use utoipa::OpenApi;
 
 pub struct ConnectionsApiState {
     pub connections_service: Arc<ConnectionsService>,
+}
+
+/// The public origin this request arrived on, used to build an OAuth redirect
+/// URI that points at wherever the deployment is actually served from rather
+/// than at the container's own `localhost` (issue #158).
+///
+/// `Origin` for the two XHR steps — the browser sends it on every POST — and the
+/// forwarded host for the redirect endpoints, which are top-level navigations
+/// from the provider and so carry no `Origin` at all. Deliberately not `Referer`
+/// there: it would be `accounts.google.com`, not us.
+fn request_origin(req: &HttpRequest) -> Option<String> {
+    if let Some(origin) = req
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| *v != "null" && !v.is_empty())
+    {
+        return Some(origin.to_string());
+    }
+
+    let info = req.connection_info();
+    let host = info.host();
+    if host.is_empty() {
+        return None;
+    }
+    Some(format!("{}://{}", info.scheme(), host))
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -55,10 +81,13 @@ pub async fn list_connections(
 )]
 #[post("/connections/google")]
 pub async fn initiate_google(
+    req: HttpRequest,
     state: web::Data<ConnectionsApiState>,
     user: AuthenticatedUser,
 ) -> Result<web::Json<OAuthInitResponse>, ApiError> {
-    let result = state.connections_service.initiate_google(&user.user_id)?;
+    let result = state
+        .connections_service
+        .initiate_google(&user.user_id, request_origin(&req).as_deref())?;
     Ok(web::Json(result))
 }
 
@@ -89,6 +118,7 @@ pub struct OAuthCallbackQuery {
 )]
 #[get("/connections/google/callback")]
 pub async fn google_callback(
+    req: HttpRequest,
     state: web::Data<ConnectionsApiState>,
     query: web::Query<OAuthCallbackQuery>,
 ) -> Result<HttpResponse, ApiError> {
@@ -112,7 +142,7 @@ pub async fn google_callback(
     };
     state
         .connections_service
-        .connect_google(&user, &query.code)
+        .connect_google(&user, request_origin(&req).as_deref(), &query.code)
         .await?;
     Ok(HttpResponse::Found()
         .insert_header((header::LOCATION, "/calendar/settings"))
@@ -138,13 +168,14 @@ pub async fn google_callback(
 )]
 #[post("/connections/google/complete")]
 pub async fn complete_google(
+    req: HttpRequest,
     state: web::Data<ConnectionsApiState>,
     user: AuthenticatedUser,
     body: web::Json<CompleteGoogleRequest>,
 ) -> Result<web::Json<ConnectionResponse>, ApiError> {
     let conn = state
         .connections_service
-        .connect_google(&user, &body.code)
+        .connect_google(&user, request_origin(&req).as_deref(), &body.code)
         .await?;
     Ok(web::Json(conn))
 }
@@ -166,10 +197,13 @@ pub async fn complete_google(
 )]
 #[post("/connections/outlook")]
 pub async fn initiate_outlook(
+    req: HttpRequest,
     state: web::Data<ConnectionsApiState>,
     _user: AuthenticatedUser,
 ) -> Result<web::Json<OAuthInitResponse>, ApiError> {
-    let result = state.connections_service.initiate_outlook()?;
+    let result = state
+        .connections_service
+        .initiate_outlook(request_origin(&req).as_deref())?;
     Ok(web::Json(result))
 }
 
@@ -193,6 +227,7 @@ pub async fn initiate_outlook(
 )]
 #[get("/connections/outlook/callback")]
 pub async fn outlook_callback(
+    req: HttpRequest,
     state: web::Data<ConnectionsApiState>,
     user: AuthenticatedUser,
     query: web::Query<OAuthCallbackQuery>,
@@ -205,7 +240,7 @@ pub async fn outlook_callback(
     }
     let conn = state
         .connections_service
-        .connect_outlook(&user, &query.code)
+        .connect_outlook(&user, request_origin(&req).as_deref(), &query.code)
         .await?;
     Ok(web::Json(conn))
 }
@@ -340,3 +375,47 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     security(("bearer_auth" = []))
 )]
 pub struct ConnectionsApiDoc;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::test::TestRequest;
+
+    #[test]
+    fn takes_the_origin_header_when_the_browser_sends_one() {
+        let req = TestRequest::default()
+            .insert_header((header::ORIGIN, "https://neutrino.example.com"))
+            .to_http_request();
+        assert_eq!(
+            request_origin(&req).as_deref(),
+            Some("https://neutrino.example.com")
+        );
+    }
+
+    /// A provider redirect is a top-level navigation with no `Origin`, so the
+    /// forwarded host is all there is — and behind a reverse proxy it is the
+    /// public address, which is the one registered with the provider.
+    #[test]
+    fn falls_back_to_the_forwarded_host_on_a_redirect() {
+        let req = TestRequest::default()
+            .insert_header(("x-forwarded-proto", "https"))
+            .insert_header(("x-forwarded-host", "neutrino.example.com"))
+            .to_http_request();
+        assert_eq!(
+            request_origin(&req).as_deref(),
+            Some("https://neutrino.example.com")
+        );
+    }
+
+    #[test]
+    fn ignores_an_opaque_origin() {
+        let req = TestRequest::default()
+            .insert_header((header::ORIGIN, "null"))
+            .insert_header(("host", "neutrino.example.com"))
+            .to_http_request();
+        assert_eq!(
+            request_origin(&req).as_deref(),
+            Some("http://neutrino.example.com")
+        );
+    }
+}
