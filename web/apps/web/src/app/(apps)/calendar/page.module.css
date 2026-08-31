@@ -146,8 +146,12 @@
   gap: 0;
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 8px;
-  overflow: hidden;
+  /* Scroll the weeks rather than clipping them: a 6-week month (or a short
+     window) must not lose its last week — issue #160. */
+  overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
+  min-height: 0;
 }
 
 .weekHeader {
@@ -155,6 +159,10 @@
   grid-template-columns: repeat(7, 1fr);
   background: var(--color-surface-secondary, #f9fafb);
   border-bottom: 1px solid var(--color-border, #e5e7eb);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex-shrink: 0;
 }
 
 .weekHeaderCell {
@@ -171,7 +179,9 @@
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   border-bottom: 1px solid var(--color-border, #e5e7eb);
-  flex: 1;
+  /* Grow into spare height, but never shrink below a full-height week. */
+  flex: 1 0 auto;
+  min-height: 100px;
 }
 
 .monthWeek:last-child {
@@ -276,6 +286,9 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .agendaDay {

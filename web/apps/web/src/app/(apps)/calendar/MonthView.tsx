@@ -6,6 +6,13 @@ import { DAYS } from './calendarConstants';
 import { buildMonthGrid, isSameDay, eventsForDay, fmtTime } from './calendarHelpers';
 import styles from './page.module.css';
 
+/** Local `YYYY-MM-DD` — not `toISOString`, which would shift the day by the UTC offset. */
+function isoDate(day: Date): string {
+  const m = `${day.getMonth() + 1}`.padStart(2, '0');
+  const d = `${day.getDate()}`.padStart(2, '0');
+  return `${day.getFullYear()}-${m}-${d}`;
+}
+
 interface MonthViewProps {
   cursor: Date;
   events: EventResponse[];
@@ -29,14 +36,14 @@ export default function MonthView({
   );
 
   return (
-    <div className={styles.monthGrid}>
-      <div className={styles.weekHeader}>
+    <div className={styles.monthGrid} data-testid="month-grid">
+      <div className={styles.weekHeader} data-testid="month-week-header">
         {orderedDays.map((d) => (
           <div key={d} className={styles.weekHeaderCell}>{d}</div>
         ))}
       </div>
       {grid.map((week, wi) => (
-        <div key={wi} className={styles.monthWeek}>
+        <div key={wi} className={styles.monthWeek} data-testid="month-week">
           {week.map((day, di) => {
             const isCurrentMonth = day.getMonth() === cursor.getMonth();
             const isToday = isSameDay(day, today);
@@ -46,6 +53,8 @@ export default function MonthView({
               <div
                 key={di}
                 className={`${styles.dayCell} ${!isCurrentMonth ? styles.dayCellOtherMonth : ''} ${isToday ? styles.dayCellToday : ''} ${isCurrentMonth && isPast ? styles.dayCellPast : ''}`}
+                data-testid="day-cell"
+                data-date={isoDate(day)}
                 onClick={() => onDayClick(new Date(day))}
               >
                 <span className={`${styles.dayNumber} ${!isCurrentMonth ? styles.dayNumberOtherMonth : ''} ${isCurrentMonth && isPast ? styles.dayNumberPast : ''}`}>
