@@ -5,11 +5,46 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Badge, Button, Card, EmptyState, Heading, Spinner, Text } from '@neutrino/ui';
 import { ApiClientError, getShareDownloadUrl, getSharePreviewUrl, sharingApi } from '@/lib/api';
+import { officeAppForFile, type OfficeApp } from '@/lib/officeFormats';
 import styles from './page.module.css';
 
 const DOC_MIME = 'application/x-neutrino-doc';
 const SHEET_MIME = 'application/x-neutrino-sheet';
 const SLIDE_MIME = 'application/x-neutrino-slide';
+
+const NATIVE_APP: Record<string, OfficeApp> = {
+  [DOC_MIME]: 'docs',
+  [SHEET_MIME]: 'sheets',
+  [SLIDE_MIME]: 'slides',
+};
+
+const EDITOR_PATH: Record<OfficeApp, string> = {
+  docs: '/docs/editor?id=',
+  sheets: '/sheets/editor?id=',
+  slides: '/slides/editor?id=',
+};
+
+const OPEN_LABEL: Record<OfficeApp, string> = {
+  docs: 'Open document',
+  sheets: 'Open spreadsheet',
+  slides: 'Open presentation',
+};
+
+/**
+ * Which editor a shared file opens in, or null for a file that has none.
+ *
+ * The mime type alone is not enough since issue #127: a document written here
+ * is a real `.docx`, so the suite's own documents reach this page looking like
+ * any other upload. Treating them as one offered the recipient a raw download
+ * of bytes that are E2EE ciphertext, with no way to open the document at all.
+ */
+function editorAppFor(
+  resource: { resourceType: string; mimeType?: string | null; resourceName: string },
+): OfficeApp | null {
+  if (resource.resourceType !== 'file') return null;
+  const mime = resource.mimeType ?? '';
+  return NATIVE_APP[mime] ?? officeAppForFile(mime, resource.resourceName);
+}
 
 function formatExpiresAt(expiresAt: string | null): string | null {
   if (!expiresAt) return null;
@@ -40,16 +75,8 @@ export default function ShareTokenClient() {
     mutationFn: () => sharingApi.createGuestSession(token),
     onSuccess: (session) => {
       localStorage.setItem('access_token', session.accessToken);
-      const mime = data?.mimeType;
-      if (mime === DOC_MIME) {
-        router.push(`/docs/editor?id=${data!.resourceId}`);
-      } else if (mime === SHEET_MIME) {
-        router.push(`/sheets/editor?id=${data!.resourceId}`);
-      } else if (mime === SLIDE_MIME) {
-        router.push(`/slides/editor?id=${data!.resourceId}`);
-      } else {
-        router.push('/drive');
-      }
+      const app = data ? editorAppFor(data) : null;
+      router.push(app ? `${EDITOR_PATH[app]}${data!.resourceId}` : '/drive');
     },
   });
 
@@ -97,17 +124,12 @@ export default function ShareTokenClient() {
   }
 
   const expiresAt = formatExpiresAt(data.expiresAt);
-  const mime = data.mimeType;
-  const isNeutrinoDoc = mime === DOC_MIME || mime === SHEET_MIME || mime === SLIDE_MIME;
-  const isPlainFile = data.resourceType === 'file' && !isNeutrinoDoc;
+  const editorApp = editorAppFor(data);
+  const isPlainFile = data.resourceType === 'file' && !editorApp;
   const downloadUrl = getShareDownloadUrl(token);
   const previewUrl = getSharePreviewUrl(token);
 
-  const openLabel =
-    mime === DOC_MIME ? 'Open document' :
-    mime === SHEET_MIME ? 'Open spreadsheet' :
-    mime === SLIDE_MIME ? 'Open presentation' :
-    'Open in Drive';
+  const openLabel = editorApp ? OPEN_LABEL[editorApp] : 'Open in Drive';
 
   return (
     <div className={styles.page}>

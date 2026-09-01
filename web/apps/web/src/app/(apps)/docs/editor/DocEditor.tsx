@@ -80,7 +80,7 @@ import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension, OFFICE_MIME } from '@/lib/officeFormats';
-import { readNeutrinoModel } from '@/lib/ooxmlContainer';
+import { looksLikeOoxml, readNeutrinoModel } from '@/lib/ooxmlContainer';
 import type { DocModel } from '@/lib/ooxml/docx/mapping';
 import { Toolbar } from './Toolbar';
 import { HamburgerMenu } from './MenuBar';
@@ -743,7 +743,12 @@ export function DocEditor() {
     isError: officeFallbackIsError,
   } = useQuery({
     queryKey: ['doc-office-fallback', docId],
-    queryFn: () => storageApi.getFileMetadata(docId),
+    // `getFileInfo`, not `getFileMetadata`: the metadata endpoint looks the file
+    // up under the caller's own id, so it 404s for everyone the file was shared
+    // with — and since #127 that is the only thing standing between a shared
+    // document and its reader. `/info` resolves the file for anyone with a role
+    // on it, which is why it is the endpoint the editors open with.
+    queryFn: () => storageApi.getFileInfo(docId),
     enabled: doc404,
     staleTime: 0,
     retry: false,
@@ -751,7 +756,9 @@ export function DocEditor() {
     refetchOnReconnect: false,
   });
 
-  const officeApp = officeFileMeta ? officeAppForFile(officeFileMeta.mimeType, officeFileMeta.name) : null;
+  const officeApp = officeFileMeta
+    ? officeAppForFile(officeFileMeta.mimeType ?? '', officeFileMeta.name)
+    : null;
   const officeMode = doc404 && officeApp === 'docs';
 
   // Seed the stale-write guard from the revision this load saw. The effect
@@ -1021,6 +1028,18 @@ export function DocEditor() {
   const triggerSave = useCallback(
     (content: string, metadata?: { title?: string }) => {
       if (!isLocalWriterRef.current) return;
+      // A `.docx` is written as a package — `officeAutosaveMutation` builds it
+      // from the editor and `layoutMetaRef`, which every caller here has
+      // already updated. Writing `content` instead would put the bespoke JSON
+      // body in a file that is a Word document, and the next open finds bytes
+      // that are neither: page setup and header/footer changes went down this
+      // path and left the document unreadable, its `_meta` — the only place
+      // the page setup lives — gone with it. The keystroke autosave, the flush
+      // and the back button each made this same choice already.
+      if (officeModeRef.current) {
+        officeAutosaveRef.current();
+        return;
+      }
       contentMutation.mutate({ content });
       if (metadata) metaMutation.mutate(metadata);
     },
@@ -1283,7 +1302,19 @@ export function DocEditor() {
     setPageSetup(pageSetupFromMeta(m));
   }, []);
 
-  const officeContentLoadStartedRef = useRef(false);
+  /**
+   * Whether the stored `.docx` has been read, and whether the read that ran had
+   * a key.
+   *
+   * One read per document, except for the one case where the first read could
+   * not have worked: the unlock gate is an overlay, so this editor mounts while
+   * the vault is still locked, `dekResolved` goes true with nothing resolved,
+   * and the read that follows sees ciphertext it cannot open. The re-resolution
+   * that the unlock triggers flips `dekResolved` again with the key in hand by
+   * then, and that run has to be let through — otherwise the document opens for
+   * good with no `_meta`, which is where its page setup lives.
+   */
+  const officeReadRef = useRef({ started: false, hadKey: false });
   /**
    * What the stored `.docx` turned out to hold.
    *
@@ -1307,6 +1338,12 @@ export function DocEditor() {
    * `useEncryptedDocumentContent` mints a key for a file that has none, so a
    * legacy plaintext upload also arrives here holding one. Decrypting those
    * bytes fails; reading a real ciphertext as a zip fails just as loudly.
+   *
+   * `null` is the third answer: ciphertext with no key to open it. The unlock
+   * gate is an overlay, so this editor mounts while the vault is still locked
+   * on every page load and `dekResolved` goes true with nothing resolved.
+   * Those bytes are not the document and must not be read as one — the caller
+   * waits for the key instead.
    */
   const readOfficeBytes = useCallback(async (): Promise<ArrayBuffer | null> => {
     // `driveReadBytes`, not `downloadFile`: a document created a moment ago has
@@ -1317,14 +1354,26 @@ export function DocEditor() {
     // No body is never ciphertext — decrypting it would fail and report a new
     // document as an unopenable one.
     if (bytes.byteLength === 0) return new ArrayBuffer(0);
-    if (!dekRef.current || isNewEncryption) return bytes.buffer as ArrayBuffer;
-    const plain = decryptFile(bytes, dekRef.current);
+    // `awaitDek`, not `dekRef.current`: the ref is empty while the key is still
+    // being fetched, which is exactly when this runs.
+    const dek = await awaitDek();
+    if (!dek || isNewEncryption) {
+      if (!dek && !looksLikeOoxml(bytes)) return null;
+      return bytes.buffer as ArrayBuffer;
+    }
+    const plain = decryptFile(bytes, dek);
     return plain.buffer.slice(plain.byteOffset, plain.byteOffset + plain.byteLength) as ArrayBuffer;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, isNewEncryption]);
   useEffect(() => {
-    if (!officeMode || !officeFileMeta || !dekResolved || officeContentLoadStartedRef.current) return;
-    officeContentLoadStartedRef.current = true;
+    if (!officeMode || !officeFileMeta || !dekResolved) return;
+    const haveKey = dekRef.current !== null;
+    // Read once — unless the read that ran had no key and this run does. A key
+    // that never arrives leaves `haveKey` false and this guard closed, so a
+    // locked session reads the file once and then waits rather than spinning.
+    const { started, hadKey } = officeReadRef.current;
+    if (started && (hadKey || !haveKey)) return;
+    officeReadRef.current = { started: true, hadKey: haveKey };
     let cancelled = false;
     (async () => {
       try {
@@ -1334,7 +1383,11 @@ export function DocEditor() {
         // had none, so what is stored is still the plaintext .docx it was
         // uploaded as, and the first save is what encrypts it.
         const arrayBuffer = await readOfficeBytes();
-        if (cancelled || !arrayBuffer) return;
+        if (cancelled) return;
+        // Ciphertext with no key: locked, not broken. Nothing is applied and
+        // nothing is said — the unlock brings this effect back with a key, and
+        // the guard above lets that run through.
+        if (!arrayBuffer) return;
         if (arrayBuffer.byteLength === 0) {
           setOfficeContent({ kind: 'empty' });
           return;

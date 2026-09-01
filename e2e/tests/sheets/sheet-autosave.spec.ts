@@ -80,22 +80,31 @@ test.describe('Sheets autosave — timed save', () => {
 
     await registerAndLogin(request, page, 'timed');
     const sheetId = await createSheetAndGetId(page);
+    const token = await getAuthToken(page);
+
+    // A spreadsheet is created with no body — an `.xlsx` is a zip the server
+    // does not build — so the editor's first act is a save of its own, which
+    // takes the revision from 1 to 2. Let that land before typing: it is a
+    // write like any other, and an edit made while it is still in flight cannot
+    // be told apart from it below.
+    await expect
+      .poll(() => contentVersion(request, token, sheetId), { timeout: 15_000 })
+      .toBeGreaterThan(1);
+    const versionBeforeEdit = await contentVersion(request, token, sheetId);
 
     const cellValue = 'TimedSaveValue';
     await setCell(page, 'A1', cellValue);
 
-    // Wait for the autosave request that driveAutosaveContent issues.
-    // The endpoint is PUT /api/v1/drive/files/{id}/autosave
-    const savedResponse = page.waitForResponse(
-      (r) =>
-        r.url().includes(`/api/v1/drive/files/${sheetId}/autosave`) &&
-        r.request().method() === 'PUT',
-      { timeout: 15_000 },
-    );
-
+    // Watch the file's revision rather than waiting for "an autosave request to
+    // answer": the opening save above answers too, and a listener registered
+    // after the edit still catches it — which had this test navigate away 300ms
+    // after typing, before the timed save had written anything at all. The
+    // revision moving is the server's own record that the edit landed.
+    //
     // The timed save fires at most 3 seconds after the dirty flag is set.
-    // Wait up to 8 seconds to be safe in a CI environment.
-    await savedResponse;
+    await expect
+      .poll(() => contentVersion(request, token, sheetId), { timeout: 15_000 })
+      .toBeGreaterThan(versionBeforeEdit);
 
     // Navigate away completely so the editor unmounts and React state is discarded
     await page.goto('/drive');

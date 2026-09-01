@@ -6,7 +6,7 @@
  * when a raw .docx file is opened in the Docs editor route, `docsApi.getDoc`
  * 404s (there is no `docs` row for it — it's not a native Neutrino doc). The
  * editor must distinguish that case from a genuinely deleted/missing file by
- * falling back to `storageApi.getFileMetadata`:
+ * falling back to `storageApi.getFileInfo`:
  *   - If the fallback metadata identifies an office format (docx mimetype or
  *     .docx extension), the editor enters "office mode": it downloads the raw
  *     file bytes and parses them with `readDocx` instead of showing a
@@ -54,6 +54,10 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   useEncryptedDocumentContent: () => ({
     dekRef: { current: null },
     dekResolved: true,
+    // The office read waits on the resolution rather than sampling the ref —
+    // see `readOfficeBytes`. These documents are unencrypted, so it settles on
+    // no key, which is the "read the stored bytes as they are" branch.
+    awaitDek: async () => null,
     autosave: vi.fn(),
     createVersion: vi.fn(),
     isAutosaving: false,
@@ -79,11 +83,11 @@ vi.mock('@/providers/FeatureFlagsProvider', () => ({
 
 // ---------------------------------------------------------------------------
 // The API mock is declared with `let` handles so each test can reconfigure
-// getDoc / getFileMetadata behavior per-scenario.
+// getDoc / getFileInfo behavior per-scenario.
 // ---------------------------------------------------------------------------
 
 const mockGetDoc = vi.fn();
-const mockGetFileMetadata = vi.fn();
+const mockGetFileInfo = vi.fn();
 const mockDownloadFile = vi.fn();
 /**
  * The office load path reads through `driveReadBytes`, not `downloadFile`
@@ -121,7 +125,10 @@ vi.mock('@/lib/api', () => ({
   driveCreateEncryptedVersion: vi.fn(() => Promise.resolve()),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve()),
   storageApi: {
-    getFileMetadata: (...args: unknown[]) => mockGetFileMetadata(...args),
+    // The office fallback reads `/info`, which resolves the file for anyone
+    // with a role on it — `getFileMetadata` is scoped to the owner alone.
+    getFileInfo: (...args: unknown[]) => mockGetFileInfo(...args),
+    getFileMetadata: vi.fn(),
     downloadFile: (...args: unknown[]) => mockDownloadFile(...args),
     uploadFile: vi.fn(() => Promise.resolve()),
   },
@@ -307,9 +314,9 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
     mockReadNeutrinoModel.mockResolvedValue(null);
   });
 
-  it('falls back to storageApi.getFileMetadata when docsApi.getDoc 404s', async () => {
+  it('falls back to storageApi.getFileInfo when docsApi.getDoc 404s', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    mockGetFileMetadata.mockResolvedValue({
+    mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
       mimeType: DOCX_MIME,
@@ -318,12 +325,12 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
 
     renderDocEditor();
 
-    await waitFor(() => expect(mockGetFileMetadata).toHaveBeenCalledWith('test-doc-id'));
+    await waitFor(() => expect(mockGetFileInfo).toHaveBeenCalledWith('test-doc-id'));
   });
 
   it('enters office mode and parses the Word document for a raw .docx file', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    mockGetFileMetadata.mockResolvedValue({
+    mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
       mimeType: DOCX_MIME,
@@ -347,7 +354,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
    */
   it('prefers a legacy packed model over parsing the Word document', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    mockGetFileMetadata.mockResolvedValue({
+    mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
       mimeType: DOCX_MIME,
@@ -368,7 +375,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
 
   it('shows a genuine not-found state when the storage fallback ALSO 404s', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    mockGetFileMetadata.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'File not found'));
+    mockGetFileInfo.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'File not found'));
 
     renderDocEditor();
 
@@ -388,7 +395,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
    */
   it('opens a document whose body has never been written', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    mockGetFileMetadata.mockResolvedValue({
+    mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'Untitled document.docx',
       mimeType: DOCX_MIME,
@@ -407,7 +414,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
 
   it('does NOT enter office mode for a fallback file that is not an office format', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    mockGetFileMetadata.mockResolvedValue({
+    mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'photo.png',
       mimeType: 'image/png',
@@ -415,7 +422,7 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
 
     renderDocEditor();
 
-    await waitFor(() => expect(mockGetFileMetadata).toHaveBeenCalled());
+    await waitFor(() => expect(mockGetFileInfo).toHaveBeenCalled());
     expect(mockReadDocx).not.toHaveBeenCalled();
   });
 });

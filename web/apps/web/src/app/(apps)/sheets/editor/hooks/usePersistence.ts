@@ -558,6 +558,7 @@ export function usePersistence({
         // Reset dirty so a reload (e.g. version restore) doesn't trigger the
         // colWidths/rowHeights save-on-change effect with stale unsaved state.
         dirtyRef.current = false;
+        loadBlockedRef.current = false;
 
         // Waited for, not sampled: the editor fires this off `dekResolved`,
         // which is true while a brand-new spreadsheet's key is still being
@@ -597,6 +598,19 @@ export function usePersistence({
                 // that with 409 `NO_CONTENT` rather than with the zero bytes
                 // the empty branch below is written for.
                 const stored = await driveReadBytes(sheetId);
+                // Ciphertext, and no key to open it. The unlock gate is an
+                // overlay rather than a hard gate, so this editor mounts while
+                // the vault is still locked on every page load, and
+                // `dekResolved` goes true with nothing resolved. Reading on
+                // from here hands the ciphertext to the workbook parser, which
+                // does not refuse it — SheetJS falls back to reading unknown
+                // bytes as text and fills the grid with them (issue #157 in a
+                // new place). Leave the spreadsheet untouched and unstarted;
+                // `load()` reads again once the key lands.
+                if (!dek && stored.byteLength > 0 && !looksLikeWorkbook(stored)) {
+                    loadBlockedRef.current = true;
+                    return;
+                }
                 // Saves are encrypted, so a file that already has a key ref
                 // holds ciphertext — but one uploaded before this, or created
                 // and not yet sealed, is still the plaintext workbook it
@@ -680,6 +694,12 @@ export function usePersistence({
             // empty sheet, start fresh — but do NOT start autosave if this was a
             // network/download failure; loadOk stays false and autosave is skipped
             // so we never overwrite existing server content with an empty file.
+            //
+            // With no key in hand it is also what a locked vault looks like: the
+            // body read raw is ciphertext, which does not parse. Marked so the
+            // load that follows the unlock reads it again rather than being
+            // folded into this one.
+            if (!dek) loadBlockedRef.current = true;
         }
         // Signal the autosave useEffect to (re-)start the interval with a fresh closure.
         // Guard: only start when content was successfully loaded OR when we know the
@@ -715,13 +735,38 @@ export function usePersistence({
      */
     const loadInFlightRef = useRef<Promise<void> | null>(null);
 
-    const load = (): Promise<void> => {
-        if (loadInFlightRef.current) return loadInFlightRef.current;
+    /**
+     * Set when a load stopped because the stored bytes need a key the session
+     * did not have yet, and cleared by the load that replaces it.
+     *
+     * That load applied nothing, so deduplicating the next caller into it (see
+     * `load`) would leave the spreadsheet permanently empty — the read that
+     * *can* open the file never happening.
+     */
+    const loadBlockedRef = useRef(false);
+
+    const startLoad = (): Promise<void> => {
         const inFlight = runLoad().finally(() => {
             if (loadInFlightRef.current === inFlight) loadInFlightRef.current = null;
         });
         loadInFlightRef.current = inFlight;
         return inFlight;
+    };
+
+    const load = (): Promise<void> => {
+        const inFlight = loadInFlightRef.current;
+        if (!inFlight) return startLoad();
+        // A load is already running. Normally that *is* this load — but a load
+        // that started before the vault unlocked reads bytes it cannot open and
+        // applies nothing (see `loadBlockedRef`), and the caller arriving with
+        // the key is the one that has to read them again. Chained rather than
+        // concurrent: two reads of the same file racing each other is how the
+        // blank workbook used to land on top of what was typed.
+        return inFlight.catch(() => {}).then(() => {
+            if (!loadBlockedRef.current) return;
+            loadBlockedRef.current = false;
+            return startLoad();
+        });
     };
 
     const updateTitle = async (event: React.FocusEvent<HTMLElement>) => {

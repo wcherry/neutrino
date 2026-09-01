@@ -85,6 +85,10 @@ export function NewItemFAB() {
       }
     } catch {
       toast.error('Failed to create item');
+    } finally {
+      // Always, not only on failure: this component lives in the app shell and
+      // survives the navigation above, so a `pending` left standing disables
+      // the button for the rest of the session.
       setPending(false);
     }
   }
