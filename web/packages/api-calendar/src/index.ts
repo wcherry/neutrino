@@ -200,6 +200,10 @@ export interface CompleteGoogleOAuthRequest {
   code: string;
 }
 
+export interface CompleteOutlookOAuthRequest {
+  code: string;
+}
+
 export interface TriggerSyncResponse {
   eventsSynced: number;
 }
@@ -354,6 +358,18 @@ export const calendarApi = {
 
   async connectOutlook(): Promise<{ authUrl: string }> {
     return request<{ authUrl: string }>('/api/v1/calendar/connections/outlook', { method: 'POST' });
+  },
+
+  /**
+   * Step 2 of the Outlook OAuth flow — the counterpart of
+   * {@link calendarApi.completeGoogleOAuth}, called by the callback page with the
+   * code Microsoft put in the URL and the user's existing JWT.
+   */
+  async completeOutlookOAuth(code: string): Promise<ConnectionResponse> {
+    return request<ConnectionResponse>('/api/v1/calendar/connections/outlook/complete', {
+      method: 'POST',
+      body: JSON.stringify({ code } satisfies CompleteOutlookOAuthRequest),
+    });
   },
 
   async connectApple(body: CreateAppleConnectionRequest): Promise<ConnectionResponse> {
