@@ -90,8 +90,11 @@ test.describe('Spreadsheets lifecycle', () => {
     await page.getByRole('button', { name: 'Sheets' }).click();
     await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
 
-    // The renamed spreadsheet should appear in the drive file list
-    await expect(page.getByRole('listitem', { name: 'Q1 Budget' })).toBeVisible({
+    // The renamed spreadsheet should appear in the drive file list. Drive lists
+    // files under the name they are stored as, and a spreadsheet is a real
+    // `.xlsx` since issue #127 — only the editor's own title bar drops the
+    // extension.
+    await expect(page.getByRole('listitem', { name: 'Q1 Budget.xlsx' })).toBeVisible({
       timeout: 10_000,
     });
   });

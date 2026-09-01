@@ -45,11 +45,12 @@ vi.mock('@neutrino/auth', () => ({
 }));
 
 const getFileKey = vi.fn(() => Promise.resolve({ encryptedFileKey: 'sealed' }));
+const setFileKey = vi.fn(() => Promise.resolve());
 
 vi.mock('@/lib/api', () => ({
   encryptionApi: {
     getFileKey: (...args: unknown[]) => getFileKey(...(args as [])),
-    setFileKey: vi.fn(() => Promise.resolve()),
+    setFileKey: (...args: unknown[]) => setFileKey(...(args as [])),
   },
   driveAutosaveContent: vi.fn(),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve()),
@@ -72,6 +73,10 @@ function renderEncryptedContent() {
 describe('useEncryptedDocumentContent — unlocking after mount', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `clearAllMocks` forgets the calls, not the implementations — put the
+    // default answers back so a test that stubs one does not leak into the next.
+    getFileKey.mockResolvedValue({ encryptedFileKey: 'sealed' });
+    setFileKey.mockResolvedValue(undefined);
     unlocked = false;
     lockListeners.clear();
   });
@@ -128,6 +133,40 @@ describe('useEncryptedDocumentContent — unlocking after mount', () => {
     });
 
     await expect(pending).resolves.not.toBeNull();
+  });
+
+  /**
+   * The resolution that minted the key was cancelled, so it never reported
+   * itself resolved — and the run that replaced it found the key already in
+   * hand and returned early. Nothing was left to set the flag, and every
+   * caller gated on it waited forever: the note editor rendered its toolbar
+   * and no blocks at all.
+   */
+  it('reports resolved when a re-run finds the key a cancelled resolution left behind', async () => {
+    unlocked = true;
+    getFileKey.mockResolvedValue(null as never);
+    const settleWrites: Array<() => void> = [];
+    setFileKey.mockImplementation(
+      () => new Promise<void>((resolve) => { settleWrites.push(() => resolve()); }),
+    );
+
+    const { result } = renderEncryptedContent();
+    await waitFor(() => expect(settleWrites.length).toBe(1));
+
+    // A lock notification cancels that first resolution and starts a second.
+    await act(async () => { lockListeners.forEach((l) => l()); });
+    await waitFor(() => expect(settleWrites.length).toBe(2));
+    expect(result.current.dekResolved).toBe(false);
+
+    // The cancelled one lands anyway: the key is written to the ref, but its
+    // `finally` stays quiet because it was cancelled.
+    await act(async () => { settleWrites[0](); });
+
+    // The next notification therefore finds a key already resolved for this
+    // file and has nothing to fetch — it still has to say so.
+    await act(async () => { lockListeners.forEach((l) => l()); });
+    await waitFor(() => expect(result.current.dekResolved).toBe(true));
+    expect(result.current.dekRef.current).not.toBeNull();
   });
 
   it('drops the key when the session locks', async () => {

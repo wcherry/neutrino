@@ -76,11 +76,11 @@ vi.mock('@/providers/FeatureFlagsProvider', () => ({
 
 // ---------------------------------------------------------------------------
 // The API mock is declared with `let` handles so each test can reconfigure
-// getDoc / getFileMetadata behavior per-scenario.
+// getDoc / getFileInfo behavior per-scenario.
 // ---------------------------------------------------------------------------
 
 const mockGetDoc = vi.fn();
-const mockGetFileMetadata = vi.fn();
+const mockGetFileInfo = vi.fn();
 const mockDownloadFile = vi.fn();
 /**
  * The office load path reads through `driveReadBytes`, not `downloadFile`
@@ -120,7 +120,10 @@ vi.mock('@/lib/api', () => ({
   driveCreateEncryptedVersion: vi.fn(() => Promise.resolve()),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve()),
   storageApi: {
-    getFileMetadata: (...args: unknown[]) => mockGetFileMetadata(...args),
+    // The office fallback reads `/info`, which resolves the file for anyone
+    // with a role on it — `getFileMetadata` is scoped to the owner alone.
+    getFileInfo: (...args: unknown[]) => mockGetFileInfo(...args),
+    getFileMetadata: vi.fn(),
     downloadFile: (...args: unknown[]) => mockDownloadFile(...args),
     uploadFile: vi.fn(() => Promise.resolve()),
   },
@@ -314,7 +317,7 @@ describe('DocEditor — returning to the browser tab (issue #141)', () => {
 
   it('keeps a .docx open — no reload of the document, no spinner', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    mockGetFileMetadata.mockResolvedValue({
+    mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
       mimeType: DOCX_MIME,
@@ -329,7 +332,7 @@ describe('DocEditor — returning to the browser tab (issue #141)', () => {
     // The 404 is the answer, not a failure to be re-asked for: re-running it is
     // what reset the query to `pending` and took the editor down with it.
     expect(mockGetDoc).toHaveBeenCalledTimes(1);
-    expect(mockGetFileMetadata).toHaveBeenCalledTimes(1);
+    expect(mockGetFileInfo).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     expect(screen.getByTestId('editor-content')).toBeInTheDocument();
   });
@@ -362,7 +365,7 @@ describe('DocEditor — returning to the browser tab (issue #141)', () => {
    */
   it('does not reopen the loading gate once the document has been resolved', async () => {
     mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    mockGetFileMetadata.mockResolvedValue({
+    mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
       mimeType: DOCX_MIME,

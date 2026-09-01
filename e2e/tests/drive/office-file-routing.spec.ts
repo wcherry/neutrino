@@ -92,7 +92,14 @@ test.describe('Drive — office file routing', () => {
     await expect(page).toHaveURL(new RegExp(`/docs/editor/?\\?id=${fileId}`), { timeout: 15_000 });
   });
 
-  test('the context-menu "Preview" action on a .docx file opens the Docs editor', async ({ page, request }) => {
+  // "Preview" is the one entry point that deliberately does *not* open the
+  // editor: issue #68 gave every format the suite owns a read-only preview
+  // there, and issue #127 extended that to `.docx`/`.xlsx`/`.pptx` — leaving
+  // them out would have taken Preview away from every document created since.
+  // What it must still do is recognise the file as a document rather than
+  // dropping it into the generic file preview, and offer the way into the
+  // editor from there.
+  test('the context-menu "Preview" action on a .docx file opens the document preview', async ({ page, request }) => {
     await registerAndLogin(request, page);
     const token = await getAuthToken(page);
     const fileId = await uploadSampleDocx(request, token, 'context-menu.docx');
@@ -103,6 +110,10 @@ test.describe('Drive — office file routing', () => {
     await expect(page.getByRole('menu', { name: 'File options' })).toBeVisible({ timeout: 5_000 });
     await page.getByRole('menuitem', { name: 'Preview' }).click();
 
+    const preview = page.getByRole('dialog', { name: 'Preview Document' });
+    await expect(preview).toBeVisible({ timeout: 15_000 });
+
+    await preview.getByRole('button', { name: 'Open in editor' }).click();
     await expect(page).toHaveURL(new RegExp(`/docs/editor/?\\?id=${fileId}`), { timeout: 15_000 });
   });
 

@@ -27,7 +27,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -63,17 +63,26 @@ vi.mock('@/lib/api', () => ({
   },
 }));
 
-vi.mock('@neutrino/e2e-crypto', () => ({ decryptFile: vi.fn() }));
+vi.mock('@neutrino/e2e-crypto', () => ({
+  decryptFile: vi.fn(() => workbookBytes('the decrypted workbook')),
+}));
 
 vi.mock('@neutrino/ui', () => ({
   useToast: () => ({ warning: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() }),
 }));
 
+/**
+ * The key this session holds, if any. Mutable so a test can hand the key over
+ * mid-load — which is what an unlock does, the gate being an overlay that
+ * settles after the editor has already mounted.
+ */
+let sessionDek: Uint8Array | null = null;
+
 vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   useEncryptedDocumentContent: () => ({
-    dekRef: { current: null },
+    dekRef: { current: sessionDek },
     dekResolved: true,
-    awaitDek: async () => null,
+    awaitDek: async () => sessionDek,
   }),
 }));
 
@@ -100,6 +109,19 @@ vi.mock('xlsx', () => ({
 import { usePersistence } from '../../app/(apps)/sheets/editor/hooks/usePersistence';
 import { ApiClientError } from '@/lib/api';
 
+/**
+ * Stored bytes that read as a workbook rather than as ciphertext.
+ *
+ * A `.xlsx` is a zip, and that is how the load path tells an unencrypted
+ * workbook from bytes it has no key for — bytes with neither the zip header
+ * nor a key are ciphertext the session cannot open yet, and are left alone
+ * rather than parsed. These tests are about the plaintext-upload path, so the
+ * fixtures carry the header a real package would.
+ */
+function workbookBytes(rest: string): Uint8Array {
+  return new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...new TextEncoder().encode(rest)]);
+}
+
 function setupHook() {
   const setData = vi.fn();
   const props = {
@@ -124,13 +146,14 @@ function setupHook() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionDek = null;
 });
 
 describe('usePersistence — office-mode detection/fallback (issue #43)', () => {
   it('falls back to storageApi.getFileMetadata when sheetsApi.getSheet 404s', async () => {
     mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
-    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake xlsx bytes'));
+    mockReadBytes.mockResolvedValue(workbookBytes('fake xlsx bytes'));
 
     const { result } = setupHook();
     await result.current.load();
@@ -141,12 +164,56 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
   it('enters office mode and parses xlsx content via setData for a raw .xlsx file', async () => {
     mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
-    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake xlsx bytes'));
+    mockReadBytes.mockResolvedValue(workbookBytes('fake xlsx bytes'));
 
     const { result, setData } = setupHook();
     await result.current.load();
 
     expect(setData).toHaveBeenCalled();
+  });
+
+  /**
+   * The vault unlocks a moment after the editor mounts, so the first load runs
+   * with no key at all. Its bytes are the spreadsheet's ciphertext, and the
+   * workbook parser does not refuse those — it reads unknown bytes as text and
+   * fills the grid with them. Nothing may be applied from that read, and the
+   * caller that arrives with the key has to read the file again rather than
+   * being handed the keyless load's promise.
+   */
+  it('does not read ciphertext as a workbook, and reads again once the key arrives', async () => {
+    mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
+    mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
+    const ciphertext = new TextEncoder().encode('not a zip — this is E2EE ciphertext');
+    let releaseRead: () => void = () => {};
+    mockReadBytes.mockImplementationOnce(
+      () => new Promise((resolve) => { releaseRead = () => resolve(ciphertext); }),
+    );
+    mockReadBytes.mockResolvedValue(ciphertext);
+
+    const { result, setData } = setupHook();
+    const keyless = result.current.load();
+    await waitFor(() => expect(mockReadBytes).toHaveBeenCalledTimes(1));
+
+    // The unlock lands while that read is still in flight.
+    sessionDek = new Uint8Array([1, 2, 3]);
+    const withKey = result.current.load();
+    releaseRead();
+    await Promise.all([keyless, withKey]);
+
+    expect(mockReadBytes).toHaveBeenCalledTimes(2);
+    expect(setData).toHaveBeenCalled();
+  });
+
+  it('applies nothing at all when the key never arrives', async () => {
+    mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
+    mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
+    mockReadBytes.mockResolvedValue(new TextEncoder().encode('not a zip — this is E2EE ciphertext'));
+
+    const { result, setData } = setupHook();
+    await result.current.load();
+
+    expect(mockXlsxRead).not.toHaveBeenCalled();
+    expect(setData).not.toHaveBeenCalled();
   });
 
   it('does not call getFileMetadata when sheetsApi.getSheet succeeds (native sheet, unaffected)', async () => {

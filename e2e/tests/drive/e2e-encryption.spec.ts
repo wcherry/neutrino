@@ -46,15 +46,23 @@ function uniqueFilename(): string {
   return `enc-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.txt`;
 }
 
-// Path pattern from store.rs: {RUN_DIR}/{STORAGE_PATH}/{user_id}/{file_id}
-function readStoredFile(userId: string, fileId: string, versionId?: string): NonSharedBuffer {
-    let diskFilePath;
-    if(versionId) {
-      diskFilePath = path.join(STORAGE_PATH, userId, 'versions', fileId, versionId);
-    } else {
-      diskFilePath = path.join(STORAGE_PATH, userId, fileId);
-    }
-    return fs.readFileSync(diskFilePath);
+/**
+ * One stored blob, by the key `store.rs` writes it under.
+ *
+ * A file is a directory of versions — `{STORAGE_PATH}/{user_id}/{file_id}/{version_id}`
+ * — holding the current content *and* the older snapshots alike, with the
+ * file's `storage_path` naming whichever is live (issue #167). Before that the
+ * content lived at `{user_id}/{file_id}` with history under
+ * `{user_id}/versions/{file_id}/{version_id}`, and every upload wrote its bytes
+ * out twice.
+ */
+function readStoredVersion(userId: string, fileId: string, versionId: string): Buffer {
+    return fs.readFileSync(path.join(STORAGE_PATH, userId, fileId, versionId));
+}
+
+/** Every version id the file's directory on disk holds bytes for. */
+function storedVersionIds(userId: string, fileId: string): string[] {
+    return fs.readdirSync(path.join(STORAGE_PATH, userId, fileId));
 }
 
 function fromBase64url(value: string): Uint8Array {
@@ -331,9 +339,9 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     expect(downloadedText, 'downloaded content must match original plaintext').toBe(plaintext);
   });
 
-  // ── 4. File and version snapshot are both encrypted on disk and end-to-end ─
+  // ── 4. The file's stored version is ciphertext on disk, and end-to-end ─────
 
-  test('file bytes and auto-created version snapshot are both stored as ciphertext on disk and are E2EE', async ({
+  test('the auto-created version holding a file’s bytes is stored as ciphertext on disk and is E2EE', async ({
     page,
     request,
   }) => {
@@ -357,22 +365,10 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     expect(apiRes.ok(), `download failed: ${apiRes.status()}`).toBeTruthy();
     const serverBytes = await apiRes.body();
 
-    // ── Disk: main file ──────────────────────────────────────────────────────
-    const diskFileBytes = readStoredFile(userId, fileId);
-
-    expect(
-      diskFileBytes.toString('utf8'),
-      'main file on disk must not contain plaintext',
-    ).not.toContain(plaintext.slice(0, 20));
-    // Server stores the E2EE ciphertext as-is — disk bytes must equal what the API serves.
-    expect(
-      diskFileBytes.equals(serverBytes),
-      'disk bytes must match the E2EE ciphertext served by the API',
-    ).toBe(true);
-
-    // ── Disk: version 1 snapshot ─────────────────────────────────────────────
-    // Version 1 is created automatically in finalize_upload by copying the main file.
-    // Path pattern from store.rs: {STORAGE_PATH}/{user_id}/versions/{file_id}/{version_id}
+    // ── Disk: version 1, which is the file ───────────────────────────────────
+    // Version 1 is created by finalize_upload out of the staged bytes. Since
+    // issue #167 it *is* the current content rather than a second copy of it,
+    // so the file's directory holds exactly one blob after an upload.
     const versionsRes = await request.get(`${BASE_URL}/api/v1/drive/files/${fileId}/versions`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -386,16 +382,21 @@ test.describe('E2EE key lifecycle and file encryption', () => {
     ).toBeGreaterThan(0);
 
     const v1 = [...versions].sort((a, b) => a.versionNumber - b.versionNumber)[0];
-    const diskVersionBytes = readStoredFile(userId, fileId, v1.id);
+    expect(
+      storedVersionIds(userId, fileId).sort(),
+      'the file directory must hold one blob per version row and nothing else',
+    ).toEqual([...versions.map((v) => v.id)].sort());
+
+    const diskFileBytes = readStoredVersion(userId, fileId, v1.id);
 
     expect(
-      diskVersionBytes.toString('utf8'),
-      'version snapshot on disk must not contain plaintext',
+      diskFileBytes.toString('utf8'),
+      'the file on disk must not contain plaintext',
     ).not.toContain(plaintext.slice(0, 20));
-    // Version 1 is a byte-for-byte copy of the file at upload time — same E2EE ciphertext.
+    // Server stores the E2EE ciphertext as-is — disk bytes must equal what the API serves.
     expect(
-      diskVersionBytes.equals(serverBytes),
-      'version snapshot bytes must equal the E2EE ciphertext of the main file',
+      diskFileBytes.equals(serverBytes),
+      'disk bytes must match the E2EE ciphertext served by the API',
     ).toBe(true);
 
     // ── E2EE round-trip: client can decrypt server bytes back to plaintext ───

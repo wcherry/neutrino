@@ -32,6 +32,17 @@ async function openNewDoc(page: Page): Promise<void> {
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 10_000 });
 }
 
+/**
+ * Something only the version-history panel puts on screen: the newest version's
+ * "Current" badge, the empty state, or the spinner text on the way to either.
+ */
+function panelState(page: Page) {
+  return page
+    .getByText('Loading versions…')
+    .or(page.getByText('No versions yet.'))
+    .or(page.getByText('Current'));
+}
+
 async function openViewSubmenu(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Open menu' }).click();
   await expect(page.getByRole('menu')).toBeVisible({ timeout: 5_000 });
@@ -67,10 +78,11 @@ test.describe('Docs version history', () => {
     await openViewSubmenu(page);
     await page.getByText('Version history').click();
 
-    // The VersionHistoryPanel renders unique loading/empty states not visible elsewhere
-    await expect(
-      page.getByText('Loading versions…').or(page.getByText('No versions yet.')),
-    ).toBeVisible({ timeout: 10_000 });
+    // States only the VersionHistoryPanel renders. A document created a moment
+    // ago already has a version — its current content *is* version 1 since
+    // issue #167 — so "Current" is the usual answer and the empty state is kept
+    // only for a file whose history has yet to be listed.
+    await expect(panelState(page)).toBeVisible({ timeout: 10_000 });
   });
 
   test('a version saved via Ctrl+S appears in the history panel', async ({ page, request }) => {
@@ -110,16 +122,12 @@ test.describe('Docs version history', () => {
     await openViewSubmenu(page);
     await page.getByText('Version history').click();
 
-    await expect(
-      page.getByText('Loading versions…').or(page.getByText('No versions yet.')),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(panelState(page)).toBeVisible({ timeout: 10_000 });
 
     // Close button inside the panel (title="Close")
     await page.getByTitle('Close').click();
 
-    await expect(
-      page.getByText('Loading versions…').or(page.getByText('No versions yet.')),
-    ).not.toBeVisible({ timeout: 5_000 });
+    await expect(panelState(page)).not.toBeVisible({ timeout: 5_000 });
   });
 });
 

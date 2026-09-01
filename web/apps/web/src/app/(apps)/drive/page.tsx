@@ -255,6 +255,15 @@ function DriveContent() {
         ? lastOffset + CONTENTS_PAGE_SIZE
         : undefined,
     enabled: !!currentFolderId || !!currentUser,
+    // Re-read the folder every time this page is mounted, rather than trusting
+    // the global one-minute `staleTime` (see `QueryProvider`). The mutations on
+    // this page invalidate the listing themselves, but the ones that change it
+    // from somewhere else cannot all be enumerated here — every editor renames
+    // its own file, the FAB creates one before navigating away from Drive
+    // entirely — and each of those left the user looking at a folder as it was
+    // before, for the rest of that minute. The cached copy is still shown while
+    // the read is in flight, so this costs a request, not a spinner.
+    staleTime: 0,
   });
 
   // Folders across all pages first, then files across all pages: the grid puts

@@ -73,8 +73,10 @@ test.describe('Documents lifecycle', () => {
     await page.getByRole('button', { name: 'Docs' }).click();
     await expect(page).toHaveURL(/\/drive/, { timeout: 10_000 });
 
-    // The renamed document should appear in the drive file list
-    await expect(page.getByRole('listitem', { name: 'My Budget' })).toBeVisible({
+    // The renamed document should appear in the drive file list. Drive lists
+    // files under the name they are stored as, and a document is a real `.docx`
+    // since issue #127 — only the editor's own title bar drops the extension.
+    await expect(page.getByRole('listitem', { name: 'My Budget.docx' })).toBeVisible({
       timeout: 10_000,
     });
   });

@@ -9,6 +9,7 @@ import {
   filesystemApi,
   storageApi,
   driveReadContent,
+  driveReadBytes,
   driveAutosaveEncryptedContent,
   encryptionApi,
   mintFileKey,
@@ -117,6 +118,28 @@ export default function NoteEditorPage() {
   const savingRef = useRef(false);
   /** The editor has been seeded with server content for this note. */
   const seededRef = useRef(false);
+  /**
+   * The title and blocks as they stand right now, for the debounced save.
+   *
+   * The save used to be handed the values captured by the render that
+   * scheduled it, and every schedule cancels the one before it — so a keystroke
+   * in the body that landed before the title's re-render replaced the pending
+   * save with one carrying the *old* name. That save then found the title
+   * unchanged, sent no rename, and recorded the stale name as the last saved
+   * one, so no later save sent it either: the note kept the name the user had
+   * typed over, and only in the tab they typed it in.
+   */
+  const titleRef = useRef('');
+  const blocksRef = useRef<Block[]>([]);
+  /**
+   * Which of the two the user has edited, tracked separately so the first seed
+   * can leave those alone and still fill in the other. Renaming a note the
+   * moment it opens touches the title and not the body, and a seed skipped
+   * wholesale for that leaves the body with no blocks at all — no placeholder,
+   * nothing to type into.
+   */
+  const titleTouchedRef = useRef(false);
+  const blocksTouchedRef = useRef(false);
   // Set when the content read finds the server holding this note in the clear.
   // A ref, not state: setting state from inside a query function re-renders
   // mid-fetch and sets a second fetch going. `contentUpdatedAt` below is the
@@ -178,8 +201,23 @@ export default function NoteEditorPage() {
       const dek = await awaitDek();
       if (dek && !isNewEncryption) {
         await initSodium();
-        const blob = await storageApi.downloadFile(noteId);
-        const stored = new Uint8Array(await blob.arrayBuffer());
+        // `driveReadBytes`, not `downloadFile`: a note created a moment ago has
+        // no body at all, and the download endpoint answers that with 409
+        // `NO_CONTENT` — which `downloadFile` throws. Nothing catches it, and a
+        // 4xx is not retried, so the read stayed in error for the life of the
+        // page: `noteContent` never arrived, the editor seeded no blocks, and
+        // the note rendered as an empty pane with nothing to type into.
+        //
+        // Reaching this branch for a note that has no body is a race rather
+        // than a contradiction. `isNewEncryption` says "this session minted the
+        // key, so what is stored is not sealed yet" — but it is read off the
+        // render that built this closure, and for a note whose key is minted
+        // while the read is being set up it is still `false` when `awaitDek`
+        // hands back a key a moment later. The plaintext path below already
+        // reads through `driveReadContent`, which swallows the same 409; this
+        // is the encrypted path catching up with it.
+        const stored = await driveReadBytes(noteId);
+        if (stored.byteLength === 0) return '';
         // Saves write raw ciphertext bytes. A note saved by the old
         // notes-CRUD API before it was fixed wrote the base64url *text* of
         // the ciphertext instead — decode that first, and fall back to the
@@ -269,6 +307,8 @@ export default function NoteEditorPage() {
   // Switching notes starts from a clean slate.
   useEffect(() => {
     seededRef.current = false;
+    titleTouchedRef.current = false;
+    blocksTouchedRef.current = false;
     dirtyRef.current = false;
     savingRef.current = false;
     appliedUpdatedAtRef.current = null;
@@ -296,17 +336,38 @@ export default function NoteEditorPage() {
   useEffect(() => {
     if (!note || noteContent === undefined) return;
 
-    const apply = () => {
-      setBlocks(parseBlocks(noteContent));
-      setTitle(note.name);
+    /**
+     * `preserveEdits` applies only what the user has not already changed. The
+     * read is asynchronous and their typing is not, so on the first seed the
+     * two can collide; every later application is a remote revision, which
+     * takes the note as a whole.
+     */
+    const apply = (preserveEdits = false) => {
+      const parsed = parseBlocks(noteContent);
+      if (!preserveEdits || !blocksTouchedRef.current) {
+        blocksRef.current = parsed;
+        setBlocks(parsed);
+      }
+      if (!preserveEdits || !titleTouchedRef.current) {
+        titleRef.current = note.name;
+        setTitle(note.name);
+      }
       lastSavedRef.current = { content: noteContent, title: note.name };
       appliedUpdatedAtRef.current = note.updatedAt;
       seededRef.current = true;
     };
 
-    // Initial load always seeds the editor.
+    // Initial load seeds the editor, around anything the user has got to first.
+    //
+    // A note opened and renamed straight away is still waiting for its body
+    // when the rename is made, and seeding on top of that put the server's name
+    // back over what had just been typed. The rename was then not merely undone
+    // on screen — the save that followed compared against the *server's* title,
+    // found it unchanged, and sent no rename at all, so the note kept the old
+    // name for good. What the server holds is still recorded either way,
+    // because that is the baseline the next save compares against.
     if (!seededRef.current) {
-      apply();
+      apply(true);
       return;
     }
 
@@ -436,24 +497,36 @@ export default function NoteEditorPage() {
     [noteId, queryClient, awaitDek, broadcastFileUpdate, currentUser?.id, versionGuard, toast]
   );
 
-  function scheduleAutosave(nextBlocks: Block[], nextTitle: string) {
+  /**
+   * Save what the editor holds when the timer fires, not what it held when the
+   * change was made — the two differ whenever a title edit and a body edit land
+   * in the same debounce window, and the second used to silently drop the
+   * first. See `titleRef`/`blocksRef`.
+   */
+  function scheduleAutosave() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     dirtyRef.current = true;
     editSeqRef.current += 1;
     setSaveStatus('idle');
-    const serialized = serializeBlocks(nextBlocks);
-    debounceRef.current = setTimeout(() => save(serialized, nextTitle), AUTOSAVE_DELAY_MS);
+    debounceRef.current = setTimeout(
+      () => save(serializeBlocks(blocksRef.current), titleRef.current),
+      AUTOSAVE_DELAY_MS,
+    );
   }
 
   function handleBlocksChange(nextBlocks: Block[]) {
+    blocksTouchedRef.current = true;
+    blocksRef.current = nextBlocks;
     setBlocks(nextBlocks);
-    scheduleAutosave(nextBlocks, title);
+    scheduleAutosave();
   }
 
   function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
+    titleTouchedRef.current = true;
+    titleRef.current = val;
     setTitle(val);
-    scheduleAutosave(blocks, val);
+    scheduleAutosave();
   }
 
   useEffect(() => {
@@ -462,14 +535,14 @@ export default function NoteEditorPage() {
 
   const handleManualSave = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    save(serializeBlocks(blocks), title);
-  }, [blocks, title, save]);
+    save(serializeBlocks(blocksRef.current), titleRef.current);
+  }, [save]);
 
   const handleBack = useCallback(async () => {
     if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
-    await save(serializeBlocks(blocks), title);
+    await save(serializeBlocks(blocksRef.current), titleRef.current);
     router.push('/drive');
-  }, [blocks, title, save, router]);
+  }, [save, router]);
 
   const handleNewNote = useCallback(async () => {
     const newNote = await createNote('Untitled note');

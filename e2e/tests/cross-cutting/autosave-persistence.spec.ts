@@ -114,6 +114,25 @@ test.describe('Autosave persistence — notes', () => {
     await page.getByRole('button', { name: /new note/i }).first().click();
     await expect(page).toHaveURL(/\/notes\//, { timeout: 15_000 });
 
+    // Wait for the rename, which is the last of the two writes this test
+    // asserts on: a note is a Drive file, so the body goes through the
+    // encrypted autosave and the title through a rename, and the rename is
+    // issued only *after* the body write answers (it is metadata, saved
+    // best-effort alongside the version-guarded content write). Waiting for "a
+    // write to /drive/files" returns on the body instead and leaves the reload
+    // racing a rename that has not been sent yet — which is how this test came
+    // back with a note still called "Untitled note".
+    //
+    // Armed before the first keystroke, because the autosave is on a timer: the
+    // edits below can take longer than the debounce, and a listener added after
+    // the save has gone waits for a second one that never comes.
+    const titleSaved = page.waitForResponse(
+      (r) =>
+        /\/api\/v1\/drive\/files\/[^/]+$/.test(new URL(r.url()).pathname) &&
+        r.request().method() === 'PATCH',
+      { timeout: 30_000 },
+    );
+
     // Fill in the title
     await page.getByLabel('Note title').fill('Autosave Note Title');
 
@@ -129,14 +148,7 @@ test.describe('Autosave persistence — notes', () => {
     // Blur back to title to trigger save
     await page.getByLabel('Note title').click();
 
-    // Wait for the API save. A note is a Drive file: the body goes through the
-    // encrypted autosave and the title through a rename, both on /drive/files.
-    await page.waitForResponse(
-      (r) =>
-        r.url().includes('/api/v1/drive/files/') &&
-        ['PUT', 'PATCH', 'POST'].includes(r.request().method()),
-      { timeout: 15_000 },
-    );
+    await titleSaved;
 
     await page.reload();
 

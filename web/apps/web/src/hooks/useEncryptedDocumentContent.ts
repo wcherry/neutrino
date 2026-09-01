@@ -153,7 +153,16 @@ export function useEncryptedDocumentContent({
     // lock notification must not re-fetch it.  The owner check matters after a
     // user switch: the key in hand belongs to whoever was signed in when it was
     // resolved, and re-sealing DEKs to the wrong identity is unrecoverable.
-    if (dekRef.current && dekOwnerRef.current === owner) return;
+    //
+    // `setDekResolved(true)` and not a bare `return`: the run that fetched this
+    // key may have been cancelled by the very notification that brought us back
+    // here, in which case its `finally` skipped the flag and only this branch is
+    // left to set it.  Leaving it false strands every caller gated on it — the
+    // note editor renders no blocks at all, forever.
+    if (dekRef.current && dekOwnerRef.current === owner) {
+      setDekResolved(true);
+      return;
+    }
     dekRef.current = null;
 
     let cancelled = false;
