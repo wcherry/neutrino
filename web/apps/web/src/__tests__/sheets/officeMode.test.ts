@@ -207,7 +207,7 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
     const { result, setData } = setupHook();
     await result.current.load();
 
-    expect(mockXlsxRead).not.toHaveBeenCalled();
+    expect(mockReadXlsx).not.toHaveBeenCalled();
     expect(setData).not.toHaveBeenCalled();
   });
 
