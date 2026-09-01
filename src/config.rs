@@ -60,8 +60,10 @@ pub struct OAuthConfig {
 /// it back with the user's JWT (`POST /connections/google/complete`).
 pub const GOOGLE_REDIRECT_PATH: &str = "/calendar/settings/oauth/google/callback";
 
-/// Outlook has no such page yet, so it still redirects at the API route.
-pub const OUTLOOK_REDIRECT_PATH: &str = "/api/v1/calendar/connections/outlook/callback";
+/// The same for Microsoft, and for the same reason: the redirect used to land on
+/// the API route, which is behind the `AuthenticatedUser` extractor and so
+/// answered Microsoft's token-less navigation with a 401 (issue #159).
+pub const OUTLOOK_REDIRECT_PATH: &str = "/calendar/settings/oauth/outlook/callback";
 
 impl OAuthConfig {
     /// The redirect URI to hand Google, and to repeat verbatim at code exchange —
@@ -259,11 +261,11 @@ mod tests {
         );
     }
 
-    /// The Google callback is a page in the web app, not an API route: the
-    /// redirect carries no `Authorization` header, so the code has to come back
-    /// through an authenticated POST.
+    /// Both callbacks are pages in the web app, not API routes: the redirect
+    /// carries no `Authorization` header, so the code has to come back through
+    /// an authenticated POST.
     #[test]
-    fn google_redirects_to_the_web_app_and_outlook_to_the_api_route() {
+    fn both_providers_redirect_to_the_web_app() {
         let cfg = cfg(None, None);
         assert_eq!(
             cfg.google_redirect_uri(Some("https://x.test")),
@@ -271,7 +273,7 @@ mod tests {
         );
         assert_eq!(
             cfg.outlook_redirect_uri(Some("https://x.test")),
-            "https://x.test/api/v1/calendar/connections/outlook/callback"
+            "https://x.test/calendar/settings/oauth/outlook/callback"
         );
     }
 

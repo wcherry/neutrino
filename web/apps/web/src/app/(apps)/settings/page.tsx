@@ -12,6 +12,7 @@ import { clearDriveImageCache } from '@/lib/driveImages';
 import { getKeyringState, adoptKeyPair } from '@neutrino/auth';
 import { requestEncryptionGate } from '@/components/E2EEUnlockGate';
 import { KeyManagementPanel } from './KeyManagementPanel';
+import { PROVIDER_LABELS, connectFailureMessage } from './connectErrors';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
@@ -56,12 +57,6 @@ const DAY_END_OPTIONS: { value: number; label: string }[] = Array.from(
   { length: 24 },
   (_, i) => ({ value: i + 1, label: fmtHour(i + 1) })
 );
-
-const PROVIDER_LABELS: Record<ConnectionProvider, string> = {
-  google: 'Google Calendar',
-  outlook: 'Outlook / Microsoft 365',
-  apple: 'Apple Calendar (iCloud)',
-};
 
 const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
   google: 'Sync via Google Calendar API',
@@ -455,11 +450,13 @@ const qc = useQueryClient();
   const connectGoogle = useMutation({
     mutationFn: () => calendarApi.connectGoogle(),
     onSuccess: ({ authUrl }) => { window.location.href = authUrl; },
+    onError: (err) => toastError(connectFailureMessage('google', err)),
   });
 
   const connectOutlook = useMutation({
     mutationFn: () => calendarApi.connectOutlook(),
     onSuccess: ({ authUrl }) => { window.location.href = authUrl; },
+    onError: (err) => toastError(connectFailureMessage('outlook', err)),
   });
 
   const connectApple = useMutation({
@@ -468,6 +465,7 @@ const qc = useQueryClient();
       qc.invalidateQueries({ queryKey: ['calendar-connections'] });
       setShowAppleModal(false);
     },
+    onError: (err) => toastError(connectFailureMessage('apple', err)),
   });
 
   const disconnect = useMutation({

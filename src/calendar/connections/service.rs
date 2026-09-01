@@ -95,8 +95,15 @@ impl ConnectionsService {
 
     // ── Outlook OAuth ─────────────────────────────────────────────────────────
 
-    pub fn initiate_outlook(&self, origin: Option<&str>) -> Result<OAuthInitResponse, ApiError> {
-        let state = Uuid::new_v4().to_string();
+    /// As [`ConnectionsService::initiate_google`]. The caller's id goes in the
+    /// state so the redirect endpoint — which the browser reaches with no JWT —
+    /// still knows whose connection this is.
+    pub fn initiate_outlook(
+        &self,
+        user_id: &str,
+        origin: Option<&str>,
+    ) -> Result<OAuthInitResponse, ApiError> {
+        let state = format!("{}:{}", user_id, Uuid::new_v4());
         let redirect_uri = self.oauth.outlook_redirect_uri(origin);
         let auth_url = outlook::build_auth_url(&self.oauth, &redirect_uri, &state)?;
         Ok(OAuthInitResponse { auth_url })

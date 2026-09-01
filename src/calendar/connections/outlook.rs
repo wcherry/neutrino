@@ -305,3 +305,52 @@ pub fn parse_outlook_dt(odt: &OutlookDateTimeValue) -> Option<NaiveDateTime> {
 pub fn is_removed(ev: &OutlookEvent) -> bool {
     ev.removed.is_some()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(client_id: Option<&str>) -> OAuthConfig {
+        OAuthConfig {
+            google_client_id: None,
+            google_client_secret: None,
+            google_redirect_uri: None,
+            outlook_client_id: client_id.map(str::to_string),
+            outlook_client_secret: Some("secret".into()),
+            outlook_redirect_uri: None,
+            base_url: "http://localhost:8080".into(),
+        }
+    }
+
+    /// Issue #159: this is the error a deployment that never set
+    /// `OUTLOOK_CLIENT_ID` gets, and the frontend has to show it rather than
+    /// swallow it — so it stays a 400 with a message naming the missing var.
+    #[test]
+    fn says_which_variable_is_missing_when_outlook_is_not_configured() {
+        let err = build_auth_url(&cfg(None), "https://x.test/cb", "user:nonce").unwrap_err();
+        assert_eq!(err.status, 400);
+        assert!(err.message.contains("OUTLOOK_CLIENT_ID"), "{}", err.message);
+    }
+
+    #[test]
+    fn carries_the_redirect_uri_and_state_into_the_authorize_url() {
+        let url = build_auth_url(&cfg(Some("client-id")), "https://x.test/cb", "user:nonce")
+            .expect("configured");
+        let parsed = Url::parse(&url).unwrap();
+        let pairs: Vec<(String, String)> = parsed
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        let get = |key: &str| {
+            pairs
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
+        assert!(url.starts_with(AUTH_URL));
+        assert_eq!(get("client_id"), Some("client-id"));
+        assert_eq!(get("redirect_uri"), Some("https://x.test/cb"));
+        assert_eq!(get("state"), Some("user:nonce"));
+        assert_eq!(get("response_type"), Some("code"));
+    }
+}

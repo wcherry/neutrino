@@ -54,6 +54,13 @@ pub struct CompleteGoogleRequest {
     pub code: String,
 }
 
+/// The same, for Microsoft.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompleteOutlookRequest {
+    pub code: String,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TriggerSyncResponse {

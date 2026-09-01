@@ -69,7 +69,7 @@ const optionalVars = [
   { name: 'GOOGLE_REDIRECT_URI', default: '<origin>/calendar/settings/oauth/google/callback', desc: 'OAuth redirect URI. Derived from the address the browser reached the app on, so it normally needs no setting — register that URL in the Google console. Set it only to override.' },
   { name: 'OUTLOOK_CLIENT_ID', default: '(optional)', desc: 'Microsoft OAuth client ID, for calendar sync.' },
   { name: 'OUTLOOK_CLIENT_SECRET', default: '(optional)', desc: 'Microsoft OAuth client secret.' },
-  { name: 'OUTLOOK_REDIRECT_URI', default: '<origin>/api/v1/calendar/connections/outlook/callback', desc: 'Microsoft OAuth redirect URI, derived the same way.' },
+  { name: 'OUTLOOK_REDIRECT_URI', default: '<origin>/calendar/settings/oauth/outlook/callback', desc: 'Microsoft OAuth redirect URI, derived the same way — register that URL in the Azure portal.' },
 ];
 
 function VarTable({ rows }: { rows: { name: string; default: string; desc: string }[] }) {

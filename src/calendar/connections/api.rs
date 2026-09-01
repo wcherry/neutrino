@@ -1,6 +1,6 @@
 use crate::calendar::connections::dto::{
-    CompleteGoogleRequest, ConnectAppleRequest, ConnectionResponse, ListConnectionsResponse,
-    OAuthInitResponse, TriggerSyncRequest, TriggerSyncResponse,
+    CompleteGoogleRequest, CompleteOutlookRequest, ConnectAppleRequest, ConnectionResponse,
+    ListConnectionsResponse, OAuthInitResponse, TriggerSyncRequest, TriggerSyncResponse,
 };
 use crate::calendar::connections::service::ConnectionsService;
 use crate::shared::{ApiError, AuthenticatedUser};
@@ -199,18 +199,20 @@ pub async fn complete_google(
 pub async fn initiate_outlook(
     req: HttpRequest,
     state: web::Data<ConnectionsApiState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
 ) -> Result<web::Json<OAuthInitResponse>, ApiError> {
     let result = state
         .connections_service
-        .initiate_outlook(request_origin(&req).as_deref())?;
+        .initiate_outlook(&user.user_id, request_origin(&req).as_deref())?;
     Ok(web::Json(result))
 }
 
-/// Complete the Outlook Calendar OAuth flow.
+/// Handle the redirect Microsoft sends back after the user grants access.
 ///
-/// Exchanges the authorization code Microsoft returned for tokens and stores the resulting
-/// connection.
+/// Unauthenticated, for the same reason as the Google callback: the browser arrives here
+/// without a Bearer token, so the caller is identified from the `state` parameter minted by
+/// `POST /connections/outlook`. On success it stores the connection and 302s to
+/// `/calendar/settings`.
 #[utoipa::path(
     get,
     path = "/api/v1/connections/outlook/callback",
@@ -219,28 +221,70 @@ pub async fn initiate_outlook(
         ("state" = Option<String>, Query, description = "State parameter"),
     ),
     responses(
-        (status = 200, description = "Connection established", body = ConnectionResponse),
+        (status = 302, description = "Redirect to /calendar/settings on success"),
         (status = 400, description = "OAuth error"),
     ),
-    security(("bearer_auth" = [])),
     tag = "connections"
 )]
 #[get("/connections/outlook/callback")]
 pub async fn outlook_callback(
     req: HttpRequest,
     state: web::Data<ConnectionsApiState>,
-    user: AuthenticatedUser,
     query: web::Query<OAuthCallbackQuery>,
-) -> Result<web::Json<ConnectionResponse>, ApiError> {
+) -> Result<HttpResponse, ApiError> {
     if let Some(err) = &query.error {
         return Err(ApiError::bad_request(&format!(
             "Outlook OAuth error: {}",
             err
         )));
     }
-    let conn = state
+    let oauth_state = query.state.as_deref().unwrap_or("");
+    let user_id = oauth_state
+        .split(':')
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| ApiError::bad_request("Invalid OAuth state"))?;
+    let user = AuthenticatedUser {
+        user_id: user_id.to_string(),
+        email: String::new(),
+        token: String::new(),
+        is_admin: false,
+    };
+    state
         .connections_service
         .connect_outlook(&user, request_origin(&req).as_deref(), &query.code)
+        .await?;
+    Ok(HttpResponse::Found()
+        .insert_header((header::LOCATION, "/calendar/settings"))
+        .finish())
+}
+
+/// Finish the Outlook Calendar OAuth flow.
+///
+/// The counterpart of `/connections/google/complete`: the frontend callback page POSTs the
+/// authorization code it captured from the redirect URL, with the user's JWT, and this
+/// exchanges it for tokens and stores the connection.
+#[utoipa::path(
+    post,
+    path = "/api/v1/connections/outlook/complete",
+    request_body = CompleteOutlookRequest,
+    responses(
+        (status = 200, description = "Outlook Calendar connection established", body = ConnectionResponse),
+        (status = 400, description = "OAuth code exchange failed"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "connections"
+)]
+#[post("/connections/outlook/complete")]
+pub async fn complete_outlook(
+    req: HttpRequest,
+    state: web::Data<ConnectionsApiState>,
+    user: AuthenticatedUser,
+    body: web::Json<CompleteOutlookRequest>,
+) -> Result<web::Json<ConnectionResponse>, ApiError> {
+    let conn = state
+        .connections_service
+        .connect_outlook(&user, request_origin(&req).as_deref(), &body.code)
         .await?;
     Ok(web::Json(conn))
 }
@@ -341,6 +385,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(complete_google)
         .service(initiate_outlook)
         .service(outlook_callback)
+        .service(complete_outlook)
         .service(connect_apple)
         .service(disconnect_connection)
         .service(trigger_sync);
@@ -355,12 +400,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         complete_google,
         initiate_outlook,
         outlook_callback,
+        complete_outlook,
         connect_apple,
         disconnect_connection,
         trigger_sync,
     ),
     components(schemas(
         CompleteGoogleRequest,
+        CompleteOutlookRequest,
         ConnectAppleRequest,
         ConnectionResponse,
         ListConnectionsResponse,
