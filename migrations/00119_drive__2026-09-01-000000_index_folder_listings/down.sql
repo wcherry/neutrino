@@ -1,0 +1,4 @@
+DROP INDEX idx_folders_parent_listing_name;
+DROP INDEX idx_files_folder_listing_created_at;
+DROP INDEX idx_files_folder_listing_updated_at;
+DROP INDEX idx_files_folder_listing_name;

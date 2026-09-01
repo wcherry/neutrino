@@ -1,10 +1,11 @@
+use crate::drive::filesystem::dto::FolderContentsOrderField;
 use crate::drive::filesystem::model::{
     FolderRecord, NewFolderRecord, NewShortcutRecord, ShortcutRecord, TrashFolderRecord,
     UpdateFolderRecord,
 };
 use crate::drive::storage::model::FileRecord;
 use crate::schema::{file_versions, files, folders, shortcuts};
-use crate::shared::ApiError;
+use crate::shared::{ApiError, ListQueryParams, OrderDirection, SqlPage};
 use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -32,6 +33,20 @@ fn delete_version_rows(
             ApiError::internal("Database error")
         })?;
     Ok(())
+}
+
+/// The sort one folder-contents listing resolves to.
+///
+/// Both halves fall back the way [`apply_list_query`](crate::shared::apply_list_query)
+/// falls back, so a query naming neither still comes back name-ascending —
+/// which is what these listings returned when the sort was applied in Rust.
+fn listing_order(
+    query: &ListQueryParams<FolderContentsOrderField>,
+) -> (FolderContentsOrderField, OrderDirection) {
+    (
+        query.order_by.unwrap_or(FolderContentsOrderField::Name),
+        query.direction.unwrap_or(OrderDirection::Asc),
+    )
 }
 
 pub struct FilesystemRepository {
@@ -204,28 +219,50 @@ impl FilesystemRepository {
         Ok(ids)
     }
 
+    /// The subfolders of one folder, as a single sorted page.
+    ///
+    /// `parent_id` of `None` lists the drive root.
     pub fn list_subfolders(
         &self,
         user_id: &str,
         parent_id: Option<&str>,
+        query: &ListQueryParams<FolderContentsOrderField>,
     ) -> Result<Vec<FolderRecord>, ApiError> {
         let mut conn = self.get_conn()?;
+        let page = SqlPage::from_query(query);
 
-        let result = match parent_id {
-            Some(pid) => folders::table
-                .filter(folders::user_id.eq(user_id))
-                .filter(folders::parent_id.eq(pid))
-                .filter(folders::deleted_at.is_null())
-                .select(FolderRecord::as_select())
-                .order(folders::name.asc())
-                .load(&mut conn),
-            None => folders::table
-                .filter(folders::user_id.eq(user_id))
-                .filter(folders::parent_id.is_null())
-                .filter(folders::deleted_at.is_null())
-                .select(FolderRecord::as_select())
-                .order(folders::name.asc())
-                .load(&mut conn),
+        let mut base = folders::table
+            .filter(folders::user_id.eq(user_id))
+            .filter(folders::deleted_at.is_null())
+            .select(FolderRecord::as_select())
+            .limit(page.limit)
+            .offset(page.offset)
+            .into_boxed();
+
+        base = match parent_id {
+            Some(pid) => base.filter(folders::parent_id.eq(pid.to_string())),
+            None => base.filter(folders::parent_id.is_null()),
+        };
+
+        let result = match listing_order(query) {
+            (FolderContentsOrderField::Name, OrderDirection::Asc) => {
+                base.order(folders::name.asc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::Name, OrderDirection::Desc) => {
+                base.order(folders::name.desc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::CreatedAt, OrderDirection::Asc) => {
+                base.order(folders::created_at.asc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::CreatedAt, OrderDirection::Desc) => {
+                base.order(folders::created_at.desc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::UpdatedAt, OrderDirection::Asc) => {
+                base.order(folders::updated_at.asc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::UpdatedAt, OrderDirection::Desc) => {
+                base.order(folders::updated_at.desc()).load(&mut conn)
+            }
         };
 
         result.map_err(|e| {
@@ -234,28 +271,63 @@ impl FilesystemRepository {
         })
     }
 
+    /// The files directly inside one folder, as a single sorted page,
+    /// optionally narrowed to a set of MIME `LIKE` patterns.
+    ///
+    /// `folder_id` of `None` lists the drive root.
+    ///
+    /// Sorting, the type filter and the page window all belong in SQL rather
+    /// than in the caller because a `FileRecord` carries `cover_thumbnail` —
+    /// up to ~100KB of base64 per row. Loading the whole folder to hand back
+    /// `limit` rows means reading every one of those thumbnails off disk only
+    /// to drop it, which is what made this listing take twenty seconds in a
+    /// drive holding a Google Takeout import (issue #147).
     pub fn list_files_in_folder(
         &self,
         user_id: &str,
         folder_id: Option<&str>,
+        query: &ListQueryParams<FolderContentsOrderField>,
+        patterns: Option<&[&'static str]>,
     ) -> Result<Vec<FileRecord>, ApiError> {
         let mut conn = self.get_conn()?;
+        let page = SqlPage::from_query(query);
 
-        let result = match folder_id {
-            Some(fid) => files::table
-                .filter(files::user_id.eq(user_id))
-                .filter(files::folder_id.eq(fid))
-                .filter(files::deleted_at.is_null())
-                .select(FileRecord::as_select())
-                .order(files::name.asc())
-                .load(&mut conn),
-            None => files::table
-                .filter(files::user_id.eq(user_id))
-                .filter(files::folder_id.is_null())
-                .filter(files::deleted_at.is_null())
-                .select(FileRecord::as_select())
-                .order(files::name.asc())
-                .load(&mut conn),
+        let mut base = files::table
+            .filter(files::user_id.eq(user_id))
+            .filter(files::deleted_at.is_null())
+            .select(FileRecord::as_select())
+            .limit(page.limit)
+            .offset(page.offset)
+            .into_boxed();
+
+        base = match folder_id {
+            Some(fid) => base.filter(files::folder_id.eq(fid.to_string())),
+            None => base.filter(files::folder_id.is_null()),
+        };
+
+        if let Some(patterns) = patterns {
+            base = base.filter(Self::mime_matches(patterns));
+        }
+
+        let result = match listing_order(query) {
+            (FolderContentsOrderField::Name, OrderDirection::Asc) => {
+                base.order(files::name.asc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::Name, OrderDirection::Desc) => {
+                base.order(files::name.desc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::CreatedAt, OrderDirection::Asc) => {
+                base.order(files::created_at.asc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::CreatedAt, OrderDirection::Desc) => {
+                base.order(files::created_at.desc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::UpdatedAt, OrderDirection::Asc) => {
+                base.order(files::updated_at.asc()).load(&mut conn)
+            }
+            (FolderContentsOrderField::UpdatedAt, OrderDirection::Desc) => {
+                base.order(files::updated_at.desc()).load(&mut conn)
+            }
         };
 
         result.map_err(|e| {
@@ -1050,6 +1122,35 @@ mod tests {
         files.iter().map(|f| f.name.as_str()).collect()
     }
 
+    fn folder_names(folders: &[FolderRecord]) -> Vec<&str> {
+        folders.iter().map(|f| f.name.as_str()).collect()
+    }
+
+    /// A listing query that asks for nothing in particular: no window, no sort.
+    /// The repository is expected to fall back to the whole folder, name-ascending.
+    fn all() -> ListQueryParams<FolderContentsOrderField> {
+        ListQueryParams {
+            limit: None,
+            offset: None,
+            order_by: None,
+            direction: None,
+        }
+    }
+
+    fn page(
+        limit: Option<i64>,
+        offset: Option<i64>,
+        order_by: Option<FolderContentsOrderField>,
+        direction: Option<OrderDirection>,
+    ) -> ListQueryParams<FolderContentsOrderField> {
+        ListQueryParams {
+            limit,
+            offset,
+            order_by,
+            direction,
+        }
+    }
+
     /// `names`, order-independent. Used against `list_recent_files`, whose
     /// `updated_at desc` order is unspecified between rows inserted in the
     /// same instant — unlike the old name-sorted whole-drive type listing.
@@ -1247,6 +1348,210 @@ mod tests {
             .expect("failed to insert test file");
     }
 
+    /// A named file of a chosen MIME type inside `folder_id`, with `updated_at`
+    /// forced to a distinct instant — the insert default is `CURRENT_TIMESTAMP`,
+    /// which gives every row in a test the same second and makes a recency sort
+    /// untestable.
+    fn insert_listed_file(
+        repo: &FilesystemRepository,
+        id: &str,
+        user: &str,
+        folder_id: Option<&str>,
+        name: &str,
+        mime: &str,
+        updated_at_minute: i64,
+    ) {
+        let mut conn = repo.get_conn().unwrap();
+        diesel::insert_into(files::table)
+            .values(NewFileRecord {
+                id,
+                user_id: user,
+                name,
+                size_bytes: 1,
+                mime_type: mime,
+                storage_path: id,
+                folder_id,
+                encrypted_metadata: None,
+            })
+            .execute(&mut conn)
+            .expect("failed to insert test file");
+
+        let stamp = chrono::DateTime::from_timestamp(updated_at_minute * 60, 0)
+            .unwrap()
+            .naive_utc();
+        diesel::update(files::table.filter(files::id.eq(id)))
+            .set((files::updated_at.eq(stamp), files::created_at.eq(stamp)))
+            .execute(&mut conn)
+            .expect("failed to stamp test file");
+    }
+
+    /// Four files in one folder: two photos, two not, with recency running
+    /// opposite to name order so a sort test cannot pass by accident.
+    fn seed_listing_folder(repo: &FilesystemRepository) {
+        insert_folder(repo, "album", "user-1", None);
+        insert_listed_file(repo, "f1", "user-1", Some("album"), "a.png", "image/png", 4);
+        insert_listed_file(repo, "f2", "user-1", Some("album"), "b.txt", "text/plain", 3);
+        insert_listed_file(repo, "f3", "user-1", Some("album"), "c.jpg", "image/jpeg", 2);
+        insert_listed_file(repo, "f4", "user-1", Some("album"), "d.txt", "text/plain", 1);
+    }
+
+    #[test]
+    fn folder_listing_defaults_to_the_whole_folder_name_ascending() {
+        let repo = test_repo();
+        seed_listing_folder(&repo);
+
+        let files = repo
+            .list_files_in_folder("user-1", Some("album"), &all(), None)
+            .unwrap();
+
+        assert_eq!(names(&files), vec!["a.png", "b.txt", "c.jpg", "d.txt"]);
+    }
+
+    #[test]
+    fn folder_listing_pages_in_sql() {
+        let repo = test_repo();
+        seed_listing_folder(&repo);
+
+        let files = repo
+            .list_files_in_folder(
+                "user-1",
+                Some("album"),
+                &page(Some(2), Some(1), None, None),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(names(&files), vec!["b.txt", "c.jpg"]);
+    }
+
+    #[test]
+    fn folder_listing_sorts_by_the_requested_field_and_direction() {
+        let repo = test_repo();
+        seed_listing_folder(&repo);
+
+        let files = repo
+            .list_files_in_folder(
+                "user-1",
+                Some("album"),
+                &page(
+                    None,
+                    None,
+                    Some(FolderContentsOrderField::UpdatedAt),
+                    Some(OrderDirection::Desc),
+                ),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(names(&files), vec!["a.png", "b.txt", "c.jpg", "d.txt"]);
+
+        let oldest_first = repo
+            .list_files_in_folder(
+                "user-1",
+                Some("album"),
+                &page(
+                    Some(2),
+                    None,
+                    Some(FolderContentsOrderField::UpdatedAt),
+                    Some(OrderDirection::Asc),
+                ),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(names(&oldest_first), vec!["d.txt", "c.jpg"]);
+    }
+
+    /// The type filter has to be applied before `LIMIT`, not after it: filtering
+    /// a page of two that happens to hold one photo would return one photo when
+    /// the folder holds two.
+    #[test]
+    fn folder_listing_filters_by_type_before_paging() {
+        let repo = test_repo();
+        seed_listing_folder(&repo);
+
+        let photos = repo
+            .list_files_in_folder(
+                "user-1",
+                Some("album"),
+                &page(Some(2), None, None, None),
+                Some(DriveFileType::Photo.mime_patterns()),
+            )
+            .unwrap();
+
+        assert_eq!(names(&photos), vec!["a.png", "c.jpg"]);
+    }
+
+    /// SQLite reads a negative `LIMIT` as "no limit", the opposite of what the
+    /// in-memory paging this replaced did with one.
+    #[test]
+    fn folder_listing_treats_a_non_positive_limit_as_an_empty_page() {
+        let repo = test_repo();
+        seed_listing_folder(&repo);
+
+        for limit in [0, -1] {
+            let files = repo
+                .list_files_in_folder(
+                    "user-1",
+                    Some("album"),
+                    &page(Some(limit), Some(-5), None, None),
+                    None,
+                )
+                .unwrap();
+            assert!(names(&files).is_empty(), "limit {limit} returned rows");
+        }
+    }
+
+    #[test]
+    fn root_listing_pages_the_files_with_no_folder() {
+        let repo = test_repo();
+        insert_folder(&repo, "album", "user-1", None);
+        insert_listed_file(&repo, "r1", "user-1", None, "root-b", "text/plain", 1);
+        insert_listed_file(&repo, "r2", "user-1", None, "root-a", "text/plain", 2);
+        insert_listed_file(
+            &repo,
+            "r3",
+            "user-1",
+            Some("album"),
+            "nested",
+            "text/plain",
+            3,
+        );
+
+        let files = repo
+            .list_files_in_folder("user-1", None, &page(Some(1), None, None, None), None)
+            .unwrap();
+
+        assert_eq!(names(&files), vec!["root-a"]);
+    }
+
+    #[test]
+    fn subfolder_listing_sorts_and_pages_in_sql() {
+        let repo = test_repo();
+        insert_folder(&repo, "top", "user-1", None);
+        insert_folder(&repo, "a-child", "user-1", Some("top"));
+        insert_folder(&repo, "b-child", "user-1", Some("top"));
+        insert_folder(&repo, "c-child", "user-1", Some("top"));
+        insert_folder(&repo, "elsewhere", "user-1", None);
+
+        let first_two = repo
+            .list_subfolders("user-1", Some("top"), &page(Some(2), None, None, None))
+            .unwrap();
+        assert_eq!(folder_names(&first_two), vec!["a-child", "b-child"]);
+
+        let descending = repo
+            .list_subfolders(
+                "user-1",
+                Some("top"),
+                &page(Some(1), None, None, Some(OrderDirection::Desc)),
+            )
+            .unwrap();
+        assert_eq!(folder_names(&descending), vec!["c-child"]);
+
+        let root = repo.list_subfolders("user-1", None, &all()).unwrap();
+        assert_eq!(folder_names(&root), vec!["elsewhere", "top"]);
+    }
+
     fn is_trashed(repo: &FilesystemRepository, file_id: &str) -> bool {
         let mut conn = repo.get_conn().unwrap();
         files::table
@@ -1271,7 +1576,7 @@ mod tests {
         assert!(is_trashed(&repo, "inside"));
         assert!(!is_trashed(&repo, "elsewhere"));
         assert!(repo
-            .list_files_in_folder("user-1", Some("docs"))
+            .list_files_in_folder("user-1", Some("docs"), &all(), None)
             .unwrap()
             .is_empty());
     }
@@ -1287,7 +1592,10 @@ mod tests {
         repo.trash_folder("top", "user-1").unwrap();
 
         assert!(is_trashed(&repo, "deep-file"));
-        assert!(repo.list_subfolders("user-1", Some("top")).unwrap().is_empty());
+        assert!(repo
+            .list_subfolders("user-1", Some("top"), &all())
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -1316,7 +1624,11 @@ mod tests {
         assert!(!is_trashed(&repo, "inside"));
         assert!(!is_trashed(&repo, "nested-file"));
         assert_eq!(
-            names(&repo.list_files_in_folder("user-1", Some("docs")).unwrap()),
+            names(
+                &repo
+                    .list_files_in_folder("user-1", Some("docs"), &all(), None)
+                    .unwrap()
+            ),
             vec!["inside"]
         );
     }
