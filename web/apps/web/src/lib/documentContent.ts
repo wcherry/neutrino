@@ -61,20 +61,41 @@ function decryptStored(stored: Uint8Array, dek: Uint8Array): Uint8Array {
  *
  * Docs, Sheets and Slides store OOXML now (issue #127), so for those the body
  * is a zip and decoding it as UTF-8 gives back noise. What the callers here
- * want is the model packed inside it — the same JSON the bespoke format stored
- * directly — so a package is unwrapped and everything else is passed through.
+ * want is the model — the same JSON the bespoke format stored directly.
  *
- * A package with no model (a Word file, one round-tripped through Word) has no
- * such JSON to give, so this returns `''` for it rather than noise. The editors
- * parse the OOXML itself in that case; a preview and a search entry can wait
- * for the file to be opened and saved once.
+ * Two ways to get it, in this order. A package written before its app had a
+ * real OOXML writer carries the model in a `neutrino/model.json` part, and that
+ * is preferred where it exists because the OOXML beside it was only a
+ * projection. Otherwise the model is *read out of the OOXML*, by the same
+ * reader the editor opens the file with — which is what makes a preview of a
+ * `.docx` or an `.xlsx` from anywhere show its contents rather than nothing.
+ *
+ * Slides has no such reader yet, so a deck with no model part still comes back
+ * empty; its preview waits for the file to be opened and saved once. Both
+ * readers are imported dynamically — a preview should not pull the OOXML
+ * layer into the page that merely lists files.
  */
 export async function bodyTextFromStored(
   plain: Uint8Array,
   app: OoxmlApp | undefined,
 ): Promise<string> {
   if (!app || !looksLikeOoxml(plain)) return new TextDecoder().decode(plain);
-  return (await readNeutrinoModel(plain, app)) ?? '';
+  const legacy = await readNeutrinoModel(plain, app);
+  if (legacy) return legacy;
+  try {
+    if (app === 'sheets') {
+      const { readXlsx } = await import('@/lib/ooxml/xlsx/read');
+      return JSON.stringify(await readXlsx(plain));
+    }
+    if (app === 'docs') {
+      const { readDocx } = await import('@/lib/ooxml/docx/read');
+      return JSON.stringify((await readDocx(plain)).doc);
+    }
+  } catch {
+    // Unreadable as its own format: a corrupt package, or one whose parts this
+    // does not know. A preview showing nothing beats one showing an exception.
+  }
+  return '';
 }
 
 /**

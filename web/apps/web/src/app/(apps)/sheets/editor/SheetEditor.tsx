@@ -5,12 +5,12 @@ import { flushSync } from 'react-dom';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { VersionHistoryPanel } from '@/components/VersionHistoryPanel';
 import {
-    sheetsApi, filesystemApi, driveAutosaveEncryptedContent,
+    sheetsApi, filesystemApi, driveAutosaveEncryptedBytes,
     mintFileKey, canEncryptFor,
 } from '@/lib/api';
+import { withOoxmlExtension } from '@/lib/officeFormats';
 import { useToast } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { useUser } from '@neutrino/auth';
@@ -95,26 +95,24 @@ function parseCsvToMap(text: string): Map<string, CellProps> {
     return map;
 }
 
-function parseXlsxToSheets(buffer: ArrayBuffer): { name: string; data: Map<string, CellProps> }[] {
-    const wb = XLSX.read(new Uint8Array(buffer));
-    return wb.SheetNames.map(name => {
-        const ws = wb.Sheets[name];
-        const map = new Map<string, CellProps>();
-        const ref = ws['!ref'];
-        if (ref) {
-            const range = XLSX.utils.decode_range(ref);
-            for (let r = range.s.r; r <= range.e.r; r++) {
-                for (let c = range.s.c; c <= range.e.c; c++) {
-                    const cell = ws[XLSX.utils.encode_cell({ r, c })];
-                    if (!cell || cell.v == null) continue;
-                    const id = `${numToAlpha(c + 1)}${r + 1}`;
-                    const val = cell.w ?? String(cell.v);
-                    if (val !== '') map.set(id, { id, raw: val, value: val, edit: false });
-                }
-            }
-        }
-        return { name, data: map };
-    });
+/**
+ * An uploaded `.xlsx` as tabs of cells.
+ *
+ * Through `readXlsx`, the same reader that opens a stored spreadsheet — so a
+ * workbook dropped in here arrives with its formulas, number formats, fills,
+ * borders and merges, not just its values. This used to be its own pass of
+ * SheetJS at the defaults, reading `cell.w`: a percentage came in as the text
+ * `15%` and a formula did not come in at all.
+ */
+async function parseXlsxToSheets(
+    buffer: ArrayBuffer,
+): Promise<{ name: string; data: Map<string, CellProps> }[]> {
+    const { readXlsx } = await import('@/lib/ooxml/xlsx/read');
+    const file = await readXlsx(new Uint8Array(buffer));
+    return file.sheets.map(sheet => ({
+        name: sheet.name ?? 'Sheet',
+        data: new Map(Object.entries(sheet.cells).map(([id, cell]) => [id, { ...cell, edit: false }])),
+    }));
 }
 
 async function readFileAsText(file: File): Promise<string> {
@@ -1396,10 +1394,15 @@ export function SheetEditor() {
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
-        const serialized = persist.serialize();
+        // The copy is stored the way every spreadsheet is stored — as a real
+        // workbook. This wrote the bespoke JSON body under an `.xlsx` mime type,
+        // which is the copy that opened as its own source code across row 1
+        // (issue #169).
+        const { writeXlsx } = await import('@/lib/ooxml/xlsx/write');
+        const bytes = await writeXlsx(persist.serializeModel());
         const newSheet = await sheetsApi.createSheet({ title: newTitle });
         const dek = await mintFileKey(currentUser?.id, newSheet.id);
-        await driveAutosaveEncryptedContent(newSheet.id, serialized, 'sheet.json', dek);
+        await driveAutosaveEncryptedBytes(newSheet.id, bytes, withOoxmlExtension(newTitle, 'sheets'), dek);
         router.push(`/sheets/editor?id=${newSheet.id}`);
     }, [persist, router, currentUser?.id, toast]);
 
@@ -1417,7 +1420,7 @@ export function SheetEditor() {
             parsed = [{ name: file.name.replace(/\.csv$/i, ''), data: parseCsvToMap(text) }];
         } else {
             const buf = await readFileAsArrayBuffer(file);
-            parsed = parseXlsxToSheets(buf);
+            parsed = await parseXlsxToSheets(buf);
         }
         sheets.replaceAllSheets(parsed);
         persist.save();
@@ -1431,7 +1434,7 @@ export function SheetEditor() {
             sheets.addSheetWithData(name, parseCsvToMap(text));
         } else {
             const buf = await readFileAsArrayBuffer(file);
-            const parsed = parseXlsxToSheets(buf);
+            const parsed = await parseXlsxToSheets(buf);
             for (const { name, data } of parsed) {
                 sheets.addSheetWithData(name, data);
             }

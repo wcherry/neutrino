@@ -6,10 +6,24 @@
  * device (`useEncryptedDocumentContent`). A server-side importer could only
  * write plaintext that the editor would then fail to decrypt.
  *
- * Per document the sequence mirrors what the editor does on a first save:
- * convert the file to the editor's Tiptap JSON, create the doc, mint a DEK and
- * register it, upload the ciphertext as `doc.json`, and hand the flattened
- * text to the local search index.
+ * Per document the sequence mirrors what the editor does on a first save: get
+ * the file into a `.docx`, create the doc, mint a DEK and register it, upload
+ * the ciphertext, and hand the flattened text to the local search index. A
+ * `.docx` is what a document is stored as now (issue #127), and writing the
+ * bespoke `doc.json` body instead is what left every imported document
+ * reporting "Failed to open this file for editing" — issue #169.
+ *
+ * "Get the file into a `.docx`" is the whole of `storedDocxFor`, and for the
+ * format most of an export is in, it is nothing at all: a Google Doc is
+ * exported *as* a `.docx`, so the exported file is stored byte for byte. It
+ * used to be run through mammoth into HTML and on into the editor's Tiptap
+ * JSON, which was the right shape when a document was stored as that JSON and
+ * is a lossy round trip to nowhere now that it is stored as a Word file —
+ * mammoth is built to discard presentation (see `ooxml/docx/read.ts`), so
+ * every colour, alignment, indent, header, footer and footnote in the export
+ * was dropped on the way in and then written back out as a document that never
+ * had them. `.html` and `.txt` exports still convert, because there is nothing
+ * else to do with them.
  *
  * The document's created and modified dates come across too, in a call made
  * after the body is saved — saving is what stamps the file with the current
@@ -29,12 +43,16 @@ import {
   encryptFileKey,
   type KeyPair,
 } from '@neutrino/e2e-crypto';
-import { extractDocText } from '@neutrino/api-docs';
+import { DEFAULT_PAGE_SETUP, extractDocText } from '@neutrino/api-docs';
 import {
   docsApi,
-  driveAutosaveEncryptedContent,
+  driveAutosaveEncryptedBytes,
   encryptionApi,
 } from '@/lib/api';
+import type { LayoutMeta } from '@/lib/docBody';
+import { emptyDocProperties } from '@/lib/docFields';
+import { defaultHeaderFooterConfig } from '@/lib/docHeaderFooter';
+import { withOoxmlExtension } from '@/lib/officeFormats';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { htmlToDocJson, textToDocJson, type PmNode } from './docHtml';
 import { readDocInfo, type DriveDocEntry, type DriveDocInfo } from './driveDocs';
@@ -44,10 +62,42 @@ import { describeError, formatBytes, logFail, logStep, logWarn } from './log';
 import { sanitiseTitle } from './titles';
 import type { ImportItem, ImportProgress, ImportSummary } from './types';
 
-/** The filename every doc body is stored under, as the editor writes it. */
-const CONTENT_FILENAME = 'doc.json';
-
 export const UNTITLED_DOC = 'Untitled document';
+
+/**
+ * The layout an imported document lands with.
+ *
+ * Nothing the converters produce touches any of it — a Takeout export carries
+ * no header, footer, watermark or page setup this reads — so it is the same
+ * blank slate `DocEditor` starts a new document from, and the document opens at
+ * the defaults rather than with them missing.
+ */
+function defaultLayoutMeta(): LayoutMeta {
+  return {
+    headerFooter: defaultHeaderFooterConfig(),
+    headerText: '', footerText: '', showPageNumbers: false,
+    watermarkText: '', bgColor: '', docTheme: 'default',
+    properties: emptyDocProperties(),
+    pageSetup: DEFAULT_PAGE_SETUP,
+  };
+}
+
+/**
+ * A converted document as the `.docx` the editor stores.
+ *
+ * `writeDocx` is the same writer the editor's own save uses, imported here
+ * dynamically: it pulls the ~400KB `docx` package, which has no business in the
+ * import page until a document is actually being written. `collectImageBytes`
+ * decodes the `data:` images an HTML export inlines into real parts of the
+ * package; an image it cannot resolve is written as a placeholder rather than
+ * taking the document's only save down with it.
+ */
+async function buildDocxBytes(doc: PmNode, title: string): Promise<Uint8Array> {
+  const { writeDocx } = await import('@/lib/ooxml/docx/write');
+  const { collectImageBytes } = await import('@/lib/ooxml/docx/images');
+  const model = { doc, meta: defaultLayoutMeta() };
+  return writeDocx(model, { title, images: await collectImageBytes(model) });
+}
 
 export interface DocsImportOptions {
   /** Recreate the folder tree the export recorded, under the destination folder. */
@@ -73,46 +123,62 @@ export interface RunDocsImportArgs {
   signal?: AbortSignal;
 }
 
-// ── Conversion ────────────────────────────────────────────────────────────────
+// ── What gets stored ──────────────────────────────────────────────────────────
 
 /**
- * Convert `.docx` bytes to HTML with mammoth, the same library the docs editor
- * uses to open a raw Word file from Drive (`docxBytesToHtml` in
- * `DocEditor.tsx`, not imported here — reaching into the editor would pull all
- * of it into the import bundle).
+ * One exported file as the `.docx` bytes to store for it.
  *
- * The two style-map entries are the formatting mammoth drops by default:
- * underline carries meaning in a document, and Word's strikethrough character
- * style has no semantic tag of its own.
+ * A Google Doc is exported as a `.docx` and a document is stored as a `.docx`,
+ * so that case is a copy: the export goes in as it came out, and the editor
+ * opens it with `readDocx` exactly as it opens any other Word file in Drive.
+ * There is nothing to gain by taking it apart and rebuilding it, and a great
+ * deal to lose — see the note at the top of this file.
+ *
+ * `.html` and `.txt` have no such shortcut, so they convert (`docHtml.ts`) and
+ * are written out by `buildDocxBytes`.
  */
-export async function docxToHtml(bytes: ArrayBuffer): Promise<string> {
-  const { convertToHtml } = await import('mammoth');
-  const result = await convertToHtml({ arrayBuffer: bytes }, { styleMap: ['u => u', 'strike => s'] });
-  // mammoth reports what it could not represent (unsupported styles, broken
-  // relationships) rather than throwing, so a document that converts to less
-  // than the user expects leaves its explanation here and nowhere else.
-  if (result.messages?.length) {
-    logWarn('docs', 'mammoth had something to say about this file', result.messages.slice(0, 20));
+export async function storedDocxFor(doc: DriveDocEntry, title: string): Promise<Uint8Array> {
+  if (doc.format === 'docx') {
+    const bytes = new Uint8Array(await (await doc.entry.blob()).arrayBuffer());
+    logStep('docs', `storing ${doc.entry.path} as exported`, { docx: formatBytes(bytes.byteLength) });
+    return bytes;
   }
-  return result.value;
+  const converted = doc.format === 'html'
+    ? htmlToDocJson(await doc.entry.text())
+    : textToDocJson(await doc.entry.text());
+  const bytes = await buildDocxBytes(converted, title);
+  logStep('docs', `converted ${doc.entry.path}`, {
+    from: doc.format,
+    docx: formatBytes(bytes.byteLength),
+  });
+  return bytes;
 }
 
-/** Read one exported file and convert it into the editor's document JSON. */
-export async function convertDriveDoc(doc: DriveDocEntry): Promise<PmNode> {
-  switch (doc.format) {
-    case 'docx': {
-      const bytes = await (await doc.entry.blob()).arrayBuffer();
-      const html = await docxToHtml(bytes);
-      logStep('docs', `converted ${doc.entry.path}`, {
-        docx: formatBytes(bytes.byteLength),
-        html: formatBytes(html.length),
-      });
-      return htmlToDocJson(html);
-    }
-    case 'html':
-      return htmlToDocJson(await doc.entry.text());
-    case 'text':
-      return textToDocJson(await doc.entry.text());
+/**
+ * The text to index a stored document by, read back out of the bytes that were
+ * stored.
+ *
+ * Read back rather than kept from the conversion, because for a `.docx` export
+ * there is no conversion to keep it from — and reading it with `readDocx`, the
+ * reader the editor opens the file with, means the index holds what the editor
+ * will show. It doubles as a check that the stored file parses at all.
+ *
+ * A failure here is a warning, not a failed import: the document is already
+ * saved by the time this runs, and reporting a stored file as a failed one
+ * invites a second import of the whole archive. The cost is a document that is
+ * searchable by title only.
+ */
+async function indexTextFor(bytes: Uint8Array, file: string): Promise<string> {
+  try {
+    const { readDocx } = await import('@/lib/ooxml/docx/read');
+    const model = await readDocx(bytes);
+    return extractDocText(JSON.stringify(model.doc));
+  } catch (err) {
+    logWarn('docs', 'could not read the stored document back for the search index', {
+      file,
+      error: describeError(err),
+    });
+    return '';
   }
 }
 
@@ -130,12 +196,17 @@ function titleFor(doc: DriveDocEntry, info: DriveDocInfo | null): string {
 // ── The import ────────────────────────────────────────────────────────────────
 
 /**
- * Encrypt a document's content the way the editor's first save does, and
+ * Encrypt a document's `.docx` the way the editor's first save does, and
  * register the DEK so the editor can decrypt it later.
+ *
+ * The bytes go through the binary-safe transport, never the string one: a
+ * `.docx` is a zip, and a `TextEncoder` round trip through it is not one any
+ * more.
  */
 async function saveEncrypted(
   docId: string,
-  content: string,
+  bytes: Uint8Array,
+  filename: string,
   keyPair: KeyPair,
   userId: string,
 ): Promise<void> {
@@ -144,7 +215,7 @@ async function saveEncrypted(
     encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
     keyVersion: activeKeyVersion(userId) ?? undefined,
   });
-  await driveAutosaveEncryptedContent(docId, content, CONTENT_FILENAME, dek);
+  await driveAutosaveEncryptedBytes(docId, bytes, filename, dek);
 }
 
 export async function runDocsImport({
@@ -234,8 +305,8 @@ export async function runDocsImport({
         continue;
       }
 
-      step = 'converting the file';
-      const content = JSON.stringify(await convertDriveDoc(doc));
+      step = 'reading the file';
+      const bytes = await storedDocxFor(doc, title);
 
       step = 'resolving its folder';
       const parentId =
@@ -247,12 +318,22 @@ export async function runDocsImport({
       const created = await docsApi.createDoc({ title, folderId: parentId });
 
       // Body size is the usual reason a save is rejected where a create was
-      // fine: images arrive from mammoth as data URIs, so one photo-heavy
-      // document can be tens of megabytes.
-      logStep('docs', `saving ${title}`, { id: created.id, body: formatBytes(content.length), encrypted: true });
+      // fine: a document carries its images, so one photo-heavy export is tens
+      // of megabytes.
+      logStep('docs', `saving ${title}`, {
+        id: created.id,
+        body: formatBytes(bytes.byteLength),
+        encrypted: true,
+      });
 
       step = 'saving the encrypted body';
-      await saveEncrypted(created.id, content, encrypting.keyPair, encrypting.userId);
+      await saveEncrypted(
+        created.id,
+        bytes,
+        withOoxmlExtension(title, 'docs'),
+        encrypting.keyPair,
+        encrypting.userId,
+      );
 
       // After the body, not before: saving it is what stamps the file with the
       // current time, so dates written any earlier would be overwritten here.
@@ -269,7 +350,7 @@ export async function runDocsImport({
         id: created.id,
         type: 'document',
         title,
-        content: extractDocText(content),
+        content: await indexTextFor(bytes, file),
       });
 
       items.push({ file, title, status: 'imported' });

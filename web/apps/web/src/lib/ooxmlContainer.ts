@@ -1,47 +1,36 @@
 /**
- * The OOXML package Neutrino stores a spreadsheet or presentation in
- * (issue #127).
+ * The OOXML package Neutrino stored a spreadsheet or presentation in
+ * (issue #127) — now only a presentation, and only until slides catches up.
  *
  * A native document is a real `.docx`/`.xlsx`/`.pptx`, so it has to survive
- * being opened by Excel, PowerPoint or LibreOffice. But what the sheets and
- * slides editors can currently *write* is a lossy projection of what they can
- * hold.
+ * being opened by Excel, PowerPoint or LibreOffice. But what an editor could
+ * *write* used to be a lossy projection of what it could hold, so storing only
+ * the OOXML would have meant every autosave silently deleting work.
  *
- * That is mostly a gap in our serializers, not in OOXML — the format expresses
- * column widths (`<cols>`), conditional formats and charts — though a few here
- * really are library limits: SheetJS cannot write cell styles or charts, and
- * pptxgenjs has no transitions. Either way `buildXlsxWorksheet` writes `{v, t}`
- * per cell and `!ref` and nothing else, and the embed references —
- * `neutrino-drive:<fileId>`, sheet and diagram embeds — are live pointers at
- * other Drive files that no interchange format has a notion of.
+ * So a package carried both. The OOXML parts are the interoperable copy other
+ * tools read; alongside them sat one extra part, `neutrino/model.json`, holding
+ * the editor's own full-fidelity model. On open the model won, and nothing was
+ * lost across a save in Neutrino; when it was missing the editors fell back to
+ * parsing the OOXML, which is how a file from anywhere else opened.
  *
- * Whatever the cause, storing only the OOXML would mean every autosave silently
- * deleted work.
- *
- * So a package carries both. The OOXML parts are the interoperable copy that
- * other tools read; alongside them sits one extra part, `neutrino/model.json`,
- * holding the editor's own full-fidelity model as it was already serialized
- * before this change. On open the model wins, and nothing is lost across a save
- * in Neutrino; when it is missing the editors fall back to parsing the OOXML,
- * which is how an `.xlsx` from anywhere else opens.
- *
- * Read the model part as a stopgap rather than the destination — and one Docs
- * has already left behind. `lib/ooxml/docx/` writes and reads the whole
- * document as real OOXML, so a `.docx` no longer carries a model part at all;
- * only what OOXML genuinely cannot express rides along, in a `customXml/` part
- * that Word preserves. Sheets and slides still pack a model and still read it,
- * and `DocEditor` still reads one out of any `.docx` saved before that landed.
- * The same route out is open to them: each field a writer learns to emit is
- * safe to add, because the model keeps Neutrino correct meanwhile.
+ * **Two of the three apps have left it behind.** `lib/ooxml/docx/` and
+ * `lib/ooxml/xlsx/` write and read the whole document as real OOXML, so a
+ * `.docx` and an `.xlsx` carry no model part at all; only what OOXML genuinely
+ * cannot express rides along, in a `customXml/` part Word and Excel preserve.
+ * What is left here is slides, which still packs a model and still reads one,
+ * and the *read* side for docs and sheets, because a file saved before its
+ * writer landed still has the part and its first save is what migrates it. The
+ * same route out is open to slides: each field a writer learns to emit is safe
+ * to add, because the model keeps Neutrino correct meanwhile.
  *
  * The fallback is also the answer to a package edited elsewhere. Excel and
- * LibreOffice both discard parts they don't recognise when they save, so a
- * workbook round-tripped through them comes back with no model and is parsed
- * from its OOXML — correct, just lossy. A tool that *keeps* the part while
- * rewriting the document would be worse: a stale model would quietly overwrite
- * the outside edit. `digest` closes that off — it fingerprints every other part
- * at save time, and a model whose digest no longer matches the package it sits
- * in is ignored exactly as if it were absent.
+ * LibreOffice both discard parts they don't recognise when they save, so a deck
+ * round-tripped through them comes back with no model and is parsed from its
+ * OOXML — correct, just lossy. A tool that *keeps* the part while rewriting the
+ * document would be worse: a stale model would quietly overwrite the outside
+ * edit. `digest` closes that off — it fingerprints every other part at save
+ * time, and a model whose digest no longer matches the package it sits in is
+ * ignored exactly as if it were absent.
  */
 
 import { stripOoxmlExtension, type OoxmlApp } from '@neutrino/api-core';

@@ -3,9 +3,11 @@
  *
  * A Google Docs document leaves Takeout as a file, not as JSON: `.docx` by
  * default, or `.html`/`.txt` when the export was configured that way. The
- * `.docx` half is handled by mammoth (`docxToHtml` in `importDocs.ts`), which
- * gives back plain semantic HTML; this module does the second half, turning
- * that HTML into the ProseMirror document the docs editor reads back.
+ * `.docx` case never reaches here — a document is stored as a `.docx`, so the
+ * export is stored as it is (`storedDocxFor` in `importDocs.ts`). This module
+ * is for the other two, turning an exported page into the ProseMirror document
+ * the docs editor reads back, which `writeDocx` then writes out as the Word
+ * file the document is stored as.
  *
  * It is written by hand rather than driven off the editor's schema for the
  * same reason `inlineHtml.ts` is: the import runs nowhere near a Tiptap

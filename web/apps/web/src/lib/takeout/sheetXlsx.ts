@@ -238,20 +238,6 @@ function convertWorkbook(wb: Workbook, xlsx: XlsxModule, options: SheetConversio
  */
 const READ_OPTIONS = { cellNF: true, cellStyles: true } as const;
 
-/** Convert exported `.xlsx` bytes into the editor's stored JSON. */
-export async function xlsxToSheetFile(
-  bytes: ArrayBuffer,
-  options: SheetConversionOptions,
-): Promise<SheetFile> {
-  const xlsx = await import('xlsx');
-  const wb = xlsx.read(new Uint8Array(bytes), { type: 'array', ...READ_OPTIONS });
-  const file = convertWorkbook(wb, xlsx, options);
-  logStep('sheets', 'converted a workbook', {
-    tabs: file.sheets.map((s) => ({ name: s.name, cells: Object.keys(s.cells).length })),
-  });
-  return file;
-}
-
 /**
  * Convert exported `.csv`/`.tsv` text into the editor's stored JSON, as a
  * single tab named after the file.
@@ -277,4 +263,19 @@ export async function delimitedToSheetFile(
     cells: Object.keys(file.sheets[0]?.cells ?? {}).length,
   });
   return file;
+}
+
+// ── The stored file ──────────────────────────────────────────────────────────
+
+/**
+ * A converted spreadsheet as the `.xlsx` the editor stores.
+ *
+ * Only `.csv` and `.tsv` reach here. A `.xlsx` export is stored as itself —
+ * see `importSheets.ts` — because a spreadsheet *is* an `.xlsx` and
+ * `ooxml/xlsx/read.ts` opens the exported one directly. Converting it would be
+ * the round trip docs stopped doing.
+ */
+export async function sheetFileToXlsx(file: SheetFile): Promise<Uint8Array> {
+  const { writeXlsx } = await import('@/lib/ooxml/xlsx/write');
+  return writeXlsx(file);
 }

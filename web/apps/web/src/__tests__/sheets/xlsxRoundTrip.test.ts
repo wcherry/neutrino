@@ -1,19 +1,21 @@
 /**
- * A spreadsheet stored as `.xlsx` loses nothing across a save (issue #127).
+ * A spreadsheet stored as `.xlsx` loses nothing across a save (issues #127,
+ * #169).
  *
- * SheetJS writes values and nothing else — no column widths, no cell fills, no
- * charts, no conditional formats, no sheet colours. So a workbook that stored
- * only what SheetJS can write would delete all of that on the first autosave
- * tick, three seconds after the file was opened. The package therefore carries
- * the editor's own model beside the workbook, and the load path prefers it.
+ * This used to be a test about the `neutrino/model.json` part: what the editor
+ * could write was a value per cell, so the package carried a second, complete
+ * copy of the model and the load path preferred it. `ooxml/xlsx/` writes the
+ * spreadsheet as real SpreadsheetML now, so there is no second copy — and this
+ * is what says the seam still holds without one.
  *
- * These tests drive `usePersistence` end to end over a real zip, because the
- * thing that can break is the seam: a model written and then not read back is
- * indistinguishable, from inside either half, from working correctly.
+ * These drive `usePersistence` end to end over a real zip, because the thing
+ * that can break is exactly that seam: something written and then not read back
+ * is indistinguishable, from inside either half, from working correctly.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
+import * as XLSX from 'xlsx';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const DEK = new Uint8Array(32).fill(6);
@@ -73,33 +75,11 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   }),
 }));
 
-/**
- * Stand in for SheetJS. `write` hands back a real (if minimal) zip so the
- * container has something to pack into — synchronously, as the real one does —
- * and `read` reports a workbook whose sheet name is deliberately *not* what the
- * model says, which is how a test can tell which of the two the editor read.
- */
-vi.mock('xlsx', async () => {
-  const JSZip = (await import('jszip')).default;
-  const zip = new JSZip();
-  zip.file('[Content_Types].xml', '<Types xmlns="http://x"/>');
-  zip.file('xl/workbook.xml', '<workbook/>');
-  const workbookBytes = await zip.generateAsync({ type: 'arraybuffer' });
-  return {
-    read: () => ({ SheetNames: ['FromWorkbook'], Sheets: { FromWorkbook: {} } }),
-    write: () => workbookBytes,
-    utils: {
-      decode_range: () => ({ s: { r: 0, c: 0 }, e: { r: 0, c: 0 } }),
-      encode_cell: () => 'A1',
-      book_new: () => ({}),
-      book_append_sheet: () => {},
-    },
-  };
-});
-
 import JSZip from 'jszip';
 import { usePersistence } from '../../app/(apps)/sheets/editor/hooks/usePersistence';
-import { packNeutrinoModel, readNeutrinoModel } from '@/lib/ooxmlContainer';
+import { packNeutrinoModel } from '@/lib/ooxmlContainer';
+import { writeXlsx } from '@/lib/ooxml/xlsx/write';
+import { NEUTRINO_MODEL_PART } from '@/lib/ooxmlContainer';
 import { ApiClientError } from '@/lib/api';
 
 // ---------------------------------------------------------------------------
@@ -107,19 +87,24 @@ import { ApiClientError } from '@/lib/api';
 // ---------------------------------------------------------------------------
 
 /**
- * A model carrying exactly the things SheetJS cannot write. If the editor reads
- * the workbook instead of the model, every one of these comes back empty.
+ * A spreadsheet carrying the things a value-per-cell workbook could not: a tab
+ * colour, a column width, a row height and a conditional format. Every one of
+ * them is real SpreadsheetML now, and every one used to need the model part.
  */
-const MODEL = JSON.stringify({
+const MODEL = {
   sheets: [{
     name: 'Q1',
     color: '#ff0000',
-    cells: { A1: { id: 'A1', raw: '7', value: '7', cellStyle: { bg: '#00ff00' } } },
+    cells: { A1: { id: 'A1', raw: '7', value: '7', cellStyle: { backgroundColor: '#00ff00' } } },
     colWidths: { '1': 240 },
     rowHeights: { '1': 44 },
-    conditionalFormats: [{ id: 'cf-1', range: 'A1:A9' }],
+    conditionalFormats: [{
+      id: 'cf-0-0',
+      range: 'A1:A9',
+      rule: { kind: 'singleColor', condition: 'greaterThan', value: '5', format: { color: '#111111' } },
+    }],
   }],
-});
+};
 
 async function emptyWorkbookZip(): Promise<Uint8Array> {
   const zip = new JSZip();
@@ -128,12 +113,19 @@ async function emptyWorkbookZip(): Promise<Uint8Array> {
   return zip.generateAsync({ type: 'uint8array' });
 }
 
+/** A workbook from another tool, with a tab name nothing here would invent. */
+function foreignWorkbook(): Uint8Array {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['from', 'excel']]), 'FromWorkbook');
+  return new Uint8Array(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer);
+}
+
 /**
  * `SheetEditor` keeps its per-sheet refs in step with the state the setters
  * write, and `serialize()` reads the refs — so a harness whose setters only
  * record calls would serialise the *initial* refs on save and make a
  * round-trip test pass or fail for reasons that have nothing to do with the
- * container. These setters therefore write through, as the editor does.
+ * format. These setters therefore write through, as the editor does.
  */
 function setupHook() {
   const props = {
@@ -177,80 +169,99 @@ async function storedBytes(bytes: Uint8Array) {
   downloadFile.mockResolvedValue(new Blob([bytes.buffer as ArrayBuffer]));
 }
 
+/** Load a stored package through the hook and hand back the harness. */
+async function open(bytes: Uint8Array) {
+  await storedBytes(bytes);
+  const harness = setupHook();
+  await act(async () => { await harness.hook.result.current.load(); });
+  await waitFor(() => expect(harness.hook.result.current.officeMode).toBe(true));
+  return harness;
+}
+
 // ---------------------------------------------------------------------------
 
 describe('opening an .xlsx Neutrino wrote', () => {
-  it('reads the packed model rather than re-parsing the workbook', async () => {
-    await storedBytes(await packNeutrinoModel(await emptyWorkbookZip(), 'sheets', MODEL));
-    const { hook, setSheetNames } = setupHook();
+  it('brings back everything a value-per-cell workbook could not carry', async () => {
+    const { setSheetNames, setColWidths, setSheetColors, setConditionalFormats } =
+      await open(await writeXlsx(MODEL as never));
 
-    await act(async () => { await hook.result.current.load(); });
-    await waitFor(() => expect(hook.result.current.officeMode).toBe(true));
-
-    // 'FromWorkbook' is what the SheetJS stub reports; 'Q1' is what the model
-    // says. Reading the workbook here is the data-loss bug this guards.
     expect(setSheetNames).toHaveBeenCalledWith(['Q1']);
-  });
-
-  it('brings back everything the workbook format cannot carry', async () => {
-    await storedBytes(await packNeutrinoModel(await emptyWorkbookZip(), 'sheets', MODEL));
-    const { hook, setColWidths, setSheetColors, setConditionalFormats } = setupHook();
-
-    await act(async () => { await hook.result.current.load(); });
-    await waitFor(() => expect(hook.result.current.officeMode).toBe(true));
-
     expect(setColWidths).toHaveBeenCalledWith(new Map([[1, 240]]));
     expect(setSheetColors).toHaveBeenCalledWith(['#ff0000']);
-    expect(setConditionalFormats).toHaveBeenCalledWith([{ id: 'cf-1', range: 'A1:A9' }]);
+    expect(setConditionalFormats).toHaveBeenCalledWith([
+      expect.objectContaining({ range: 'A1:A9' }),
+    ]);
   });
 });
 
 describe('opening an .xlsx from somewhere else', () => {
-  it('falls back to parsing the workbook when there is no model in it', async () => {
-    await storedBytes(await emptyWorkbookZip());
-    const { hook, setSheetNames } = setupHook();
-
-    await act(async () => { await hook.result.current.load(); });
-    await waitFor(() => expect(hook.result.current.officeMode).toBe(true));
-
+  it('reads the workbook itself', async () => {
+    const { setSheetNames } = await open(foreignWorkbook());
     expect(setSheetNames).toHaveBeenCalledWith(['FromWorkbook']);
   });
 });
 
+/**
+ * A spreadsheet saved before the OOXML writer was complete carries the model in
+ * a `neutrino/model.json` part beside a workbook that was only a projection of
+ * it. Reading that workbook would lose everything the projection dropped, so
+ * the part still wins where it exists — and its first save here migrates it.
+ */
+describe('opening an .xlsx saved before the writer was complete', () => {
+  it('prefers the model part over the workbook beside it', async () => {
+    const legacy = await packNeutrinoModel(
+      foreignWorkbook(), 'sheets', JSON.stringify(MODEL),
+    );
+    const { setSheetNames } = await open(legacy);
+
+    // 'FromWorkbook' is what the workbook says; 'Q1' is what the model says.
+    expect(setSheetNames).toHaveBeenCalledWith(['Q1']);
+  });
+});
+
 describe('saving', () => {
-  it('writes a package holding both the workbook and the model', async () => {
-    await storedBytes(await packNeutrinoModel(await emptyWorkbookZip(), 'sheets', MODEL));
-    const { hook } = setupHook();
-    await act(async () => { await hook.result.current.load(); });
-    await waitFor(() => expect(hook.result.current.officeMode).toBe(true));
+  it('writes a workbook and no second copy of the model', async () => {
+    const { hook } = await open(await writeXlsx(MODEL as never));
 
     await act(async () => { await hook.result.current.save(); });
 
     const written = driveAutosaveEncryptedBytes.mock.calls.at(-1)![1] as Uint8Array;
     const zip = await JSZip.loadAsync(written);
-    // Real workbook parts, so Excel opens it…
     expect(zip.file('xl/workbook.xml')).not.toBeNull();
-    // …and the model, so Neutrino reopens it without losing anything.
-    expect(await readNeutrinoModel(written, 'sheets')).toBeTruthy();
+    expect(zip.file('xl/worksheets/sheet1.xml')).not.toBeNull();
+    // The whole point of the rewrite: the spreadsheet is the OOXML.
+    expect(zip.file(NEUTRINO_MODEL_PART)).toBeNull();
   });
 
   it('what it writes is what it reads back', async () => {
-    await storedBytes(await packNeutrinoModel(await emptyWorkbookZip(), 'sheets', MODEL));
-    const { hook } = setupHook();
-    await act(async () => { await hook.result.current.load(); });
-    await waitFor(() => expect(hook.result.current.officeMode).toBe(true));
-
+    const { hook } = await open(await writeXlsx(MODEL as never));
     await act(async () => { await hook.result.current.save(); });
     const written = driveAutosaveEncryptedBytes.mock.calls.at(-1)![1] as Uint8Array;
 
-    // Reload from the bytes just written and the same spreadsheet comes back.
-    await storedBytes(written);
-    const second = setupHook();
-    await act(async () => { await second.hook.result.current.load(); });
-    await waitFor(() => expect(second.hook.result.current.officeMode).toBe(true));
+    const second = await open(written);
 
     expect(second.setSheetNames).toHaveBeenCalledWith(['Q1']);
     expect(second.setColWidths).toHaveBeenCalledWith(new Map([[1, 240]]));
+    expect(second.setSheetColors).toHaveBeenCalledWith(['#ff0000']);
+  });
+
+  /**
+   * A workbook that has been through Excel can carry pivot tables and images
+   * this editor has no notion of. Dropping them on every autosave tick would
+   * make Neutrino the tool that quietly deletes your pivot table.
+   */
+  it('carries forward the parts of the stored package it does not model', async () => {
+    const base = await writeXlsx(MODEL as never);
+    const zip = await JSZip.loadAsync(base);
+    zip.file('xl/pivotTables/pivotTable1.xml', '<pivotTableDefinition/>');
+    const { hook } = await open(await zip.generateAsync({ type: 'uint8array' }));
+
+    await act(async () => { await hook.result.current.save(); });
+
+    const written = driveAutosaveEncryptedBytes.mock.calls.at(-1)![1] as Uint8Array;
+    const out = await JSZip.loadAsync(written);
+    expect(await out.file('xl/pivotTables/pivotTable1.xml')!.async('string'))
+      .toBe('<pivotTableDefinition/>');
   });
 });
 
@@ -258,21 +269,23 @@ describe('a spreadsheet that was just created', () => {
   /**
    * `POST /drive/files` writes no body for an OOXML type — a zip is not
    * something the server can build, and a seed would sit in the clear until the
-   * first save. So the first thing the editor sees is zero bytes, and it has to
-   * read that as a blank workbook rather than as a file it failed to open.
+   * first save anyway. So the editor opens zero bytes as a blank spreadsheet
+   * and its first save is what makes the file a real workbook.
    */
-  it('opens a zero-byte file as blank and saves a real package immediately', async () => {
+  it('opens a zero-byte file as blank and saves a real workbook immediately', async () => {
     await storedBytes(new Uint8Array(0));
-    const { hook, setSheetNames } = setupHook();
+    const { hook } = setupHook();
 
     await act(async () => { await hook.result.current.load(); });
-    await waitFor(() => expect(hook.result.current.officeMode).toBe(true));
-    await waitFor(() => expect(driveAutosaveEncryptedBytes).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(driveAutosaveEncryptedBytes).toHaveBeenCalled());
 
-    // Nothing was parsed out of the empty file…
-    expect(setSheetNames).not.toHaveBeenCalled();
-    // …and what landed in Drive is a valid package, not another zero-byte write.
-    const written = driveAutosaveEncryptedBytes.mock.calls[0][1] as Uint8Array;
-    expect(await readNeutrinoModel(written, 'sheets')).toBeTruthy();
+    const written = driveAutosaveEncryptedBytes.mock.calls.at(-1)![1] as Uint8Array;
+    const zip = await JSZip.loadAsync(written);
+    expect(zip.file('xl/workbook.xml')).not.toBeNull();
+  });
+
+  it('does not mistake an empty package for an empty file', async () => {
+    const { hook } = await open(await emptyWorkbookZip());
+    expect(hook.result.current.officeMode).toBe(true);
   });
 });

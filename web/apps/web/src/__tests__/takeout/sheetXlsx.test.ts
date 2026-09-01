@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
-import { delimitedToSheetFile, xlsxToSheetFile } from '@/lib/takeout/sheetXlsx';
+import { delimitedToSheetFile } from '@/lib/takeout/sheetXlsx';
 import type { WorkSheet } from 'xlsx';
 
 const WITH_FORMULAS = { importFormulas: true };
@@ -63,129 +63,6 @@ async function xlsxWithSizes(sheetXml: string): Promise<ArrayBuffer> {
   const bytes = await zip.generateAsync({ type: 'uint8array' });
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
-
-describe('xlsxToSheetFile', () => {
-  it('turns each tab into a sheet of cells addressed the way the editor is', async () => {
-    const file = await xlsxToSheetFile(
-      xlsxBytes({ Data: grid([['Name', 'Qty'], ['Widget', 2]]), Notes: grid([['second']]) }),
-      WITH_FORMULAS,
-    );
-
-    expect(file.sheets.map((s) => s.name)).toEqual(['Data', 'Notes']);
-    expect(file.sheets[0].cells.A1).toMatchObject({ id: 'A1', raw: 'Name' });
-    expect(file.sheets[0].cells.B2).toMatchObject({ id: 'B2', raw: '2', value: '2' });
-    expect(file.sheets[1].cells.A1).toMatchObject({ raw: 'second' });
-  });
-
-  it('stores a number unformatted and carries its format alongside', async () => {
-    const ws = grid([[0]]);
-    // A percentage in a file is the number 0.155 under a `0.00%` format —
-    // storing the *display* would leave a spreadsheet that cannot add up.
-    ws.A1 = { t: 'n', v: 0.155, z: '0.00%', w: '15.50%' };
-    const file = await xlsxToSheetFile(xlsxBytes({ Data: ws }), WITH_FORMULAS);
-
-    expect(file.sheets[0].cells.A1).toEqual({
-      id: 'A1',
-      raw: '0.155',
-      value: '15.50%',
-      cellStyle: { customFormat: '0.00%' },
-    });
-  });
-
-  it('leaves an unformatted cell without a style', async () => {
-    const file = await xlsxToSheetFile(xlsxBytes({ Data: grid([[42]]) }), WITH_FORMULAS);
-    expect(file.sheets[0].cells.A1.cellStyle).toBeUndefined();
-  });
-
-  it('keeps a date as the serial and format it is in the file', async () => {
-    const ws = grid([[0]]);
-    // 46246 is 2026-08-13. Kept as the serial rather than turned into a date
-    // string, which the browser's timezone could move by a day.
-    ws.A1 = { t: 'n', v: 46246, z: 'yyyy-mm-dd', w: '2026-08-13' };
-    const file = await xlsxToSheetFile(xlsxBytes({ Data: ws }), WITH_FORMULAS);
-
-    expect(file.sheets[0].cells.A1).toMatchObject({
-      raw: '46246',
-      cellStyle: { customFormat: 'yyyy-mm-dd' },
-    });
-  });
-
-  it('brings a formula across as a formula, with its exported result', async () => {
-    const ws = grid([[2, 3]]);
-    ws.C1 = { t: 'n', f: 'A1+B1', v: 5, w: '5' };
-    ws['!ref'] = 'A1:C1';
-    const file = await xlsxToSheetFile(xlsxBytes({ Data: ws }), WITH_FORMULAS);
-
-    expect(file.sheets[0].cells.C1).toMatchObject({ raw: '=A1+B1', value: '5' });
-  });
-
-  it('keeps only the computed value when formulas are turned off', async () => {
-    const ws = grid([[2, 3]]);
-    ws.C1 = { t: 'n', f: 'A1+B1', v: 5, w: '5' };
-    ws['!ref'] = 'A1:C1';
-    const file = await xlsxToSheetFile(xlsxBytes({ Data: ws }), { importFormulas: false });
-
-    expect(file.sheets[0].cells.C1).toMatchObject({ raw: '5', value: '5' });
-  });
-
-  it('expands a merged range into an anchor and the cells it covers', async () => {
-    const ws = grid([['Title', null], [1, 2]]);
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
-    const file = await xlsxToSheetFile(xlsxBytes({ Data: ws }), WITH_FORMULAS);
-
-    expect(file.sheets[0].cells.A1).toMatchObject({ raw: 'Title', colSpan: 2, rowSpan: 1 });
-    expect(file.sheets[0].cells.B1).toMatchObject({ id: 'B1', mergeAnchor: 'A1' });
-  });
-
-  it('keeps booleans and error cells readable', async () => {
-    const ws = grid([[0, 0]]);
-    ws.A1 = { t: 'b', v: true, w: 'TRUE' };
-    ws.B1 = { t: 'e', v: 0x17, w: '#REF!' };
-    const file = await xlsxToSheetFile(xlsxBytes({ Data: ws }), WITH_FORMULAS);
-
-    expect(file.sheets[0].cells.A1.raw).toBe('TRUE');
-    expect(file.sheets[0].cells.B1.raw).toBe('#REF!');
-  });
-
-  it('stores nothing for the empty cells between the full ones', async () => {
-    const file = await xlsxToSheetFile(
-      xlsxBytes({ Data: grid([['a', null, null], [null, null, 'b']]) }),
-      WITH_FORMULAS,
-    );
-
-    expect(Object.keys(file.sheets[0].cells).sort()).toEqual(['A1', 'C2']);
-  });
-
-  it('carries the column widths and row heights the file declares', async () => {
-    // `customWidth` marks a column the user actually resized; `wch` is a count
-    // of characters, which the editor needs as pixels.
-    const file = await xlsxToSheetFile(
-      await xlsxWithSizes(
-        `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-          `<cols><col min="1" max="1" width="25" customWidth="1"/></cols>` +
-          `<sheetData><row r="1" ht="40" customHeight="1"><c r="A1" t="inlineStr"><is><t>a</t></is></c></row></sheetData>` +
-          `</worksheet>`,
-      ),
-      WITH_FORMULAS,
-    );
-
-    // Keyed by 0-based index, as the editor's own colWidths/rowHeights are.
-    expect(file.sheets[0].colWidths?.['0']).toBeGreaterThan(100);
-    expect(file.sheets[0].rowHeights?.['0']).toBeGreaterThan(28);
-  });
-
-  it('leaves the sizing out entirely when the file says nothing about it', async () => {
-    const file = await xlsxToSheetFile(xlsxBytes({ Data: grid([['a']]) }), WITH_FORMULAS);
-    expect(file.sheets[0].colWidths).toBeUndefined();
-    expect(file.sheets[0].rowHeights).toBeUndefined();
-  });
-
-  it('gives an empty workbook a tab to open on', async () => {
-    const file = await xlsxToSheetFile(xlsxBytes({ Sheet1: grid([]) }), WITH_FORMULAS);
-    expect(file.sheets).toHaveLength(1);
-    expect(file.sheets[0].cells).toEqual({});
-  });
-});
 
 describe('delimitedToSheetFile', () => {
   it('reads a CSV into one tab named after the file', async () => {

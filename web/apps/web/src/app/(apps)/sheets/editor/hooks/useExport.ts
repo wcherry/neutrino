@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import * as XLSX from 'xlsx';
-import type { CellProps, CellStyle } from '../types';
-import { getRangeCells, getCellBounds, getSelectionSubset, triggerDownload, formatCellValue, numToAlpha, alphaToNum } from '../utils';
+import type { CellProps, CellStyle, SheetData } from '../types';
+import { getRangeCells, getCellBounds, getSelectionSubset, triggerDownload, formatCellValue, numToAlpha } from '../utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,34 +38,29 @@ type HtmlExportOptions = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-export function buildXlsxWorksheet(
+/**
+ * One tab's live state as the stored model's shape, which is what `writeXlsx`
+ * takes. `selectionIds` narrows it to a copied range for a selection export.
+ */
+function sheetDataFor(
+    name: string,
     cells: Map<string, CellProps>,
+    colWidths: Map<number, number> | undefined,
+    rowHeights: Map<number, number> | undefined,
     selectionIds?: Set<string>,
-): XLSX.WorkSheet {
-    const ws: XLSX.WorkSheet = {};
-    const entries = selectionIds
-        ? [...selectionIds].map(id => [id, cells.get(id) ?? { id, value: '', raw: '', edit: false }] as const)
-        : [...cells.entries()];
-
-    let minRow = Infinity, maxRow = 0, minCol = Infinity, maxCol = 0;
-    for (const [id, cell] of entries) {
-        const m = id.match(/^([A-Z]+)(\d+)$/);
-        if (!m) continue;
-        const col = alphaToNum(m[1]), row = parseInt(m[2]);
-        if (row < minRow) minRow = row;
-        if (row > maxRow) maxRow = row;
-        if (col < minCol) minCol = col;
-        if (col > maxCol) maxCol = col;
-        const val = cell.value ?? cell.raw ?? '';
-        const num = Number(val);
-        ws[id] = (val !== '' && !isNaN(num) && val.trim() !== '')
-            ? { v: num, t: 'n' }
-            : { v: val, t: 's' };
+): SheetData {
+    const out: SheetData['cells'] = {};
+    for (const [id, cell] of cells) {
+        if (selectionIds && !selectionIds.has(id)) continue;
+        out[id] = {
+            id, raw: cell.raw, value: cell.value, cellStyle: cell.cellStyle,
+            colSpan: cell.colSpan, rowSpan: cell.rowSpan, mergeAnchor: cell.mergeAnchor,
+        };
     }
-    if (maxRow > 0) {
-        ws['!ref'] = `${numToAlpha(minCol)}${minRow}:${numToAlpha(maxCol)}${maxRow}`;
-    }
-    return ws;
+    const sheet: SheetData = { name, cells: out };
+    if (colWidths?.size) sheet.colWidths = Object.fromEntries([...colWidths].map(([k, v]) => [String(k), v]));
+    if (rowHeights?.size) sheet.rowHeights = Object.fromEntries([...rowHeights].map(([k, v]) => [String(k), v]));
+    return sheet;
 }
 
 function buildTableHtml(
@@ -240,34 +234,51 @@ export function useExport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [title, flushActiveSheet, activeSheetIndexRef, sheetsDataRef, setHamburgerDialog]);
 
-    const doExportXlsx = useCallback((opts: {
+    /**
+     * One writer for both destinations — the autosave that stores the
+     * spreadsheet and the export that downloads it — because a spreadsheet is
+     * *stored* as an `.xlsx` now, so an export that produced anything different
+     * would mean two writers to keep in step and a downloaded copy that did not
+     * match the stored one. It used to be `buildXlsxWorksheet`, which wrote a
+     * value per cell and nothing else, so an exported workbook arrived with the
+     * numbers and none of the formatting.
+     *
+     * Charts, conditional formats and table regions are not here: this hook is
+     * given the cells, widths and heights and nothing else. They are in the
+     * stored file, which is what a user who wants all of it should download
+     * from Drive.
+     */
+    const doExportXlsx = useCallback(async (opts: {
         filename: string;
         sheetIndex: number;
         selectionOnly: boolean;
         allSheets: boolean;
     }) => {
         flushActiveSheet();
-        const wb = XLSX.utils.book_new();
-        if (opts.allSheets) {
-            sheetNamesRef.current.forEach((name, i) => {
-                XLSX.utils.book_append_sheet(wb, buildXlsxWorksheet(sheetsDataRef.current[i]), name);
-            });
-        } else {
-            const selectionIds = opts.selectionOnly
-                ? getRangeCells(selectionAnchorRef.current!, selectionActiveRef.current ?? selectionAnchorRef.current!)
-                : undefined;
-            XLSX.utils.book_append_sheet(
-                wb,
-                buildXlsxWorksheet(sheetsDataRef.current[opts.sheetIndex], selectionIds),
-                sheetNamesRef.current[opts.sheetIndex],
-            );
-        }
-        const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+        const { writeXlsx } = await import('@/lib/ooxml/xlsx/write');
+        const indices = opts.allSheets
+            ? sheetNamesRef.current.map((_, i) => i)
+            : [opts.sheetIndex];
+        const selectionIds = !opts.allSheets && opts.selectionOnly
+            ? getRangeCells(selectionAnchorRef.current!, selectionActiveRef.current ?? selectionAnchorRef.current!)
+            : undefined;
+        const bytes = await writeXlsx({
+            sheets: indices.map((i) => sheetDataFor(
+                sheetNamesRef.current[i],
+                sheetsDataRef.current[i],
+                sheetsColWidthsRef.current[i],
+                sheetsRowHeightsRef.current[i],
+                selectionIds,
+            )),
+        });
         triggerDownload(
-            new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+            new Blob([bytes as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
             `${opts.filename || 'sheet'}.xlsx`,
         );
-    }, [flushActiveSheet, sheetsDataRef, sheetNamesRef, selectionAnchorRef, selectionActiveRef]);
+    }, [
+        flushActiveSheet, sheetsDataRef, sheetNamesRef, sheetsColWidthsRef, sheetsRowHeightsRef,
+        selectionAnchorRef, selectionActiveRef,
+    ]);
 
     // ── Print ─────────────────────────────────────────────────────────────────
 
