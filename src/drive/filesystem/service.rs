@@ -1,10 +1,9 @@
 use crate::drive::filesystem::{
     dto::{
         BulkMoveRequest, BulkResult, BulkTrashRequest, CreateFolderRequest, CreateShortcutRequest,
-        DriveFileType, FileResponse, FolderContentsOrderField, FolderContentsQuery,
-        FolderContentsResponse, FolderResponse, ShortcutListResponse, ShortcutResponse,
-        StarredContentsResponse, TrashContentsQuery, TrashContentsResponse, TrashOrderField,
-        UpdateFileRequest, UpdateFolderRequest,
+        DriveFileType, FileResponse, FolderContentsQuery, FolderContentsResponse, FolderResponse,
+        ShortcutListResponse, ShortcutResponse, StarredContentsResponse, TrashContentsQuery,
+        TrashContentsResponse, TrashOrderField, UpdateFileRequest, UpdateFolderRequest,
     },
     model::{NewFolderRecord, NewShortcutRecord, UpdateFolderRecord},
     repository::FilesystemRepository,
@@ -106,35 +105,16 @@ impl FilesystemService {
             None
         };
 
-        let subfolders = self.repo.list_subfolders(user_id, folder_id)?;
-        let files = filter_by_type(
-            self.repo.list_files_in_folder(user_id, folder_id)?,
-            file_type,
-        );
-
-        let subfolders = apply_list_query(
-            subfolders,
+        // Sorted, type-filtered and paged in SQL. Doing any of it here instead
+        // would mean loading every row in the folder — each carrying a
+        // `cover_thumbnail` of up to ~100KB — to return one page of them.
+        let subfolders = self.repo.list_subfolders(user_id, folder_id, query)?;
+        let files = self.repo.list_files_in_folder(
+            user_id,
+            folder_id,
             query,
-            FolderContentsOrderField::Name,
-            OrderDirection::Asc,
-            |a, b, order_by| match order_by {
-                FolderContentsOrderField::Name => a.name.cmp(&b.name),
-                FolderContentsOrderField::CreatedAt => a.created_at.cmp(&b.created_at),
-                FolderContentsOrderField::UpdatedAt => a.updated_at.cmp(&b.updated_at),
-            },
-        );
-
-        let files = apply_list_query(
-            files,
-            query,
-            FolderContentsOrderField::Name,
-            OrderDirection::Asc,
-            |a, b, order_by| match order_by {
-                FolderContentsOrderField::Name => a.name.cmp(&b.name),
-                FolderContentsOrderField::CreatedAt => a.created_at.cmp(&b.created_at),
-                FolderContentsOrderField::UpdatedAt => a.updated_at.cmp(&b.updated_at),
-            },
-        );
+            file_type.map(|t| t.mime_patterns()),
+        )?;
 
         Ok(FolderContentsResponse {
             folder: folder_response,

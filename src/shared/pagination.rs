@@ -38,6 +38,30 @@ pub struct ListQueryParams<F> {
     pub direction: Option<OrderDirection>,
 }
 
+/// A list query's window expressed as SQL `LIMIT`/`OFFSET`, for the listings
+/// that page in the database instead of loading everything and calling
+/// [`apply_list_query`].
+///
+/// The clamping is what makes the two agree. `skip`/`take` in
+/// [`apply_list_query`] saturate at zero, whereas SQLite reads a negative
+/// `LIMIT` as "no limit" — the exact opposite — so a negative limit has to be
+/// pinned to 0 here rather than passed through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SqlPage {
+    pub limit: i64,
+    pub offset: i64,
+}
+
+impl SqlPage {
+    /// The window `apply_list_query` would have applied to the same query.
+    pub fn from_query<F>(query: &ListQueryParams<F>) -> Self {
+        SqlPage {
+            limit: query.limit.unwrap_or(i64::MAX).max(0),
+            offset: query.offset.unwrap_or(0).max(0),
+        }
+    }
+}
+
 pub fn apply_list_query<T, F, C>(
     mut items: Vec<T>,
     query: &ListQueryParams<F>,
@@ -133,6 +157,33 @@ mod tests {
     fn limit_and_offset_combined() {
         let result = run(vec![1, 2, 3, 4, 5], &q(Some(2), Some(1)));
         assert_eq!(result, vec![2, 3]);
+    }
+
+    /// `SqlPage` exists to hand SQL the window `apply_list_query` would have
+    /// taken, so the two are checked against each other rather than in isolation.
+    #[test]
+    fn sql_page_matches_the_in_memory_window() {
+        let items: Vec<i32> = (0..5).collect();
+        for (limit, offset) in [
+            (None, None),
+            (Some(3), None),
+            (None, Some(2)),
+            (Some(2), Some(1)),
+            (Some(0), None),
+            (Some(-1), Some(-5)),
+            (None, Some(99)),
+        ] {
+            let params = q(limit, offset);
+            let page = SqlPage::from_query(&params);
+            let expected = run(items.clone(), &params);
+            let got: Vec<i32> = items
+                .iter()
+                .copied()
+                .skip(page.offset as usize)
+                .take(page.limit as usize)
+                .collect();
+            assert_eq!(got, expected, "limit {limit:?} offset {offset:?}");
+        }
     }
 
     #[test]
