@@ -13,4 +13,5 @@ VALUES
   ('neutrino-notes-ios','Neutrino Notes iOS','["neutrino://oauth/callback"]'),
   ('neutrino-docs-ios','Neutrino Docs iOS','["neutrino://oauth/callback"]'),
   ('neutrino-sheets-ios','Neutrino Sheets iOS','["neutrino://oauth/callback"]'),
-  ('neutrino-photos-ios', 'Neutrino Photos iOS','["neutrino://oauth/callback"]');
+  ('neutrino-photos-ios', 'Neutrino Photos iOS','["neutrino://oauth/callback"]'),
+  ('neutrino-slides-ios', 'Neutrino Slides iOS','["neutrino://oauth/callback"]');
