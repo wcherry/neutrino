@@ -8,19 +8,16 @@ import { Spinner, Toggle, ProgressBar, useToast, DropZone } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { adminApi, fontsApi } from '@neutrino/api-admin';
 import { ApiClientError } from '@neutrino/api-core';
-import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, FeatureFlag, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
+import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, FeatureFlag, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
+import { CreateUserDialog, ResetPasswordDialog, UserQuotaDialog } from './UserDialogs';
+import { PasswordPolicySection } from './PasswordPolicySection';
+import { WorkQueueTab } from './WorkQueueTab';
+import { formatBytes, formatLimit, usagePercent } from './bytes';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
 
 /**
  * How long a deleted account has left before the worker erases it.
@@ -301,6 +298,9 @@ function ServicesTab() {
   );
 }
 
+/** The page size the Users tab lists at, and the batch its quotas are read in. */
+const USERS_PAGE_SIZE = 20;
+
 function UsersTab() {
   const { user: currentUser } = useAuth();
   const qc = useQueryClient();
@@ -308,20 +308,52 @@ function UsersTab() {
   const [page, setPage] = useState(1);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [quotaUser, setQuotaUser] = useState<AdminUser | null>(null);
+  const [resetUser, setResetUser] = useState<AdminUser | null>(null);
 
   const { data, isLoading, error } = useQuery({
     // `showDeleted` is part of the key: the two listings have different totals,
     // so sharing one cache entry would page the wrong one.
     queryKey: ['admin-users', page, showDeleted],
-    queryFn: () => adminApi.listUsers(page, 20, showDeleted),
+    queryFn: () => adminApi.listUsers(page, USERS_PAGE_SIZE, showDeleted),
   });
 
+  const userIds = (data?.users ?? []).map((u) => u.id);
+
+  /**
+   * The storage figures for the page on screen, in one request rather than one
+   * per row. Keyed by the ids so paging refetches, and deliberately separate
+   * from the listing: a slow quota read must not hold the user table back, and
+   * a failed one leaves the table intact with the storage column blank.
+   */
+  const quotas = useQuery({
+    queryKey: ['admin-user-quotas', userIds],
+    queryFn: () => adminApi.listQuotas(userIds),
+    enabled: userIds.length > 0,
+  });
+
+  const quotaById = new Map<string, UserQuota>((quotas.data ?? []).map((q) => [q.userId, q]));
+
+  /**
+   * Every edit an admin can make to a row goes through one mutation.
+   *
+   * The API applies each field independently, so the caller sends the change
+   * and a sentence describing it; splitting this into a mutation per field
+   * would be five copies of the same invalidate-and-toast.
+   */
   const updateUser = useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: string }) =>
-      adminApi.updateUser(userId, { role }),
-    onSuccess: () => {
+    mutationFn: ({
+      userId,
+      changes,
+    }: {
+      userId: string;
+      changes: Parameters<typeof adminApi.updateUser>[1];
+      message: string;
+    }) => adminApi.updateUser(userId, changes),
+    onSuccess: (_user, variables) => {
       qc.invalidateQueries({ queryKey: ['admin-users'] });
-      toastSuccess('User updated.');
+      toastSuccess(variables.message);
     },
     onError: () => {
       toastError('Failed to update user. Please try again.');
@@ -371,17 +403,23 @@ function UsersTab() {
     );
   }
 
+  // The two are independent reads, so a listing that failed leaves the rules
+  // editable — an admin who came here to tighten the policy should not be sent
+  // away because the user table happened to fail.
   if (error) {
     return (
-      <div className={styles.error}>
-        Failed to load users. You may not have admin permissions.
-      </div>
+      <>
+        <div className={styles.error}>
+          Failed to load users. You may not have admin permissions.
+        </div>
+        <PasswordPolicySection />
+      </>
     );
   }
 
   const users: AdminUser[] = data?.users ?? [];
   const total = data?.total ?? 0;
-  const totalPages = Math.ceil(total / 20);
+  const totalPages = Math.ceil(total / USERS_PAGE_SIZE);
 
   // The toggle has to render even with nothing in the list, or an admin whose
   // only remaining accounts are deleted ones has no way to reveal them.
@@ -399,22 +437,45 @@ function UsersTab() {
     </label>
   );
 
+  const header = (
+    <>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>
+          Users <span className={styles.userCount}>({total})</span>
+        </h2>
+        <button type="button" className={styles.primaryBtn} onClick={() => setCreating(true)}>
+          New user
+        </button>
+      </div>
+      {deletedToggle}
+    </>
+  );
+
+  const dialogs = (
+    <>
+      <CreateUserDialog open={creating} onClose={() => setCreating(false)} />
+      <UserQuotaDialog user={quotaUser} onClose={() => setQuotaUser(null)} />
+      <ResetPasswordDialog user={resetUser} onClose={() => setResetUser(null)} />
+    </>
+  );
+
   if (users.length === 0) {
     return (
-      <div className={styles.section}>
-        <h2 className={styles.sectionTitle}>Users</h2>
-        {deletedToggle}
-        <div className={styles.empty}>No users found.</div>
-      </div>
+      <>
+        <div className={styles.section}>
+          {header}
+          <div className={styles.empty}>No users found.</div>
+          {dialogs}
+        </div>
+        <PasswordPolicySection />
+      </>
     );
   }
 
   return (
+    <>
     <div className={styles.section}>
-      <h2 className={styles.sectionTitle}>
-        Users <span className={styles.userCount}>({total})</span>
-      </h2>
-      {deletedToggle}
+      {header}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
@@ -422,88 +483,240 @@ function UsersTab() {
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Storage</th>
+              <th>Status</th>
               <th>2FA</th>
               <th>Joined</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.id} className={u.deletedAt ? styles.deletedRow : undefined}>
-                <td>
-                  {u.name}
-                  {u.deletedAt && (
-                    <span className={styles.deletedBadge} title={purgeTitle(u)}>
-                      {purgeLabel(u)}
-                    </span>
-                  )}
-                </td>
-                <td>{u.email}</td>
-                <td>
-                  <select
-                    className={styles.roleSelect}
-                    value={u.role}
-                    // Changing the role of an account on its way out writes to a
-                    // row the worker is about to delete.
-                    disabled={
-                      u.id === currentUser?.id || updateUser.isPending || !!u.deletedAt
-                    }
-                    onChange={(e) =>
-                      updateUser.mutate({ userId: u.id, role: e.target.value })
-                    }
-                  >
-                    <option value="user">user</option>
-                    <option value="admin">admin</option>
-                  </select>
-                </td>
-                <td>
-                  <span className={u.totpEnabled ? styles.twoFaOn : styles.twoFaOff}>
-                    {u.totpEnabled ? 'On' : 'Off'}
-                  </span>
-                </td>
-                <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                <td>
-                  {u.deletedAt ? (
-                    <button
-                      className={styles.restoreBtn}
-                      onClick={() => restoreUser.mutate(u.id)}
-                      disabled={restoreUser.isPending}
-                      type="button"
+            {users.map((u) => {
+              const quota = quotaById.get(u.id);
+              const percent = quota ? usagePercent(quota.usedBytes, quota.quotaBytes) : null;
+              // A deleted account is on its way out, so every control that
+              // writes to its row is off: the worker is about to erase it.
+              const readOnly = !!u.deletedAt;
+              const isSelf = u.id === currentUser?.id;
+              return (
+                <tr key={u.id} className={u.deletedAt ? styles.deletedRow : undefined}>
+                  <td>
+                    {u.name}
+                    {u.deletedAt && (
+                      <span className={styles.deletedBadge} title={purgeTitle(u)}>
+                        {purgeLabel(u)}
+                      </span>
+                    )}
+                  </td>
+                  <td>{u.email}</td>
+                  <td>
+                    <select
+                      className={styles.roleSelect}
+                      value={u.role}
+                      // An admin demoting themselves would lose the console
+                      // they are standing in, so their own row is fixed.
+                      disabled={isSelf || updateUser.isPending || readOnly}
+                      onChange={(e) =>
+                        updateUser.mutate({
+                          userId: u.id,
+                          changes: { role: e.target.value },
+                          message: `${u.name} is now ${e.target.value}.`,
+                        })
+                      }
                     >
-                      Restore
-                    </button>
-                  ) : u.id === currentUser?.id ? (
-                    <span className={styles.selfLabel}>You</span>
-                  ) : confirmDeleteId === u.id ? (
-                    <span className={styles.confirmRow}>
+                      <option value="user">user</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </td>
+                  <td>
+                    {quotas.isLoading ? (
+                      <span className={styles.serviceMeta}>…</span>
+                    ) : quota ? (
+                      <div className={styles.quotaCell}>
+                        <span
+                          className={`${styles.quotaText} ${
+                            percent !== null && percent >= 100 ? styles.quotaOver : ''
+                          }`}
+                        >
+                          {formatBytes(quota.usedBytes)} / {formatLimit(quota.quotaBytes)}
+                        </span>
+                        {percent !== null && (
+                          <ProgressBar
+                            value={percent}
+                            max={100}
+                            size="sm"
+                            color={percent >= 90 ? 'error' : percent >= 75 ? 'warning' : 'accent'}
+                            aria-label={`Storage used by ${u.name}`}
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <span className={styles.serviceMeta}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    <span className={styles.badgeRow}>
+                      {u.disabledAt && (
+                        <span
+                          className={styles.badgeDisabled}
+                          title={`Disabled ${new Date(u.disabledAt).toLocaleString()}`}
+                        >
+                          Disabled
+                        </span>
+                      )}
+                      {u.lockedOutAt && (
+                        <span
+                          className={styles.badgeLocked}
+                          title={`Locked ${new Date(
+                            u.lockedOutAt,
+                          ).toLocaleString()} after ${u.failedLoginAttempts} failed sign-in attempts`}
+                        >
+                          Locked
+                        </span>
+                      )}
+                      {u.passwordExpired && (
+                        <span
+                          className={styles.badgeExpired}
+                          title="Sign-in is refused until this user sets a new password"
+                        >
+                          Password expired
+                        </span>
+                      )}
+                      {!u.disabledAt && !u.lockedOutAt && !u.passwordExpired && (
+                        <span className={styles.badgeOk}>Active</span>
+                      )}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={u.totpEnabled ? styles.twoFaOn : styles.twoFaOff}>
+                      {u.totpEnabled ? 'On' : 'Off'}
+                    </span>
+                  </td>
+                  <td>{new Date(u.createdAt).toLocaleDateString()}</td>
+                  <td>
+                    {u.deletedAt ? (
                       <button
-                        className={styles.confirmBtn}
-                        onClick={() => deleteUser.mutate(u.id)}
-                        disabled={deleteUser.isPending}
+                        className={styles.restoreBtn}
+                        onClick={() => restoreUser.mutate(u.id)}
+                        disabled={restoreUser.isPending}
                         type="button"
                       >
-                        Confirm
+                        Restore
                       </button>
-                      <button
-                        className={styles.cancelBtn}
-                        onClick={() => setConfirmDeleteId(null)}
-                        type="button"
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      className={styles.deleteBtn}
-                      onClick={() => setConfirmDeleteId(u.id)}
-                      type="button"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                    ) : (
+                      <span className={styles.rowActions}>
+                        <button
+                          type="button"
+                          className={styles.linkBtn}
+                          onClick={() => setQuotaUser(u)}
+                        >
+                          Storage
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.linkBtn}
+                          onClick={() => setResetUser(u)}
+                        >
+                          Password
+                        </button>
+                        {/* Releasing a lockout only ever restores access, so
+                            unlike Disable it is safe on an admin's own row —
+                            though a locked admin has no session to do it from,
+                            which is why it is here rather than nowhere. */}
+                        {u.lockedOutAt && (
+                          <button
+                            type="button"
+                            className={styles.linkBtn}
+                            disabled={updateUser.isPending}
+                            title="Clear the lockout and the failed-attempt count behind it"
+                            onClick={() =>
+                              updateUser.mutate({
+                                userId: u.id,
+                                changes: { unlock: true },
+                                message: `${u.name} can sign in again.`,
+                              })
+                            }
+                          >
+                            Unlock
+                          </button>
+                        )}
+                        {/* Locking yourself out, or expiring your own password,
+                            ends the session doing it — so an admin's own row
+                            offers neither. */}
+                        {!isSelf && (
+                          <>
+                            <button
+                              type="button"
+                              className={styles.linkBtn}
+                              disabled={updateUser.isPending || u.passwordExpired}
+                              title={
+                                u.passwordExpired
+                                  ? 'This password is already expired'
+                                  : 'Refuse sign-in until they set a new password'
+                              }
+                              onClick={() =>
+                                updateUser.mutate({
+                                  userId: u.id,
+                                  changes: { expirePassword: true },
+                                  message: `${u.name} must set a new password.`,
+                                })
+                              }
+                            >
+                              Expire password
+                            </button>
+                            <button
+                              type="button"
+                              className={u.disabledAt ? styles.linkBtn : styles.deleteBtn}
+                              disabled={updateUser.isPending}
+                              onClick={() =>
+                                updateUser.mutate({
+                                  userId: u.id,
+                                  changes: { disabled: !u.disabledAt },
+                                  message: u.disabledAt
+                                    ? `${u.name} can sign in again.`
+                                    : `${u.name} is locked out.`,
+                                })
+                              }
+                            >
+                              {u.disabledAt ? 'Enable' : 'Disable'}
+                            </button>
+                          </>
+                        )}
+                        {isSelf ? (
+                          <span className={styles.selfLabel}>You</span>
+                        ) : confirmDeleteId === u.id ? (
+                          <span className={styles.confirmRow}>
+                            <button
+                              className={styles.confirmBtn}
+                              onClick={() => deleteUser.mutate(u.id)}
+                              disabled={deleteUser.isPending}
+                              type="button"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              className={styles.cancelBtn}
+                              onClick={() => setConfirmDeleteId(null)}
+                              type="button"
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            className={styles.deleteBtn}
+                            onClick={() => setConfirmDeleteId(u.id)}
+                            type="button"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -530,7 +743,10 @@ function UsersTab() {
           </button>
         </div>
       )}
+      {dialogs}
     </div>
+    <PasswordPolicySection />
+    </>
   );
 }
 
@@ -957,13 +1173,28 @@ function JobsTab() {
 // Page
 // ---------------------------------------------------------------------------
 
-type Tab = 'processes' | 'disk' | 'services' | 'users' | 'flags' | 'versions' | 'fonts' | 'jobs';
+type Tab =
+  | 'processes'
+  | 'disk'
+  | 'services'
+  | 'users'
+  | 'queue'
+  | 'flags'
+  | 'versions'
+  | 'fonts'
+  | 'jobs';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'processes', label: 'Processes' },
   { id: 'disk', label: 'Disk Space' },
   { id: 'services', label: 'Services' },
+  // The password rules are a section inside Users rather than a tab of their
+  // own: they are the rules the accounts in that table are held to, and an
+  // admin tightening one usually wants to see who it lands on.
   { id: 'users', label: 'Users' },
+  // Next to Users, because it is the queue of things users have asked for and
+  // acting on one lands back in that tab's data.
+  { id: 'queue', label: 'Work Queue' },
   { id: 'flags', label: 'Feature Flags' },
   { id: 'versions', label: 'Versions' },
   { id: 'fonts', label: 'Fonts' },
@@ -1024,6 +1255,7 @@ export default function AdminPage() {
         {activeTab === 'disk' && <DiskTab />}
         {activeTab === 'services' && <ServicesTab />}
         {activeTab === 'users' && <UsersTab />}
+        {activeTab === 'queue' && <WorkQueueTab />}
         {activeTab === 'flags' && <FeatureFlagsTab />}
         {activeTab === 'versions' && <VersionsTab />}
         {activeTab === 'fonts' && <FontsTab />}
