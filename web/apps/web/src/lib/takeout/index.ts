@@ -59,6 +59,23 @@ export {
 } from './importSheets';
 export type { SheetsImportOptions } from './importSheets';
 
+export { findDriveSlides, readSlideInfo } from './driveSlides';
+export type {
+  DriveSlideEntry,
+  DriveSlideInfo,
+  DriveSlidesSource,
+  SlideFormat,
+  UnsupportedSlide,
+} from './driveSlides';
+
+export {
+  storedPptxFor,
+  runSlidesImport,
+  DEFAULT_SLIDES_IMPORT_OPTIONS,
+  UNTITLED_SLIDE,
+} from './importSlides';
+export type { SlidesImportOptions } from './importSlides';
+
 export { captureDateOf, findTakeoutPhotos, readPhotoInfo } from './photos';
 export type { MediaKind, PhotoInfo, PhotosSource, TakeoutAlbum, TakeoutPhoto } from './photos';
 
