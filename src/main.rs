@@ -191,6 +191,14 @@ fn rsc_payload_path(web_dir: &str, request_path: &str) -> Option<std::path::Path
     safe_join(web_dir, &format!("{}/index{}", route, RSC_PAYLOAD_SUFFIX)).filter(|p| p.is_file())
 }
 
+/// Whether `web_dir` holds a built export to serve.
+///
+/// The index is what the SPA fallback hands out for every route, so a directory without one is not
+/// a web build however many other files are in it.
+fn web_app_present(web_dir: &str) -> bool {
+    std::path::Path::new(web_dir).join("index.html").is_file()
+}
+
 /// Serves the statically exported Next.js app out of `web_dir`.
 ///
 /// Two mounts, because they want opposite caching. `/_next/static` is content-hashed and cached
@@ -211,13 +219,24 @@ fn rsc_payload_path(web_dir: &str, request_path: &str) -> Option<std::path::Path
 /// `beforeunload` warning was the only reason anyone saw it happen.
 ///
 /// Returns a closure because `App` is rebuilt per worker thread and `configure` takes `FnOnce`.
+///
+/// Mounts nothing at all when `web_dir` does not exist, which is the normal state under
+/// `cargo dev`: there the Next dev server owns the UI on its own port and only proxies `/api` here,
+/// so the export this serves is never built. Registering the mounts anyway made `actix_files` log
+/// `Specified path is not a directory` at ERROR for every request that reached them — an error per
+/// request, for a directory nothing was supposed to be reading. Whether the app is being served is
+/// reported once at startup instead; see the caller.
 fn configure_web_app(web_dir: &str) -> impl FnOnce(&mut web::ServiceConfig) {
     let hashed_assets_dir = format!("{}/_next/static", web_dir);
     let index = format!("{}/index.html", web_dir);
+    let present = web_app_present(web_dir);
     let web_dir = web_dir.to_owned();
     let fallback_dir = web_dir.clone();
 
     move |cfg: &mut web::ServiceConfig| {
+        if !present {
+            return;
+        }
         cfg.service(
             web::scope("/_next/static")
                 .wrap(from_fn(immutable_cache_control))
@@ -259,7 +278,22 @@ fn configure_web_app(web_dir: &str) -> impl FnOnce(&mut web::ServiceConfig) {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    dotenvy::dotenv().ok();
+    // `dotenv()` searches *upward* from the process's working directory, so
+    // which file it finds depends on where the binary was started — from
+    // outside the repo it walks straight past the repo's `.env` and loads
+    // whatever `.env` sits higher up, a home directory's included. Reporting
+    // the file it settled on turns "the app is ignoring my .env" into a
+    // question with an answer on the first line of the log. Printed rather than
+    // logged because logging is configured from what this loads.
+    match dotenvy::dotenv() {
+        Ok(path) => println!("Loaded environment from {}", path.display()),
+        Err(_) => println!(
+            "No .env found from {}; using the environment as it stands",
+            std::env::current_dir()
+                .map(|d| d.display().to_string())
+                .unwrap_or_else(|_| "the working directory".to_string()),
+        ),
+    }
 
     let config = config::Config::from_env().unwrap_or_else(|e| {
         eprintln!("Configuration error: {}", e);
@@ -1101,6 +1135,20 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
 
     info!("Listening on {}", bind_addr);
 
+    // Said once here rather than per request. Under `cargo dev` the absence is
+    // expected — the Next dev server owns the UI and proxies only `/api` here —
+    // so it is not a warning; in a deployment it is the one line that explains
+    // why the site is 404ing while the API answers.
+    if web_app_present(&web_dir) {
+        info!("Serving the web app from {}", web_dir);
+    } else {
+        info!(
+            "No web build at {} — serving the API only. Run `cargo web` to build it, \
+             or ignore this under `cargo dev`, where the Next dev server serves the app.",
+            web_dir
+        );
+    }
+
     HttpServer::new(move || {
         App::new()
             // Shared app data
@@ -1434,6 +1482,49 @@ mod tests {
             let dir = TestWebDir::new();
             let resp = get!(dir, "/_next/static/chunks/main-abc123.js");
             assert_eq!(resp.status(), 200);
+        }
+
+        /// A directory with no export in it is the normal state under
+        /// `cargo dev`, where the Next dev server owns the UI and only `/api`
+        /// is proxied here. Mounting `actix_files` over it anyway logged
+        /// `Specified path is not a directory` at ERROR for every request that
+        /// reached it — an error per request about a directory nothing was
+        /// meant to be reading.
+        #[actix_web::test]
+        async fn mounts_nothing_when_there_is_no_web_build() {
+            struct Missing(String);
+            impl Missing {
+                fn as_str(&self) -> &str {
+                    &self.0
+                }
+            }
+            let dir = Missing(
+                std::env::temp_dir()
+                    .join(format!("neutrino-absent-{}", uuid::Uuid::new_v4()))
+                    .to_str()
+                    .expect("utf-8 temp path")
+                    .to_owned(),
+            );
+
+            for uri in ["/", "/some/client/route", "/_next/static/chunks/main.js"] {
+                assert_eq!(
+                    get!(dir, uri).status(),
+                    404,
+                    "{uri} should fall through to a plain 404",
+                );
+            }
+        }
+
+        /// An empty directory is not a web build either: the SPA fallback hands
+        /// out `index.html` for every route, so without one there is nothing to
+        /// serve and the mounts would only produce the same per-request errors.
+        #[actix_web::test]
+        async fn an_empty_directory_is_not_a_web_build() {
+            let path =
+                std::env::temp_dir().join(format!("neutrino-empty-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("temp dir");
+            assert!(!web_app_present(path.to_str().expect("utf-8 temp path")));
+            let _ = std::fs::remove_dir_all(&path);
         }
 
         #[actix_web::test]
