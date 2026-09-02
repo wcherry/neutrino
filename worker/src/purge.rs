@@ -80,6 +80,10 @@ const USER_OWNED_TABLES: &[(&str, &str)] = &[
     ("user_key_vaults", "user_id"),
     ("user_key_unlocks", "user_id"),
     ("oauth_authorization_codes", "user_id"),
+    // The password-reuse history. Hashes, but hashes of the account's real
+    // passwords — leaving them behind would keep the one thing a purge is for
+    // getting rid of, long after the account itself is gone.
+    ("password_history", "user_id"),
     // Calendar
     ("events", "user_id"),
     ("reminders", "user_id"),
@@ -125,8 +129,12 @@ const USER_OWNED_TABLES: &[(&str, &str)] = &[
 /// colleague's comment on a document that is going away. Each is deleted by
 /// subquery against the owner's files, and this has to run **before**
 /// `USER_OWNED_TABLES` empties `files`, or the subquery matches nothing.
+// A name here that no longer exists is not a no-op: the DELETE raises "no such
+// table", `purge_account` returns the error, and `sweep` logs and skips the
+// account — so one stale entry quietly stops *every* account being purged. That
+// is what `docs` did between migration 00114 dropping the table and its removal
+// from this list.
 const FILE_SCOPED_TABLES: &[&str] = &[
-    "docs",
     "doc_yjs_state",
     "notes",
     "diagram_yjs_state",
@@ -415,6 +423,18 @@ mod tests {
                 .bind::<diesel::sql_types::Timestamp, _>(now)
                 .execute(&mut conn)
                 .expect("insert note");
+
+            // Hashes of the account's real passwords, so the purge has to take
+            // them with it.
+            diesel::sql_query(
+                "INSERT INTO password_history (id, user_id, password_hash, created_at) \
+                 VALUES (?, ?, 'argon2-hash', ?)",
+            )
+            .bind::<Text, _>(format!("pw-{owner}"))
+            .bind::<Text, _>(owner)
+            .bind::<diesel::sql_types::Timestamp, _>(now)
+            .execute(&mut conn)
+            .expect("insert password history");
         }
 
         let purged = sweep(&db.pool, &db.dir).expect("sweep");
@@ -427,12 +447,21 @@ mod tests {
             0,
             "a row hanging off the purged user's file was orphaned",
         );
+        assert_eq!(
+            count(&mut conn, "SELECT COUNT(*) AS n FROM password_history WHERE user_id = ?", "gone"),
+            0,
+            "the purged account's password hashes outlived it",
+        );
 
         // The live account is untouched, children included.
         assert_eq!(count(&mut conn, "SELECT COUNT(*) AS n FROM users WHERE id = ?", "stays"), 1);
         assert_eq!(count(&mut conn, "SELECT COUNT(*) AS n FROM files WHERE user_id = ?", "stays"), 1);
         assert_eq!(
             count(&mut conn, "SELECT COUNT(*) AS n FROM notes WHERE file_id = ?", "file-stays"),
+            1,
+        );
+        assert_eq!(
+            count(&mut conn, "SELECT COUNT(*) AS n FROM password_history WHERE user_id = ?", "stays"),
             1,
         );
     }
