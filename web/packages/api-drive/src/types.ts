@@ -111,6 +111,27 @@ export interface QuotaInfo {
   dailyCapBytes: number | null;
 }
 
+/**
+ * One ask for a bigger storage limit, and what was decided about it (issue #144).
+ *
+ * The admin console owns the queue these land in; this is the asker's own view,
+ * so the storage meter can say "awaiting review" rather than offering to ask
+ * again, and can report the answer when it comes.
+ */
+export interface QuotaRequestItem {
+  id: string;
+  userId: string;
+  /** The new total limit asked for, in bytes — not an increment. */
+  requestedBytes: number;
+  reason: string | null;
+  status: 'pending' | 'approved' | 'denied';
+  /** What was granted, which may be less than was asked for. */
+  grantedBytes: number | null;
+  decisionNote: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
 // ---------------------------------------------------------------------------
 // Version types
 // ---------------------------------------------------------------------------

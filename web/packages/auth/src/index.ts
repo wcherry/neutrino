@@ -27,6 +27,7 @@ export { decodeJwtAdmin, isCurrentUserAdmin } from './adminUtils';
 export type {
   RegisterRequest,
   LoginRequest,
+  ChangePasswordRequest,
   AuthTokens,
   RefreshRequest,
   UserProfile,

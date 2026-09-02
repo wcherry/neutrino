@@ -13,6 +13,21 @@ export interface LoginRequest {
   password: string;
 }
 
+/**
+ * Set a new password by proving knowledge of the current one.
+ *
+ * Deliberately not an authenticated call: sign-in refuses an expired password
+ * with `PASSWORD_EXPIRED` and issues no tokens, so this is the only way out of
+ * that state. The proof is the same one sign-in takes.
+ */
+export interface ChangePasswordRequest {
+  email: string;
+  currentPassword: string;
+  newPassword: string;
+  /** Required when the account has two-factor enabled, exactly as at sign-in. */
+  totpCode?: string;
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
