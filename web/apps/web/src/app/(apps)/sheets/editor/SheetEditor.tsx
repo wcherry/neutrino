@@ -50,7 +50,8 @@ import { FormulaBar } from './components/FormulaBar';
 import { HamburgerMenu } from './components/HamburgerMenu';
 import { ExportDialogs } from './components/ExportDialogs';
 import { SheetTabBar } from './components/SheetTabBar';
-import { ShareButton } from '@neutrino/ui';
+import { SheetZoomProvider } from './zoom';
+import { ShareButton, ZoomSlider } from '@neutrino/ui';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import type { FileItem } from '@/lib/api';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
@@ -222,6 +223,11 @@ export function SheetEditor() {
     const [showHistory, setShowHistory] = useState(false);
     const [findReplaceMode, setFindReplaceMode] = useState<'find' | 'replace' | null>(null);
     const [showShareDialog, setShowShareDialog] = useState(false);
+
+    // ── Grid zoom ────────────────────────────────────────────────────────────
+    // A view setting, like it is in docs, slides and drawing: held for the
+    // session and never written into the file.
+    const [zoom, setZoom] = useState(100);
 
     // ── Conditional formatting state (feature-flagged) ───────────────────────
     const [showCFDialog, setShowCFDialog] = useState(false);
@@ -1781,7 +1787,13 @@ export function SheetEditor() {
             <div className={styles.mainArea}>
                 <div
                     className={styles.editorScrollArea}
-                    style={formatPainterSource ? { cursor: 'crosshair' } : undefined}
+                    // CSS zoom relayouts, so zooming out shows more cells rather
+                    // than painting the same ones smaller, and every pixel the
+                    // grid computes stays in its own unzoomed space.
+                    style={{
+                        zoom: `${zoom}%`,
+                        ...(formatPainterSource ? { cursor: 'crosshair' } : {}),
+                    }}
                     onMouseUp={() => {
                         if (didApplyPaintRef.current) {
                             // Already applied in handleCellActivate (single-cell click)
@@ -1797,46 +1809,48 @@ export function SheetEditor() {
                         }
                     }}
                 >
-                    <SheetGrid
-                        data={data}
-                        selectedCells={selectedCells}
-                        cutCells={clipboard.cutCells}
-                        onCellActivate={handleCellActivate}
-                        onSelectionExtend={handleSelectionExtend}
-                        colWidths={colWidths}
-                        rowHeights={rowHeights}
-                        onColResize={handleColResize}
-                        onRowResize={handleRowResize}
-                        onColHeaderSelect={handleColHeaderSelect}
-                        onRowHeaderSelect={handleRowHeaderSelect}
-                        onColHeaderExtendTo={handleColHeaderExtendTo}
-                        onRowHeaderExtendTo={handleRowHeaderExtendTo}
-                        headerSelection={gridHeaderSelection}
-                        formulaPickMode={editing.formulaPickMode}
-                        onFormulaPickMouseDown={editing.handleFormulaPickMouseDown}
-                        onFormulaPickMouseMove={editing.handleFormulaPickMouseMove}
-                        formulaPickCells={editing.formulaPickMode ? selectedCells : undefined}
-                        formulaRefHighlights={editing.formulaRefHighlights}
-                        onCellContextMenu={handleCellContextMenu}
-                        onColHeaderContextMenu={handleColHeaderContextMenu}
-                        onRowHeaderContextMenu={handleRowHeaderContextMenu}
-                        columnFilters={columnFilters.size > 0 ? columnFilters : undefined}
-                        scrollBodyRef={scrollBodyRef}
-                        conditionalFormats={flags.sheetsConditionalFormatting ? cf.conditionalFormats : undefined}
-                        cfVariables={flags.sheetsConditionalFormatting ? cfVariables : undefined}
-                        remotePresence={remoteUsers.filter(u => u.cellId != null).map(u => ({ clientId: u.clientId, cellId: u.cellId!, color: u.color, name: u.name }))}
-                        overlay={flags.sheetsCharts ? (
-                            <ChartLayer
-                                charts={charts.charts}
-                                data={data}
-                                selectedChartId={selectedChartId}
-                                onSelectChart={setSelectedChartId}
-                                onUpdateChart={(id, patch) => { charts.updateChart(id, patch); dirtyRef.current = true; }}
-                                onDeleteChart={(id) => { charts.removeChart(id); setSelectedChartId(null); dirtyRef.current = true; }}
-                                containerRef={scrollBodyRef}
-                            />
-                        ) : null}
-                    />
+                    <SheetZoomProvider scale={zoom / 100}>
+                        <SheetGrid
+                            data={data}
+                            selectedCells={selectedCells}
+                            cutCells={clipboard.cutCells}
+                            onCellActivate={handleCellActivate}
+                            onSelectionExtend={handleSelectionExtend}
+                            colWidths={colWidths}
+                            rowHeights={rowHeights}
+                            onColResize={handleColResize}
+                            onRowResize={handleRowResize}
+                            onColHeaderSelect={handleColHeaderSelect}
+                            onRowHeaderSelect={handleRowHeaderSelect}
+                            onColHeaderExtendTo={handleColHeaderExtendTo}
+                            onRowHeaderExtendTo={handleRowHeaderExtendTo}
+                            headerSelection={gridHeaderSelection}
+                            formulaPickMode={editing.formulaPickMode}
+                            onFormulaPickMouseDown={editing.handleFormulaPickMouseDown}
+                            onFormulaPickMouseMove={editing.handleFormulaPickMouseMove}
+                            formulaPickCells={editing.formulaPickMode ? selectedCells : undefined}
+                            formulaRefHighlights={editing.formulaRefHighlights}
+                            onCellContextMenu={handleCellContextMenu}
+                            onColHeaderContextMenu={handleColHeaderContextMenu}
+                            onRowHeaderContextMenu={handleRowHeaderContextMenu}
+                            columnFilters={columnFilters.size > 0 ? columnFilters : undefined}
+                            scrollBodyRef={scrollBodyRef}
+                            conditionalFormats={flags.sheetsConditionalFormatting ? cf.conditionalFormats : undefined}
+                            cfVariables={flags.sheetsConditionalFormatting ? cfVariables : undefined}
+                            remotePresence={remoteUsers.filter(u => u.cellId != null).map(u => ({ clientId: u.clientId, cellId: u.cellId!, color: u.color, name: u.name }))}
+                            overlay={flags.sheetsCharts ? (
+                                <ChartLayer
+                                    charts={charts.charts}
+                                    data={data}
+                                    selectedChartId={selectedChartId}
+                                    onSelectChart={setSelectedChartId}
+                                    onUpdateChart={(id, patch) => { charts.updateChart(id, patch); dirtyRef.current = true; }}
+                                    onDeleteChart={(id) => { charts.removeChart(id); setSelectedChartId(null); dirtyRef.current = true; }}
+                                    containerRef={scrollBodyRef}
+                                />
+                            ) : null}
+                        />
+                    </SheetZoomProvider>
                 </div>
                 {showHistory && (
                     <VersionHistoryPanel
@@ -1862,56 +1876,61 @@ export function SheetEditor() {
                 })()}
             </div>
 
-            <SheetTabBar
-                sheetNames={sheets.sheetNames}
-                sheetColors={sheets.sheetColors}
-                setSheetColors={sheets.setSheetColors}
-                activeSheetIndex={sheets.activeSheetIndex}
-                dirtyRef={dirtyRef}
-                readOnly={isViewer}
-                onSwitchSheet={(idx) => {
-                    if (flags.sheetsCharts) {
-                        // Flush before switchSheet updates activeSheetIndexRef, so
-                        // the current sheet's charts land in the correct slot.
-                        charts.flushActiveCharts();
-                    }
-                    if (flags.sheetsConditionalFormatting) {
-                        cf.flushActiveConditionalFormats();
-                    }
-                    tableRegions.flushActiveTableRegions();
-                    sheets.switchSheet(idx);
-                    if (flags.sheetsCharts) {
-                        charts.switchSheetCharts(idx);
-                        setSelectedChartId(null);
-                    }
-                    if (flags.sheetsConditionalFormatting) {
-                        cf.switchSheetConditionalFormats(idx);
-                    }
-                    tableRegions.switchSheetTableRegions(idx);
-                }}
-                onAddSheet={() => {
-                    if (flags.sheetsCharts) {
-                        charts.flushActiveCharts();
-                    }
-                    if (flags.sheetsConditionalFormatting) {
-                        cf.flushActiveConditionalFormats();
-                    }
-                    tableRegions.flushActiveTableRegions();
-                    sheets.addSheet();
-                    if (flags.sheetsCharts) {
-                        charts.switchSheetCharts(sheets.activeSheetIndexRef.current);
-                        setSelectedChartId(null);
-                    }
-                    if (flags.sheetsConditionalFormatting) {
-                        cf.switchSheetConditionalFormats(sheets.activeSheetIndexRef.current);
-                    }
-                    tableRegions.switchSheetTableRegions(sheets.activeSheetIndexRef.current);
-                }}
-                onDeleteSheet={sheets.deleteSheet}
-                onDuplicateSheet={sheets.duplicateSheet}
-                onMoveSheet={sheets.moveSheet}
-                onCommitRename={sheets.commitRename}
-            />
+            <div className={styles.bottomBar}>
+                <SheetTabBar
+                    sheetNames={sheets.sheetNames}
+                    sheetColors={sheets.sheetColors}
+                    setSheetColors={sheets.setSheetColors}
+                    activeSheetIndex={sheets.activeSheetIndex}
+                    dirtyRef={dirtyRef}
+                    readOnly={isViewer}
+                    onSwitchSheet={(idx) => {
+                        if (flags.sheetsCharts) {
+                            // Flush before switchSheet updates activeSheetIndexRef, so
+                            // the current sheet's charts land in the correct slot.
+                            charts.flushActiveCharts();
+                        }
+                        if (flags.sheetsConditionalFormatting) {
+                            cf.flushActiveConditionalFormats();
+                        }
+                        tableRegions.flushActiveTableRegions();
+                        sheets.switchSheet(idx);
+                        if (flags.sheetsCharts) {
+                            charts.switchSheetCharts(idx);
+                            setSelectedChartId(null);
+                        }
+                        if (flags.sheetsConditionalFormatting) {
+                            cf.switchSheetConditionalFormats(idx);
+                        }
+                        tableRegions.switchSheetTableRegions(idx);
+                    }}
+                    onAddSheet={() => {
+                        if (flags.sheetsCharts) {
+                            charts.flushActiveCharts();
+                        }
+                        if (flags.sheetsConditionalFormatting) {
+                            cf.flushActiveConditionalFormats();
+                        }
+                        tableRegions.flushActiveTableRegions();
+                        sheets.addSheet();
+                        if (flags.sheetsCharts) {
+                            charts.switchSheetCharts(sheets.activeSheetIndexRef.current);
+                            setSelectedChartId(null);
+                        }
+                        if (flags.sheetsConditionalFormatting) {
+                            cf.switchSheetConditionalFormats(sheets.activeSheetIndexRef.current);
+                        }
+                        tableRegions.switchSheetTableRegions(sheets.activeSheetIndexRef.current);
+                    }}
+                    onDeleteSheet={sheets.deleteSheet}
+                    onDuplicateSheet={sheets.duplicateSheet}
+                    onMoveSheet={sheets.moveSheet}
+                    onCommitRename={sheets.commitRename}
+                />
+                <div className={styles.zoomArea}>
+                    <ZoomSlider value={zoom} onChange={setZoom} min={50} max={200} step={25} />
+                </div>
+            </div>
 
             {flags.sheetsCharts && showChartDialog && (
                 <ChartCreationDialog

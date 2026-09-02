@@ -9,6 +9,7 @@ import type { HeaderAxis, HeaderClickModifiers, HeaderRun } from './headerSelect
 import { Cell } from './Cell';
 import { evaluateConditionalFormats } from './conditionalFormatting';
 import type { CFRule, CFVariable } from './types';
+import { useSheetZoom } from './zoom';
 import styles from './page.module.css';
 
 export type SheetGridProps = {
@@ -192,6 +193,9 @@ export const SheetGrid = React.memo(function SheetGrid({
     remotePresence,
 }: SheetGridProps) {
     const bodyRef = useRef<HTMLDivElement>(null);
+    // Resize drags read the pointer in screen pixels; the widths they set are in
+    // grid pixels. See `zoom.tsx`.
+    const zoomScale = useSheetZoom();
 
     // Sync the internal bodyRef to the optional external ref so callers can
     // imperatively scroll cells into view after arrow-key navigation.
@@ -343,11 +347,13 @@ export const SheetGrid = React.memo(function SheetGrid({
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
 
+        const widthAt = (clientX: number) => Math.max(20, startWidth + (clientX - startX) / zoomScale);
+
         const onMouseMove = (ev: MouseEvent) => {
-            setDragCol({ index: colIndex, width: Math.max(20, startWidth + ev.clientX - startX) });
+            setDragCol({ index: colIndex, width: widthAt(ev.clientX) });
         };
         const onMouseUp = (ev: MouseEvent) => {
-            const newWidth = Math.max(20, startWidth + ev.clientX - startX);
+            const newWidth = widthAt(ev.clientX);
             onColResize(colIndex, newWidth);
             setDragCol(null);
             document.body.style.cursor = '';
@@ -357,7 +363,7 @@ export const SheetGrid = React.memo(function SheetGrid({
         };
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
-    }, [colWidths, onColResize]);
+    }, [colWidths, onColResize, zoomScale]);
 
     const handleRowResizeStart = useCallback((e: React.MouseEvent, rowIndex: number) => {
         e.preventDefault();
@@ -368,11 +374,13 @@ export const SheetGrid = React.memo(function SheetGrid({
         document.body.style.cursor = 'row-resize';
         document.body.style.userSelect = 'none';
 
+        const heightAt = (clientY: number) => Math.max(12, startHeight + (clientY - startY) / zoomScale);
+
         const onMouseMove = (ev: MouseEvent) => {
-            setDragRow({ index: rowIndex, height: Math.max(12, startHeight + ev.clientY - startY) });
+            setDragRow({ index: rowIndex, height: heightAt(ev.clientY) });
         };
         const onMouseUp = (ev: MouseEvent) => {
-            const newHeight = Math.max(12, startHeight + ev.clientY - startY);
+            const newHeight = heightAt(ev.clientY);
             onRowResize(rowIndex, newHeight);
             setDragRow(null);
             document.body.style.cursor = '';
@@ -382,7 +390,7 @@ export const SheetGrid = React.memo(function SheetGrid({
         };
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
-    }, [rowHeights, onRowResize]);
+    }, [rowHeights, onRowResize, zoomScale]);
 
     // ── Header selection drag ─────────────────────────────────────────────────
     // Selection starts on mousedown (not click) so that dragging across headers
