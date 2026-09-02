@@ -14,10 +14,15 @@ pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
 /// Drop the version history of files that are about to be deleted for good.
 ///
-/// SQLite runs with `foreign_keys` off, so the `ON DELETE CASCADE` declared on
-/// `file_versions.file_id` never fires. Left behind, the rows point at blobs
-/// the caller has just removed and go on counting against the owner's quota,
-/// which is derived from exactly this table.
+/// Left behind, these rows point at blobs the caller has just removed and go on
+/// counting against the owner's quota, which is derived from exactly this
+/// table. The `ON DELETE CASCADE` declared on `file_versions.file_id` would
+/// take them too — foreign keys are enforced here, because `libsqlite3-sys`
+/// builds its bundled SQLite with `SQLITE_DEFAULT_FOREIGN_KEYS=1` rather than
+/// the upstream default of off — but that is a compile flag of a vendored C
+/// library, invisible from this file and one dependency bump from changing.
+/// Deleting the rows outright costs one statement and does not rest on it.
+/// `the_declared_cascade_is_actually_enforced` pins the assumption itself.
 fn delete_version_rows(
     conn: &mut SqliteConnection,
     files_going: &[FileRecord],
@@ -533,10 +538,10 @@ impl FilesystemRepository {
             })?;
 
         if record.is_some() {
-            // SQLite runs with `foreign_keys` off, so the `ON DELETE CASCADE`
-            // on `file_versions.file_id` never fires — the history rows have
-            // to go by hand, or they outlive the blobs the caller is about to
-            // remove and keep counting against the owner's quota forever.
+            // The history rows go first and by hand, for the reason
+            // `delete_version_rows` gives: left behind they outlive the blobs
+            // the caller is about to remove and keep counting against the
+            // owner's quota forever.
             diesel::delete(file_versions::table.filter(file_versions::file_id.eq(file_id)))
                 .execute(&mut conn)
                 .map_err(|e| {
@@ -1083,6 +1088,7 @@ mod tests {
     use super::*;
     use crate::drive::filesystem::dto::DriveFileType;
     use crate::drive::storage::model::NewFileRecord;
+    use chrono::Duration;
     use diesel_migrations::MigrationHarness;
 
     /// A repository backed by a fresh in-memory SQLite database. The pool is
@@ -1668,5 +1674,148 @@ mod tests {
         assert!(is_trashed(&repo, "one-file"));
         assert!(is_trashed(&repo, "child-file"));
         assert!(is_trashed(&repo, "two-file"));
+    }
+
+    // ── Version rows outliving their file (#135) ─────────────────────────────
+
+    /// One version row for `file_id`, which must already exist as a file.
+    fn insert_version(repo: &FilesystemRepository, id: &str, file_id: &str, user: &str, n: i32) {
+        let mut conn = repo.get_conn().unwrap();
+        diesel::insert_into(file_versions::table)
+            .values((
+                file_versions::id.eq(id),
+                file_versions::file_id.eq(file_id),
+                file_versions::user_id.eq(user),
+                file_versions::version_number.eq(n),
+                file_versions::size_bytes.eq(1024),
+                file_versions::storage_path.eq(format!("{user}/{file_id}/{id}")),
+                file_versions::is_named.eq(false),
+            ))
+            .execute(&mut conn)
+            .expect("failed to insert test version");
+    }
+
+    fn version_ids(repo: &FilesystemRepository, file_id: &str) -> Vec<String> {
+        let mut conn = repo.get_conn().unwrap();
+        file_versions::table
+            .filter(file_versions::file_id.eq(file_id))
+            .select(file_versions::id)
+            .load(&mut conn)
+            .unwrap()
+    }
+
+    /// The leak this covers: the rows survived their file, went on pointing at
+    /// blobs the caller had just removed, and kept charging the owner for them
+    /// — the quota is a sum over exactly this table.
+    #[test]
+    fn permanently_deleting_a_file_takes_its_version_rows_with_it() {
+        let repo = test_repo();
+        insert_file_in(&repo, "gone", "user-1", None);
+        insert_file_in(&repo, "kept", "user-1", None);
+        insert_version(&repo, "gone-v1", "gone", "user-1", 1);
+        insert_version(&repo, "gone-v2", "gone", "user-1", 2);
+        insert_version(&repo, "kept-v1", "kept", "user-1", 1);
+        repo.trash_file("gone", "user-1").unwrap();
+
+        let record = repo.permanently_delete_file("gone", "user-1").unwrap();
+
+        assert!(
+            record.is_some(),
+            "the caller needs the record to free its dir"
+        );
+        assert!(version_ids(&repo, "gone").is_empty());
+        assert_eq!(version_ids(&repo, "kept"), vec!["kept-v1"]);
+    }
+
+    #[test]
+    fn emptying_the_trash_takes_every_trashed_file_version_row_with_it() {
+        let repo = test_repo();
+        insert_file_in(&repo, "gone", "user-1", None);
+        insert_file_in(&repo, "kept", "user-1", None);
+        insert_file_in(&repo, "other-user", "user-2", None);
+        insert_version(&repo, "gone-v1", "gone", "user-1", 1);
+        insert_version(&repo, "kept-v1", "kept", "user-1", 1);
+        insert_version(&repo, "other-v1", "other-user", "user-2", 1);
+        repo.trash_file("gone", "user-1").unwrap();
+        repo.trash_file("other-user", "user-2").unwrap();
+
+        let deleted = repo.empty_trash("user-1").unwrap();
+
+        assert_eq!(names(&deleted), vec!["gone"]);
+        assert!(version_ids(&repo, "gone").is_empty());
+        assert_eq!(version_ids(&repo, "kept"), vec!["kept-v1"]);
+        assert_eq!(
+            version_ids(&repo, "other-user"),
+            vec!["other-v1"],
+            "emptied one user's trash and reached into another's"
+        );
+    }
+
+    #[test]
+    fn purging_expired_trash_takes_the_expired_files_version_rows_with_it() {
+        let repo = test_repo();
+        insert_file_in(&repo, "expired", "user-1", None);
+        insert_file_in(&repo, "recent", "user-1", None);
+        insert_version(&repo, "expired-v1", "expired", "user-1", 1);
+        insert_version(&repo, "recent-v1", "recent", "user-1", 1);
+        repo.trash_file("expired", "user-1").unwrap();
+        repo.trash_file("recent", "user-1").unwrap();
+
+        // Both were trashed just now; only the first is backdated past the cutoff.
+        let mut conn = repo.get_conn().unwrap();
+        let long_ago = Utc::now().naive_utc() - Duration::days(60);
+        diesel::update(files::table.filter(files::id.eq("expired")))
+            .set(files::deleted_at.eq(long_ago))
+            .execute(&mut conn)
+            .unwrap();
+        drop(conn);
+
+        let cutoff = Utc::now().naive_utc() - Duration::days(30);
+        let purged = repo.purge_expired_trash("user-1", cutoff).unwrap();
+
+        assert_eq!(names(&purged), vec!["expired"]);
+        assert!(version_ids(&repo, "expired").is_empty());
+        assert_eq!(version_ids(&repo, "recent"), vec!["recent-v1"]);
+    }
+
+    /// #135 was reported as "`PRAGMA foreign_keys` is never enabled, so the
+    /// declared cascade never fires". Not so for this binary: `libsqlite3-sys`
+    /// compiles its bundled SQLite with `SQLITE_DEFAULT_FOREIGN_KEYS=1`, so
+    /// every connection enforces them and the cascade is a second line of
+    /// defence behind the explicit deletes above. This pins that — a move to a
+    /// system SQLite, or a dependency that stops setting the flag, fails here
+    /// rather than quietly reinstating the leak wherever a file row is deleted
+    /// without `delete_version_rows` alongside it.
+    #[test]
+    fn the_declared_cascade_is_actually_enforced() {
+        let repo = test_repo();
+        insert_file_in(&repo, "gone", "user-1", None);
+        insert_version(&repo, "gone-v1", "gone", "user-1", 1);
+
+        let mut conn = repo.get_conn().unwrap();
+        let orphan = diesel::insert_into(file_versions::table)
+            .values((
+                file_versions::id.eq("no-parent"),
+                file_versions::file_id.eq("no-such-file"),
+                file_versions::user_id.eq("user-1"),
+                file_versions::version_number.eq(1),
+                file_versions::size_bytes.eq(1),
+                file_versions::storage_path.eq("user-1/no-such-file/no-parent"),
+                file_versions::is_named.eq(false),
+            ))
+            .execute(&mut conn);
+        assert!(
+            orphan.is_err(),
+            "a version row was accepted for a file that does not exist"
+        );
+
+        // A raw delete, standing in for any future caller that drops a file row
+        // without clearing its history first.
+        diesel::delete(files::table.filter(files::id.eq("gone")))
+            .execute(&mut conn)
+            .unwrap();
+        drop(conn);
+
+        assert!(version_ids(&repo, "gone").is_empty());
     }
 }

@@ -449,6 +449,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(base);
     }
 
+    /// The disk half of #135: history shares the file's directory, so deleting
+    /// the file for good has to take the directory, not the one blob
+    /// `storage_path` names — otherwise every older version is stranded.
+    #[test]
+    fn remove_file_dir_takes_the_versions_with_it() {
+        let (store, base) = temp_store();
+        store.ensure_file_dir("user1", "file1").expect("mkdir");
+        store.ensure_file_dir("user1", "file2").expect("mkdir");
+        for version in ["v1", "v2", "v3"] {
+            std::fs::write(store.version_path("user1", "file1", version), b"bytes").expect("write");
+        }
+        std::fs::write(store.version_path("user1", "file2", "v1"), b"bytes").expect("write");
+
+        store.remove_file_dir("user1", "file1");
+
+        assert!(!store.file_dir("user1", "file1").exists());
+        assert!(store.version_path("user1", "file2", "v1").exists());
+        // A second delete, and a file that never had content, are both no-ops.
+        store.remove_file_dir("user1", "file1");
+        store.remove_file_dir("user1", "never-uploaded");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
     #[test]
     fn resolve_for_serving_accepts_file_key() {
         let (store, base) = temp_store();
