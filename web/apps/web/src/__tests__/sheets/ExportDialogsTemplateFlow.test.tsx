@@ -21,7 +21,7 @@
  * component instance state, which is what makes this observable without a
  * dedicated "selected template" prop.
  *
- * See /Users/williamcherry/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
+ * See /Users/williamcherry/Playground/getneutrino.app/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
  * for the full plan this test file is written against.
  */
 

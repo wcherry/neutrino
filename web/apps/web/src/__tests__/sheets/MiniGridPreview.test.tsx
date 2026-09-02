@@ -7,7 +7,7 @@
  * plus data rows, each cell its own element, no interactivity or internal
  * state.
  *
- * See /Users/williamcherry/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
+ * See /Users/williamcherry/Playground/getneutrino.app/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
  * for the full plan this test file is written against.
  */
 

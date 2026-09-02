@@ -1,7 +1,7 @@
 // Pure functions (no React) implementing the unified structural insert/delete
 // shift used by every row/col insert/delete handler in SheetEditor.tsx.
 //
-// See /Users/williamcherry/neutrino/agent_docs/plans/fix-sheets-structural-shift.md
+// See /Users/williamcherry/Playground/getneutrino.app/neutrino/agent_docs/plans/fix-sheets-structural-shift.md
 // for full background. Summary:
 //
 // - `index` is always 1-based (matches cell-id numbering, e.g. col B = 2).

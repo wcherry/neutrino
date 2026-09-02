@@ -14,7 +14,7 @@
  * jsdom — only on the `open`/`onClose` contract `Modal`/`ModalHeader`/
  * `ModalBody` expose.
  *
- * See /Users/williamcherry/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
+ * See /Users/williamcherry/Playground/getneutrino.app/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
  * ("Continuation: Table styles gallery (28 presets)") for the original plan
  * this test file was first written against.
  */
