@@ -336,7 +336,20 @@ async fn main() -> std::io::Result<()> {
     use auth::service::AuthService;
 
     let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
-    let auth_service = Arc::new(AuthService::new(auth_repo.clone(), token_service.clone()));
+    // The workspace password rules. Shared between the admin routes that write
+    // them and the auth service that enforces them, so a policy change takes
+    // effect on the next password without a restart.
+    let password_policy_repo = Arc::new(
+        auth::password_policy::PasswordPolicyRepository::new(pool.clone()),
+    );
+    let auth_service = Arc::new(AuthService::new(
+        auth_repo.clone(),
+        token_service.clone(),
+        password_policy_repo.clone(),
+    ));
+    let password_policy_state = web::Data::new(auth::password_policy::api::PasswordPolicyState {
+        repo: password_policy_repo,
+    });
     // `auth_state` is built further down, once the Drive filesystem service it
     // needs to seed a new account's folders exists.
 
@@ -718,6 +731,17 @@ async fn main() -> std::io::Result<()> {
         service: drive_fonts_service,
     });
 
+    // Storage-increase requests (issue #144). Approving one writes the user's
+    // quota, which the storage service owns, so it is borrowed here rather than
+    // duplicated.
+    let drive_quota_requests_state =
+        web::Data::new(drive::quota_requests::api::QuotaRequestsState {
+            repo: Arc::new(drive::quota_requests::repository::QuotaRequestsRepository::new(
+                pool.clone(),
+            )),
+            storage_service: drive_storage_service.clone(),
+        });
+
     // Drive background jobs processor
     let drive_jobs_bg = drive_jobs_service.clone();
     tokio::spawn(async move {
@@ -1094,6 +1118,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(drive::admin::api::AdminApiDoc::openapi());
         doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
         doc.merge(drive::version_retention::api::VersionRetentionApiDoc::openapi());
+        doc.merge(drive::quota_requests::api::QuotaRequestsApiDoc::openapi());
+        doc.merge(auth::password_policy::api::PasswordPolicyApiDoc::openapi());
         doc.merge(drive::fonts::api::FontsApiDoc::openapi());
         doc.merge(drive::comments::api::CommentsApiDoc::openapi());
         doc.merge(drive::encryption::api::EncryptionApiDoc::openapi());
@@ -1189,6 +1215,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(drive_feature_flags_state.clone())
             .app_data(drive_version_retention_state.clone())
             .app_data(drive_fonts_state.clone())
+            .app_data(drive_quota_requests_state.clone())
+            .app_data(password_policy_state.clone())
             // File events (shared)
             .app_data(file_events_state.clone())
             .app_data(file_events_drive_data.clone())
@@ -1262,6 +1290,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                             .configure(drive::admin::api::configure)
                             .configure(drive::feature_flags::api::configure_admin)
                             .configure(drive::version_retention::api::configure_admin)
+                            .configure(drive::quota_requests::api::configure_admin)
+                            .configure(auth::password_policy::api::configure_admin)
                             .configure(drive::fonts::api::configure_admin),
                     )
                     // Internal routes
