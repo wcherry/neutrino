@@ -1,6 +1,7 @@
 use super::dto::{
-    AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse, AuthResponse,
-    EmailPreferences, LoginRequest, LoginResponse, PublicKeyResponse, PublicKeyRingResponse,
+    AdminCreateUserRequest, AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse,
+    AuthResponse, ChangePasswordRequest, EmailPreferences, LoginRequest, LoginResponse,
+    PublicKeyResponse, PublicKeyRingResponse,
     PublicKeyVersionResponse, PublicProfileResponse,
     RefreshRequest, RegisterRequest, RegisterResponse, SessionListResponse, SessionResponse,
     SetPublicKeyRequest, SocialLinks, TwoFactorConfirmRequest, TwoFactorDisableRequest,
@@ -96,6 +97,35 @@ async fn create_default_folders(state: &AuthApiState, user: &RegisterResponse) {
             ATTACHMENTS_FOLDER_NAME, user.id, e
         );
     }
+}
+
+// ── Password change ───────────────────────────────────────────────────────────
+
+/// Set a new password, proving knowledge of the current one.
+///
+/// Unauthenticated by design: an expired password is refused at sign-in, so there is no token to
+/// authenticate with, and this is the way out of that. The proof is the same one sign-in takes —
+/// the current password and, where the account has it, a two-factor code. Succeeding clears any
+/// forced expiry, restarts the maximum-age clock and signs every device out.
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/password",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 204, description = "Password changed; sign in again"),
+        (status = 400, description = "The new password breaks the workspace policy, or matches the current one"),
+        (status = 401, description = "Wrong password, or a missing or invalid two-factor code"),
+        (status = 403, description = "The account is disabled"),
+    ),
+    tag = "auth"
+)]
+#[post("/password")]
+pub async fn change_password(
+    state: web::Data<AuthApiState>,
+    body: web::Json<ChangePasswordRequest>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    state.auth_service.change_password(body.into_inner())?;
+    Ok(actix_web::HttpResponse::NoContent().finish())
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -598,6 +628,39 @@ pub async fn admin_list_users(
     Ok(web::Json(result))
 }
 
+/// Create a fully registered account. Admin only.
+///
+/// The same thing self-serve registration produces — a live account with a password it can sign in
+/// with and the default folders every account gets — plus the role, and the option to expire the
+/// password immediately so the user must choose their own before they can sign in.
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/users",
+    request_body = AdminCreateUserRequest,
+    responses(
+        (status = 201, description = "Account created", body = RegisterResponse),
+        (status = 400, description = "Missing field, unknown role, or a password the policy refuses"),
+        (status = 403, description = "Authenticated user is not an admin"),
+        (status = 409, description = "Email already in use"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "auth"
+)]
+#[post("/admin/users")]
+pub async fn admin_create_user(
+    state: web::Data<AuthApiState>,
+    user: AuthenticatedUser,
+    body: web::Json<AdminCreateUserRequest>,
+) -> Result<actix_web::HttpResponse, ApiError> {
+    require_admin(&user)?;
+    let created = state.auth_service.admin_create_user(body.into_inner())?;
+    // The same best-effort seeding registration does, and for the same reason:
+    // the account already exists by now, so a folder that fails to create must
+    // not turn a created account into an error the console reports.
+    create_default_folders(&state, &created).await;
+    Ok(actix_web::HttpResponse::Created().json(created))
+}
+
 /// Fetch one account's admin view. Admin only.
 ///
 /// Includes the fields hidden from the public profile — role, two-factor state, and deletion
@@ -625,10 +688,12 @@ pub async fn admin_get_user(
     Ok(web::Json(result))
 }
 
-/// Change an account's role or force two-factor off. Admin only.
+/// Change an account's name, role, lock-out, password or two-factor state. Admin only.
 ///
-/// The role must be `user` or `admin`. Setting `totpEnabled` to false clears the stored TOTP
-/// secret, which is the recovery path for a user who has lost their authenticator.
+/// Every field is optional and applied independently. The role must be `user` or `admin`. Setting
+/// `totpEnabled` to false clears the stored TOTP secret, which is the recovery path for a user who
+/// has lost their authenticator. `disabled`, `password` and `expirePassword` each revoke every
+/// session the account holds, since all three change who may use it.
 #[utoipa::path(
     patch,
     path = "/api/v1/admin/users/{user_id}",
@@ -636,6 +701,7 @@ pub async fn admin_get_user(
     request_body = AdminUpdateUserRequest,
     responses(
         (status = 200, description = "User updated", body = AdminUserResponse),
+        (status = 400, description = "Unknown role, empty name, or a password the policy refuses"),
         (status = 404, description = "User not found"),
     ),
     security(("bearer_auth" = [])),
@@ -881,6 +947,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .service(register)
             .service(login)
             .service(refresh)
+            .service(change_password)
             .service(me)
             .service(delete_own_account)
             .service(get_profile_details)
@@ -903,6 +970,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .configure(crate::auth::keyvault::api::configure),
     )
     .service(admin_list_users)
+    .service(admin_create_user)
     .service(admin_get_user)
     .service(admin_update_user)
     .service(admin_delete_user)
@@ -915,6 +983,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         register,
         login,
         refresh,
+        change_password,
         me,
         delete_own_account,
         lookup_user_by_email,
@@ -934,6 +1003,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         get_user_public_key,
         get_user_public_keys,
         admin_list_users,
+        admin_create_user,
         admin_get_user,
         admin_update_user,
         admin_delete_user,
@@ -959,6 +1029,8 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         AdminUserResponse,
         AdminUserListResponse,
         AdminUpdateUserRequest,
+        AdminCreateUserRequest,
+        ChangePasswordRequest,
         UserProfileDetailsResponse,
         UpdateProfileRequest,
         EmailPreferences,

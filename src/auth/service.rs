@@ -1,12 +1,16 @@
 use super::dto::{
-    AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse, AuthResponse,
-    EmailPreferences, LoginResponse, PublicProfileResponse, RefreshRequest, RegisterRequest,
-    RegisterResponse, SessionListResponse, SessionResponse, SocialLinks, TwoFactorDisableRequest,
-    TwoFactorEnrollResponse, TwoFactorStatusResponse, UpdateProfileRequest, UserLookupResponse,
-    UserProfileDetailsResponse, UserProfileResponse,
+    AdminCreateUserRequest, AdminUpdateUserRequest, AdminUserListResponse, AdminUserResponse,
+    AuthResponse, ChangePasswordRequest, EmailPreferences, LoginResponse, PublicProfileResponse,
+    RefreshRequest, RegisterRequest, RegisterResponse, SessionListResponse, SessionResponse,
+    SocialLinks, TwoFactorDisableRequest, TwoFactorEnrollResponse, TwoFactorStatusResponse,
+    UpdateProfileRequest, UserLookupResponse, UserProfileDetailsResponse, UserProfileResponse,
+};
+use super::password_policy::{
+    password_expiry, validate_password, PasswordPolicyRecord, PasswordPolicyRepository,
+    MAX_HISTORY_COUNT,
 };
 use super::repository::{
-    AuthRepository, NewRefreshToken, NewTotpBackupCode, NewUser, UpsertUserProfile,
+    AuthRepository, NewRefreshToken, NewTotpBackupCode, NewUser, UpsertUserProfile, User,
 };
 use super::tokens::{hash_token, TokenService};
 use super::totp::{generate_otpauth_uri, generate_secret, verify_totp};
@@ -60,42 +64,130 @@ pub fn refresh_reuse_grace() -> chrono::Duration {
 pub struct AuthService {
     repo: Arc<AuthRepository>,
     token_service: Arc<TokenService>,
+    /// The workspace password rules, read wherever a password is set and by
+    /// sign-in for the maximum-age check.
+    password_policy: Arc<PasswordPolicyRepository>,
 }
 
 impl AuthService {
-    pub fn new(repo: Arc<AuthRepository>, token_service: Arc<TokenService>) -> Self {
+    pub fn new(
+        repo: Arc<AuthRepository>,
+        token_service: Arc<TokenService>,
+        password_policy: Arc<PasswordPolicyRepository>,
+    ) -> Self {
         AuthService {
             repo,
             token_service,
+            password_policy,
         }
+    }
+
+    /// Hash a password with Argon2 after checking it against the policy.
+    ///
+    /// Every path that stores a password goes through here — registration, an
+    /// admin creating an account, an admin resetting one, and a user changing
+    /// their own — so no route can set a password the policy would refuse.
+    fn hash_new_password(&self, password: &str) -> Result<String, ApiError> {
+        let policy = self.password_policy.get()?;
+        validate_password(password, &policy)?;
+
+        let salt = SaltString::generate(&mut OsRng);
+        Ok(Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| {
+                tracing::error!("Password hashing error: {:?}", e);
+                ApiError::internal("Failed to hash password")
+            })?
+            .to_string())
+    }
+
+    /// Keep a password hash for the reuse check.
+    ///
+    /// Called on every path that stores a password, including the first one an
+    /// account ever has: a history that only started at the *second* password
+    /// would let the original be set again the moment the rule was turned on.
+    ///
+    /// Always the module's cap, never the policy's current count, so raising
+    /// the count later still has history to check against.
+    fn record_password(&self, user_id: &str, password_hash: &str) -> Result<(), ApiError> {
+        self.repo
+            .record_password_history(user_id, password_hash, MAX_HISTORY_COUNT as i64)
+    }
+
+    /// Refuse a password this account has used within the policy's window.
+    ///
+    /// Argon2 salts every hash, so this cannot be a lookup: the candidate is
+    /// verified against each stored hash in turn. That is also why the count is
+    /// capped — every comparison is a full Argon2 hash, deliberately slow.
+    fn check_password_not_reused(&self, user_id: &str, password: &str) -> Result<(), ApiError> {
+        let policy = self.password_policy.get()?;
+        if policy.history_count <= 0 {
+            return Ok(());
+        }
+
+        let recent = self
+            .repo
+            .recent_password_hashes(user_id, policy.history_count as i64)?;
+        let reused = recent.iter().any(|stored| {
+            PasswordHash::new(stored)
+                .map(|parsed| {
+                    Argon2::default()
+                        .verify_password(password.as_bytes(), &parsed)
+                        .is_ok()
+                })
+                // A hash that will not parse is a row we cannot compare against,
+                // not a match. Refusing every password over one bad row would
+                // lock the account out of changing its own password.
+                .unwrap_or(false)
+        });
+
+        if reused {
+            return Err(ApiError::bad_request(format!(
+                "This password has been used before. Choose one that is not among the last {} passwords on this account.",
+                policy.history_count
+            )));
+        }
+        Ok(())
+    }
+
+    /// Count a sign-in that got the password wrong, locking the account if that
+    /// reaches the policy's threshold.
+    ///
+    /// The caller still answers with the same "invalid email or password" it
+    /// gives an unknown address. Saying "that attempt locked the account" at the
+    /// moment of the failure would confirm the address has an account, and would
+    /// confirm it to precisely whoever was guessing at the password.
+    fn count_failed_login(&self, user: &User) -> Result<(), ApiError> {
+        let policy = self.password_policy.get()?;
+        if policy.lockout_threshold <= 0 {
+            return Ok(());
+        }
+
+        let attempts = self.repo.record_failed_login(&user.id)?;
+        if attempts >= policy.lockout_threshold && user.locked_out_at.is_none() {
+            tracing::warn!(
+                "Locking account {} after {} failed sign-in attempts",
+                user.id,
+                attempts
+            );
+            self.repo.lock_out_user(&user.id)?;
+        }
+        Ok(())
     }
 
     pub fn register(&self, req: RegisterRequest) -> Result<RegisterResponse, ApiError> {
         if req.email.is_empty() {
             return Err(ApiError::bad_request("Email is required"));
         }
-        if req.password.len() < 8 {
-            return Err(ApiError::bad_request(
-                "Password must be at least 8 characters",
-            ));
-        }
         if req.name.is_empty() {
             return Err(ApiError::bad_request("Name is required"));
         }
 
+        let password_hash = self.hash_new_password(&req.password)?;
+
         if self.repo.find_user_by_email(&req.email)?.is_some() {
             return Err(ApiError::conflict("Email already registered"));
         }
-
-        let salt = SaltString::generate(&mut OsRng);
-        let argon2 = Argon2::default();
-        let password_hash = argon2
-            .hash_password(req.password.as_bytes(), &salt)
-            .map_err(|e| {
-                tracing::error!("Password hashing error: {:?}", e);
-                ApiError::internal("Failed to hash password")
-            })?
-            .to_string();
 
         let user_id = Uuid::new_v4().to_string();
         let new_user = NewUser {
@@ -103,9 +195,13 @@ impl AuthService {
             email: &req.email,
             name: &req.name,
             password_hash: &password_hash,
+            role: None,
+            password_changed_at: Some(Utc::now().naive_utc()),
+            password_expired_at: None,
         };
 
         let user = self.repo.create_user(new_user)?;
+        self.record_password(&user.id, &password_hash)?;
 
         Ok(RegisterResponse {
             id: user.id,
@@ -131,9 +227,45 @@ impl AuthService {
             ApiError::internal("Authentication error")
         })?;
 
-        Argon2::default()
+        if Argon2::default()
             .verify_password(req.password.as_bytes(), &parsed_hash)
-            .map_err(|_| ApiError::unauthorized("Invalid email or password"))?;
+            .is_err()
+        {
+            self.count_failed_login(&user)?;
+            return Err(ApiError::unauthorized("Invalid email or password"));
+        }
+
+        // Checked only once the password is known to be right: refusing a
+        // disabled, locked or expired account before that would let anyone learn
+        // which addresses have accounts, and in what state, without a password.
+        if user.disabled_at.is_some() {
+            return Err(ApiError::new(
+                403,
+                "ACCOUNT_DISABLED",
+                "This account has been disabled. Contact an administrator.",
+            ));
+        }
+        if user.locked_out_at.is_some() {
+            return Err(ApiError::new(
+                403,
+                "ACCOUNT_LOCKED",
+                "This account is locked after too many failed sign-in attempts. Contact an administrator.",
+            ));
+        }
+        if self.is_password_expired(&user)? {
+            return Err(ApiError::new(
+                403,
+                "PASSWORD_EXPIRED",
+                "This password has expired. Set a new one to sign in.",
+            ));
+        }
+
+        // The run of failures is over, so it stops counting towards a lockout —
+        // a typo today and a typo next week are not one attack. Written only
+        // when there is something to clear, so an ordinary sign-in stays a read.
+        if user.failed_login_attempts > 0 {
+            self.repo.clear_lockout(&user.id)?;
+        }
 
         // Check if 2FA is required
         if user.totp_enabled == 1 {
@@ -197,6 +329,17 @@ impl AuthService {
             .repo
             .find_user_by_id(&stored_token.user_id)?
             .ok_or_else(|| ApiError::unauthorized("User not found"))?;
+
+        // Disabling revokes the account's refresh tokens, so this is the
+        // belt to that braces: a token issued a moment before the lock-out, or
+        // one this instance has not seen revoked, must not mint a new session.
+        if user.disabled_at.is_some() {
+            return Err(ApiError::new(
+                403,
+                "ACCOUNT_DISABLED",
+                "This account has been disabled. Contact an administrator.",
+            ));
+        }
 
         let is_admin = user.role == "admin";
         let access_token =
@@ -411,6 +554,49 @@ impl AuthService {
         self.repo.delete_all_refresh_tokens_for_user(user_id)
     }
 
+    // ── Password expiry ───────────────────────────────────────────────────────
+
+    /// Whether this account's password is currently refused at sign-in.
+    ///
+    /// Two rules, either of which is enough: an admin forced it to expire, or
+    /// the policy's maximum age has passed since it was set. They are folded
+    /// together here so no caller has to remember both.
+    fn is_password_expired(&self, user: &User) -> Result<bool, ApiError> {
+        if user.password_expired_at.is_some() {
+            return Ok(true);
+        }
+        let policy = self.password_policy.get()?;
+        Ok(Self::expiry_of(user, &policy).is_some_and(|at| at <= Utc::now().naive_utc()))
+    }
+
+    fn expiry_of(user: &User, policy: &PasswordPolicyRecord) -> Option<chrono::NaiveDateTime> {
+        password_expiry(user.password_changed_at, policy)
+    }
+
+    /// Build the admin view of a user, resolving both expiry rules against the
+    /// policy passed in — the caller reads the policy once per listing rather
+    /// than once per row.
+    fn admin_view(user: User, policy: &PasswordPolicyRecord) -> AdminUserResponse {
+        let expires_at = Self::expiry_of(&user, policy);
+        AdminUserResponse {
+            purge_after: user.deleted_at.map(purge_after),
+            password_expired: user.password_expired_at.is_some()
+                || expires_at.is_some_and(|at| at <= Utc::now().naive_utc()),
+            password_expires_at: expires_at,
+            password_changed_at: user.password_changed_at,
+            disabled_at: user.disabled_at,
+            locked_out_at: user.locked_out_at,
+            failed_login_attempts: user.failed_login_attempts,
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            totp_enabled: user.totp_enabled == 1,
+            created_at: user.created_at,
+            deleted_at: user.deleted_at,
+        }
+    }
+
     // ── Admin ─────────────────────────────────────────────────────────────────
 
     pub fn admin_list_users(
@@ -419,21 +605,13 @@ impl AuthService {
         page_size: i64,
         include_deleted: bool,
     ) -> Result<AdminUserListResponse, ApiError> {
-        let page_size = page_size.min(100).max(1);
+        let page_size = page_size.clamp(1, 100);
         let page = page.max(1);
         let (users, total) = self.repo.list_users(page, page_size, include_deleted)?;
+        let policy = self.password_policy.get()?;
         let items = users
             .into_iter()
-            .map(|u| AdminUserResponse {
-                purge_after: u.deleted_at.map(purge_after),
-                id: u.id,
-                email: u.email,
-                name: u.name,
-                role: u.role,
-                totp_enabled: u.totp_enabled == 1,
-                created_at: u.created_at,
-                deleted_at: u.deleted_at,
-            })
+            .map(|u| Self::admin_view(u, &policy))
             .collect();
         Ok(AdminUserListResponse {
             users: items,
@@ -448,16 +626,139 @@ impl AuthService {
             .repo
             .find_user_by_id(user_id)?
             .ok_or_else(|| ApiError::not_found("User not found"))?;
-        Ok(AdminUserResponse {
-            purge_after: user.deleted_at.map(purge_after),
+        let policy = self.password_policy.get()?;
+        Ok(Self::admin_view(user, &policy))
+    }
+
+    /// Create a fully registered account on an admin's behalf.
+    ///
+    /// Everything self-serve registration produces — the same validation, the
+    /// same policy check, the same live account — plus the two things only an
+    /// admin can decide up front: the role, and whether the password they chose
+    /// must be replaced before the account can sign in.
+    ///
+    /// The caller still seeds the default folders, exactly as the registration
+    /// handler does; this returns the account so it can.
+    pub fn admin_create_user(
+        &self,
+        req: AdminCreateUserRequest,
+    ) -> Result<RegisterResponse, ApiError> {
+        let email = req.email.trim();
+        let name = req.name.trim();
+        if email.is_empty() {
+            return Err(ApiError::bad_request("Email is required"));
+        }
+        if name.is_empty() {
+            return Err(ApiError::bad_request("Name is required"));
+        }
+        let role = req.role.as_deref().unwrap_or("user");
+        if role != "user" && role != "admin" {
+            return Err(ApiError::bad_request("Role must be 'user' or 'admin'"));
+        }
+
+        let password_hash = self.hash_new_password(&req.password)?;
+
+        if self.repo.find_user_by_email(email)?.is_some() {
+            return Err(ApiError::conflict("Email already registered"));
+        }
+
+        let now = Utc::now().naive_utc();
+        let user_id = Uuid::new_v4().to_string();
+        let user = self.repo.create_user(NewUser {
+            id: &user_id,
+            email,
+            name,
+            password_hash: &password_hash,
+            role: Some(role),
+            password_changed_at: Some(now),
+            // Expired from the outset when asked for, so the password the admin
+            // typed — and therefore knows — cannot become the one the account
+            // keeps using.
+            password_expired_at: req.require_password_change.unwrap_or(false).then_some(now),
+        })?;
+        self.record_password(&user.id, &password_hash)?;
+
+        Ok(RegisterResponse {
             id: user.id,
             email: user.email,
             name: user.name,
-            role: user.role,
-            totp_enabled: user.totp_enabled == 1,
-            created_at: user.created_at,
-            deleted_at: user.deleted_at,
         })
+    }
+
+    /// Change a password by proving knowledge of the current one.
+    ///
+    /// Unauthenticated on purpose: an expired password is refused at sign-in,
+    /// so there is no token to authenticate the change with. The proof is the
+    /// same one sign-in takes — the current password, and a two-factor code if
+    /// the account has it — and a disabled account is refused outright, since
+    /// setting a new password must not be a way back into one.
+    pub fn change_password(&self, req: ChangePasswordRequest) -> Result<(), ApiError> {
+        let user = self
+            .repo
+            .find_user_by_email(&req.email)?
+            .ok_or_else(|| ApiError::unauthorized("Invalid email or password"))?;
+
+        let parsed_hash = PasswordHash::new(&user.password_hash).map_err(|e| {
+            tracing::error!("Password hash parse error: {:?}", e);
+            ApiError::internal("Authentication error")
+        })?;
+        Argon2::default()
+            .verify_password(req.current_password.as_bytes(), &parsed_hash)
+            .map_err(|_| ApiError::unauthorized("Invalid email or password"))?;
+
+        if user.disabled_at.is_some() {
+            return Err(ApiError::new(
+                403,
+                "ACCOUNT_DISABLED",
+                "This account has been disabled. Contact an administrator.",
+            ));
+        }
+        // Same reasoning as a disabled account: choosing a new password must not
+        // be a way out of a lockout, or the threshold would be advisory.
+        if user.locked_out_at.is_some() {
+            return Err(ApiError::new(
+                403,
+                "ACCOUNT_LOCKED",
+                "This account is locked after too many failed sign-in attempts. Contact an administrator.",
+            ));
+        }
+
+        if user.totp_enabled == 1 {
+            let code = req
+                .totp_code
+                .as_deref()
+                .ok_or_else(|| ApiError::unauthorized("Two-factor code required"))?;
+            let secret = user
+                .totp_secret
+                .as_deref()
+                .ok_or_else(|| ApiError::internal("TOTP configuration error"))?;
+            if !verify_totp(secret, code) {
+                return Err(ApiError::unauthorized("Invalid two-factor code"));
+            }
+        }
+
+        // Refused rather than accepted as a no-op: re-setting the same password
+        // would clear the expiry and hand back exactly the password that was
+        // expired, which is the one outcome expiring it was meant to prevent.
+        if Argon2::default()
+            .verify_password(req.new_password.as_bytes(), &parsed_hash)
+            .is_ok()
+        {
+            return Err(ApiError::bad_request(
+                "The new password must be different from the current one",
+            ));
+        }
+        // The policy's own version of that rule, reaching back over however many
+        // passwords it is set to. Checked before hashing, so a refused password
+        // costs one Argon2 pass per stored hash and no write at all.
+        self.check_password_not_reused(&user.id, &req.new_password)?;
+
+        let password_hash = self.hash_new_password(&req.new_password)?;
+        self.repo.update_user_password(&user.id, &password_hash)?;
+        self.record_password(&user.id, &password_hash)?;
+        // Every session predates the change, and a password is changed after a
+        // scare as often as on a schedule.
+        self.repo.delete_all_refresh_tokens_for_user(&user.id)
     }
 
     /// Undoes a soft delete, whoever performed it.
@@ -480,21 +781,94 @@ impl AuthService {
         self.admin_get_user(user_id)
     }
 
+    /// Apply an admin's edits to one account.
+    ///
+    /// Every field is optional and applied independently, so the console can
+    /// send one change at a time. Validation happens before anything is
+    /// written, so a request carrying one good field and one bad one changes
+    /// nothing rather than half of what was asked.
     pub fn admin_update_user(
         &self,
         user_id: &str,
         req: AdminUpdateUserRequest,
     ) -> Result<AdminUserResponse, ApiError> {
+        // Confirms the account exists before any of the writes below, which are
+        // updates by id and would otherwise report success having matched no
+        // rows.
+        self.repo
+            .find_user_by_id(user_id)?
+            .ok_or_else(|| ApiError::not_found("User not found"))?;
+
         if let Some(ref role) = req.role {
             if role != "user" && role != "admin" {
                 return Err(ApiError::bad_request("Role must be 'user' or 'admin'"));
             }
-            self.repo.update_user_role(user_id, role)?;
+        }
+        let new_name = match req.name {
+            Some(ref name) if name.trim().is_empty() => {
+                return Err(ApiError::bad_request("Name cannot be empty"))
+            }
+            Some(ref name) => Some(name.trim().to_string()),
+            None => None,
+        };
+        // Hashed — and so policy-checked, reuse included — before the first
+        // write, for the same reason: a password the policy refuses must not
+        // leave a role change applied behind it.
+        if let Some(ref password) = req.password {
+            self.check_password_not_reused(user_id, password)?;
+        }
+        let new_password_hash = req
+            .password
+            .as_deref()
+            .map(|p| self.hash_new_password(p))
+            .transpose()?;
+
+        if let Some(role) = req.role {
+            self.repo.update_user_role(user_id, &role)?;
+        }
+        if let Some(name) = new_name {
+            self.repo.update_user_name(user_id, &name)?;
         }
         if let Some(enabled) = req.totp_enabled {
             if !enabled {
                 // Admin force-disabling 2FA
                 self.repo.update_user_totp(user_id, None, false)?;
+            }
+        }
+        if let Some(disabled) = req.disabled {
+            self.repo.set_user_disabled(user_id, disabled)?;
+            if disabled {
+                // The access token they hold stays valid until it expires;
+                // leaving them a refresh token would let them mint another and
+                // work on past the lock-out.
+                self.repo.delete_all_refresh_tokens_for_user(user_id)?;
+            }
+        }
+        // Unlock before any password reset, so an admin doing both in one
+        // request does not have the reset's own clear undone by an explicit
+        // `unlock: false` arriving in the same body.
+        if let Some(unlock) = req.unlock {
+            if unlock {
+                self.repo.clear_lockout(user_id)?;
+            }
+        }
+        if let Some(hash) = new_password_hash {
+            self.repo.update_user_password(user_id, &hash)?;
+            self.record_password(user_id, &hash)?;
+            // The failures that locked this account were against a password
+            // that no longer exists, so the count that survives them would be
+            // counting nothing. Same reasoning as `update_user_password`
+            // clearing a forced expiry.
+            self.repo.clear_lockout(user_id)?;
+            self.repo.delete_all_refresh_tokens_for_user(user_id)?;
+        }
+        // Applied after any password reset, so an admin can set a password
+        // *and* require the user to replace it in one request; the reset clears
+        // the expiry the flag then puts back.
+        if let Some(expire) = req.expire_password {
+            self.repo.set_password_expired(user_id, expire)?;
+            if expire {
+                self.repo.delete_all_refresh_tokens_for_user(user_id)?;
             }
         }
         self.admin_get_user(user_id)
@@ -740,6 +1114,7 @@ fn anonymize_ip(ip: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::password_policy::repository::PasswordPolicyUpdate;
     // use crate::auth::repository::AuthRepository;
     // use crate::auth::tokens::TokenService;
     use diesel::r2d2::{ConnectionManager, Pool};
@@ -766,8 +1141,24 @@ mod tests {
             900,
             604800,
         ));
-        let repo = Arc::new(AuthRepository::new(pool));
-        AuthService::new(repo, token_service)
+        make_service_with_policy().0
+    }
+
+    /// The service and the policy repository behind it, for the tests that have
+    /// to tighten a rule before exercising it.
+    fn make_service_with_policy() -> (AuthService, Arc<PasswordPolicyRepository>) {
+        let pool = make_test_pool();
+        let token_service = Arc::new(TokenService::new_with_expiry(
+            "test-secret-key".to_string(),
+            900,
+            604800,
+        ));
+        let repo = Arc::new(AuthRepository::new(pool.clone()));
+        let policy = Arc::new(PasswordPolicyRepository::new(pool));
+        (
+            AuthService::new(repo, token_service, policy.clone()),
+            policy,
+        )
     }
 
     fn reg(email: &str, password: &str, name: &str) -> RegisterRequest {
@@ -783,6 +1174,21 @@ mod tests {
             email: email.to_string(),
             password: password.to_string(),
             totp_code: None,
+        }
+    }
+
+    /// An admin edit that changes nothing, to spread the one field under test
+    /// over. Every field is optional and independent, so spelling them all out
+    /// at each call site would bury the change being made.
+    fn admin_update() -> AdminUpdateUserRequest {
+        AdminUpdateUserRequest {
+            name: None,
+            role: None,
+            totp_enabled: None,
+            disabled: None,
+            expire_password: None,
+            password: None,
+            unlock: None,
         }
     }
 
@@ -1032,13 +1438,686 @@ mod tests {
             .admin_update_user(
                 &reg_resp.id,
                 AdminUpdateUserRequest {
-                    name: None,
                     role: Some("superuser".to_string()),
-                    totp_enabled: None,
+                    ..admin_update()
                 },
             )
             .unwrap_err();
         assert_eq!(err.status, 400);
+    }
+
+    // ── admin: creating an account ────────────────────────────────────────────
+
+    fn create_req(email: &str, password: &str) -> AdminCreateUserRequest {
+        AdminCreateUserRequest {
+            email: email.to_string(),
+            name: "Created".to_string(),
+            password: password.to_string(),
+            role: None,
+            require_password_change: None,
+        }
+    }
+
+    /// "Fully registered" is the whole point: the account an admin makes must
+    /// be able to sign in, not wait for an invitation to be completed.
+    #[test]
+    fn an_admin_created_account_can_sign_in_immediately() {
+        let svc = make_service();
+        let created = svc
+            .admin_create_user(create_req("made@test.com", "password123"))
+            .expect("create");
+        assert_eq!(created.email, "made@test.com");
+        let resp = svc
+            .login(login_req("made@test.com", "password123"), None, None, None)
+            .expect("login");
+        assert!(resp.auth.is_some());
+    }
+
+    #[test]
+    fn an_admin_created_account_takes_the_role_it_was_given() {
+        let svc = make_service();
+        let created = svc
+            .admin_create_user(AdminCreateUserRequest {
+                role: Some("admin".to_string()),
+                ..create_req("boss@test.com", "password123")
+            })
+            .expect("create");
+        assert_eq!(svc.admin_get_user(&created.id).expect("get").role, "admin");
+    }
+
+    #[test]
+    fn an_admin_cannot_invent_a_role() {
+        let svc = make_service();
+        let err = svc
+            .admin_create_user(AdminCreateUserRequest {
+                role: Some("superuser".to_string()),
+                ..create_req("odd@test.com", "password123")
+            })
+            .unwrap_err();
+        assert_eq!(err.status, 400);
+    }
+
+    #[test]
+    fn an_admin_cannot_reuse_an_address() {
+        let svc = make_service();
+        svc.register(reg("taken@test.com", "password123", "First"))
+            .expect("register");
+        let err = svc
+            .admin_create_user(create_req("taken@test.com", "password456"))
+            .unwrap_err();
+        assert_eq!(err.status, 409);
+    }
+
+    /// The password an admin types is one they know, so requiring a change is
+    /// what stops it staying the account's password.
+    #[test]
+    fn requiring_a_password_change_expires_the_password_at_once() {
+        let svc = make_service();
+        let created = svc
+            .admin_create_user(AdminCreateUserRequest {
+                require_password_change: Some(true),
+                ..create_req("fresh@test.com", "password123")
+            })
+            .expect("create");
+        assert!(svc.admin_get_user(&created.id).expect("get").password_expired);
+
+        let err = svc
+            .login(login_req("fresh@test.com", "password123"), None, None, None)
+            .unwrap_err();
+        assert_eq!(err.code, "PASSWORD_EXPIRED");
+
+        svc.change_password(ChangePasswordRequest {
+            email: "fresh@test.com".to_string(),
+            current_password: "password123".to_string(),
+            new_password: "adifferentpassword".to_string(),
+            totp_code: None,
+        })
+        .expect("change");
+        assert!(svc
+            .login(
+                login_req("fresh@test.com", "adifferentpassword"),
+                None,
+                None,
+                None
+            )
+            .expect("login")
+            .auth
+            .is_some());
+    }
+
+    // ── admin: locking an account out ─────────────────────────────────────────
+
+    #[test]
+    fn a_disabled_account_cannot_sign_in_and_keeps_no_sessions() {
+        let svc = make_service();
+        let created = svc
+            .register(reg("locked@test.com", "password123", "Locked"))
+            .expect("register");
+        let session = svc
+            .login(login_req("locked@test.com", "password123"), None, None, None)
+            .expect("login")
+            .auth
+            .expect("tokens");
+
+        let view = svc
+            .admin_update_user(
+                &created.id,
+                AdminUpdateUserRequest {
+                    disabled: Some(true),
+                    ..admin_update()
+                },
+            )
+            .expect("disable");
+        assert!(view.disabled_at.is_some());
+
+        let err = svc
+            .login(login_req("locked@test.com", "password123"), None, None, None)
+            .unwrap_err();
+        assert_eq!(err.status, 403);
+        assert_eq!(err.code, "ACCOUNT_DISABLED");
+
+        // The refresh token they were holding must not mint a new session.
+        let err = svc
+            .refresh(RefreshRequest {
+                refresh_token: session.refresh_token,
+            })
+            .unwrap_err();
+        assert!(err.status == 401 || err.status == 403, "{}", err);
+    }
+
+    /// A lock-out is not a deletion: re-enabling gives the same account back,
+    /// password and all.
+    #[test]
+    fn re_enabling_an_account_lets_it_sign_in_again() {
+        let svc = make_service();
+        let created = svc
+            .register(reg("back@test.com", "password123", "Back"))
+            .expect("register");
+        svc.admin_update_user(
+            &created.id,
+            AdminUpdateUserRequest {
+                disabled: Some(true),
+                ..admin_update()
+            },
+        )
+        .expect("disable");
+        svc.admin_update_user(
+            &created.id,
+            AdminUpdateUserRequest {
+                disabled: Some(false),
+                ..admin_update()
+            },
+        )
+        .expect("enable");
+        assert!(svc
+            .login(login_req("back@test.com", "password123"), None, None, None)
+            .expect("login")
+            .auth
+            .is_some());
+    }
+
+    // ── admin: expiring and resetting a password ──────────────────────────────
+
+    #[test]
+    fn expiring_a_password_refuses_sign_in_until_it_is_changed() {
+        let svc = make_service();
+        let created = svc
+            .register(reg("stale@test.com", "password123", "Stale"))
+            .expect("register");
+        svc.admin_update_user(
+            &created.id,
+            AdminUpdateUserRequest {
+                expire_password: Some(true),
+                ..admin_update()
+            },
+        )
+        .expect("expire");
+
+        let err = svc
+            .login(login_req("stale@test.com", "password123"), None, None, None)
+            .unwrap_err();
+        assert_eq!(err.code, "PASSWORD_EXPIRED");
+    }
+
+    /// Setting the expired password again would clear the expiry and hand back
+    /// exactly the password that was expired.
+    #[test]
+    fn a_password_change_must_actually_change_the_password() {
+        let svc = make_service();
+        svc.register(reg("same@test.com", "password123", "Same"))
+            .expect("register");
+        let err = svc
+            .change_password(ChangePasswordRequest {
+                email: "same@test.com".to_string(),
+                current_password: "password123".to_string(),
+                new_password: "password123".to_string(),
+                totp_code: None,
+            })
+            .unwrap_err();
+        assert_eq!(err.status, 400);
+    }
+
+    #[test]
+    fn a_password_change_needs_the_current_password() {
+        let svc = make_service();
+        svc.register(reg("proof@test.com", "password123", "Proof"))
+            .expect("register");
+        let err = svc
+            .change_password(ChangePasswordRequest {
+                email: "proof@test.com".to_string(),
+                current_password: "not-it".to_string(),
+                new_password: "anotherpassword".to_string(),
+                totp_code: None,
+            })
+            .unwrap_err();
+        assert_eq!(err.status, 401);
+    }
+
+    /// Setting a new password must not be a way back into an account an admin
+    /// has locked.
+    #[test]
+    fn a_disabled_account_cannot_change_its_password() {
+        let svc = make_service();
+        let created = svc
+            .register(reg("shut@test.com", "password123", "Shut"))
+            .expect("register");
+        svc.admin_update_user(
+            &created.id,
+            AdminUpdateUserRequest {
+                disabled: Some(true),
+                ..admin_update()
+            },
+        )
+        .expect("disable");
+        let err = svc
+            .change_password(ChangePasswordRequest {
+                email: "shut@test.com".to_string(),
+                current_password: "password123".to_string(),
+                new_password: "anotherpassword".to_string(),
+                totp_code: None,
+            })
+            .unwrap_err();
+        assert_eq!(err.code, "ACCOUNT_DISABLED");
+    }
+
+    #[test]
+    fn an_admin_reset_password_is_the_one_that_works() {
+        let svc = make_service();
+        let created = svc
+            .register(reg("reset@test.com", "password123", "Reset"))
+            .expect("register");
+        svc.admin_update_user(
+            &created.id,
+            AdminUpdateUserRequest {
+                password: Some("brandnewpassword".to_string()),
+                ..admin_update()
+            },
+        )
+        .expect("reset");
+
+        assert!(svc
+            .login(login_req("reset@test.com", "password123"), None, None, None)
+            .is_err());
+        assert!(svc
+            .login(
+                login_req("reset@test.com", "brandnewpassword"),
+                None,
+                None,
+                None
+            )
+            .expect("login")
+            .auth
+            .is_some());
+    }
+
+    /// One request can both set a password and require it to be replaced —
+    /// which only works if the expiry is applied after the reset that clears it.
+    #[test]
+    fn a_reset_can_be_expired_in_the_same_request() {
+        let svc = make_service();
+        let created = svc
+            .register(reg("both@test.com", "password123", "Both"))
+            .expect("register");
+        let view = svc
+            .admin_update_user(
+                &created.id,
+                AdminUpdateUserRequest {
+                    password: Some("temporarypassword".to_string()),
+                    expire_password: Some(true),
+                    ..admin_update()
+                },
+            )
+            .expect("reset and expire");
+        assert!(view.password_expired);
+    }
+
+    /// A refused field must not leave the accepted ones half-applied.
+    #[test]
+    fn an_edit_with_a_bad_field_changes_nothing() {
+        let svc = make_service();
+        let created = svc
+            .register(reg("atomic@test.com", "password123", "Atomic"))
+            .expect("register");
+        let err = svc
+            .admin_update_user(
+                &created.id,
+                AdminUpdateUserRequest {
+                    role: Some("admin".to_string()),
+                    password: Some("short".to_string()),
+                    ..admin_update()
+                },
+            )
+            .unwrap_err();
+        assert_eq!(err.code, "PASSWORD_POLICY");
+        assert_eq!(
+            svc.admin_get_user(&created.id).expect("get").role,
+            "user",
+            "the role must not have moved",
+        );
+    }
+
+    // ── policy: forbidden characters ──────────────────────────────────────────
+
+    #[test]
+    fn a_password_containing_a_forbidden_character_is_refused() {
+        let (svc, policy) = make_service_with_policy();
+        policy
+            .update(PasswordPolicyUpdate {
+                forbidden_characters: Some("<>&".to_string()),
+                ..Default::default()
+            })
+            .expect("policy");
+
+        let err = svc
+            .register(reg("angle@test.com", "pass<word>here", "Angle"))
+            .unwrap_err();
+        assert_eq!(err.code, "PASSWORD_POLICY");
+        assert!(
+            svc.register(reg("plain@test.com", "passwordhere", "Plain"))
+                .is_ok(),
+            "a password clear of the set must still be accepted",
+        );
+    }
+
+    // ── policy: lockout after failed sign-ins ─────────────────────────────────
+
+    #[test]
+    fn the_account_locks_after_the_threshold_of_failed_sign_ins() {
+        let (svc, policy) = make_service_with_policy();
+        policy
+            .update(PasswordPolicyUpdate {
+                lockout_threshold: Some(3),
+                ..Default::default()
+            })
+            .expect("policy");
+        svc.register(reg("lock@test.com", "password123", "Lock"))
+            .expect("register");
+
+        for _ in 0..3 {
+            let err = svc
+                .login(login_req("lock@test.com", "wrongpassword"), None, None, None)
+                .unwrap_err();
+            assert_eq!(
+                err.status, 401,
+                "a failed attempt must not announce the lockout it caused",
+            );
+        }
+
+        // The *right* password now, and it is refused — which is the whole
+        // point of the rule.
+        let err = svc
+            .login(login_req("lock@test.com", "password123"), None, None, None)
+            .unwrap_err();
+        assert_eq!(err.status, 403);
+        assert_eq!(err.code, "ACCOUNT_LOCKED");
+    }
+
+    /// A typo today and a typo next week are not one attack.
+    #[test]
+    fn a_successful_sign_in_ends_the_run_of_failures() {
+        let (svc, policy) = make_service_with_policy();
+        policy
+            .update(PasswordPolicyUpdate {
+                lockout_threshold: Some(3),
+                ..Default::default()
+            })
+            .expect("policy");
+        let created = svc
+            .register(reg("reset@test.com", "password123", "Reset"))
+            .expect("register");
+
+        for _ in 0..2 {
+            assert!(svc
+                .login(
+                    login_req("reset@test.com", "wrongpassword"),
+                    None,
+                    None,
+                    None
+                )
+                .is_err());
+        }
+        svc.login(login_req("reset@test.com", "password123"), None, None, None)
+            .expect("login");
+        assert_eq!(
+            svc.admin_get_user(&created.id)
+                .expect("get")
+                .failed_login_attempts,
+            0,
+        );
+
+        // Two more failures would have locked it had the count survived.
+        for _ in 0..2 {
+            assert!(svc
+                .login(
+                    login_req("reset@test.com", "wrongpassword"),
+                    None,
+                    None,
+                    None
+                )
+                .is_err());
+        }
+        assert!(svc
+            .login(login_req("reset@test.com", "password123"), None, None, None)
+            .is_ok());
+    }
+
+    #[test]
+    fn no_threshold_means_failures_never_lock_the_account() {
+        let svc = make_service();
+        svc.register(reg("free@test.com", "password123", "Free"))
+            .expect("register");
+        for _ in 0..10 {
+            assert!(svc
+                .login(login_req("free@test.com", "wrongpassword"), None, None, None)
+                .is_err());
+        }
+        assert!(svc
+            .login(login_req("free@test.com", "password123"), None, None, None)
+            .is_ok());
+    }
+
+    #[test]
+    fn an_admin_unlocks_a_locked_account() {
+        let (svc, policy) = make_service_with_policy();
+        policy
+            .update(PasswordPolicyUpdate {
+                lockout_threshold: Some(2),
+                ..Default::default()
+            })
+            .expect("policy");
+        let created = svc
+            .register(reg("unlock@test.com", "password123", "Unlock"))
+            .expect("register");
+        for _ in 0..2 {
+            assert!(svc
+                .login(
+                    login_req("unlock@test.com", "wrongpassword"),
+                    None,
+                    None,
+                    None
+                )
+                .is_err());
+        }
+        assert!(svc
+            .admin_get_user(&created.id)
+            .expect("get")
+            .locked_out_at
+            .is_some());
+
+        let view = svc
+            .admin_update_user(
+                &created.id,
+                AdminUpdateUserRequest {
+                    unlock: Some(true),
+                    ..admin_update()
+                },
+            )
+            .expect("unlock");
+        assert!(view.locked_out_at.is_none());
+        assert_eq!(view.failed_login_attempts, 0);
+        assert!(svc
+            .login(login_req("unlock@test.com", "password123"), None, None, None)
+            .is_ok());
+    }
+
+    /// The failures were against a password that no longer exists, so the reset
+    /// that replaced it releases the account too.
+    #[test]
+    fn an_admin_password_reset_releases_the_lockout() {
+        let (svc, policy) = make_service_with_policy();
+        policy
+            .update(PasswordPolicyUpdate {
+                lockout_threshold: Some(2),
+                ..Default::default()
+            })
+            .expect("policy");
+        let created = svc
+            .register(reg("relock@test.com", "password123", "Relock"))
+            .expect("register");
+        for _ in 0..2 {
+            assert!(svc
+                .login(
+                    login_req("relock@test.com", "wrongpassword"),
+                    None,
+                    None,
+                    None
+                )
+                .is_err());
+        }
+
+        let view = svc
+            .admin_update_user(
+                &created.id,
+                AdminUpdateUserRequest {
+                    password: Some("anotherpassword".to_string()),
+                    ..admin_update()
+                },
+            )
+            .expect("reset");
+        assert!(view.locked_out_at.is_none());
+        assert!(svc
+            .login(
+                login_req("relock@test.com", "anotherpassword"),
+                None,
+                None,
+                None
+            )
+            .is_ok());
+    }
+
+    // ── policy: password reuse history ────────────────────────────────────────
+
+    #[test]
+    fn a_password_within_the_history_window_cannot_be_set_again() {
+        let (svc, policy) = make_service_with_policy();
+        policy
+            .update(PasswordPolicyUpdate {
+                history_count: Some(3),
+                ..Default::default()
+            })
+            .expect("policy");
+        svc.register(reg("reuse@test.com", "firstpassword", "Reuse"))
+            .expect("register");
+
+        svc.change_password(ChangePasswordRequest {
+            email: "reuse@test.com".to_string(),
+            current_password: "firstpassword".to_string(),
+            new_password: "secondpassword".to_string(),
+            totp_code: None,
+        })
+        .expect("second");
+
+        // Back to the first, which is still inside the window.
+        let err = svc
+            .change_password(ChangePasswordRequest {
+                email: "reuse@test.com".to_string(),
+                current_password: "secondpassword".to_string(),
+                new_password: "firstpassword".to_string(),
+                totp_code: None,
+            })
+            .unwrap_err();
+        assert_eq!(err.status, 400);
+        assert!(err.message.contains("used before"), "{}", err.message);
+    }
+
+    /// The window has a length, and a password that falls out of it is free
+    /// again — otherwise the rule would be "never reuse anything, ever".
+    #[test]
+    fn a_password_older_than_the_window_can_be_set_again() {
+        let (svc, policy) = make_service_with_policy();
+        policy
+            .update(PasswordPolicyUpdate {
+                history_count: Some(2),
+                ..Default::default()
+            })
+            .expect("policy");
+        svc.register(reg("window@test.com", "firstpassword", "Window"))
+            .expect("register");
+
+        for (current, next) in [
+            ("firstpassword", "secondpassword"),
+            ("secondpassword", "thirdpassword"),
+        ] {
+            svc.change_password(ChangePasswordRequest {
+                email: "window@test.com".to_string(),
+                current_password: current.to_string(),
+                new_password: next.to_string(),
+                totp_code: None,
+            })
+            .expect("change");
+        }
+
+        // The window holds the second and third; the first has fallen out.
+        svc.change_password(ChangePasswordRequest {
+            email: "window@test.com".to_string(),
+            current_password: "thirdpassword".to_string(),
+            new_password: "firstpassword".to_string(),
+            totp_code: None,
+        })
+        .expect("the first password is outside the window");
+    }
+
+    /// The rule reaches the account's very first password, or turning it on
+    /// would leave the original free to be set again.
+    #[test]
+    fn the_history_includes_the_password_the_account_was_created_with() {
+        let (svc, policy) = make_service_with_policy();
+        policy
+            .update(PasswordPolicyUpdate {
+                history_count: Some(5),
+                ..Default::default()
+            })
+            .expect("policy");
+        let created = svc
+            .register(reg("origin@test.com", "originalpass", "Origin"))
+            .expect("register");
+
+        let err = svc
+            .admin_update_user(
+                &created.id,
+                AdminUpdateUserRequest {
+                    password: Some("originalpass".to_string()),
+                    ..admin_update()
+                },
+            )
+            .unwrap_err();
+        assert_eq!(err.status, 400);
+    }
+
+    #[test]
+    fn no_history_count_lets_any_previous_password_come_back() {
+        let svc = make_service();
+        svc.register(reg("nohist@test.com", "firstpassword", "NoHist"))
+            .expect("register");
+        svc.change_password(ChangePasswordRequest {
+            email: "nohist@test.com".to_string(),
+            current_password: "firstpassword".to_string(),
+            new_password: "secondpassword".to_string(),
+            totp_code: None,
+        })
+        .expect("second");
+        svc.change_password(ChangePasswordRequest {
+            email: "nohist@test.com".to_string(),
+            current_password: "secondpassword".to_string(),
+            new_password: "firstpassword".to_string(),
+            totp_code: None,
+        })
+        .expect("the rule is off, so the first password is free");
+    }
+
+    #[test]
+    fn editing_an_unknown_account_is_a_404() {
+        let svc = make_service();
+        let err = svc
+            .admin_update_user(
+                "no-such-user",
+                AdminUpdateUserRequest {
+                    disabled: Some(true),
+                    ..admin_update()
+                },
+            )
+            .unwrap_err();
+        assert_eq!(err.status, 404);
     }
 
     // ── self-serve deletion ───────────────────────────────────────────────────

@@ -187,6 +187,20 @@ impl Config {
 
         let web_dir = env::var("WEB_DIR").unwrap_or_else(|_| "web/apps/web/out".to_string());
 
+        // Every path here has a default, so a variable that is missing — or
+        // misspelled in a `.env` — produces a working server pointed somewhere
+        // nobody meant, with nothing said about it. Reporting what was actually
+        // resolved is what makes that visible on the first line of the log
+        // instead of on the day the files cannot be found. Printed rather than
+        // logged because `init_logging` runs on the values being returned here.
+        println!(
+            "Resolved paths: database={} storage={} web={} logs={}",
+            database_url,
+            storage_path,
+            web_dir,
+            log_path.as_deref().unwrap_or("stdout"),
+        );
+
         Ok(Config {
             port,
             log_level,
