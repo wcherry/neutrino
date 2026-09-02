@@ -5,16 +5,17 @@
  *
  * A three-stage page: pick the zip, choose what comes across, watch it run.
  * The archive is opened in the browser and the imports write through the
- * ordinary notes, docs, sheets and photos APIs, one item at a time, because
- * every kind of content is E2EE and only this device can encrypt it (see
- * `lib/takeout/importKeep.ts`, `importDocs.ts`, `importSheets.ts` and
- * `importPhotos.ts`). Photos are the one product whose bytes do reach the
- * server — encrypted, as an upload — since a photo *is* its file.
+ * ordinary notes, docs, sheets, slides and photos APIs, one item at a time,
+ * because every kind of content is E2EE and only this device can encrypt it
+ * (see `lib/takeout/importKeep.ts`, `importDocs.ts`, `importSheets.ts`,
+ * `importSlides.ts` and `importPhotos.ts`). Photos are the one product whose
+ * bytes do reach the server — encrypted, as an upload — since a photo *is* its
+ * file.
  *
- * Four products are supported and any of them can be run on its own: Keep →
- * Notes, the documents and spreadsheets in Drive → Docs and Sheets, and Google
- * Photos → Photos. The runs are sequential and share one progress bar and one
- * result screen.
+ * Five products are supported and any of them can be run on its own: Keep →
+ * Notes, the documents, spreadsheets and presentations in Drive → Docs, Sheets
+ * and Slides, and Google Photos → Photos. The runs are sequential and share one
+ * progress bar and one result screen.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,6 +28,7 @@ import {
   FileText,
   Image as ImageIcon,
   Package,
+  Presentation,
   X,
 } from 'lucide-react';
 import { Alert, Button, Checkbox, DropZone, ProgressBar, Spinner, TextInput, useToast } from '@neutrino/ui';
@@ -38,8 +40,10 @@ import {
   DEFAULT_KEEP_IMPORT_OPTIONS,
   DEFAULT_PHOTOS_IMPORT_OPTIONS,
   DEFAULT_SHEETS_IMPORT_OPTIONS,
+  DEFAULT_SLIDES_IMPORT_OPTIONS,
   findDriveDocs,
   findDriveSheets,
+  findDriveSlides,
   findKeepNotes,
   findTakeoutPhotos,
   openTakeout,
@@ -47,16 +51,19 @@ import {
   runKeepImport,
   runPhotosImport,
   runSheetsImport,
+  runSlidesImport,
   TakeoutError,
   type DocsImportOptions,
   type DriveDocsSource,
   type DriveSheetsSource,
+  type DriveSlidesSource,
   type ImportItem,
   type KeepImportOptions,
   type KeepSource,
   type PhotosImportOptions,
   type PhotosSource,
   type SheetsImportOptions,
+  type SlidesImportOptions,
   type TakeoutArchive,
 } from '@/lib/takeout';
 import { useImportRun, type ImportStep } from '@/components/ImportRun';
@@ -79,6 +86,7 @@ interface LoadedArchive {
   keep: KeepSource | null;
   docs: DriveDocsSource | null;
   sheets: DriveSheetsSource | null;
+  slides: DriveSlidesSource | null;
   photos: PhotosSource | null;
 }
 
@@ -119,10 +127,12 @@ export default function ImportPage() {
   const [includeKeep, setIncludeKeep] = useState(true);
   const [includeDocs, setIncludeDocs] = useState(true);
   const [includeSheets, setIncludeSheets] = useState(true);
+  const [includeSlides, setIncludeSlides] = useState(true);
   const [includePhotos, setIncludePhotos] = useState(true);
   const [keepOptions, setKeepOptions] = useState<KeepImportOptions>(DEFAULT_KEEP_IMPORT_OPTIONS);
   const [docOptions, setDocOptions] = useState<DocsImportOptions>(DEFAULT_DOCS_IMPORT_OPTIONS);
   const [sheetOptions, setSheetOptions] = useState<SheetsImportOptions>(DEFAULT_SHEETS_IMPORT_OPTIONS);
+  const [slideOptions, setSlideOptions] = useState<SlidesImportOptions>(DEFAULT_SLIDES_IMPORT_OPTIONS);
   const [photoOptions, setPhotoOptions] = useState<PhotosImportOptions>(DEFAULT_PHOTOS_IMPORT_OPTIONS);
   const [readError, setReadError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
@@ -162,6 +172,7 @@ export default function ImportPage() {
     setIncludeKeep(true);
     setIncludeDocs(true);
     setIncludeSheets(true);
+    setIncludeSlides(true);
     setIncludePhotos(true);
   };
 
@@ -185,6 +196,7 @@ export default function ImportPage() {
       const keep = await findKeepNotes(archive);
       const docs = findDriveDocs(archive);
       const sheets = findDriveSheets(archive);
+      const slides = findDriveSlides(archive);
       const photos = await findTakeoutPhotos(archive);
       logStep('page', `read ${label}`, {
         parts: archive.partCount,
@@ -193,10 +205,12 @@ export default function ImportPage() {
         unsupportedDocuments: docs?.unsupported.length ?? 0,
         spreadsheets: sheets?.sheets.length ?? 0,
         unsupportedSpreadsheets: sheets?.unsupported.length ?? 0,
+        presentations: slides?.slides.length ?? 0,
+        unsupportedPresentations: slides?.unsupported.length ?? 0,
         photos: photos?.photos.length ?? 0,
         albums: photos?.albums.length ?? 0,
       });
-      setLoaded({ fileName: label, partCount: archive.partCount, archive, keep, docs, sheets, photos });
+      setLoaded({ fileName: label, partCount: archive.partCount, archive, keep, docs, sheets, slides, photos });
       setPickStage('configure');
     } catch (err) {
       logFail('page', `could not read ${label}`, err);
@@ -215,8 +229,9 @@ export default function ImportPage() {
   const noteCount = includeKeep ? loaded?.keep?.entries.length ?? 0 : 0;
   const docCount = includeDocs ? loaded?.docs?.docs.length ?? 0 : 0;
   const sheetCount = includeSheets ? loaded?.sheets?.sheets.length ?? 0 : 0;
+  const slideCount = includeSlides ? loaded?.slides?.slides.length ?? 0 : 0;
   const photoCount = includePhotos ? loaded?.photos?.photos.length ?? 0 : 0;
-  const selectedCount = noteCount + docCount + sheetCount + photoCount;
+  const selectedCount = noteCount + docCount + sheetCount + slideCount + photoCount;
 
   /**
    * The passes to run, in order, each closed over the options as they stand at
@@ -252,6 +267,15 @@ export default function ImportPage() {
           runSheetsImport({ sheets, options: sheetOptions, userId: user?.id, onProgress, signal }),
       });
     }
+    if (slideCount > 0 && archive.slides) {
+      const slides = archive.slides.slides;
+      steps.push({
+        product: 'Presentations',
+        count: slideCount,
+        run: ({ onProgress, signal }) =>
+          runSlidesImport({ slides, options: slideOptions, userId: user?.id, onProgress, signal }),
+      });
+    }
     if (photoCount > 0 && archive.photos) {
       const photos = archive.photos.photos;
       steps.push({
@@ -267,7 +291,7 @@ export default function ImportPage() {
   const startImport = async () => {
     if (!loaded || selectedCount === 0) return;
     // Every runner declines without a key rather than importing in the clear
-    // (issue #95), so ask once here instead of letting four passes each fail
+    // (issue #95), so ask once here instead of letting five passes each fail
     // their way to the same answer.
     if (!(await canEncryptFor(user?.id))) {
       toast.warning(ENCRYPTION_WARNING_MESSAGE);
@@ -302,6 +326,7 @@ export default function ImportPage() {
   const ranNotes = (results ?? []).some((r) => r.product === 'Notes');
   const ranDocs = (results ?? []).some((r) => r.product === 'Documents');
   const ranSheets = (results ?? []).some((r) => r.product === 'Spreadsheets');
+  const ranSlides = (results ?? []).some((r) => r.product === 'Presentations');
   const ranPhotos = (results ?? []).some((r) => r.product === 'Photos');
 
   return (
@@ -347,12 +372,13 @@ export default function ImportPage() {
                 </li>
                 <li>
                   Select <strong>Keep</strong> for your notes, <strong>Drive</strong> for your
-                  documents and spreadsheets, and <strong>Google Photos</strong> for your pictures,
-                  then create the export.
+                  documents, spreadsheets and presentations, and <strong>Google Photos</strong> for
+                  your pictures, then create the export.
                 </li>
                 <li>
-                  Leave Drive&rsquo;s formats set to <strong>Word (.docx)</strong> for Google Docs
-                  and <strong>Excel (.xlsx)</strong> for Google Sheets — those are the defaults, and
+                  Leave Drive&rsquo;s formats set to <strong>Word (.docx)</strong> for Google Docs,{' '}
+                  <strong>Excel (.xlsx)</strong> for Google Sheets and{' '}
+                  <strong>PowerPoint (.pptx)</strong> for Google Slides — those are the defaults, and
                   the formats that convert best.
                 </li>
                 <li>
@@ -362,9 +388,9 @@ export default function ImportPage() {
               </ol>
               <p className={styles.helpNote}>
                 Keep notes become Neutrino notes, Google Docs documents become Neutrino documents,
-                Google Sheets spreadsheets become Neutrino spreadsheets, and Google Photos pictures
-                and videos become Neutrino photos. Other products in the archive are recognised but
-                cannot be imported yet.
+                Google Sheets spreadsheets become Neutrino spreadsheets, Google Slides decks become
+                Neutrino presentations, and Google Photos pictures and videos become Neutrino
+                photos. Other products in the archive are recognised but cannot be imported yet.
               </p>
               <p className={styles.helpNote}>
                 Google splits a large export across several .zip files, and it splits them wherever
@@ -522,7 +548,7 @@ export default function ImportPage() {
                     <p className={styles.caveat}>
                       Comments, suggestions and revision history are not in the export, so they
                       cannot come across; neither is sharing, so an imported document starts out
-                      private to you. Presentations in the archive are left alone.
+                      private to you.
                     </p>
                   </>
                 )}
@@ -621,6 +647,83 @@ export default function ImportPage() {
               </div>
             )}
 
+            {loaded.slides && (
+              <div className={styles.product}>
+                <div className={`${styles.productRow} ${includeSlides ? '' : styles.productRowOff}`}>
+                  <Presentation size={18} className={styles.productIcon} aria-hidden="true" />
+                  <div className={styles.productText}>
+                    <div className={styles.productName}>
+                      {plural(loaded.slides.slides.length, 'presentation')} in {loaded.slides.directory}
+                    </div>
+                    <div className={styles.productDest}>→ Slides</div>
+                  </div>
+                  <div className={styles.productToggle}>
+                    <Checkbox
+                      label="Import"
+                      checked={includeSlides}
+                      disabled={loaded.slides.slides.length === 0}
+                      onChange={(e) => setIncludeSlides(e.target.checked)}
+                    />
+                  </div>
+                </div>
+
+                {includeSlides && loaded.slides.slides.length > 0 && (
+                  <>
+                    <div className={styles.options}>
+                      <Checkbox
+                        label="Recreate the folders they were in"
+                        description="Otherwise every presentation lands in one folder."
+                        checked={slideOptions.preserveFolders}
+                        onChange={(e) => setSlideOptions((o) => ({ ...o, preserveFolders: e.target.checked }))}
+                      />
+                      <Checkbox
+                        label="Skip presentations whose title already exists"
+                        description="Lets you re-run the import without creating duplicates."
+                        checked={slideOptions.skipExisting}
+                        onChange={(e) => setSlideOptions((o) => ({ ...o, skipExisting: e.target.checked }))}
+                      />
+                      <Checkbox
+                        label="Put imported presentations in a folder"
+                        checked={slideOptions.folderName !== null}
+                        onChange={(e) =>
+                          setSlideOptions((o) => ({
+                            ...o,
+                            folderName: e.target.checked ? DEFAULT_SLIDES_IMPORT_OPTIONS.folderName : null,
+                          }))
+                        }
+                      />
+                      {slideOptions.folderName !== null && (
+                        <div className={styles.folderInput}>
+                          <TextInput
+                            value={slideOptions.folderName}
+                            onChange={(e) => setSlideOptions((o) => ({ ...o, folderName: e.target.value }))}
+                            placeholder="Folder name"
+                            aria-label="Presentations folder name"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <p className={styles.caveat}>
+                      The exported PowerPoint file is stored as it is, so slides, layouts, themes and
+                      images come across exactly as Google wrote them. Comments and revision history
+                      are not in the export, and neither is sharing, so an imported presentation
+                      starts out private to you.
+                    </p>
+                  </>
+                )}
+
+                {loaded.slides.unsupported.length > 0 && (
+                  <Alert
+                    variant="warning"
+                    message={`${plural(loaded.slides.unsupported.length, 'file')} in ${
+                      loaded.slides.directory
+                    } (${[...new Set(loaded.slides.unsupported.map((u) => u.format))].join(', ')}) cannot be opened in the browser. Re-run the export with the Google Slides format set to PowerPoint (.pptx) to bring those across.`}
+                  />
+                )}
+              </div>
+            )}
+
             {loaded.photos && (
               <div className={styles.product}>
                 <div className={`${styles.productRow} ${includePhotos ? '' : styles.productRowOff}`}>
@@ -707,7 +810,7 @@ export default function ImportPage() {
               </div>
             )}
 
-            {loaded.keep || loaded.docs || loaded.sheets || loaded.photos ? (
+            {loaded.keep || loaded.docs || loaded.sheets || loaded.slides || loaded.photos ? (
               <div className={styles.actions}>
                 <Button onClick={() => { void startImport(); }} disabled={selectedCount === 0}>
                   Import {plural(selectedCount, 'item')}
@@ -808,9 +911,17 @@ export default function ImportPage() {
                   Go to Sheets
                 </Button>
               )}
-              {ranPhotos && (
+              {ranSlides && (
                 <Button
                   variant={ranNotes || ranDocs || ranSheets ? 'secondary' : 'primary'}
+                  onClick={() => router.push('/slides')}
+                >
+                  Go to Slides
+                </Button>
+              )}
+              {ranPhotos && (
+                <Button
+                  variant={ranNotes || ranDocs || ranSheets || ranSlides ? 'secondary' : 'primary'}
                   onClick={() => router.push('/photos')}
                 >
                   Go to Photos

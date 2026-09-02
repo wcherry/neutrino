@@ -1,11 +1,11 @@
 /**
  * The shape of a Drive export, shared by everything read out of one.
  *
- * Neither Docs nor Sheets is a product directory of its own: a Google Doc and
- * a Google Sheet are both Drive files, so both come out under `Takeout/Drive/`
- * in the folder tree the user had, converted on the way out to whatever format
- * the export was configured for, each optionally beside a `-info.json`
- * metadata sidecar:
+ * None of Docs, Sheets or Slides is a product directory of its own: a Google
+ * Doc, a Google Sheet and a Google Slides deck are all Drive files, so they all
+ * come out under `Takeout/Drive/` in the folder tree the user had, converted on
+ * the way out to whatever format the export was configured for, each optionally
+ * beside a `-info.json` metadata sidecar:
  *
  *     Takeout/
  *       Drive/
@@ -14,11 +14,13 @@
  *         Work/
  *           Q3 plan.docx
  *           Budget.xlsx
+ *           Kickoff.pptx
  *           logo.png
  *
- * Two finders (`driveDocs.ts`, `driveSheets.ts`) walk that same tree looking
- * for different files in it, so locating the directory, pairing a file with
- * its sidecar and reading one live here rather than in either of them.
+ * Three finders (`driveDocs.ts`, `driveSheets.ts`, `driveSlides.ts`) walk that
+ * same tree looking for different files in it, so locating the directory,
+ * pairing a file with its sidecar and reading one live here rather than in any
+ * of them.
  */
 
 import type { TakeoutArchive, TakeoutEntry, TakeoutProductDir } from './archive';
@@ -50,13 +52,15 @@ function directoryWithMost(archive: TakeoutArchive, ext: string): TakeoutProduct
  * Google localises the directory's name, so a non-English export has to be
  * recognised by its contents instead. That is what `signalExt` is for: an
  * extension no other Takeout product emits, and so strong enough on its own to
- * say "this is Drive" — `.docx` for documents, `.xlsx` for spreadsheets. It is
- * deliberately never `.html`, `.txt` or `.csv`, all of which other products
- * write: Keep puts an `.html` beside every note and Contacts exports a `.csv`,
- * so sniffing for those would hand another product's files to this one.
+ * say "this is Drive" — `.docx` for documents, `.xlsx` for spreadsheets,
+ * `.pptx` for presentations. It is deliberately never `.html`, `.txt` or
+ * `.csv`, all of which other products write: Keep puts an `.html` beside every
+ * note and Contacts exports a `.csv`, so sniffing for those would hand another
+ * product's files to this one.
  *
- * `scope` only names the log lines, so a run that reads the directory twice —
- * once for documents, once for spreadsheets — says which pass it is on.
+ * `scope` only names the log lines, so a run that reads the directory three
+ * times — once each for documents, spreadsheets and presentations — says which
+ * pass it is on.
  */
 export function findDriveDirectory(
   archive: TakeoutArchive,

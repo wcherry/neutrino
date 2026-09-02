@@ -1,7 +1,7 @@
 /**
  * The import page (`app/(apps)/import/page.tsx`).
  *
- * The conversions and the four runners have their own tests; what this covers
+ * The conversions and the five runners have their own tests; what this covers
  * is the page's job of putting several products in one run — which of them
  * take part, that one progress bar counts them all, that stopping one stops
  * the rest, and that the result screen adds the summaries up.
@@ -23,10 +23,12 @@ const { pushMock, takeout, canEncryptFor } = vi.hoisted(() => ({
     findKeepNotes: vi.fn(),
     findDriveDocs: vi.fn(),
     findDriveSheets: vi.fn(),
+    findDriveSlides: vi.fn(),
     findTakeoutPhotos: vi.fn(),
     runKeepImport: vi.fn(),
     runDocsImport: vi.fn(),
     runSheetsImport: vi.fn(),
+    runSlidesImport: vi.fn(),
     runPhotosImport: vi.fn(),
   },
 }));
@@ -56,6 +58,11 @@ vi.mock('@/lib/takeout', () => ({
     skipExisting: true,
     folderName: 'Google Sheets',
     importFormulas: true,
+  },
+  DEFAULT_SLIDES_IMPORT_OPTIONS: {
+    preserveFolders: true,
+    skipExisting: true,
+    folderName: 'Google Slides',
   },
   DEFAULT_PHOTOS_IMPORT_OPTIONS: {
     importAlbums: true,
@@ -132,6 +139,11 @@ const sheetsSource = {
   sheets: [{ entry: { path: 'a.xlsx' } }, { entry: { path: 'b.xlsx' } }],
   unsupported: [],
 };
+const slidesSource = {
+  directory: 'Drive',
+  slides: [{ entry: { path: 'a.pptx' } }, { entry: { path: 'b.pptx' } }],
+  unsupported: [],
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -140,12 +152,14 @@ beforeEach(() => {
   takeout.findKeepNotes.mockResolvedValue(keepSource);
   takeout.findDriveDocs.mockReturnValue(docsSource);
   // Off by default so each test opts into the products it is about; the
-  // spreadsheet and photo cases below turn them on.
+  // spreadsheet, presentation and photo cases below turn them on.
   takeout.findDriveSheets.mockReturnValue(null);
+  takeout.findDriveSlides.mockReturnValue(null);
   takeout.findTakeoutPhotos.mockResolvedValue(null);
   takeout.runKeepImport.mockResolvedValue(summary(2));
   takeout.runDocsImport.mockResolvedValue(summary(2));
   takeout.runSheetsImport.mockResolvedValue(summary(2));
+  takeout.runSlidesImport.mockResolvedValue(summary(2));
   takeout.runPhotosImport.mockResolvedValue(summary(2));
 });
 
@@ -333,6 +347,56 @@ describe('ImportPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Import 4 items' }));
     });
     expect(takeout.runSheetsImport).not.toHaveBeenCalled();
+  });
+
+  it('runs the presentations after the spreadsheets', async () => {
+    takeout.findDriveSheets.mockReturnValue(sheetsSource);
+    takeout.findDriveSlides.mockReturnValue(slidesSource);
+    const { container } = renderPage();
+    await dropArchive(container);
+
+    expect(screen.getByText('2 presentations in Drive')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 8 items' }));
+    });
+
+    expect(takeout.runSlidesImport).toHaveBeenCalledTimes(1);
+    expect(takeout.runSheetsImport.mock.invocationCallOrder[0]).toBeLessThan(
+      takeout.runSlidesImport.mock.invocationCallOrder[0],
+    );
+    await waitFor(() => expect(screen.getByText(/8 imported/)).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Go to Slides' })).toBeTruthy();
+  });
+
+  it('does not start the presentations when an earlier run was stopped', async () => {
+    takeout.findDriveSlides.mockReturnValue(slidesSource);
+    takeout.runDocsImport.mockResolvedValue(summary(1, { cancelled: true }));
+    const { container } = renderPage();
+    await dropArchive(container);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 6 items' }));
+    });
+
+    expect(takeout.runSlidesImport).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText('Import stopped')).toBeTruthy());
+  });
+
+  it('leaves the presentations out when the user unchecks them', async () => {
+    takeout.findDriveSlides.mockReturnValue(slidesSource);
+    const { container } = renderPage();
+    await dropArchive(container);
+
+    // Each product row has its own "Import" checkbox; with no spreadsheets in
+    // this archive the third is Slides.
+    await act(async () => {
+      fireEvent.click(screen.getAllByLabelText('Import')[2]);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Import 4 items' }));
+    });
+    expect(takeout.runSlidesImport).not.toHaveBeenCalled();
   });
 
   it('runs the photos last of all and offers Photos as a destination', async () => {

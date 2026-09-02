@@ -8,8 +8,8 @@
  * Only the document-shaped files are of interest here, and only those the
  * browser can convert: `.docx` (the Takeout default), `.html` and `.txt`.
  * Spreadsheets, presentations, images and everything else in the export are
- * not documents and are ignored outright — spreadsheets have a finder of their
- * own (`driveSheets.ts`). Documents in a format we cannot convert (`.pdf`,
+ * not documents and are ignored outright — spreadsheets and presentations have
+ * finders of their own (`driveSheets.ts`, `driveSlides.ts`). Documents in a format we cannot convert (`.pdf`,
  * `.odt`, `.rtf`, `.epub`) are a different case — the user chose that format
  * for their Docs and would otherwise be told, wrongly, that the archive
  * contains no documents — so those are counted and reported.
