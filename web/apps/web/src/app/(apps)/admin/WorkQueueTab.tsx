@@ -92,7 +92,7 @@ export function WorkQueueTab() {
   );
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.sectionWide}`}>
       <h2 className={styles.sectionTitle}>
         Work Queue{' '}
         {pendingCount !== undefined && (

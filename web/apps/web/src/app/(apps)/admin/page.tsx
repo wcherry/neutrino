@@ -100,7 +100,7 @@ function ProcessesTab() {
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.sectionWide}`}>
       <h2 className={styles.sectionTitle}>Running Processes</h2>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
@@ -164,7 +164,7 @@ function DiskTab() {
       : 0;
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.sectionWide}`}>
       <h2 className={styles.sectionTitle}>Disk Usage</h2>
       <div className={styles.diskStats}>
         <div className={styles.diskStat}>
@@ -474,7 +474,7 @@ function UsersTab() {
 
   return (
     <>
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.sectionWide}`}>
       {header}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
@@ -1129,7 +1129,7 @@ function JobsTab() {
   }
 
   return (
-    <div className={styles.section}>
+    <div className={`${styles.section} ${styles.sectionWide}`}>
       <h2 className={styles.sectionTitle}>
         Jobs <span className={styles.userCount}>({jobs.length})</span>
       </h2>
@@ -1227,39 +1227,45 @@ export default function AdminPage() {
   return (
     <div className={styles.page}>
       {/* ── Header ──────────────────────────────────────────────────────── */}
+      {/* The rule under the tabs runs the full width; everything inside it is
+          centred to the same column as the tab content below. */}
       <div className={styles.header}>
-        <button className={styles.backBtn} onClick={() => router.back()} type="button">
-          <ArrowLeft size={16} />
-          Back
-        </button>
-        <h1 className={styles.heading}>Admin</h1>
+        <div className={styles.headerInner}>
+          <button className={styles.backBtn} onClick={() => router.back()} type="button">
+            <ArrowLeft size={16} />
+            Back
+          </button>
+          <h1 className={styles.heading}>Admin</h1>
 
-        {/* ── Tab bar ─────────────────────────────────────────────────── */}
-        <div className={styles.tabBar}>
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              className={`${styles.tabBtn} ${activeTab === tab.id ? styles.tabBtnActive : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-              type="button"
-            >
-              {tab.label}
-            </button>
-          ))}
+          {/* ── Tab bar ───────────────────────────────────────────────── */}
+          <div className={styles.tabBar}>
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                className={`${styles.tabBtn} ${activeTab === tab.id ? styles.tabBtnActive : ''}`}
+                onClick={() => setActiveTab(tab.id)}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* ── Tab content ─────────────────────────────────────────────────── */}
       <div className={styles.content}>
-        {activeTab === 'processes' && <ProcessesTab />}
-        {activeTab === 'disk' && <DiskTab />}
-        {activeTab === 'services' && <ServicesTab />}
-        {activeTab === 'users' && <UsersTab />}
-        {activeTab === 'queue' && <WorkQueueTab />}
-        {activeTab === 'flags' && <FeatureFlagsTab />}
-        {activeTab === 'versions' && <VersionsTab />}
-        {activeTab === 'fonts' && <FontsTab />}
-        {activeTab === 'jobs' && <JobsTab />}
+        <div className={styles.contentInner}>
+          {activeTab === 'processes' && <ProcessesTab />}
+          {activeTab === 'disk' && <DiskTab />}
+          {activeTab === 'services' && <ServicesTab />}
+          {activeTab === 'users' && <UsersTab />}
+          {activeTab === 'queue' && <WorkQueueTab />}
+          {activeTab === 'flags' && <FeatureFlagsTab />}
+          {activeTab === 'versions' && <VersionsTab />}
+          {activeTab === 'fonts' && <FontsTab />}
+          {activeTab === 'jobs' && <JobsTab />}
+        </div>
       </div>
     </div>
   );
