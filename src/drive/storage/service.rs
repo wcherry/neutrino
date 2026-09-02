@@ -752,6 +752,26 @@ impl StorageService {
         })
     }
 
+    /// Set a user's storage limit and daily upload cap. `None` means unlimited.
+    ///
+    /// The admin console's write half of [`Self::get_quota`], and what
+    /// approving a storage request (issue #144) calls. Occupancy is not
+    /// recomputed here — the response reports it, so it comes back through
+    /// `get_quota` on the way out.
+    pub fn set_quota_limits(
+        &self,
+        user_id: &str,
+        quota_bytes: Option<i64>,
+        daily_cap_bytes: Option<i64>,
+    ) -> Result<QuotaResponse, ApiError> {
+        if quota_bytes.is_some_and(|b| b < 0) || daily_cap_bytes.is_some_and(|b| b < 0) {
+            return Err(ApiError::bad_request("A quota cannot be negative"));
+        }
+        self.repo
+            .set_quota_limits(user_id, quota_bytes, daily_cap_bytes)?;
+        self.get_quota(user_id)
+    }
+
     pub fn store(&self) -> &LocalFileStore {
         &self.store
     }
@@ -940,7 +960,11 @@ mod tests {
         let encryption_repo = Arc::new(EncryptionRepository::new(pool.clone()));
         let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
         let token_service = Arc::new(TokenService::new("test-secret".to_string()));
-        let auth_service = Arc::new(AuthService::new(auth_repo, token_service));
+        let auth_service = Arc::new(AuthService::new(
+            auth_repo,
+            token_service,
+            Arc::new(crate::auth::password_policy::PasswordPolicyRepository::new(pool.clone())),
+        ));
         let permissions_repo = Arc::new(PermissionsRepository::new(pool.clone()));
         let permissions_service = Arc::new(PermissionsService::new(
             permissions_repo,
@@ -1195,7 +1219,11 @@ mod tests {
         let encryption_repo = Arc::new(EncryptionRepository::new(pool.clone()));
         let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
         let token_service = Arc::new(TokenService::new("test-secret".to_string()));
-        let auth_service = Arc::new(AuthService::new(auth_repo, token_service));
+        let auth_service = Arc::new(AuthService::new(
+            auth_repo,
+            token_service,
+            Arc::new(crate::auth::password_policy::PasswordPolicyRepository::new(pool.clone())),
+        ));
         let perms_for_assertions = PermissionsRepository::new(pool.clone());
         let permissions_repo = Arc::new(PermissionsRepository::new(pool.clone()));
         let permissions_service = Arc::new(PermissionsService::new(

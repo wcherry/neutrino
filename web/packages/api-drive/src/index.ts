@@ -50,6 +50,7 @@ export type {
   FileListQuery,
   DriveFileType,
   QuotaInfo,
+  QuotaRequestItem,
   FileVersionItem,
   ListVersionsResponse,
   ZipEntry,

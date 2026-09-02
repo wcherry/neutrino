@@ -249,6 +249,45 @@ impl StorageRepository {
             })
     }
 
+    /// Set a user's storage limit and daily upload cap, seeding the quota row
+    /// if they have never uploaded anything.
+    ///
+    /// `None` for either means unlimited, which is what a fresh row already
+    /// carries. Only the limits move: `used_bytes` is derived from the file and
+    /// version rows and the daily counter measures traffic, so neither is an
+    /// admin's to set.
+    pub fn set_quota_limits(
+        &self,
+        user_id: &str,
+        quota_bytes: Option<i64>,
+        daily_cap_bytes: Option<i64>,
+    ) -> Result<UserQuota, ApiError> {
+        // Seeds the row if it is missing, so the update below always has
+        // something to write to.
+        self.get_or_create_quota(user_id)?;
+        let mut conn = self.get_conn()?;
+
+        diesel::update(user_quotas::table.filter(user_quotas::user_id.eq(user_id)))
+            .set((
+                user_quotas::quota_bytes.eq(quota_bytes),
+                user_quotas::daily_cap_bytes.eq(daily_cap_bytes),
+            ))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB set quota limits error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        user_quotas::table
+            .filter(user_quotas::user_id.eq(user_id))
+            .select(UserQuota::as_select())
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB get quota after limit update error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
     /// The bytes this user actually occupies in the store, derived from the
     /// rows that own those bytes rather than from a running total.
     ///

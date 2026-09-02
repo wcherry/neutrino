@@ -68,6 +68,21 @@ impl CustomizeConnection<SqliteConnection, R2D2Error> for SqliteConnectionInit {
 }
 
 fn main() {
+    // The same `.env` the main app loads, and for a stronger reason: every
+    // variable below has a default, so a worker that never read the file starts
+    // cleanly and quietly does its work against the wrong database and the
+    // wrong storage root — see `storage_root` below for what that costs. In a
+    // container the variables are already in the environment and this finds no
+    // file, which is fine: dotenv never overrides what is already set.
+    // `dotenv()` searches upward from the working directory, so which file it
+    // finds depends on where this was started; the app prints the same line for
+    // the same reason. Printed rather than logged because logging is configured
+    // from what this loads.
+    match dotenvy::dotenv() {
+        Ok(path) => println!("worker: loaded environment from {}", path.display()),
+        Err(_) => println!("worker: no .env found; using the environment as it stands"),
+    }
+
     // Same `LOG_LEVEL` / `LOG_PATH` pair the main app reads, so one set of
     // variables configures both processes. Held for the whole of `main`: the
     // file writer is non-blocking, and dropping the guard would cut the flush.
@@ -86,6 +101,16 @@ fn main() {
         env::var("STORAGE_PATH").unwrap_or_else(|_| "./storage".to_string()),
     );
     let worker_id = format!("worker-{}", Uuid::new_v4());
+
+    // Both paths default, so a missing or misspelled variable puts the worker
+    // on a different database and storage root than the app with nothing said
+    // about it — the failure the comment above describes. Reported here so the
+    // two processes' first log lines can be compared.
+    tracing::info!(
+        "worker: database={} storage={}",
+        database_url,
+        storage_root.display()
+    );
 
     let pool = Pool::builder()
         .max_size(1)

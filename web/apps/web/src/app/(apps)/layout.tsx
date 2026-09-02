@@ -29,6 +29,7 @@ import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessag
 import { getNavSections, withActiveItem } from './navSections';
 import { NewItemFAB } from './NewItemFAB';
 import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
+import { RequestStorageDialog } from '@/components/RequestStorageDialog';
 import { ImportRunProvider } from '@/components/ImportRun';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
@@ -83,7 +84,10 @@ function quotaFromInfo(info: QuotaInfo): StorageQuota {
 
 type AuthState =
   | { status: 'loading' }
-  | { status: 'ready'; user: UserProfile; quota: StorageQuota };
+  // `quotaInfo` is the server's answer as it came, kept alongside the meter's
+  // reduced view of it: the meter substitutes a default for "no limit", and the
+  // storage request dialog has to be able to tell those apart.
+  | { status: 'ready'; user: UserProfile; quota: StorageQuota; quotaInfo: QuotaInfo | null };
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -91,6 +95,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const [auth, setAuth] = useState<AuthState>({ status: 'loading' });
+  const [requestingStorage, setRequestingStorage] = useState(false);
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
   const [searchPending, setSearchPending] = useState(false);
   const { search } = useClientSearch();
@@ -172,6 +177,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           quota: quotaInfo
             ? quotaFromInfo(quotaInfo)
             : { usedBytes: 0, totalBytes: DEFAULT_QUOTA_BYTES },
+          quotaInfo,
         });
         // The E2EE key is provisioned or unlocked by `E2EEUnlockGate` below —
         // it needs an unlock secret from the user, so it cannot happen here.
@@ -254,6 +260,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       logoHref="/drive"
       sections={navSections}
       quota={auth.quota}
+      onRequestStorage={() => setRequestingStorage(true)}
       onUpload={handleUpload}
       version={VERSION_LABEL}
       versionTitle={FULL_VERSION_LABEL ? `Neutrino ${FULL_VERSION_LABEL}` : undefined}
@@ -292,6 +299,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Overlays the shell when the identity key is missing or locked. Renders
             nothing once unlocked, and is dismissable — see the component notes. */}
         <E2EEUnlockGate userId={auth.user.id} userName={auth.user.email} />
+        {/* The storage meter's "Request Additional" (issue #144). Mounted here
+            rather than in the sidebar because @neutrino/layout has no API
+            dependencies, so the ask belongs to the app. */}
+        <RequestStorageDialog
+          open={requestingStorage}
+          onClose={() => setRequestingStorage(false)}
+          quota={auth.quotaInfo}
+        />
       </AppShell>
     </ImportRunProvider>
   );

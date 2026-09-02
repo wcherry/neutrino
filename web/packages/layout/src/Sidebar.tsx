@@ -33,6 +33,13 @@ export interface SidebarProps {
   logoHref?: string;
   sections?: NavSection[];
   quota?: StorageQuota;
+  /**
+   * Opens whatever the embedder uses to ask an admin for more storage
+   * (issue #144). Given, the meter offers "Request Additional"; omitted, it
+   * offers nothing — this package has no API dependencies, so the ask itself
+   * belongs to the app.
+   */
+  onRequestStorage?: () => void;
   onUpload?: (files: FileList) => void;
   className?: string;
   /**
@@ -59,6 +66,7 @@ export function Sidebar({
   logoHref = '/',
   sections = [],
   quota,
+  onRequestStorage,
   onUpload,
   className = '',
   version,
@@ -254,9 +262,19 @@ export function Sidebar({
           </div>
           <p className={styles['quota-sub']}>
             {formatBytes(quota.usedBytes)} of {formatBytes(quota.totalBytes)} used
-            <a href="/settings/storage" className={styles['quota-link']}>
-              Manage
-            </a>
+            {/* This used to link to /settings/storage, a page that does not
+                exist — the meter's link went nowhere, which is issue #144.
+                What someone who has run out of room actually wants is more
+                room, so the link asks for it. */}
+            {onRequestStorage && (
+              <button
+                type="button"
+                onClick={onRequestStorage}
+                className={styles['quota-link']}
+              >
+                Request Additional
+              </button>
+            )}
           </p>
         </div>
       )}

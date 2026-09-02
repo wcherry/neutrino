@@ -11,6 +11,7 @@ import type {
   FileListQuery,
   DriveFileType,
   QuotaInfo,
+  QuotaRequestItem,
   FileVersionItem,
   ListVersionsResponse,
   ZipContentsResponse,
@@ -150,6 +151,26 @@ export const storageApi = {
 
   async getQuota(): Promise<QuotaInfo> {
     return request<QuotaInfo>('/api/v1/drive/quota');
+  },
+
+  /**
+   * Ask an administrator for a bigger storage limit (issue #144).
+   *
+   * `requestedBytes` is the new *total* limit, not an increment. Nothing about
+   * the quota changes here — the ask lands in the admin console's work queue,
+   * and approving it is what raises the limit. A second ask while the first is
+   * unanswered is refused with 409 rather than filed twice.
+   */
+  async requestQuotaIncrease(requestedBytes: number, reason?: string): Promise<QuotaRequestItem> {
+    return request<QuotaRequestItem>('/api/v1/drive/quota/requests', {
+      method: 'POST',
+      body: JSON.stringify({ requestedBytes, reason }),
+    });
+  },
+
+  /** The caller's own storage requests, newest first. */
+  async listQuotaRequests(): Promise<QuotaRequestItem[]> {
+    return request<QuotaRequestItem[]>('/api/v1/drive/quota/requests');
   },
 
   async deleteFile(fileId: string): Promise<void> {

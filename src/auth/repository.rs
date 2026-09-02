@@ -1,4 +1,6 @@
-use crate::schema::{refresh_tokens, totp_backup_codes, user_profiles, users};
+use crate::schema::{
+    password_history as history, refresh_tokens, totp_backup_codes, user_profiles, users,
+};
 use crate::shared::{ApiError, DbPool};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
@@ -18,6 +20,23 @@ pub struct User {
     pub totp_enabled: i32,
     pub deleted_at: Option<NaiveDateTime>,
     pub public_key: Option<String>,
+    /// When an admin locked the account out. `None` for a live account.
+    /// Distinct from `deleted_at`: a disabled account is still listed, still
+    /// owns its files, and is re-enabled by clearing this.
+    pub disabled_at: Option<NaiveDateTime>,
+    /// When the password was last set. `None` only for an account created
+    /// before migration 120 that has never changed it since.
+    pub password_changed_at: Option<NaiveDateTime>,
+    /// When an admin forced the password to expire. `None` normally; a
+    /// policy-driven expiry is computed from `password_changed_at` instead.
+    pub password_expired_at: Option<NaiveDateTime>,
+    /// Consecutive sign-ins that got the password wrong. Reset by one that
+    /// gets it right, so unrelated typos never accumulate into a lockout.
+    pub failed_login_attempts: i32,
+    /// When the run of failures reached the policy's threshold. `None`
+    /// normally. Distinct from `disabled_at`: this was applied by a counter and
+    /// is cleared by Unlock, whereas a disabled account was a decision.
+    pub locked_out_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Insertable)]
@@ -27,6 +46,16 @@ pub struct NewUser<'a> {
     pub email: &'a str,
     pub name: &'a str,
     pub password_hash: &'a str,
+    /// `None` leaves the column default, `"user"`. Set only where an admin
+    /// creates an account and picks the role up front.
+    pub role: Option<&'a str>,
+    /// Stamped at creation so a maximum-age policy has an age to measure from
+    /// for every account made from here on.
+    pub password_changed_at: Option<NaiveDateTime>,
+    /// Set to force the new account to choose its own password before it can
+    /// sign in — what "require a password change" on the admin's create form
+    /// means.
+    pub password_expired_at: Option<NaiveDateTime>,
 }
 
 /// One published version of a user's Curve25519 identity key.
@@ -607,6 +636,253 @@ impl AuthRepository {
                 tracing::error!("DB update error: {:?}", e);
                 ApiError::internal("Database error")
             })?;
+
+        Ok(())
+    }
+
+    pub fn update_user_name(&self, user_id_val: &str, new_name: &str) -> Result<(), ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        diesel::update(users::table.filter(users::id.eq(user_id_val)))
+            .set(users::name.eq(new_name))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(())
+    }
+
+    /// Lock an account out, or let it back in.
+    ///
+    /// Only the column moves here; the caller revokes refresh tokens, because a
+    /// disabled user holding one could otherwise mint a fresh access token and
+    /// carry on until it expired.
+    pub fn set_user_disabled(&self, user_id_val: &str, disabled: bool) -> Result<(), ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        let value = disabled.then(|| chrono::Utc::now().naive_utc());
+        diesel::update(users::table.filter(users::id.eq(user_id_val)))
+            .set(users::disabled_at.eq(value))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(())
+    }
+
+    /// Force the account's password to expire, or take the forced expiry back.
+    ///
+    /// Clearing it does not restart the age clock — `password_changed_at` is
+    /// untouched — so a password already past the policy's maximum age stays
+    /// expired, which is the honest answer.
+    pub fn set_password_expired(&self, user_id_val: &str, expired: bool) -> Result<(), ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        let value = expired.then(|| chrono::Utc::now().naive_utc());
+        diesel::update(users::table.filter(users::id.eq(user_id_val)))
+            .set(users::password_expired_at.eq(value))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(())
+    }
+
+    /// Count one sign-in that got the password wrong, and report the new total.
+    ///
+    /// The read-back is what the caller compares against the policy's
+    /// threshold, so the decision to lock is made on the stored count rather
+    /// than on one this process was holding.
+    pub fn record_failed_login(&self, user_id_val: &str) -> Result<i32, ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        diesel::update(users::table.filter(users::id.eq(user_id_val)))
+            .set(users::failed_login_attempts.eq(users::failed_login_attempts + 1))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        users::table
+            .filter(users::id.eq(user_id_val))
+            .select(users::failed_login_attempts)
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB read error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// Lock the account out on the policy's failure threshold.
+    pub fn lock_out_user(&self, user_id_val: &str) -> Result<(), ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        diesel::update(users::table.filter(users::id.eq(user_id_val)))
+            .set(users::locked_out_at.eq(chrono::Utc::now().naive_utc()))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(())
+    }
+
+    /// Clear the lockout and the count behind it.
+    ///
+    /// Both move together always: releasing the account while leaving the count
+    /// at the threshold would lock it again on the next single typo.
+    pub fn clear_lockout(&self, user_id_val: &str) -> Result<(), ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        diesel::update(users::table.filter(users::id.eq(user_id_val)))
+            .set((
+                users::locked_out_at.eq(None::<NaiveDateTime>),
+                users::failed_login_attempts.eq(0),
+            ))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        Ok(())
+    }
+
+    /// Keep a password hash for the reuse check, newest last.
+    ///
+    /// Trimmed to `keep` rows — the module's fixed cap, not the policy's current
+    /// count — so raising the count later still has history to check against.
+    pub fn record_password_history(
+        &self,
+        user_id_val: &str,
+        password_hash: &str,
+        keep: i64,
+    ) -> Result<(), ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        diesel::insert_into(history::table)
+            .values((
+                history::id.eq(uuid::Uuid::new_v4().to_string()),
+                history::user_id.eq(user_id_val),
+                history::password_hash.eq(password_hash),
+                history::created_at.eq(chrono::Utc::now().naive_utc()),
+            ))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB password history insert error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        // Read the ids to keep and delete the rest, rather than deleting by
+        // offset: SQLite has no LIMIT on DELETE unless it was compiled with one.
+        let keep_ids: Vec<String> = history::table
+            .filter(history::user_id.eq(user_id_val))
+            .order(history::created_at.desc())
+            .limit(keep)
+            .select(history::id)
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB password history read error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        diesel::delete(
+            history::table
+                .filter(history::user_id.eq(user_id_val))
+                .filter(history::id.ne_all(keep_ids)),
+        )
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB password history trim error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+
+        Ok(())
+    }
+
+    /// The account's most recent password hashes, newest first.
+    pub fn recent_password_hashes(
+        &self,
+        user_id_val: &str,
+        limit: i64,
+    ) -> Result<Vec<String>, ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        history::table
+            .filter(history::user_id.eq(user_id_val))
+            .order(history::created_at.desc())
+            .limit(limit)
+            .select(history::password_hash)
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB password history read error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// Store a new password hash, restarting the age clock and clearing any
+    /// forced expiry — the three always move together, so they are one write.
+    pub fn update_user_password(
+        &self,
+        user_id_val: &str,
+        password_hash: &str,
+    ) -> Result<(), ApiError> {
+        let mut conn = self.pool.get().map_err(|e| {
+            tracing::error!("DB pool error: {:?}", e);
+            ApiError::internal("Database connection error")
+        })?;
+
+        let updated = diesel::update(users::table.filter(users::id.eq(user_id_val)))
+            .set((
+                users::password_hash.eq(password_hash),
+                users::password_changed_at.eq(chrono::Utc::now().naive_utc()),
+                users::password_expired_at.eq(None::<chrono::NaiveDateTime>),
+            ))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB update error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+
+        // An update matching no rows is not an error in Diesel, and a password
+        // change that silently changed nothing is the worst possible outcome
+        // here — the caller would report success and the old password would
+        // still be the one that works.
+        if updated == 0 {
+            return Err(ApiError::not_found("User not found"));
+        }
 
         Ok(())
     }

@@ -15,6 +15,39 @@ diesel::table! {
         deleted_at -> Nullable<Timestamp>,
         // Added in migration 005
         public_key -> Nullable<Text>,
+        // Added in migration 120
+        disabled_at -> Nullable<Timestamp>,
+        password_changed_at -> Nullable<Timestamp>,
+        password_expired_at -> Nullable<Timestamp>,
+        // Added in migration 123
+        failed_login_attempts -> Integer,
+        locked_out_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
+    password_policies (id) {
+        id -> Text,
+        min_length -> Integer,
+        require_uppercase -> Bool,
+        require_lowercase -> Bool,
+        require_number -> Bool,
+        require_symbol -> Bool,
+        max_age_days -> Integer,
+        updated_at -> Timestamp,
+        // Added in migration 123
+        forbidden_characters -> Text,
+        lockout_threshold -> Integer,
+        history_count -> Integer,
+    }
+}
+
+diesel::table! {
+    password_history (id) {
+        id -> Text,
+        user_id -> Text,
+        password_hash -> Text,
+        created_at -> Timestamp,
     }
 }
 
@@ -452,6 +485,21 @@ diesel::table! {
         daily_reset_at -> Timestamp,
         quota_bytes -> Nullable<BigInt>,
         daily_cap_bytes -> Nullable<BigInt>,
+    }
+}
+
+diesel::table! {
+    quota_requests (id) {
+        id -> Text,
+        user_id -> Text,
+        requested_bytes -> BigInt,
+        reason -> Nullable<Text>,
+        status -> Text,
+        granted_bytes -> Nullable<BigInt>,
+        decision_note -> Nullable<Text>,
+        decided_by -> Nullable<Text>,
+        decided_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
     }
 }
 
@@ -961,6 +1009,7 @@ diesel::joinable!(shared_drive_members -> shared_drives (shared_drive_id));
 diesel::joinable!(file_legal_holds -> legal_holds (hold_id));
 diesel::joinable!(file_tags -> files (file_id));
 diesel::joinable!(file_tags -> tags (tag_id));
+diesel::joinable!(quota_requests -> users (user_id));
 
 // ── Cross-table query allowlist ───────────────────────────────────────────────
 
@@ -970,6 +1019,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     refresh_tokens,
     totp_backup_codes,
     user_profiles,
+    password_policies,
+    password_history,
     // Calendar
     events,
     reminders,
@@ -1004,6 +1055,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     folders,
     files,
     user_quotas,
+    quota_requests,
     shortcuts,
     file_versions,
     version_retention_settings,

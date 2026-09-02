@@ -3,6 +3,7 @@ import { emitAuthChanged } from './authEvents';
 import type {
   RegisterRequest,
   LoginRequest,
+  ChangePasswordRequest,
   AuthTokens,
   UserProfile,
   UserProfileDetails,
@@ -20,6 +21,21 @@ import type {
 export const authApi = {
   async register(body: RegisterRequest): Promise<UserProfile> {
     return request<UserProfile>('/api/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * Set a new password, proving knowledge of the current one.
+   *
+   * Unauthenticated, and that is the point: a password sign-in has refused as
+   * expired gets no tokens, so an authenticated change would leave the account
+   * with no way back in. Succeeding signs every device out, so the caller signs
+   * in again with the new password rather than being handed a session here.
+   */
+  async changePassword(body: ChangePasswordRequest): Promise<void> {
+    return request<void>('/api/v1/auth/password', {
       method: 'POST',
       body: JSON.stringify(body),
     });

@@ -16,6 +16,11 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 serde_json = "1"
 
+# The worker reads the same `.env` as the main app. Pinned to the version the
+# app uses, since a difference in how the two parse that file would point the
+# two processes at different databases.
+dotenvy = "0.15"
+
 # Decrypting attached files (matches the main app's AES-256-GCM format)
 aes-gcm = "0.10"
 base64 = "0.22"

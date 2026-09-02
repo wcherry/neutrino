@@ -10,6 +10,7 @@ pub mod key_files;
 pub mod notifications;
 pub mod permissions;
 pub mod private_store;
+pub mod quota_requests;
 pub mod security;
 pub mod service_registry;
 pub mod shared_drives;
@@ -34,6 +35,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .configure(tags::api::configure)
             .configure(encryption::api::configure)
             .configure(key_files::api::configure)
+            .configure(quota_requests::api::configure_user)
             .configure(shared_drives::api::configure),
     );
 }

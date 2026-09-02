@@ -1,10 +1,26 @@
 /* ── Page shell ──────────────────────────────────────────────────────────── */
+/*
+ * The tab bar's rule and the content scroller are full-bleed; what is centred
+ * within them is `.headerInner` / `.contentInner`, both to the same width, so
+ * the tabs line up with the table beneath them and the scrollbar stays at the
+ * edge of the window rather than halfway across it.
+ */
 .page {
+  --admin-max-width: 1400px;
+  --admin-gutter: 48px;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
   background: var(--color-surface, #fff);
+}
+
+/* The gutter is generous on a desktop window and would be most of a narrow
+   one, so it tightens rather than squeezing the content out. */
+@media (max-width: 900px) {
+  .page {
+    --admin-gutter: 20px;
+  }
 }
 
 .loading {
@@ -17,11 +33,21 @@
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .header {
+  flex-shrink: 0;
+  /* Carries the rule the tab bar used to draw, so it spans the window while
+     the tabs themselves stay inside the centred column. */
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.headerInner {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 20px 28px 0;
-  flex-shrink: 0;
+  padding: 20px var(--admin-gutter) 0;
+  width: 100%;
+  max-width: var(--admin-max-width);
+  margin-inline: auto;
+  box-sizing: border-box;
 }
 
 .backBtn {
@@ -52,8 +78,14 @@
 .tabBar {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
   flex-shrink: 0;
+  /* Nine tabs on a narrow window scroll rather than wrap into a second row. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabBar::-webkit-scrollbar {
+  display: none;
 }
 
 .tabBtn {
@@ -82,19 +114,45 @@
 /* ── Scrollable content ───────────────────────────────────────────────────── */
 .content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 28px;
+}
+
+.contentInner {
   display: flex;
   flex-direction: column;
-  gap: 32px;
-  max-width: 900px;
+  gap: 40px;
+  /* Extra below the last section so it does not end flush with the window. */
+  padding: 36px var(--admin-gutter) 64px;
+  width: 100%;
+  max-width: var(--admin-max-width);
+  margin-inline: auto;
+  box-sizing: border-box;
 }
 
 /* ── Sections ────────────────────────────────────────────────────────────── */
+/*
+ * A section is the measure of a tab body. A row of a label and its control, or
+ * a paragraph of policy, reads badly stretched the full width of a large
+ * window, so the default is 70% of the body — floored at the whole width, so a
+ * narrow window gives it everything rather than 70% of not much.
+ */
 .section {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  width: 70%;
+  min-width: min(100%, 760px);
+}
+
+/*
+ * The exception: a section whose body is a table wants every pixel. The users
+ * table carries eight columns and an action column that cannot shrink past its
+ * buttons, so 70% is where it starts scrolling.
+ */
+.sectionWide {
+  width: 100%;
+  min-width: 0;
 }
 
 .sectionTitle {
@@ -107,10 +165,15 @@
 }
 
 /* ── Process / service table ─────────────────────────────────────────────── */
+/*
+ * `overflow-x: auto`, not `hidden`: the users table's action column cannot
+ * shrink past its buttons, so a window too narrow for it used to clip the
+ * column away entirely instead of offering a scrollbar.
+ */
 .tableWrap {
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .table {
@@ -473,9 +536,316 @@
   cursor: not-allowed;
 }
 
+/*
+ * A settings row's explanation, as distinct from `.serviceMeta`.
+ *
+ * `.serviceMeta` is a one-line cell in a table of processes and mounts and
+ * truncates with an ellipsis by design; a rule's explanation is a sentence or
+ * three and has to wrap, or the policy form reads as a column of half-sentences.
+ */
+.settingMeta {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #6b7280);
+  max-width: 68ch;
+}
+
+/*
+ * A rule whose control is too wide to sit beside its label — the forbidden
+ * character list — so the row stacks instead of splitting left and right.
+ */
+.settingRowStacked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface, #fff);
+}
+
+.settingRowStacked:last-child {
+  border-bottom: none;
+}
+
+.textInput {
+  width: 100%;
+  max-width: 340px;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111827);
+  /* The value is a set of individual characters, so they are easier to tell
+     apart — a lowercase l from a 1 — in a monospaced face. */
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.textInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.charList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.charChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  background: var(--color-surface-secondary, #f9fafb);
+  color: var(--color-text, #111827);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  line-height: 1;
+}
+
 .formActions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
+}
+
+/* ── Section header with an action ───────────────────────────────────────── */
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.primaryBtn {
+  font-size: 13px;
+  padding: 6px 14px;
+  border: 1px solid var(--color-primary, #2563eb);
+  border-radius: 6px;
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Row actions ─────────────────────────────────────────────────────────── */
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/*
+ * A text button for the actions that crowd a table row. Deliberately not a
+ * link: it does something rather than going somewhere.
+ */
+.linkBtn {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.linkBtn:hover:not(:disabled) {
+  background: var(--color-surface-raised, #f3f4f6);
+}
+
+.linkBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Account state badges ────────────────────────────────────────────────── */
+
+.badgeRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badgeOk {
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.badgeDisabled {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #fef2f2;
+  color: #b91c1c;
+  white-space: nowrap;
+}
+
+.badgeExpired {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #fffbeb;
+  color: #b45309;
+  white-space: nowrap;
+}
+
+/*
+ * Locked by the failed-sign-in threshold — not the same state as Disabled, and
+ * released by a different action, so it does not share that badge's colour.
+ */
+.badgeLocked {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #eef2ff;
+  color: #4338ca;
+  white-space: nowrap;
+}
+
+/* ── Storage column ──────────────────────────────────────────────────────── */
+
+.quotaCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.quotaText {
+  font-size: 12px;
+  color: var(--color-text, #111827);
+  white-space: nowrap;
+}
+
+.quotaOver {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+/* ── Dialog forms ────────────────────────────────────────────────────────── */
+
+.dialogForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.formLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text, #111827);
+}
+
+.formInput {
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111827);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.formInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.formHint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary, #6b7280);
+  margin: 0;
+}
+
+.formError {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b91c1c;
+  margin: 0;
+}
+
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text, #111827);
+}
+
+.checkRow input {
+  margin-top: 2px;
+}
+
+/* ── Work queue ──────────────────────────────────────────────────────────── */
+
+.queueFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.queueReason {
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+  max-width: 32ch;
+  white-space: normal;
+}
+
+.queueEmphasis {
+  font-weight: 600;
+}
+
+.statusApproved {
+  color: #16a34a;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.statusDenied {
+  color: #b91c1c;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.statusPending {
+  color: #b45309;
+  font-weight: 500;
+  font-size: 12px;
 }

@@ -169,7 +169,11 @@ mod tests {
         let encryption_repo = Arc::new(EncryptionRepository::new(pool.clone()));
         let auth_repo = Arc::new(AuthRepository::new(pool.clone()));
         let token_service = Arc::new(TokenService::new("test-secret".to_string()));
-        let auth_service = Arc::new(AuthService::new(auth_repo, token_service));
+        let auth_service = Arc::new(AuthService::new(
+            auth_repo,
+            token_service,
+            Arc::new(crate::auth::password_policy::PasswordPolicyRepository::new(pool.clone())),
+        ));
         let permissions_repo_for_assertions = PermissionsRepository::new(pool.clone());
         let permissions_repo = Arc::new(PermissionsRepository::new(pool.clone()));
         let permissions_service = Arc::new(PermissionsService::new(

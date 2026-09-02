@@ -182,10 +182,21 @@
   margin-bottom: var(--space-2);
 }
 
+/*
+ * Used on both an <a> and a <button> — the expired-password form's way back is
+ * an action, not a destination — so the browser's button reset is undone here
+ * to keep the two looking the same.
+ */
 .footerLink {
   color: var(--color-accent);
   text-decoration: none;
   font-weight: var(--font-medium);
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: inherit;
+  font-family: inherit;
+  cursor: pointer;
 }
 
 .footerLink:hover {
