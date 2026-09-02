@@ -11,10 +11,14 @@ For every repo that requires changes, create a dedicated feature branch. The bra
 **Branch naming:** `feature/<short-kebab-description>`
 
 ```bash
-git -C /Users/williamcherry/neutrino-repos/<repo> checkout -b feature/<name>
+git -C /Users/williamcherry/Playground/getneutrino.app/<repo> checkout -b feature/<name>
 ```
 
-- Identify all affected repos before branching. Typical candidates: `neutrino-auth`, `neutrino-drive`, `neutrino-notes`, `neutrino-worker`, `neutrino-web`, `neutrino-shared`, `neutrino-e2e`.
+- Identify all affected repos before branching. Every repo is a sibling directory under
+  `/Users/williamcherry/Playground/getneutrino.app/`. Candidates: `neutrino` (Rust backend + `web/`
+  monorepo + `e2e/` + `worker/`), `neutrino_shared_ios`, `neutrino_docs_ios_mobile`,
+  `neutrino_drive_ios_mobile`, `neutrino_notes_ios_mobile`, `neutrino_photos_ios_mobile`,
+  `neutrino_sheets_ios_mobile`, `neutrino_slides_ios_mobile`, `neutrino_drive_mac_desktop`.
 - Do NOT create branches in repos that require no changes.
 - Confirm the branch was created in each repo before proceeding.
 
@@ -131,7 +135,7 @@ Implement the changes described in the plan, one task at a time.
 1. Enable the feature flag (`FEATURE_<NAME>=true`) in the test environment.
 2. Run the full e2e suite:
    ```bash
-   cd /Users/williamcherry/neutrino-repos/neutrino-e2e && ./scripts/run-tests.sh
+   cd /Users/williamcherry/Playground/getneutrino.app/neutrino/e2e && ./scripts/run-tests.sh
    ```
 3. All tests must pass before proceeding. Fix failures before continuing.
 
@@ -182,8 +186,8 @@ Commit each repo separately. Each commit must be scoped to only that repo's chan
 - Do NOT skip pre-commit hooks (`--no-verify` is not allowed).
 
 ```bash
-git -C /Users/williamcherry/neutrino-repos/<repo> add <specific files>
-git -C /Users/williamcherry/neutrino-repos/<repo> commit -m "<message>"
+git -C /Users/williamcherry/Playground/getneutrino.app/<repo> add <specific files>
+git -C /Users/williamcherry/Playground/getneutrino.app/<repo> commit -m "<message>"
 ```
 
 Confirm each commit succeeded before moving to the next repo.
@@ -195,8 +199,8 @@ Confirm each commit succeeded before moving to the next repo.
 Push each branch and open a PR. One PR per repo.
 
 ```bash
-git -C /Users/williamcherry/neutrino-repos/<repo> push -u origin feature/<name>
-gh pr create --repo wcherry/neutrino-<repo> \
+git -C /Users/williamcherry/Playground/getneutrino.app/<repo> push -u origin feature/<name>
+gh pr create --repo wcherry/<repo> \
   --title "<Feature name>" \
   --body "$(cat <<'EOF'
 ## Summary

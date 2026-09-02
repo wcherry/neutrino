@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - No feature flag required — this is a pure structural refactor with no behavioural changes
-- Run `npm run dev` in the monorepo root (`/Users/williamcherry/neutrino-repos/neutrino-web`)
+- Run `npm run dev` in the monorepo root (`/Users/williamcherry/Playground/getneutrino.app/neutrino/web`)
 - Sign in to the application at `http://localhost:3000`
 
 ## Slide Editor

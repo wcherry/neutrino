@@ -4,7 +4,7 @@
  * specialist implements `editor/hooks/useTableRegions.ts`).
  *
  * Per the plan
- * (/Users/williamcherry/neutrino/agent_docs/plans/fix-sheets-structural-shift.md),
+ * (/Users/williamcherry/Playground/getneutrino.app/neutrino/agent_docs/plans/fix-sheets-structural-shift.md),
  * this hook mirrors `useConditionalFormatting.ts`'s shape exactly:
  *   - `sheetsTableRegionsRef`: per-sheet array of TableRegion[]
  *   - `tableRegions` / `tableRegionsRef`: active-sheet state + ref

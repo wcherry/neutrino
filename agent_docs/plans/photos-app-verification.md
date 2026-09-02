@@ -1,7 +1,7 @@
 # Manual Verification: Photos Editor
 
 ## Prerequisites
-- [ ] Dev server running (`pnpm dev` from `/Users/williamcherry/neutrino/web`)
+- [ ] Dev server running (`pnpm dev` from `/Users/williamcherry/Playground/getneutrino.app/neutrino/web`)
 - [ ] At least one image file (JPG/PNG/WebP) uploaded to your Drive
 
 ## Steps to Verify

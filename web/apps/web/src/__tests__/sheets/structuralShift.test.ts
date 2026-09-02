@@ -3,7 +3,7 @@
  * yet; these tests are expected to fail with a module-resolution error until
  * a specialist implements `editor/structuralShift.ts`).
  *
- * See /Users/williamcherry/neutrino/agent_docs/plans/fix-sheets-structural-shift.md
+ * See /Users/williamcherry/Playground/getneutrino.app/neutrino/agent_docs/plans/fix-sheets-structural-shift.md
  * for full background. Summary of the pinned algorithm under test:
  *
  * - `shiftedId(id, axis, op, index)`: unified per-cell id shift. `index` is

@@ -13,7 +13,7 @@
  * framer-motion/portal timing in jsdom — only on the `open`/`onClose` contract
  * `Modal`/`ModalHeader`/`ModalBody` expose.
  *
- * See /Users/williamcherry/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
+ * See /Users/williamcherry/Playground/getneutrino.app/neutrino/agent_docs/plans/feature-sheets-template-gallery.md
  * for the full plan this test file is written against.
  */
 
