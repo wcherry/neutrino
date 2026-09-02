@@ -50,7 +50,7 @@ test.describe('Spreadsheet sheet tabs', () => {
     await expect(page.getByText('Sheet 2', { exact: true })).toBeVisible();
 
     await page.getByText('Sheet 2', { exact: true }).dblclick();
-    const renameInput = page.locator('main input').last();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput).toBeVisible();
     await renameInput.fill(renamedSheet);
     await renameInput.press('Enter');
