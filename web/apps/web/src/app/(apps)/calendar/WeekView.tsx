@@ -8,8 +8,7 @@ import {
   eventsForDay,
   fmtTime,
   weekStartDate,
-  getEventTopOffset,
-  getEventHeight,
+  getEventDayBounds,
 } from './calendarHelpers';
 import styles from './page.module.css';
 import gridStyles from './WeekView.module.css';
@@ -216,16 +215,16 @@ function WeekViewGrid({
               const visibleTop = scrollTop;
               const visibleBottom = scrollTop + scrollAreaHeight;
 
+              // Bounds are per-day: a multi-day event fills this column from
+              // whenever it starts to whenever it ends, clamped to the day.
               const aboveEvents = timed.filter((ev) => {
-                const top = getEventTopOffset(ev.startTime, 0, HOUR_HEIGHT);
-                const height = getEventHeight(ev.startTime, ev.endTime, HOUR_HEIGHT);
+                const { top, height } = getEventDayBounds(ev, day, HOUR_HEIGHT);
                 return top + height < visibleTop;
               });
 
-              const belowEvents = timed.filter((ev) => {
-                const top = getEventTopOffset(ev.startTime, 0, HOUR_HEIGHT);
-                return top > visibleBottom;
-              });
+              const belowEvents = timed.filter(
+                (ev) => getEventDayBounds(ev, day, HOUR_HEIGHT).top > visibleBottom,
+              );
 
               return (
                 <div
@@ -262,17 +261,19 @@ function WeekViewGrid({
 
                   {/* Timed events — positioned on the full 24-hour grid */}
                   {timed.map((ev) => {
-                    const top = getEventTopOffset(ev.startTime, 0, HOUR_HEIGHT);
-                    const height = getEventHeight(ev.startTime, ev.endTime, HOUR_HEIGHT);
+                    const { top, height } = getEventDayBounds(ev, day, HOUR_HEIGHT);
+                    const startsToday = isSameDay(new Date(ev.startTime), day);
                     return (
                       <button
-                        key={ev.id}
+                        key={`${ev.id}-${ev.startTime}`}
                         className={gridStyles.eventChip}
                         style={{ top, height }}
                         onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
                         title={ev.title}
                       >
-                        <span className={gridStyles.eventChipTime}>{fmtTime(ev.startTime)}</span>
+                        {startsToday && (
+                          <span className={gridStyles.eventChipTime}>{fmtTime(ev.startTime)}</span>
+                        )}
                         {ev.title}
                       </button>
                     );

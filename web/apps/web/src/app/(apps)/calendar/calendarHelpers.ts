@@ -41,6 +41,73 @@ export function getEventHeight(startIso: string, endIso: string, hourHeight: num
 
 // ── End week-view helpers ────────────────────────────────────────────────────
 
+// ── Event form date values ───────────────────────────────────────────────────
+// The event modal holds its start and end as the raw value of a `date` or a
+// `datetime-local` input — `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` — so these helpers
+// work on that wall-clock text rather than on `Date`. Arithmetic goes through
+// `Date.UTC`, which keeps a DST boundary from moving the wall-clock time by an
+// hour: 09:00 stays 09:00 whichever side of the change the new date lands on.
+
+const FORM_VALUE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::\d{2})?)?$/;
+
+interface ParsedFormValue {
+  ms: number;
+  hasTime: boolean;
+}
+
+function parseFormValue(value: string): ParsedFormValue | null {
+  const m = FORM_VALUE_RE.exec(value);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  return {
+    ms: Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h ?? 0), Number(mi ?? 0)),
+    hasTime: h !== undefined,
+  };
+}
+
+function formatFormValue(ms: number, hasTime: boolean): string {
+  const d = new Date(ms);
+  const p = (n: number) => `${n}`.padStart(2, '0');
+  const date = `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+  return hasTime ? `${date}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}` : date;
+}
+
+/**
+ * The end value moved by however far the start value moved, so editing the start
+ * keeps the event's length instead of leaving the end behind it — issue #129.
+ * Either value being unparseable leaves the end alone.
+ */
+export function shiftEndWithStart(previousStart: string, nextStart: string, end: string): string {
+  const before = parseFormValue(previousStart);
+  const after = parseFormValue(nextStart);
+  const current = parseFormValue(end);
+  if (!before || !after || !current) return end;
+  const delta = after.ms - before.ms;
+  if (delta === 0) return end;
+  return formatFormValue(current.ms + delta, current.hasTime);
+}
+
+/** The `HH:mm` of a form value, or null when it carries no time. */
+export function timeOfFormValue(value: string): string | null {
+  const parsed = parseFormValue(value);
+  if (!parsed || !parsed.hasTime) return null;
+  return formatFormValue(parsed.ms, true).slice(11);
+}
+
+/** The same instant as a `date` input's value — the day, with the time dropped. */
+export function toAllDayFormValue(value: string): string {
+  const parsed = parseFormValue(value);
+  return parsed ? formatFormValue(parsed.ms, false) : value;
+}
+
+/** The same day as a `datetime-local` input's value, taking `time` if it has none. */
+export function toTimedFormValue(value: string, time: string): string {
+  const parsed = parseFormValue(value);
+  if (!parsed) return value;
+  if (parsed.hasTime) return formatFormValue(parsed.ms, true);
+  return `${formatFormValue(parsed.ms, false)}T${time}`;
+}
+
 export function startOfMonth(y: number, m: number) {
   return new Date(y, m, 1);
 }
@@ -214,15 +281,140 @@ export function expandRecurringEvents(events: EventResponse[], from: Date, to: D
   return result;
 }
 
-export function eventsForDay(events: EventResponse[], day: Date): EventResponse[] {
-  return events.filter((e) => {
-    if (e.allDay) {
-      // Avoid UTC→local conversion: compare date parts directly
-      const [y, mo, d] = e.startTime.slice(0, 10).split('-').map(Number);
-      return y === day.getFullYear() && (mo - 1) === day.getMonth() && d === day.getDate();
+// ── Multi-day events ─────────────────────────────────────────────────────────
+// An event covers every day between its start and its end, not just the day it
+// begins on — issue #130. All of this works in whole local days: an event is
+// either on a given day or it isn't, whatever time of day it starts.
+
+export function startOfDay(day: Date): Date {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate());
+}
+
+/** Local midnight of an ISO string's date part — no UTC→local conversion. */
+function dateOnly(iso: string): Date {
+  const [y, mo, d] = iso.slice(0, 10).split('-').map(Number);
+  return new Date(y, mo - 1, d);
+}
+
+function addDays(day: Date, n: number): Date {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() + n);
+}
+
+/**
+ * The first and last local day an event occupies, both inclusive, as midnights.
+ *
+ * An end that lands exactly on midnight belongs to the day before it: that is
+ * what an `.ics` all-day `DTEND` means (it is exclusive), and a timed event
+ * ending at 00:00 has nothing on the day it names either.
+ */
+export function eventDayRange(ev: EventResponse): { first: Date; last: Date } {
+  const endsAtMidnight = ev.allDay
+    ? ev.endTime.slice(11, 19) === '00:00:00'
+    : (() => { const e = new Date(ev.endTime); return e.getHours() === 0 && e.getMinutes() === 0 && e.getSeconds() === 0; })();
+
+  const first = ev.allDay ? dateOnly(ev.startTime) : startOfDay(new Date(ev.startTime));
+  let last = ev.allDay ? dateOnly(ev.endTime) : startOfDay(new Date(ev.endTime));
+
+  if (last.getTime() > first.getTime() && endsAtMidnight) last = addDays(last, -1);
+  if (last.getTime() < first.getTime()) last = first;
+  return { first, last };
+}
+
+export function eventOccupiesDay(ev: EventResponse, day: Date): boolean {
+  const { first, last } = eventDayRange(ev);
+  const t = startOfDay(day).getTime();
+  return t >= first.getTime() && t <= last.getTime();
+}
+
+/**
+ * Pixel top and height for the part of an event that falls on `day`, clamped to
+ * that day — a multi-day event fills the column on the days in between rather
+ * than running off the bottom of the one it started on.
+ */
+export function getEventDayBounds(
+  ev: EventResponse,
+  day: Date,
+  hourHeight: number,
+): { top: number; height: number } {
+  const dayStart = startOfDay(day).getTime();
+  const dayEnd = addDays(day, 1).getTime();
+  const start = Math.max(new Date(ev.startTime).getTime(), dayStart);
+  const end = Math.min(new Date(ev.endTime).getTime(), dayEnd);
+  return {
+    top: ((start - dayStart) / 3_600_000) * hourHeight,
+    height: Math.max(24, ((end - start) / 3_600_000) * hourHeight),
+  };
+}
+
+/** One event's run across one week row of the month grid. */
+export interface WeekEventSegment {
+  event: EventResponse;
+  /** Stable across renders; an event id alone is not, since occurrences share one. */
+  key: string;
+  /** Column (0-6) the bar starts in, and how many columns it covers. */
+  startIndex: number;
+  span: number;
+  /** The event runs on past this week row's edge, so the bar is cut square there. */
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+  /** Row within the week's cells; bars in the same lane never overlap. */
+  lane: number;
+}
+
+/**
+ * Lays every event that touches `week` out as one bar per week row, so a
+ * multi-day event is a single widget covering its days rather than a chip on
+ * the first one — issue #130.
+ */
+export function buildWeekEventSegments(events: EventResponse[], week: Date[]): WeekEventSegment[] {
+  const dayTimes = week.map((d) => startOfDay(d).getTime());
+  if (dayTimes.length === 0) return [];
+
+  const placed: Omit<WeekEventSegment, 'lane'>[] = [];
+  for (const ev of events) {
+    const { first, last } = eventDayRange(ev);
+    const startIndex = dayTimes.findIndex((t) => t >= first.getTime());
+    if (startIndex === -1) continue;
+    let endIndex = -1;
+    for (let i = dayTimes.length - 1; i >= 0; i--) {
+      if (dayTimes[i] <= last.getTime()) { endIndex = i; break; }
     }
-    return isSameDay(new Date(e.startTime), day);
+    if (endIndex < startIndex) continue;
+
+    placed.push({
+      event: ev,
+      key: `${ev.id}-${ev.startTime}-${dayTimes[startIndex]}`,
+      startIndex,
+      span: endIndex - startIndex + 1,
+      continuesBefore: first.getTime() < dayTimes[0],
+      continuesAfter: last.getTime() > dayTimes[dayTimes.length - 1],
+    });
+  }
+
+  // Longest first so a bar spanning the week sits above the single days it
+  // crosses, which is what keeps a week row from looking like a staircase.
+  placed.sort((a, b) =>
+    a.startIndex - b.startIndex ||
+    b.span - a.span ||
+    a.event.startTime.localeCompare(b.event.startTime) ||
+    a.event.title.localeCompare(b.event.title));
+
+  const lanes: boolean[][] = [];
+  return placed.map((seg) => {
+    let lane = 0;
+    for (;;) {
+      if (!lanes[lane]) lanes[lane] = new Array<boolean>(week.length).fill(false);
+      const free = lanes[lane].slice(seg.startIndex, seg.startIndex + seg.span).every((taken) => !taken);
+      if (free) break;
+      lane++;
+    }
+    for (let i = seg.startIndex; i < seg.startIndex + seg.span; i++) lanes[lane][i] = true;
+    return { ...seg, lane };
   });
+}
+
+export function eventsForDay(events: EventResponse[], day: Date): EventResponse[] {
+  return events.filter((e) => eventOccupiesDay(e, day));
 }
 
 export function isOverdue(dueTime: string) {
