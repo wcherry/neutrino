@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import {
   SHAPE_CATALOG,
   SHAPE_GROUPS,
@@ -166,7 +165,6 @@ export function HamburgerMenu({
   onZoomChange,
   onPresent,
 }: HamburgerMenuProps) {
-  const flags = useFeatureFlags();
   const router = useRouter();
   const [showHelp, setShowHelp] = useState(false);
 
@@ -244,13 +242,9 @@ export function HamburgerMenu({
             kind: 'action' as const, label: def.label, action: () => onInsertLine(id),
           })),
         },
-        ...(flags.sheetLiveEmbed || flags.diagramsApp ? [{ kind: 'separator' as const }] : []),
-        ...(flags.sheetLiveEmbed
-          ? [{ kind: 'action' as const, label: 'Sheet…', action: () => onInsertSheet() }]
-          : []),
-        ...(flags.diagramsApp
-          ? [{ kind: 'action' as const, label: 'Diagram…', action: () => onInsertDiagram() }]
-          : []),
+        { kind: 'separator' },
+        { kind: 'action', label: 'Sheet…',   action: () => onInsertSheet() },
+        { kind: 'action', label: 'Diagram…', action: () => onInsertDiagram() },
       ],
     },
     {

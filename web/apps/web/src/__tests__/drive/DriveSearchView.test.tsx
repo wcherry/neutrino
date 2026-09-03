@@ -35,11 +35,6 @@ vi.mock('@neutrino/auth', () => ({
   useUser: () => null,
 }));
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => new Proxy({}, { get: () => false }),
-  useFeatureFlagsLoaded: () => true,
-}));
-
 vi.mock('@/lib/api', () => ({
   storageApi: {
     uploadFile: vi.fn(),

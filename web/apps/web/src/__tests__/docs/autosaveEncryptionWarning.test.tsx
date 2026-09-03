@@ -53,20 +53,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   }),
 }));
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({
-    docsLayoutStructure: false,
-    docsAdvancedFormatting: false,
-    docsEditingTools: false,
-    docsPresence: false,
-    docsTrackChanges: false,
-    docsCompare: false,
-    docsDistractionFree: false,
-    sheetLiveEmbed: false,
-    colorPickerAlpha: false,
-  }),
-}));
-
 vi.mock('@/lib/api', () => ({
   DEFAULT_PAGE_SETUP: {
     marginTop: 72, marginBottom: 72, marginLeft: 72, marginRight: 72,

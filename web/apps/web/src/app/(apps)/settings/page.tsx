@@ -17,7 +17,6 @@ import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
 import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { ThemeGrid } from '@/components/theme/ThemeGrid';
-import { useFeatureFlags, type FeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { rebuildSearchIndex } from '@/lib/searchIndexer';
 import { APP_VERSION, BUILD_ID } from '@/lib/version';
 import { forceUploadSnapshot } from '@/lib/searchIndexSnapshot';
@@ -82,7 +81,7 @@ const AI_KEY_PAGES: Record<AiSettings['provider'], { url: string; label: string 
 
 type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'advanced';
 
-const TABS: { id: Tab; label: string; flag?: keyof FeatureFlags }[] = [
+const TABS: { id: Tab; label: string }[] = [
   { id: 'ai', label: 'AI Assistant' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'notifications', label: 'Notifications' },
@@ -194,13 +193,11 @@ export default function SettingsPage() {
 
 const qc = useQueryClient();
   const { user } = useAuth();
-  const flags = useFeatureFlags();
-  const visibleTabs = TABS.filter((tab) => !tab.flag || flags[tab.flag]);
 
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('tab') as Tab | null;
-      if (param && visibleTabs.some((t) => t.id === param)) return param;
+      if (param && TABS.some((t) => t.id === param)) return param;
     }
     return 'ai';
   });
@@ -624,7 +621,7 @@ const qc = useQueryClient();
 
         {/* ── Tab bar ─────────────────────────────────────────────────── */}
         <div className={styles.tabBar}>
-          {visibleTabs.map((tab) => (
+          {TABS.map((tab) => (
             <button
               key={tab.id}
               className={`${styles.tabBtn} ${activeTab === tab.id ? styles.tabBtnActive : ''}`}

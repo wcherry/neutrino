@@ -8,10 +8,6 @@
  *   - Dropping files on the grid opens the UploadZone overlay
  *   - Dropping an empty transfer (no files) does NOT open the UploadZone
  *   - UploadZone receives the dropped files via initialFiles prop
- *
- * The `driveAreaDropTarget` flag is no longer consulted — migration 00097
- * enabled it permanently and the page dropped the check — so there is no
- * flag-off behaviour left to cover.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -34,11 +30,6 @@ vi.mock('../../app/(apps)/drive/UploadZone', () => ({
       </div>
     );
   },
-}));
-
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => new Proxy({}, { get: () => false }),
-  useFeatureFlagsLoaded: () => true,
 }));
 
 // Next.js router

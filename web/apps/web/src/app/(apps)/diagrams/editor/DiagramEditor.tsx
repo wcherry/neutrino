@@ -20,7 +20,6 @@ import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useDiagramEditor } from './hooks/useDiagramEditor';
 import { useDiagramCollab } from './hooks/useDiagramCollab';
 import { DiagramCanvas } from './DiagramCanvas';

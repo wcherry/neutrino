@@ -1,8 +1,8 @@
 /**
  * Unit tests for CustomFontsProvider (feature/custom-fonts, red phase).
  *
- * Mirrors FeatureFlagsProvider.tsx's shape (fetch on mount, expose via
- * context with a `loaded` flag), plus the additional behavior described in
+ * Fetches on mount and exposes the result via context with a `loaded` flag,
+ * plus the additional behavior described in
  * agent_docs/plans/feature-custom-fonts.md:
  *   - Guarded on `localStorage.getItem('access_token')` being present, so it
  *     never fires (and never triggers a 401 -> redirect loop) on

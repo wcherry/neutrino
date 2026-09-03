@@ -90,10 +90,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   }),
 }));
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({ diagramsApp: true }),
-}));
-
 vi.mock('../../app/(apps)/diagrams/editor/hooks/useDiagramEditor', () => ({
   useDiagramEditor: () => ({
     document: {

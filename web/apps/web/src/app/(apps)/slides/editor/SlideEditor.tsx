@@ -84,7 +84,6 @@ import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessag
 import type { SlideTheme, CreateThemeRequest, UpdateThemeRequest } from '@neutrino/api-slides';
 import { ThemeEditorDialog, type ThemeEditorMode } from './ThemeEditorDialog';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { useSheetPasteInterceptor, PasteChoiceDialog } from '@neutrino/sheet-embed';
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
@@ -330,7 +329,6 @@ export function SlideEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const flags = useFeatureFlags();
   const { fontFamilyNames: FONT_FAMILIES } = useAvailableFonts();
   const slideId = searchParams.get('id') ?? '';
   useAccessRevocation(slideId);
@@ -1380,7 +1378,6 @@ export function SlideEditor() {
   });
 
   useEffect(() => {
-    if (!flags.sheetLiveEmbed) return;
     const listener = (e: ClipboardEvent) => {
       handleSheetPaste(e).then((consumed) => {
         if (consumed) e.preventDefault();
@@ -1822,7 +1819,7 @@ export function SlideEditor() {
                 color={(selectedElement as TextElement).style.color ?? '#202124'}
                 onChange={(hex) => updateTextStyle(selectedElement.id, { color: hex })}
                 title="Text color"
-                showAlpha={flags.colorPickerAlpha}
+                showAlpha
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
@@ -1833,7 +1830,7 @@ export function SlideEditor() {
                 color={(selectedElement as TextElement).style.backgroundColor ?? '#fef08a'}
                 onChange={(hex) => updateTextStyle(selectedElement.id, { backgroundColor: hex })}
                 title="Text background color"
-                showAlpha={flags.colorPickerAlpha}
+                showAlpha
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9632;</span>
@@ -1858,7 +1855,7 @@ export function SlideEditor() {
                   color={(selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)'}
                   onChange={(hex) => updateTextStyle(selectedElement.id, { shadowColor: hex })}
                   title="Shadow color"
-                  showAlpha={flags.colorPickerAlpha}
+                  showAlpha
                 >
                   <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                     <span style={{ fontSize: 11, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>A</span>
@@ -1985,7 +1982,7 @@ export function SlideEditor() {
               color={(selectedElement as ImageElement).tintColor ?? '#ff0000'}
               onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, tintColor: hex } as ImageElement))}
               title="Tint color"
-              showAlpha={flags.colorPickerAlpha}
+              showAlpha
             >
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                 <span style={{ fontSize: 11 }}>Tint</span>
@@ -2065,7 +2062,7 @@ export function SlideEditor() {
                 color={(selectedElement as ShapeElement).fill}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, fill: hex } as ShapeElement))}
                 title="Fill color"
-                showAlpha={flags.colorPickerAlpha}
+                showAlpha
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9632;</span>
@@ -2076,7 +2073,7 @@ export function SlideEditor() {
                 color={(selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as ShapeElement))}
                 title="Outline color"
-                showAlpha={flags.colorPickerAlpha}
+                showAlpha
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9633;</span>
@@ -2130,7 +2127,7 @@ export function SlideEditor() {
                 color={(selectedElement as LineElement).stroke}
                 onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as LineElement))}
                 title="Line color"
-                showAlpha={flags.colorPickerAlpha}
+                showAlpha
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 12 }}>&#9633;</span>
@@ -2574,18 +2571,14 @@ export function SlideEditor() {
                         <Video size={15} />
                         <span>Video</span>
                       </button>
-                      {flags.sheetLiveEmbed && (
-                        <button className={styles.insertBtn} onClick={() => setSheetDialogOpen(true)}>
-                          <Table2 size={15} />
-                          <span>Sheet</span>
-                        </button>
-                      )}
-                      {flags.diagramsApp && (
-                        <button className={styles.insertBtn} onClick={() => setDiagramDialogOpen(true)}>
-                          <Network size={15} />
-                          <span>Diagram</span>
-                        </button>
-                      )}
+                      <button className={styles.insertBtn} onClick={() => setSheetDialogOpen(true)}>
+                        <Table2 size={15} />
+                        <span>Sheet</span>
+                      </button>
+                      <button className={styles.insertBtn} onClick={() => setDiagramDialogOpen(true)}>
+                        <Network size={15} />
+                        <span>Diagram</span>
+                      </button>
                     </div>
                     {SHAPE_GROUPS.map((group) => (
                       <div key={group.key} className={styles.insertSection}>
@@ -2665,7 +2658,7 @@ export function SlideEditor() {
         <ZoomSlider value={zoom} onChange={setZoom} />
       </div>
 
-      {flags.sheetLiveEmbed && sheetPasteDialogState && (
+      {sheetPasteDialogState && (
         <PasteChoiceDialog
           previewData={sheetPasteDialogState.previewData}
           onPasteAsTable={sheetPasteDialogState.onPasteAsTable}

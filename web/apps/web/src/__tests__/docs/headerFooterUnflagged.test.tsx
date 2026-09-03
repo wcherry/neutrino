@@ -1,12 +1,11 @@
 /**
- * Regression test: headers and footers are not behind a feature flag.
+ * Regression test: headers and footers are reachable unconditionally.
  *
- * They used to be, inherited from the layout/structure flag that the old
- * header/footer dialog sat behind. With that flag off — which is its state
- * until the flags endpoint answers, and its permanent state on any deployment
- * that never enabled it — the Format menu had no entry and the margins had no
- * double-click target, so the feature was unreachable rather than merely
- * unstyled. These render with every flag off, which is the condition that broke.
+ * They were once gated, inherited from the layout/structure flag the old
+ * header/footer dialog sat behind, and with that flag off the Format menu had
+ * no entry and the margins had no double-click target — the feature was
+ * unreachable rather than merely unstyled. The flag is gone, but the entry
+ * point it used to hide is what these assert, so the regression stays covered.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -42,20 +41,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
     isCreatingVersion: false,
     autosaveError: null,
     createVersionError: null,
-  }),
-}));
-
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({
-    docsLayoutStructure: false,
-    docsAdvancedFormatting: false,
-    docsEditingTools: false,
-    docsPresence: false,
-    docsTrackChanges: false,
-    docsCompare: false,
-    docsDistractionFree: false,
-    sheetLiveEmbed: false,
-    colorPickerAlpha: false,
   }),
 }));
 

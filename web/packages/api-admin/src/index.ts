@@ -16,8 +16,6 @@ export type {
   QuotaRequestStatus,
   PasswordPolicy,
   UpdatePasswordPolicyRequest,
-  FeatureFlag,
-  UpdateFeatureFlagRequest,
   VersionRetentionSettings,
   UpdateVersionRetentionRequest,
   JobResponse,

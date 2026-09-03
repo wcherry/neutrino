@@ -13,8 +13,6 @@ import type {
   QuotaRequestStatus,
   PasswordPolicy,
   UpdatePasswordPolicyRequest,
-  FeatureFlag,
-  UpdateFeatureFlagRequest,
   VersionRetentionSettings,
   UpdateVersionRetentionRequest,
   JobResponse,
@@ -244,25 +242,6 @@ export const adminApi = {
     return request<PasswordPolicy>('/api/v1/admin/password-policy', {
       method: 'PUT',
       body: JSON.stringify(body),
-    });
-  },
-
-  /**
-   * List all feature flags with metadata.
-   * GET /api/v1/admin/feature-flags
-   */
-  async listFeatureFlags(): Promise<FeatureFlag[]> {
-    return request<FeatureFlag[]>('/api/v1/admin/feature-flags');
-  },
-
-  /**
-   * Enable or disable a feature flag.
-   * PATCH /api/v1/admin/feature-flags/{key}
-   */
-  async updateFeatureFlag(key: string, updates: UpdateFeatureFlagRequest): Promise<FeatureFlag> {
-    return request<FeatureFlag>(`/api/v1/admin/feature-flags/${encodeURIComponent(key)}`, {
-      method: 'PATCH',
-      body: JSON.stringify(updates),
     });
   },
 

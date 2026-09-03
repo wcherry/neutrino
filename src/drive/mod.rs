@@ -3,7 +3,6 @@ pub mod activity;
 pub mod admin;
 pub mod comments;
 pub mod encryption;
-pub mod feature_flags;
 pub mod filesystem;
 pub mod fonts;
 pub mod key_files;

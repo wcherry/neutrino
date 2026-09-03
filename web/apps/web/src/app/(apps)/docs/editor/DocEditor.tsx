@@ -18,7 +18,7 @@ import { SectionBreakExtension } from '@/lib/extensions/SectionBreakExtension';
 import { ColumnLayoutExtension } from '@/lib/extensions/ColumnLayoutExtension';
 import { FontSizeExtension } from '@/lib/extensions/FontSizeExtension';
 import { CaretFontSizeExtension } from '@/lib/extensions/CaretFontSizeExtension';
-// Advanced formatting extensions — only loaded when docsAdvancedFormatting flag is on
+// Advanced formatting extensions
 import { Superscript, Subscript } from '@/lib/extensions/SubSuperExtension';
 import { IndentExtension } from '@/lib/extensions/IndentExtension';
 import { ListStyleExtension } from '@/lib/extensions/ListStyleExtension';
@@ -51,9 +51,7 @@ import FontFamily from '@tiptap/extension-font-family';
 import TextAlign from '@tiptap/extension-text-align';
 import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
-import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import CharacterCount from '@tiptap/extension-character-count';
@@ -78,7 +76,6 @@ import { decryptFile } from '@neutrino/e2e-crypto';
 import { aiApi } from '@neutrino/api-core';
 import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension, OFFICE_MIME } from '@/lib/officeFormats';
 import { looksLikeOoxml, readNeutrinoModel } from '@/lib/ooxmlContainer';
 import type { DocModel } from '@/lib/ooxml/docx/mapping';
@@ -542,7 +539,6 @@ const AUTO_SAVE_DELAY_MS = 2000;
 export function DocEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const flags = useFeatureFlags();
   const currentUser = useUser();
   const docId = searchParams.get('id') ?? '';
   useAccessRevocation(docId);
@@ -570,7 +566,7 @@ export function DocEditor() {
   const [showComments, setShowComments] = useState(false);
   const [commentInitialText, setCommentInitialText] = useState('');
 
-  // ── Layout & structure state (gated by flags.docsLayoutStructure) ──
+  // ── Layout & structure state ──
   const [headerFooter, setHeaderFooter] = useState<HeaderFooterConfig>(defaultHeaderFooterConfig);
   const [watermarkText, setWatermarkText] = useState('');
   const [bgColor, setBgColor] = useState('');
@@ -599,12 +595,12 @@ export function DocEditor() {
   const [spellWord, setSpellWord] = useState<string | undefined>(undefined);
   const [spellWordRange, setSpellWordRange] = useState<{ from: number; to: number } | null>(null);
   const [spellSuggestions, setSpellSuggestions] = useState<string[] | undefined>(undefined);
-  // ── Advanced formatting state (gated by flags.docsAdvancedFormatting) ──
+  // ── Advanced formatting state ──
   const [showStylesPalette, setShowStylesPalette] = useState(false);
   const [showImageProps, setShowImageProps] = useState(false);
   const [showTableCellModal, setShowTableCellModal] = useState(false);
 
-  // ── Editing tools state (gated by flags.docsEditingTools) ──
+  // ── Editing tools state ──
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [grammarEnabled, setGrammarEnabled] = useState(false);
   const [grammarIssue, setGrammarIssue] = useState<{
@@ -625,7 +621,7 @@ export function DocEditor() {
   // handleAiInsert knows exactly where to replace when the user accepts.
   const grammarAiRangeRef = useRef<{ from: number; to: number } | null>(null);
 
-  // ── Presence state (gated by flags.docsPresence) ──
+  // ── Presence state ──
   const [authToken, setAuthToken] = useState<string | null>(null);
   useEffect(() => {
     const stored = localStorage.getItem('access_token');
@@ -633,10 +629,10 @@ export function DocEditor() {
     setAuthToken(stored);
   }, []);
 
-  // ── Track changes state (gated by flags.docsTrackChanges) ──
+  // ── Track changes state ──
   const [suggestingMode, setSuggestingMode] = useState(false);
 
-  // ── Compare state (gated by flags.docsCompare) ──
+  // ── Compare state ──
   const [compareVersion, setCompareVersion] = useState<FileVersionItem | null>(null);
 
   // ── Distraction-free / focus mode ──────────────────────────────────────────
@@ -1100,15 +1096,11 @@ export function DocEditor() {
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Table.configure({ resizable: true }),
       TableRow,
-      // When advanced formatting is on, use the extended TableCell with extra attrs;
-      // otherwise fall back to the standard TableCell for backward compatibility.
-      flags.docsAdvancedFormatting ? AdvancedTableCell : TableCell,
+      // The extended TableCell, which carries the extra formatting attrs.
+      AdvancedTableCell,
       TableHeader,
-      // When advanced formatting is on, use the extended Image node (adds width,
-      // alignment, caption attrs); otherwise use the standard Image extension.
-      flags.docsAdvancedFormatting
-        ? AdvancedImage.configure({ inline: true, allowBase64: true })
-        : Image.configure({ inline: true, allowBase64: true }),
+      // The extended Image node — adds width, alignment and caption attrs.
+      AdvancedImage.configure({ inline: true, allowBase64: true }),
       // Paints the real image over nodes whose src is a `neutrino-drive:` id.
       // `allowBase64` stays on above so documents written before references
       // (and pasted data URLs) still parse.
@@ -1126,43 +1118,35 @@ export function DocEditor() {
       CharacterCount,
       SheetEmbedExtension,
       DiagramEmbedExtension,
-      // Layout & structure extensions — only loaded when feature flag is on
-      ...(flags.docsLayoutStructure ? [
-        FootnoteExtension,
-        CrossRefExtension,
-        TableOfContentsExtension,
-        SectionBreakExtension,
-        ColumnLayoutExtension,
-      ] : []),
-      // Advanced formatting extensions — only loaded when feature flag is on
-      ...(flags.docsAdvancedFormatting ? [
-        Superscript,
-        Subscript,
-        IndentExtension,
-        ListStyleExtension,
-      ] : []),
+      // Layout & structure extensions
+      FootnoteExtension,
+      CrossRefExtension,
+      TableOfContentsExtension,
+      SectionBreakExtension,
+      ColumnLayoutExtension,
+      // Advanced formatting extensions
+      Superscript,
+      Subscript,
+      IndentExtension,
+      ListStyleExtension,
       // Client-side spell checking via nspell (replaces browser spellcheck attribute)
       SpellCheckExtension,
       // Editing tools — find/replace and grammar check (feature gap #3)
-      ...(flags.docsEditingTools ? [
-        FindReplaceExtension,
-        GrammarCheckExtension,
-      ] : []),
+      FindReplaceExtension,
+      GrammarCheckExtension,
       RemoteCursorsExtension,
       // Track changes / suggesting mode (feature gap #5)
-      ...(flags.docsTrackChanges ? [TrackChangesExtension] : []),
+      TrackChangesExtension,
     ],
     editorProps: {
       attributes: { class: 'ProseMirror', spellcheck: 'false' },
     },
     onUpdate: ({ editor }) => {
       // Bump editorVersion so layout-dependent components (e.g. footnote list) re-render
-      if (flags.docsLayoutStructure) {
-        setEditorVersion(v => v + 1);
-      }
+      setEditorVersion(v => v + 1);
       // Use the stable ref so we always get fresh metadata values without
       // needing to re-create the editor when metadata changes.
-      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current);
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -1218,13 +1202,13 @@ export function DocEditor() {
 
   // ── Track changes — keep React state in sync with plugin state ────────────
   useEffect(() => {
-    if (!flags.docsTrackChanges || !editor) return;
+    if (!editor) return;
     const update = () => {
       setSuggestingMode(isSuggestingMode(editor.state));
     };
     editor.on('transaction', update);
     return () => { editor.off('transaction', update); };
-  }, [flags.docsTrackChanges, editor]);
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -1609,7 +1593,7 @@ export function DocEditor() {
     if (title === doc?.title) return;
     // Save title together with current content in one combined call.
     if (editor) {
-      const content = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+      const content = serializeContent(editor.getJSON(), layoutMetaRef.current);
       triggerSave(content, { title });
     } else {
       metaMutation.mutate({ title });
@@ -1647,13 +1631,13 @@ export function DocEditor() {
     const content = serializeContent(editor.getJSON(), {
       headerFooter, ...legacyFieldsFor(headerFooter), watermarkText, bgColor, docTheme,
       properties: docProperties, pageSetup,
-    }, flags.docsLayoutStructure);
+    });
     versionMutation.mutate(content);
   }, [editor, versionMutation, officeMode, officeVersionMutation, headerFooter, watermarkText, bgColor, docTheme, docProperties, pageSetup]);
 
   // Sync grammar-enabled state into the GrammarCheckExtension plugin
   useEffect(() => {
-    if (!flags.docsEditingTools || !editor) return;
+    if (!editor) return;
     editor.commands.setGrammarEnabled(grammarEnabled);
   }, [grammarEnabled, editor]);
 
@@ -1664,13 +1648,13 @@ export function DocEditor() {
         return;
       }
 
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f' && flags.docsDistractionFree) {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         setDistractionFree(v => !v);
         return;
       }
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && flags.docsEditingTools) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault();
         setShowFindReplace(true);
         return;
@@ -1710,7 +1694,7 @@ export function DocEditor() {
     // "delete to end of line" before our stopPropagation can take effect.
     document.addEventListener('keydown', handler, true);
     return () => document.removeEventListener('keydown', handler, true);
-  }, [handleManualSave, editor, distractionFree, setDistractionFree, flags.docsDistractionFree]);
+  }, [handleManualSave, editor, distractionFree, setDistractionFree]);
 
   const handleNewDoc = useCallback(async () => {
     const newDoc = await docsApi.createDoc({ title: 'Untitled document' });
@@ -1747,7 +1731,7 @@ export function DocEditor() {
     if (!editor) return;
     const meta: LayoutMeta = { ...layoutMetaRef.current, pageSetup: ps };
     layoutMetaRef.current = meta;
-    const content = serializeContent(editor.getJSON(), meta, flags.docsLayoutStructure);
+    const content = serializeContent(editor.getJSON(), meta);
     triggerSave(content, { title });
   };
 
@@ -1820,12 +1804,12 @@ export function DocEditor() {
     };
     layoutMetaRef.current = meta;
     if (!editor) return;
-    const content = serializeContent(editor.getJSON(), meta, flags.docsLayoutStructure);
+    const content = serializeContent(editor.getJSON(), meta);
     pendingContent.current = content;
     setSaveStatus('unsaved');
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => triggerSave(content, { title: titleRef.current }), AUTO_SAVE_DELAY_MS);
-  }, [editor, triggerSave, flags.docsLayoutStructure]);
+  }, [editor, triggerSave]);
 
   /** Open the bands for editing, with the caret in the one that was clicked. */
   const enterHeaderFooterEdit = useCallback((focus?: HeaderFooterFocus) => {
@@ -1913,7 +1897,7 @@ export function DocEditor() {
     if (editor) {
       const content = serializeContent(editor.getJSON(), {
         ...layoutMetaRef.current, watermarkText: wt, bgColor: bg,
-      }, flags.docsLayoutStructure);
+      });
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -1926,7 +1910,7 @@ export function DocEditor() {
     if (editor) {
       const content = serializeContent(editor.getJSON(), {
         ...layoutMetaRef.current, docTheme: theme,
-      }, flags.docsLayoutStructure);
+      });
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -2015,7 +1999,7 @@ export function DocEditor() {
     }
 
     // Detect grammar issue at cursor position when grammar check is enabled
-    if (flags.docsEditingTools && grammarEnabled && editor) {
+    if (grammarEnabled && editor) {
       const view = editor.view;
       const pos = view.posAtCoords({ left: e.clientX, top: e.clientY });
       if (pos) {
@@ -2034,7 +2018,7 @@ export function DocEditor() {
 
     // Detect if the right-click landed on an image node.
     let isOnImage = false;
-    if (flags.docsAdvancedFormatting && editor) {
+    if (editor) {
       const coordPos = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
       if (coordPos) {
         const nodeAt = editor.state.doc.nodeAt(coordPos.pos);
@@ -2321,7 +2305,7 @@ export function DocEditor() {
     paddingBottom: pageSetup.marginBottom,
     paddingLeft: pageSetup.marginLeft,
     paddingRight: pageSetup.marginRight,
-    ...(flags.docsLayoutStructure && bgColor ? { backgroundColor: bgColor } : {}),
+    ...(bgColor ? { backgroundColor: bgColor } : {}),
   };
 
   // One page occupies a full sheet followed by the gap before the next sheet,
@@ -2408,7 +2392,7 @@ export function DocEditor() {
       const meta: LayoutMeta = { ...layoutMetaRef.current, properties };
       layoutMetaRef.current = meta;
       setDocFieldContext(editor, { properties });
-      const content = serializeContent(editor.getJSON(), meta, flags.docsLayoutStructure);
+      const content = serializeContent(editor.getJSON(), meta);
       pendingContent.current = content;
       setSaveStatus('unsaved');
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -2417,7 +2401,7 @@ export function DocEditor() {
         AUTO_SAVE_DELAY_MS,
       );
     },
-    [editor, flags.docsLayoutStructure, triggerSave],
+    [editor, triggerSave],
   );
 
   // Read the split-paragraphs preference back on mount, and follow it when
@@ -2553,24 +2537,18 @@ export function DocEditor() {
           showFieldCodes={showFieldCodes}
           onToggleFieldCodes={handleToggleFieldCodes}
           onRefreshFields={handleRefreshFields}
-          {...(flags.docsLayoutStructure ? {
-            onInsertFootnote: handleInsertFootnote,
-            onInsertCrossRef: handleInsertCrossRef,
-            onWatermark: () => setShowWatermarkModal(true),
-            onTheme: () => setShowThemeModal(true),
-          } : {})}
-          {...(flags.docsAdvancedFormatting ? {
-            onStylesPalette: () => setShowStylesPalette(true),
-            onInsertLocalImage: handleInsertLocalImage,
-          } : {})}
-          {...(flags.docsEditingTools ? {
-            onOpenFindReplace: () => setShowFindReplace(true),
-            grammarEnabled,
-            onToggleGrammar: () => setGrammarEnabled(v => !v),
-            onAiSuggestions: () => runAiOperation('suggestions'),
-            onAiSummarize: () => runAiOperation('summarize'),
-            onAiChangeTone: () => setShowChangeTone(true),
-          } : {})}
+          onInsertFootnote={handleInsertFootnote}
+          onInsertCrossRef={handleInsertCrossRef}
+          onWatermark={() => setShowWatermarkModal(true)}
+          onTheme={() => setShowThemeModal(true)}
+          onStylesPalette={() => setShowStylesPalette(true)}
+          onInsertLocalImage={handleInsertLocalImage}
+          onOpenFindReplace={() => setShowFindReplace(true)}
+          grammarEnabled={grammarEnabled}
+          onToggleGrammar={() => setGrammarEnabled(v => !v)}
+          onAiSuggestions={() => runAiOperation('suggestions')}
+          onAiSummarize={() => runAiOperation('summarize')}
+          onAiChangeTone={() => setShowChangeTone(true)}
         />
 
         <button className={styles.backBtn} onClick={handleBack}>
@@ -2649,29 +2627,25 @@ export function DocEditor() {
         editor={editor}
         onInsertImage={handleInsertImage}
         onInsertDiagram={() => setShowInsertDiagram(true)}
-        {...(flags.docsAdvancedFormatting ? {
-          onInsertLocalImage: handleInsertLocalImage,
-          onOpenStylesPalette: () => setShowStylesPalette(true),
-          onOpenImageProps: () => setShowImageProps(true),
-          onOpenTableCellModal: () => setShowTableCellModal(true),
-        } : {})}
-        {...(flags.docsEditingTools ? {
-          grammarEnabled,
-          onToggleGrammar: () => setGrammarEnabled(v => !v),
-          onAiSuggestions: () => runAiOperation('suggestions'),
-          onAiSummarize: () => runAiOperation('summarize'),
-          onAiChangeTone: () => setShowChangeTone(true),
-          onOpenFindReplace: () => setShowFindReplace(true),
-        } : {})}
+        onInsertLocalImage={handleInsertLocalImage}
+        onOpenStylesPalette={() => setShowStylesPalette(true)}
+        onOpenImageProps={() => setShowImageProps(true)}
+        onOpenTableCellModal={() => setShowTableCellModal(true)}
+        grammarEnabled={grammarEnabled}
+        onToggleGrammar={() => setGrammarEnabled(v => !v)}
+        onAiSuggestions={() => runAiOperation('suggestions')}
+        onAiSummarize={() => runAiOperation('summarize')}
+        onAiChangeTone={() => setShowChangeTone(true)}
+        onOpenFindReplace={() => setShowFindReplace(true)}
       />)}
 
-      {/* ── Find & replace bar (editing tools flag) ── */}
-      {!distractionFree && flags.docsEditingTools && showFindReplace && editor && (
+      {/* ── Find & replace bar ── */}
+      {!distractionFree && showFindReplace && editor && (
         <FindReplaceBar editor={editor} onClose={() => setShowFindReplace(false)} />
       )}
 
-      {/* ── Track changes bar (docsTrackChanges flag) ── */}
-      {!distractionFree && flags.docsTrackChanges && editor && (
+      {/* ── Track changes bar ── */}
+      {!distractionFree && editor && (
         <TrackChangesBar
           editor={editor}
           suggestingMode={suggestingMode}
@@ -2743,7 +2717,7 @@ export function DocEditor() {
                 // Double-click into a band to edit it, double-click the body to
                 // come back out — the way out has to be as findable as the way in.
                 onDoubleClick={headerFooterEditing ? exitHeaderFooterEdit : undefined}
-                {...(flags.docsLayoutStructure && docTheme !== 'default'
+                {...(docTheme !== 'default'
                   ? { 'data-doc-theme': docTheme }
                   : {})}
               >
@@ -2768,7 +2742,7 @@ export function DocEditor() {
                   onExitEdit={exitHeaderFooterEdit}
                 />
                 {/* ── Watermark ── */}
-                {flags.docsLayoutStructure && watermarkText && (
+                {watermarkText && (
                   <div className={styles.watermark} aria-hidden="true">{watermarkText}</div>
                 )}
                 <div
@@ -2777,12 +2751,12 @@ export function DocEditor() {
                   // an empty document should be exactly one page, not one page
                   // plus whatever a hardcoded Letter column left over.
                   style={{ '--doc-content-min-height': `${contentHeightPx}px` } as React.CSSProperties}
-                  onClick={flags.docsLayoutStructure ? handleCrossRefClick : undefined}
+                  onClick={handleCrossRefClick}
                 >
                   <EditorContent editor={editor} />
                 </div>
                 {/* ── Footnote list ── */}
-                {flags.docsLayoutStructure && editor && (() => {
+                {editor && (() => {
                   void editorVersion;
                   const notes = getFootnoteItems(editor);
                   if (notes.length === 0) return null;
@@ -2831,11 +2805,11 @@ export function DocEditor() {
               queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
             }}
             onClose={() => setShowHistory(false)}
-            compareEnabled={flags.docsCompare}
+            compareEnabled
             onCompare={(v) => setCompareVersion(v)}
           />
         )}
-        {!distractionFree && flags.docsCompare && compareVersion && editor && (
+        {!distractionFree && compareVersion && editor && (
           (() => {
             const currentVersionPlaceholder: FileVersionItem = {
               id: '__current__',
@@ -2845,7 +2819,7 @@ export function DocEditor() {
               label: 'Current',
               createdAt: new Date().toISOString(),
             };
-            const currentContent = serializeContent(editor.getJSON(), layoutMetaRef.current, flags.docsLayoutStructure);
+            const currentContent = serializeContent(editor.getJSON(), layoutMetaRef.current);
             return (
               <DocComparePanel
                 fileId={docId}
@@ -2916,14 +2890,14 @@ export function DocEditor() {
           spellWord={spellWord}
           spellSuggestions={spellSuggestions}
           onApplySuggestion={handleApplySuggestion}
-          {...(flags.docsEditingTools && grammarIssue ? {
+          {...(grammarIssue ? {
             grammarMessage: grammarIssue.message,
             grammarSuggestion: grammarIssue.suggestion,
             grammarRange: { from: grammarIssue.from, to: grammarIssue.to },
             onApplyGrammarFix: handleApplyGrammarFix,
             onAiGrammarFix: handleAiGrammarFix,
           } : {})}
-          isImageActive={!!(flags.docsAdvancedFormatting && contextMenu?.isOnImage)}
+          isImageActive={!!(contextMenu?.isOnImage)}
           onImageProperties={() => {
             setContextMenu(null);
             setSpellWord(undefined);
@@ -2945,7 +2919,7 @@ export function DocEditor() {
       )}
 
       {/* ── Layout & structure modals ── */}
-      {flags.docsLayoutStructure && showWatermarkModal && (
+      {showWatermarkModal && (
         <WatermarkModal
           watermarkText={watermarkText}
           bgColor={bgColor}
@@ -2953,7 +2927,7 @@ export function DocEditor() {
           onClose={() => setShowWatermarkModal(false)}
         />
       )}
-      {flags.docsLayoutStructure && showThemeModal && (
+      {showThemeModal && (
         <ThemeModal
           currentTheme={docTheme}
           onSave={handleThemeSave}
@@ -2977,13 +2951,13 @@ export function DocEditor() {
       )}
 
       {/* ── Advanced formatting modals ── */}
-      {flags.docsAdvancedFormatting && showStylesPalette && editor && (
+      {showStylesPalette && editor && (
         <ParagraphStylesModal
           editor={editor}
           onClose={() => setShowStylesPalette(false)}
         />
       )}
-      {flags.docsAdvancedFormatting && showImageProps && editor && (
+      {showImageProps && editor && (
         <ImagePropertiesModal
           editor={editor}
           initialAttrs={{
@@ -3000,7 +2974,7 @@ export function DocEditor() {
           onClose={() => setShowImageProps(false)}
         />
       )}
-      {flags.docsAdvancedFormatting && showTableCellModal && editor && (
+      {showTableCellModal && editor && (
         <TableCellModal
           editor={editor}
           onClose={() => setShowTableCellModal(false)}
@@ -3017,7 +2991,7 @@ export function DocEditor() {
         />
       )}
 
-      {flags.docsEditingTools && showChangeTone && (
+      {showChangeTone && (
         <ChangeToneDialog
           hasSelection={editor ? !editor.state.selection.empty : false}
           onApply={(values) => {
@@ -3028,7 +3002,7 @@ export function DocEditor() {
         />
       )}
 
-      {flags.docsEditingTools && showAiPanel && (
+      {showAiPanel && (
         <div className={styles.aiPanelOverlay}>
           <AiPanel
             operation={aiOperation}

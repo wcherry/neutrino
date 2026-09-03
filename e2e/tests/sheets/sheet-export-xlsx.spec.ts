@@ -222,16 +222,6 @@ test.describe('Sheets XLSX export', () => {
 // ── XLSX export with charts ───────────────────────────────────────────────────
 
 test.describe('Sheets XLSX export with charts', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.route('**/api/v1/feature-flags', async route => {
-      const response = await route.fetch();
-      const flags = await response.json();
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ ...flags, sheetsCharts: true }),
-      });
-    });
-  });
 
   test('a sheet with a chart exports its cell data to xlsx successfully', async ({ page, request }) => {
     await registerAndLogin(request, page);

@@ -82,15 +82,10 @@ export function hasLayoutMeta(meta: LayoutMeta): boolean {
   );
 }
 
-export function serializeContent(
-  docJson: object,
-  meta: LayoutMeta,
-  layoutStructure: boolean,
-): string {
-  // The flag still forces the wrapper on, so documents that have been stored
-  // that way keep their shape even after their metadata is cleared out.
-  if (layoutStructure || hasLayoutMeta(meta)) {
-    return JSON.stringify({ doc: docJson, _meta: meta });
-  }
-  return JSON.stringify(docJson);
+/**
+ * Every document is stored wrapped, so one whose metadata is later cleared out
+ * keeps the shape it was saved with rather than reverting to a bare doc.
+ */
+export function serializeContent(docJson: object, meta: LayoutMeta): string {
+  return JSON.stringify({ doc: docJson, _meta: meta });
 }

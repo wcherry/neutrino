@@ -450,7 +450,6 @@ async fn main() -> std::io::Result<()> {
     use drive::comments::service::CommentsService;
     use drive::encryption::repository::EncryptionRepository;
     use drive::encryption::service::EncryptionService;
-    use drive::feature_flags::repository::FeatureFlagsRepository;
     use drive::filesystem::repository::FilesystemRepository;
     use drive::filesystem::service::FilesystemService;
     use jobs::repository::JobsRepository;
@@ -713,11 +712,6 @@ async fn main() -> std::io::Result<()> {
     let drive_admin_state = web::Data::new(drive::admin::api::AdminDashboardState {
         service: drive_admin_svc,
         service_registry: drive_service_registry,
-    });
-
-    let drive_feature_flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
-    let drive_feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
-        repo: drive_feature_flags_repo,
     });
 
     let drive_version_retention_state =
@@ -1116,7 +1110,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(docs::collab::api::CollabApiDoc::openapi());
         doc.merge(drive::access_requests::api::AccessRequestsApiDoc::openapi());
         doc.merge(drive::admin::api::AdminApiDoc::openapi());
-        doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
         doc.merge(drive::version_retention::api::VersionRetentionApiDoc::openapi());
         doc.merge(drive::quota_requests::api::QuotaRequestsApiDoc::openapi());
         doc.merge(auth::password_policy::api::PasswordPolicyApiDoc::openapi());
@@ -1212,7 +1205,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(key_files_state.clone())
             .app_data(drive_service_registry_state.clone())
             .app_data(drive_admin_state.clone())
-            .app_data(drive_feature_flags_state.clone())
             .app_data(drive_version_retention_state.clone())
             .app_data(drive_fonts_state.clone())
             .app_data(drive_quota_requests_state.clone())
@@ -1272,7 +1264,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                 web::scope("/api/v1")
                     .configure(auth::api::configure)
                     .configure(oauth::api::configure)
-                    .configure(drive::feature_flags::api::configure_public)
                     .configure(drive::fonts::api::configure_public)
                     .configure(themes::api::configure)
                     .configure(search::api::configure)
@@ -1288,7 +1279,6 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                         web::scope("/admin")
                             .configure(drive::security::api::configure)
                             .configure(drive::admin::api::configure)
-                            .configure(drive::feature_flags::api::configure_admin)
                             .configure(drive::version_retention::api::configure_admin)
                             .configure(drive::quota_requests::api::configure_admin)
                             .configure(auth::password_policy::api::configure_admin)

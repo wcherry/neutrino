@@ -60,20 +60,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   }),
 }));
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({
-    docsLayoutStructure: false,
-    docsAdvancedFormatting: false,
-    docsEditingTools: false,
-    docsPresence: false,
-    docsTrackChanges: false,
-    docsCompare: false,
-    docsDistractionFree: false,
-    sheetLiveEmbed: false,
-    colorPickerAlpha: false,
-  }),
-}));
-
 // ---------------------------------------------------------------------------
 // The API mock is declared with `let` handles so each test can reconfigure
 // getDoc / getFileInfo behavior per-scenario.

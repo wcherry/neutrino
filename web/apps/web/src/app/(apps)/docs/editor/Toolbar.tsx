@@ -16,7 +16,6 @@ import {
   BULLET_LIST_STYLES,
   ORDERED_LIST_STYLES,
 } from '@/lib/extensions/ListStyleExtension';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import styles from './page.module.css';
 
@@ -258,15 +257,15 @@ function AiWritingMenu({
 export interface ToolbarProps {
   editor: Editor | null;
   onInsertImage: () => void;
-  /** Local file upload handler (advanced formatting flag only). */
+  /** Local file upload handler. */
   onInsertLocalImage?: () => void;
-  /** Open paragraph styles palette (advanced formatting flag only). */
+  /** Open paragraph styles palette. */
   onOpenStylesPalette?: () => void;
-  /** Open image properties modal (advanced formatting flag only). */
+  /** Open image properties modal. */
   onOpenImageProps?: () => void;
-  /** Open table cell format modal (advanced formatting flag only). */
+  /** Open table cell format modal. */
   onOpenTableCellModal?: () => void;
-  // Editing tools props (feature gap #3, docsEditingTools flag only)
+  // Editing tools props
   grammarEnabled?: boolean;
   onToggleGrammar?: () => void;
   onAiSuggestions?: () => void;
@@ -291,7 +290,6 @@ export function Toolbar({
   onOpenFindReplace,
   onInsertDiagram,
 }: ToolbarProps) {
-  const flags = useFeatureFlags();
   const { fontFamilies } = useAvailableFonts();
   const colorSelRef = useRef<{ from: number; to: number } | null>(null);
   if (!editor) return null;
@@ -324,8 +322,8 @@ export function Toolbar({
 
       <ToolbarDivider />
 
-      {/* ── Paragraph styles palette button (advanced flag only) ── */}
-      {flags.docsAdvancedFormatting && onOpenStylesPalette && (
+      {/* ── Paragraph styles palette button ── */}
+      {onOpenStylesPalette && (
         <>
           <ToolbarButton onClick={onOpenStylesPalette} title="Paragraph styles" wide>
             Styles
@@ -387,25 +385,21 @@ export function Toolbar({
         <ToolbarButton active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</ToolbarButton>
         <ToolbarButton active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" style={{ textDecoration: 'line-through' }}>S</ToolbarButton>
 
-        {/* Superscript / Subscript (advanced flag only) */}
-        {flags.docsAdvancedFormatting && (
-          <>
-            <ToolbarButton
-              active={editor.isActive('superscript')}
-              onClick={() => editor.chain().focus().toggleMark('superscript').run()}
-              title="Superscript (Ctrl+.)"
-            >
-              <Superscript size={15} />
-            </ToolbarButton>
-            <ToolbarButton
-              active={editor.isActive('subscript')}
-              onClick={() => editor.chain().focus().toggleMark('subscript').run()}
-              title="Subscript (Ctrl+,)"
-            >
-              <Subscript size={15} />
-            </ToolbarButton>
-          </>
-        )}
+        {/* Superscript / Subscript */}
+        <ToolbarButton
+          active={editor.isActive('superscript')}
+          onClick={() => editor.chain().focus().toggleMark('superscript').run()}
+          title="Superscript (Ctrl+.)"
+        >
+          <Superscript size={15} />
+        </ToolbarButton>
+        <ToolbarButton
+          active={editor.isActive('subscript')}
+          onClick={() => editor.chain().focus().toggleMark('subscript').run()}
+          title="Subscript (Ctrl+,)"
+        >
+          <Subscript size={15} />
+        </ToolbarButton>
       </ToolbarGroup>
 
       <ToolbarDivider />
@@ -446,13 +440,9 @@ export function Toolbar({
 
       <ToolbarDivider />
 
-      {/* Text case (advanced flag only) */}
-      {flags.docsAdvancedFormatting && (
-        <>
-          <TextCaseMenu editor={editor} />
-          <ToolbarDivider />
-        </>
-      )}
+      {/* Text case */}
+      <TextCaseMenu editor={editor} />
+      <ToolbarDivider />
 
       <LineSpacingMenu editor={editor} />
 
@@ -471,45 +461,39 @@ export function Toolbar({
         <ToolbarButton active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bulleted list"><List size={15} /></ToolbarButton>
         <ToolbarButton active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list"><ListOrdered size={15} /></ToolbarButton>
 
-        {/* List style type dropdown (advanced flag only, shown only when a list is active) */}
-        {flags.docsAdvancedFormatting && (
-          <ListStyleMenu editor={editor} />
-        )}
+        {/* List style type dropdown (shown only when a list is active) */}
+        <ListStyleMenu editor={editor} />
 
         <ToolbarButton active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="Quote"><Quote size={15} /></ToolbarButton>
         <ToolbarButton active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()} title="Inline code"><Code size={15} /></ToolbarButton>
       </ToolbarGroup>
 
-      {/* Indent / Outdent (advanced flag only) */}
-      {flags.docsAdvancedFormatting && (
-        <>
-          <ToolbarDivider />
-          <ToolbarGroup>
-            <ToolbarButton
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onClick={() => (editor.chain().focus() as any)?.outdent?.()?.run?.()}
-              title="Outdent (Shift+Tab)"
-            >
-              <Outdent size={15} />
-            </ToolbarButton>
-            <ToolbarButton
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onClick={() => (editor.chain().focus() as any)?.indent?.()?.run?.()}
-              title="Indent (Tab)"
-            >
-              <Indent size={15} />
-            </ToolbarButton>
-          </ToolbarGroup>
-        </>
-      )}
+      {/* Indent / Outdent */}
+      <ToolbarDivider />
+      <ToolbarGroup>
+        <ToolbarButton
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          onClick={() => (editor.chain().focus() as any)?.outdent?.()?.run?.()}
+          title="Outdent (Shift+Tab)"
+        >
+          <Outdent size={15} />
+        </ToolbarButton>
+        <ToolbarButton
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          onClick={() => (editor.chain().focus() as any)?.indent?.()?.run?.()}
+          title="Indent (Tab)"
+        >
+          <Indent size={15} />
+        </ToolbarButton>
+      </ToolbarGroup>
 
       <ToolbarDivider />
 
       <ToolbarGroup>
         <ToolbarButton active={editor.isActive('link')} onClick={setLink} title="Insert link"><Link size={15} /></ToolbarButton>
 
-        {/* When advanced flag is on: show a URL insert + a local upload option */}
-        {flags.docsAdvancedFormatting && onInsertLocalImage ? (
+        {/* With a local-upload handler: show a URL insert + a local upload option */}
+        {onInsertLocalImage ? (
           <>
             <ToolbarButton onClick={onInsertLocalImage} title="Upload local image"><Image size={15} /></ToolbarButton>
             {/* When an image is selected, show properties button */}
@@ -544,8 +528,8 @@ export function Toolbar({
             <ToolbarButton wide onClick={() => editor.chain().focus().splitCell().run()} title="Split cell">Split</ToolbarButton>
             <ToolbarButton wide onClick={() => editor.chain().focus().deleteTable().run()} title="Delete table" style={{ color: '#d93025' }}>Del Table</ToolbarButton>
 
-            {/* Cell formatting (advanced flag only) */}
-            {flags.docsAdvancedFormatting && onOpenTableCellModal && (
+            {/* Cell formatting */}
+            {onOpenTableCellModal && (
               <ToolbarButton wide onClick={onOpenTableCellModal} title="Cell formatting">Cell…</ToolbarButton>
             )}
           </ToolbarGroup>
@@ -553,31 +537,27 @@ export function Toolbar({
       )}
 
       {/* ── Editing tools: grammar toggle + find/replace + AI writing ── */}
-      {flags.docsEditingTools && (
-        <>
-          <ToolbarDivider />
-          <ToolbarGroup>
-            <ToolbarButton
-              active={grammarEnabled}
-              onClick={onToggleGrammar}
-              title={grammarEnabled ? 'Grammar check on — click to disable' : 'Enable grammar check'}
-            >
-              <SpellCheck size={15} />
-            </ToolbarButton>
-            <ToolbarButton
-              onClick={onOpenFindReplace}
-              title="Find and replace (Ctrl+F)"
-            >
-              <Search size={15} />
-            </ToolbarButton>
-            <AiWritingMenu
-              onSuggestions={onAiSuggestions}
-              onSummarize={onAiSummarize}
-              onChangeTone={onAiChangeTone}
-            />
-          </ToolbarGroup>
-        </>
-      )}
+      <ToolbarDivider />
+      <ToolbarGroup>
+        <ToolbarButton
+          active={grammarEnabled}
+          onClick={onToggleGrammar}
+          title={grammarEnabled ? 'Grammar check on — click to disable' : 'Enable grammar check'}
+        >
+          <SpellCheck size={15} />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={onOpenFindReplace}
+          title="Find and replace (Ctrl+F)"
+        >
+          <Search size={15} />
+        </ToolbarButton>
+        <AiWritingMenu
+          onSuggestions={onAiSuggestions}
+          onSummarize={onAiSummarize}
+          onChangeTone={onAiChangeTone}
+        />
+      </ToolbarGroup>
     </RickTextToolbar>
   );
 }

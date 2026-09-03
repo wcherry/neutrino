@@ -14,10 +14,6 @@ import { render } from '@testing-library/react';
 
 const flags: Record<string, boolean> = {};
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => flags,
-}));
-
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));

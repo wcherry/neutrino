@@ -53,7 +53,7 @@ packages/
 
 **State management** — TanStack Query (`@tanstack/react-query`) for all server state. Zustand is available but used sparingly. Local UI state uses `useState`/`useReducer`.
 
-**Feature flags** — flags are stored in the database and served by `GET /api/v1/feature-flags`. The `FeatureFlags` type in `apps/web/src/lib/featureFlags.ts` lists all known flags for TypeScript type-safety; `FeatureFlagsProvider` fetches the live values on mount. Toggle flags at runtime via the admin panel (`/admin`) or `PATCH /api/v1/admin/feature-flags/{key}`. To add a new flag: add it to the `FeatureFlags` type, add an `INSERT` in a new migration under `migrations/`, and register it via the admin API or directly in the DB.
+**Feature flags — there are none, deliberately.** There used to be a DB-backed system: a `feature_flags` table, a public `GET /api/v1/feature-flags`, a `FeatureFlagsProvider` that fetched it on mount, and an admin panel tab to toggle keys. All fifteen keys were removed by migration 00124, along with every gate that read them — each collapsed to the branch it took when enabled, so the features they guarded are unconditional. Do not reintroduce a flag to hide unfinished work; use a branch.
 
 **User preferences** — persisted in `localStorage` and read back on mount with a `storage` event listener for cross-tab sync. The pattern is used for theme (`neutrino.theme`), calendar week start (`neutrino:calendar:weekStart`), and similar settings. Preferences are not stored in the backend unless they are part of `UpdateProfileRequest` (handled by `authApi.updateProfileDetails`).
 
@@ -65,7 +65,7 @@ The route handlers under `apps/web/src/app/api/` that used to serve this are gon
 
 **Calendar app** — `apps/web/src/app/(apps)/calendar/page.tsx` is the main client component. It owns all state: current view (`month` | `week` | `agenda`), cursor date, event/reminder CRUD mutations, ICS drag-and-drop, and browser notifications. View components (`MonthView`, `WeekView`, `AgendaView`) are pure presentational and receive `cursor`, `events`, `onDayClick`, `onEventClick`, and `startDay` props. Helper functions (`eventsForDay`, `weekStartDate`, `expandRecurringEvents`, etc.) are in `calendarHelpers.ts`. Constants (day/month names, reminder presets) are in `calendarConstants.ts`.
 
-**Settings** — the `/settings` page (`apps/web/src/app/(apps)/settings/page.tsx`) is tab-based. The Calendar tab stores the `weekStart` preference in localStorage via `WEEK_START_KEY`. The calendar page listens to the `storage` event to pick up changes without a page reload. The settings page itself is gated by `featureFlags.settingsPage`.
+**Settings** — the `/settings` page (`apps/web/src/app/(apps)/settings/page.tsx`) is tab-based. The Calendar tab stores the `weekStart` preference in localStorage via `WEEK_START_KEY`. The calendar page listens to the `storage` event to pick up changes without a page reload.
 
 **UI library** — `@neutrino/ui` exports primitives (Button, Text, Heading, Badge, Avatar), inputs (TextInput, Select, Checkbox, Radio, Toggle, SearchInput), feedback (Alert, Toast/ToastProvider, Spinner, Skeleton, EmptyState, ProgressBar), containers (Card, Modal, Panel, Popover, Drawer, Tabs, Accordion), and navigation (Menu, Dropdown, Breadcrumbs, Pagination). CSS is CSS Modules with `var(--color-*)` design tokens.
 
