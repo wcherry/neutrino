@@ -497,7 +497,7 @@
   font-size: 13px;
   line-height: 1.6;
   color: var(--color-text-secondary, #6b7280);
-  max-width: 68ch;
+  max-width: 108ch;
 }
 
 .numberInput {

@@ -1,7 +1,11 @@
 use std::{
     env, fs,
+    io::{Read, Write},
+    net::{TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
     process::{self, Command},
+    thread,
+    time::{Duration, Instant},
 };
 
 /// Facial-recognition model used by the background worker.
@@ -16,6 +20,15 @@ const REQUIRED_ENV_SECRETS: [&str; 2] = ["JWT_SECRET", "WORKER_SECRET"];
 /// Docker secrets `e2e/docker-compose-test.yml` mounts out of `e2e/secrets/`.
 /// The directory is gitignored, so a fresh clone has to generate them.
 const E2E_SECRET_FILES: [&str; 2] = ["jwt_secret.txt", "worker_secret.txt"];
+
+/// How long `cargo xtask dev` waits for the backend's `/health` before giving up.
+/// Generous because the first `cargo run` of a session compiles the whole server
+/// before it binds anything.
+const BACKEND_HEALTH_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// Port the backend binds when neither the environment nor `.env` sets `PORT`.
+/// Matches the default in `Config::from_env`.
+const DEFAULT_BACKEND_PORT: &str = "8080";
 
 struct Config {
     web_dir: PathBuf,
@@ -275,6 +288,11 @@ fn run_dev(root: &Path) {
         .spawn()
         .expect("failed to spawn cargo run");
 
+    // The worker authenticates against the backend and the frontend proxies to it,
+    // so both spend their first seconds erroring out if they start first. Hold them
+    // until `/health` answers.
+    wait_for_backend(root, &mut backend);
+
     let mut worker = Command::new("cargo")
         .args(["run", "-p", "worker"])
         .current_dir(root)
@@ -303,8 +321,97 @@ fn run_dev(root: &Path) {
             backend.kill().ok();
             process::exit(status.code().unwrap_or(1));
         }
-        std::thread::sleep(std::time::Duration::from_millis(250));
+        thread::sleep(Duration::from_millis(250));
     }
+}
+
+/// Blocks until the backend answers `/health` with a 200. Exits instead of
+/// returning if the backend dies first or never comes up, so `dev` never leaves a
+/// worker and a frontend talking to nothing.
+fn wait_for_backend(root: &Path, backend: &mut process::Child) {
+    let addr = format!("127.0.0.1:{}", backend_port(root));
+    println!("waiting for the backend to be healthy at http://{addr}/health");
+
+    let deadline = Instant::now() + BACKEND_HEALTH_TIMEOUT;
+    loop {
+        if let Some(status) = backend.try_wait().expect("failed to wait on cargo run") {
+            eprintln!("backend exited before it became healthy");
+            process::exit(status.code().unwrap_or(1));
+        }
+        if backend_healthy(&addr) {
+            println!("backend is healthy — starting worker and frontend");
+            return;
+        }
+        if Instant::now() >= deadline {
+            eprintln!(
+                "backend was not healthy within {}s, giving up",
+                BACKEND_HEALTH_TIMEOUT.as_secs()
+            );
+            backend.kill().ok();
+            process::exit(1);
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// One `GET /health`. Every failure — refused connection, timeout, non-200 — is
+/// just "not ready yet"; the caller retries.
+fn backend_healthy(addr: &str) -> bool {
+    let Some(sock) = addr.to_socket_addrs().ok().and_then(|mut a| a.next()) else {
+        return false;
+    };
+    let Ok(mut stream) = TcpStream::connect_timeout(&sock, Duration::from_secs(2)) else {
+        return false;
+    };
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    stream.set_write_timeout(Some(Duration::from_secs(5))).ok();
+
+    let request = b"GET /health HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    if stream.write_all(request).is_err() {
+        return false;
+    }
+    let mut response = Vec::new();
+    if stream.read_to_end(&mut response).is_err() {
+        return false;
+    }
+    String::from_utf8_lossy(&response)
+        .lines()
+        .next()
+        .is_some_and(|status| status.contains(" 200 "))
+}
+
+/// The port the backend will bind, resolved the way `Config::from_env` resolves it:
+/// the environment first, then the repo-root `.env` `cargo run` loads, then 8080.
+fn backend_port(root: &Path) -> String {
+    if let Some(port) = env::var("PORT").ok().filter(|p| !p.trim().is_empty()) {
+        return port.trim().to_string();
+    }
+    fs::read_to_string(root.join(".env"))
+        .ok()
+        .and_then(|contents| env_file_value(&contents, "PORT"))
+        .unwrap_or_else(|| DEFAULT_BACKEND_PORT.to_string())
+}
+
+/// Value `key` is assigned in a `.env`, if any. Deliberately minimal: it handles
+/// the plain `KEY=value` and quoted forms this repo's `.env` uses, nothing more.
+fn env_file_value(contents: &str, key: &str) -> Option<String> {
+    contents.lines().find_map(|line| {
+        let line = line.trim_start();
+        if line.starts_with('#') {
+            return None;
+        }
+        let value = line
+            .strip_prefix(key)?
+            .trim_start()
+            .strip_prefix('=')?
+            .trim();
+        let value = value
+            .strip_prefix('"')
+            .and_then(|v| v.strip_suffix('"'))
+            .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+            .unwrap_or(value);
+        (!value.is_empty()).then(|| value.to_string())
+    })
 }
 
 fn run(cmd: &str, args: &[&str], dir: &Path) {

@@ -709,7 +709,6 @@ function UsersTab() {
                   <td>{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td>
                     <span className={styles.rowActions}>
-                      {isSelf && <span className={styles.selfLabel}>You</span>}
                       {confirmDeleteId === u.id ? (
                         <span className={styles.confirmRow}>
                           <button
@@ -743,6 +742,7 @@ function UsersTab() {
                           <MoreVertical size={16} />
                         </button>
                       )}
+                      {isSelf && <span className={styles.selfLabel}>You</span>}
                     </span>
                   </td>
                 </tr>
