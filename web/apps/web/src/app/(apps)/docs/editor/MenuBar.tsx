@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import type { Editor } from '@tiptap/react';
 import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { applyTextCase } from '@/lib/textCase';
 import { FIELD_DEFS } from '@/lib/docFields';
 import styles from './MenuBar.module.css';
@@ -128,7 +127,7 @@ export interface HamburgerMenuProps {
   onToggleSplitParagraphs: () => void;
   // Office mode (issue #43) — true when this file is a raw .docx being edited
   // in place rather than a native Neutrino doc.
-  // Layout & structure feature callbacks (only used when docsLayoutStructure flag is on)
+  // Layout & structure feature callbacks
   onInsertFootnote?: () => void;
   onInsertCrossRef?: () => void;
   onHeaderFooter?: () => void;
@@ -136,11 +135,11 @@ export interface HamburgerMenuProps {
   onTheme?: () => void;
   /** Opens the shared image picker (Drive / local file / URL). */
   onInsertImage?: () => void;
-  // Advanced formatting feature callbacks (only used when docsAdvancedFormatting flag is on)
+  // Advanced formatting feature callbacks
   onStylesPalette?: () => void;
   /** Opens the shared image picker on its Local File tab. */
   onInsertLocalImage?: () => void;
-  // Editing tools feature callbacks (only used when docsEditingTools flag is on)
+  // Editing tools feature callbacks
   onOpenFindReplace?: () => void;
   grammarEnabled?: boolean;
   onToggleGrammar?: () => void;
@@ -202,7 +201,6 @@ export function HamburgerMenu({
   onToggleFieldCodes,
   onRefreshFields,
 }: HamburgerMenuProps) {
-  const flags = useFeatureFlags();
   const router = useRouter();
   const [showHelp, setShowHelp] = useState(false);
 
@@ -257,11 +255,9 @@ export function HamburgerMenu({
         { kind: 'action', label: 'Paste',      shortcut: 'Ctrl+V', action: () => document.execCommand('paste') },
         { kind: 'separator' },
         { kind: 'action', label: 'Select all', shortcut: 'Ctrl+A', action: () => editor?.chain().focus().selectAll().run() },
-        ...(flags.docsEditingTools ? [
-          { kind: 'separator' as const },
-          { kind: 'action' as const, label: 'Find and replace…', shortcut: 'Ctrl+F', action: () => onOpenFindReplace?.() },
-          { kind: 'action' as const, label: grammarEnabled ? 'Grammar check ✓' : 'Grammar check', action: () => onToggleGrammar?.() },
-        ] : []),
+        { kind: 'separator' as const },
+        { kind: 'action' as const, label: 'Find and replace…', shortcut: 'Ctrl+F', action: () => onOpenFindReplace?.() },
+        { kind: 'action' as const, label: grammarEnabled ? 'Grammar check ✓' : 'Grammar check', action: () => onToggleGrammar?.() },
       ],
     },
     {
@@ -296,31 +292,27 @@ export function HamburgerMenu({
         },
         { kind: 'separator' as const },
         { kind: 'action' as const, label: 'Header & footer…',  action: () => onHeaderFooter?.() },
-        ...(flags.docsLayoutStructure ? [
-          { kind: 'action' as const, label: 'Watermark…',         action: () => onWatermark?.() },
-          { kind: 'action' as const, label: 'Document theme…',    action: () => onTheme?.() },
-        ] : []),
-        ...(flags.docsAdvancedFormatting ? [
-          { kind: 'separator' as const },
-          { kind: 'action' as const, label: 'Paragraph styles…', action: () => onStylesPalette?.() },
-          { kind: 'separator' as const },
-          { kind: 'action' as const, label: 'Superscript', shortcut: 'Ctrl+.', action: () => editor?.chain().focus().toggleMark('superscript').run() },
-          { kind: 'action' as const, label: 'Subscript',   shortcut: 'Ctrl+,', action: () => editor?.chain().focus().toggleMark('subscript').run() },
-          { kind: 'separator' as const },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          { kind: 'action' as const, label: 'Indent',              action: () => (editor?.chain().focus() as any)?.indent?.()?.run?.() },
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          { kind: 'action' as const, label: 'Outdent',             action: () => (editor?.chain().focus() as any)?.outdent?.()?.run?.() },
-          { kind: 'separator' as const },
-          {
-            kind: 'submenu' as const, label: 'Text case', items: [
-              { kind: 'action' as const, label: 'UPPERCASE',     action: () => editor && applyTextCase(editor, 'uppercase') },
-              { kind: 'action' as const, label: 'lowercase',     action: () => editor && applyTextCase(editor, 'lowercase') },
-              { kind: 'action' as const, label: 'Title Case',    action: () => editor && applyTextCase(editor, 'title') },
-              { kind: 'action' as const, label: 'Sentence case', action: () => editor && applyTextCase(editor, 'sentence') },
-            ],
-          },
-        ] : []),
+        { kind: 'action' as const, label: 'Watermark…',         action: () => onWatermark?.() },
+        { kind: 'action' as const, label: 'Document theme…',    action: () => onTheme?.() },
+        { kind: 'separator' as const },
+        { kind: 'action' as const, label: 'Paragraph styles…', action: () => onStylesPalette?.() },
+        { kind: 'separator' as const },
+        { kind: 'action' as const, label: 'Superscript', shortcut: 'Ctrl+.', action: () => editor?.chain().focus().toggleMark('superscript').run() },
+        { kind: 'action' as const, label: 'Subscript',   shortcut: 'Ctrl+,', action: () => editor?.chain().focus().toggleMark('subscript').run() },
+        { kind: 'separator' as const },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { kind: 'action' as const, label: 'Indent',              action: () => (editor?.chain().focus() as any)?.indent?.()?.run?.() },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { kind: 'action' as const, label: 'Outdent',             action: () => (editor?.chain().focus() as any)?.outdent?.()?.run?.() },
+        { kind: 'separator' as const },
+        {
+          kind: 'submenu' as const, label: 'Text case', items: [
+            { kind: 'action' as const, label: 'UPPERCASE',     action: () => editor && applyTextCase(editor, 'uppercase') },
+            { kind: 'action' as const, label: 'lowercase',     action: () => editor && applyTextCase(editor, 'lowercase') },
+            { kind: 'action' as const, label: 'Title Case',    action: () => editor && applyTextCase(editor, 'title') },
+            { kind: 'action' as const, label: 'Sentence case', action: () => editor && applyTextCase(editor, 'sentence') },
+          ],
+        },
       ],
     },
     {
@@ -329,9 +321,7 @@ export function HamburgerMenu({
       items: [
         { kind: 'action', label: 'Link…',           shortcut: 'Ctrl+K', action: () => { const url = window.prompt('Enter URL:', 'https://'); if (url) editor?.chain().focus().setLink({ href: url }).run(); } },
         { kind: 'action' as const, label: 'Image…',             action: () => onInsertImage?.() },
-        ...(flags.docsAdvancedFormatting
-          ? [{ kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() }]
-          : []),
+        { kind: 'action' as const, label: 'Image (upload)…', action: () => onInsertLocalImage?.() },
         { kind: 'separator' },
         {
           // Field codes. The plain cases insert straight from here; a fallback
@@ -361,18 +351,16 @@ export function HamburgerMenu({
         { kind: 'action', label: 'Horizontal rule',                     action: () => editor?.chain().focus().setHorizontalRule().run() },
         { kind: 'action', label: 'Code block',                          action: () => editor?.chain().focus().toggleCodeBlock().run() },
         { kind: 'action', label: 'Blockquote',                          action: () => editor?.chain().focus().toggleBlockquote().run() },
-        ...(flags.docsLayoutStructure ? [
-          { kind: 'separator' as const },
-          { kind: 'action' as const, label: 'Table of contents',  action: () => editor?.chain().focus().insertContent({ type: 'tableOfContents' }).run() },
-          { kind: 'action' as const, label: 'Footnote',           action: () => onInsertFootnote?.() },
-          { kind: 'action' as const, label: 'Cross-reference…',  action: () => onInsertCrossRef?.() },
-          { kind: 'action' as const, label: 'Section break',      action: () => editor?.chain().focus().insertContent({ type: 'sectionBreak' }).run() },
-          { kind: 'action' as const, label: '2-column layout',    action: () => editor?.chain().focus().insertContent({ type: 'columnLayout', attrs: { columns: 2 }, content: [{ type: 'paragraph' }] }).run() },
-          { kind: 'action' as const, label: '3-column layout',    action: () => editor?.chain().focus().insertContent({ type: 'columnLayout', attrs: { columns: 3 }, content: [{ type: 'paragraph' }] }).run() },
-        ] : []),
+        { kind: 'separator' as const },
+        { kind: 'action' as const, label: 'Table of contents',  action: () => editor?.chain().focus().insertContent({ type: 'tableOfContents' }).run() },
+        { kind: 'action' as const, label: 'Footnote',           action: () => onInsertFootnote?.() },
+        { kind: 'action' as const, label: 'Cross-reference…',  action: () => onInsertCrossRef?.() },
+        { kind: 'action' as const, label: 'Section break',      action: () => editor?.chain().focus().insertContent({ type: 'sectionBreak' }).run() },
+        { kind: 'action' as const, label: '2-column layout',    action: () => editor?.chain().focus().insertContent({ type: 'columnLayout', attrs: { columns: 2 }, content: [{ type: 'paragraph' }] }).run() },
+        { kind: 'action' as const, label: '3-column layout',    action: () => editor?.chain().focus().insertContent({ type: 'columnLayout', attrs: { columns: 3 }, content: [{ type: 'paragraph' }] }).run() },
       ],
     },
-    ...(flags.docsEditingTools ? [{
+    {
       kind: 'submenu' as const,
       label: 'AI Writing',
       items: [
@@ -380,7 +368,7 @@ export function HamburgerMenu({
         { kind: 'action' as const, label: 'Summarize',    action: () => onAiSummarize?.() },
         { kind: 'action' as const, label: 'Change tone…', action: () => onAiChangeTone?.() },
       ],
-    }] : []),
+    },
     {
       kind: 'submenu',
       label: 'View',
@@ -388,9 +376,7 @@ export function HamburgerMenu({
         { kind: 'action', label: showOutline ? 'Outline ✓'          : 'Outline',          action: () => onToggleOutline() },
         { kind: 'action', label: showHistory ? 'Version history ✓'  : 'Version history',  action: () => onToggleHistory() },
         { kind: 'action', label: showComments ? 'Comments ✓'        : 'Comments',         action: () => onToggleComments() },
-        ...(flags.docsCompare ? [
-          { kind: 'action' as const, label: 'Compare versions…', action: () => onToggleHistory() },
-        ] : []),
+        { kind: 'action' as const, label: 'Compare versions…', action: () => onToggleHistory() },
         { kind: 'separator' as const },
         { kind: 'action' as const, label: showRulers ? 'Rulers ✓' : 'Rulers', action: () => onToggleRulers() },
         { kind: 'action' as const, label: singlePageMode ? 'Single page ✓' : 'Single page', action: () => onToggleSinglePage() },
@@ -399,10 +385,8 @@ export function HamburgerMenu({
           label: splitParagraphs ? 'Split paragraphs across pages ✓' : 'Split paragraphs across pages',
           action: () => onToggleSplitParagraphs(),
         },
-        ...(flags.docsDistractionFree ? [
-          { kind: 'separator' as const },
-          { kind: 'action' as const, label: distractionFree ? 'Focus mode ✓' : 'Focus mode', shortcut: 'Ctrl+Shift+F', action: () => onToggleFocus?.() },
-        ] : []),
+        { kind: 'separator' as const },
+        { kind: 'action' as const, label: distractionFree ? 'Focus mode ✓' : 'Focus mode', shortcut: 'Ctrl+Shift+F', action: () => onToggleFocus?.() },
       ],
     },
     {

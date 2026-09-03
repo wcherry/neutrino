@@ -125,31 +125,24 @@ describe('hasLayoutMeta', () => {
 
 describe('serializeContent', () => {
   it('wraps a document with customised margins, and carries the page setup', () => {
-    const stored = parse(serializeContent(DOC, meta({ pageSetup: CUSTOM }), false));
+    const stored = parse(serializeContent(DOC, meta({ pageSetup: CUSTOM })));
     expect(stored.doc).toEqual(DOC);
     expect(stored._meta?.pageSetup).toEqual(CUSTOM);
   });
 
   it('round-trips: what is written is what reads back', () => {
-    const stored = parse(serializeContent(DOC, meta({ pageSetup: CUSTOM }), false));
+    const stored = parse(serializeContent(DOC, meta({ pageSetup: CUSTOM })));
     expect(pageSetupFromMeta(stored._meta)).toEqual(CUSTOM);
   });
 
-  it('leaves a default document as bare Tiptap JSON, so it does not gain a _meta block', () => {
-    // The iOS Docs app asserts the same property from the other side: a
-    // document stored without `_meta` must not acquire one on a round-trip.
-    const raw = serializeContent(DOC, meta(), false);
-    expect(raw).not.toContain('_meta');
-    expect(JSON.parse(raw)).toEqual(DOC);
-  });
-
-  it('still wraps a default document when the layout-structure flag forces it', () => {
-    const stored = parse(serializeContent(DOC, meta(), true));
+  it('wraps a default document too, so the stored shape does not depend on content', () => {
+    const stored = parse(serializeContent(DOC, meta()));
+    expect(stored.doc).toEqual(DOC);
     expect(stored._meta?.pageSetup).toEqual(DEFAULT_PAGE_SETUP);
   });
 
   it('writes page setup alongside other metadata rather than displacing it', () => {
-    const raw = serializeContent(DOC, meta({ pageSetup: CUSTOM, watermarkText: 'DRAFT' }), false);
+    const raw = serializeContent(DOC, meta({ pageSetup: CUSTOM, watermarkText: 'DRAFT' }));
     const stored = JSON.parse(raw) as { _meta: LayoutMeta };
     expect(stored._meta.pageSetup).toEqual(CUSTOM);
     expect(stored._meta.watermarkText).toBe('DRAFT');

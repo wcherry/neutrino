@@ -854,15 +854,6 @@ diesel::table! {
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 diesel::table! {
-    feature_flags (key) {
-        key -> Text,
-        enabled -> Integer,
-        description -> Nullable<Text>,
-        updated_at -> Text,
-    }
-}
-
-diesel::table! {
     custom_fonts (id) {
         id -> Text,
         display_name -> Text,
@@ -1087,7 +1078,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     oauth_clients,
     oauth_authorization_codes,
     // Admin
-    feature_flags,
     custom_fonts,
     // Themes
     custom_themes,

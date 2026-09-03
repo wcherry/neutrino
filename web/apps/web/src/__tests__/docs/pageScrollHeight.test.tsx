@@ -49,20 +49,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   }),
 }));
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({
-    docsLayoutStructure: false,
-    docsAdvancedFormatting: false,
-    docsEditingTools: false,
-    docsPresence: false,
-    docsTrackChanges: false,
-    docsCompare: false,
-    docsDistractionFree: false,
-    sheetLiveEmbed: false,
-    colorPickerAlpha: false,
-  }),
-}));
-
 const mockGetDoc = vi.fn();
 
 vi.mock('@/lib/api', () => ({

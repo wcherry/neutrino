@@ -224,17 +224,6 @@ export interface UpdatePasswordPolicyRequest {
   historyCount?: number;
 }
 
-export interface FeatureFlag {
-  key: string;
-  enabled: boolean;
-  description: string | null;
-  updatedAt: string;
-}
-
-export interface UpdateFeatureFlagRequest {
-  enabled: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // File version retention
 //

@@ -8,7 +8,7 @@ import { Spinner, Toggle, ProgressBar, useToast, DropZone } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { adminApi, fontsApi } from '@neutrino/api-admin';
 import { ApiClientError } from '@neutrino/api-core';
-import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, FeatureFlag, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
+import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
 import { CreateUserDialog, ResetPasswordDialog, UserQuotaDialog } from './UserDialogs';
 import { PasswordPolicySection } from './PasswordPolicySection';
 import { WorkQueueTab } from './WorkQueueTab';
@@ -750,77 +750,6 @@ function UsersTab() {
   );
 }
 
-function FeatureFlagsTab() {
-  const qc = useQueryClient();
-  const { error: toastError, success: toastSuccess } = useToast();
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['admin-feature-flags'],
-    queryFn: () => adminApi.listFeatureFlags(),
-  });
-
-  const toggleFlag = useMutation({
-    mutationFn: ({ key, enabled }: { key: string; enabled: boolean }) =>
-      adminApi.updateFeatureFlag(key, { enabled }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-feature-flags'] });
-      toastSuccess('Feature flag updated.');
-    },
-    onError: () => {
-      toastError('Failed to update feature flag. Please try again.');
-    },
-  });
-
-  if (isLoading) {
-    return (
-      <div className={styles.loading}>
-        <Spinner size="md" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={styles.error}>
-        Failed to load feature flags.
-      </div>
-    );
-  }
-
-  const flags: FeatureFlag[] = data ?? [];
-
-  return (
-    <div className={styles.section}>
-      <h2 className={styles.sectionTitle}>Feature Flags</h2>
-      <div className={styles.serviceList}>
-        {flags.map((flag) => (
-          <div key={flag.key} className={styles.serviceRow}>
-            <div className={styles.serviceInfo}>
-              <span className={styles.serviceName}>{flag.key}</span>
-              {flag.description && (
-                <span className={styles.serviceMeta}>{flag.description}</span>
-              )}
-            </div>
-            <div className={styles.serviceControls}>
-              <span className={styles.serviceLabel}>
-                {flag.enabled ? 'Enabled' : 'Disabled'}
-              </span>
-              <Toggle
-                checked={flag.enabled}
-                disabled={toggleFlag.isPending}
-                aria-label={`Toggle ${flag.key}`}
-                onChange={() => {
-                  toggleFlag.mutate({ key: flag.key, enabled: !flag.enabled });
-                }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function FontsTab() {
   const qc = useQueryClient();
   const { error: toastError, success: toastSuccess } = useToast();
@@ -1179,7 +1108,6 @@ type Tab =
   | 'services'
   | 'users'
   | 'queue'
-  | 'flags'
   | 'versions'
   | 'fonts'
   | 'jobs';
@@ -1195,7 +1123,6 @@ const TABS: { id: Tab; label: string }[] = [
   // Next to Users, because it is the queue of things users have asked for and
   // acting on one lands back in that tab's data.
   { id: 'queue', label: 'Work Queue' },
-  { id: 'flags', label: 'Feature Flags' },
   { id: 'versions', label: 'Versions' },
   { id: 'fonts', label: 'Fonts' },
   { id: 'jobs', label: 'Jobs' },
@@ -1261,7 +1188,6 @@ export default function AdminPage() {
           {activeTab === 'services' && <ServicesTab />}
           {activeTab === 'users' && <UsersTab />}
           {activeTab === 'queue' && <WorkQueueTab />}
-          {activeTab === 'flags' && <FeatureFlagsTab />}
           {activeTab === 'versions' && <VersionsTab />}
           {activeTab === 'fonts' && <FontsTab />}
           {activeTab === 'jobs' && <JobsTab />}

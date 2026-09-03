@@ -31,11 +31,6 @@ vi.mock('@neutrino/auth', () => ({
   }),
 }));
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({ adminDashboard: true }),
-  useFeatureFlagsLoaded: () => true,
-}));
-
 vi.mock('@neutrino/ui', () => ({
   Spinner: () => <div data-testid="spinner" />,
   Toggle: ({

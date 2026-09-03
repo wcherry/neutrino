@@ -34,10 +34,6 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/api', () => api);
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({}),
-}));
-
 // The preview modal pulls in the download/decrypt stack, which these tests
 // don't exercise — only that a non-routable file falls through to it.
 vi.mock('../../app/(apps)/drive/PreviewModal', () => ({

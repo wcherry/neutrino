@@ -49,10 +49,6 @@ vi.mock('@neutrino/ui', () => ({
   ColorPickerPopover: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => ({}),
-}));
-
 const CUSTOM_FONT_OPTION = { label: 'My Custom Font', value: "'My Custom Font', sans-serif" };
 
 vi.mock('@/hooks/useAvailableFonts', () => ({

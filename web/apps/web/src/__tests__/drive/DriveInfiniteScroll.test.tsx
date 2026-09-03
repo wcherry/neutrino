@@ -25,11 +25,6 @@ const PAGE_SIZE = 200;
 
 vi.mock('../../app/(apps)/drive/UploadZone', () => ({ UploadZone: () => null }));
 
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => new Proxy({}, { get: () => false }),
-  useFeatureFlagsLoaded: () => true,
-}));
-
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
   usePathname: () => '/drive',

@@ -54,7 +54,6 @@ import { SheetZoomProvider } from './zoom';
 import { ShareButton, ZoomSlider } from '@neutrino/ui';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import type { FileItem } from '@/lib/api';
-import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { useCharts } from './charts/useCharts';
 import { ChartLayer } from './charts/ChartLayer';
 import { ChartCreationDialog } from './charts/ChartCreationDialog';
@@ -137,7 +136,6 @@ async function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 export function SheetEditor() {
     const searchParams = useSearchParams();
     const router = useRouter();
-    const flags = useFeatureFlags();
     const sheetId = searchParams.get('id') ?? '';
     useAccessRevocation(sheetId);
 
@@ -229,13 +227,13 @@ export function SheetEditor() {
     // session and never written into the file.
     const [zoom, setZoom] = useState(100);
 
-    // ── Conditional formatting state (feature-flagged) ───────────────────────
+    // ── Conditional formatting state ───────────────────────
     const [showCFDialog, setShowCFDialog] = useState(false);
     const [cfVariables, setCfVariables] = useState(() => {
         try { return JSON.parse(localStorage.getItem('neutrino:sheets:cf-variables') ?? '[]'); } catch { return []; }
     });
 
-    // ── Chart state (feature-flagged) ────────────────────────────────────────
+    // ── Chart state ────────────────────────────────────────
     const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
     const [showChartDialog, setShowChartDialog] = useState(false);
     const queryClient = useQueryClient();
@@ -342,12 +340,12 @@ export function SheetEditor() {
         setData, setColWidths, setRowHeights,
         setSheetNames: sheets.setSheetNames,
         setSheetColors: sheets.setSheetColors,
-        sheetsChartsRef: flags.sheetsCharts ? charts.sheetsChartsRef : undefined,
-        flushActiveCharts: flags.sheetsCharts ? charts.flushActiveCharts : undefined,
-        setCharts: flags.sheetsCharts ? charts.setCharts : undefined,
-        sheetsConditionalFormatsRef: flags.sheetsConditionalFormatting ? cf.sheetsConditionalFormatsRef : undefined,
-        flushActiveConditionalFormats: flags.sheetsConditionalFormatting ? cf.flushActiveConditionalFormats : undefined,
-        setConditionalFormats: flags.sheetsConditionalFormatting ? cf.setConditionalFormats : undefined,
+        sheetsChartsRef: charts.sheetsChartsRef,
+        flushActiveCharts: charts.flushActiveCharts,
+        setCharts: charts.setCharts,
+        sheetsConditionalFormatsRef: cf.sheetsConditionalFormatsRef,
+        flushActiveConditionalFormats: cf.flushActiveConditionalFormats,
+        setConditionalFormats: cf.setConditionalFormats,
         sheetsTableRegionsRef: tableRegions.sheetsTableRegionsRef,
         flushActiveTableRegions: tableRegions.flushActiveTableRegions,
         setTableRegions: tableRegions.setTableRegions,
@@ -1090,8 +1088,8 @@ export function SheetEditor() {
         });
         dirtyRef.current = true;
 
-        // Copy CF rules from source range to dest range (only when CF feature flag is on)
-        if (flags.sheetsConditionalFormatting && cf.conditionalFormatsRef.current.length > 0) {
+        // Copy CF rules from source range to dest range
+        if (cf.conditionalFormatsRef.current.length > 0) {
             const srcMinR = srcMinRow;
             const srcMaxR = srcMinRow + srcRows - 1;
             const srcMinC = srcMinCol;
@@ -1145,7 +1143,7 @@ export function SheetEditor() {
         }
 
         setFormatPainterSource(null);
-    }, [flags.sheetsConditionalFormatting, cf, history, dirtyRef, setData]);
+    }, [cf, history, dirtyRef, setData]);
 
     // Keep the applyFormatPaintRef up-to-date so the onMouseUp handler always
     // calls the latest version without a stale closure.
@@ -1694,7 +1692,7 @@ export function SheetEditor() {
                     formatDisabled={!selectionAnchor || isViewer}
                     isMerged={editing.isMerged}
                     onMergeCells={editing.mergeCells}
-                    onInsertChart={flags.sheetsCharts ? () => setShowChartDialog(true) : undefined}
+                    onInsertChart={() => setShowChartDialog(true)}
                 />
                 <button className={styles.backBtn} aria-label="Sheets" onClick={handleBack}>
                     <ArrowLeft size={16} />
@@ -1772,9 +1770,9 @@ export function SheetEditor() {
                 canRedo={history.historyLen.redo > 0}
                 onMergeCells={editing.mergeCells}
                 isMerged={editing.isMerged}
-                onInsertChart={flags.sheetsCharts ? () => setShowChartDialog(true) : undefined}
+                onInsertChart={() => setShowChartDialog(true)}
                 onFindReplace={() => setFindReplaceMode('replace')}
-                onConditionalFormat={flags.sheetsConditionalFormatting ? () => setShowCFDialog(v => !v) : undefined}
+                onConditionalFormat={() => setShowCFDialog(v => !v)}
                 isFormatPainterActive={!!formatPainterSource}
                 onFormatPainterClick={handleFormatPainterClick}
                 selectedCells={selectedCells}
@@ -1835,10 +1833,10 @@ export function SheetEditor() {
                             onRowHeaderContextMenu={handleRowHeaderContextMenu}
                             columnFilters={columnFilters.size > 0 ? columnFilters : undefined}
                             scrollBodyRef={scrollBodyRef}
-                            conditionalFormats={flags.sheetsConditionalFormatting ? cf.conditionalFormats : undefined}
-                            cfVariables={flags.sheetsConditionalFormatting ? cfVariables : undefined}
+                            conditionalFormats={cf.conditionalFormats}
+                            cfVariables={cfVariables}
                             remotePresence={remoteUsers.filter(u => u.cellId != null).map(u => ({ clientId: u.clientId, cellId: u.cellId!, color: u.color, name: u.name }))}
-                            overlay={flags.sheetsCharts ? (
+                            overlay={(
                                 <ChartLayer
                                     charts={charts.charts}
                                     data={data}
@@ -1848,7 +1846,7 @@ export function SheetEditor() {
                                     onDeleteChart={(id) => { charts.removeChart(id); setSelectedChartId(null); dirtyRef.current = true; }}
                                     containerRef={scrollBodyRef}
                                 />
-                            ) : null}
+                            )}
                         />
                     </SheetZoomProvider>
                 </div>
@@ -1862,7 +1860,7 @@ export function SheetEditor() {
                         onClose={() => setShowHistory(false)}
                     />
                 )}
-                {flags.sheetsCharts && selectedChartId && (() => {
+                {selectedChartId && (() => {
                     const def = charts.charts.find(c => c.id === selectedChartId);
                     return def ? (
                         <ChartEditorPanel
@@ -1885,41 +1883,25 @@ export function SheetEditor() {
                     dirtyRef={dirtyRef}
                     readOnly={isViewer}
                     onSwitchSheet={(idx) => {
-                        if (flags.sheetsCharts) {
-                            // Flush before switchSheet updates activeSheetIndexRef, so
-                            // the current sheet's charts land in the correct slot.
-                            charts.flushActiveCharts();
-                        }
-                        if (flags.sheetsConditionalFormatting) {
-                            cf.flushActiveConditionalFormats();
-                        }
+                        // Flush before switchSheet updates activeSheetIndexRef, so
+                        // the current sheet's charts land in the correct slot.
+                        charts.flushActiveCharts();
+                        cf.flushActiveConditionalFormats();
                         tableRegions.flushActiveTableRegions();
                         sheets.switchSheet(idx);
-                        if (flags.sheetsCharts) {
-                            charts.switchSheetCharts(idx);
-                            setSelectedChartId(null);
-                        }
-                        if (flags.sheetsConditionalFormatting) {
-                            cf.switchSheetConditionalFormats(idx);
-                        }
+                        charts.switchSheetCharts(idx);
+                        setSelectedChartId(null);
+                        cf.switchSheetConditionalFormats(idx);
                         tableRegions.switchSheetTableRegions(idx);
                     }}
                     onAddSheet={() => {
-                        if (flags.sheetsCharts) {
-                            charts.flushActiveCharts();
-                        }
-                        if (flags.sheetsConditionalFormatting) {
-                            cf.flushActiveConditionalFormats();
-                        }
+                        charts.flushActiveCharts();
+                        cf.flushActiveConditionalFormats();
                         tableRegions.flushActiveTableRegions();
                         sheets.addSheet();
-                        if (flags.sheetsCharts) {
-                            charts.switchSheetCharts(sheets.activeSheetIndexRef.current);
-                            setSelectedChartId(null);
-                        }
-                        if (flags.sheetsConditionalFormatting) {
-                            cf.switchSheetConditionalFormats(sheets.activeSheetIndexRef.current);
-                        }
+                        charts.switchSheetCharts(sheets.activeSheetIndexRef.current);
+                        setSelectedChartId(null);
+                        cf.switchSheetConditionalFormats(sheets.activeSheetIndexRef.current);
                         tableRegions.switchSheetTableRegions(sheets.activeSheetIndexRef.current);
                     }}
                     onDeleteSheet={sheets.deleteSheet}
@@ -1932,7 +1914,7 @@ export function SheetEditor() {
                 </div>
             </div>
 
-            {flags.sheetsCharts && showChartDialog && (
+            {showChartDialog && (
                 <ChartCreationDialog
                     initialRange={
                         selectionAnchor && selectionActive
@@ -2031,7 +2013,7 @@ export function SheetEditor() {
                 />
             )}
 
-            {flags.sheetsConditionalFormatting && showCFDialog && (
+            {showCFDialog && (
                 <ConditionalFormattingDialog
                     rules={cf.conditionalFormats}
                     selectionRange={

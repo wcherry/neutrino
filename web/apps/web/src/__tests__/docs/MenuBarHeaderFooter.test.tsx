@@ -1,22 +1,15 @@
 /**
- * The Format menu's "Header & footer…" entry must not depend on a feature flag.
+ * The Format menu carries "Header & footer…" and its layout siblings.
  *
- * It used to sit inside the `docsLayoutStructure` block alongside Watermark and
- * Document theme, so with that flag off the only discoverable way into headers
- * and footers simply was not in the menu. Watermark and theme stay flagged —
- * this pins only that the header/footer entry escaped that block.
+ * The entry used to sit inside a `docsLayoutStructure` block alongside
+ * Watermark and Document theme, and with that flag off the only discoverable
+ * way into headers and footers was not in the menu at all. The flag is gone and
+ * the whole block is unconditional now, so these pin the entries themselves.
  */
 
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-
-/** Every flag off — the state before the flags endpoint answers. */
-const flags: Record<string, boolean> = {};
-
-vi.mock('@/providers/FeatureFlagsProvider', () => ({
-  useFeatureFlags: () => flags,
-}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
@@ -53,7 +46,7 @@ function menu(label: string): Item[] {
 }
 
 describe('MenuBar — Header & footer entry', () => {
-  it('is in the Format menu with every flag off', () => {
+  it('is in the Format menu, and calls back when chosen', () => {
     const onHeaderFooter = vi.fn();
     render(<HamburgerMenu editor={null} onHeaderFooter={onHeaderFooter} />);
 
@@ -64,12 +57,12 @@ describe('MenuBar — Header & footer entry', () => {
     expect(onHeaderFooter).toHaveBeenCalled();
   });
 
-  it('still keeps watermark and theme behind the layout flag', () => {
+  it('carries watermark and theme alongside it', () => {
     render(<HamburgerMenu editor={null} />);
     const labels = menu('Format').map(i => i.label);
 
     expect(labels).toContain('Header & footer…');
-    expect(labels).not.toContain('Watermark…');
-    expect(labels).not.toContain('Document theme…');
+    expect(labels).toContain('Watermark…');
+    expect(labels).toContain('Document theme…');
   });
 });
