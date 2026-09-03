@@ -3,13 +3,26 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft } from 'lucide-react';
+import {
+  ArrowLeft,
+  Ban,
+  CircleCheck,
+  HardDrive,
+  KeyRound,
+  LockOpen,
+  MoreVertical,
+  RotateCcw,
+  TimerReset,
+  Trash2,
+} from 'lucide-react';
 import { Spinner, Toggle, ProgressBar, useToast, DropZone } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { adminApi, fontsApi } from '@neutrino/api-admin';
 import { ApiClientError } from '@neutrino/api-core';
 import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
 import { CreateUserDialog, ResetPasswordDialog, UserQuotaDialog } from './UserDialogs';
+import { MENU_SEPARATOR, UserActionsMenu } from './UserActionsMenu';
+import type { UserActionEntry } from './UserActionsMenu';
 import { PasswordPolicySection } from './PasswordPolicySection';
 import { WorkQueueTab } from './WorkQueueTab';
 import { formatBytes, formatLimit, usagePercent } from './bytes';
@@ -311,6 +324,8 @@ function UsersTab() {
   const [creating, setCreating] = useState(false);
   const [quotaUser, setQuotaUser] = useState<AdminUser | null>(null);
   const [resetUser, setResetUser] = useState<AdminUser | null>(null);
+  /** The row whose actions menu is open, and where its button was. */
+  const [menuFor, setMenuFor] = useState<{ user: AdminUser; x: number; y: number } | null>(null);
 
   const { data, isLoading, error } = useQuery({
     // `showDeleted` is part of the key: the two listings have different totals,
@@ -416,6 +431,105 @@ function UsersTab() {
       </>
     );
   }
+
+  /**
+   * Everything an admin can do to one row, as one menu.
+   *
+   * A row carries up to six actions and each is a rule about a different
+   * account state, so they are gathered behind the row's three-dot button
+   * rather than spread across the column as inline buttons.
+   */
+  const actionsFor = (u: AdminUser): UserActionEntry[] => {
+    // A deleted account is on its way out, so the only thing on offer is
+    // calling that back: the worker is about to erase it.
+    if (u.deletedAt) {
+      return [
+        {
+          label: 'Restore',
+          icon: <RotateCcw size={14} />,
+          disabled: restoreUser.isPending,
+          onSelect: () => restoreUser.mutate(u.id),
+        },
+      ];
+    }
+
+    const isSelf = u.id === currentUser?.id;
+    return [
+      {
+        label: 'Storage limit',
+        icon: <HardDrive size={14} />,
+        onSelect: () => setQuotaUser(u),
+      },
+      {
+        label: 'Reset password',
+        icon: <KeyRound size={14} />,
+        onSelect: () => setResetUser(u),
+      },
+      // Releasing a lockout only ever restores access, so unlike Disable it is
+      // safe on an admin's own row — though a locked admin has no session to do
+      // it from, which is why it is here rather than nowhere.
+      ...(u.lockedOutAt
+        ? [
+            {
+              label: 'Unlock',
+              icon: <LockOpen size={14} />,
+              disabled: updateUser.isPending,
+              title: 'Clear the lockout and the failed-attempt count behind it',
+              onSelect: () =>
+                updateUser.mutate({
+                  userId: u.id,
+                  changes: { unlock: true },
+                  message: `${u.name} can sign in again.`,
+                }),
+            },
+          ]
+        : []),
+      // Locking yourself out, expiring your own password, or deleting your own
+      // account ends the session doing it — so an admin's own row offers none
+      // of the three.
+      ...(isSelf
+        ? []
+        : [
+            {
+              label: 'Expire password',
+              icon: <TimerReset size={14} />,
+              disabled: updateUser.isPending || u.passwordExpired,
+              title: u.passwordExpired
+                ? 'This password is already expired'
+                : 'Refuse sign-in until they set a new password',
+              onSelect: () =>
+                updateUser.mutate({
+                  userId: u.id,
+                  changes: { expirePassword: true },
+                  message: `${u.name} must set a new password.`,
+                }),
+            },
+            {
+              label: u.disabledAt ? 'Enable' : 'Disable',
+              icon: u.disabledAt ? <CircleCheck size={14} /> : <Ban size={14} />,
+              disabled: updateUser.isPending,
+              danger: !u.disabledAt,
+              onSelect: () =>
+                updateUser.mutate({
+                  userId: u.id,
+                  changes: { disabled: !u.disabledAt },
+                  message: u.disabledAt
+                    ? `${u.name} can sign in again.`
+                    : `${u.name} is locked out.`,
+                }),
+            },
+            MENU_SEPARATOR,
+            {
+              label: 'Remove',
+              icon: <Trash2 size={14} />,
+              danger: true,
+              // Confirmed in the row rather than here: the menu is gone by the
+              // time the second click happens.
+              onSelect: () => setConfirmDeleteId(u.id),
+            },
+          ]),
+    ];
+  };
 
   const users: AdminUser[] = data?.users ?? [];
   const total = data?.total ?? 0;
@@ -594,125 +708,42 @@ function UsersTab() {
                   </td>
                   <td>{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td>
-                    {u.deletedAt ? (
-                      <button
-                        className={styles.restoreBtn}
-                        onClick={() => restoreUser.mutate(u.id)}
-                        disabled={restoreUser.isPending}
-                        type="button"
-                      >
-                        Restore
-                      </button>
-                    ) : (
-                      <span className={styles.rowActions}>
-                        <button
-                          type="button"
-                          className={styles.linkBtn}
-                          onClick={() => setQuotaUser(u)}
-                        >
-                          Storage
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.linkBtn}
-                          onClick={() => setResetUser(u)}
-                        >
-                          Password
-                        </button>
-                        {/* Releasing a lockout only ever restores access, so
-                            unlike Disable it is safe on an admin's own row —
-                            though a locked admin has no session to do it from,
-                            which is why it is here rather than nowhere. */}
-                        {u.lockedOutAt && (
+                    <span className={styles.rowActions}>
+                      {isSelf && <span className={styles.selfLabel}>You</span>}
+                      {confirmDeleteId === u.id ? (
+                        <span className={styles.confirmRow}>
                           <button
-                            type="button"
-                            className={styles.linkBtn}
-                            disabled={updateUser.isPending}
-                            title="Clear the lockout and the failed-attempt count behind it"
-                            onClick={() =>
-                              updateUser.mutate({
-                                userId: u.id,
-                                changes: { unlock: true },
-                                message: `${u.name} can sign in again.`,
-                              })
-                            }
-                          >
-                            Unlock
-                          </button>
-                        )}
-                        {/* Locking yourself out, or expiring your own password,
-                            ends the session doing it — so an admin's own row
-                            offers neither. */}
-                        {!isSelf && (
-                          <>
-                            <button
-                              type="button"
-                              className={styles.linkBtn}
-                              disabled={updateUser.isPending || u.passwordExpired}
-                              title={
-                                u.passwordExpired
-                                  ? 'This password is already expired'
-                                  : 'Refuse sign-in until they set a new password'
-                              }
-                              onClick={() =>
-                                updateUser.mutate({
-                                  userId: u.id,
-                                  changes: { expirePassword: true },
-                                  message: `${u.name} must set a new password.`,
-                                })
-                              }
-                            >
-                              Expire password
-                            </button>
-                            <button
-                              type="button"
-                              className={u.disabledAt ? styles.linkBtn : styles.deleteBtn}
-                              disabled={updateUser.isPending}
-                              onClick={() =>
-                                updateUser.mutate({
-                                  userId: u.id,
-                                  changes: { disabled: !u.disabledAt },
-                                  message: u.disabledAt
-                                    ? `${u.name} can sign in again.`
-                                    : `${u.name} is locked out.`,
-                                })
-                              }
-                            >
-                              {u.disabledAt ? 'Enable' : 'Disable'}
-                            </button>
-                          </>
-                        )}
-                        {isSelf ? (
-                          <span className={styles.selfLabel}>You</span>
-                        ) : confirmDeleteId === u.id ? (
-                          <span className={styles.confirmRow}>
-                            <button
-                              className={styles.confirmBtn}
-                              onClick={() => deleteUser.mutate(u.id)}
-                              disabled={deleteUser.isPending}
-                              type="button"
-                            >
-                              Confirm
-                            </button>
-                            <button
-                              className={styles.cancelBtn}
-                              onClick={() => setConfirmDeleteId(null)}
-                              type="button"
-                            >
-                              Cancel
-                            </button>
-                          </span>
-                        ) : (
-                          <button
-                            className={styles.deleteBtn}
-                            onClick={() => setConfirmDeleteId(u.id)}
+                            className={styles.confirmBtn}
+                            onClick={() => deleteUser.mutate(u.id)}
+                            disabled={deleteUser.isPending}
                             type="button"
                           >
-                            Remove
+                            Confirm
                           </button>
-                        )}
-                      </span>
-                    )}
+                          <button
+                            className={styles.cancelBtn}
+                            onClick={() => setConfirmDeleteId(null)}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.moreBtn}
+                          aria-label={`Actions for ${u.name}`}
+                          aria-haspopup="menu"
+                          aria-expanded={menuFor?.user.id === u.id}
+                          onClick={(e) => {
+                            const r = e.currentTarget.getBoundingClientRect();
+                            setMenuFor({ user: u, x: r.left, y: r.bottom + 4 });
+                          }}
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                      )}
+                    </span>
                   </td>
                 </tr>
               );
@@ -742,6 +773,15 @@ function UsersTab() {
             Next
           </button>
         </div>
+      )}
+      {menuFor && (
+        <UserActionsMenu
+          x={menuFor.x}
+          y={menuFor.y}
+          entries={actionsFor(menuFor.user)}
+          onClose={() => setMenuFor(null)}
+          aria-label={`Actions for ${menuFor.user.name}`}
+        />
       )}
       {dialogs}
     </div>
