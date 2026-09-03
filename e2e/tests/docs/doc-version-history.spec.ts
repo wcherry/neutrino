@@ -40,7 +40,9 @@ function panelState(page: Page) {
   return page
     .getByText('Loading versions…')
     .or(page.getByText('No versions yet.'))
-    .or(page.getByText('Current'));
+    // Exact: the panel's compare section is titled "Compare with current",
+    // which a substring match would tie with the badge.
+    .or(page.getByText('Current', { exact: true }));
 }
 
 async function openViewSubmenu(page: Page): Promise<void> {
@@ -110,8 +112,9 @@ test.describe('Docs version history', () => {
 
     // Panel should now show the saved version. The newest version (idx=0) shows
     // a "Current" badge instead of a "Restore" button, so check for either.
+    // Exact on the badge: the compare section title also contains "current".
     await expect(
-      page.getByText('Current').or(page.getByText('No versions yet.')),
+      page.getByText('Current', { exact: true }).or(page.getByText('No versions yet.')),
     ).toBeVisible({ timeout: 10_000 });
   });
 

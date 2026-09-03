@@ -215,7 +215,9 @@ test.describe('Docs export formats — HTML', () => {
     const editor = page.locator('.ProseMirror');
     await editor.click();
 
-    await page.getByTitle('Paragraph style').selectOption('Heading 1');
+    // Exact: the toolbar also carries a "Paragraph styles" button, which a
+    // substring match would tie with the heading select.
+    await page.getByTitle('Paragraph style', { exact: true }).selectOption('Heading 1');
     await editor.pressSequentially('My Report');
     await page.keyboard.press('Enter');
     await editor.pressSequentially('Introduction paragraph.');
