@@ -41,6 +41,73 @@ export function getEventHeight(startIso: string, endIso: string, hourHeight: num
 
 // ── End week-view helpers ────────────────────────────────────────────────────
 
+// ── Event form date values ───────────────────────────────────────────────────
+// The event modal holds its start and end as the raw value of a `date` or a
+// `datetime-local` input — `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm` — so these helpers
+// work on that wall-clock text rather than on `Date`. Arithmetic goes through
+// `Date.UTC`, which keeps a DST boundary from moving the wall-clock time by an
+// hour: 09:00 stays 09:00 whichever side of the change the new date lands on.
+
+const FORM_VALUE_RE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::\d{2})?)?$/;
+
+interface ParsedFormValue {
+  ms: number;
+  hasTime: boolean;
+}
+
+function parseFormValue(value: string): ParsedFormValue | null {
+  const m = FORM_VALUE_RE.exec(value);
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  return {
+    ms: Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h ?? 0), Number(mi ?? 0)),
+    hasTime: h !== undefined,
+  };
+}
+
+function formatFormValue(ms: number, hasTime: boolean): string {
+  const d = new Date(ms);
+  const p = (n: number) => `${n}`.padStart(2, '0');
+  const date = `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+  return hasTime ? `${date}T${p(d.getUTCHours())}:${p(d.getUTCMinutes())}` : date;
+}
+
+/**
+ * The end value moved by however far the start value moved, so editing the start
+ * keeps the event's length instead of leaving the end behind it — issue #129.
+ * Either value being unparseable leaves the end alone.
+ */
+export function shiftEndWithStart(previousStart: string, nextStart: string, end: string): string {
+  const before = parseFormValue(previousStart);
+  const after = parseFormValue(nextStart);
+  const current = parseFormValue(end);
+  if (!before || !after || !current) return end;
+  const delta = after.ms - before.ms;
+  if (delta === 0) return end;
+  return formatFormValue(current.ms + delta, current.hasTime);
+}
+
+/** The `HH:mm` of a form value, or null when it carries no time. */
+export function timeOfFormValue(value: string): string | null {
+  const parsed = parseFormValue(value);
+  if (!parsed || !parsed.hasTime) return null;
+  return formatFormValue(parsed.ms, true).slice(11);
+}
+
+/** The same instant as a `date` input's value — the day, with the time dropped. */
+export function toAllDayFormValue(value: string): string {
+  const parsed = parseFormValue(value);
+  return parsed ? formatFormValue(parsed.ms, false) : value;
+}
+
+/** The same day as a `datetime-local` input's value, taking `time` if it has none. */
+export function toTimedFormValue(value: string, time: string): string {
+  const parsed = parseFormValue(value);
+  if (!parsed) return value;
+  if (parsed.hasTime) return formatFormValue(parsed.ms, true);
+  return `${formatFormValue(parsed.ms, false)}T${time}`;
+}
+
 export function startOfMonth(y: number, m: number) {
   return new Date(y, m, 1);
 }

@@ -97,7 +97,7 @@ function renderWithClient(ui: React.ReactElement) {
 function renderCreateModal(overrides: Partial<Parameters<typeof NewEventModal>[0]> = {}) {
   const onCreate = vi.fn();
   const onClose = vi.fn();
-  renderWithClient(
+  const { container } = renderWithClient(
     <NewEventModal
       defaultDate={defaultDate}
       onClose={onClose}
@@ -106,14 +106,25 @@ function renderCreateModal(overrides: Partial<Parameters<typeof NewEventModal>[0
       {...overrides}
     />
   );
-  return { onCreate, onClose };
+  return { onCreate, onClose, container };
+}
+
+/**
+ * The Start and End labels are not associated with their inputs, so the date
+ * fields are addressed by type and order — Start first, End second.
+ */
+function dateFields(container: HTMLElement) {
+  const inputs = container.querySelectorAll<HTMLInputElement>(
+    'input[type="datetime-local"], input[type="date"]'
+  );
+  return { start: inputs[0], end: inputs[1] };
 }
 
 function renderEditModal(overrides: Partial<Parameters<typeof NewEventModal>[0]> = {}) {
   const onUpdate = vi.fn();
   const onCreate = vi.fn();
   const onClose = vi.fn();
-  renderWithClient(
+  const { container } = renderWithClient(
     <NewEventModal
       defaultDate={defaultDate}
       existingEvent={existingEvent}
@@ -124,7 +135,7 @@ function renderEditModal(overrides: Partial<Parameters<typeof NewEventModal>[0]>
       {...overrides}
     />
   );
-  return { onUpdate, onCreate, onClose };
+  return { onUpdate, onCreate, onClose, container };
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +273,71 @@ describe('NewEventModal – edit mode', () => {
     await waitFor(() => {
       const [, id] = onUpdate.mock.calls[0];
       expect(id).toBe('evt-1');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — start/end coupling (issue #129)
+// ---------------------------------------------------------------------------
+
+describe('NewEventModal – moving the start moves the end', () => {
+  it('pushes the end out by the same gap when the start is moved forward', () => {
+    const { container } = renderCreateModal();
+    const { start, end } = dateFields(container);
+
+    fireEvent.change(start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.change(end, { target: { value: '2026-03-14T09:00' } });
+    fireEvent.change(start, { target: { value: '2026-03-15T09:00' } });
+
+    expect(end.value).toBe('2026-03-17T09:00');
+  });
+
+  it('pulls the end back by the same gap when the start is moved backward', () => {
+    const { container } = renderCreateModal();
+    const { start, end } = dateFields(container);
+
+    fireEvent.change(start, { target: { value: '2026-03-15T09:00' } });
+    fireEvent.change(end, { target: { value: '2026-03-17T09:00' } });
+    fireEvent.change(start, { target: { value: '2026-03-12T09:00' } });
+
+    expect(end.value).toBe('2026-03-14T09:00');
+  });
+
+  it('keeps a sub-day duration when only the time is changed', () => {
+    const { container } = renderCreateModal();
+    const { start, end } = dateFields(container);
+
+    fireEvent.change(start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.change(end, { target: { value: '2026-03-12T10:00' } });
+    fireEvent.change(start, { target: { value: '2026-03-12T14:00' } });
+
+    expect(end.value).toBe('2026-03-12T15:00');
+  });
+
+  it('leaves the start alone when only the end is edited', () => {
+    const { container } = renderCreateModal();
+    const { start, end } = dateFields(container);
+
+    fireEvent.change(start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.change(end, { target: { value: '2026-03-20T09:00' } });
+
+    expect(start.value).toBe('2026-03-12T09:00');
+    expect(end.value).toBe('2026-03-20T09:00');
+  });
+
+  it('submits the shifted end, so the saved event does not end before it starts', async () => {
+    const { container, onUpdate } = renderEditModal();
+    const { start, end } = dateFields(container);
+
+    fireEvent.change(start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.change(end, { target: { value: '2026-03-14T09:00' } });
+    fireEvent.change(start, { target: { value: '2026-03-15T09:00' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      const [req] = onUpdate.mock.calls[0];
+      expect(new Date(req.endTime).getTime()).toBeGreaterThan(new Date(req.startTime).getTime());
     });
   });
 });

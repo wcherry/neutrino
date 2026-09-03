@@ -7,6 +7,7 @@ import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui
 import { calendarApi, type CreateAttachmentRequest } from '@/lib/api';
 import type { NewEventModalProps, ReminderEntry } from './calendarTypes';
 import { REMINDER_PRESETS } from './calendarConstants';
+import { shiftEndWithStart } from './calendarHelpers';
 import { AddAttachmentModal, AttachmentItem } from './EventDetail';
 import styles from './page.module.css';
 
@@ -68,6 +69,15 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
     mutationFn: (attachmentId: string) => calendarApi.deleteAttachment(existingEvent!.id, attachmentId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['attachments', existingEvent?.id] }),
   });
+
+  /**
+   * Moving the start moves the end with it, so the event keeps its length rather
+   * than ending before it begins — issue #129.
+   */
+  function handleStartChange(next: string) {
+    setEnd((prevEnd) => shiftEndWithStart(start, next, prevEnd));
+    setStart(next);
+  }
 
   function addAttendee() {
     const email = attendeeInput.trim().toLowerCase();
@@ -140,7 +150,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
                 className={styles.formInput}
                 type={allDay ? 'date' : 'datetime-local'}
                 value={start}
-                onChange={(e) => setStart(e.target.value)}
+                onChange={(e) => handleStartChange(e.target.value)}
               />
             </div>
             <div className={styles.formGroup}>
