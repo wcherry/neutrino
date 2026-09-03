@@ -458,26 +458,6 @@
   color: #fcd34d;
 }
 
-.restoreBtn {
-  font-size: 12px;
-  padding: 3px 10px;
-  border: 1px solid var(--color-border, #e5e7eb);
-  border-radius: 4px;
-  background: transparent;
-  color: var(--color-primary, #2563eb);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.restoreBtn:hover:not(:disabled) {
-  background: var(--color-surface-hover, #f3f4f6);
-}
-
-.restoreBtn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* ── Pagination ──────────────────────────────────────────────────────────── */
 .pagination {
   display: flex;
@@ -651,8 +631,29 @@
 .rowActions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The one control the actions column carries; everything else is in its menu. */
+.moreBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.moreBtn:hover,
+.moreBtn[aria-expanded='true'] {
+  background: var(--color-surface-raised, #f3f4f6);
+  color: var(--color-text, #111827);
 }
 
 /*

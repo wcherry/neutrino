@@ -188,6 +188,14 @@ function userFixture(overrides: Partial<AdminUser> = {}): AdminUser {
   };
 }
 
+/**
+ * Opens a row's three-dot menu. Every action on a user lives behind it, so a
+ * test that acts on one opens the menu first.
+ */
+function openRowMenu(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^actions for ${name}$`, 'i') }));
+}
+
 function makeQC() {
   return new QueryClient({
     defaultOptions: {
@@ -312,7 +320,7 @@ describe('AdminPage', () => {
     });
   });
 
-  it('shows a user row with role select and Remove button', async () => {
+  it('shows a user row with role select and a Remove action in its menu', async () => {
     const { adminApi } = await import('@neutrino/api-admin');
     vi.mocked(adminApi.listUsers).mockResolvedValueOnce({
       users: [userFixture()],
@@ -325,7 +333,8 @@ describe('AdminPage', () => {
     await waitFor(() => {
       expect(screen.getByText('bob@example.com')).toBeInTheDocument();
     });
-    expect(screen.getByRole('button', { name: /remove/i })).toBeInTheDocument();
+    openRowMenu('Bob');
+    expect(screen.getByRole('menuitem', { name: /remove/i })).toBeInTheDocument();
   });
 });
 
@@ -403,10 +412,11 @@ describe('AdminPage — deleted accounts', () => {
 
     fireEvent.click(screen.getByLabelText(/show deleted accounts/i));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /restore/i })).toBeInTheDocument();
+      expect(screen.getByText('gone@example.com')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    openRowMenu('Gone');
+    fireEvent.click(screen.getByRole('menuitem', { name: /restore/i }));
 
     await waitFor(() => {
       expect(adminApi.restoreUser).toHaveBeenCalledWith('u9');
@@ -418,11 +428,14 @@ describe('AdminPage — deleted accounts', () => {
     fireEvent.click(screen.getByLabelText(/show deleted accounts/i));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /restore/i })).toBeInTheDocument();
+      expect(screen.getByText('gone@example.com')).toBeInTheDocument();
     });
+
+    openRowMenu('Gone');
+    expect(screen.getByRole('menuitem', { name: /restore/i })).toBeInTheDocument();
     // Deleting something already deleted has nothing to do, and the row is
     // about to be erased regardless.
-    expect(screen.queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /remove/i })).not.toBeInTheDocument();
   });
 });
 
@@ -488,7 +501,8 @@ describe('AdminPage — account administration', () => {
     const adminApi = await openUsers([userFixture()]);
     vi.mocked(adminApi.updateUser).mockResolvedValue(userFixture({ disabledAt: 'now' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /^disable$/i }));
+    openRowMenu('Bob');
+    fireEvent.click(screen.getByRole('menuitem', { name: /^disable$/i }));
 
     await waitFor(() => {
       expect(adminApi.updateUser).toHaveBeenCalledWith('u2', { disabled: true });
@@ -497,8 +511,9 @@ describe('AdminPage — account administration', () => {
 
   it('offers Enable, not Disable, on an account already locked out', async () => {
     await openUsers([userFixture({ disabledAt: '2026-08-01T00:00:00Z' })]);
-    expect(screen.getByRole('button', { name: /^enable$/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^disable$/i })).not.toBeInTheDocument();
+    openRowMenu('Bob');
+    expect(screen.getByRole('menuitem', { name: /^enable$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /^disable$/i })).not.toBeInTheDocument();
     expect(screen.getByText(/^disabled$/i)).toBeInTheDocument();
   });
 
@@ -513,7 +528,8 @@ describe('AdminPage — account administration', () => {
     expect(screen.getByText(/^locked$/i)).toBeInTheDocument();
     vi.mocked(adminApi.updateUser).mockResolvedValue(userFixture());
 
-    fireEvent.click(screen.getByRole('button', { name: /^unlock$/i }));
+    openRowMenu('Bob');
+    fireEvent.click(screen.getByRole('menuitem', { name: /^unlock$/i }));
 
     await waitFor(() => {
       expect(adminApi.updateUser).toHaveBeenCalledWith('u2', { unlock: true });
@@ -522,14 +538,16 @@ describe('AdminPage — account administration', () => {
 
   it('offers no Unlock on an account that is not locked', async () => {
     await openUsers([userFixture()]);
-    expect(screen.queryByRole('button', { name: /^unlock$/i })).not.toBeInTheDocument();
+    openRowMenu('Bob');
+    expect(screen.queryByRole('menuitem', { name: /^unlock$/i })).not.toBeInTheDocument();
   });
 
   it('expires a password without touching anything else', async () => {
     const adminApi = await openUsers([userFixture()]);
     vi.mocked(adminApi.updateUser).mockResolvedValue(userFixture({ passwordExpired: true }));
 
-    fireEvent.click(screen.getByRole('button', { name: /expire password/i }));
+    openRowMenu('Bob');
+    fireEvent.click(screen.getByRole('menuitem', { name: /expire password/i }));
 
     await waitFor(() => {
       expect(adminApi.updateUser).toHaveBeenCalledWith('u2', { expirePassword: true });
@@ -539,7 +557,8 @@ describe('AdminPage — account administration', () => {
   /** Expiring an already-expired password would say nothing and do nothing. */
   it('will not expire a password that is already expired', async () => {
     await openUsers([userFixture({ passwordExpired: true })]);
-    expect(screen.getByRole('button', { name: /expire password/i })).toBeDisabled();
+    openRowMenu('Bob');
+    expect(screen.getByRole('menuitem', { name: /expire password/i })).toBeDisabled();
     expect(screen.getByText(/password expired/i)).toBeInTheDocument();
   });
 
@@ -547,11 +566,14 @@ describe('AdminPage — account administration', () => {
    * Both controls end the session pressing them, so an admin's own row offers
    * neither — the role select is already fixed for the same reason.
    */
-  it('does not offer to lock out or expire the signed-in admin', async () => {
+  it('does not offer to lock out, expire or remove the signed-in admin', async () => {
     await openUsers([userFixture({ id: '1', email: 'admin@example.com', name: 'Admin' })]);
-    expect(screen.queryByRole('button', { name: /^disable$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /expire password/i })).not.toBeInTheDocument();
     expect(screen.getByText(/^you$/i)).toBeInTheDocument();
+
+    openRowMenu('Admin');
+    expect(screen.queryByRole('menuitem', { name: /^disable$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /expire password/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /remove/i })).not.toBeInTheDocument();
   });
 
   it('creates a fully registered account', async () => {
@@ -625,7 +647,8 @@ describe('AdminPage — account administration', () => {
       dailyUploadBytes: 0,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /^storage$/i }));
+    openRowMenu('Bob');
+    fireEvent.click(screen.getByRole('menuitem', { name: /^storage limit$/i }));
 
     // The form opens on the limit actually in force, not on a placeholder: a
     // PUT replaces both fields, so a guess saved by accident is a real change.
