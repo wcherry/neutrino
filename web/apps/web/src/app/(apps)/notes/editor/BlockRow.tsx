@@ -2,18 +2,22 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { NoteLinkTarget } from './blockEditorHelpers';
-import type { Block, BlockType, BlockRowProps, FocusRequest } from './blockEditorTypes';
+import type { Block, BlockRowProps, MarkdownShortcut, SlashCommand } from './blockEditorTypes';
 import { SLASH_COMMANDS } from './blockEditorConstants';
 import {
   caretColumn,
   createDefaultTable,
   getWikiLinkQuery,
   insertWikiLink,
+  isDividerContent,
   isOnFirstLine,
   isOnLastLine,
   isSoftWrapped,
+  matchMarkdownShortcut,
   renderInline,
   numberedIndexInGroup,
+  toggleHeadingPrefix,
+  toggleInlineMarker,
 } from './blockEditorHelpers';
 import TableBlock from './TableBlock';
 import styles from './BlockEditor.module.css';
@@ -48,8 +52,9 @@ export default function BlockRow({
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
 
-  // Stores a pending cursor position to apply once the textarea mounts
-  const pendingFocusPositionRef = useRef<'start' | 'end' | number | null>(null);
+  // Stores a pending cursor position to apply once the textarea mounts — or a
+  // `[start, end]` pair, for the shortcuts below that leave text selected.
+  const pendingFocusPositionRef = useRef<'start' | 'end' | number | [number, number] | null>(null);
   // Bumped on every focus request so the effect below re-runs even when this
   // row is already in edit mode (rapid arrow-key navigation back and forth)
   const [focusNonce, setFocusNonce] = useState(0);
@@ -103,6 +108,10 @@ export default function BlockRow({
     const ta = taRef.current;
     if (!ta) return;
     ta.focus();
+    if (Array.isArray(pos)) {
+      ta.setSelectionRange(pos[0], pos[1]);
+      return;
+    }
     const cursor =
       pos === 'end' ? ta.value.length : pos === 'start' ? 0 : (pos as number);
     ta.setSelectionRange(cursor, cursor);
@@ -123,11 +132,13 @@ export default function BlockRow({
       (acQuery === '' || n.title.toLowerCase().includes((acQuery ?? '').toLowerCase()))
   );
 
+  const slashNeedle = (slashQuery ?? '').toLowerCase();
   const filteredCommands = SLASH_COMMANDS.filter(
     (cmd) =>
-      slashQuery === '' ||
-      cmd.label.toLowerCase().includes((slashQuery ?? '').toLowerCase()) ||
-      cmd.type.toLowerCase().includes((slashQuery ?? '').toLowerCase())
+      slashNeedle === '' ||
+      cmd.label.toLowerCase().includes(slashNeedle) ||
+      cmd.id.includes(slashNeedle) ||
+      (cmd.keywords ?? []).some((kw) => kw.includes(slashNeedle))
   );
 
   function enterEditMode(position: 'start' | 'end' = 'end') {
@@ -186,10 +197,18 @@ export default function BlockRow({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Before the menus below: a formatting shortcut means the same thing
+    // whether or not one of them happens to be open.
+    const shortcut = matchMarkdownShortcut(e);
+    if (shortcut && applyMarkdownShortcut(shortcut, e.currentTarget)) {
+      e.preventDefault();
+      return;
+    }
+
     if (slashQuery !== null && filteredCommands.length > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex((i) => Math.min(i + 1, filteredCommands.length - 1)); return; }
       if (e.key === 'ArrowUp')   { e.preventDefault(); setSlashIndex((i) => Math.max(i - 1, 0)); return; }
-      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applySlashCommand(filteredCommands[slashIndex].type); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applySlashCommand(filteredCommands[slashIndex]); return; }
       if (e.key === 'Escape') { setSlashQuery(null); return; }
     }
 
@@ -247,17 +266,85 @@ export default function BlockRow({
     }
   }
 
-  function applySlashCommand(type: BlockType) {
-    const patch: Partial<Block> = { type, content: '' };
-    if (type === 'table') patch.tableData = createDefaultTable();
+  function applySlashCommand(cmd: SlashCommand) {
+    const content = cmd.content ?? '';
+    const patch: Partial<Block> = { type: cmd.type, content };
+    if (cmd.type === 'table') patch.tableData = createDefaultTable();
     onBlockPatch(block.id, patch);
     setSlashQuery(null);
-    if (type !== 'table') {
-      requestAnimationFrame(() => {
-        const ta = taRef.current;
-        if (ta) { ta.focus(); ta.setSelectionRange(0, 0); }
-      });
+    // After any markdown the command seeded, so typing carries on where the
+    // heading's text or the rule's line would start. (A table has no textarea
+    // to put a caret in; `restoreSelection` finds none and does nothing.)
+    restoreSelection(content.length, content.length);
+  }
+
+  /**
+   * Put the caret (or selection) back after a command or shortcut rewrote the
+   * content — through the same pending-position handoff a focus request uses,
+   * for the same reason its comment gives. The rewrite and this bump are one
+   * batched update, so the layout effect sets the caret in that commit, before
+   * the browser can deliver the next keystroke. A frame later is too late: a
+   * slash command followed straight away by typing (which is what inserting a
+   * heading *is*) had the first few characters land at the old caret and the
+   * rest at the new one, scrambling the word across two blocks.
+   */
+  function restoreSelection(start: number, end: number) {
+    pendingFocusPositionRef.current = [start, end];
+    setFocusNonce((n) => n + 1);
+  }
+
+  /**
+   * Run a markdown keyboard shortcut against this block. Returns false when it
+   * declines — the key press is then left to the browser, rather than being
+   * swallowed by a shortcut that did nothing.
+   */
+  function applyMarkdownShortcut(shortcut: MarkdownShortcut, ta: HTMLTextAreaElement): boolean {
+    const start = ta.selectionStart ?? block.content.length;
+    const end = ta.selectionEnd ?? start;
+    const action = shortcut.action;
+
+    if (action.kind === 'block') {
+      // The same shortcut again goes back to a plain paragraph.
+      onBlockPatch(block.id, { type: block.type === action.type ? 'paragraph' : action.type });
+      restoreSelection(start, end);
+      return true;
     }
+
+    if (action.kind === 'heading') {
+      // A heading is a paragraph carrying a `#` prefix, so this both switches
+      // the type and rewrites the prefix; only the prefix moves the caret.
+      const content = toggleHeadingPrefix(block.content, action.level);
+      const shift = content.length - block.content.length;
+      onBlockPatch(block.id, { type: 'paragraph', content });
+      restoreSelection(Math.max(0, start + shift), Math.max(0, end + shift));
+      return true;
+    }
+
+    // Inline markers inside a code block would be literal asterisks, not
+    // formatting — the block renders its content verbatim.
+    if (block.type === 'code') return false;
+
+    if (action.kind === 'wikiLink') {
+      const selected = block.content.slice(start, end);
+      const caret = start + 2 + selected.length;
+      onContentChange(
+        block.id,
+        `${block.content.slice(0, start)}[[${selected}]]${block.content.slice(end)}`
+      );
+      // Caret between the selected title and the closing brackets, which is
+      // where `getWikiLinkQuery` would read the same query from as the user
+      // carries on typing.
+      setSlashQuery(null);
+      setAcQuery(selected);
+      setAcIndex(0);
+      restoreSelection(caret, caret);
+      return true;
+    }
+
+    const toggled = toggleInlineMarker(block.content, start, end, action.marker);
+    onContentChange(block.id, toggled.content);
+    restoreSelection(toggled.selectionStart, toggled.selectionEnd);
+    return true;
   }
 
   function applyAutocomplete(note: NoteLinkTarget) {
@@ -267,10 +354,7 @@ export default function BlockRow({
     const { newContent, newCursor } = insertWikiLink(block.content, cursor, note.title);
     onContentChange(block.id, newContent);
     setAcQuery(null);
-    requestAnimationFrame(() => {
-      ta.setSelectionRange(newCursor, newCursor);
-      ta.focus();
-    });
+    restoreSelection(newCursor, newCursor);
   }
 
   function handleBlur() {
@@ -340,6 +424,16 @@ export default function BlockRow({
               Start writing… use / for block types, [[ to link notes
             </span>
           )}
+        </div>
+      );
+    }
+
+    // A divider is a paragraph holding nothing but `---`, on the same terms as
+    // a heading below: markdown the content itself carries, not a block type.
+    if (block.type === 'paragraph' && isDividerContent(block.content)) {
+      return (
+        <div className={styles.blockViewDivider} onClick={handleViewClick}>
+          <hr className={styles.divider} />
         </div>
       );
     }
@@ -424,11 +518,11 @@ export default function BlockRow({
               <ul className={styles.slashMenu} role="listbox">
                 {filteredCommands.map((cmd, i) => (
                   <li
-                    key={cmd.type}
+                    key={cmd.id}
                     role="option"
                     aria-selected={i === slashIndex}
                     className={i === slashIndex ? styles.slashItemActive : styles.slashItem}
-                    onMouseDown={(e) => { e.preventDefault(); applySlashCommand(cmd.type); }}
+                    onMouseDown={(e) => { e.preventDefault(); applySlashCommand(cmd); }}
                   >
                     <span className={styles.slashLabel}>{cmd.label}</span>
                     <span className={styles.slashDesc}>{cmd.description}</span>

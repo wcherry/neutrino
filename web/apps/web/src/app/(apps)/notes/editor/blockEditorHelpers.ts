@@ -1,6 +1,6 @@
 import React from 'react';
-import type { Block } from './blockEditorTypes';
-import { INLINE_PATTERN } from './blockEditorConstants';
+import type { Block, MarkdownShortcut } from './blockEditorTypes';
+import { DIVIDER_PATTERN, INLINE_PATTERN, MARKDOWN_SHORTCUTS } from './blockEditorConstants';
 import styles from './BlockEditor.module.css';
 
 /** The subset of a note's identity the editor needs for wiki-link autocomplete/rendering. */
@@ -85,6 +85,106 @@ export function insertWikiLink(
   const prefix = before.slice(0, before.length - match[0].length);
   const link = `[[${noteTitle}]]`;
   return { newContent: prefix + link + after, newCursor: prefix.length + link.length };
+}
+
+// ── Markdown shortcuts ───────────────────────────────────────────────────────
+
+/** The shortcut this key press asks for, or null if it asks for nothing. */
+export function matchMarkdownShortcut(
+  e: Pick<KeyboardEvent, 'key' | 'code' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey'>
+): MarkdownShortcut | null {
+  if (!(e.ctrlKey || e.metaKey)) return null;
+  const key = e.key.toLowerCase();
+  return (
+    MARKDOWN_SHORTCUTS.find(
+      (s) =>
+        !!s.shift === e.shiftKey &&
+        !!s.alt === e.altKey &&
+        // Either identification is enough — see `MarkdownShortcut` for why
+        // neither one alone survives every keyboard layout.
+        (s.code === e.code || s.key === key)
+    ) ?? null
+  );
+}
+
+export interface InlineToggle {
+  content: string;
+  selectionStart: number;
+  selectionEnd: number;
+}
+
+/**
+ * Wrap the selection in `marker`, or unwrap it when it is already wrapped —
+ * whether the markers are inside the selection (`|**bold**|`) or immediately
+ * outside it (`**|bold|**`), since which one you get depends on how the
+ * selection was made. With no selection this inserts an empty pair and puts
+ * the caret between the two halves, and pressing the shortcut again there
+ * takes the pair back out.
+ */
+export function toggleInlineMarker(
+  content: string,
+  start: number,
+  end: number,
+  marker: string
+): InlineToggle {
+  const m = marker.length;
+  const wrappedOutside =
+    start >= m && content.slice(start - m, start) === marker && content.slice(end, end + m) === marker;
+
+  if (start === end) {
+    if (wrappedOutside) {
+      return {
+        content: content.slice(0, start - m) + content.slice(start + m),
+        selectionStart: start - m,
+        selectionEnd: start - m,
+      };
+    }
+    return {
+      content: content.slice(0, start) + marker + marker + content.slice(start),
+      selectionStart: start + m,
+      selectionEnd: start + m,
+    };
+  }
+
+  const selected = content.slice(start, end);
+  if (selected.length > 2 * m && selected.startsWith(marker) && selected.endsWith(marker)) {
+    const inner = selected.slice(m, selected.length - m);
+    return {
+      content: content.slice(0, start) + inner + content.slice(end),
+      selectionStart: start,
+      selectionEnd: start + inner.length,
+    };
+  }
+  if (wrappedOutside) {
+    return {
+      content: content.slice(0, start - m) + selected + content.slice(end + m),
+      selectionStart: start - m,
+      selectionEnd: end - m,
+    };
+  }
+  return {
+    content: content.slice(0, start) + marker + selected + marker + content.slice(end),
+    selectionStart: start + m,
+    selectionEnd: end + m,
+  };
+}
+
+/**
+ * Set (or, with `level` 0, clear) a paragraph's `#` heading prefix. Asking for
+ * the level it already has clears it too, so the same shortcut toggles.
+ * Only the prefix changes, so the caret moves by the length difference.
+ */
+export function toggleHeadingPrefix(content: string, level: number): string {
+  const match = content.match(/^(#{1,3}) /);
+  const current = match ? match[1].length : 0;
+  const body = match ? content.slice(match[0].length) : content;
+  if (level === 0 || level === current) return body;
+  return `${'#'.repeat(level)} ${body}`;
+}
+
+/** True when a paragraph holds nothing but a markdown horizontal rule. */
+export function isDividerContent(content: string): boolean {
+  return DIVIDER_PATTERN.test(content);
 }
 
 // ── Caret helpers (arrow-key navigation between blocks) ──────────────────────
@@ -312,8 +412,19 @@ export function blocksToHtml(blocks: Block[]): string {
         parts.push(`<table>${rowsHtml}</table>`);
         break;
       }
-      default:
+      default: {
+        if (isDividerContent(block.content)) { parts.push('<hr>'); break; }
+        // A heading is a paragraph carrying its own `#` prefix, exactly as the
+        // editor renders one — so print and the HTML export have to read it
+        // back out rather than printing the hashes.
+        const heading = block.content.match(/^(#{1,3}) (.*)/);
+        if (heading) {
+          const level = heading[1].length;
+          parts.push(`<h${level}>${inlineToHtml(heading[2])}</h${level}>`);
+          break;
+        }
         parts.push(block.content.trim() ? `<p>${inlineToHtml(block.content)}</p>` : '<p><br></p>');
+      }
     }
   }
   closeList();

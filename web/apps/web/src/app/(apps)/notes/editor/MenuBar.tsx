@@ -4,25 +4,65 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
+import { MARKDOWN_SHORTCUTS } from './blockEditorConstants';
 import styles from './MenuBar.module.css';
 
 // ── Help modal ────────────────────────────────────────────────────────────
 
-const SHORTCUTS = [
-  { action: 'Bold',             keys: ['**text**'] },
-  { action: 'Italic',           keys: ['*text*'] },
-  { action: 'Strikethrough',    keys: ['~~text~~'] },
-  { action: 'Inline code',      keys: ['`text`'] },
-  { action: 'Bullet list',      keys: ['-', 'Space'] },
-  { action: 'Numbered list',    keys: ['1.', 'Space'] },
-  { action: 'Task checkbox',    keys: ['[]', 'Space'] },
-  { action: 'Blockquote',       keys: ['>', 'Space'] },
-  { action: 'Block menu',       keys: ['/'] },
-  { action: 'Link to a note',   keys: ['[[', 'title'] },
-  { action: 'New block',        keys: ['Enter'] },
-  { action: 'Merge with previous', keys: ['Backspace'] },
-  { action: 'Save',             keys: ['Ctrl', 'S'] },
+interface ShortcutRow {
+  action: string;
+  keys: string[];
+}
+
+/**
+ * Every markdown shortcut the editor listens for, from the table it listens
+ * with, so the two can't drift — followed by the note-level ones the page
+ * itself handles.
+ */
+const KEY_SHORTCUTS: ShortcutRow[] = [
+  ...MARKDOWN_SHORTCUTS.map(({ label, keys }) => ({ action: label, keys })),
+  { action: 'Select all', keys: ['Ctrl', 'A'] },
+  { action: 'Save', keys: ['Ctrl', 'S'] },
+  { action: 'Print', keys: ['Ctrl', 'P'] },
 ];
+
+/** Markdown that converts as it is typed, needing no shortcut at all. */
+const TYPED_MARKDOWN: ShortcutRow[] = [
+  { action: 'Bold', keys: ['**text**'] },
+  { action: 'Italic', keys: ['*text*'] },
+  { action: 'Strikethrough', keys: ['~~text~~'] },
+  { action: 'Inline code', keys: ['`text`'] },
+  { action: 'Heading', keys: ['#', 'Space'] },
+  { action: 'Bullet list', keys: ['-', 'Space'] },
+  { action: 'Numbered list', keys: ['1.', 'Space'] },
+  { action: 'Task checkbox', keys: ['[]', 'Space'] },
+  { action: 'Blockquote', keys: ['>', 'Space'] },
+  { action: 'Divider', keys: ['---'] },
+  { action: 'Block menu', keys: ['/'] },
+  { action: 'Link to a note', keys: ['[[', 'title'] },
+  { action: 'New block', keys: ['Enter'] },
+  { action: 'Merge with previous', keys: ['Backspace'] },
+];
+
+function ShortcutGrid({ rows }: { rows: ShortcutRow[] }) {
+  return (
+    <div className={styles.shortcutsGrid}>
+      {rows.map(({ action, keys }) => (
+        <div key={action} className={styles.shortcutRow}>
+          <span className={styles.shortcutAction}>{action}</span>
+          <span className={styles.shortcutKeys}>
+            {keys.map((k, i) => (
+              <React.Fragment key={k}>
+                {i > 0 && <span className={styles.shortcutPlus}>+</span>}
+                <kbd className={styles.kbd}>{k}</kbd>
+              </React.Fragment>
+            ))}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function HelpModal({ onClose }: { onClose: () => void }) {
   return (
@@ -34,37 +74,29 @@ function HelpModal({ onClose }: { onClose: () => void }) {
           <ul className={styles.helpList}>
             <li>Click anywhere in the note to start typing.</li>
             <li>Notes save automatically — look for &quot;Saved&quot; in the top bar.</li>
-            <li>Type <strong>/</strong> at the start of a block to switch its type.</li>
+            <li>Type <strong>/</strong> at the start of a block for headings, lists, a quote, code, a divider or a table.</li>
             <li>Type <strong>[[</strong> to link to another note by title.</li>
             <li>Drag the handle on the left of a block to reorder it.</li>
           </ul>
         </section>
 
         <section className={styles.helpSection}>
-          <h3 className={styles.helpSectionTitle}>Formatting &amp; shortcuts</h3>
-          <div className={styles.shortcutsGrid}>
-            {SHORTCUTS.map(({ action, keys }) => (
-              <div key={action} className={styles.shortcutRow}>
-                <span className={styles.shortcutAction}>{action}</span>
-                <span className={styles.shortcutKeys}>
-                  {keys.map((k, i) => (
-                    <React.Fragment key={k}>
-                      {i > 0 && <span className={styles.shortcutPlus}>+</span>}
-                      <kbd className={styles.kbd}>{k}</kbd>
-                    </React.Fragment>
-                  ))}
-                </span>
-              </div>
-            ))}
-          </div>
+          <h3 className={styles.helpSectionTitle}>Keyboard shortcuts</h3>
+          <ShortcutGrid rows={KEY_SHORTCUTS} />
+        </section>
+
+        <section className={styles.helpSection}>
+          <h3 className={styles.helpSectionTitle}>Markdown as you type</h3>
+          <ShortcutGrid rows={TYPED_MARKDOWN} />
         </section>
 
         <section className={styles.helpSection}>
           <h3 className={styles.helpSectionTitle}>Tips</h3>
           <ul className={styles.helpList}>
+            <li>On a Mac, use <strong>⌘</strong> wherever the shortcuts above say Ctrl.</li>
+            <li>A formatting shortcut with nothing selected leaves the caret between the markers, ready to type into.</li>
             <li>Notes linked to this one with <strong>[[wiki links]]</strong> show up under Linked from.</li>
             <li>Notes are end-to-end encrypted — only you can read the content.</li>
-            <li>Use the block menu (type <strong>/</strong>) to insert a table.</li>
           </ul>
         </section>
       </ModalBody>
