@@ -277,7 +277,7 @@ test.describe('Absolute cell references', () => {
     await page.getByTitle('Add sheet').click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
-    const renameInput = page.locator('main input').last();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput).toBeVisible({ timeout: 5_000 });
     await renameInput.fill('Beta');
     await renameInput.press('Enter');

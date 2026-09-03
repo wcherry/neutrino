@@ -63,7 +63,7 @@ async function addAndRenameSheet(page: Page, newName: string): Promise<void> {
     const allTabTexts = page.locator('button').filter({ hasText: /^Sheet \d+$/ });
     await allTabTexts.last().dblclick();
   }
-  const renameInput = page.locator('main input').last();
+  const renameInput = page.getByTestId('sheet-tab-rename-input');
   await expect(renameInput).toBeVisible({ timeout: 5_000 });
   await renameInput.fill(newName);
   await renameInput.press('Enter');
@@ -99,7 +99,7 @@ test.describe('Cross-sheet cell references', () => {
     // Rename the new tab to "Beta" via double-click
     const newTab = page.getByText('Sheet 2', { exact: true });
     await newTab.dblclick();
-    const renameInput = page.locator('main input').last();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput).toBeVisible({ timeout: 5_000 });
     await renameInput.fill('Beta');
     await renameInput.press('Enter');
@@ -129,7 +129,7 @@ test.describe('Cross-sheet cell references', () => {
     await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
-    const renameInput = page.locator('main input').last();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput).toBeVisible({ timeout: 5_000 });
     await renameInput.fill('Beta');
     await renameInput.press('Enter');
@@ -162,7 +162,7 @@ test.describe('Cross-sheet cell references', () => {
     await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
-    const renameInput = page.locator('main input').last();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput).toBeVisible({ timeout: 5_000 });
     await renameInput.fill('Net Worth');
     await renameInput.press('Enter');
@@ -191,7 +191,7 @@ test.describe('Cross-sheet cell references', () => {
     await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
-    const renameInput = page.locator('main input').last();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput).toBeVisible({ timeout: 5_000 });
     await renameInput.fill('Beta');
     await renameInput.press('Enter');
@@ -208,7 +208,7 @@ test.describe('Cross-sheet cell references', () => {
 
     // Rename "Beta" to "Gamma"
     await page.getByText('Beta', { exact: true }).dblclick();
-    const renameInput2 = page.locator('main input').last();
+    const renameInput2 = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput2).toBeVisible({ timeout: 5_000 });
     await renameInput2.fill('Gamma');
     await renameInput2.press('Enter');
@@ -232,7 +232,7 @@ test.describe('Cross-sheet cell references', () => {
     await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
-    const renameInput = page.locator('main input').last();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput).toBeVisible({ timeout: 5_000 });
     await renameInput.fill('Beta');
     await renameInput.press('Enter');
@@ -274,7 +274,7 @@ test.describe('Cross-sheet cell references', () => {
     await page.getByRole('button', { name: '+', exact: true }).click();
     await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 10_000 });
     await page.getByText('Sheet 2', { exact: true }).dblclick();
-    const renameInput = page.locator('main input').last();
+    const renameInput = page.getByTestId('sheet-tab-rename-input');
     await expect(renameInput).toBeVisible({ timeout: 5_000 });
     await renameInput.fill('Beta');
     await renameInput.press('Enter');

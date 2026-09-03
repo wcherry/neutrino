@@ -399,22 +399,39 @@
 }
 
 
-/* ── Sheet tab bar ── */
-.sheetTabBar {
+/* ── Bottom bar: the sheet tabs, with the zoom control pinned to its right ── */
+.bottomBar {
   display: flex;
   align-items: stretch;
   height: 32px;
   background: rgb(240, 240, 245);
   border-top: 1px solid var(--color-border);
   flex-shrink: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
 }
 
 /* Dark mode: match the dark surface palette instead of the hardcoded light grey */
-:global([data-theme="dark"]) .sheetTabBar {
+:global([data-theme="dark"]) .bottomBar {
   background: #263040;
+}
+
+.zoomArea {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+}
+
+/* ── Sheet tab bar ── */
+.sheetTabBar {
+  display: flex;
+  align-items: stretch;
+  /* Takes the width the zoom control leaves, and scrolls its tabs inside it. */
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
 
 .sheetTabBar::-webkit-scrollbar {

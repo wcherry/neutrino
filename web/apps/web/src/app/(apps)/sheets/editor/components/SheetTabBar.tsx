@@ -77,6 +77,7 @@ export function SheetTabBar({
                             {renamingIndex === i ? (
                                 <input
                                     autoFocus
+                                    data-testid="sheet-tab-rename-input"
                                     className={styles.sheetTabInput}
                                     value={renameValue}
                                     onChange={e => setRenameValue(e.target.value)}

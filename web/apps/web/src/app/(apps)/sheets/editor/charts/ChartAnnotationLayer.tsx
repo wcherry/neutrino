@@ -2,6 +2,7 @@
 
 import React, { useRef, useState, useCallback } from 'react';
 import type { ChartAnnotation } from './chartTypes';
+import { useSheetZoom } from '../zoom';
 import styles from './charts.module.css';
 
 interface ChartAnnotationLayerProps {
@@ -57,6 +58,8 @@ function AnnotationItem({ ann, frameW, frameH, isChartSelected, onUpdate, onDele
     const [editing, setEditing] = useState(false);
     const [selectedAnn, setSelectedAnn] = useState(false);
     const dragState = useRef<{ startMX: number; startMY: number; startX: number; startY: number } | null>(null);
+    // The drag delta arrives in screen pixels; frameW/frameH are grid pixels.
+    const zoomScale = useSheetZoom();
 
     const px = toPixel(ann.x, frameW);
     const py = toPixel(ann.y, frameH);
@@ -85,8 +88,8 @@ function AnnotationItem({ ann, frameW, frameH, isChartSelected, onUpdate, onDele
 
         function onMove(me: MouseEvent) {
             if (!dragState.current) return;
-            const dx = me.clientX - dragState.current.startMX;
-            const dy = me.clientY - dragState.current.startMY;
+            const dx = (me.clientX - dragState.current.startMX) / zoomScale;
+            const dy = (me.clientY - dragState.current.startMY) / zoomScale;
             onUpdate({
                 x: Math.max(0.01, Math.min(0.98, dragState.current.startX + dx / frameW)),
                 y: Math.max(0.01, Math.min(0.98, dragState.current.startY + dy / frameH)),

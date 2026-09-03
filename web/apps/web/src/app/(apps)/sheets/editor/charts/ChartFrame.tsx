@@ -5,6 +5,7 @@ import type { CellProps } from '../types';
 import type { ChartDef, ChartAnnotation } from './chartTypes';
 import { ChartRenderer } from './ChartRenderer';
 import { ChartAnnotationLayer } from './ChartAnnotationLayer';
+import { useSheetZoom } from '../zoom';
 import styles from './charts.module.css';
 import animStyles from './chartAnimation.module.css';
 
@@ -35,6 +36,9 @@ export function ChartFrame({
 }: ChartFrameProps) {
     const internalRef = useRef<HTMLDivElement | null>(null);
     const resolvedFrameRef = frameRef ?? internalRef;
+    // Move and resize drags read the pointer in screen pixels; a chart's
+    // x/y/w/h are in grid pixels. See `zoom.tsx`.
+    const zoomScale = useSheetZoom();
 
     const dragState = useRef<{
         startMouseX: number;
@@ -89,8 +93,8 @@ export function ChartFrame({
 
         function onMove(me: MouseEvent) {
             if (!dragState.current) return;
-            const dx = me.clientX - dragState.current.startMouseX;
-            const dy = me.clientY - dragState.current.startMouseY;
+            const dx = (me.clientX - dragState.current.startMouseX) / zoomScale;
+            const dy = (me.clientY - dragState.current.startMouseY) / zoomScale;
             const newX = Math.max(0, dragState.current.startX + dx);
             const newY = Math.max(0, dragState.current.startY + dy);
             onUpdate({ x: newX, y: newY });
@@ -123,8 +127,8 @@ export function ChartFrame({
         function onMove(me: MouseEvent) {
             if (!resizeState.current) return;
             const { handle: h, startMouseX, startMouseY, startX, startY, startW, startH } = resizeState.current;
-            const dx = me.clientX - startMouseX;
-            const dy = me.clientY - startMouseY;
+            const dx = (me.clientX - startMouseX) / zoomScale;
+            const dy = (me.clientY - startMouseY) / zoomScale;
 
             let newX = startX, newY = startY, newW = startW, newH = startH;
 
