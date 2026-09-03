@@ -16,8 +16,8 @@ env:
   # minor rather than carrying the whole repo's build history forward.
   # Bump both by hand when a release calls for it: BASE_NUMBER is the run number
   # of the last build on the *previous* minor.
-  BASE_VERSION: "0.2"
-  BASE_NUMBER: 125
+  BASE_VERSION: "0.3"
+  BASE_NUMBER: 153
 
 jobs:
   build-and-push:
