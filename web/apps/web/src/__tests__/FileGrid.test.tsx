@@ -13,6 +13,13 @@
  *   - Space key on a focused list-view row calls onItemClick
  *   - Pressing Space on a card prevents default (no page scroll)
  *   - Other keys (e.g. Tab, ArrowDown) do not call onItemClick
+ *
+ * Plus the type-filter chips, which group by what a file is rather than by
+ * which app owns it (the sidebar already cuts it that way):
+ *   - The chip set, and that each file falls under exactly one of them
+ *   - A chip keeps only its own group
+ *   - Folders survive every chip
+ *   - The MIME grouping itself, including the cases where the hints overlap
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -69,7 +76,13 @@ vi.mock('@neutrino/ui', async (importOriginal) => {
 
 // ── Subject ───────────────────────────────────────────────────────────────────
 
-import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
+import {
+  FileGrid,
+  categorizeMime,
+  type GridItem,
+  type SortField,
+  type SortDir,
+} from '@neutrino/ui';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -236,5 +249,149 @@ describe('FileGrid — list view', () => {
     fireEvent.keyDown(row, { key: 'ArrowDown' });
     fireEvent.keyDown(row, { key: 'Escape' });
     expect(onItemClick).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('FileGrid — type filter', () => {
+  const ITEMS: GridItem[] = [
+    makeItem({ id: 'folder-1', name: 'Reports', kind: 'folder', mimeType: undefined }),
+    makeItem({ id: 'photo-1', name: 'Beach.jpg', kind: 'file', mimeType: 'image/jpeg' }),
+    makeItem({ id: 'clip-1', name: 'Surf.mp4', kind: 'file', mimeType: 'video/mp4' }),
+    makeItem({ id: 'note-1', name: 'Groceries', kind: 'file', mimeType: 'application/x-neutrino-note' }),
+    makeItem({ id: 'sheet-2', name: 'Budget', kind: 'file', mimeType: 'application/x-neutrino-sheet' }),
+    makeItem({ id: 'diagram-1', name: 'Architecture', kind: 'file', mimeType: 'application/x-neutrino-diagram' }),
+    makeItem({ id: 'pdf-1', name: 'Invoice.pdf', kind: 'file', mimeType: 'application/pdf' }),
+    makeItem({ id: 'zip-1', name: 'backup.zip', kind: 'file', mimeType: 'application/zip' }),
+  ];
+
+  function renderFilterable(props: Partial<React.ComponentProps<typeof FileGrid>> = {}) {
+    return render(
+      <FileGrid
+        items={ITEMS}
+        isLoading={false}
+        isError={false}
+        onItemClick={vi.fn()}
+        showFilter
+        showSizeColumn={false}
+        sortBy={'updatedAt' as SortField}
+        sortDir={'desc' as SortDir}
+        onSortChange={vi.fn()}
+        defaultViewMode="large"
+        {...props}
+      />,
+    );
+  }
+
+  function visibleNames(): string[] {
+    return screen.getAllByRole('listitem').map((el) => el.getAttribute('aria-label') ?? '');
+  }
+
+  it('offers one chip per group rather than one per app', () => {
+    renderFilterable();
+    const chips = screen
+      .getByRole('group', { name: 'Filter files' })
+      .querySelectorAll('button');
+    expect([...chips].map((c) => c.textContent)).toEqual([
+      'All', 'Media', 'Office', 'Drawings', 'PDFs', 'Archives', 'Code', 'Starred',
+    ]);
+  });
+
+  it('gathers pictures and clips under one chip', () => {
+    renderFilterable();
+    fireEvent.click(screen.getByRole('button', { name: 'Media' }));
+    expect(visibleNames()).toEqual(['Reports', 'Beach.jpg', 'Surf.mp4']);
+  });
+
+  it('gathers the office suite under one chip and the canvas apps under another', () => {
+    renderFilterable();
+    fireEvent.click(screen.getByRole('button', { name: 'Office' }));
+    expect(visibleNames()).toEqual(['Reports', 'Groceries', 'Budget']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Drawings' }));
+    expect(visibleNames()).toEqual(['Reports', 'Architecture']);
+  });
+
+  it('gives the loose types the sidebar has no entry for their own chips', () => {
+    renderFilterable();
+    fireEvent.click(screen.getByRole('button', { name: 'PDFs' }));
+    expect(visibleNames()).toEqual(['Reports', 'Invoice.pdf']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archives' }));
+    expect(visibleNames()).toEqual(['Reports', 'backup.zip']);
+  });
+
+  it('reports the chip to a controlled owner without moving itself', () => {
+    // How My Drive answers the filter from the server: the page owns the chip,
+    // refetches with `?type=`, and passes the new one back down.
+    const onFilterChange = vi.fn();
+    renderFilterable({ filter: 'all', onFilterChange });
+    fireEvent.click(screen.getByRole('button', { name: 'Drawings' }));
+    // The chip key is the backend's category name, sent as `?type=` verbatim.
+    expect(onFilterChange).toHaveBeenCalledWith('canvas');
+    expect(visibleNames()).toHaveLength(ITEMS.length);
+  });
+
+  it('files every item under exactly one chip', () => {
+    renderFilterable();
+    const chips = ['Media', 'Office', 'Drawings', 'PDFs', 'Archives', 'Code'];
+    const seen = chips.flatMap((chip) => {
+      fireEvent.click(screen.getByRole('button', { name: chip }));
+      // The folder is in every listing by design, so it is not counted here.
+      return visibleNames().filter((n) => n !== 'Reports');
+    });
+    expect([...seen].sort()).toEqual(
+      ITEMS.filter((i) => i.kind !== 'folder').map((i) => i.name).sort(),
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('categorizeMime', () => {
+  it('puts pictures, clips and sound together', () => {
+    expect(categorizeMime('image/png')).toBe('media');
+    expect(categorizeMime('video/quicktime')).toBe('media');
+    expect(categorizeMime('audio/mpeg')).toBe('media');
+    expect(categorizeMime('image/svg+xml')).toBe('media');
+  });
+
+  it('puts Neutrino documents beside their uploaded equivalents', () => {
+    expect(categorizeMime('application/x-neutrino-doc')).toBe('office');
+    expect(categorizeMime('application/x-neutrino-sheet')).toBe('office');
+    expect(categorizeMime('application/x-neutrino-slide')).toBe('office');
+    expect(categorizeMime('application/x-neutrino-note')).toBe('office');
+    expect(categorizeMime('application/msword')).toBe('office');
+    expect(categorizeMime('application/vnd.oasis.opendocument.text')).toBe('office');
+    expect(categorizeMime('text/csv')).toBe('office');
+  });
+
+  // "openxmlformats" contains "xml", so an office check that ran after the code
+  // one would file every .docx and .xlsx under Code.
+  it('keeps an Office XML file out of Code', () => {
+    expect(categorizeMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe('office');
+    expect(categorizeMime('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe('office');
+    expect(categorizeMime('application/xml')).toBe('code');
+  });
+
+  it('puts diagrams and drawings together', () => {
+    // `canvas`, not `drawing`: the backend already uses `drawing` for the
+    // drawing app alone, and the chip keys are sent to it verbatim.
+    expect(categorizeMime('application/x-neutrino-diagram')).toBe('canvas');
+    expect(categorizeMime('application/x-neutrino-drawing')).toBe('canvas');
+  });
+
+  it('recognises the loose types under any of their spellings', () => {
+    expect(categorizeMime('application/pdf')).toBe('pdf');
+    expect(categorizeMime('application/zip')).toBe('archive');
+    expect(categorizeMime('application/x-zip-compressed')).toBe('archive');
+    expect(categorizeMime('application/x-7z-compressed')).toBe('archive');
+    expect(categorizeMime('text/javascript')).toBe('code');
+    expect(categorizeMime('application/json')).toBe('code');
+    expect(categorizeMime('text/html')).toBe('code');
+  });
+
+  it('leaves anything it does not recognise out of every chip', () => {
+    expect(categorizeMime('application/octet-stream')).toBe('other');
+    expect(categorizeMime('')).toBe('other');
   });
 });

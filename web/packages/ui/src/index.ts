@@ -153,8 +153,8 @@ export { Dropdown } from './components/navigation/Dropdown';
 export type { DropdownProps, DropdownPlacement } from './components/navigation/Dropdown';
 
 // Display
-export { FileGrid } from './components/display/FileGrid';
-export type { FileGridProps, GridItem, ViewMode, SortField, SortDir, FilterType } from './components/display/FileGrid';
+export { FileGrid, categorizeMime } from './components/display/FileGrid';
+export type { FileGridProps, GridItem, ViewMode, SortField, SortDir, FilterType, FileCategory } from './components/display/FileGrid';
 
 export { ShareButton } from './components/display/ShareButton';
 export type { ShareButtonProps, ShareUser } from './components/display/ShareButton';
