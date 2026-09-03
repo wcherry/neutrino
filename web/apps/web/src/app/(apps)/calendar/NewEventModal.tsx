@@ -1,13 +1,22 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, UserPlus, X, Paperclip } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui';
 import { calendarApi, type CreateAttachmentRequest } from '@/lib/api';
 import type { NewEventModalProps, ReminderEntry } from './calendarTypes';
 import { REMINDER_PRESETS } from './calendarConstants';
-import { shiftEndWithStart } from './calendarHelpers';
+import {
+  shiftEndWithStart,
+  timeOfFormValue,
+  toAllDayFormValue,
+  toTimedFormValue,
+} from './calendarHelpers';
+
+/** Times a previously all-day event falls back to when it becomes timed again. */
+const DEFAULT_START_TIME = '09:00';
+const DEFAULT_END_TIME = '10:00';
 import { AddAttachmentModal, AttachmentItem } from './EventDetail';
 import styles from './page.module.css';
 
@@ -77,6 +86,30 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
   function handleStartChange(next: string) {
     setEnd((prevEnd) => shiftEndWithStart(start, next, prevEnd));
     setStart(next);
+  }
+
+  // The times an all-day event goes back to when it is un-ticked, so a toggle
+  // and a change of mind returns the form to where it was.
+  const lastTimes = useRef({ start: DEFAULT_START_TIME, end: DEFAULT_END_TIME });
+
+  /**
+   * The dates survive the toggle — issue #121. A `datetime-local` value is not a
+   * valid `date` value or the reverse, so switching the input's type left the
+   * browser holding a value it could not display and both fields came up blank.
+   */
+  function handleAllDayChange(checked: boolean) {
+    if (checked) {
+      lastTimes.current = {
+        start: timeOfFormValue(start) ?? lastTimes.current.start,
+        end: timeOfFormValue(end) ?? lastTimes.current.end,
+      };
+      setStart(toAllDayFormValue(start));
+      setEnd(toAllDayFormValue(end));
+    } else {
+      setStart(toTimedFormValue(start, lastTimes.current.start));
+      setEnd(toTimedFormValue(end, lastTimes.current.end));
+    }
+    setAllDay(checked);
   }
 
   function addAttendee() {
@@ -170,7 +203,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
               type="checkbox"
               id="allDay"
               checked={allDay}
-              onChange={(e) => setAllDay(e.target.checked)}
+              onChange={(e) => handleAllDayChange(e.target.checked)}
             />
             <label htmlFor="allDay" className={styles.formLabel} style={{ margin: 0 }}>All day</label>
           </div>

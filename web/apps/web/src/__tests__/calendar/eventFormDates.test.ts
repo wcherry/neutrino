@@ -5,11 +5,17 @@
  * wall-clock text (`YYYY-MM-DD` / `YYYY-MM-DDTHH:mm`) rather than an instant.
  *
  * Covers issue #129 — changing the start date used to leave the end date behind,
- * so the event ended before it began.
+ * so the event ended before it began — and issue #121, where ticking "All day"
+ * cleared both dates because a `datetime-local` value is not a valid `date` one.
  */
 
 import { describe, it, expect } from 'vitest';
-import { shiftEndWithStart } from '../../app/(apps)/calendar/calendarHelpers';
+import {
+  shiftEndWithStart,
+  timeOfFormValue,
+  toAllDayFormValue,
+  toTimedFormValue,
+} from '../../app/(apps)/calendar/calendarHelpers';
 
 describe('shiftEndWithStart', () => {
   it('moves the end date by the same number of days as the start moved', () => {
@@ -66,5 +72,48 @@ describe('shiftEndWithStart', () => {
   it('accepts a value carrying seconds, and drops them', () => {
     expect(shiftEndWithStart('2026-03-12T09:00:00', '2026-03-15T09:00:00', '2026-03-14T09:00:00'))
       .toBe('2026-03-17T09:00');
+  });
+});
+
+describe('toAllDayFormValue', () => {
+  it('keeps the day and drops the time', () => {
+    expect(toAllDayFormValue('2026-03-12T09:00')).toBe('2026-03-12');
+  });
+
+  it('leaves a date-only value alone', () => {
+    expect(toAllDayFormValue('2026-03-12')).toBe('2026-03-12');
+  });
+
+  it('leaves an unparseable value alone rather than truncating it', () => {
+    expect(toAllDayFormValue('')).toBe('');
+    expect(toAllDayFormValue('2026-0')).toBe('2026-0');
+  });
+});
+
+describe('toTimedFormValue', () => {
+  it('keeps the day and takes the given time', () => {
+    expect(toTimedFormValue('2026-03-12', '09:00')).toBe('2026-03-12T09:00');
+  });
+
+  it('leaves a value that already has a time alone', () => {
+    expect(toTimedFormValue('2026-03-12T14:30', '09:00')).toBe('2026-03-12T14:30');
+  });
+
+  it('leaves an unparseable value alone', () => {
+    expect(toTimedFormValue('', '09:00')).toBe('');
+  });
+});
+
+describe('timeOfFormValue', () => {
+  it('returns the time of a timed value', () => {
+    expect(timeOfFormValue('2026-03-12T09:05')).toBe('09:05');
+  });
+
+  it('returns null for a date-only value', () => {
+    expect(timeOfFormValue('2026-03-12')).toBeNull();
+  });
+
+  it('returns null for an unparseable value', () => {
+    expect(timeOfFormValue('nonsense')).toBeNull();
   });
 });

@@ -326,6 +326,20 @@ describe('NewEventModal – moving the start moves the end', () => {
     expect(end.value).toBe('2026-03-20T09:00');
   });
 
+  it('moves the end when the start is moved while the event is all-day', () => {
+    const { container } = renderCreateModal();
+    const { start, end } = dateFields(container);
+
+    fireEvent.change(start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.change(end, { target: { value: '2026-03-14T09:00' } });
+    fireEvent.click(screen.getByLabelText('All day'));
+
+    const allDayFields = dateFields(container);
+    fireEvent.change(allDayFields.start, { target: { value: '2026-03-15' } });
+
+    expect(allDayFields.end.value).toBe('2026-03-17');
+  });
+
   it('submits the shifted end, so the saved event does not end before it starts', async () => {
     const { container, onUpdate } = renderEditModal();
     const { start, end } = dateFields(container);
@@ -338,6 +352,103 @@ describe('NewEventModal – moving the start moves the end', () => {
     await waitFor(() => {
       const [req] = onUpdate.mock.calls[0];
       expect(new Date(req.endTime).getTime()).toBeGreaterThan(new Date(req.startTime).getTime());
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — the All day toggle (issue #121)
+// ---------------------------------------------------------------------------
+
+describe('NewEventModal – toggling All day', () => {
+  it('keeps the dates when All day is ticked', () => {
+    const { container } = renderCreateModal();
+    const { start, end } = dateFields(container);
+
+    fireEvent.change(start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.change(end, { target: { value: '2026-03-14T17:00' } });
+    fireEvent.click(screen.getByLabelText('All day'));
+
+    const allDayFields = dateFields(container);
+    expect(allDayFields.start.value).toBe('2026-03-12');
+    expect(allDayFields.end.value).toBe('2026-03-14');
+  });
+
+  it('swaps both inputs to date pickers when All day is ticked', () => {
+    const { container } = renderCreateModal();
+    fireEvent.click(screen.getByLabelText('All day'));
+
+    const { start, end } = dateFields(container);
+    expect(start.type).toBe('date');
+    expect(end.type).toBe('date');
+  });
+
+  it('keeps the dates when All day is un-ticked', () => {
+    const { container } = renderCreateModal();
+
+    fireEvent.change(dateFields(container).start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.click(screen.getByLabelText('All day'));
+    fireEvent.click(screen.getByLabelText('All day'));
+
+    expect(dateFields(container).start.value).toBe('2026-03-12T09:00');
+  });
+
+  it('gives back the times the event had before it was made all-day', () => {
+    const { container } = renderCreateModal();
+
+    fireEvent.change(dateFields(container).start, { target: { value: '2026-03-12T14:30' } });
+    fireEvent.change(dateFields(container).end, { target: { value: '2026-03-12T16:45' } });
+    fireEvent.click(screen.getByLabelText('All day'));
+    fireEvent.click(screen.getByLabelText('All day'));
+
+    const { start, end } = dateFields(container);
+    expect(start.value).toBe('2026-03-12T14:30');
+    expect(end.value).toBe('2026-03-12T16:45');
+  });
+
+  it('keeps a date edited while all-day when the toggle comes off', () => {
+    const { container } = renderCreateModal();
+
+    fireEvent.change(dateFields(container).start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.click(screen.getByLabelText('All day'));
+    fireEvent.change(dateFields(container).start, { target: { value: '2026-03-20' } });
+    fireEvent.click(screen.getByLabelText('All day'));
+
+    expect(dateFields(container).start.value).toBe('2026-03-20T09:00');
+  });
+
+  it('gives an event that was created all-day a default working day', () => {
+    const { container } = renderEditModal({
+      existingEvent: {
+        ...existingEvent,
+        allDay: true,
+        startTime: '2026-03-12T00:00:00Z',
+        endTime: '2026-03-12T23:59:59Z',
+      },
+    });
+
+    expect(dateFields(container).start.value).toBe('2026-03-12');
+    fireEvent.click(screen.getByLabelText('All day'));
+
+    const { start, end } = dateFields(container);
+    expect(start.value).toBe('2026-03-12T09:00');
+    expect(end.value).toBe('2026-03-12T10:00');
+  });
+
+  it('submits the preserved date, not an empty one', async () => {
+    const { container, onCreate } = renderCreateModal();
+
+    fireEvent.change(screen.getByPlaceholderText('Event title'), { target: { value: 'Offsite' } });
+    fireEvent.change(dateFields(container).start, { target: { value: '2026-03-12T09:00' } });
+    fireEvent.change(dateFields(container).end, { target: { value: '2026-03-13T09:00' } });
+    fireEvent.click(screen.getByLabelText('All day'));
+    fireEvent.click(screen.getByRole('button', { name: /create event/i }));
+
+    await waitFor(() => {
+      const [req] = onCreate.mock.calls[0];
+      expect(req.allDay).toBe(true);
+      expect(req.startTime).toBe('2026-03-12T00:00:00Z');
+      expect(req.endTime).toBe('2026-03-13T23:59:59Z');
     });
   });
 });

@@ -7,6 +7,8 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
  *
  * Issue #129 — moving the start date left the end date where it was, so an
  * event edited forwards ended before it began.
+ * Issue #121 — ticking "All day" cleared both dates, because the value of a
+ * `datetime-local` input is not a valid value for a `date` one.
  */
 
 const BASE_URL = 'http://localhost:9880';
@@ -178,5 +180,80 @@ test.describe('Calendar event dates (issue #129)', () => {
 
     await expect(start).toHaveValue(`${ymd(year, month, 12)}T09:00`);
     await expect(end).toHaveValue(`${ymd(year, month, 13)}T10:00`);
+  });
+});
+
+test.describe('Calendar all-day toggle (issue #121)', () => {
+  test('ticking All day keeps the dates already chosen', async ({ page, request }) => {
+    await registerAndLogin(request, page);
+    await page.goto('/calendar');
+    await expect(page.getByTestId('month-grid')).toBeVisible({ timeout: 15_000 });
+    const { year, month } = await browserMonth(page);
+
+    await page.getByRole('button', { name: 'New Event' }).click();
+    const dialog = page.locator('[role="dialog"]');
+    await expect(dialog.getByRole('heading', { name: 'New Event' })).toBeVisible({ timeout: 10_000 });
+
+    const { start, end } = dateFields(dialog);
+    await start.fill(`${ymd(year, month, 12)}T09:00`);
+    await end.fill(`${ymd(year, month, 13)}T17:00`);
+
+    await dialog.locator('#allDay').check();
+
+    // Both fields are date pickers now, and both still hold their day. They
+    // used to come up blank.
+    await expect(dateFields(dialog).start).toHaveAttribute('type', 'date');
+    await expect(dateFields(dialog).start).toHaveValue(ymd(year, month, 12));
+    await expect(dateFields(dialog).end).toHaveValue(ymd(year, month, 13));
+  });
+
+  test('un-ticking All day gives back the dates and the times', async ({ page, request }) => {
+    await registerAndLogin(request, page);
+    await page.goto('/calendar');
+    await expect(page.getByTestId('month-grid')).toBeVisible({ timeout: 15_000 });
+    const { year, month } = await browserMonth(page);
+
+    await page.getByRole('button', { name: 'New Event' }).click();
+    const dialog = page.locator('[role="dialog"]');
+    await expect(dialog.getByRole('heading', { name: 'New Event' })).toBeVisible({ timeout: 10_000 });
+
+    await dateFields(dialog).start.fill(`${ymd(year, month, 12)}T09:00`);
+    await dateFields(dialog).end.fill(`${ymd(year, month, 13)}T17:00`);
+    await dialog.locator('#allDay').check();
+    await dialog.locator('#allDay').uncheck();
+
+    await expect(dateFields(dialog).start).toHaveValue(`${ymd(year, month, 12)}T09:00`);
+    await expect(dateFields(dialog).end).toHaveValue(`${ymd(year, month, 13)}T17:00`);
+  });
+
+  test('an all-day event created after the toggle lands on the day that was picked', async ({ page, request }) => {
+    await registerAndLogin(request, page);
+    const token = await getAuthToken(page);
+    const title = uniqueTitle('all day toggle');
+
+    await page.goto('/calendar');
+    await expect(page.getByTestId('month-grid')).toBeVisible({ timeout: 15_000 });
+    const { year, month } = await browserMonth(page);
+
+    await page.getByRole('button', { name: 'New Event' }).click();
+    const dialog = page.locator('[role="dialog"]');
+    await expect(dialog.getByRole('heading', { name: 'New Event' })).toBeVisible({ timeout: 10_000 });
+
+    await dialog.getByPlaceholder('Event title').fill(title);
+    await dateFields(dialog).start.fill(`${ymd(year, month, 12)}T09:00`);
+    await dateFields(dialog).end.fill(`${ymd(year, month, 12)}T17:00`);
+    await dialog.locator('#allDay').check();
+    await dialog.getByRole('button', { name: 'Create Event' }).click();
+    await expect(dialog).not.toBeVisible({ timeout: 15_000 });
+
+    const res = await request.get(`${BASE_URL}/api/v1/calendar/events?from=${ymd(year, month, 1)}T00:00:00Z&to=${ymd(year, month, 28)}T00:00:00Z`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.ok(), `list events failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+    const body = await res.json() as { events: { title: string; startTime: string; allDay: boolean }[] };
+    const saved = body.events.find((e) => e.title === title);
+    expect(saved, `event "${title}" missing from the listing`).toBeTruthy();
+    expect(saved!.allDay).toBe(true);
+    expect(saved!.startTime).toContain(ymd(year, month, 12));
   });
 });
