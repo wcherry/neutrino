@@ -532,6 +532,18 @@
     filter: drop-shadow(0 0 3px rgba(37, 99, 235, 0.5));
 }
 
+/* Endpoint handles on a selected arrow — drag either end to reshape it. */
+.annotationHandle {
+    fill: #ffffff;
+    stroke: #2563eb;
+    stroke-width: 1.5;
+    cursor: crosshair;
+}
+
+.annotationHandle:hover {
+    fill: #dbeafe;
+}
+
 /* ── Phase 5: Export buttons row ── */
 
 .exportButtonRow {
