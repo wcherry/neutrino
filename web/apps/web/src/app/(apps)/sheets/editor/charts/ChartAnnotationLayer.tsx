@@ -24,6 +24,27 @@ function toNorm(px: number, size: number): number {
     return Math.max(0.01, Math.min(0.99, px / size));
 }
 
+// Annotation coordinates are kept inside the frame, with a little slack so an
+// annotation dragged to an edge stays grabbable.
+const MIN_NORM = 0.01;
+const MAX_NORM = 0.98;
+
+function clampNorm(v: number): number {
+    return Math.max(MIN_NORM, Math.min(MAX_NORM, v));
+}
+
+/**
+ * Clamp a *translation* rather than each coordinate on its own: an arrow moves
+ * as a whole, so the delta has to be limited by whichever end hits the edge
+ * first. Clamping the two ends separately would shorten the arrow instead of
+ * stopping it.
+ */
+function clampDelta(delta: number, a: number, b: number): number {
+    const lo = MIN_NORM - Math.min(a, b);
+    const hi = MAX_NORM - Math.max(a, b);
+    return Math.max(lo, Math.min(hi, delta));
+}
+
 // ── SVG path for callout bubble ───────────────────────────────────────────────
 
 function calloutPath(x: number, y: number, w: number, h: number, r = 6): string {
@@ -45,6 +66,9 @@ function calloutPath(x: number, y: number, w: number, h: number, r = 6): string 
 
 // ── Single annotation renderer ────────────────────────────────────────────────
 
+/** 'move' drags the whole annotation; 'tail'/'head' drag one end of an arrow. */
+type DragMode = 'move' | 'tail' | 'head';
+
 interface AnnotationItemProps {
     ann: ChartAnnotation;
     frameW: number;
@@ -57,7 +81,15 @@ interface AnnotationItemProps {
 function AnnotationItem({ ann, frameW, frameH, isChartSelected, onUpdate, onDelete }: AnnotationItemProps) {
     const [editing, setEditing] = useState(false);
     const [selectedAnn, setSelectedAnn] = useState(false);
-    const dragState = useRef<{ startMX: number; startMY: number; startX: number; startY: number } | null>(null);
+    const dragState = useRef<{
+        mode: DragMode;
+        startMX: number;
+        startMY: number;
+        startX: number;
+        startY: number;
+        startX2: number;
+        startY2: number;
+    } | null>(null);
     // The drag delta arrives in screen pixels; frameW/frameH are grid pixels.
     const zoomScale = useSheetZoom();
 
@@ -66,6 +98,10 @@ function AnnotationItem({ ann, frameW, frameH, isChartSelected, onUpdate, onDele
     const pw = toPixel(ann.w, frameW);
     const ph = toPixel(ann.h, frameH);
 
+    // An arrow's head is an absolute point, not an offset from its tail.
+    const annX2 = ann.x2 ?? ann.x + ann.w;
+    const annY2 = ann.y2 ?? ann.y + ann.h;
+
     const fill = ann.fillColor ?? 'rgba(255,255,255,0.85)';
     const stroke = ann.strokeColor ?? '#2563eb';
     const strokeW = ann.strokeWidth ?? 1.5;
@@ -73,26 +109,53 @@ function AnnotationItem({ ann, frameW, frameH, isChartSelected, onUpdate, onDele
     const fontSize = ann.fontSize ?? 12;
     const text = ann.text ?? '';
 
-    function handleMouseDown(e: React.MouseEvent) {
+    function handleMouseDown(e: React.MouseEvent, mode: DragMode = 'move') {
         if (!isChartSelected) return;
         if (e.button !== 0) return;
         e.stopPropagation();
         setSelectedAnn(true);
 
+        const isArrow = ann.type === 'arrow';
         dragState.current = {
+            mode,
             startMX: e.clientX,
             startMY: e.clientY,
             startX: ann.x,
             startY: ann.y,
+            startX2: annX2,
+            startY2: annY2,
         };
 
         function onMove(me: MouseEvent) {
-            if (!dragState.current) return;
-            const dx = (me.clientX - dragState.current.startMX) / zoomScale;
-            const dy = (me.clientY - dragState.current.startMY) / zoomScale;
+            const st = dragState.current;
+            if (!st) return;
+            const dx = (me.clientX - st.startMX) / zoomScale / frameW;
+            const dy = (me.clientY - st.startMY) / zoomScale / frameH;
+
+            if (st.mode === 'head') {
+                onUpdate({ x2: clampNorm(st.startX2 + dx), y2: clampNorm(st.startY2 + dy) });
+                return;
+            }
+            if (st.mode === 'tail') {
+                onUpdate({ x: clampNorm(st.startX + dx), y: clampNorm(st.startY + dy) });
+                return;
+            }
+            if (isArrow) {
+                // Move the whole arrow: both ends travel by the same delta, so
+                // dragging the body no longer leaves the head behind.
+                const cdx = clampDelta(dx, st.startX, st.startX2);
+                const cdy = clampDelta(dy, st.startY, st.startY2);
+                onUpdate({
+                    x: st.startX + cdx,
+                    y: st.startY + cdy,
+                    x2: st.startX2 + cdx,
+                    y2: st.startY2 + cdy,
+                });
+                return;
+            }
             onUpdate({
-                x: Math.max(0.01, Math.min(0.98, dragState.current.startX + dx / frameW)),
-                y: Math.max(0.01, Math.min(0.98, dragState.current.startY + dy / frameH)),
+                x: clampNorm(st.startX + dx),
+                y: clampNorm(st.startY + dy),
             });
         }
         function onUp() {
@@ -132,8 +195,8 @@ function AnnotationItem({ ann, frameW, frameH, isChartSelected, onUpdate, onDele
     };
 
     if (ann.type === 'arrow') {
-        const x2 = toPixel(ann.x2 ?? ann.x + ann.w, frameW);
-        const y2 = toPixel(ann.y2 ?? ann.y + ann.h, frameH);
+        const x2 = toPixel(annX2, frameW);
+        const y2 = toPixel(annY2, frameH);
         // Compute arrowhead
         const angle = Math.atan2(y2 - py, x2 - px);
         const headLen = 10;
@@ -148,6 +211,24 @@ function AnnotationItem({ ann, frameW, frameH, isChartSelected, onUpdate, onDele
                 <polygon points={`${x2},${y2} ${a1x},${a1y} ${a2x},${a2y}`} fill={stroke} />
                 {/* Transparent hit area */}
                 <line x1={px} y1={py} x2={x2} y2={y2} stroke="transparent" strokeWidth={12} />
+                {/* Endpoint handles — each end is dragged on its own, and they sit
+                    above the hit area so a grab near an end reshapes rather than moves. */}
+                {selectedAnn && isChartSelected && (
+                    <>
+                        <circle
+                            className={styles.annotationHandle}
+                            data-handle="tail"
+                            cx={px} cy={py} r={5}
+                            onMouseDown={e => handleMouseDown(e, 'tail')}
+                        />
+                        <circle
+                            className={styles.annotationHandle}
+                            data-handle="head"
+                            cx={x2} cy={y2} r={5}
+                            onMouseDown={e => handleMouseDown(e, 'head')}
+                        />
+                    </>
+                )}
             </g>
         );
     }
