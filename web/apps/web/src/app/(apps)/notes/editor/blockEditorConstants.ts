@@ -1,17 +1,60 @@
-import type { BlockType, TablePreset, TableStyle } from './blockEditorTypes';
+import type { MarkdownShortcut, SlashCommand, TablePreset, TableStyle } from './blockEditorTypes';
 
 // Matches (in priority order): wiki links, inline code, bold, italic, strikethrough
 export const INLINE_PATTERN =
   /(\[\[[^\]]+\]\])|(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(?<![a-zA-Z0-9])(~~[^~\n]+~~)/g;
 
-export const SLASH_COMMANDS: Array<{ type: BlockType; label: string; description: string }> = [
-  { type: 'paragraph', label: 'Paragraph', description: 'Plain text' },
-  { type: 'bullet', label: 'Bullet list', description: 'Unordered list item' },
-  { type: 'numbered', label: 'Numbered list', description: 'Ordered list item' },
-  { type: 'task', label: 'Task', description: 'Checkbox to-do item' },
-  { type: 'blockquote', label: 'Quote', description: 'Block quotation' },
-  { type: 'code', label: 'Code block', description: 'Monospace code' },
-  { type: 'table', label: 'Table', description: 'Resizable table' },
+/** A line that is nothing but `---`, `***` or `___` renders as a horizontal rule. */
+export const DIVIDER_PATTERN = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
+
+/** The inline markers the shortcuts below wrap a selection in. */
+export const BOLD_MARKER = '**';
+export const ITALIC_MARKER = '*';
+export const CODE_MARKER = '`';
+export const STRIKE_MARKER = '~~';
+
+export const SLASH_COMMANDS: SlashCommand[] = [
+  { id: 'paragraph', type: 'paragraph', label: 'Paragraph', description: 'Plain text', keywords: ['body'] },
+  { id: 'heading1', type: 'paragraph', content: '# ', label: 'Heading 1', description: 'Large section heading', keywords: ['h1', 'title', '#'] },
+  { id: 'heading2', type: 'paragraph', content: '## ', label: 'Heading 2', description: 'Medium section heading', keywords: ['h2', '##'] },
+  { id: 'heading3', type: 'paragraph', content: '### ', label: 'Heading 3', description: 'Small section heading', keywords: ['h3', '###'] },
+  { id: 'bullet', type: 'bullet', label: 'Bullet list', description: 'Unordered list item', keywords: ['ul', 'unordered', '-'] },
+  { id: 'numbered', type: 'numbered', label: 'Numbered list', description: 'Ordered list item', keywords: ['ol', 'ordered', '1.'] },
+  { id: 'task', type: 'task', label: 'Task', description: 'Checkbox to-do item', keywords: ['todo', 'checkbox', '[]'] },
+  { id: 'blockquote', type: 'blockquote', label: 'Quote', description: 'Block quotation', keywords: ['quote', '>'] },
+  { id: 'code', type: 'code', label: 'Code block', description: 'Monospace code', keywords: ['pre', '```'] },
+  { id: 'divider', type: 'paragraph', content: '---', label: 'Divider', description: 'Horizontal rule', keywords: ['hr', 'rule', 'separator', '---'] },
+  { id: 'table', type: 'table', label: 'Table', description: 'Resizable table', keywords: ['grid'] },
+];
+
+/**
+ * Ctrl/Cmd shortcuts that add markdown without typing its syntax. Ordered as
+ * the help modal lists them, which is also the order they are matched in.
+ *
+ * The letters are the ones every editor uses (B, I, K); the rest are grouped
+ * so they are learnable rather than individually familiar — Alt for the ones
+ * that set a block's own shape (headings, code, quote, back to plain), Shift
+ * for the list kinds, on the digits that carry their punctuation (`&` 7 for
+ * numbered, `*` 8 for a bullet).
+ *
+ * Ctrl+Shift+Q is deliberately not among them: it quits the browser on Linux,
+ * and that is not something a page can take back with `preventDefault`.
+ */
+export const MARKDOWN_SHORTCUTS: MarkdownShortcut[] = [
+  { label: 'Bold',           keys: ['Ctrl', 'B'],          key: 'b', code: 'KeyB',   action: { kind: 'inline', marker: BOLD_MARKER } },
+  { label: 'Italic',         keys: ['Ctrl', 'I'],          key: 'i', code: 'KeyI',   action: { kind: 'inline', marker: ITALIC_MARKER } },
+  { label: 'Inline code',    keys: ['Ctrl', 'E'],          key: 'e', code: 'KeyE',   action: { kind: 'inline', marker: CODE_MARKER } },
+  { label: 'Strikethrough',  keys: ['Ctrl', 'Shift', 'X'], key: 'x', code: 'KeyX',   shift: true, action: { kind: 'inline', marker: STRIKE_MARKER } },
+  { label: 'Link to a note', keys: ['Ctrl', 'K'],          key: 'k', code: 'KeyK',   action: { kind: 'wikiLink' } },
+  { label: 'Heading 1',      keys: ['Ctrl', 'Alt', '1'],   key: '1', code: 'Digit1', alt: true, action: { kind: 'heading', level: 1 } },
+  { label: 'Heading 2',      keys: ['Ctrl', 'Alt', '2'],   key: '2', code: 'Digit2', alt: true, action: { kind: 'heading', level: 2 } },
+  { label: 'Heading 3',      keys: ['Ctrl', 'Alt', '3'],   key: '3', code: 'Digit3', alt: true, action: { kind: 'heading', level: 3 } },
+  { label: 'Plain text',     keys: ['Ctrl', 'Alt', '0'],   key: '0', code: 'Digit0', alt: true, action: { kind: 'heading', level: 0 } },
+  { label: 'Code block',     keys: ['Ctrl', 'Alt', 'C'],   key: 'c', code: 'KeyC',   alt: true, action: { kind: 'block', type: 'code' } },
+  { label: 'Quote',          keys: ['Ctrl', 'Alt', 'Q'],   key: 'q', code: 'KeyQ',   alt: true, action: { kind: 'block', type: 'blockquote' } },
+  { label: 'Numbered list',  keys: ['Ctrl', 'Shift', '7'], key: '7', code: 'Digit7', shift: true, action: { kind: 'block', type: 'numbered' } },
+  { label: 'Bullet list',    keys: ['Ctrl', 'Shift', '8'], key: '8', code: 'Digit8', shift: true, action: { kind: 'block', type: 'bullet' } },
+  { label: 'Task',           keys: ['Ctrl', 'Shift', '9'], key: '9', code: 'Digit9', shift: true, action: { kind: 'block', type: 'task' } },
 ];
 
 export const TABLE_PRESETS: TablePreset[] = [

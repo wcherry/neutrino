@@ -54,6 +54,54 @@ export interface FocusRequest {
   position: 'start' | 'end' | number;
 }
 
+/** One entry in the `/` menu. See `SLASH_COMMANDS`. */
+export interface SlashCommand {
+  id: string;
+  label: string;
+  description: string;
+  type: BlockType;
+  /**
+   * What the block's content becomes — a heading's `## `, a divider's `---`.
+   * Markdown the editor renders from the content itself has no block type of
+   * its own, so the command seeds the syntax and the caret lands after it.
+   * Omitted for commands that only change the type.
+   */
+  content?: string;
+  /** Extra lower-case terms the menu filters on, so `h1` finds Heading 1. */
+  keywords?: string[];
+}
+
+/** What a markdown keyboard shortcut does to the block it fires in. */
+export type MarkdownAction =
+  /** Wrap (or unwrap) the selection in an inline marker — `**`, `` ` ``, … */
+  | { kind: 'inline'; marker: string }
+  /** Set the block's heading level; 0 strips the heading. */
+  | { kind: 'heading'; level: number }
+  /** Switch the block's type, or back to a paragraph if it is that type already. */
+  | { kind: 'block'; type: BlockType }
+  /** Wrap the selection in `[[…]]` and open the note autocomplete. */
+  | { kind: 'wikiLink' };
+
+/**
+ * A Ctrl/Cmd shortcut for adding markdown. `key` and `code` are both matched
+ * (either one hitting is enough): `code` is what survives Alt on macOS and
+ * Shift on the digit row, where `e.key` is `¡` or `&` rather than `1` or `7`;
+ * `key` is what survives a non-QWERTY layout, where `code` is a position.
+ */
+export interface MarkdownShortcut {
+  /** Action name for the help modal. */
+  label: string;
+  /** Key names shown in the help modal, in order. */
+  keys: string[];
+  /** Lower-case `KeyboardEvent.key`. */
+  key: string;
+  /** `KeyboardEvent.code`. */
+  code: string;
+  shift?: boolean;
+  alt?: boolean;
+  action: MarkdownAction;
+}
+
 export interface TableBlockProps {
   block: Block;
   onTableChange: (patch: Partial<Block>) => void;
