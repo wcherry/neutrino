@@ -1,4 +1,4 @@
-use crate::drive::filesystem::dto::FolderContentsOrderField;
+use crate::drive::filesystem::dto::{FolderContentsOrderField, MimeFilter};
 use crate::drive::filesystem::model::{
     FolderRecord, NewFolderRecord, NewShortcutRecord, ShortcutRecord, TrashFolderRecord,
     UpdateFolderRecord,
@@ -292,7 +292,7 @@ impl FilesystemRepository {
         user_id: &str,
         folder_id: Option<&str>,
         query: &ListQueryParams<FolderContentsOrderField>,
-        patterns: Option<&[&'static str]>,
+        mime_filter: Option<&MimeFilter>,
     ) -> Result<Vec<FileRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         let page = SqlPage::from_query(query);
@@ -310,8 +310,8 @@ impl FilesystemRepository {
             None => base.filter(files::folder_id.is_null()),
         };
 
-        if let Some(patterns) = patterns {
-            base = base.filter(Self::mime_matches(patterns));
+        if let Some(mime_filter) = mime_filter {
+            base = base.filter(Self::mime_matches(mime_filter));
         }
 
         let result = match listing_order(query) {
@@ -990,7 +990,7 @@ impl FilesystemRepository {
         &self,
         user_id: &str,
         limit: i64,
-        patterns: Option<&[&'static str]>,
+        mime_filter: Option<&MimeFilter>,
     ) -> Result<Vec<FileRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         let mut query = files::table
@@ -998,8 +998,8 @@ impl FilesystemRepository {
             .filter(files::deleted_at.is_null())
             .into_boxed();
 
-        if let Some(patterns) = patterns {
-            query = query.filter(Self::mime_matches(patterns));
+        if let Some(mime_filter) = mime_filter {
+            query = query.filter(Self::mime_matches(mime_filter));
         }
 
         query
@@ -1013,10 +1013,15 @@ impl FilesystemRepository {
             })
     }
 
-    /// `(mime LIKE p1 OR mime LIKE p2 OR ...)` as one boxed expression, so it
-    /// ANDs correctly with the surrounding filters rather than binding loosely.
+    /// `(mime LIKE i1 OR ...) AND NOT (mime LIKE e1 OR ...)` as one boxed
+    /// expression, so it ANDs correctly with the surrounding filters rather than
+    /// binding loosely.
+    ///
+    /// The `NOT` half is the category precedence (`MimeFilter::exclude`): it is
+    /// how `code` gives up the `.docx` that `office` has already claimed. It is
+    /// empty for the per-app types, which overlap each other by design.
     fn mime_matches(
-        patterns: &[&'static str],
+        filter: &MimeFilter,
     ) -> Box<
         dyn BoxableExpression<
             files::table,
@@ -1027,16 +1032,25 @@ impl FilesystemRepository {
         use diesel::sql_types::Bool;
         use diesel::sqlite::Sqlite;
 
-        let mut mime_match: Box<dyn BoxableExpression<files::table, Sqlite, SqlType = Bool>> =
-            match patterns.first() {
+        type MimeExpr = Box<dyn BoxableExpression<files::table, Sqlite, SqlType = Bool>>;
+
+        /// `mime LIKE p1 OR mime LIKE p2 OR …`; no patterns matches nothing.
+        fn any_of(patterns: &[&'static str]) -> MimeExpr {
+            let mut expr: MimeExpr = match patterns.first() {
                 Some(first) => Box::new(files::mime_type.like(*first)),
-                // No patterns => match nothing.
                 None => Box::new(diesel::dsl::sql::<Bool>("0")),
             };
-        for pattern in patterns.iter().skip(1) {
-            mime_match = Box::new(mime_match.or(files::mime_type.like(*pattern)));
+            for pattern in patterns.iter().skip(1) {
+                expr = Box::new(expr.or(files::mime_type.like(*pattern)));
+            }
+            expr
         }
-        mime_match
+
+        let included = any_of(filter.include);
+        if filter.exclude.is_empty() {
+            return included;
+        }
+        Box::new(included.and(diesel::dsl::not(any_of(&filter.exclude))))
     }
 
     // ── Starred (Quick Access) ─────────────────────────────────────────────────
@@ -1195,7 +1209,7 @@ mod tests {
         seed(&repo, "user-1");
 
         let files = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Photo.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Photo.mime_filter()))
             .unwrap();
 
         assert_eq!(sorted_names(&files), vec!["a-photo.png", "b-photo.jpg"]);
@@ -1207,12 +1221,12 @@ mod tests {
         seed(&repo, "user-1");
 
         let videos = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Video.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Video.mime_filter()))
             .unwrap();
         assert_eq!(names(&videos), vec!["clip.mp4"]);
 
         let audio = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Audio.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Audio.mime_filter()))
             .unwrap();
         assert_eq!(names(&audio), vec!["song.mp3"]);
     }
@@ -1223,7 +1237,7 @@ mod tests {
         seed(&repo, "user-1");
 
         let docs = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Document.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Document.mime_filter()))
             .unwrap();
 
         // pdf + text/plain, but not the generic octet-stream blob.
@@ -1237,7 +1251,7 @@ mod tests {
         repo.trash_file("png", "user-1").unwrap();
 
         let files = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Photo.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Photo.mime_filter()))
             .unwrap();
         assert_eq!(names(&files), vec!["b-photo.jpg"]);
     }
@@ -1248,14 +1262,170 @@ mod tests {
         seed(&repo, "user-1");
 
         let docs = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Doc.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Doc.mime_filter()))
             .unwrap();
         assert_eq!(names(&docs), vec!["my-doc"]);
 
         let sheets = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Sheet.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Sheet.mime_filter()))
             .unwrap();
         assert_eq!(names(&sheets), vec!["my-sheet"]);
+    }
+
+    // ── Categories, in SQL ────────────────────────────────────────────────────
+
+    /// A drive holding one of everything the categories have to sort out,
+    /// including the MIME types that answer to two of them.
+    fn seed_every_kind(repo: &FilesystemRepository, user: &str) -> Vec<(&'static str, &'static str)> {
+        let corpus: Vec<(&'static str, &'static str)> = vec![
+            ("shot.png", "image/png"),
+            ("logo.svg", "image/svg+xml"),
+            ("clip.mp4", "video/mp4"),
+            ("song.mp3", "audio/mpeg"),
+            ("report.pdf", "application/pdf"),
+            ("my-doc", "application/x-neutrino-doc"),
+            ("my-note", "application/x-neutrino-note"),
+            ("my-diagram", "application/x-neutrino-diagram"),
+            ("my-drawing", "application/x-neutrino-drawing"),
+            (
+                "contract.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+            ("budget.ods", "application/vnd.oasis.opendocument.spreadsheet"),
+            ("notes.txt", "text/plain"),
+            ("backup.zip", "application/zip"),
+            ("old.tar.gz", "application/gzip"),
+            ("config.json", "application/json"),
+            ("page.html", "text/html"),
+            ("blob.bin", "application/octet-stream"),
+        ];
+        for (i, (name, mime)) in corpus.iter().enumerate() {
+            insert_file(repo, &format!("c{i}"), user, name, mime);
+        }
+        corpus
+    }
+
+    const CATEGORIES: [DriveFileType; 6] = [
+        DriveFileType::Media,
+        DriveFileType::Office,
+        DriveFileType::Canvas,
+        DriveFileType::Pdf,
+        DriveFileType::Archive,
+        DriveFileType::Code,
+    ];
+
+    /// The whole point of `MimeFilter`: one table drives both the `LIKE` clause
+    /// and `DriveFileType::matches`, so the filtered listing a client gets from
+    /// SQL is the same set the in-memory filter would have produced. Trash,
+    /// starred and shared-with-me still take the in-memory path, and a drift
+    /// between the two would show the same drive differently view by view.
+    #[test]
+    fn the_sql_filter_returns_what_matches_would_have_kept() {
+        let repo = test_repo();
+        let corpus = seed_every_kind(&repo, "user-1");
+
+        for category in CATEGORIES {
+            let listed = repo
+                .list_recent_files("user-1", 100, Some(&category.mime_filter()))
+                .unwrap();
+            let from_sql = sorted_names(&listed);
+            let mut in_memory: Vec<&str> = corpus
+                .iter()
+                .filter(|(_, mime)| category.matches(mime))
+                .map(|(name, _)| *name)
+                .collect();
+            in_memory.sort_unstable();
+
+            assert_eq!(from_sql, in_memory, "{category:?} disagreed with matches()");
+            assert!(!from_sql.is_empty(), "{category:?} matched nothing at all");
+        }
+    }
+
+    #[test]
+    fn each_category_selects_its_own_group_in_sql() {
+        let repo = test_repo();
+        seed_every_kind(&repo, "user-1");
+
+        let listed = |category: DriveFileType| {
+            sorted_names(
+                &repo
+                    .list_recent_files("user-1", 100, Some(&category.mime_filter()))
+                    .unwrap(),
+            )
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            listed(DriveFileType::Media),
+            vec!["clip.mp4", "logo.svg", "shot.png", "song.mp3"]
+        );
+        assert_eq!(
+            listed(DriveFileType::Office),
+            vec!["budget.ods", "contract.docx", "my-doc", "my-note", "notes.txt"]
+        );
+        assert_eq!(listed(DriveFileType::Canvas), vec!["my-diagram", "my-drawing"]);
+        assert_eq!(listed(DriveFileType::Pdf), vec!["report.pdf"]);
+        assert_eq!(listed(DriveFileType::Archive), vec!["backup.zip", "old.tar.gz"]);
+        assert_eq!(listed(DriveFileType::Code), vec!["config.json", "page.html"]);
+    }
+
+    /// `NOT (mime LIKE …)` is the half of the query that carries the precedence:
+    /// a `.docx` is `…officedocument…`, which contains "xml", and an SVG is an
+    /// image whose MIME ends in "+xml". Both would land under Code without it.
+    #[test]
+    fn the_sql_exclusions_keep_office_and_media_out_of_code() {
+        let repo = test_repo();
+        seed_every_kind(&repo, "user-1");
+
+        let listed = repo
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Code.mime_filter()))
+            .unwrap();
+        let code = sorted_names(&listed);
+        assert!(!code.contains(&"contract.docx"));
+        assert!(!code.contains(&"logo.svg"));
+    }
+
+    /// The filter has to be in the query, not applied to the page it returns:
+    /// with a limit smaller than the drive, filtering afterwards would return
+    /// whatever happened to be in the first page and call it the whole category.
+    #[test]
+    fn the_category_filter_runs_before_the_limit() {
+        let repo = test_repo();
+        seed_every_kind(&repo, "user-1");
+
+        let files = repo
+            .list_recent_files("user-1", 2, Some(&DriveFileType::Canvas.mime_filter()))
+            .unwrap();
+        assert_eq!(sorted_names(&files), vec!["my-diagram", "my-drawing"]);
+    }
+
+    #[test]
+    fn a_category_scopes_to_the_folder_being_listed() {
+        let repo = test_repo();
+        seed_every_kind(&repo, "user-1");
+        let folder = repo
+            .create_folder(NewFolderRecord {
+                id: "f1",
+                user_id: "user-1",
+                parent_id: None,
+                name: "Pictures",
+            })
+            .unwrap();
+        insert_file(&repo, "inner", "user-1", "inside.png", "image/png");
+        repo.update_file("inner", "user-1", None, Some(Some(&folder.id)), None)
+            .unwrap();
+
+        let inside = repo
+            .list_files_in_folder(
+                "user-1",
+                Some(&folder.id),
+                &all(),
+                Some(&DriveFileType::Media.mime_filter()),
+            )
+            .unwrap();
+        assert_eq!(names(&inside), vec!["inside.png"]);
     }
 
     #[test]
@@ -1265,7 +1435,7 @@ mod tests {
         insert_file(&repo, "other", "user-2", "their-photo.png", "image/png");
 
         let files = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Photo.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Photo.mime_filter()))
             .unwrap();
         assert_eq!(sorted_names(&files), vec!["a-photo.png", "b-photo.jpg"]);
     }
@@ -1287,7 +1457,7 @@ mod tests {
         seed(&repo, "user-1");
 
         let files = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Doc.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Doc.mime_filter()))
             .unwrap();
         assert_eq!(names(&files), vec!["my-doc"]);
     }
@@ -1303,7 +1473,7 @@ mod tests {
         seed(&repo, "user-1");
 
         let files = repo
-            .list_recent_files("user-1", 1, Some(DriveFileType::Doc.mime_patterns()))
+            .list_recent_files("user-1", 1, Some(&DriveFileType::Doc.mime_filter()))
             .unwrap();
         assert_eq!(names(&files), vec!["my-doc"]);
     }
@@ -1315,7 +1485,7 @@ mod tests {
         repo.trash_file("doc", "user-1").unwrap();
 
         let files = repo
-            .list_recent_files("user-1", 100, Some(DriveFileType::Doc.mime_patterns()))
+            .list_recent_files("user-1", 100, Some(&DriveFileType::Doc.mime_filter()))
             .unwrap();
         assert!(files.is_empty());
     }
@@ -1481,7 +1651,7 @@ mod tests {
                 "user-1",
                 Some("album"),
                 &page(Some(2), None, None, None),
-                Some(DriveFileType::Photo.mime_patterns()),
+                Some(&DriveFileType::Photo.mime_filter()),
             )
             .unwrap();
 

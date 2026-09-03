@@ -81,8 +81,18 @@ export interface CreateFileRequest {
   folderId?: string | null;
 }
 
-/** Filter drive contents to a single kind of file, matched by MIME type. */
+/**
+ * Filter drive contents to a single kind of file, matched by MIME type.
+ *
+ * Mirrors `DriveFileType` in `src/drive/filesystem/dto.rs`, and like it holds
+ * two generations. The **per-app types** are what the iOS apps ask for (Photos
+ * for `photo`/`video`, Docs/Sheets/Slides for their own native MIME) and are
+ * pinned by shipped builds. The **categories** are coarser groupings, and are
+ * what the Drive filter chips send; they partition a drive, so a file answers
+ * to exactly one of them.
+ */
 export type DriveFileType =
+  // Per-app types
   | 'photo'
   | 'video'
   | 'audio'
@@ -92,7 +102,14 @@ export type DriveFileType =
   | 'slide'
   | 'diagram'
   | 'drawing'
-  | 'note';
+  | 'note'
+  // Categories
+  | 'media'
+  | 'office'
+  | 'canvas'
+  | 'pdf'
+  | 'archive'
+  | 'code';
 
 export interface FileListQuery {
   limit?: number;

@@ -16,7 +16,31 @@ import styles from './FileGrid.module.css';
 export type ViewMode = 'large' | 'small' | 'list';
 export type SortField = 'name' | 'size' | 'createdAt' | 'updatedAt';
 export type SortDir = 'asc' | 'desc';
-export type FilterType = 'all' | 'image' | 'video' | 'audio' | 'document' | 'archive' | 'starred';
+
+/**
+ * What the filter chips sort a drive into.
+ *
+ * Deliberately coarser than the app list in the sidebar. Docs, Sheets, Slides,
+ * Notes, Diagrams, Drawings and Photos each already have a nav entry of their
+ * own, so a chip per app filtered Drive by a cut the sidebar had already made —
+ * and left the file types a drive actually fills up with (PDFs, archives,
+ * source files) with no chip at all. These group by what a file *is* instead:
+ * one for anything that plays or is looked at, one for the office suite, one
+ * for the canvas apps, and one each for the loose types worth singling out.
+ *
+ * Every file lands in exactly one of these, so the chips partition the listing
+ * rather than overlapping it. `other` is the remainder — no chip of its own,
+ * reachable under All.
+ *
+ * The names are the backend's (`DriveFileType` in `src/drive/filesystem/dto.rs`),
+ * so a chip can be sent as `?type=` without a translation table in between —
+ * which is why the diagrams-and-drawings group is `canvas` rather than
+ * `drawing`, a value the backend already uses for the drawing app alone.
+ */
+export type FileCategory = 'media' | 'office' | 'canvas' | 'pdf' | 'archive' | 'code' | 'other';
+
+/** A category chip, plus All and Starred, which are not categories of file. */
+export type FilterType = 'all' | Exclude<FileCategory, 'other'> | 'starred';
 
 export interface GridItem {
   id: string;
@@ -41,25 +65,62 @@ export interface GridItem {
 }
 
 const FILTER_CHIPS: { key: FilterType; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'image', label: 'Images' },
-  { key: 'video', label: 'Videos' },
-  { key: 'audio', label: 'Audio' },
-  { key: 'document', label: 'Documents' },
+  { key: 'all',     label: 'All' },
+  { key: 'media',   label: 'Media' },
+  { key: 'office',  label: 'Office' },
+  { key: 'canvas',  label: 'Drawings' },
+  { key: 'pdf',     label: 'PDFs' },
   { key: 'archive', label: 'Archives' },
+  { key: 'code',    label: 'Code' },
   { key: 'starred', label: 'Starred' },
 ];
+
+/** Neutrino's own file types, which are all `application/x-neutrino-<app>`. */
+const NEUTRINO_PREFIX = 'application/x-neutrino-';
+const OFFICE_APPS = ['doc', 'sheet', 'slide', 'note'];
+const CANVAS_APPS = ['diagram', 'drawing'];
+
+/**
+ * The rest is matched on substrings, because the same file arrives under
+ * several MIME types depending on what uploaded it — a zip is `application/zip`
+ * from one browser and `application/x-zip-compressed` from another — and an
+ * exhaustive list of the spellings would be wrong the first time an unusual one
+ * turned up. Order of the checks below is what keeps the hints from overlapping.
+ */
+const OFFICE_HINTS = ['officedocument', 'opendocument', 'msword', 'ms-excel', 'ms-powerpoint', 'spreadsheet', 'presentation'];
+const OFFICE_MIMES = new Set(['application/rtf', 'text/plain', 'text/markdown', 'text/csv', 'text/tab-separated-values']);
+const ARCHIVE_HINTS = ['zip', 'tar', 'rar', '7z', 'gzip', 'bzip', 'compressed'];
+const CODE_HINTS = ['javascript', 'typescript', 'python', 'ruby', 'java', 'php', 'rust', 'json', 'yaml', 'xml', 'sql', 'x-sh', 'x-go', 'x-perl', 'x-swift'];
+const CODE_MIMES = new Set(['text/css', 'text/html', 'text/x-c', 'text/x-c++src', 'text/x-csrc']);
+
+/**
+ * Which chip a file belongs under. Exactly one, and the first match wins, so
+ * the order here is load-bearing: `.docx` is `…openxmlformats-officedocument…`,
+ * which contains "xml" and would be Code if the office check came second.
+ */
+export function categorizeMime(mime: string): FileCategory {
+  if (mime.startsWith(NEUTRINO_PREFIX)) {
+    const app = mime.slice(NEUTRINO_PREFIX.length);
+    if (OFFICE_APPS.includes(app)) return 'office';
+    if (CANVAS_APPS.includes(app)) return 'canvas';
+  }
+  if (mime === 'application/pdf') return 'pdf';
+  // Pictures, clips and sound are one chip: they are the things you scroll past
+  // looking for, rather than three separate errands.
+  if (mime.startsWith('image/') || mime.startsWith('video/') || mime.startsWith('audio/')) return 'media';
+  if (OFFICE_MIMES.has(mime) || OFFICE_HINTS.some((hint) => mime.includes(hint))) return 'office';
+  if (ARCHIVE_HINTS.some((hint) => mime.includes(hint))) return 'archive';
+  if (CODE_MIMES.has(mime) || CODE_HINTS.some((hint) => mime.includes(hint))) return 'code';
+  return 'other';
+}
 
 function matchesFilter(item: GridItem, filter: FilterType): boolean {
   if (filter === 'all') return true;
   if (filter === 'starred') return !!item.isStarred;
-  const mime = item.mimeType ?? '';
-  if (filter === 'image') return mime.startsWith('image/');
-  if (filter === 'video') return mime.startsWith('video/');
-  if (filter === 'audio') return mime.startsWith('audio/');
-  if (filter === 'archive') return mime.includes('zip') || mime.includes('tar') || mime.includes('rar');
-  if (filter === 'document') return mime.includes('text') || mime.includes('document') || mime.includes('pdf');
-  return true;
+  // Folders survive every chip: one may hold exactly what is being looked for,
+  // and hiding them would make a filtered listing a dead end to navigate.
+  if (item.kind === 'folder') return true;
+  return categorizeMime(item.mimeType ?? '') === filter;
 }
 
 const VIEW_BUTTONS: { mode: ViewMode; icon: React.ReactNode; label: string }[] = [
@@ -101,6 +162,13 @@ export interface FileGridProps {
   onToggleStar?: (item: GridItem) => void;
   /** Show type-filter chips above the grid (default: false) */
   showFilter?: boolean;
+  /**
+   * The selected chip. Pass it with `onFilterChange` to own the filter — which
+   * is what a caller does to answer it from the server (`?type=`) rather than
+   * over the page it has already loaded. Omit both and the grid keeps the chip.
+   */
+  filter?: FilterType;
+  onFilterChange?: (filter: FilterType) => void;
   /** Show Size column and Size sort option (default: true) */
   showSizeColumn?: boolean;
   sortBy: SortField;
@@ -135,6 +203,8 @@ export function FileGrid({
   onItemMenuOpen,
   onToggleStar,
   showFilter = false,
+  filter: filterProp,
+  onFilterChange,
   showSizeColumn = true,
   sortBy,
   sortDir,
@@ -151,8 +221,14 @@ export function FileGrid({
   footer,
 }: FileGridProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
-  const [filter, setFilter] = useState<FilterType>('all');
+  const [uncontrolledFilter, setUncontrolledFilter] = useState<FilterType>('all');
+  const filter = filterProp ?? uncontrolledFilter;
 
+  // Still run when the caller filtered server-side. The two answers are the same
+  // one — `categorizeMime` and the backend's `MimeFilter` are the same table —
+  // so it costs a pass over one page, and it is the only filter the items that
+  // never came from that endpoint get: search hits, and `starred`, which is a
+  // property of the row rather than a kind of file.
   const filteredItems = useMemo(
     () => (showFilter ? items.filter((item) => matchesFilter(item, filter)) : items),
     [items, showFilter, filter]
@@ -230,7 +306,7 @@ export function FileGrid({
               key={key}
               type="button"
               className={[styles['filter-chip'], filter === key ? styles['filter-chip-active'] : ''].filter(Boolean).join(' ')}
-              onClick={() => setFilter(key)}
+              onClick={() => { setUncontrolledFilter(key); onFilterChange?.(key); }}
               aria-pressed={filter === key}
             >
               {label}

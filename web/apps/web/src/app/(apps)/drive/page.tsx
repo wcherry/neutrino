@@ -23,7 +23,7 @@ import {
   SearchX,
   X,
 } from 'lucide-react';
-import { storageApi, filesystemApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem } from '@/lib/api';
+import { storageApi, filesystemApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -37,7 +37,7 @@ import { FolderContextMenu } from './FolderContextMenu';
 import { FileInfoPanel } from './FileInfoPanel';
 import { ShareDialog } from './ShareDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
-import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
+import { FileGrid, type GridItem, type SortField, type SortDir, type FilterType } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
 import { routeForFile, previewKindForMime } from './routeForFile';
 import {
@@ -50,6 +50,16 @@ import styles from './page.module.css';
 
 /** Items fetched per request; more are pulled in as the grid is scrolled. */
 const CONTENTS_PAGE_SIZE = 200;
+
+/**
+ * The `type` the folder endpoint should be asked for. The chip keys are the
+ * backend's own category names, so this is a narrowing rather than a mapping —
+ * `all` is the whole folder, and `starred` is not a kind of file at all, so the
+ * grid keeps that one to itself.
+ */
+function fileTypeParam(filter: FilterType): DriveFileType | undefined {
+  return filter === 'all' || filter === 'starred' ? undefined : filter;
+}
 
 function triggerBlobDownload(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -87,6 +97,7 @@ function DriveContent() {
 
   const [sortBy, setSortBy] = useState<SortField>('updatedAt');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [filter, setFilter] = useState<FilterType>('all');
   const [uploadOpen, setUploadOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -238,13 +249,18 @@ function DriveContent() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['contents', currentFolderId, currentUser?.id, { orderBy: sortBy, direction: sortDir }],
+    // The chip is part of the key because it is answered in SQL: each one pages
+    // through its own listing, rather than through the whole folder with the
+    // misses dropped in the browser — which left a chip looking empty until
+    // enough pages had been scrolled past to reach a file that matched.
+    queryKey: ['contents', currentFolderId, currentUser?.id, { orderBy: sortBy, direction: sortDir, type: fileTypeParam(filter) }],
     queryFn: ({ pageParam }) =>
       filesystemApi.getFolderContents(currentFolderId ?? currentUser!.id, {
         limit: CONTENTS_PAGE_SIZE,
         offset: pageParam,
         orderBy: sortBy,
         direction: sortDir,
+        type: fileTypeParam(filter),
       }),
     initialPageParam: 0,
     // The endpoint paginates subfolders and files independently — the same
@@ -776,6 +792,8 @@ function DriveContent() {
                 isDraggingOver,
               })}
           showFilter
+          filter={filter}
+          onFilterChange={setFilter}
           showSizeColumn={!searchTerm}
           sortBy={sortBy}
           sortDir={sortDir}

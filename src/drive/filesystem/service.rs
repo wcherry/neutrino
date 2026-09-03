@@ -109,12 +109,10 @@ impl FilesystemService {
         // would mean loading every row in the folder — each carrying a
         // `cover_thumbnail` of up to ~100KB — to return one page of them.
         let subfolders = self.repo.list_subfolders(user_id, folder_id, query)?;
-        let files = self.repo.list_files_in_folder(
-            user_id,
-            folder_id,
-            query,
-            file_type.map(|t| t.mime_patterns()),
-        )?;
+        let mime_filter = file_type.map(|t| t.mime_filter());
+        let files =
+            self.repo
+                .list_files_in_folder(user_id, folder_id, query, mime_filter.as_ref())?;
 
         Ok(FolderContentsResponse {
             folder: folder_response,
@@ -257,9 +255,10 @@ impl FilesystemService {
         file_type: Option<DriveFileType>,
     ) -> Result<FolderContentsResponse, ApiError> {
         // Filtered in SQL so `limit` counts matching files (see the repo method).
-        let files =
-            self.repo
-                .list_recent_files(user_id, limit, file_type.map(|t| t.mime_patterns()))?;
+        let mime_filter = file_type.map(|t| t.mime_filter());
+        let files = self
+            .repo
+            .list_recent_files(user_id, limit, mime_filter.as_ref())?;
         Ok(FolderContentsResponse {
             folder: None,
             folders: vec![],

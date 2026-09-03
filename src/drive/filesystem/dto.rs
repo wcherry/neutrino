@@ -100,9 +100,20 @@ impl From<FileRecord> for FileResponse {
 }
 
 /// Filter drive contents to a single kind of file, matched by MIME type.
+///
+/// Two generations of value live here and both are answered, because clients
+/// ship on their own schedules: the **per-app types** are pinned by the iOS
+/// apps (Photos asks for `photo` and `video`, Docs/Sheets/Slides for their own
+/// native MIME) and cannot be renamed out from under a released build, while
+/// the **categories** are what the web filter chips ask for. A category is
+/// coarser on purpose — the web sidebar already has a nav entry per app, so a
+/// chip per app filtered Drive by a cut that had already been made, and left
+/// the file types a drive actually fills up with (PDFs, archives, source
+/// files) with no filter at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum DriveFileType {
+    // ── Per-app types ─────────────────────────────────────────────────────────
     Photo,
     Video,
     Audio,
@@ -113,10 +124,74 @@ pub enum DriveFileType {
     Diagram,
     Drawing,
     Note,
+
+    // ── Categories ────────────────────────────────────────────────────────────
+    /// Anything you look at or play: pictures, clips and sound.
+    Media,
+    /// The office suite — Neutrino's own documents and their uploaded equivalents.
+    Office,
+    /// The two canvas apps: diagrams and drawings.
+    Canvas,
+    Pdf,
+    Archive,
+    Code,
+}
+
+/// What a MIME type has to look like to be a given [`DriveFileType`].
+///
+/// Two lists rather than one because the categories are resolved *in order*
+/// (see [`DriveFileType::CATEGORY_ORDER`]): `exclude` is how a later category
+/// gives up a file an earlier one has already claimed, which is what keeps a
+/// `.docx` — `application/vnd.openxmlformats-officedocument…`, containing the
+/// substring "xml" — out of `Code`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MimeFilter {
+    /// SQL `LIKE` patterns; matching any one of them is a match.
+    pub include: &'static [&'static str],
+    /// Patterns that take the file back out again, whatever `include` said.
+    pub exclude: Vec<&'static str>,
+}
+
+/// The `LIKE` forms these patterns use, matched in memory: `a/%` is a prefix,
+/// `%a%` a substring, `%a` a suffix, and a pattern with no `%` is an exact MIME.
+///
+/// SQLite's `LIKE` is case-insensitive for ASCII, so the comparison is made on
+/// a lowercased MIME to keep the in-memory answer and the SQL one the same.
+fn like_matches(pattern: &str, mime: &str) -> bool {
+    match (pattern.strip_prefix('%'), pattern.strip_suffix('%')) {
+        (Some(_), Some(_)) => mime.contains(pattern.trim_matches('%')),
+        (Some(suffix), None) => mime.ends_with(suffix),
+        (None, Some(prefix)) => mime.starts_with(prefix),
+        (None, None) => mime == pattern,
+    }
 }
 
 impl DriveFileType {
-    /// SQL `LIKE` patterns that a file's MIME type must match (any of them).
+    /// The categories in resolution order: a MIME that could answer to two of
+    /// them belongs to the first, and the ones after it exclude the ones before.
+    ///
+    /// The per-app types are deliberately absent. They are pinned by shipped
+    /// clients, so they keep the exact meaning they have always had and overlap
+    /// each other freely — `document` and `doc` are different filters, not two
+    /// halves of one partition.
+    const CATEGORY_ORDER: [DriveFileType; 6] = [
+        DriveFileType::Pdf,
+        DriveFileType::Media,
+        DriveFileType::Canvas,
+        DriveFileType::Office,
+        DriveFileType::Archive,
+        DriveFileType::Code,
+    ];
+
+    /// SQL `LIKE` patterns that a file's MIME type must match (any of them),
+    /// before precedence between the categories is applied.
+    ///
+    /// The categories match on substrings where the per-app types match on
+    /// prefixes, because the same file arrives under several MIME types
+    /// depending on what uploaded it — a zip is `application/zip` from one
+    /// browser and `application/x-zip-compressed` from another — and an
+    /// exhaustive list of the spellings would be wrong the first time an
+    /// unusual one turned up.
     pub fn mime_patterns(&self) -> &'static [&'static str] {
         match self {
             DriveFileType::Photo => &["image/%"],
@@ -135,23 +210,99 @@ impl DriveFileType {
             DriveFileType::Diagram => &["application/x-neutrino-diagram"],
             DriveFileType::Drawing => &["application/x-neutrino-drawing"],
             DriveFileType::Note => &["application/x-neutrino-note"],
+
+            DriveFileType::Media => &["image/%", "video/%", "audio/%"],
+            DriveFileType::Office => &[
+                "application/x-neutrino-doc",
+                "application/x-neutrino-sheet",
+                "application/x-neutrino-slide",
+                "application/x-neutrino-note",
+                "%officedocument%",
+                "%opendocument%",
+                "%msword%",
+                "%ms-excel%",
+                "%ms-powerpoint%",
+                "%spreadsheet%",
+                "%presentation%",
+                "application/rtf",
+                "text/plain",
+                "text/markdown",
+                "text/csv",
+                "text/tab-separated-values",
+            ],
+            DriveFileType::Canvas => &[
+                "application/x-neutrino-diagram",
+                "application/x-neutrino-drawing",
+            ],
+            DriveFileType::Pdf => &["application/pdf"],
+            DriveFileType::Archive => &[
+                "%zip%",
+                "%tar%",
+                "%rar%",
+                "%7z%",
+                "%gzip%",
+                "%bzip%",
+                "%compressed%",
+            ],
+            DriveFileType::Code => &[
+                "%javascript%",
+                "%typescript%",
+                "%python%",
+                "%ruby%",
+                "%java%",
+                "%php%",
+                "%rust%",
+                "%json%",
+                "%yaml%",
+                "%xml%",
+                "%sql%",
+                "%x-sh%",
+                "%x-go%",
+                "%x-perl%",
+                "%x-swift%",
+                "text/css",
+                "text/html",
+                "text/x-c",
+                "text/x-c++src",
+                "text/x-csrc",
+            ],
+        }
+    }
+
+    /// The patterns plus the precedence, as one value the SQL and the in-memory
+    /// filter both read — so the two cannot answer the same question differently.
+    pub fn mime_filter(&self) -> MimeFilter {
+        let exclude = match Self::CATEGORY_ORDER.iter().position(|c| c == self) {
+            Some(i) => Self::CATEGORY_ORDER[..i]
+                .iter()
+                .flat_map(|earlier| earlier.mime_patterns())
+                .copied()
+                .collect(),
+            None => Vec::new(),
+        };
+        MimeFilter {
+            include: self.mime_patterns(),
+            exclude,
         }
     }
 
     /// Whether a MIME type matches this file type, in memory.
     ///
-    /// The SQL counterpart is [`Self::mime_patterns`] fed to `LIKE`; this is for
-    /// the listings that are already loaded and sorted in Rust (folder contents,
-    /// the `view=` listings, trash, shared-with-me, tagged files) rather than
-    /// filtered in the query. Every pattern is either an exact MIME or a
-    /// trailing-`%` prefix, so those are the only two forms handled.
+    /// The SQL counterpart is [`Self::mime_filter`] fed to `LIKE`; this is for
+    /// the listings that are already loaded and sorted in Rust (the `view=`
+    /// listings, trash, shared-with-me, tagged files) rather than filtered in
+    /// the query.
     pub fn matches(&self, mime: &str) -> bool {
-        self.mime_patterns()
+        let mime = mime.to_ascii_lowercase();
+        let filter = self.mime_filter();
+        filter
+            .include
             .iter()
-            .any(|pattern| match pattern.strip_suffix('%') {
-                Some(prefix) => mime.starts_with(prefix),
-                None => mime == *pattern,
-            })
+            .any(|pattern| like_matches(pattern, &mime))
+            && !filter
+                .exclude
+                .iter()
+                .any(|pattern| like_matches(pattern, &mime))
     }
 }
 
@@ -437,22 +588,32 @@ mod tests {
         assert!(!DriveFileType::Document.matches("image/png"));
     }
 
+    /// Every type the enum has, so a new variant cannot be added without the
+    /// tests below covering it.
+    const ALL_TYPES: [DriveFileType; 16] = [
+        DriveFileType::Photo,
+        DriveFileType::Video,
+        DriveFileType::Audio,
+        DriveFileType::Document,
+        DriveFileType::Doc,
+        DriveFileType::Sheet,
+        DriveFileType::Slide,
+        DriveFileType::Diagram,
+        DriveFileType::Drawing,
+        DriveFileType::Note,
+        DriveFileType::Media,
+        DriveFileType::Office,
+        DriveFileType::Canvas,
+        DriveFileType::Pdf,
+        DriveFileType::Archive,
+        DriveFileType::Code,
+    ];
+
     #[test]
     fn matches_agrees_with_the_sql_patterns() {
-        // Every exact (non-wildcard) pattern must match itself, so the in-memory
-        // filter and the `LIKE` query cannot drift apart.
-        for file_type in [
-            DriveFileType::Photo,
-            DriveFileType::Video,
-            DriveFileType::Audio,
-            DriveFileType::Document,
-            DriveFileType::Doc,
-            DriveFileType::Sheet,
-            DriveFileType::Slide,
-            DriveFileType::Diagram,
-            DriveFileType::Drawing,
-            DriveFileType::Note,
-        ] {
+        // Every pattern must match a MIME built from it, so the in-memory filter
+        // and the `LIKE` query cannot drift apart.
+        for file_type in ALL_TYPES {
             for pattern in file_type.mime_patterns() {
                 let sample = pattern.replace('%', "sample");
                 assert!(
@@ -461,6 +622,176 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── Categories ────────────────────────────────────────────────────────────
+
+    /// A drive's worth of MIME types, including every one that answers to two
+    /// categories at once.
+    const CORPUS: [&str; 20] = [
+        "image/png",
+        "image/svg+xml",
+        "video/mp4",
+        "audio/mpeg",
+        "application/pdf",
+        "application/x-neutrino-doc",
+        "application/x-neutrino-sheet",
+        "application/x-neutrino-slide",
+        "application/x-neutrino-note",
+        "application/x-neutrino-diagram",
+        "application/x-neutrino-drawing",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.oasis.opendocument.text",
+        "text/plain",
+        "text/csv",
+        "application/zip",
+        "application/x-7z-compressed",
+        "application/json",
+        "application/octet-stream",
+    ];
+
+    const CATEGORIES: [DriveFileType; 6] = [
+        DriveFileType::Media,
+        DriveFileType::Office,
+        DriveFileType::Canvas,
+        DriveFileType::Pdf,
+        DriveFileType::Archive,
+        DriveFileType::Code,
+    ];
+
+    #[test]
+    fn query_parses_the_category_values() {
+        for (raw, expected) in [
+            (r#"{"type":"media"}"#, DriveFileType::Media),
+            (r#"{"type":"office"}"#, DriveFileType::Office),
+            (r#"{"type":"canvas"}"#, DriveFileType::Canvas),
+            (r#"{"type":"pdf"}"#, DriveFileType::Pdf),
+            (r#"{"type":"archive"}"#, DriveFileType::Archive),
+            (r#"{"type":"code"}"#, DriveFileType::Code),
+        ] {
+            let q: FolderContentsQuery = serde_json::from_str(raw).unwrap();
+            assert_eq!(q.file_type, Some(expected), "parsing {raw}");
+        }
+    }
+
+    #[test]
+    fn media_gathers_pictures_clips_and_sound() {
+        assert!(DriveFileType::Media.matches("image/png"));
+        assert!(DriveFileType::Media.matches("video/quicktime"));
+        assert!(DriveFileType::Media.matches("audio/mpeg"));
+        assert!(!DriveFileType::Media.matches("application/pdf"));
+    }
+
+    #[test]
+    fn office_gathers_the_suite_and_its_uploaded_equivalents() {
+        for mime in [
+            "application/x-neutrino-doc",
+            "application/x-neutrino-sheet",
+            "application/x-neutrino-slide",
+            "application/x-neutrino-note",
+            "application/msword",
+            "application/vnd.oasis.opendocument.text",
+            "text/csv",
+        ] {
+            assert!(DriveFileType::Office.matches(mime), "office should hold {mime}");
+        }
+        assert!(!DriveFileType::Office.matches("application/x-neutrino-diagram"));
+    }
+
+    #[test]
+    fn canvas_gathers_diagrams_and_drawings() {
+        assert!(DriveFileType::Canvas.matches("application/x-neutrino-diagram"));
+        assert!(DriveFileType::Canvas.matches("application/x-neutrino-drawing"));
+        assert!(!DriveFileType::Canvas.matches("application/x-neutrino-doc"));
+    }
+
+    /// The precedence the `exclude` half of a [`MimeFilter`] exists for: both of
+    /// these contain a substring `code` claims, and both are claimed earlier.
+    #[test]
+    fn code_gives_up_what_an_earlier_category_claimed() {
+        let docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        assert!(DriveFileType::Office.matches(docx));
+        assert!(!DriveFileType::Code.matches(docx), "a .docx is not source code");
+
+        assert!(DriveFileType::Media.matches("image/svg+xml"));
+        assert!(!DriveFileType::Code.matches("image/svg+xml"));
+
+        // An XML file that is not an office part or an image still is code.
+        assert!(DriveFileType::Code.matches("application/xml"));
+    }
+
+    #[test]
+    fn every_file_belongs_to_at_most_one_category() {
+        for mime in CORPUS {
+            let claimed: Vec<DriveFileType> = CATEGORIES
+                .into_iter()
+                .filter(|category| category.matches(mime))
+                .collect();
+            assert!(
+                claimed.len() <= 1,
+                "{mime} was claimed by more than one category: {claimed:?}"
+            );
+        }
+    }
+
+    /// `application/octet-stream` is the remainder: it is under no chip, and is
+    /// reachable only by listing the folder unfiltered.
+    #[test]
+    fn an_unrecognised_mime_belongs_to_no_category() {
+        assert!(!CATEGORIES
+            .into_iter()
+            .any(|category| category.matches("application/octet-stream")));
+    }
+
+    #[test]
+    fn only_the_categories_carry_precedence() {
+        // The per-app types are pinned by shipped clients and overlap freely —
+        // `document` and `doc` both hold things the other does. Giving them
+        // exclusions would silently change what an iOS build already asks for.
+        for file_type in ALL_TYPES {
+            let has_exclusions = !file_type.mime_filter().exclude.is_empty();
+            assert_eq!(
+                has_exclusions,
+                CATEGORIES.contains(&file_type) && file_type != DriveFileType::Pdf,
+                "{file_type:?}"
+            );
+        }
+    }
+
+    /// The per-app filters the iOS apps and the macOS client pin. Renaming or
+    /// re-scoping one of these breaks a shipped build, which cannot be updated
+    /// in the same release — see the coupling rules in the platform CLAUDE.md.
+    #[test]
+    fn the_per_app_types_still_mean_what_the_clients_expect() {
+        assert!(DriveFileType::Photo.matches("image/png"));
+        assert!(!DriveFileType::Photo.matches("video/mp4"));
+        assert!(DriveFileType::Video.matches("video/mp4"));
+        assert!(DriveFileType::Doc.matches("application/x-neutrino-doc"));
+        assert!(!DriveFileType::Doc.matches("application/x-neutrino-note"));
+        assert!(DriveFileType::Sheet.matches("application/x-neutrino-sheet"));
+        assert!(DriveFileType::Slide.matches("application/x-neutrino-slide"));
+        // `drawing` is still the drawing app alone; `canvas` is the group.
+        assert!(DriveFileType::Drawing.matches("application/x-neutrino-drawing"));
+        assert!(!DriveFileType::Drawing.matches("application/x-neutrino-diagram"));
+    }
+
+    #[test]
+    fn like_forms_are_matched_the_way_sqlite_would() {
+        assert!(like_matches("image/%", "image/png"));
+        assert!(!like_matches("image/%", "application/image/png"));
+        assert!(like_matches("%zip%", "application/x-zip-compressed"));
+        assert!(like_matches("%zip", "application/zip"));
+        assert!(like_matches("text/csv", "text/csv"));
+        assert!(!like_matches("text/csv", "text/csv2"));
+    }
+
+    #[test]
+    fn matching_ignores_case_the_way_sqlite_like_does() {
+        // A client that uploads with `IMAGE/PNG` is filtered the same either way,
+        // rather than appearing under a chip in SQL and vanishing in memory.
+        assert!(DriveFileType::Media.matches("IMAGE/PNG"));
+        assert!(DriveFileType::Pdf.matches("Application/PDF"));
     }
 
     #[test]
