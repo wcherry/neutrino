@@ -29,6 +29,7 @@ import {
   Image as ImageIcon,
   Package,
   Presentation,
+  RotateCcw,
   X,
 } from 'lucide-react';
 import { Alert, Button, Checkbox, DropZone, ProgressBar, Spinner, TextInput, useToast } from '@neutrino/ui';
@@ -66,7 +67,7 @@ import {
   type SlidesImportOptions,
   type TakeoutArchive,
 } from '@/lib/takeout';
-import { useImportRun, type ImportStep } from '@/components/ImportRun';
+import { useImportRun, type ImportStep, type RetryTarget } from '@/components/ImportRun';
 import { logFail, logStep } from '@/lib/takeout/log';
 import styles from './page.module.css';
 
@@ -109,6 +110,16 @@ const archiveLabel = (files: File[]) =>
  */
 const inPartOrder = (files: File[]) =>
   [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+/**
+ * The files a retry asked for, out of everything a product found.
+ *
+ * Every runner reports an item's `file` as the entry's path inside the archive,
+ * so that is the key the result screen hands back and the one to filter on.
+ * No set means the whole product, i.e. an ordinary first run.
+ */
+const onlyFiles = <T,>(items: T[], pathOf: (item: T) => string, only?: ReadonlySet<string>) =>
+  only ? items.filter((item) => only.has(pathOf(item))) : items;
 
 /** "12 photos", or "12 photos and videos" when the export holds both. */
 const mediaLabel = (source: PhotosSource) =>
@@ -237,6 +248,10 @@ export default function ImportPage() {
    * The passes to run, in order, each closed over the options as they stand at
    * the moment Import is pressed. Building them here keeps the provider free of
    * any knowledge of Keep or Drive or Photos; it just sequences them.
+   *
+   * A step is also what a retry re-runs, so each one narrows its own list to
+   * the `only` files it is given — the provider knows which product a failed
+   * row came from, and the step knows what a file path means in it.
    */
   const buildSteps = (archive: LoadedArchive): ImportStep[] => {
     const steps: ImportStep[] = [];
@@ -245,8 +260,14 @@ export default function ImportPage() {
       steps.push({
         product: 'Notes',
         count: noteCount,
-        run: ({ onProgress, signal }) =>
-          runKeepImport({ entries, options: keepOptions, userId: user?.id, onProgress, signal }),
+        run: ({ onProgress, signal, only }) =>
+          runKeepImport({
+            entries: onlyFiles(entries, (e) => e.path, only),
+            options: keepOptions,
+            userId: user?.id,
+            onProgress,
+            signal,
+          }),
       });
     }
     if (docCount > 0 && archive.docs) {
@@ -254,8 +275,14 @@ export default function ImportPage() {
       steps.push({
         product: 'Documents',
         count: docCount,
-        run: ({ onProgress, signal }) =>
-          runDocsImport({ docs, options: docOptions, userId: user?.id, onProgress, signal }),
+        run: ({ onProgress, signal, only }) =>
+          runDocsImport({
+            docs: onlyFiles(docs, (d) => d.entry.path, only),
+            options: docOptions,
+            userId: user?.id,
+            onProgress,
+            signal,
+          }),
       });
     }
     if (sheetCount > 0 && archive.sheets) {
@@ -263,8 +290,14 @@ export default function ImportPage() {
       steps.push({
         product: 'Spreadsheets',
         count: sheetCount,
-        run: ({ onProgress, signal }) =>
-          runSheetsImport({ sheets, options: sheetOptions, userId: user?.id, onProgress, signal }),
+        run: ({ onProgress, signal, only }) =>
+          runSheetsImport({
+            sheets: onlyFiles(sheets, (s) => s.entry.path, only),
+            options: sheetOptions,
+            userId: user?.id,
+            onProgress,
+            signal,
+          }),
       });
     }
     if (slideCount > 0 && archive.slides) {
@@ -272,8 +305,14 @@ export default function ImportPage() {
       steps.push({
         product: 'Presentations',
         count: slideCount,
-        run: ({ onProgress, signal }) =>
-          runSlidesImport({ slides, options: slideOptions, userId: user?.id, onProgress, signal }),
+        run: ({ onProgress, signal, only }) =>
+          runSlidesImport({
+            slides: onlyFiles(slides, (s) => s.entry.path, only),
+            options: slideOptions,
+            userId: user?.id,
+            onProgress,
+            signal,
+          }),
       });
     }
     if (photoCount > 0 && archive.photos) {
@@ -281,26 +320,45 @@ export default function ImportPage() {
       steps.push({
         product: 'Photos',
         count: photoCount,
-        run: ({ onProgress, signal }) =>
-          runPhotosImport({ photos, options: photoOptions, userId: user?.id, onProgress, signal }),
+        run: ({ onProgress, signal, only }) =>
+          runPhotosImport({
+            photos: onlyFiles(photos, (p) => p.entry.path, only),
+            options: photoOptions,
+            userId: user?.id,
+            onProgress,
+            signal,
+          }),
       });
     }
     return steps;
   };
 
+  /**
+   * Whether this device can encrypt, warning if it cannot. Every runner
+   * declines without a key rather than importing in the clear (issue #95), so
+   * both Import and Retry ask once here instead of letting the passes each fail
+   * their way to the same answer.
+   */
+  const canEncrypt = async () => {
+    if (await canEncryptFor(user?.id)) return true;
+    toast.warning(ENCRYPTION_WARNING_MESSAGE);
+    return false;
+  };
+
   const startImport = async () => {
     if (!loaded || selectedCount === 0) return;
-    // Every runner declines without a key rather than importing in the clear
-    // (issue #95), so ask once here instead of letting five passes each fail
-    // their way to the same answer.
-    if (!(await canEncryptFor(user?.id))) {
-      toast.warning(ENCRYPTION_WARNING_MESSAGE);
-      return;
-    }
+    if (!(await canEncrypt())) return;
     // The archive goes with the plan: from here it is the run's to read and the
     // run's to close, so this page's unmount must not touch it.
     archiveRef.current = null;
     run.start({ fileName: loaded.fileName, archive: loaded.archive, steps: buildSteps(loaded) });
+  };
+
+  /** Run some of the failed files again, through the products they came from. */
+  const retryImport = async (targets: RetryTarget[]) => {
+    if (targets.length === 0) return;
+    if (!(await canEncrypt())) return;
+    run.retry(targets);
   };
 
   const percent = progress && progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
@@ -313,6 +371,9 @@ export default function ImportPage() {
     );
   const failures = rowsOf('failed');
   const skips = rowsOf('skipped');
+  // Whether those failures can be run again: the archive holding their bytes
+  // is open only while the provider says a retry would still find something.
+  const retryable = run.state.status === 'done' && run.state.retryable;
   const totals = (results ?? []).reduce(
     (acc, r) => ({
       imported: acc.imported + r.summary.imported,
@@ -872,11 +933,42 @@ export default function ImportPage() {
 
             {failures.length > 0 && (
               <div className={styles.list}>
-                <h2 className={styles.listHeading}>Failed</h2>
+                <div className={styles.listHead}>
+                  <h2 className={styles.listHeading}>Failed</h2>
+                  {/* Failures are ordinary over thousands of files, and every
+                      one of these can be run again on its own — recovering the
+                      three that failed rather than the whole archive. With a
+                      single failure the row's own Retry already is "all". */}
+                  {retryable && failures.length > 1 && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={<RotateCcw size={14} />}
+                      onClick={() => {
+                        void retryImport(failures.map(({ product, file }) => ({ product, file })));
+                      }}
+                    >
+                      Retry all {failures.length} failed
+                    </Button>
+                  )}
+                </div>
                 {failures.map((item) => (
                   <div key={`${item.product}:${item.file}`} className={styles.listRow}>
                     <span className={styles.listTitle}>{item.title}</span>
                     <span className={styles.listReason}>{item.reason}</span>
+                    {retryable && (
+                      <button
+                        type="button"
+                        className={styles.retryBtn}
+                        aria-label={`Retry ${item.title}`}
+                        onClick={() => {
+                          void retryImport([{ product: item.product, file: item.file }]);
+                        }}
+                      >
+                        <RotateCcw size={13} aria-hidden="true" />
+                        Retry
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

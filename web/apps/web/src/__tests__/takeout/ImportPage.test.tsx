@@ -498,6 +498,140 @@ describe('ImportPage', () => {
     expect(screen.getByText(/Nothing importable was found/)).toBeTruthy();
   });
 
+  // Issue #155. A failure part-way through an archive used to leave re-running
+  // the whole thing as the only recovery, which for a photo library means
+  // re-uploading thousands of files to recover one.
+  describe('retrying what failed', () => {
+    /** Import an archive whose notes and documents each fail on their second file. */
+    async function runWithFailures() {
+      takeout.runKeepImport.mockResolvedValue(
+        summary(1, {
+          total: 2,
+          failed: 1,
+          items: [
+            { file: 'a.json', title: 'A', status: 'imported' },
+            { file: 'b.json', title: 'B', status: 'failed', reason: 'HTTP 500: server error' },
+          ],
+        }),
+      );
+      takeout.runDocsImport.mockResolvedValue(
+        summary(1, {
+          total: 2,
+          failed: 1,
+          items: [
+            { file: 'a.docx', title: 'A doc', status: 'imported' },
+            { file: 'b.docx', title: 'B doc', status: 'failed', reason: 'HTTP 413: too large' },
+          ],
+        }),
+      );
+
+      const { container } = renderPage();
+      await dropArchive(container);
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Import 4 items' }));
+      });
+      await waitFor(() => expect(screen.getByText('2 imported · 0 skipped · 2 failed')).toBeTruthy());
+      return container;
+    }
+
+    it('offers a retry for each failed file and one for all of them', async () => {
+      await runWithFailures();
+
+      expect(screen.getByRole('button', { name: 'Retry all 2 failed' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Retry B' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Retry B doc' })).toBeTruthy();
+    });
+
+    it('drops Retry all down to one failure’s own Retry', async () => {
+      await runWithFailures();
+      takeout.runKeepImport.mockResolvedValue(
+        summary(1, { total: 1, items: [{ file: 'b.json', title: 'B', status: 'imported' }] }),
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Retry B' }));
+      });
+
+      // One failure left, and "Retry all 1 failed" would be the same button
+      // twice over.
+      await waitFor(() => expect(screen.queryByRole('button', { name: /^Retry all/ })).toBeNull());
+      expect(screen.getByRole('button', { name: 'Retry B doc' })).toBeTruthy();
+    });
+
+    it('retries one file through the product that failed on it', async () => {
+      await runWithFailures();
+      takeout.runKeepImport.mockResolvedValue(
+        summary(1, { total: 1, items: [{ file: 'b.json', title: 'B', status: 'imported' }] }),
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Retry B' }));
+      });
+
+      // The notes run again over that one entry; the documents are left alone.
+      expect(takeout.runKeepImport).toHaveBeenCalledTimes(2);
+      expect(takeout.runKeepImport.mock.calls[1][0].entries).toEqual([{ path: 'b.json' }]);
+      expect(takeout.runDocsImport).toHaveBeenCalledTimes(1);
+
+      // The row is gone and the counts moved by one, over the whole import.
+      await waitFor(() => expect(screen.getByText('3 imported · 0 skipped · 1 failed')).toBeTruthy());
+      expect(screen.queryByRole('button', { name: 'Retry B' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Retry B doc' })).toBeTruthy();
+    });
+
+    it('retries every failed file across both products at once', async () => {
+      await runWithFailures();
+      takeout.runKeepImport.mockResolvedValue(
+        summary(1, { total: 1, items: [{ file: 'b.json', title: 'B', status: 'imported' }] }),
+      );
+      takeout.runDocsImport.mockResolvedValue(
+        summary(1, { total: 1, items: [{ file: 'b.docx', title: 'B doc', status: 'imported' }] }),
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Retry all 2 failed' }));
+      });
+
+      expect(takeout.runKeepImport.mock.calls[1][0].entries).toEqual([{ path: 'b.json' }]);
+      expect(takeout.runDocsImport.mock.calls[1][0].docs).toEqual([{ entry: { path: 'b.docx' } }]);
+      await waitFor(() => expect(screen.getByText('4 imported · 0 skipped · 0 failed')).toBeTruthy());
+      expect(screen.queryByRole('button', { name: /^Retry/ })).toBeNull();
+    });
+
+    it('leaves a file that fails again on the list, with its new reason', async () => {
+      await runWithFailures();
+      takeout.runKeepImport.mockResolvedValue(
+        summary(0, {
+          total: 1,
+          failed: 1,
+          items: [{ file: 'b.json', title: 'B', status: 'failed', reason: 'HTTP 401: session expired' }],
+        }),
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Retry B' }));
+      });
+
+      await waitFor(() => expect(screen.getByText('HTTP 401: session expired')).toBeTruthy());
+      expect(screen.getByRole('button', { name: 'Retry B' })).toBeTruthy();
+      expect(screen.getByText('2 imported · 0 skipped · 2 failed')).toBeTruthy();
+    });
+
+    it('does not retry when this device cannot encrypt', async () => {
+      await runWithFailures();
+      canEncryptFor.mockResolvedValue(false);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Retry all 2 failed' }));
+      });
+
+      // Same reason the first import asks (issue #95): a run with no key writes
+      // nothing, so it would report every file as failing a second time.
+      expect(takeout.runKeepImport).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Retry all 2 failed' })).toBeTruthy();
+    });
+  });
+
   it('warns about documents in a format it cannot convert', async () => {
     takeout.findDriveDocs.mockReturnValue({
       ...docsSource,
