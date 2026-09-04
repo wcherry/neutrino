@@ -34,7 +34,7 @@ function HelpModal({ onClose }: { onClose: () => void }) {
             <li>Pick a starting point for the current slide with <strong>Slide → Apply layout</strong>.</li>
             <li>Add content from the <strong>Insert</strong> menu — text boxes, images, shapes, lines and video.</li>
             <li>Presentations save automatically — look for the save status in the top bar.</li>
-            <li>Use <strong>File → Export</strong> to download as PowerPoint (.pptx).</li>
+            <li>Use <strong>File → Export</strong> to download as PowerPoint (.pptx) or PDF.</li>
           </ul>
         </section>
 
@@ -89,6 +89,7 @@ export interface HamburgerMenuProps {
   onDuplicate: () => void;
   onImport: () => void;
   onExportPptx: () => void;
+  onExportPdf: () => void;
   onShare: () => void;
   // Office mode (issue #43) — true when this file is a raw .pptx being edited
   // in place rather than a native Neutrino presentation.
@@ -135,6 +136,7 @@ export function HamburgerMenu({
   onDuplicate,
   onImport,
   onExportPptx,
+  onExportPdf,
   onShare,
   onNewSlide,
   onDuplicateSlide,
@@ -196,6 +198,7 @@ export function HamburgerMenu({
         {
           kind: 'submenu', label: 'Export as…', items: [
             { kind: 'action', label: 'PowerPoint (.pptx)', action: () => onExportPptx() },
+            { kind: 'action', label: 'PDF (.pdf)',         action: () => onExportPdf() },
           ],
         },
         { kind: 'separator' },

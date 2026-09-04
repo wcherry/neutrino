@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { test, expect } from '../../fixtures/base';
 import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
@@ -72,5 +73,36 @@ test.describe('Presentation export', () => {
 
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/Q4 Review.*\.pptx$/i);
+  });
+
+  test('Export → PDF downloads a PDF of the slides (issue #100)', async ({ page, request }) => {
+    test.setTimeout(60_000);
+    await registerAndLogin(request, page);
+
+    await page.goto('/drive');
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Presentation' }).click();
+    await expect(page).toHaveURL(/\/slides\/editor\/?\?id=/, { timeout: 15_000 });
+    await expect(page.getByRole('button', { name: 'Slides' })).toBeVisible({ timeout: 10_000 });
+
+    // A shape as well as the layout's text, so the export's SVG path is
+    // exercised in a real browser and not only in the unit tests.
+    await page.getByRole('button', { name: 'Open menu' }).click();
+    await page.getByRole('menu').getByText('Insert', { exact: true }).hover();
+    await page.getByText('General', { exact: true }).hover();
+    await page.getByText('Rectangle', { exact: true }).click();
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 45_000 });
+    await page.getByRole('button', { name: /Export/ }).click();
+    await page.getByText('PDF (.pdf)').click();
+
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.pdf$/i);
+
+    const path = await download.path();
+    expect(path).toBeTruthy();
+    const bytes = readFileSync(path!);
+    expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(bytes.length).toBeGreaterThan(1_000);
   });
 });

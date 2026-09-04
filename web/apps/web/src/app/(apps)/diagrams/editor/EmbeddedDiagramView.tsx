@@ -1,7 +1,8 @@
 'use client';
 
 import React from 'react';
-import type { DiagramPage, DiagramShape, DiagramConnector } from '../types';
+import type { DiagramPage } from '../types';
+import { computeViewBox, connectorLabelAnchor, getConnectorPoints, getShapePath } from './diagramSvg';
 import styles from './EmbeddedDiagramView.module.css';
 
 export interface EmbeddedDiagramViewProps {
@@ -12,53 +13,6 @@ export interface EmbeddedDiagramViewProps {
   bgColor?: string;
   showGrid?: boolean;
   gridSize?: number;
-}
-
-function getShapePath(shape: DiagramShape): string {
-  const { x, y, width: w, height: h } = shape;
-  switch (shape.type) {
-    case 'ellipse':
-    case 'circle':
-      return `M ${x + w / 2} ${y} A ${w / 2} ${h / 2} 0 1 1 ${x + w / 2 - 0.01} ${y}`;
-    case 'diamond':
-    case 'flowchart-decision':
-      return `M ${x + w / 2} ${y} L ${x + w} ${y + h / 2} L ${x + w / 2} ${y + h} L ${x} ${y + h / 2} Z`;
-    case 'triangle':
-      return `M ${x + w / 2} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
-    default:
-      return `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`;
-  }
-}
-
-function getConnectorPoints(conn: DiagramConnector, shapes: DiagramShape[]): string {
-  const shapeMap = new Map(shapes.map((s) => [s.id, s]));
-  let x1 = conn.startPoint?.x ?? 0;
-  let y1 = conn.startPoint?.y ?? 0;
-  let x2 = conn.endPoint?.x ?? 0;
-  let y2 = conn.endPoint?.y ?? 0;
-
-  if (conn.sourceId) {
-    const s = shapeMap.get(conn.sourceId);
-    if (s) { x1 = s.x + s.width / 2; y1 = s.y + s.height / 2; }
-  }
-  if (conn.targetId) {
-    const s = shapeMap.get(conn.targetId);
-    if (s) { x2 = s.x + s.width / 2; y2 = s.y + s.height / 2; }
-  }
-
-  const pts = [`${x1},${y1}`, ...conn.waypoints.map((p) => `${p.x},${p.y}`), `${x2},${y2}`];
-  return pts.join(' ');
-}
-
-function computeViewBox(page: DiagramPage): string {
-  const shapes = page.shapes;
-  if (shapes.length === 0) return '0 0 400 300';
-  const pad = 20;
-  const minX = Math.min(...shapes.map((s) => s.x)) - pad;
-  const minY = Math.min(...shapes.map((s) => s.y)) - pad;
-  const maxX = Math.max(...shapes.map((s) => s.x + s.width)) + pad;
-  const maxY = Math.max(...shapes.map((s) => s.y + s.height)) + pad;
-  return `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
 }
 
 export function EmbeddedDiagramView({
@@ -155,12 +109,11 @@ export function EmbeddedDiagramView({
               opacity={conn.style.opacity}
             />
             {conn.label && (() => {
-              const pts = getConnectorPoints(conn, page.shapes).split(' ');
-              const mid = pts[Math.floor(pts.length / 2)]?.split(',') ?? ['0', '0'];
+              const at = connectorLabelAnchor(getConnectorPoints(conn, page.shapes));
               return (
                 <text
-                  x={parseFloat(mid[0] ?? '0')}
-                  y={parseFloat(mid[1] ?? '0') - 6}
+                  x={at.x}
+                  y={at.y}
                   textAnchor="middle"
                   fontSize={11}
                   fill={conn.style.textColor}

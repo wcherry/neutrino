@@ -10,8 +10,8 @@ import { useSlideBackgroundStyle } from './useSlideBackgroundStyle';
 import { SheetEmbedRenderer } from '@neutrino/sheet-embed';
 import type { CellValue } from '@neutrino/sheet-embed';
 import { EmbeddedDiagramView } from '@/app/(apps)/diagrams/editor/EmbeddedDiagramView';
-import { diagramsApi } from '@neutrino/api-diagrams';
-import type { DiagramDocument, DiagramPage } from '@/app/(apps)/diagrams/types';
+import { fetchDiagramPage } from '@/app/(apps)/diagrams/editor/diagramSvg';
+import type { DiagramPage } from '@/app/(apps)/diagrams/types';
 import styles from './page.module.css';
 import { DriveImage } from '@/components/DriveImage';
 
@@ -20,16 +20,8 @@ function DiagramSlideElement({ el }: { el: DiagramElement }) {
 
   useEffect(() => {
     let cancelled = false;
-    diagramsApi.getDiagram(el.diagramId)
-      .then(async (meta) => {
-        if (cancelled || !meta.contentUrl) return;
-        const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') ?? '' : '';
-        const res = await fetch(meta.contentUrl, { headers: { Authorization: `Bearer ${token}` } });
-        if (!res.ok || cancelled) return;
-        const doc = await res.json() as DiagramDocument;
-        const p = doc.pages[el.pageIndex] ?? doc.pages[0] ?? null;
-        if (!cancelled) setPage(p);
-      })
+    fetchDiagramPage(el.diagramId, el.pageIndex)
+      .then((p) => { if (!cancelled) setPage(p); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [el.diagramId, el.pageIndex]);
