@@ -27,7 +27,7 @@ export interface NormalizedHtml {
   dropped: string[];
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     // A remote image has to be fetched with CORS or the canvas is tainted and
@@ -40,7 +40,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /** True if any pixel is not fully opaque — decides PNG vs the smaller JPEG. */
-function hasTransparency(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
+export function hasTransparency(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
   try {
     const { data } = ctx.getImageData(0, 0, w, h);
     for (let i = 3; i < data.length; i += 4) {

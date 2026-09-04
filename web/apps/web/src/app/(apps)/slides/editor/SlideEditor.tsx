@@ -123,6 +123,7 @@ import {
 } from './slideEditorConstants';
 import { slideBackgroundStyle, dbThemeToTheme, getVideoEmbedInfo } from './slideEditorHelpers';
 import { exportAsPptx, exportAsPptxBytes } from './pptxExport';
+import { exportAsPdf } from './pdfExport';
 import FillPicker from './FillPicker';
 import SlideCanvas from './SlideCanvas';
 import SlideThumbnail from './SlideThumbnail';
@@ -356,6 +357,8 @@ export function SlideEditor() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [presenterMode, setPresenterMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const exportingPdfRef = useRef(false);
   const [masterMode, setMasterMode] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<'layout' | 'theme' | 'insert'>('layout');
   const [zoom, setZoom] = useState(100);
@@ -875,6 +878,24 @@ export function SlideEditor() {
     queryClient.invalidateQueries({ queryKey: ['slides'] });
     router.push(`/slides/editor?id=${copy.id}`);
   }, [title, currentUser?.id, queryClient, router, toast]);
+
+  // Unlike the .pptx export, this one decrypts and rasterises every picture on
+  // every slide, so it can take a moment on a deck full of images — hence the
+  // busy flag, which also stops a second run piling up behind the first.
+  const handleExportPdf = useCallback(async () => {
+    if (exportingPdfRef.current) return;
+    exportingPdfRef.current = true;
+    setExportingPdf(true);
+    try {
+      await exportAsPdf(title || 'presentation', presentationRef.current);
+    } catch (err) {
+      console.error('[slides:pdf] export failed', err);
+      toast.error('Could not export this presentation as a PDF.');
+    } finally {
+      exportingPdfRef.current = false;
+      setExportingPdf(false);
+    }
+  }, [title, toast]);
 
   function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
@@ -1586,6 +1607,7 @@ export function SlideEditor() {
           onDuplicate={handleDuplicate}
           onImport={() => importInputRef.current?.click()}
           onExportPptx={() => { void exportAsPptx(title || 'presentation', presentationRef.current); }}
+          onExportPdf={() => { void handleExportPdf(); }}
           onShare={() => setShowShareDialog(true)}
           onNewSlide={addSlide}
           onDuplicateSlide={duplicateSlide}
@@ -1663,6 +1685,16 @@ export function SlideEditor() {
                   }}
                 >
                   PowerPoint (.pptx)
+                </button>
+                <button
+                  className={styles.dropdownItem}
+                  disabled={exportingPdf}
+                  onClick={() => {
+                    setExportOpen(false);
+                    void handleExportPdf();
+                  }}
+                >
+                  {exportingPdf ? 'Preparing PDF…' : 'PDF (.pdf)'}
                 </button>
               </div>
             )}
