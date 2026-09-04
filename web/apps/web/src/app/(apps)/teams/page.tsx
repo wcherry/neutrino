@@ -103,7 +103,7 @@ function DiscoverSection({ onJoined }: { onJoined: (teamId: string) => void }) {
   return (
     <section className={styles.discover}>
       <div className={styles.discoverHeader}>
-        <Heading level={2} size="md">
+        <Heading level={2} size="base">
           Discover
         </Heading>
         <Text size="sm" color="secondary">

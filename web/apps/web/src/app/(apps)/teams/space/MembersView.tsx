@@ -175,7 +175,7 @@ function JoinRequestsPanel({ team }: { team: Team }) {
   return (
     <section className={styles.requests}>
       <div className={styles.pageHeaderText}>
-        <Heading level={2} size="md">
+        <Heading level={2} size="base">
           Requests to join ({requests.length})
         </Heading>
         <Text size="sm" color="secondary">
