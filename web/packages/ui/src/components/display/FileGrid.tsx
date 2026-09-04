@@ -10,6 +10,7 @@ import {
   ChevronUp,
   ChevronDown,
 } from 'lucide-react';
+import { formatDateTime, formatFriendlyDate } from '@neutrino/utils';
 import { Card, Text, FileListSkeleton, Badge } from '../../index';
 import styles from './FileGrid.module.css';
 
@@ -58,6 +59,14 @@ export interface GridItem {
   sizeText?: string;
   /** Formatted modified date for list view */
   modifiedText?: string;
+  /**
+   * When the item last changed, ISO-8601. Shown on the large card as a
+   * friendly date ("Yesterday", "A week ago") — the card is scanned rather
+   * than read, so it wants "is this the one I was working on?" answered, not a
+   * date. The list view's Modified column keeps `modifiedText`, since a column
+   * you sort by wants the real date. Trash passes its `deletedAt` here.
+   */
+  updatedAt?: string;
   isStarred?: boolean;
   /** Base64-encoded cover thumbnail, shown in grid cards when available */
   coverThumbnail?: string | null;
@@ -139,6 +148,24 @@ const ALL_SORT_OPTIONS: { field: SortField; label: string }[] = [
 function SortIndicator({ field, sortBy, sortDir }: { field: SortField; sortBy: SortField; sortDir: SortDir }) {
   if (field !== sortBy) return null;
   return sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />;
+}
+
+/**
+ * The line under a large card's name: what the item is, and when it last
+ * changed. Both on one row so adding the date does not make every card taller,
+ * with the exact timestamp on the tooltip for when the friendly one is too
+ * vague to act on.
+ */
+function CardMeta({ subtitle, updatedAt }: { subtitle?: string; updatedAt?: string }) {
+  const friendly = updatedAt ? formatFriendlyDate(updatedAt) : '';
+  if (!subtitle && !friendly) return null;
+  return (
+    <div className={styles['card-meta']} title={friendly ? formatDateTime(updatedAt!) : undefined}>
+      {subtitle && <Text size="xs" color="muted" truncate>{subtitle}</Text>}
+      {subtitle && friendly && <span className={styles['card-meta-sep']} aria-hidden="true">·</span>}
+      {friendly && <Text size="xs" color="muted" truncate>{friendly}</Text>}
+    </div>
+  );
 }
 
 /** Keyboard handler that activates an item on Enter or Space, matching button/link conventions. */
@@ -372,7 +399,7 @@ export function FileGrid({
               </div>
               <div className={styles['card-large-body']}>
                 <Text size="sm" weight="medium" truncate>{item.name}</Text>
-                {item.subtitle && <Text size="xs" color="muted">{item.subtitle}</Text>}
+                <CardMeta subtitle={item.subtitle} updatedAt={item.updatedAt} />
               </div>
               {onItemMenuOpen && (
                 <button

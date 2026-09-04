@@ -13,6 +13,9 @@ const meta: Meta<typeof FileGrid> = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** Story dates are relative so the cards' friendly dates read as they would in the app. */
+const hoursAgo = (h: number) => new Date(Date.now() - h * 3600_000).toISOString();
+
 // ── Docs & Presentations (matches the screenshot) ──────────────────────────
 const DOCS_ITEMS: GridItem[] = [
   {
@@ -26,6 +29,7 @@ const DOCS_ITEMS: GridItem[] = [
     typeText: 'Slides',
     sizeText: '1.3 KB',
     modifiedText: 'May 22, 2026',
+    updatedAt: hoursAgo(0),
   },
   {
     id: '2',
@@ -38,6 +42,7 @@ const DOCS_ITEMS: GridItem[] = [
     typeText: 'Document',
     sizeText: '27 B',
     modifiedText: 'May 21, 2026',
+    updatedAt: hoursAgo(5),
   },
   {
     id: '3',
@@ -50,17 +55,18 @@ const DOCS_ITEMS: GridItem[] = [
     typeText: 'Document',
     sizeText: '0 B',
     modifiedText: 'May 20, 2026',
+    updatedAt: hoursAgo(30),
   },
 ];
 
 // ── Mixed file types ───────────────────────────────────────────────────────
 const MIXED_ITEMS: GridItem[] = [
-  { id: '1', name: 'Project Brief.pdf', kind: 'file', icon: FileText, iconColor: '#dc2626', subtitle: '2.4 MB', mimeType: 'application/pdf', typeText: 'PDF', sizeText: '2.4 MB', modifiedText: 'May 18, 2026' },
-  { id: '2', name: 'Design Assets', kind: 'folder', icon: Folder, iconColor: '#d97706', subtitle: 'Folder', typeText: 'Folder', modifiedText: 'May 17, 2026' },
-  { id: '3', name: 'hero.png', kind: 'file', icon: Image, iconColor: '#7c3aed', subtitle: '840 KB', mimeType: 'image/png', typeText: 'PNG', sizeText: '840 KB', modifiedText: 'May 16, 2026', isStarred: true },
-  { id: '4', name: 'soundtrack.mp3', kind: 'file', icon: Music, iconColor: '#0891b2', subtitle: '8.1 MB', mimeType: 'audio/mp3', typeText: 'MP3', sizeText: '8.1 MB', modifiedText: 'May 15, 2026' },
-  { id: '5', name: 'demo.mp4', kind: 'file', icon: Video, iconColor: '#16a34a', subtitle: '142 MB', mimeType: 'video/mp4', typeText: 'MP4', sizeText: '142 MB', modifiedText: 'May 14, 2026', isStarred: true },
-  { id: '6', name: 'release-v2.zip', kind: 'file', icon: Archive, iconColor: '#374151', subtitle: '34 MB', mimeType: 'application/zip', typeText: 'ZIP', sizeText: '34 MB', modifiedText: 'May 13, 2026' },
+  { id: '1', name: 'Project Brief.pdf', kind: 'file', icon: FileText, iconColor: '#dc2626', subtitle: '2.4 MB', mimeType: 'application/pdf', typeText: 'PDF', sizeText: '2.4 MB', modifiedText: 'May 18, 2026', updatedAt: hoursAgo(2) },
+  { id: '2', name: 'Design Assets', kind: 'folder', icon: Folder, iconColor: '#d97706', subtitle: 'Folder', typeText: 'Folder', modifiedText: 'May 17, 2026', updatedAt: hoursAgo(26) },
+  { id: '3', name: 'hero.png', kind: 'file', icon: Image, iconColor: '#7c3aed', subtitle: '840 KB', mimeType: 'image/png', typeText: 'PNG', sizeText: '840 KB', modifiedText: 'May 16, 2026', updatedAt: hoursAgo(72), isStarred: true },
+  { id: '4', name: 'soundtrack.mp3', kind: 'file', icon: Music, iconColor: '#0891b2', subtitle: '8.1 MB', mimeType: 'audio/mp3', typeText: 'MP3', sizeText: '8.1 MB', modifiedText: 'May 15, 2026', updatedAt: hoursAgo(24 * 9) },
+  { id: '5', name: 'demo.mp4', kind: 'file', icon: Video, iconColor: '#16a34a', subtitle: '142 MB', mimeType: 'video/mp4', typeText: 'MP4', sizeText: '142 MB', modifiedText: 'May 14, 2026', updatedAt: hoursAgo(24 * 40), isStarred: true },
+  { id: '6', name: 'release-v2.zip', kind: 'file', icon: Archive, iconColor: '#374151', subtitle: '34 MB', mimeType: 'application/zip', typeText: 'ZIP', sizeText: '34 MB', modifiedText: 'May 13, 2026', updatedAt: hoursAgo(24 * 400) },
 ];
 
 function FileGridDemo(props: Partial<React.ComponentProps<typeof FileGrid>> & { defaultItems?: GridItem[] }) {
