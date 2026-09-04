@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Check, ChevronRight, Copy, Link2, Link2Off, Loader2, RefreshCw, ShieldAlert, ShieldCheck, ShieldX, Upload } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter, Spinner, useToast } from '@neutrino/ui';
@@ -79,7 +80,14 @@ const AI_KEY_PAGES: Record<AiSettings['provider'], { url: string; label: string 
   openai: { url: 'https://platform.openai.com/api-keys', label: 'OpenAI Platform' },
 };
 
-type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'calendar' | 'advanced';
+/**
+ * Account used to hold identity, the password section, the whole end-to-end
+ * encryption panel and the danger zone at once — the tab issue #60 named as the
+ * one that had grown too big. Security is where the encryption panel and
+ * password live now; Account keeps the address, a pointer at /profile for the
+ * user's own details, and deletion.
+ */
+type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'security' | 'calendar' | 'advanced';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'ai', label: 'AI Assistant' },
@@ -87,6 +95,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'calendar', label: 'Calendar' },
   { id: 'account', label: 'Account' },
+  { id: 'security', label: 'Security' },
   { id: 'advanced', label: 'Advanced' },
 ];
 
@@ -233,8 +242,9 @@ const qc = useQueryClient();
   const [emailCritical, setEmailCritical] = useState(true);
 
   // ── Account state ──────────────────────────────────────────────────────────
-  const [name, setName] = useState('');
-  const [nameSaved, setNameSaved] = useState(false);
+  // The display name is not here: it is one of the user's own details, so
+  // /profile owns it (issue #60). It used to be in both places, and in neither
+  // did it save.
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // ── Encryption key state ───────────────────────────────────────────────────
@@ -482,7 +492,6 @@ const qc = useQueryClient();
   // ── Populate form when data arrives ───────────────────────────────────────
   useEffect(() => {
     if (!details && !user) return;
-    setName(user?.name ?? '');
     if (details) {
       setEmailMarketing(details.emailPreferences?.marketing ?? false);
       setEmailGeneral(details.emailPreferences?.general ?? true);
@@ -513,17 +522,6 @@ const qc = useQueryClient();
         critical: emailCritical,
       },
     });
-  }
-
-  function handleNameSave(e: React.FormEvent) {
-    e.preventDefault();
-    // NOTE: name is stored on the UserProfile record, not UserProfileDetails.
-    // The updateProfileDetails endpoint accepts the common UpdateProfileRequest
-    // fields; name updates would go through a separate endpoint when available.
-    // For now we persist what we can.
-    save.mutate({});
-    setNameSaved(true);
-    setTimeout(() => setNameSaved(false), 2000);
   }
 
   /**
@@ -896,38 +894,44 @@ const qc = useQueryClient();
               />
             </div>
 
-            <form onSubmit={handleNameSave}>
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Display name</label>
-                <input
-                  className={styles.formInput}
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your name"
-                />
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <div className={styles.settingName}>Your details</div>
+                <div className={styles.settingDesc}>
+                  Display name, avatar, bio, locale and social links are on your profile.
+                </div>
               </div>
-
-              <div className={styles.saveBar}>
-                {save.isError && (
-                  <span className={styles.saveError}>Failed to save. Please try again.</span>
-                )}
-                <button
-                  type="submit"
-                  className={styles.saveBtn}
-                  disabled={save.isPending}
-                >
-                  {save.isPending ? (
-                    <><Loader2 size={15} className={styles.spinner} /> Saving…</>
-                  ) : nameSaved ? (
-                    <><Check size={15} /> Saved</>
-                  ) : (
-                    'Save account'
-                  )}
-                </button>
-              </div>
-            </form>
+              {/* `Link`, not a bare `<a>`: a full page load would drop the
+                  unlocked encryption key held in memory for this session. */}
+              <Link className={styles.outlineBtn} href="/profile">
+                Edit profile<ChevronRight size={13} />
+              </Link>
+            </div>
           </section>
 
+          {/* ── Danger zone ─────────────────────────────────────────── */}
+          <section className={styles.section}>
+            <div className={styles.dangerZone}>
+              <h2 className={styles.dangerTitle}>Danger zone</h2>
+              <p className={styles.dangerDesc}>
+                Delete your account and all associated data. Your account stops working
+                straight away and is permanently erased after 30 days.
+              </p>
+              <button
+                type="button"
+                className={styles.dangerBtn}
+                onClick={() => setShowDeleteDialog(true)}
+              >
+                Delete account
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ── Security tab ────────────────────────────────────────────────── */}
+      {activeTab === 'security' && (
+        <div className={styles.content}>
           {/* ── Change password ─────────────────────────────────────── */}
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>Change password</h2>
@@ -1069,24 +1073,6 @@ const qc = useQueryClient();
                 {importKeySaved
                   ? <><Check size={14} /> Key imported</>
                   : <><Upload size={14} /> Import key</>}
-              </button>
-            </div>
-          </section>
-
-          {/* ── Danger zone ─────────────────────────────────────────── */}
-          <section className={styles.section}>
-            <div className={styles.dangerZone}>
-              <h2 className={styles.dangerTitle}>Danger zone</h2>
-              <p className={styles.dangerDesc}>
-                Delete your account and all associated data. Your account stops working
-                straight away and is permanently erased after 30 days.
-              </p>
-              <button
-                type="button"
-                className={styles.dangerBtn}
-                onClick={() => setShowDeleteDialog(true)}
-              >
-                Delete account
               </button>
             </div>
           </section>

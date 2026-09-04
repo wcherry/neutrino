@@ -89,6 +89,12 @@ export interface PublicProfile {
 }
 
 export interface UpdateProfileRequest {
+  /**
+   * Display name. Stored on the user record rather than the profile record, so
+   * it is not echoed back in `UserProfileDetails` — re-read it with
+   * `useAuth().refresh()` after a save.
+   */
+  name?: string;
   theme?: string | null;
   bio?: string | null;
   avatar?: string | null;

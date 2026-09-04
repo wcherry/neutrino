@@ -4,7 +4,7 @@
  *
  * Two tests are included:
  * 1. A direct unit test of ENCRYPTION_WARNING_MESSAGE that verifies the
- *    constant renders a link pointing at /settings?tab=account.
+ *    constant renders a link pointing at /settings?tab=security.
  * 2. An integration test that renders DocEditor, intercepts useMutation via
  *    a module-level mock that wraps the real implementation, captures the
  *    onError callback from contentMutation, and invokes it to verify that
@@ -210,7 +210,7 @@ describe('DocEditor — contentMutation encryption warning toast', () => {
     const { getByRole } = render(
       React.createElement(React.Fragment, null, ENCRYPTION_WARNING_MESSAGE)
     );
-    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=account');
+    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=security');
   });
 
   /**
@@ -241,7 +241,7 @@ describe('DocEditor — contentMutation encryption warning toast', () => {
 
     const message = mockWarning.mock.calls[0][0] as React.ReactNode;
     const { getByRole } = render(React.createElement(React.Fragment, null, message));
-    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=account');
+    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=security');
   });
 
   it('onError does NOT call toast.warning for unrelated errors', async () => {

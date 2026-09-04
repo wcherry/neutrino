@@ -866,7 +866,7 @@ export default function ImportPage() {
               <Alert
                 variant="warning"
                 className={styles.alert}
-                message="This device has no encryption key set up, so nothing was imported — items are never written without end-to-end encryption. Set up or unlock your keys in Settings → Account, then run the import again."
+                message="This device has no encryption key set up, so nothing was imported — items are never written without end-to-end encryption. Set up or unlock your keys in Settings → Security, then run the import again."
               />
             )}
 

@@ -46,7 +46,7 @@ test.describe('Settings page — smoke', () => {
   test('all tabs are visible', async ({ page }) => {
     await page.goto('/settings');
     const tabBar = page.locator('[class*="tabBar"]');
-    for (const label of ['AI Assistant', 'Appearance', 'Notifications', 'Calendar', 'Account', 'Advanced']) {
+    for (const label of ['AI Assistant', 'Appearance', 'Notifications', 'Calendar', 'Account', 'Security', 'Advanced']) {
       await expect(tabBar.getByRole('button', { name: label })).toBeVisible({ timeout: 10_000 });
     }
   });
@@ -111,12 +111,26 @@ test.describe('Settings page — tab navigation', () => {
     await expect(emailInput).toBeDisabled();
   });
 
-  test('Account tab shows editable display name field', async ({ page }) => {
+  // Issue #60: the display name lived here and on /profile, and neither copy
+  // saved it. Profile owns it now, and Account points at Profile instead.
+  test('Account tab has no display name field, only a link to Profile', async ({ page }) => {
     await clickTab(page, 'Account');
     await expect(page.getByRole('heading', { name: 'Account', level: 2 })).toBeVisible();
-    // The display name input has placeholder "Your name" (no label association)
-    await expect(page.getByPlaceholder('Your name')).toBeVisible();
-    await expect(page.getByPlaceholder('Your name')).toBeEnabled();
+    await expect(page.getByPlaceholder('Your name')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /profile/i })).toBeVisible();
+  });
+
+  test('Security tab shows the encryption key panel', async ({ page }) => {
+    await clickTab(page, 'Security');
+    await expect(page.getByRole('heading', { name: 'Encryption key', level: 2 })).toBeVisible();
+    await expect(page.getByText('End-to-end encryption')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Change password', level: 2 })).toBeVisible();
+  });
+
+  test('Account tab no longer carries the encryption key panel', async ({ page }) => {
+    await clickTab(page, 'Account');
+    await expect(page.getByRole('heading', { name: 'Account', level: 2 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Encryption key', level: 2 })).toHaveCount(0);
   });
 
   test('Calendar tab shows week-start options', async ({ page }) => {
@@ -203,10 +217,9 @@ test.describe('Settings page — account', () => {
     await expect(emailInput).toBeDisabled();
   });
 
-  test('saving account shows Saved confirmation', async ({ page }) => {
-    await page.getByPlaceholder('Your name').fill('Updated Name');
-    await page.getByRole('button', { name: 'Save account' }).click();
-    await expect(page.getByRole('button', { name: /saved/i })).toBeVisible({ timeout: 5_000 });
+  test('the link to Profile goes to /profile', async ({ page }) => {
+    await page.getByRole('link', { name: /profile/i }).click();
+    await expect(page).toHaveURL(/\/profile/, { timeout: 10_000 });
   });
 
   test('delete account button opens confirmation dialog', async ({ page }) => {
@@ -270,6 +283,14 @@ test.describe('Settings page — tab URL param', () => {
   test('?tab=account opens the Account tab directly', async ({ page }) => {
     await page.goto('/settings?tab=account');
     await expect(page.getByRole('heading', { name: 'Account', level: 2 })).toBeVisible({
+      timeout: 10_000,
+    });
+  });
+
+  // Every "Set up encryption" link in the editors points here.
+  test('?tab=security opens the Security tab directly', async ({ page }) => {
+    await page.goto('/settings?tab=security');
+    await expect(page.getByRole('heading', { name: 'Encryption key', level: 2 })).toBeVisible({
       timeout: 10_000,
     });
   });

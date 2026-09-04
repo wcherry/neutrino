@@ -95,17 +95,17 @@ test.describe('Profile page — hero and layout', () => {
     await expect(page.getByPlaceholder('https://x.com/username')).toBeVisible();
   });
 
-  test('Appearance section with theme picker is visible', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Appearance', level: 2 })).toBeVisible();
-    // Use exact: true to distinguish "Light" from "Light Glass"
-    await expect(page.getByRole('button', { name: 'Light', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Dark', exact: true })).toBeVisible();
+  // Issue #60: the theme picker and the email-notification checkboxes each used
+  // to exist here *and* on /settings, with their own state and their own save
+  // button. Settings owns both now; Profile is the user's own details only.
+  test('theme picker has moved to Settings and is not on Profile', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Appearance', level: 2 })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Dark', exact: true })).toHaveCount(0);
   });
 
-  test('Email notifications section is visible', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Email notifications', level: 2 })).toBeVisible();
-    await expect(page.getByText('Critical alerts')).toBeVisible();
-    await expect(page.getByText('Marketing')).toBeVisible();
+  test('email notifications have moved to Settings and are not on Profile', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Email notifications', level: 2 })).toHaveCount(0);
+    await expect(page.getByText('Critical alerts')).toHaveCount(0);
   });
 
   test('Save changes button is present', async ({ page }) => {
@@ -155,17 +155,29 @@ test.describe('Profile page — editing and saving', () => {
     );
   });
 
-  test('toggling a notification preference and saving succeeds', async ({ page }) => {
-    const marketingLabel = page.locator('label', { hasText: 'Marketing' });
-    const checkbox = marketingLabel.locator('input[type="checkbox"]');
-    const initialChecked = await checkbox.isChecked();
-
-    await marketingLabel.click();
-    await expect(checkbox).toBeChecked({ checked: !initialChecked });
-
+  // The display name is Profile's alone since issue #60, and until then neither
+  // copy of the field actually wrote anything: Settings sent an empty patch
+  // behind a TODO, and Profile never put `name` in its request at all.
+  test('display name saves and persists across a reload', async ({ page }) => {
+    await page.getByPlaceholder('Your name').fill('Renamed Person');
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByRole('button', { name: /saved/i })).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('[class*="saveError"]')).toBeHidden({ timeout: 3_000 });
+
+    await page.reload();
+    await expect(page.getByPlaceholder('Your name')).toHaveValue('Renamed Person', {
+      timeout: 10_000,
+    });
+  });
+
+  test('a saved display name reaches the hero', async ({ page }) => {
+    await page.getByPlaceholder('Your name').fill('Hero Name');
+    await page.getByRole('button', { name: 'Save changes' }).click();
+    await expect(page.getByRole('button', { name: /saved/i })).toBeVisible({ timeout: 5_000 });
+
+    await page.reload();
+    await expect(page.locator('[class*="heroName"]')).toContainText('Hero Name', {
+      timeout: 10_000,
+    });
   });
 });
 
