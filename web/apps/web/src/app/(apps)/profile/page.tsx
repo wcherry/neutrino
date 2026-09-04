@@ -2,12 +2,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Camera, Check, Globe, Loader2 } from 'lucide-react';
 import { authApi, useAuth, type UpdateProfileRequest } from '@/lib/api';
-import { useTheme, type ThemeChoice } from '@/providers/ThemeProvider';
 import { AvatarPickerDialog } from '@neutrino/ui';
-import { ThemeGrid } from '@/components/theme/ThemeGrid';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -27,10 +26,19 @@ const SOCIAL_PLATFORMS = [
 // Page
 // ---------------------------------------------------------------------------
 
+/**
+ * Who the user is — nothing about how the app behaves.
+ *
+ * The theme picker and the email-notification checkboxes used to live here too,
+ * duplicating the Appearance and Notifications tabs of /settings field for
+ * field, each with its own state and its own save button (issue #60). Settings
+ * owns both now. The split is the rule for anything added here later: a
+ * preference goes to Settings, a detail about the person stays.
+ */
 export default function ProfilePage() {
   const router = useRouter();
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { user, refresh: refreshUser } = useAuth();
 
   const { data: details, isLoading } = useQuery({
     queryKey: ['profile-details'],
@@ -47,12 +55,7 @@ export default function ProfilePage() {
   const [language, setLanguage] = useState('');
   const [timezone, setTimezone] = useState('');
   const [country, setCountry] = useState('');
-  const { setTheme } = useTheme();
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
-  const [emailMarketing, setEmailMarketing] = useState(false);
-  const [emailGeneral, setEmailGeneral] = useState(true);
-  const [emailUpdates, setEmailUpdates] = useState(true);
-  const [emailCritical, setEmailCritical] = useState(true);
   const [saved, setSaved] = useState(false);
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
 
@@ -74,10 +77,6 @@ export default function ProfilePage() {
       setTimezone(details.timezone ?? '');
       setCountry(details.country ?? '');
       setSocialLinks(details.socialLinks ?? {});
-      setEmailMarketing(details.emailPreferences?.marketing ?? false);
-      setEmailGeneral(details.emailPreferences?.general ?? true);
-      setEmailUpdates(details.emailPreferences?.updates ?? true);
-      setEmailCritical(details.emailPreferences?.critical ?? true);
       populatedRef.current = true;
     }
   }, [details, user]);
@@ -87,23 +86,20 @@ export default function ProfilePage() {
     mutationFn: (req: UpdateProfileRequest) => authApi.updateProfileDetails(req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profile-details'] });
+      // The name lives on the user record, so it is not in what this endpoint
+      // returns — re-read the session user or the topbar and every avatar keep
+      // showing the old one until the next reload.
+      void refreshUser();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     },
   });
 
-  // Selecting a theme (built-in or custom) applies it instantly and persists
-  // it synchronously in the click handler — standardized across
-  // Settings/Profile via the shared ThemeGrid's onSelect contract, replacing
-  // this page's previous auto-save-via-effect pattern.
-  function handleThemeSelect(themeId: string) {
-    setTheme(themeId as ThemeChoice);
-    save.mutate({ theme: themeId });
-  }
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     save.mutate({
+      // Blank is not a name; leaving it out keeps whatever is on the account.
+      ...(name.trim() ? { name: name.trim() } : {}),
       bio: bio.trim() || null,
       avatar: avatar,
       profileImage: profileImage.trim() || null,
@@ -112,12 +108,6 @@ export default function ProfilePage() {
       timezone: timezone.trim() || null,
       country: country.trim() || null,
       socialLinks,
-      emailPreferences: {
-        marketing: emailMarketing,
-        general: emailGeneral,
-        updates: emailUpdates,
-        critical: emailCritical,
-      },
     });
   }
 
@@ -302,67 +292,13 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        {/* ── Appearance ──────────────────────────────────────────────── */}
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Appearance</h2>
-          <div className={styles.formGroup}>
-            <div className={styles.settingInfo}>
-              <div className={styles.settingName}>Theme</div>
-              <div className={styles.settingDesc}>Choose the color scheme for the interface — selecting a theme applies and saves it immediately</div>
-            </div>
-            <ThemeGrid onSelect={handleThemeSelect} />
-          </div>
-        </section>
-
-        {/* ── Email preferences ────────────────────────────────────────── */}
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Email notifications</h2>
-          <div className={styles.checkList}>
-            {[
-              {
-                id: 'critical',
-                label: 'Critical alerts',
-                desc: 'Security issues, account actions that require your attention',
-                checked: emailCritical,
-                onChange: setEmailCritical,
-              },
-              {
-                id: 'general',
-                label: 'General',
-                desc: 'Activity summaries, comments, and mentions',
-                checked: emailGeneral,
-                onChange: setEmailGeneral,
-              },
-              {
-                id: 'updates',
-                label: 'Product updates',
-                desc: 'New features, improvements, and release notes',
-                checked: emailUpdates,
-                onChange: setEmailUpdates,
-              },
-              {
-                id: 'marketing',
-                label: 'Marketing',
-                desc: 'Tips, promotions, and special offers',
-                checked: emailMarketing,
-                onChange: setEmailMarketing,
-              },
-            ].map(({ id, label, desc, checked, onChange }) => (
-              <label key={id} className={styles.checkRow}>
-                <input
-                  type="checkbox"
-                  className={styles.checkbox}
-                  checked={checked}
-                  onChange={(e) => onChange(e.target.checked)}
-                />
-                <div className={styles.checkInfo}>
-                  <div className={styles.checkLabel}>{label}</div>
-                  <div className={styles.checkDesc}>{desc}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-        </section>
+        {/* Themes and email notifications are not here: they are preferences,
+            and they live in Settings → Appearance and Settings →
+            Notifications. See the note on this component. */}
+        <p className={styles.preferencesNote}>
+          Looking for themes, email notifications or your encryption key?
+          They are in <Link href="/settings">Settings</Link>.
+        </p>
 
         {/* ── Save bar ─────────────────────────────────────────────────── */}
         <div className={styles.saveBar}>

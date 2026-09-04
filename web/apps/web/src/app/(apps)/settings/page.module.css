@@ -645,6 +645,14 @@
   border-color: var(--color-text-secondary, #6b7280);
 }
 
+/* Account's "Edit profile" is the one of these that is a link rather than a
+   button, so it needs the underline off and the same no-shrink a settings row's
+   trailing control gets. */
+a.outlineBtn {
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
 .keyExportRow {
   display: flex;
   gap: 8px;

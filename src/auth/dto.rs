@@ -266,6 +266,10 @@ pub struct UserProfileDetailsResponse {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
+    /// Display name. Lives on the user row rather than the profile row, so it is
+    /// written separately — but it is edited on the same screen as everything
+    /// else here, and a second endpoint for one field bought nothing.
+    pub name: Option<String>,
     pub theme: Option<String>,
     pub bio: Option<String>,
     pub avatar: Option<String>,

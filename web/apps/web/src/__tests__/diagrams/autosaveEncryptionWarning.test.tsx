@@ -257,6 +257,6 @@ describe('DiagramEditor — encryption warning toast', () => {
     // link pointing at the encryption settings page.
     const message = mockWarning.mock.calls[0][0] as React.ReactNode;
     const { getByRole } = render(React.createElement(React.Fragment, null, message));
-    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=account');
+    expect(getByRole('link')).toHaveAttribute('href', '/settings?tab=security');
   });
 });

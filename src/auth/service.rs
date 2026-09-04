@@ -973,6 +973,17 @@ impl AuthService {
             .find_user_by_id(user_id)?
             .ok_or_else(|| ApiError::not_found("User not found"))?;
 
+        // The name is the one field here that belongs to the user row, not the
+        // profile row. Validated before anything is written so a rejected name
+        // does not leave the rest of the patch applied behind it.
+        let new_name = match req.name {
+            Some(ref name) if name.trim().is_empty() => {
+                return Err(ApiError::bad_request("Name cannot be empty"))
+            }
+            Some(ref name) => Some(name.trim().to_string()),
+            None => None,
+        };
+
         // Load existing profile (or defaults) to merge with the patch
         let existing = self.repo.get_user_profile(user_id)?;
         let defaults = EmailPreferences::default();
@@ -1029,6 +1040,11 @@ impl AuthService {
         };
 
         let saved = self.repo.upsert_user_profile(upsert)?;
+
+        if let Some(ref name) = new_name {
+            self.repo.update_user_name(user_id, name)?;
+        }
+
         Ok(profile_to_response(user_id, Some(saved)))
     }
 
@@ -2227,6 +2243,89 @@ mod tests {
         // nothing can bring it back.
         let err = svc.admin_restore_user("no-such-user").unwrap_err();
         assert_eq!(err.status, 404);
+    }
+
+    // ── update_extended_profile ───────────────────────────────────────────────
+
+    /// A profile patch that changes nothing, to spread the one field under test
+    /// over — every field is optional and independent.
+    fn profile_update() -> UpdateProfileRequest {
+        UpdateProfileRequest {
+            name: None,
+            theme: None,
+            bio: None,
+            avatar: None,
+            profile_image: None,
+            website: None,
+            social_links: None,
+            language: None,
+            timezone: None,
+            country: None,
+            email_preferences: None,
+        }
+    }
+
+    #[test]
+    fn updating_the_profile_renames_the_user() {
+        let svc = make_service();
+        let user = svc
+            .register(reg("nia@test.com", "password123", "Nia"))
+            .unwrap();
+
+        svc.update_extended_profile(
+            &user.id,
+            UpdateProfileRequest {
+                name: Some("  Nia Okafor  ".to_string()),
+                ..profile_update()
+            },
+        )
+        .unwrap();
+
+        // Trimmed: the display name is shown verbatim beside every file and
+        // comment, so leading whitespace is a rendering bug waiting to happen.
+        assert_eq!(svc.get_profile(&user.id).unwrap().name, "Nia Okafor");
+    }
+
+    #[test]
+    fn a_profile_patch_without_a_name_leaves_the_name_alone() {
+        let svc = make_service();
+        let user = svc
+            .register(reg("omar@test.com", "password123", "Omar"))
+            .unwrap();
+
+        // Every other screen that saves a profile — notifications, the theme
+        // picker — sends a patch with no `name` in it, and must not blank it.
+        svc.update_extended_profile(
+            &user.id,
+            UpdateProfileRequest {
+                bio: Some("Hello".to_string()),
+                ..profile_update()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(svc.get_profile(&user.id).unwrap().name, "Omar");
+    }
+
+    #[test]
+    fn a_blank_name_is_rejected() {
+        let svc = make_service();
+        let user = svc
+            .register(reg("pia@test.com", "password123", "Pia"))
+            .unwrap();
+
+        let err = svc
+            .update_extended_profile(
+                &user.id,
+                UpdateProfileRequest {
+                    name: Some("   ".to_string()),
+                    ..profile_update()
+                },
+            )
+            .unwrap_err();
+
+        assert_eq!(err.status, 400);
+        assert_eq!(svc.get_profile(&user.id).unwrap().name, "Pia");
     }
 
     // ── anonymize_ip ──────────────────────────────────────────────────────────
