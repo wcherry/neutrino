@@ -11,9 +11,12 @@ use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
 use super::model::*;
+use super::visibility::Visibility;
 use crate::drive::filesystem::model::FolderRecord;
 use crate::drive::storage::model::FileRecord;
-use crate::schema::{files, folders, team_members, team_page_versions, team_pages, teams, users};
+use crate::schema::{
+    files, folders, team_join_requests, team_members, team_page_versions, team_pages, teams, users,
+};
 use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
@@ -299,6 +302,135 @@ impl TeamsRepository {
         )
         .execute(&mut conn)
         .map_err(db_err("team member delete"))?;
+        Ok(())
+    }
+
+    // ── Discovery ────────────────────────────────────────────────────────────
+
+    /// The teams this user could join: discoverable, live, not archived, and not already theirs.
+    ///
+    /// Archived teams are excluded even when discoverable. An archived team refuses every write,
+    /// so joining one gets you a read-only room nobody can act in — findable is not the same as
+    /// joinable, and offering it would be offering something that does not work.
+    ///
+    /// Two queries rather than a correlated subquery: the exclusion set is the caller's own
+    /// memberships, which is a handful of ids, and `NOT IN` over them reads far more plainly than
+    /// the join it replaces.
+    pub fn list_discoverable_for_user(&self, user_id: &str) -> Result<Vec<Team>, ApiError> {
+        let mut conn = self.conn()?;
+
+        let already_mine: Vec<String> = team_members::table
+            .filter(team_members::user_id.eq(user_id))
+            .select(team_members::team_id)
+            .load(&mut conn)
+            .map_err(db_err("team discovery membership"))?;
+
+        let discoverable: Vec<&str> = Visibility::ALL
+            .iter()
+            .filter(|v| v.is_discoverable())
+            .map(|v| v.as_str())
+            .collect();
+
+        teams::table
+            .filter(teams::deleted_at.is_null())
+            .filter(teams::archived_at.is_null())
+            .filter(teams::visibility.eq_any(discoverable))
+            .filter(teams::id.ne_all(already_mine))
+            .order(teams::name.asc())
+            .select(Team::as_select())
+            .load(&mut conn)
+            .map_err(db_err("team discovery"))
+    }
+
+    // ── Join requests ────────────────────────────────────────────────────────
+
+    pub fn insert_join_request(&self, req: &NewTeamJoinRequest) -> Result<(), ApiError> {
+        let mut conn = self.conn()?;
+        diesel::insert_into(team_join_requests::table)
+            .values(req)
+            .execute(&mut conn)
+            .map_err(db_err("team join request insert"))?;
+        Ok(())
+    }
+
+    /// One request, looked up within its team so an id from another team cannot be decided here.
+    pub fn find_join_request(
+        &self,
+        team_id: &str,
+        request_id: &str,
+    ) -> Result<Option<TeamJoinRequest>, ApiError> {
+        let mut conn = self.conn()?;
+        team_join_requests::table
+            .filter(team_join_requests::id.eq(request_id))
+            .filter(team_join_requests::team_id.eq(team_id))
+            .select(TeamJoinRequest::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(db_err("team join request find"))
+    }
+
+    /// This user's outstanding request for this team, if they have one.
+    pub fn find_open_join_request(
+        &self,
+        team_id: &str,
+        user_id: &str,
+    ) -> Result<Option<TeamJoinRequest>, ApiError> {
+        let mut conn = self.conn()?;
+        team_join_requests::table
+            .filter(team_join_requests::team_id.eq(team_id))
+            .filter(team_join_requests::user_id.eq(user_id))
+            .filter(team_join_requests::status.eq(RequestStatus::PENDING))
+            .select(TeamJoinRequest::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(db_err("team join request find open"))
+    }
+
+    /// The team ids this user has an outstanding request for, so the Discover list can mark them.
+    pub fn teams_with_open_request(&self, user_id: &str) -> Result<Vec<String>, ApiError> {
+        let mut conn = self.conn()?;
+        team_join_requests::table
+            .filter(team_join_requests::user_id.eq(user_id))
+            .filter(team_join_requests::status.eq(RequestStatus::PENDING))
+            .select(team_join_requests::team_id)
+            .load(&mut conn)
+            .map_err(db_err("team open requests for user"))
+    }
+
+    /// A team's requests in one status, oldest first — the order an admin should answer them in.
+    pub fn list_join_requests(
+        &self,
+        team_id: &str,
+        status: &str,
+    ) -> Result<Vec<TeamJoinRequest>, ApiError> {
+        let mut conn = self.conn()?;
+        team_join_requests::table
+            .filter(team_join_requests::team_id.eq(team_id))
+            .filter(team_join_requests::status.eq(status.to_string()))
+            .order(team_join_requests::created_at.asc())
+            .select(TeamJoinRequest::as_select())
+            .load(&mut conn)
+            .map_err(db_err("team join requests list"))
+    }
+
+    /// Answer a request. The row is kept, not deleted — see migration 00129.
+    pub fn decide_join_request(
+        &self,
+        request_id: &str,
+        status: &str,
+        decided_by: &str,
+        now: NaiveDateTime,
+    ) -> Result<(), ApiError> {
+        let mut conn = self.conn()?;
+        diesel::update(team_join_requests::table.filter(team_join_requests::id.eq(request_id)))
+            .set((
+                team_join_requests::status.eq(status.to_string()),
+                team_join_requests::decided_by.eq(decided_by.to_string()),
+                team_join_requests::decided_at.eq(now),
+                team_join_requests::updated_at.eq(now),
+            ))
+            .execute(&mut conn)
+            .map_err(db_err("team join request decide"))?;
         Ok(())
     }
 

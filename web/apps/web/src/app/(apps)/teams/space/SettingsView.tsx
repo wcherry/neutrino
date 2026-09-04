@@ -21,18 +21,27 @@ import {
   Textarea,
   useToast,
 } from '@neutrino/ui';
-import { teamsApi, type Team, type TeamVisibility } from '@neutrino/api-drive';
+import {
+  teamsApi,
+  TEAM_VISIBILITY_DESCRIPTIONS,
+  type Team,
+  type TeamVisibility,
+} from '@neutrino/api-drive';
 import { roleCan, teamCan } from '../permissions';
 import styles from './space.module.css';
 
-const VISIBILITY_OPTIONS: Array<{ value: TeamVisibility; label: string; hint: string }> = [
-  { value: 'private', label: 'Private', hint: 'Only members can find this team.' },
-  { value: 'invite_only', label: 'Invite only', hint: 'Members can be added by an admin.' },
-  {
-    value: 'organization',
-    label: 'Organization',
-    hint: 'Anyone in the organization can find it.',
-  },
+/**
+ * The three visibilities, in order of how open they are.
+ *
+ * The hints come from `TEAM_VISIBILITY_DESCRIPTIONS` in the API package rather than being written
+ * again here. They were written twice once, and the second copy said an organization team was
+ * findable by anyone in the organization while the server ignored the column entirely — a setting
+ * that promised something nothing implemented.
+ */
+const VISIBILITY_OPTIONS: Array<{ value: TeamVisibility; label: string }> = [
+  { value: 'private', label: 'Private' },
+  { value: 'invite_only', label: 'Invite only' },
+  { value: 'organization', label: 'Organization' },
 ];
 
 export function SettingsView({ team, onDeleted }: { team: Team; onDeleted: () => void }) {
@@ -144,9 +153,7 @@ export function SettingsView({ team, onDeleted }: { team: Team; onDeleted: () =>
           disabled={!canManage}
           options={VISIBILITY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
         />
-        <span className={styles.hint}>
-          {VISIBILITY_OPTIONS.find((o) => o.value === visibility)?.hint}
-        </span>
+        <span className={styles.hint}>{TEAM_VISIBILITY_DESCRIPTIONS[visibility]}</span>
       </div>
 
       {canManage && (

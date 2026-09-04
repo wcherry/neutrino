@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::model::{Team, TeamMember, TeamPage, TeamPageVersion};
+use super::model::{Team, TeamJoinRequest, TeamMember, TeamPage, TeamPageVersion};
 
 // ── Team ─────────────────────────────────────────────────────────────────────
 
@@ -67,8 +67,108 @@ pub struct CreateTeamRequest {
     pub description: Option<String>,
     pub avatar_color: Option<String>,
     pub avatar_emoji: Option<String>,
-    /// `private` | `invite_only` | `organization`. Defaults to `private`.
+    /// `private` (not discoverable) | `organization` (discoverable, join yourself) | `invite_only`
+    /// (discoverable, request access). Defaults to `private`.
     pub visibility: Option<String>,
+}
+
+// ── Discovery ────────────────────────────────────────────────────────────────
+
+/// A discoverable team, as seen by someone who is **not** in it.
+///
+/// Deliberately much smaller than [`TeamResponse`], which stays the members-only view: no storage
+/// figures, no default page, no creator, and above all no `userRole` — a caller holding one of
+/// these has no role, and the invariant that a `TeamResponse` implies membership is what several
+/// call sites rely on. This carries only what someone needs to decide whether to join.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverableTeamResponse {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub description: Option<String>,
+    pub avatar_color: Option<String>,
+    pub avatar_emoji: Option<String>,
+    /// `organization` or `invite_only`. Never `private` — those are not discoverable.
+    pub visibility: String,
+    pub member_count: i64,
+    /// `join` if the caller can add themselves, `request` if they must ask, `requested` if they
+    /// already have. What the button should say, decided by the server so the client cannot get
+    /// the policy wrong.
+    pub join_action: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverableTeamListResponse {
+    pub teams: Vec<DiscoverableTeamResponse>,
+    pub total: i64,
+}
+
+// ── Join requests ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestAccessRequest {
+    /// Optional note to whoever answers it. An admin looking at a name they do not recognise has
+    /// nothing else to go on.
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinRequestResponse {
+    pub id: String,
+    pub team_id: String,
+    pub user_id: String,
+    pub email: String,
+    pub name: String,
+    pub message: Option<String>,
+    /// `pending` | `approved` | `declined`.
+    pub status: String,
+    pub decided_by: Option<String>,
+    pub decided_at: Option<String>,
+    pub created_at: String,
+}
+
+impl From<TeamJoinRequest> for JoinRequestResponse {
+    fn from(r: TeamJoinRequest) -> Self {
+        JoinRequestResponse {
+            id: r.id,
+            team_id: r.team_id,
+            user_id: r.user_id,
+            email: r.user_email,
+            name: r.user_name,
+            message: r.message,
+            status: r.status,
+            decided_by: r.decided_by,
+            decided_at: r.decided_at.map(|d| d.to_string()),
+            created_at: r.created_at.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinRequestListResponse {
+    pub requests: Vec<JoinRequestResponse>,
+    pub total: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinRequestListQuery {
+    /// `pending` (the default), `approved` or `declined`.
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApproveJoinRequestRequest {
+    /// The role to admit them in. Defaults to `viewer`, the same least-privilege default a
+    /// self-serve join uses.
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

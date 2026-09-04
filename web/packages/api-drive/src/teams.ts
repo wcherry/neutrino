@@ -48,7 +48,25 @@ export const TEAM_ROLE_DESCRIPTIONS: Record<TeamRole, string> = {
   guest: 'Read-only access for someone outside the team.',
 };
 
+/**
+ * Who can find a team, and how they get in.
+ *
+ * Never what a member may do once inside — that is `TeamRole`, and the two are independent: a
+ * viewer in a private team and a viewer in an organization team have identical authority.
+ *
+ * - `private` — not discoverable. A non-member gets 404 on every route, as for a team that does
+ *   not exist.
+ * - `organization` — discoverable, and anyone signed in adds themselves.
+ * - `invite_only` — discoverable, and anyone signed in asks; an owner or admin decides.
+ */
 export type TeamVisibility = 'private' | 'invite_only' | 'organization';
+
+/** What the Settings picker says each visibility does. Kept beside the type so they cannot drift. */
+export const TEAM_VISIBILITY_DESCRIPTIONS: Record<TeamVisibility, string> = {
+  private: 'Only members can find this team. People are added by an admin.',
+  organization: 'Anyone signed in can find this team and join it themselves.',
+  invite_only: 'Anyone signed in can find this team and request access. An admin decides.',
+};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,6 +115,56 @@ export interface UpdateTeamRequest {
   visibility?: TeamVisibility;
   defaultPageId?: string;
   archived?: boolean;
+}
+
+/**
+ * A team the caller can see but is **not** in.
+ *
+ * Deliberately much smaller than `Team`: no storage, no default page, and above all no `userRole`,
+ * because the caller has none. `Team` continues to mean "a team you are in", which is what the
+ * rest of the UI assumes.
+ */
+export interface DiscoverableTeam {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  avatarColor: string | null;
+  avatarEmoji: string | null;
+  /** Only ever `organization` or `invite_only` — private teams are not discoverable. */
+  visibility: Exclude<TeamVisibility, 'private'>;
+  memberCount: number;
+  /**
+   * What the button should say. Decided by the server rather than derived from `visibility` here,
+   * so the client cannot get the policy wrong or fall out of step with it.
+   */
+  joinAction: 'join' | 'request' | 'requested';
+  createdAt: string;
+}
+
+export interface DiscoverableTeamListResponse {
+  teams: DiscoverableTeam[];
+  total: number;
+}
+
+export type JoinRequestStatus = 'pending' | 'approved' | 'declined';
+
+export interface TeamJoinRequest {
+  id: string;
+  teamId: string;
+  userId: string;
+  email: string;
+  name: string;
+  message: string | null;
+  status: JoinRequestStatus;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+export interface JoinRequestListResponse {
+  requests: TeamJoinRequest[];
+  total: number;
 }
 
 export interface TeamMember {
@@ -244,6 +312,64 @@ export const teamsApi = {
   /** Soft delete. Owner only. */
   async remove(teamId: string): Promise<void> {
     await request<void>(`${base}/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
+  },
+
+  // Discovery and joining
+
+  /**
+   * Teams the caller could join but is not in.
+   *
+   * The only team read that does not need membership. Private teams never appear in it.
+   */
+  async listDiscoverable(): Promise<DiscoverableTeamListResponse> {
+    return request<DiscoverableTeamListResponse>(`${base}/discoverable`);
+  },
+
+  /** Join an `organization` team. Refused with 403 on an `invite_only` one. */
+  async join(teamId: string): Promise<TeamMember> {
+    return request<TeamMember>(`${base}/${encodeURIComponent(teamId)}/join`, { method: 'POST' });
+  },
+
+  /** Ask to join an `invite_only` team. */
+  async requestAccess(teamId: string, message?: string): Promise<TeamJoinRequest> {
+    return request<TeamJoinRequest>(`${base}/${encodeURIComponent(teamId)}/join-requests`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  /** The team's join requests — pending unless another status is asked for. Admins and owners. */
+  async listJoinRequests(
+    teamId: string,
+    status?: JoinRequestStatus
+  ): Promise<JoinRequestListResponse> {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return request<JoinRequestListResponse>(
+      `${base}/${encodeURIComponent(teamId)}/join-requests${q}`
+    );
+  },
+
+  /** Approve a request, admitting the requester as a Viewer unless a role is named. */
+  async approveJoinRequest(
+    teamId: string,
+    requestId: string,
+    role?: TeamRole
+  ): Promise<TeamMember> {
+    return request<TeamMember>(
+      `${base}/${encodeURIComponent(teamId)}/join-requests/${encodeURIComponent(
+        requestId
+      )}/approve`,
+      { method: 'POST', body: JSON.stringify({ role }) }
+    );
+  },
+
+  async declineJoinRequest(teamId: string, requestId: string): Promise<void> {
+    await request<void>(
+      `${base}/${encodeURIComponent(teamId)}/join-requests/${encodeURIComponent(
+        requestId
+      )}/decline`,
+      { method: 'POST' }
+    );
   },
 
   // Members

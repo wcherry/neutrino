@@ -1,4 +1,4 @@
-use crate::schema::{team_members, team_page_versions, team_pages, teams};
+use crate::schema::{team_join_requests, team_members, team_page_versions, team_pages, teams};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
@@ -76,6 +76,57 @@ pub struct NewTeamMember {
     pub user_name: String,
     pub role: String,
     pub added_by: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+// ── Join requests ────────────────────────────────────────────────────────────
+
+/// Someone asking to join an invite-only team.
+///
+/// Only `invite_only` produces these. An `organization` team is joined by adding yourself, so there
+/// is nothing to record beyond the membership itself, and a `private` team cannot be found to ask
+/// about — see [`Visibility`](super::visibility::Visibility).
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = team_join_requests)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct TeamJoinRequest {
+    pub id: String,
+    pub team_id: String,
+    pub user_id: String,
+    pub user_email: String,
+    pub user_name: String,
+    pub message: Option<String>,
+    /// `pending` | `approved` | `declined`. See [`RequestStatus`].
+    pub status: String,
+    pub decided_by: Option<String>,
+    pub decided_at: Option<NaiveDateTime>,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+/// The three states of a request, as stored.
+///
+/// Text rather than an integer for the same reason `team_members.role` is: the value is read
+/// straight out of the database by hand often enough that it should say what it means.
+pub struct RequestStatus;
+
+impl RequestStatus {
+    pub const PENDING: &'static str = "pending";
+    pub const APPROVED: &'static str = "approved";
+    pub const DECLINED: &'static str = "declined";
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = team_join_requests)]
+pub struct NewTeamJoinRequest {
+    pub id: String,
+    pub team_id: String,
+    pub user_id: String,
+    pub user_email: String,
+    pub user_name: String,
+    pub message: Option<String>,
+    pub status: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

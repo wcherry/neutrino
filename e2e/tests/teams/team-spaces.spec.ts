@@ -73,13 +73,23 @@ test.describe('with teamSpaces off', () => {
 
     for (const path of [
       '/api/v1/drive/teams',
+      '/api/v1/drive/teams/discoverable',
       '/api/v1/drive/teams/any-id',
       '/api/v1/drive/teams/any-id/pages',
       '/api/v1/drive/teams/any-id/members',
       '/api/v1/drive/teams/any-id/library',
       '/api/v1/drive/teams/any-id/activity',
+      '/api/v1/drive/teams/any-id/join-requests',
     ]) {
       const res = await request.get(`${BASE_URL}${path}`, { headers: auth(token) });
+      expect(res.status(), `${path} should be 404 while the flag is off`).toBe(404);
+    }
+
+    for (const path of [
+      '/api/v1/drive/teams/any-id/join',
+      '/api/v1/drive/teams/any-id/join-requests',
+    ]) {
+      const res = await request.post(`${BASE_URL}${path}`, { headers: auth(token), data: {} });
       expect(res.status(), `${path} should be 404 while the flag is off`).toBe(404);
     }
 
@@ -88,6 +98,32 @@ test.describe('with teamSpaces off', () => {
       data: { name: 'Marketing' },
     });
     expect(create.status()).toBe(404);
+  });
+
+  /**
+   * The gated routes are answered by the handler, not by the router falling through — a gated 404
+   * carries the API's own error shape, an unrouted path returns the framework's empty one.
+   *
+   * Note what this does *not* prove: with the flag off, `/teams/discoverable` reaching the wrong
+   * handler (`get_team` with an id of "discoverable") would answer 404 with this same body, so it
+   * cannot tell correct route ordering from incorrect. That ordering is pinned by
+   * `routing::the_discovery_route_is_not_swallowed_by_the_team_id_route` in `src/drive/teams/api.rs`,
+   * which runs the real `configure` with the flag on.
+   */
+  test('a gated route is answered by the handler rather than unrouted', async ({
+    request,
+    page,
+  }) => {
+    const email = uniqueEmail('team_off_discover');
+    await register(request, email);
+    const token = await signIn(page, email);
+
+    const res = await request.get(`${BASE_URL}/api/v1/drive/teams/discoverable`, {
+      headers: auth(token),
+    });
+    expect(res.status()).toBe(404);
+    const body = await res.json();
+    expect(body.error?.code, 'the gate answers with the API error shape').toBeTruthy();
   });
 
   test('the team routes still require authentication', async ({ request }) => {

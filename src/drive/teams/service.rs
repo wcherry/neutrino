@@ -23,6 +23,7 @@ use super::dto::*;
 use super::model::*;
 use super::repository::TeamsRepository;
 use super::roles::{Role, TeamAction};
+use super::visibility::{JoinPolicy, Visibility};
 use crate::drive::activity::service::ActivityService;
 use crate::drive::feature_flags::gate::FeatureGate;
 use crate::shared::{ApiError, AuthenticatedUser};
@@ -85,9 +86,25 @@ pub fn slugify(input: &str) -> String {
     out
 }
 
-/// A visibility a team may be created with.
-fn valid_visibility(value: &str) -> bool {
-    matches!(value, "private" | "invite_only" | "organization")
+/// The role someone gets by joining a team themselves, or by having their request approved without
+/// a role being named.
+///
+/// Least privilege, deliberately. The team's owner chose to make it findable and joinable; they did
+/// not thereby say that anyone who wanders in may rewrite the wiki. A Viewer reads everything and
+/// changes nothing, and an Admin promotes them in one click — which is the recoverable direction to
+/// be wrong in. Granting Contributor by default would mean that making a team discoverable silently
+/// granted write access to everyone in the deployment, which is not what the setting says it does.
+///
+/// An approval can name a different role, so an admin who wants a new joiner writing straight away
+/// says so at the point of admitting them.
+const DEFAULT_JOIN_ROLE: Role = Role::Viewer;
+
+fn parse_visibility(value: &str) -> Result<Visibility, ApiError> {
+    Visibility::parse(value).ok_or_else(|| {
+        ApiError::bad_request(
+            "Visibility must be private, invite_only or organization",
+        )
+    })
 }
 
 pub struct TeamsService {
@@ -265,12 +282,10 @@ impl TeamsService {
                 "A team name can be at most 120 characters",
             ));
         }
-        let visibility = req.visibility.unwrap_or_else(|| "private".to_string());
-        if !valid_visibility(&visibility) {
-            return Err(ApiError::bad_request(
-                "Visibility must be private, invite_only or organization",
-            ));
-        }
+        let visibility = match req.visibility.as_deref() {
+            Some(v) => parse_visibility(v)?,
+            None => Visibility::Private,
+        };
 
         let now = Self::now();
         let team_id = Uuid::new_v4().to_string();
@@ -283,7 +298,7 @@ impl TeamsService {
             description: req.description.map(|d| d.trim().to_string()),
             avatar_color: req.avatar_color,
             avatar_emoji: req.avatar_emoji,
-            visibility,
+            visibility: visibility.as_str().to_string(),
             created_by: user.user_id.clone(),
             created_at: now,
             updated_at: now,
@@ -375,13 +390,7 @@ impl TeamsService {
                 return Err(ApiError::bad_request("A team needs a name"));
             }
         }
-        if let Some(v) = req.visibility.as_deref() {
-            if !valid_visibility(v) {
-                return Err(ApiError::bad_request(
-                    "Visibility must be private, invite_only or organization",
-                ));
-            }
-        }
+        let new_visibility = req.visibility.as_deref().map(parse_visibility).transpose()?;
 
         // A rename does not move the team. The slug is what links point at, so changing it would
         // break every bookmark into the space for the sake of a tidier URL.
@@ -399,6 +408,22 @@ impl TeamsService {
             req.archived,
             now,
         )?;
+
+        // Who can find the team, and how they get into it, is worth its own entry rather than
+        // being folded into a generic "updated" — opening a team up is the kind of change someone
+        // reads the feed to find. Pending requests are deliberately left alone by a change of
+        // visibility: approving one is only ever an admin admitting someone they could have
+        // invited outright.
+        if let Some(v) = new_visibility {
+            if v.as_str() != team.visibility {
+                self.log(
+                    &team,
+                    user,
+                    "team.visibility_changed",
+                    serde_json::json!({ "from": team.visibility, "to": v.as_str() }),
+                );
+            }
+        }
 
         if let Some(archived) = req.archived {
             self.log(
@@ -448,6 +473,403 @@ impl TeamsService {
             serde_json::json!({ "name": team.name }),
         );
         self.repo.soft_delete_team(team_id, Self::now())
+    }
+
+    // ── Discovery and joining ────────────────────────────────────────────────
+
+    /// The teams the caller could join but is not in.
+    ///
+    /// This is the one read in the whole module that a non-member is allowed, and it is why
+    /// `visibility` exists. It returns [`DiscoverableTeamResponse`], never [`TeamResponse`]: a
+    /// caller with no role must not receive the members' view of a team, and keeping them separate
+    /// types is what stops that happening by accident later.
+    pub fn list_discoverable(
+        &self,
+        user: &AuthenticatedUser,
+    ) -> Result<DiscoverableTeamListResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+
+        let teams = self.repo.list_discoverable_for_user(&user.user_id)?;
+        let pending = self.repo.teams_with_open_request(&user.user_id)?;
+
+        let mut out = Vec::with_capacity(teams.len());
+        for team in teams {
+            let visibility = Visibility::stored(&team.visibility, &team.id);
+            // `list_discoverable_for_user` filters on the same rule, so this only fires for a row
+            // whose stored value nothing recognises — which `stored` has already downgraded to
+            // private and logged.
+            if !visibility.is_discoverable() {
+                continue;
+            }
+            let member_count = self.repo.count_members(&team.id)?;
+            let join_action = match visibility.join_policy() {
+                JoinPolicy::SelfServe => "join",
+                JoinPolicy::ByRequest if pending.contains(&team.id) => "requested",
+                JoinPolicy::ByRequest => "request",
+                JoinPolicy::Closed => continue,
+            };
+            out.push(DiscoverableTeamResponse {
+                id: team.id,
+                name: team.name,
+                slug: team.slug,
+                description: team.description,
+                avatar_color: team.avatar_color,
+                avatar_emoji: team.avatar_emoji,
+                visibility: visibility.as_str().to_string(),
+                member_count,
+                join_action: join_action.to_string(),
+                created_at: team.created_at.to_string(),
+            });
+        }
+
+        Ok(DiscoverableTeamListResponse {
+            total: out.len() as i64,
+            teams: out,
+        })
+    }
+
+    /// Find a team a non-member is allowed to act on, by the rules of its visibility.
+    ///
+    /// A private team is 404 here exactly as it is everywhere else — this is the entry point that
+    /// could most easily become the leak the 404 rule exists to prevent, since it is the one place
+    /// a non-member is expected. So it answers 404 for: no such team, a deleted team, a private
+    /// team, and a team whose stored visibility is unreadable.
+    fn resolve_joinable(
+        &self,
+        team_id: &str,
+        user: &AuthenticatedUser,
+    ) -> Result<(Team, Visibility), ApiError> {
+        let team = self
+            .repo
+            .find(team_id)?
+            .ok_or_else(|| ApiError::not_found("Team not found"))?;
+
+        let visibility = Visibility::stored(&team.visibility, &team.id);
+        if !visibility.is_discoverable() {
+            return Err(ApiError::not_found("Team not found"));
+        }
+
+        // Already in it. A 409 rather than a 404: they can see this team, so there is nothing to
+        // hide, and "you are already a member" is the useful answer.
+        if self.repo.find_member(team_id, &user.user_id)?.is_some() {
+            return Err(ApiError::conflict("You are already in this team"));
+        }
+
+        // Findable but not joinable. Every write is refused in an archived team, so admitting
+        // someone would hand them a room they cannot act in.
+        if team.is_archived() {
+            return Err(ApiError::conflict(
+                "This team is archived and is not accepting new members",
+            ));
+        }
+
+        Ok((team, visibility))
+    }
+
+    /// Add yourself to an `organization` team.
+    pub fn join_team(
+        &self,
+        team_id: &str,
+        user: &AuthenticatedUser,
+    ) -> Result<TeamMemberResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+        let (team, visibility) = self.resolve_joinable(team_id, user)?;
+
+        match visibility.join_policy() {
+            JoinPolicy::SelfServe => {}
+            // Discoverable, but not like this. 403 rather than 404 because the caller can already
+            // see the team; what they may not do is walk in without being asked.
+            JoinPolicy::ByRequest => {
+                return Err(ApiError::forbidden(
+                    "This team is invite only. Request access instead.",
+                ))
+            }
+            JoinPolicy::Closed => return Err(ApiError::not_found("Team not found")),
+        }
+
+        let now = Self::now();
+        let (user_id, user_email, user_name) = self.identify(user)?;
+
+        self.repo.insert_member(&NewTeamMember {
+            id: Uuid::new_v4().to_string(),
+            team_id: team_id.to_string(),
+            user_id: user_id.clone(),
+            user_email: user_email.clone(),
+            user_name: user_name.clone(),
+            role: DEFAULT_JOIN_ROLE.as_str().to_string(),
+            // Nobody added them. Recording them as their own sponsor is the truth of a self-serve
+            // join and keeps the column non-null without inventing an admin who did it.
+            added_by: user_id.clone(),
+            created_at: now,
+            updated_at: now,
+        })?;
+
+        self.log(
+            &team,
+            user,
+            "team.member_joined",
+            serde_json::json!({ "member": user_email, "role": DEFAULT_JOIN_ROLE.as_str() }),
+        );
+
+        Ok(TeamMemberResponse {
+            user_id,
+            email: user_email,
+            name: user_name,
+            role: DEFAULT_JOIN_ROLE.as_str().to_string(),
+            added_by: user.user_id.clone(),
+            created_at: now.to_string(),
+        })
+    }
+
+    /// Ask to join an `invite_only` team.
+    pub fn request_access(
+        &self,
+        team_id: &str,
+        req: RequestAccessRequest,
+        user: &AuthenticatedUser,
+    ) -> Result<JoinRequestResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+        let (team, visibility) = self.resolve_joinable(team_id, user)?;
+
+        match visibility.join_policy() {
+            JoinPolicy::ByRequest => {}
+            // Nothing to ask for — they can simply join. A 400 rather than silently minting a
+            // request nobody would ever look at.
+            JoinPolicy::SelfServe => {
+                return Err(ApiError::bad_request(
+                    "Anyone can join this team; no request is needed.",
+                ))
+            }
+            JoinPolicy::Closed => return Err(ApiError::not_found("Team not found")),
+        }
+
+        if self
+            .repo
+            .find_open_join_request(team_id, &user.user_id)?
+            .is_some()
+        {
+            return Err(ApiError::conflict(
+                "You have already asked to join this team",
+            ));
+        }
+
+        let message = req
+            .message
+            .map(|m| m.trim().to_string())
+            .filter(|m| !m.is_empty());
+        if let Some(m) = message.as_deref() {
+            if m.chars().count() > 500 {
+                return Err(ApiError::bad_request(
+                    "A request message can be at most 500 characters",
+                ));
+            }
+        }
+
+        let now = Self::now();
+        let (user_id, user_email, user_name) = self.identify(user)?;
+        let id = Uuid::new_v4().to_string();
+
+        self.repo.insert_join_request(&NewTeamJoinRequest {
+            id: id.clone(),
+            team_id: team_id.to_string(),
+            user_id: user_id.clone(),
+            user_email: user_email.clone(),
+            user_name: user_name.clone(),
+            message: message.clone(),
+            status: RequestStatus::PENDING.to_string(),
+            created_at: now,
+            updated_at: now,
+        })?;
+
+        self.log(
+            &team,
+            user,
+            "team.access_requested",
+            serde_json::json!({ "requester": user_email }),
+        );
+
+        Ok(JoinRequestResponse {
+            id,
+            team_id: team_id.to_string(),
+            user_id,
+            email: user_email,
+            name: user_name,
+            message,
+            status: RequestStatus::PENDING.to_string(),
+            decided_by: None,
+            decided_at: None,
+            created_at: now.to_string(),
+        })
+    }
+
+    /// The team's join requests — pending by default.
+    pub fn list_join_requests(
+        &self,
+        team_id: &str,
+        status: Option<&str>,
+        user: &AuthenticatedUser,
+    ) -> Result<JoinRequestListResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+        self.authorize(team_id, user, TeamAction::ManageJoinRequests)?;
+
+        let status = status.unwrap_or(RequestStatus::PENDING);
+        if !matches!(
+            status,
+            RequestStatus::PENDING | RequestStatus::APPROVED | RequestStatus::DECLINED
+        ) {
+            return Err(ApiError::bad_request(
+                "Status must be pending, approved or declined",
+            ));
+        }
+
+        let requests = self.repo.list_join_requests(team_id, status)?;
+        Ok(JoinRequestListResponse {
+            total: requests.len() as i64,
+            requests: requests.into_iter().map(Into::into).collect(),
+        })
+    }
+
+    /// Approve a request, admitting the requester.
+    pub fn approve_join_request(
+        &self,
+        team_id: &str,
+        request_id: &str,
+        req: ApproveJoinRequestRequest,
+        user: &AuthenticatedUser,
+    ) -> Result<TeamMemberResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+        let (team, actor_role) = self.authorize(team_id, user, TeamAction::ManageJoinRequests)?;
+
+        let role = match req.role.as_deref() {
+            Some(r) => Role::parse(r)
+                .ok_or_else(|| ApiError::bad_request(format!("Unknown role {r:?}")))?,
+            None => DEFAULT_JOIN_ROLE,
+        };
+        // The same escalation rule `add_member` applies: admitting someone into more authority
+        // than the admitter holds is not an approval.
+        if role == Role::Owner && actor_role != Role::Owner {
+            return Err(ApiError::forbidden(
+                "Only an owner can make someone else an owner",
+            ));
+        }
+
+        let request = self.pending_request(team_id, request_id)?;
+
+        // They may have been added by hand while the request sat in the queue. Answering it is
+        // still the right outcome — the queue should not keep showing a request that is moot —
+        // but there is no second membership to write.
+        if self
+            .repo
+            .find_member(team_id, &request.user_id)?
+            .is_some()
+        {
+            self.repo.decide_join_request(
+                &request.id,
+                RequestStatus::APPROVED,
+                &user.user_id,
+                Self::now(),
+            )?;
+            return Err(ApiError::conflict(
+                "That person is already in this team; the request has been closed",
+            ));
+        }
+
+        let now = Self::now();
+        self.repo.insert_member(&NewTeamMember {
+            id: Uuid::new_v4().to_string(),
+            team_id: team_id.to_string(),
+            user_id: request.user_id.clone(),
+            user_email: request.user_email.clone(),
+            user_name: request.user_name.clone(),
+            role: role.as_str().to_string(),
+            added_by: user.user_id.clone(),
+            created_at: now,
+            updated_at: now,
+        })?;
+        self.repo
+            .decide_join_request(&request.id, RequestStatus::APPROVED, &user.user_id, now)?;
+
+        self.log(
+            &team,
+            user,
+            "team.request_approved",
+            serde_json::json!({ "member": request.user_email, "role": role.as_str() }),
+        );
+
+        Ok(TeamMemberResponse {
+            user_id: request.user_id,
+            email: request.user_email,
+            name: request.user_name,
+            role: role.as_str().to_string(),
+            added_by: user.user_id.clone(),
+            created_at: now.to_string(),
+        })
+    }
+
+    /// Decline a request. The row is kept, so the same person does not reappear in the queue
+    /// tomorrow with nothing to say they were already answered.
+    pub fn decline_join_request(
+        &self,
+        team_id: &str,
+        request_id: &str,
+        user: &AuthenticatedUser,
+    ) -> Result<(), ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+        let (team, _) = self.authorize(team_id, user, TeamAction::ManageJoinRequests)?;
+
+        let request = self.pending_request(team_id, request_id)?;
+        self.repo.decide_join_request(
+            &request.id,
+            RequestStatus::DECLINED,
+            &user.user_id,
+            Self::now(),
+        )?;
+
+        self.log(
+            &team,
+            user,
+            "team.request_declined",
+            serde_json::json!({ "requester": request.user_email }),
+        );
+        Ok(())
+    }
+
+    /// A request that exists, belongs to this team and has not been answered yet.
+    fn pending_request(
+        &self,
+        team_id: &str,
+        request_id: &str,
+    ) -> Result<TeamJoinRequest, ApiError> {
+        let request = self
+            .repo
+            .find_join_request(team_id, request_id)?
+            .ok_or_else(|| ApiError::not_found("No such join request in this team"))?;
+
+        if request.status != RequestStatus::PENDING {
+            return Err(ApiError::conflict(format!(
+                "That request was already {}",
+                request.status
+            )));
+        }
+        Ok(request)
+    }
+
+    /// The caller's id, email and display name for a membership row they create for themselves.
+    ///
+    /// The id is always the token's, never the looked-up row's: the token is what authenticated
+    /// this request, and writing a membership for whatever id an email lookup happened to return
+    /// would be a way to act as someone else if the two ever disagreed. The lookup supplies only
+    /// the display name, which the token does not carry and which a member list needs — a row
+    /// showing an email where every other row shows a name reads as a bug. The email stands in when
+    /// there is no row, the same fallback `create_team` uses.
+    fn identify(&self, user: &AuthenticatedUser) -> Result<(String, String, String), ApiError> {
+        let email = user.email.trim().to_lowercase();
+        let name = self
+            .repo
+            .find_user_by_email(&email)?
+            .map(|(_, _, name)| name)
+            .unwrap_or_else(|| user.email.clone());
+        Ok((user.user_id.clone(), user.email.clone(), name))
     }
 
     // ── Members ──────────────────────────────────────────────────────────────
@@ -1371,13 +1793,15 @@ mod tests {
         assert!(slugify(&"a".repeat(500)).len() <= 64);
     }
 
+    /// Parsing itself is covered in `visibility.rs`; what matters here is that a bad value becomes
+    /// a 400 rather than an internal error or a silently-stored string.
     #[test]
-    fn visibility_is_restricted_to_the_three_documented_values() {
-        for v in ["private", "invite_only", "organization"] {
-            assert!(valid_visibility(v));
+    fn an_unparseable_visibility_becomes_a_bad_request() {
+        for v in Visibility::ALL {
+            assert_eq!(parse_visibility(v.as_str()).expect("valid"), v);
         }
         for v in ["public", "", "Private", "org"] {
-            assert!(!valid_visibility(v));
+            assert_eq!(parse_visibility(v).expect_err("invalid").status, 400);
         }
     }
 

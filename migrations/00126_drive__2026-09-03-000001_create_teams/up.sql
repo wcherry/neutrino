@@ -11,9 +11,13 @@
 --   slug              a URL-stable name, unique across live teams. Renaming a
 --                     team does not move it, so links into a team survive the
 --                     rename -- the same reason page slugs exist in 00127.
---   visibility        'private' | 'invite_only' | 'organization'. Who can find
---                     the team, not what a member may do inside it; that is
---                     `team_members.role`.
+--   visibility        Who can find the team and how they get in -- never what a
+--                     member may do once inside, which is `team_members.role`.
+--                     'private' is not discoverable at all; 'organization' is
+--                     discoverable and joined by adding yourself; 'invite_only'
+--                     is discoverable and joined by asking, which is the table
+--                     in 00129. All three are enforced in
+--                     `drive::teams::visibility`.
 --   storage_limit_bytes  NULL means "no team limit", which is the default. A
 --                     team's usage is metered separately from its members' own
 --                     quotas because the files belong to the team, not to

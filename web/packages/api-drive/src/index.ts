@@ -118,12 +118,18 @@ export {
   TEAM_ROLES,
   TEAM_ROLE_LABELS,
   TEAM_ROLE_DESCRIPTIONS,
+  TEAM_VISIBILITY_DESCRIPTIONS,
 } from './teams';
 
 export type {
   Team,
   TeamRole,
   TeamVisibility,
+  DiscoverableTeam,
+  DiscoverableTeamListResponse,
+  TeamJoinRequest,
+  JoinRequestStatus,
+  JoinRequestListResponse,
   TeamListResponse,
   CreateTeamRequest,
   UpdateTeamRequest,

@@ -31,6 +31,7 @@ import {
   TEAM_ROLE_DESCRIPTIONS,
   TEAM_ROLE_LABELS,
   type Team,
+  type TeamJoinRequest,
   type TeamMember,
   type TeamRole,
 } from '@neutrino/api-drive';
@@ -121,6 +122,126 @@ function AddMemberDialog({
   );
 }
 
+/**
+ * People who have asked to join, waiting on an answer.
+ *
+ * Only reachable for an Owner or Admin — the server refuses the listing to anyone else, so the
+ * query is not even run for them. Only rendered when the team is `invite_only`: no other
+ * visibility can produce a request, and an empty panel on a private team would be a question
+ * nobody asked.
+ */
+function JoinRequestsPanel({ team }: { team: Team }) {
+  const qc = useQueryClient();
+  const { success, error: toastError } = useToast();
+  const canAnswer = teamCan(team, 'inviteMember');
+  const relevant = canAnswer && team.visibility === 'invite_only' && !team.archived;
+
+  const { data } = useQuery({
+    queryKey: ['team-join-requests', team.id],
+    queryFn: () => teamsApi.listJoinRequests(team.id),
+    enabled: relevant,
+  });
+
+  const settle = () => {
+    qc.invalidateQueries({ queryKey: ['team-join-requests', team.id] });
+    qc.invalidateQueries({ queryKey: ['team-members', team.id] });
+    qc.invalidateQueries({ queryKey: ['team', team.id] });
+  };
+
+  const approve = useMutation({
+    mutationFn: ({ id, role }: { id: string; role: TeamRole }) =>
+      teamsApi.approveJoinRequest(team.id, id, role),
+    onSuccess: () => {
+      settle();
+      success('Added to the team.');
+    },
+    onError: (e: unknown) =>
+      toastError(e instanceof Error ? e.message : 'Could not approve that request.'),
+  });
+
+  const decline = useMutation({
+    mutationFn: (id: string) => teamsApi.declineJoinRequest(team.id, id),
+    onSuccess: () => {
+      settle();
+      success('Request declined.');
+    },
+    onError: (e: unknown) =>
+      toastError(e instanceof Error ? e.message : 'Could not decline that request.'),
+  });
+
+  const requests = data?.requests ?? [];
+  if (!relevant || requests.length === 0) return null;
+
+  return (
+    <section className={styles.requests}>
+      <div className={styles.pageHeaderText}>
+        <Heading level={2} size="md">
+          Requests to join ({requests.length})
+        </Heading>
+        <Text size="sm" color="secondary">
+          Approving admits them as a Viewer unless you pick another role.
+        </Text>
+      </div>
+
+      <div className={styles.list}>
+        {requests.map((r) => (
+          <RequestRow
+            key={r.id}
+            request={r}
+            actorRole={team.userRole}
+            busy={approve.isPending || decline.isPending}
+            onApprove={(role) => approve.mutate({ id: r.id, role })}
+            onDecline={() => decline.mutate(r.id)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RequestRow({
+  request,
+  actorRole,
+  busy,
+  onApprove,
+  onDecline,
+}: {
+  request: TeamJoinRequest;
+  actorRole: TeamRole;
+  busy: boolean;
+  onApprove: (role: TeamRole) => void;
+  onDecline: () => void;
+}) {
+  const [role, setRole] = useState<TeamRole>('viewer');
+
+  return (
+    <div className={styles.row}>
+      <div className={styles.rowMain}>
+        <span className={styles.rowTitle}>{request.name}</span>
+        <span className={styles.rowMeta}>{request.email}</span>
+        {request.message && <span className={styles.requestMessage}>“{request.message}”</span>}
+      </div>
+      <div className={styles.rowActions}>
+        <Select
+          value={role}
+          onChange={(e) => setRole(e.target.value as TeamRole)}
+          aria-label={`Role for ${request.name}`}
+          options={grantableRoles(actorRole).map((r) => ({
+            value: r,
+            label: TEAM_ROLE_LABELS[r],
+          }))}
+        />
+        <Button size="sm" disabled={busy} onClick={() => onApprove(role)}>
+          Approve
+        </Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={onDecline}>
+          Decline
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function MembersView({ team, onLeft }: { team: Team; onLeft: () => void }) {
   const qc = useQueryClient();
   const currentUser = useUser();
@@ -189,6 +310,8 @@ export function MembersView({ team, onLeft }: { team: Team; onLeft: () => void }
           </div>
         )}
       </div>
+
+      <JoinRequestsPanel team={team} />
 
       {isLoading ? (
         <div className={styles.loading}>

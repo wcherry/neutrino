@@ -424,3 +424,25 @@
   color: var(--color-text-secondary);
   font-size: 13px;
 }
+
+/* ── Join requests ─────────────────────────────────────────────────────────
+   Above the member list, because it is the part of this screen with something
+   waiting on the reader. Disappears entirely when the queue is empty. */
+.requests {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-secondary);
+}
+
+/* The requester's own words, quoted. Italic and secondary so it reads as
+   something they wrote rather than as a field the product generated. */
+.requestMessage {
+  font-size: 13px;
+  font-style: italic;
+  color: var(--color-text-secondary);
+}

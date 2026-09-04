@@ -100,6 +100,15 @@ impl Fixture {
     }
 
     fn create_team(&self, name: &str, as_user: &AuthenticatedUser) -> TeamResponse {
+        self.create_team_visible(name, None, as_user)
+    }
+
+    fn create_team_visible(
+        &self,
+        name: &str,
+        visibility: Option<&str>,
+        as_user: &AuthenticatedUser,
+    ) -> TeamResponse {
         self.add_user(&as_user.user_id, &as_user.email, &as_user.email);
         self.service
             .create_team(
@@ -108,11 +117,18 @@ impl Fixture {
                     description: None,
                     avatar_color: None,
                     avatar_emoji: None,
-                    visibility: None,
+                    visibility: visibility.map(str::to_string),
                 },
                 as_user,
             )
             .expect("create team")
+    }
+
+    /// A signed-in person who is in no team — the caller every discovery test needs.
+    fn outsider(&self, id: &str) -> AuthenticatedUser {
+        let email = format!("{id}@example.com");
+        self.add_user(id, &email, id);
+        user(id, &email)
     }
 }
 
@@ -199,6 +215,8 @@ fn the_single_flag_governs_every_part_of_the_feature() {
             .expect_err("gated")
             .status,
         f.service.list_activity(&team.id, &owner).expect_err("gated").status,
+        f.service.list_discoverable(&owner).expect_err("gated").status,
+        f.service.join_team(&team.id, &owner).expect_err("gated").status,
     ] {
         assert_eq!(status, 404);
     }
@@ -1542,5 +1560,669 @@ fn a_teams_file_is_governed_by_the_team_not_by_a_leftover_personal_grant() {
         perms.find_team_role(&team.id, "u1").expect("role").as_deref(),
         Some("owner"),
         "they are the team's owner; the Drive role that maps to is checked in permissions::service"
+    );
+}
+
+// ── Visibility, discovery and joining ────────────────────────────────────────
+//
+// `visibility` answers two questions at once: can a non-member find this team, and what may they
+// do about it. The tests below walk all three values against both questions, because the field
+// spent its first draft being validated and stored and never once read — every team behaved as
+// private whatever the column said, and the Settings dropdown promised otherwise.
+
+/// The whole model in one test: what each visibility does for someone outside the team.
+#[test]
+fn visibility_decides_who_can_find_a_team_and_how_they_get_in() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let outsider = f.outsider("u2");
+
+    let private = f.create_team_visible("Private", Some("private"), &owner);
+    let org = f.create_team_visible("Org", Some("organization"), &owner);
+    let invite = f.create_team_visible("Invite", Some("invite_only"), &owner);
+
+    let found = f.service.list_discoverable(&outsider).expect("discover");
+    let names: Vec<&str> = found.teams.iter().map(|t| t.name.as_str()).collect();
+
+    assert!(
+        !names.contains(&"Private"),
+        "a private team must not be discoverable"
+    );
+    assert_eq!(names, vec!["Invite", "Org"], "sorted by name");
+
+    // And what each one offers, decided by the server rather than by the client guessing.
+    let action = |name: &str| {
+        found
+            .teams
+            .iter()
+            .find(|t| t.name == name)
+            .map(|t| t.join_action.clone())
+            .expect("team in list")
+    };
+    assert_eq!(action("Org"), "join");
+    assert_eq!(action("Invite"), "request");
+
+    // The private team is still 404 on every ordinary route, unchanged by any of this.
+    assert_eq!(
+        f.service.get_team(&private.id, &outsider).expect_err("404").status,
+        404
+    );
+    // …and so are the two discoverable ones. Discovery is confined to its own endpoint and does
+    // not open up the members' view of a team.
+    for t in [&org, &invite] {
+        assert_eq!(
+            f.service.get_team(&t.id, &outsider).expect_err("404").status,
+            404,
+            "discoverable is not the same as readable"
+        );
+    }
+}
+
+/// Anyone can add themselves to an organization team, and they land as a Viewer.
+#[test]
+fn an_organization_team_is_joined_by_adding_yourself() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let joiner = f.outsider("u2");
+    let team = f.create_team_visible("Org", Some("organization"), &owner);
+
+    let member = f.service.join_team(&team.id, &joiner).expect("join");
+    assert_eq!(member.role, Role::Viewer.as_str());
+    assert_eq!(member.user_id, "u2");
+
+    // They are in: the team now resolves for them, and shows in their own list.
+    let seen = f.service.get_team(&team.id, &joiner).expect("now a member");
+    assert_eq!(seen.user_role, "viewer");
+    assert_eq!(seen.member_count, 2);
+    assert_eq!(f.service.list_teams(&joiner).expect("list").total, 1);
+
+    // And it drops out of what is left to discover.
+    assert_eq!(
+        f.service.list_discoverable(&joiner).expect("discover").total,
+        0
+    );
+}
+
+/// Least privilege: joining reads, it does not write. The alternative — Contributor by default —
+/// would mean making a team discoverable silently granted write access to the whole deployment.
+#[test]
+fn joining_grants_the_least_authority_there_is() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let joiner = f.outsider("u2");
+    let team = f.create_team_visible("Org", Some("organization"), &owner);
+    f.service.join_team(&team.id, &joiner).expect("join");
+
+    let err = f
+        .service
+        .create_page(
+            &team.id,
+            CreatePageRequest {
+                title: "Mine now".into(),
+                parent_page_id: None,
+                content_md: None,
+                icon: None,
+            },
+            &joiner,
+        )
+        .expect_err("a viewer writes nothing");
+    assert_eq!(err.status, 403);
+
+    // Reading is exactly what they came for, and that works.
+    assert!(f.service.list_pages(&team.id, None, &joiner).is_ok());
+}
+
+/// An invite-only team cannot be walked into, even though it can be found.
+#[test]
+fn an_invite_only_team_refuses_a_self_serve_join() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let outsider = f.outsider("u2");
+    let team = f.create_team_visible("Invite", Some("invite_only"), &owner);
+
+    let err = f.service.join_team(&team.id, &outsider).expect_err("refused");
+    // 403 rather than 404: they can already see this team in Discover, so there is nothing left to
+    // conceal — only something they may not do.
+    assert_eq!(err.status, 403);
+    assert!(
+        err.message.contains("Request access"),
+        "the refusal should say what to do instead, got {:?}",
+        err.message
+    );
+}
+
+/// A private team cannot be joined *or* discovered, and says only "not found" to either.
+#[test]
+fn a_private_team_is_not_joinable_and_does_not_admit_to_existing() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let outsider = f.outsider("u2");
+    let team = f.create_team_visible("Private", Some("private"), &owner);
+
+    for status in [
+        f.service.join_team(&team.id, &outsider).expect_err("404").status,
+        f.service
+            .request_access(&team.id, RequestAccessRequest { message: None }, &outsider)
+            .expect_err("404")
+            .status,
+    ] {
+        assert_eq!(
+            status, 404,
+            "a private team answers exactly as an absent one does"
+        );
+    }
+}
+
+/// The full request → approve path, and the membership it produces.
+#[test]
+fn a_request_is_answered_by_an_admin_and_admits_the_requester() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let asker = f.outsider("u2");
+    let team = f.create_team_visible("Invite", Some("invite_only"), &owner);
+
+    let request = f
+        .service
+        .request_access(
+            &team.id,
+            RequestAccessRequest {
+                message: Some("  I'm on the launch  ".into()),
+            },
+            &asker,
+        )
+        .expect("request");
+    assert_eq!(request.status, "pending");
+    assert_eq!(
+        request.message.as_deref(),
+        Some("I'm on the launch"),
+        "trimmed"
+    );
+
+    // Asking is not joining.
+    assert_eq!(
+        f.service.get_team(&team.id, &asker).expect_err("not yet").status,
+        404
+    );
+
+    // The owner sees it queued.
+    let queue = f
+        .service
+        .list_join_requests(&team.id, None, &owner)
+        .expect("queue");
+    assert_eq!(queue.total, 1);
+    assert_eq!(queue.requests[0].email, "u2@example.com");
+
+    let member = f
+        .service
+        .approve_join_request(
+            &team.id,
+            &request.id,
+            ApproveJoinRequestRequest { role: None },
+            &owner,
+        )
+        .expect("approve");
+    assert_eq!(member.role, Role::Viewer.as_str());
+
+    // In the team, and out of the queue.
+    assert!(f.service.get_team(&team.id, &asker).is_ok());
+    assert_eq!(
+        f.service
+            .list_join_requests(&team.id, None, &owner)
+            .expect("queue")
+            .total,
+        0
+    );
+    assert_eq!(
+        f.service
+            .list_join_requests(&team.id, Some("approved"), &owner)
+            .expect("queue")
+            .total,
+        1
+    );
+}
+
+/// An approval can name the role, so an admin need not admit-then-promote in two steps.
+#[test]
+fn an_approval_can_name_the_role_it_admits_them_in() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let asker = f.outsider("u2");
+    let team = f.create_team_visible("Invite", Some("invite_only"), &owner);
+    let request = f
+        .service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &asker)
+        .expect("request");
+
+    let member = f
+        .service
+        .approve_join_request(
+            &team.id,
+            &request.id,
+            ApproveJoinRequestRequest {
+                role: Some("editor".into()),
+            },
+            &owner,
+        )
+        .expect("approve");
+    assert_eq!(member.role, "editor");
+}
+
+/// The escalation rule from `add_member` applies to the other route in as well — otherwise an
+/// Admin could mint an Owner by approving a request rather than by inviting.
+#[test]
+fn an_admin_cannot_approve_someone_into_ownership() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let admin = f.outsider("u2");
+    let asker = f.outsider("u3");
+    let team = f.create_team_visible("Invite", Some("invite_only"), &owner);
+
+    f.service
+        .add_member(
+            &team.id,
+            AddMemberRequest {
+                email: "u2@example.com".into(),
+                role: "admin".into(),
+            },
+            &owner,
+        )
+        .expect("add admin");
+    let request = f
+        .service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &asker)
+        .expect("request");
+
+    let err = f
+        .service
+        .approve_join_request(
+            &team.id,
+            &request.id,
+            ApproveJoinRequestRequest {
+                role: Some("owner".into()),
+            },
+            &admin,
+        )
+        .expect_err("escalation");
+    assert_eq!(err.status, 403);
+}
+
+/// A declined request is kept as answered, which is what stops the same person filling the queue
+/// again the next day with nothing to say they were already turned down.
+#[test]
+fn a_declined_request_is_remembered_rather_than_deleted() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let asker = f.outsider("u2");
+    let team = f.create_team_visible("Invite", Some("invite_only"), &owner);
+    let request = f
+        .service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &asker)
+        .expect("request");
+
+    f.service
+        .decline_join_request(&team.id, &request.id, &owner)
+        .expect("decline");
+
+    assert_eq!(
+        f.service
+            .list_join_requests(&team.id, None, &owner)
+            .expect("queue")
+            .total,
+        0,
+        "out of the pending queue"
+    );
+    let declined = f
+        .service
+        .list_join_requests(&team.id, Some("declined"), &owner)
+        .expect("queue");
+    assert_eq!(declined.total, 1);
+    assert_eq!(declined.requests[0].decided_by.as_deref(), Some("u1"));
+    assert!(declined.requests[0].decided_at.is_some());
+
+    // They are not in the team, and the team is discoverable again — a decline is not a ban, and
+    // asking a second time is allowed.
+    assert_eq!(
+        f.service.get_team(&team.id, &asker).expect_err("no").status,
+        404
+    );
+    assert!(f
+        .service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &asker)
+        .is_ok());
+}
+
+/// One open request per person per team — the partial unique index in 00129, enforced with a
+/// legible error rather than a constraint violation.
+#[test]
+fn a_second_request_while_one_is_open_is_refused() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let asker = f.outsider("u2");
+    let team = f.create_team_visible("Invite", Some("invite_only"), &owner);
+
+    f.service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &asker)
+        .expect("first");
+    let err = f
+        .service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &asker)
+        .expect_err("second");
+    assert_eq!(err.status, 409);
+
+    // And Discover says so rather than offering the button again.
+    let found = f.service.list_discoverable(&asker).expect("discover");
+    assert_eq!(found.teams[0].join_action, "requested");
+}
+
+/// Answering a request is admitting someone, so it takes the same authority as inviting them.
+#[test]
+fn an_ordinary_member_cannot_see_or_answer_the_queue() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let editor = f.outsider("u2");
+    let asker = f.outsider("u3");
+    let team = f.create_team_visible("Invite", Some("invite_only"), &owner);
+
+    f.service
+        .add_member(
+            &team.id,
+            AddMemberRequest {
+                email: "u2@example.com".into(),
+                role: "editor".into(),
+            },
+            &owner,
+        )
+        .expect("add editor");
+    let request = f
+        .service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &asker)
+        .expect("request");
+
+    // An Editor has every authority over content and none over membership.
+    assert_eq!(
+        f.service
+            .list_join_requests(&team.id, None, &editor)
+            .expect_err("403")
+            .status,
+        403
+    );
+    assert_eq!(
+        f.service
+            .approve_join_request(
+                &team.id,
+                &request.id,
+                ApproveJoinRequestRequest { role: None },
+                &editor
+            )
+            .expect_err("403")
+            .status,
+        403
+    );
+
+    // And a complete outsider gets 404 — the queue does not confirm the team exists.
+    let stranger = f.outsider("u4");
+    assert_eq!(
+        f.service
+            .list_join_requests(&team.id, None, &stranger)
+            .expect_err("404")
+            .status,
+        404
+    );
+}
+
+/// Findable is not the same as joinable: an archived team refuses every write, so admitting
+/// someone would hand them a room they cannot act in.
+#[test]
+fn an_archived_team_is_neither_discoverable_nor_joinable() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let outsider = f.outsider("u2");
+    let team = f.create_team_visible("Org", Some("organization"), &owner);
+
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                archived: Some(true),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("archive");
+
+    assert_eq!(
+        f.service.list_discoverable(&outsider).expect("discover").total,
+        0
+    );
+    assert_eq!(
+        f.service.join_team(&team.id, &outsider).expect_err("no").status,
+        409
+    );
+}
+
+/// Joining something you are already in is a 409 rather than a second membership row.
+#[test]
+fn joining_twice_is_refused() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let joiner = f.outsider("u2");
+    let team = f.create_team_visible("Org", Some("organization"), &owner);
+
+    f.service.join_team(&team.id, &joiner).expect("join");
+    assert_eq!(
+        f.service.join_team(&team.id, &joiner).expect_err("again").status,
+        409
+    );
+    // The owner is a member too, and gets the same answer.
+    assert_eq!(
+        f.service.join_team(&team.id, &owner).expect_err("own team").status,
+        409
+    );
+}
+
+/// There is nothing to request when anyone may simply join, so asking is a 400 rather than a row
+/// in a queue nobody will ever look at.
+#[test]
+fn requesting_access_to_an_open_team_is_refused_as_pointless() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let outsider = f.outsider("u2");
+    let team = f.create_team_visible("Org", Some("organization"), &owner);
+
+    let err = f
+        .service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &outsider)
+        .expect_err("pointless");
+    assert_eq!(err.status, 400);
+}
+
+/// A request already answered cannot be answered again, whichever way it went.
+#[test]
+fn a_request_can_only_be_answered_once() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let asker = f.outsider("u2");
+    let team = f.create_team_visible("Invite", Some("invite_only"), &owner);
+    let request = f
+        .service
+        .request_access(&team.id, RequestAccessRequest { message: None }, &asker)
+        .expect("request");
+
+    f.service
+        .decline_join_request(&team.id, &request.id, &owner)
+        .expect("decline");
+
+    assert_eq!(
+        f.service
+            .decline_join_request(&team.id, &request.id, &owner)
+            .expect_err("twice")
+            .status,
+        409
+    );
+    assert_eq!(
+        f.service
+            .approve_join_request(
+                &team.id,
+                &request.id,
+                ApproveJoinRequestRequest { role: None },
+                &owner
+            )
+            .expect_err("already declined")
+            .status,
+        409
+    );
+}
+
+/// A request id from another team cannot be answered through this team's route, even by someone
+/// entitled to answer requests in both.
+#[test]
+fn a_request_from_another_team_cannot_be_answered_here() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let asker = f.outsider("u2");
+    let a = f.create_team_visible("A", Some("invite_only"), &owner);
+    let b = f.create_team_visible("B", Some("invite_only"), &owner);
+
+    let request = f
+        .service
+        .request_access(&a.id, RequestAccessRequest { message: None }, &asker)
+        .expect("request");
+
+    assert_eq!(
+        f.service
+            .approve_join_request(
+                &b.id,
+                &request.id,
+                ApproveJoinRequestRequest { role: None },
+                &owner
+            )
+            .expect_err("wrong team")
+            .status,
+        404
+    );
+    // And the request is untouched by the attempt.
+    assert_eq!(
+        f.service
+            .list_join_requests(&a.id, None, &owner)
+            .expect("queue")
+            .total,
+        1
+    );
+}
+
+/// Opening a team up is a security-relevant change, so it gets its own entry in the feed rather
+/// than being folded into a generic "settings updated".
+#[test]
+fn changing_visibility_is_recorded_in_the_activity_feed() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team_visible("Team", Some("private"), &owner);
+
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                visibility: Some("organization".into()),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("open it up");
+
+    let feed = f.service.list_activity(&team.id, &owner).expect("feed");
+    let entry = feed
+        .entries
+        .iter()
+        .find(|e| e.action == "team.visibility_changed")
+        .expect("visibility change recorded");
+    let detail = entry.detail.as_ref().expect("detail");
+    assert_eq!(detail["from"], "private");
+    assert_eq!(detail["to"], "organization");
+}
+
+/// Turning a team private takes it out of Discover for everyone who has not already joined; the
+/// people already in it stay in. Archiving-like reversibility, not a purge.
+#[test]
+fn making_a_team_private_hides_it_without_removing_anyone() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let joiner = f.outsider("u2");
+    let stranger = f.outsider("u3");
+    let team = f.create_team_visible("Org", Some("organization"), &owner);
+    f.service.join_team(&team.id, &joiner).expect("join");
+
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                visibility: Some("private".into()),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("close it");
+
+    assert_eq!(
+        f.service.list_discoverable(&stranger).expect("discover").total,
+        0
+    );
+    assert_eq!(
+        f.service.join_team(&team.id, &stranger).expect_err("gone").status,
+        404
+    );
+    // The person who joined while it was open keeps what they had.
+    assert!(f.service.get_team(&team.id, &joiner).is_ok());
+}
+
+/// An unknown visibility is refused on the way in rather than stored and puzzled over later.
+#[test]
+fn an_unknown_visibility_is_rejected() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    f.add_user("u1", "owner@example.com", "Owner");
+
+    let err = f
+        .service
+        .create_team(
+            CreateTeamRequest {
+                name: "Team".into(),
+                description: None,
+                avatar_color: None,
+                avatar_emoji: None,
+                visibility: Some("public".into()),
+            },
+            &owner,
+        )
+        .expect_err("unknown");
+    assert_eq!(err.status, 400);
+
+    let team = f.create_team("Team", &owner);
+    let err = f
+        .service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                visibility: Some("world".into()),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect_err("unknown");
+    assert_eq!(err.status, 400);
+}
+
+/// A team is private unless it says otherwise, so an existing deployment gains no discoverable
+/// teams by upgrading.
+#[test]
+fn a_team_is_private_by_default() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let outsider = f.outsider("u2");
+
+    let team = f.create_team("Unspecified", &owner);
+    assert_eq!(team.visibility, "private");
+    assert_eq!(
+        f.service.list_discoverable(&outsider).expect("discover").total,
+        0
     );
 }

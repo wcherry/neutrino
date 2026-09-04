@@ -54,6 +54,12 @@ its own key, that is a coordinated multi-repo change and gets its own issue.
 ### Part 2 — Team Spaces
 
 10. `migrations/00126_drive__2026-09-03-000001_create_teams` — `teams` and `team_members`.
+10a. `migrations/00129_drive__2026-09-04-000000_create_team_join_requests` — `team_join_requests`,
+    with a partial unique index giving one *open* request per person per team.
+10b. `src/drive/teams/visibility.rs` — what `teams.visibility` means, as a type rather than three
+    strings: `private` is not discoverable, `organization` is discoverable and self-serve,
+    `invite_only` is discoverable and by request. A stored value nothing recognises reads as
+    private. See "Visibility" below.
 11. `migrations/00127_drive__2026-09-03-000002_create_team_pages` — `team_pages` and
     `team_page_versions`.
 12. `migrations/00128_drive__2026-09-03-000003_add_team_id_to_files_and_folders` — nullable
@@ -137,9 +143,61 @@ are invisible anyway, and once it is on a phase that is finished is finished —
 would mean carrying a second code path to be built, tested in both states and then removed, for a
 feature already hidden behind the switch above it.
 
+## Visibility
+
+`teams.visibility` decides **who can find a team and how they get in**, and never what a member may
+do once inside — that is the role matrix, and the two are independent.
+
+| Value | Findable by a non-member | How they join |
+|---|---|---|
+| `private` (default) | No — 404, as if absent | They don't; someone adds them |
+| `organization` | Yes | Adds themselves, immediately |
+| `invite_only` | Yes | Asks; an Owner or Admin decides |
+
+This was a defect before it was a feature. The column shipped in the first draft **validated,
+stored, returned in the DTO and never once read** — nothing branched on it, so all three values
+behaved as `private`, and the Settings dropdown told an owner that an Organization team was
+"findable by anyone in the organization" while the server ignored the setting entirely. A field that
+looks like configuration and is not is the same failure the flag catalog exists to prevent, one
+level down.
+
+Four rules worth keeping:
+
+- **Discovery is confined to one endpoint.** `GET /teams/discoverable` returns
+  `DiscoverableTeamResponse` — name, description, avatar, member count, and what the button should
+  say. Never `TeamResponse`, whose `userRole` is documented as always present because a caller with
+  no role never sees one. Every other route still requires membership, so a discoverable team is
+  findable without being readable.
+- **Joining grants `viewer`.** Least privilege: the owner made the team joinable, which is not the
+  same as saying anyone who wanders in may rewrite the wiki. An admin promotes in one click, and an
+  approval can name a different role outright. Granting `contributor` by default would mean making a
+  team discoverable silently handed write access to the whole deployment.
+- **An unreadable stored value reads as `private`.** `Visibility::stored` fails closed and logs. The
+  cost of being wrong that way is a team nobody can discover; the other way it is a team everyone
+  can join.
+- **Archived teams are findable but not joinable.** Every write in an archived team is refused, so
+  admitting someone would hand them a room they cannot act in.
+
+Route ordering carries a hazard the service tests cannot see: `/teams/discoverable` is a literal
+segment competing with `/teams/{team_id}`, and registered second it would be read as a team whose id
+is the word "discoverable". `src/drive/teams/api.rs` has an actix-level `routing` test module
+pinning that, verified to fail when the order is reversed.
+
 ## Open Questions
 
-None blocking. One judgment call worth flagging in review: a team's file library reuses `files` and
+Two, neither blocking.
+
+**A requester cannot withdraw a request.** There is no `DELETE …/join-requests/mine`. The 409 on a
+second request means someone who asks by mistake waits for an admin to decline. Cheap to add; left
+out because nothing in the issue asks for it and the queue is the admin's screen, not the
+requester's.
+
+**Nobody is notified of a pending request.** An admin sees the panel when they next open Members.
+There is no email and no in-app notification, so a request can sit unanswered indefinitely. That is
+the same shape as every other Team Spaces event today — the activity feed records it and nothing
+pushes it — and wiring notifications is its own piece of work.
+
+One judgment call worth flagging in review: a team's file library reuses `files` and
 `folders` with a nullable `team_id` rather than getting its own tables. It means team files inherit
 uploads, versions, trash and encryption for free, at the cost of every existing query on those
 tables now needing to say which scope it means. The alternative — parallel tables — was rejected

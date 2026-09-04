@@ -46,9 +46,40 @@ pub enum TeamAction {
     UploadFile,
     DeleteFile,
     InviteMember,
+    /// Answer a request to join an invite-only team. Distinct from `InviteMember` only in who
+    /// started it — the authority is the same, so the two always agree in the matrix.
+    ManageJoinRequests,
     ManagePermissions,
     ManageSettings,
     DeleteTeam,
+}
+
+impl TeamAction {
+    /// Every action, so a test can walk the whole matrix instead of a hand-written subset of it.
+    ///
+    /// `Role::can` is what actually forces a new action to be decided — its match is exhaustive.
+    /// This is for the tests, which previously listed the actions inline in two places and would
+    /// have gone on passing while silently not covering a new one.
+    pub const ALL: [TeamAction; 11] = [
+        TeamAction::ViewTeam,
+        TeamAction::CreatePage,
+        TeamAction::EditPage,
+        TeamAction::DeletePage,
+        TeamAction::UploadFile,
+        TeamAction::DeleteFile,
+        TeamAction::InviteMember,
+        TeamAction::ManageJoinRequests,
+        TeamAction::ManagePermissions,
+        TeamAction::ManageSettings,
+        TeamAction::DeleteTeam,
+    ];
+
+    /// Every action except viewing — i.e. everything that changes something.
+    pub fn writes() -> impl Iterator<Item = TeamAction> {
+        TeamAction::ALL
+            .into_iter()
+            .filter(|a| *a != TeamAction::ViewTeam)
+    }
 }
 
 impl Role {
@@ -114,6 +145,9 @@ impl Role {
             DeleteFile => matches!(self, Owner | Admin | Editor),
 
             InviteMember => matches!(self, Owner | Admin),
+            // Approving a request admits someone to the team, which is inviting them by another
+            // route. Anyone who could not have invited them must not be able to let them in.
+            ManageJoinRequests => matches!(self, Owner | Admin),
             ManagePermissions => matches!(self, Owner | Admin),
             ManageSettings => matches!(self, Owner | Admin),
 
@@ -180,17 +214,7 @@ mod tests {
     #[test]
     fn viewer_and_guest_write_nothing() {
         for role in [Role::Viewer, Role::Guest] {
-            for action in [
-                TeamAction::CreatePage,
-                TeamAction::EditPage,
-                TeamAction::DeletePage,
-                TeamAction::UploadFile,
-                TeamAction::DeleteFile,
-                TeamAction::InviteMember,
-                TeamAction::ManagePermissions,
-                TeamAction::ManageSettings,
-                TeamAction::DeleteTeam,
-            ] {
+            for action in TeamAction::writes() {
                 assert!(!role.can(action), "{role} should not be able to {action:?}");
             }
         }
@@ -209,17 +233,10 @@ mod tests {
 
     #[test]
     fn admin_matches_owner_on_everything_but_deleting_the_team() {
-        for action in [
-            TeamAction::ViewTeam,
-            TeamAction::CreatePage,
-            TeamAction::EditPage,
-            TeamAction::DeletePage,
-            TeamAction::UploadFile,
-            TeamAction::DeleteFile,
-            TeamAction::InviteMember,
-            TeamAction::ManagePermissions,
-            TeamAction::ManageSettings,
-        ] {
+        for action in TeamAction::ALL {
+            if action == TeamAction::DeleteTeam {
+                continue;
+            }
             assert_eq!(
                 Role::Admin.can(action),
                 Role::Owner.can(action),
@@ -227,5 +244,18 @@ mod tests {
             );
         }
         assert!(!Role::Admin.can(TeamAction::DeleteTeam));
+    }
+
+    /// Letting someone in by approving their request is the same authority as inviting them, and
+    /// the matrix must not drift apart on the two routes to the same outcome.
+    #[test]
+    fn answering_a_join_request_takes_the_same_authority_as_inviting() {
+        for role in Role::ALL {
+            assert_eq!(
+                role.can(TeamAction::ManageJoinRequests),
+                role.can(TeamAction::InviteMember),
+                "{role} can do one of invite/approve but not the other"
+            );
+        }
     }
 }
