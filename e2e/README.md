@@ -183,3 +183,24 @@ All backend services are internal to the `neutrino-test` Docker network.
 1. Create a new spec file under `tests/`
 2. Import `test` and `expect` from `../../fixtures/base` (not directly from `@playwright/test`) to get automatic console and network capture
 3. Use `http://localhost:9880` as the base URL (configured in `playwright.config.ts`)
+
+### Never write to the stack's database from the host
+
+The test stack's SQLite file is visible on the host at `${RUN_DIR}/data/neutrino.db`, because
+`docker-compose-test.yml` bind-mounts `${RUN_DIR}/data`. **Do not write to it.** Reading is fine.
+
+SQLite relies on POSIX advisory locks to keep writers apart, and those locks do not carry reliably
+across a Docker bind mount on macOS — the host and the Linux VM each think they hold the file. A
+`sqlite3 "$RUN_DIR/data/neutrino.db" "UPDATE …"` run while the server has the database open
+therefore corrupts it: the server starts answering every request with
+`database disk image is malformed`, and every test after that point fails for a reason that has
+nothing to do with what it was testing. That is not hypothetical — it is how this paragraph came to
+be written, during #185.
+
+This matters because the shortcut is tempting. Some things cannot be set up through the API at all:
+there is no bootstrap endpoint, so **no test can obtain an admin account**, and everything behind
+`AdminUser` — the admin console, feature flag toggles, quota decisions — is reachable from here only
+to assert that an ordinary user is refused. Cover the rest with Rust tests, which run the real
+migrations against their own in-memory database, and with `VERIFY.md` for the browser half. If a
+feature genuinely needs admin coverage in Playwright, the fix is a supported bootstrap the test
+compose file opts into — not a write behind the server's back.

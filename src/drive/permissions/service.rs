@@ -299,6 +299,23 @@ impl PermissionsService {
         resource_type: &str,
         resource_id: &str,
     ) -> Result<Option<String>, ApiError> {
+        // A team-owned file or folder is governed by the team, and nothing else (issue #185).
+        //
+        // Checked *first*, ahead of the explicit grants, because otherwise the grants outlive the
+        // move. Every upload writes its uploader an `owner` permission row, so a file claimed into
+        // a team would leave the person who happened to press upload as its Drive owner —
+        // able to reshare a team's file outside the team, and holding an authority over it that
+        // even the team's own Owner does not have. Any share made before the file joined the team
+        // is stale for the same reason, and this makes it inert rather than honoured.
+        //
+        // The consequence, and it is intended: nobody is `owner` of a team file, so the individual
+        // sharing endpoints refuse to operate on one. Sharing out of a team is not something this
+        // phase does, and refusing is a better answer than a share that outlives the team's
+        // membership.
+        if let Some(team_role) = self.team_role_for_resource(user_id, resource_type, resource_id)? {
+            return Ok(team_role);
+        }
+
         if let Some(perm) = self
             .repo
             .find_permission(resource_type, resource_id, user_id)?
@@ -319,6 +336,67 @@ impl PermissionsService {
             _ => {}
         }
         Ok(None)
+    }
+
+    /// The caller's role over a resource, *if* it belongs to a team.
+    ///
+    /// The two levels of `Option` carry two different facts, and collapsing them is the bug this
+    /// shape exists to prevent:
+    ///
+    /// - `None` — not a team resource. Carry on to the grants and folder inheritance.
+    /// - `Some(None)` — a team resource the caller is not a member of. **Stop.** No access, and
+    ///   emphatically not a fall-through to the grants, where a stale personal share would let
+    ///   them straight back in.
+    /// - `Some(Some(role))` — a team resource and the caller's role in it.
+    fn team_role_for_resource(
+        &self,
+        user_id: &str,
+        resource_type: &str,
+        resource_id: &str,
+    ) -> Result<Option<Option<String>>, ApiError> {
+        let team_id = match resource_type {
+            "file" => self.repo.get_file_team_id(resource_id)?,
+            "folder" => self.repo.get_folder_team_id(resource_id)?,
+            _ => None,
+        };
+        let Some(team_id) = team_id else {
+            return Ok(None);
+        };
+        Ok(Some(self.role_from_team_membership(user_id, &team_id)?))
+    }
+
+    /// The Drive role a team member holds over the team's files and folders (issue #185).
+    ///
+    /// A team's library lives in the same `files` and `folders` tables as everything else, so
+    /// letting membership answer here is what makes download, preview, thumbnails, file info and
+    /// every other read that already asks this question work for a team's members — without any of
+    /// them learning that teams exist.
+    ///
+    /// Checked *before* folder inheritance, and it short-circuits: a file in a team is governed by
+    /// the team, and walking up to a personal folder's grants from inside a team's tree would let
+    /// a share made before the file joined the team outlive the move.
+    ///
+    /// The six team roles collapse to the three Drive roles because that is all this vocabulary
+    /// has. The mapping is deliberately conservative — `owner` is not granted to anyone, not even
+    /// a team Owner, because a Drive "owner" may reshare a file and change its permissions, and
+    /// authority over a team is not authority to hand its files to people outside it. Destructive
+    /// team actions are checked against the real six-role matrix in `teams::service`, which is
+    /// where deleting a team file is authorised; this only decides who may read and write one.
+    fn role_from_team_membership(
+        &self,
+        user_id: &str,
+        team_id: &str,
+    ) -> Result<Option<String>, ApiError> {
+        let Some(team_role) = self.repo.find_team_role(team_id, user_id)? else {
+            return Ok(None);
+        };
+        Ok(match team_role.as_str() {
+            "owner" | "admin" | "editor" | "contributor" => Some("editor".to_string()),
+            "viewer" | "guest" => Some("viewer".to_string()),
+            // A role nothing recognises grants nothing — the same rule `teams::roles::Role::parse`
+            // applies, for the same reason.
+            _ => None,
+        })
     }
 
     fn get_effective_role_in_folder(

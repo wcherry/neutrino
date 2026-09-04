@@ -1,41 +1,126 @@
-# Manual Verification: Friendly date on the large icon (issue #69)
+# Manual Verification: Team Spaces and the feature flag system (#185)
 
-Replaces the verification steps for issue #155, which has shipped (commit `4915570`).
+Replaces the verification steps for issue #69, which has shipped (commit `c707518`).
+
+Delete this file once Team Spaces is proven stable — in the same PR that removes the
+`teamSpaces` flags.
 
 ## Prerequisites
-- Stack running locally: `cargo dev` (or the `docker-compose-dev.yml` stack)
-- A signed-in account with a few files in Drive and at least one document or note
+
+- The stack running locally: `cargo xtask dev` (backend, worker and frontend).
+- An **admin** account. Flags are database rows and only an admin can change one; there is no
+  bootstrap endpoint, so promote an account by hand:
+  ```bash
+  sqlite3 ./data/neutrino.db "UPDATE users SET role='admin' WHERE email='you@example.com';"
+  ```
+  Sign out and back in — the role is carried in the access token.
+
+  Safe here, and only here: `cargo xtask dev` runs the backend natively, so this is an ordinary
+  same-host SQLite write and its locking works. Do **not** do the equivalent against the e2e stack's
+  database — that file is a Docker bind mount, where the locks do not carry and a host-side write
+  corrupts it. See `e2e/README.md`.
+- A second ordinary account, for the membership and role checks.
+
+All four flags ship **disabled**. Nothing below is visible until you turn them on, which is the
+first thing to confirm.
+
+---
 
 ## Steps
 
-### Happy Path
-1. Open http://localhost:3000/drive and stay in the **Large grid** view (the leftmost of the
-   three view buttons).
-2. Create or edit a file so it has just been touched. Its card's meta line reads
-   `<size> · Just now`.
-3. Wait a couple of minutes and reload. It reads `2 minutes ago`, then `An hour ago` and
-   `N hours ago` as the day goes on.
-4. Hover the meta line. The tooltip shows the exact date and time.
-5. Switch to **Detailed list**. The Modified column still shows an absolute date
-   (`Jan 5, 2026`) — the friendly wording is the card's, not the column's.
+### The flag is off — the app is unchanged
 
-### Edge Cases
-1. **Yesterday and the week**: a file last changed yesterday reads `Yesterday`; one from
-   earlier this week reads by weekday (`Monday` … `Sunday`). To check without waiting, edit a
-   file, then in `psql` run
-   `UPDATE files SET updated_at = NOW() - INTERVAL '3 days' WHERE name = '<file>';` and reload.
-   The same trick with `'10 days'` gives `A week ago`, `'20 days'` gives `2 weeks ago`,
-   `'40 days'` gives `A month ago`, `'400 days'` gives `A year ago`.
-2. **Late last night**: a file changed at 11pm shows `Yesterday` the next morning, not
-   `10 hours ago` — the day buckets are calendar comparisons.
-3. **Office suite and Notes**: open `/docs`, `/sheets`, `/slides`, `/drawing` and `/notes`.
-   Each card shows the friendly date alone (the absolute date these used to show as a subtitle
-   is gone; the icon already says what the item is).
-4. **Trash**: `/drive/trash` cards read `Deleted · Yesterday` — the date is when the item was
-   deleted, as the Modified column there already was.
-5. **Search**: search from the topbar and open the Drive results view (`/drive?q=…`). Hits
-   carry the same friendly date; a hit with no known date shows just its subtitle.
-6. **Small grid**: unchanged — no date, there is no room for one.
+1. Open the app and sign in as an ordinary user.
+2. The sidebar's Team section says **Shared Drives** and points at `/drive/team`. There is no
+   Shared Spaces entry. → *This is the state every existing deployment is in after this release.*
+3. `curl http://localhost:<port>/api/v1/feature-flags` returns all four `teamSpaces*` keys, every
+   one `false`. It needs no authentication.
+4. `curl -H "Authorization: Bearer <token>" http://localhost:<port>/api/v1/drive/teams` answers
+   **404**, not 403. → *With the flag off the feature does not exist on this deployment; 403 would
+   confirm it is coming.*
+
+### Turning it on
+
+5. Sign in as the admin, open **Admin → Feature Flags**.
+6. Each row shows its owner and the condition under which the flag is removed, beside the toggle.
+7. Turn on `teamSpaces`, `teamSpacesPages` and `teamSpacesFiles`. Leave `teamSpacesActivity` off.
+8. Reload as the ordinary user. The Team section now says **Shared Spaces** and points at `/teams`.
+   Shared Drives is gone — replaced, not joined. → *No restart was needed; that is the property
+   these are rows rather than environment variables for.*
+
+### Happy path — a team, its wiki and its files
+
+9. Open **Shared Spaces** → **New Team**. Name it `Marketing`, pick an avatar colour, create it.
+10. You land inside the team, on a **Home** page reading "Welcome to Marketing". The team sidebar
+    shows Home, Pages, Files, Members, Settings, and a Pages tree with Home in it.
+11. **Edit** the Home page, change a line, **Save**. The rendered page shows the change.
+12. **History** → one version, holding the text you replaced. **Preview** it, then **Restore** it.
+    The page goes back, and the history now has *two* versions — the restore recorded what it
+    replaced. → *Restoring the wrong version must not destroy what it replaced.*
+13. **Subpage** → `Meeting notes`. It appears indented under Home in the tree, and the page shows a
+    breadcrumb trail.
+14. In the page body, write some markdown — a heading, a table, a `- [ ] task`, a fenced code
+    block, a link. Save. All of it renders.
+15. **Files** → **Upload**, pick any file. It appears in the library and the storage figure moves.
+16. Open **My Drive**. The uploaded file is **not** there. → *It belongs to the team now, not to
+    you.* Its versions, trash and encryption are the ordinary ones — this is the same row in the
+    same table, with a `team_id`.
+17. **Files** → **New folder**, then upload into it. Breadcrumbs walk in and out of the folder.
+
+### Roles
+
+18. **Members** → **Add member**, the second account's email, role **Viewer**.
+19. Sign in as that second account. Shared Spaces shows Marketing. Open it: the pages are readable,
+    and there is no New page button, no Edit, no Upload.
+20. As the owner, change their role to **Contributor**. As them, reload: New page and Upload appear;
+    Delete does not. → *A Contributor adds but does not remove.*
+21. As them, try `DELETE /api/v1/drive/teams/<id>/pages/<page id>` directly — **403**. The buttons
+    are an affordance; the server is the rule.
+22. As the owner, **Settings** → try to demote yourself to Viewer. Refused: you are the only owner.
+
+### Edge cases
+
+- **A team you are not in**: as a third account, `GET /api/v1/drive/teams/<id>` answers **404** —
+  the same status and message as a team id that never existed. → *Whether a team exists is itself
+  something membership decides.*
+- **An administrator is not a member**: the admin account, which is in no team, gets 404 on the
+  same call. Authority over the deployment is not membership of every team on it.
+- **Deleting Home**: the Home page has no Delete button, and the API answers 400. A team always has
+  exactly one.
+- **A page inside itself**: `PATCH` a page with its own child as `parentPageId` — 400. A cycle
+  would hang the tree walk.
+- **Archiving**: Settings → Archive. Everything stays readable; every write answers 403, including
+  the owner's. Restore, and writes work again.
+- **A sub-flag alone**: turn `teamSpacesFiles` off. The Files entry disappears from the team
+  sidebar and `/api/v1/drive/teams/<id>/library` answers 404, while pages keep working.
+
+### A declared flag with no row
+
+The failure this design exists to prevent. Delete a row the server declares:
+
+```bash
+sqlite3 <path to neutrino.db> "DELETE FROM feature_flags WHERE key='teamSpacesFiles';"
+```
+
+23. `GET /api/v1/feature-flags` now answers **500**, and the message names `teamSpacesFiles`.
+24. **Admin → Feature Flags** still loads — it is how you diagnose this — and shows
+    `teamSpacesFiles` as a disabled row marked as having no row, with a banner above the list.
+25. The web app logs `[feature-flags] … missing: teamSpacesFiles` in the console rather than
+    rendering the feature as quietly off.
+26. Put it back:
+    ```bash
+    sqlite3 <path to neutrino.db> \
+      "INSERT INTO feature_flags (key, enabled, description, updated_at) \
+       VALUES ('teamSpacesFiles', 0, 'restored by hand', datetime('now'));"
+    ```
+
+### Feature disabled
+
+27. Turn all four flags off in the admin panel.
+28. Reload: the sidebar says Shared Drives again, `/teams` says Team Spaces is not enabled, and
+    every team route answers 404. Teams already created are untouched in the database and come back
+    when the flag does.
 
 ## Cleanup
-Delete VERIFY.md once the feature is proven stable.
+
+Delete this file in the PR that removes the `teamSpaces` flags.

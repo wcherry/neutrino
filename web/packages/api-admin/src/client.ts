@@ -13,6 +13,8 @@ import type {
   QuotaRequestStatus,
   PasswordPolicy,
   UpdatePasswordPolicyRequest,
+  FeatureFlag,
+  UpdateFeatureFlagRequest,
   VersionRetentionSettings,
   UpdateVersionRetentionRequest,
   JobResponse,
@@ -242,6 +244,35 @@ export const adminApi = {
     return request<PasswordPolicy>('/api/v1/admin/password-policy', {
       method: 'PUT',
       body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * List all feature flags with metadata.
+   * GET /api/v1/admin/feature-flags
+   *
+   * Unlike the public map, this answers even when the table is missing a row the
+   * server declares — that key comes back with `missingRow` set. It is the only
+   * surface on which such a key is visible, and while one exists the public
+   * endpoint is failing, so this list is how the gap gets diagnosed.
+   */
+  async listFeatureFlags(): Promise<FeatureFlag[]> {
+    return request<FeatureFlag[]>('/api/v1/admin/feature-flags');
+  },
+
+  /**
+   * Enable or disable a feature flag.
+   * PATCH /api/v1/admin/feature-flags/{key}
+   *
+   * Takes effect on every client's next read of the public flags endpoint, and
+   * on the server immediately — the gates read the row per request rather than
+   * caching it at startup, which is the property that makes these rows rather
+   * than environment variables.
+   */
+  async updateFeatureFlag(key: string, updates: UpdateFeatureFlagRequest): Promise<FeatureFlag> {
+    return request<FeatureFlag>(`/api/v1/admin/feature-flags/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
     });
   },
 

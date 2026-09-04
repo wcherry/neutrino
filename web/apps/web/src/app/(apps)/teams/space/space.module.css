@@ -1,0 +1,426 @@
+/* The team workspace is full-bleed: it draws its own two-column chrome, so it does not compose the
+   page gutter the way a content page does. */
+.shell {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 240px;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow-y: auto;
+}
+
+.teamHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  line-height: 1;
+  color: #fff;
+  background: var(--team-avatar-color, var(--color-primary));
+}
+
+.teamName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  gap: 2px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.navItem:hover {
+  background: var(--color-surface-secondary);
+}
+
+.navItemActive {
+  background: var(--color-surface-secondary);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.navSectionLabel {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+/* The page tree. Depth is an inline padding rather than nested <ul>s, so the whole tree is one
+   flat list and keyboard order matches reading order. */
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.treeItem:hover {
+  background: var(--color-surface-secondary);
+}
+
+.treeItemActive {
+  background: var(--color-surface-secondary);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.treeLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.mainInner {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.pageHeaderText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  flex-wrap: wrap;
+}
+
+.crumb {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.crumb:hover {
+  text-decoration: underline;
+}
+
+/* Rendered markdown. Scoped here rather than global so a page's content cannot restyle the app
+   around it. */
+.markdown {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin: var(--space-5) 0 var(--space-2);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.markdown h1 { font-size: 24px; }
+.markdown h2 { font-size: 19px; }
+.markdown h3 { font-size: 16px; }
+.markdown h4,
+.markdown h5,
+.markdown h6 { font-size: 14px; }
+
+.markdown > :first-child { margin-top: 0; }
+
+.markdown p { margin: 0 0 var(--space-3); }
+
+.markdown ul,
+.markdown ol {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-5);
+}
+
+.markdown li { margin-bottom: 2px; }
+
+.markdown ul[data-task-list] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown ul[data-task-list] li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.markdown ul[data-task-list] li[data-checked] span {
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+}
+
+.markdown code {
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-secondary);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9em;
+}
+
+.markdown pre {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-secondary);
+  overflow-x: auto;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown blockquote {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.markdown table {
+  width: 100%;
+  margin: 0 0 var(--space-3);
+  border-collapse: collapse;
+  font-size: 13px;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown th,
+.markdown td {
+  padding: 6px var(--space-2);
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.markdown th {
+  background: var(--color-surface-secondary);
+  font-weight: 600;
+}
+
+.markdown img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+}
+
+.markdown hr {
+  margin: var(--space-4) 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
+
+.editor {
+  width: 100%;
+  min-height: 420px;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.rowButton {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  flex: 1;
+  min-width: 0;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.storageBar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 480px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.dangerZone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-error, var(--color-border));
+  border-radius: var(--radius-md);
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-8);
+}
+
+.error {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-error-bg, var(--color-surface-secondary));
+  color: var(--color-error, var(--color-text-primary));
+  font-size: 13px;
+}
+
+.archivedNotice {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-secondary);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}

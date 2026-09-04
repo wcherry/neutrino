@@ -50,13 +50,27 @@ const APPS_SECTION: NavSection = {
   ],
 };
 
-const TEAM_SECTION: NavSection = {
-  id: 'team',
-  label: 'Team',
-  items: [
-    { id: 'shared-drives', label: 'Shared Drives', icon: Users, href: '/drive/team' },
-  ],
-};
+/**
+ * The Team section, in one of its two shapes.
+ *
+ * With `teamSpaces` off this is what it has always been — a link to the Shared Drives page — and
+ * the deployment is unchanged by #185. With the flag on, Shared Drives is replaced by Shared
+ * Spaces: not added beside it, replaced, because a Team Space is what a shared drive was meant to
+ * be and two entries would be two answers to "where does my team's stuff live".
+ *
+ * Replacing rather than adding is also what makes the flag a real kill switch. Turning it off puts
+ * the old entry back, and the Shared Drives page and its endpoint were never removed — which is
+ * what the six iOS apps and the macOS client still read.
+ */
+function teamSection(teamSpacesEnabled: boolean): NavSection {
+  return {
+    id: 'team',
+    label: 'Team',
+    items: teamSpacesEnabled
+      ? [{ id: 'shared-spaces', label: 'Shared Spaces', icon: Users, href: '/teams' }]
+      : [{ id: 'shared-drives', label: 'Shared Drives', icon: Users, href: '/drive/team' }],
+  };
+}
 
 const ADMIN_SECTION: NavSection = {
   id: 'admin',
@@ -66,8 +80,24 @@ const ADMIN_SECTION: NavSection = {
   ],
 };
 
-export function getNavSections(isAdmin: boolean, tags: Tag[]): NavSection[] {
-  const sections = [DRIVE_SECTION, APPS_SECTION, TEAM_SECTION, tagNavSection(tags)];
+/**
+ * The sidebar.
+ *
+ * `teamSpacesEnabled` defaults to `false` so a caller that has not read the flag — or is rendering
+ * before the flag map has arrived — gets the pre-#185 sidebar. Failing closed here is what keeps a
+ * slow flag fetch from flashing a Shared Spaces entry that then disappears.
+ */
+export function getNavSections(
+  isAdmin: boolean,
+  tags: Tag[],
+  teamSpacesEnabled = false
+): NavSection[] {
+  const sections = [
+    DRIVE_SECTION,
+    APPS_SECTION,
+    teamSection(teamSpacesEnabled),
+    tagNavSection(tags),
+  ];
   return isAdmin ? [...sections, ADMIN_SECTION] : sections;
 }
 

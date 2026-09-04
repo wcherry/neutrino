@@ -225,6 +225,40 @@ export interface UpdatePasswordPolicyRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Feature flags
+//
+// Mirrors FeatureFlagDto in neutrino/src/drive/feature_flags/api.rs.
+//
+// The admin view of a flag, which carries three things the public key-to-boolean
+// map does not: who owns it, the condition under which it is removed, and
+// whether the server declares a key the table has no row for.
+// ---------------------------------------------------------------------------
+
+export interface FeatureFlag {
+  key: string;
+  enabled: boolean;
+  description: string | null;
+  updatedAt: string;
+  /** The team that owns this flag. Null for a row whose key nothing declares any more. */
+  owner: string | null;
+  /**
+   * When this flag comes out. A flag with no removal plan is a permanent second
+   * code path, which is what made the previous flag system worth deleting.
+   */
+  removal: string | null;
+  /**
+   * The server declares this key but the table has no row for it. Such a key has
+   * no row to render, so it is synthesised into this list — it is the only place
+   * it is visible, and the public flags endpoint is failing while it persists.
+   */
+  missingRow: boolean;
+}
+
+export interface UpdateFeatureFlagRequest {
+  enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // File version retention
 //
 // Mirrors VersionRetentionDto in
