@@ -14,14 +14,14 @@ import {
     TableProperties,
 } from 'lucide-react';
 import type { CellStyle } from './types';
-import { ColorPickerPopover, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
+import { ColorPickerPopover, FontSizeInput, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { CustomFormatDialog } from './CustomFormatDialog';
 import { TableStyleGalleryModal } from './components/TableStyleGalleryModal';
 import { computeTableStylePatches } from './styles/applyTableStyle';
 import type { TableStyle } from './styles/tableStyles';
 
-const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
+const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72];
 
 // Text overflows past the cell border (two full lines + one overflowing)
 function WrapOverflowIcon() {
@@ -147,17 +147,12 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
             </ToolbarSelect>
 
             {/* Font size */}
-            <ToolbarSelect
+            <FontSizeInput
+                sizes={FONT_SIZES}
                 value={cellStyle?.fontSize ? cellStyle.fontSize.replace('pt', '') : '11'}
-                onChange={e => onStyleChange({ fontSize: `${e.target.value}pt` })}
+                onChange={size => onStyleChange({ fontSize: `${size}pt` })}
                 disabled={disabled}
-                title="Font size"
-                style={{ width: 56 }}
-            >
-                {FONT_SIZES.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                ))}
-            </ToolbarSelect>
+            />
 
             <ToolbarDivider />
 

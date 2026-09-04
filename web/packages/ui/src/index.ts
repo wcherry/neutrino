@@ -54,6 +54,9 @@ export type { ColorPickerPopoverProps } from './components/inputs/ColorPickerPop
 export { FillPicker } from './components/inputs/FillPicker';
 export type { FillPickerProps, Background, BackgroundTheme, DriveImageItem, FillImageChoice } from './components/inputs/FillPicker';
 
+export { FontSizeInput, DEFAULT_FONT_SIZES, MIN_FONT_SIZE, MAX_FONT_SIZE } from './components/inputs/FontSizeInput';
+export type { FontSizeInputProps } from './components/inputs/FontSizeInput';
+
 export { DropZone } from './components/inputs/DropZone';
 export type { DropZoneProps } from './components/inputs/DropZone';
 

@@ -31,6 +31,14 @@ vi.mock('@neutrino/ui', () => ({
   ToolbarButton: ({ children, onClick, title }: { children?: React.ReactNode; onClick?: () => void; title?: string }) => (
     <button onClick={onClick} title={title}>{children}</button>
   ),
+  FontSizeInput: ({ value, onChange, title = 'Font size', disabled }: {
+    value?: string | number;
+    onChange?: (size: number) => void;
+    title?: string;
+    disabled?: boolean;
+  }) => (
+    <input title={title} value={value} disabled={disabled} onChange={e => onChange?.(Number(e.target.value))} />
+  ),
   ToolbarSelect: ({
     children,
     value,

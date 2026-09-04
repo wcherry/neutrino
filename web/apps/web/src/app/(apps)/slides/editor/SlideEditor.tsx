@@ -61,6 +61,7 @@ import {
   ToolbarButton,
   ToolbarSelect,
   ColorPickerPopover,
+  FontSizeInput,
   ZoomSlider,
   ShareButton,
   useToast,
@@ -132,7 +133,7 @@ import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const FONT_SIZES = ['8', '10', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '60', '72', '96'];
+const FONT_SIZES = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 60, 72, 96];
 
 // ── Re-exports ────────────────────────────────────────────────────────────────
 export type { TextStyle, ElementAnimation, TextElement, ShapeElement, VideoElement, ImageElement, SheetEmbedElement, DiagramElement, SlideElement, SlideBackground, Slide, Theme, SlideMaster, SlidePresentation } from './slideEditorTypes';
@@ -1764,14 +1765,11 @@ export function SlideEditor() {
             </ToolbarSelect>
 
             {/* Font size */}
-            <ToolbarSelect
-              style={{ width: 56 }}
-              title="Font size"
-              value={String((selectedElement as TextElement).style.fontSize)}
-              onChange={(e) => updateTextStyle(selectedElement.id, { fontSize: parseInt(e.target.value) || 24 })}
-            >
-              {FONT_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </ToolbarSelect>
+            <FontSizeInput
+              sizes={FONT_SIZES}
+              value={(selectedElement as TextElement).style.fontSize}
+              onChange={(size) => updateTextStyle(selectedElement.id, { fontSize: size })}
+            />
 
             <ToolbarDivider />
 
