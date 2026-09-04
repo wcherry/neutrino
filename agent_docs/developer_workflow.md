@@ -1,6 +1,6 @@
 # Developer Workflow
 
-This document defines the standard process an agent must follow for every developer task in the Neutrino platform. Execute each step in order. Do not skip steps or combine them out of sequence.
+This document defines the standard process an agent must follow for every developer task in the Neutrino platform. Execute each step in order. A step marked opt-in may be skipped when it does not apply — say in the PR that you skipped it and why. Otherwise do not skip steps or combine them out of sequence.
 
 ---
 
@@ -49,7 +49,9 @@ Numbered list of discrete implementation steps, each scoped to a single file or 
 - E2E: which flows to cover in neutrino-e2e
 
 ## Feature Flag
-Name: `FEATURE_<SCREAMING_SNAKE>` — describe what it gates and its default value.
+Only if this change is being gated (see Step 4). Name: `FEATURE_<SCREAMING_SNAKE>` —
+describe what it gates and its default value. Omit this section entirely when there
+is no flag.
 
 ## Open Questions
 Any decisions that need user input before proceeding.
@@ -90,11 +92,32 @@ cd e2e && pnpm exec playwright test
 
 ---
 
-## Step 4 — Add a Feature Flag
+## Step 4 — Add a Feature Flag (opt-in)
 
-Every change must be gated behind a feature flag so it can be enabled or disabled without a redeploy.
+**A feature flag is optional.** Most changes ship unflagged. Add one only when this
+change specifically needs to be switched off without a redeploy — and when you do,
+say so in the plan (Step 2) and in the PR.
 
-### Implementation
+Reach for a flag when:
+
+- The change is risky to roll back — a migration-adjacent behaviour change, a new
+  write path, something touching auth or encryption.
+- It lands across repos that release on different schedules, so the server side has
+  to sit dark until the clients catch up.
+- It is genuinely incomplete and has to be merged anyway to unblock other work.
+  Prefer a branch; a flag is the fallback when the branch would live too long.
+
+Do not add one:
+
+- To hide unfinished work that could just as easily stay on a branch.
+- Around a self-contained change behind existing UI, where the way to disable it is
+  to revert the commit.
+- Out of habit, because the last change had one.
+
+An unnecessary flag is not free: it is a second code path that has to be built,
+tested in both states, and then removed.
+
+### Implementation (when you are adding one)
 
 Use an environment variable checked at runtime:
 
@@ -114,6 +137,7 @@ const featureEnabled = process.env.FEATURE_<NAME> === 'true';
 - Add the flag to `docker-compose-dev.yml` under the relevant service, set to `false`.
 - Add the flag to `docker-compose-test.yml` in `neutrino-e2e/` so e2e tests can control it.
 - The feature flag must be removable in one cleanup PR once the feature is proven stable.
+  Name that follow-up when you add the flag; a flag with no removal plan is permanent.
 
 ---
 
@@ -132,7 +156,8 @@ Implement the changes described in the plan, one task at a time.
 2. Fix any failures before moving on.
 
 **After all tasks are complete:**
-1. Enable the feature flag (`FEATURE_<NAME>=true`) in the test environment.
+1. If the change is flagged, enable it (`FEATURE_<NAME>=true`) in the test environment.
+   An unflagged change needs nothing here.
 2. Run the full e2e suite:
    ```bash
    cd /Users/williamcherry/Playground/getneutrino.app/neutrino/e2e && ./scripts/run-tests.sh
@@ -152,7 +177,7 @@ Write a `VERIFY.md` file at the root of the primary affected repo. This file doc
 
 ## Prerequisites
 - Stack running locally via docker-compose-dev.yml
-- FEATURE_<NAME>=true set in the environment
+- (flagged changes only) FEATURE_<NAME>=true set in the environment
 
 ## Steps
 
@@ -165,11 +190,13 @@ Write a `VERIFY.md` file at the root of the primary affected repo. This file doc
 1. <Scenario>: <Steps> → <Expected result>
 
 ### Feature Disabled
+Only for a flagged change; omit this section otherwise.
 1. Set FEATURE_<NAME>=false and restart the service.
 2. Confirm <expected disabled behavior>.
 
 ## Cleanup
-Delete VERIFY.md after the feature flag is removed.
+Delete VERIFY.md once the feature is proven stable — for a flagged change, in the
+same PR that removes the flag.
 ```
 
 ---
@@ -207,6 +234,8 @@ gh pr create --repo wcherry/<repo> \
 <1-3 bullets describing the change>
 
 ## Feature Flag
+Include this section only for a flagged change; drop it otherwise rather than
+writing "none".
 `FEATURE_<NAME>` — defaults to `false`. Set to `true` to enable.
 
 ## Test Plan
