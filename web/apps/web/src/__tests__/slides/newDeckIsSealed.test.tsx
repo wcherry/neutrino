@@ -66,6 +66,7 @@ vi.mock('@neutrino/ui', () => ({
   ToolbarDivider: () => null,
   ToolbarButton: () => null,
   ToolbarSelect: () => null,
+  FontSizeInput: () => null,
   ColorPickerPopover: () => null,
   ZoomSlider: () => null,
   ShareButton: () => null,

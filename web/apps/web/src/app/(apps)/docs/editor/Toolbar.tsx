@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import {
   Toolbar as RickTextToolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect, ColorPickerPopover,
+  FontSizeInput,
 } from '@neutrino/ui';
 import { applyTextCase, type TextCaseMode } from '@/lib/textCase';
 import {
@@ -19,7 +20,7 @@ import {
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import styles from './page.module.css';
 
-const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48', '60', '72'];
+const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72];
 
 const LINE_SPACING_PRESETS = [
   { value: 1,    label: 'Single' },
@@ -366,16 +367,13 @@ export function Toolbar({
         {fontFamilies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
       </ToolbarSelect>
 
-      <ToolbarSelect
-        style={{ width: 56 }}
-        title="Font size"
+      <FontSizeInput
+        sizes={FONT_SIZES}
         value={(editor.getAttributes('textStyle').fontSize as string | undefined)?.replace('pt', '') ?? '11'}
-        onChange={e => {
-          editor.chain().focus().setFontSize(`${e.target.value}pt`).run();
+        onChange={size => {
+          editor.chain().focus().setFontSize(`${size}pt`).run();
         }}
-      >
-        {FONT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-      </ToolbarSelect>
+      />
 
       <ToolbarDivider />
 
