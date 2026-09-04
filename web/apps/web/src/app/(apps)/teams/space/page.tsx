@@ -55,7 +55,7 @@ function TeamSpace() {
   const { data: pagesData } = useQuery({
     queryKey: ['team-pages', teamId, search],
     queryFn: () => teamsApi.listPages(teamId!, search || undefined),
-    enabled: !!teamId && flags.teamSpaces && flags.teamSpacesPages,
+    enabled: !!teamId && flags.teamSpaces,
   });
 
   const pages = useMemo(() => pagesData?.pages ?? [], [pagesData]);
@@ -136,27 +136,20 @@ function TeamSpace() {
         </div>
 
         <div className={styles.nav}>
-          {NAV.map(({ view: v, label, icon: Icon }) => {
-            // Each phase's sub-flag hides its own entry. Files with `teamSpacesFiles` off would be
-            // a tab that loads and then reports 404.
-            if (v === 'pages' && !flags.teamSpacesPages) return null;
-            if (v === 'home' && !flags.teamSpacesPages) return null;
-            if (v === 'files' && !flags.teamSpacesFiles) return null;
-            return (
-              <button
-                key={v}
-                type="button"
-                className={`${styles.navItem} ${view === v ? styles.navItemActive : ''}`}
-                onClick={() => go(v)}
-              >
-                <Icon size={15} />
-                {label}
-              </button>
-            );
-          })}
+          {NAV.map(({ view: v, label, icon: Icon }) => (
+            <button
+              key={v}
+              type="button"
+              className={`${styles.navItem} ${view === v ? styles.navItemActive : ''}`}
+              onClick={() => go(v)}
+            >
+              <Icon size={15} />
+              {label}
+            </button>
+          ))}
         </div>
 
-        {flags.teamSpacesPages && tree.length > 0 && (
+        {tree.length > 0 && (
           <>
             <div className={styles.navSectionLabel}>Pages</div>
             <div className={styles.nav}>
@@ -182,24 +175,7 @@ function TeamSpace() {
 
       <div className={styles.main}>
         <div className={styles.mainInner}>
-          {/* `home` is the default view, and it is a page — so with the wiki switched off it has
-              nothing to render. Saying so beats a blank pane, which reads as a failure rather than
-              as a phase that is not enabled yet. */}
-          {(view === 'home' || view === 'pages') && !flags.teamSpacesPages && (
-            <EmptyState
-              icon={FileText}
-              title="Team pages are not enabled"
-              description="An administrator can turn on teamSpacesPages under Admin → Feature Flags."
-            />
-          )}
-          {view === 'files' && !flags.teamSpacesFiles && (
-            <EmptyState
-              icon={Files}
-              title="The team file library is not enabled"
-              description="An administrator can turn on teamSpacesFiles under Admin → Feature Flags."
-            />
-          )}
-          {(view === 'home' || view === 'pages') && flags.teamSpacesPages && (
+          {(view === 'home' || view === 'pages') && (
             <PagesView
               team={team}
               pages={pages}
@@ -209,7 +185,7 @@ function TeamSpace() {
               onSearchChange={setSearch}
             />
           )}
-          {view === 'files' && flags.teamSpacesFiles && <FilesView team={team} />}
+          {view === 'files' && <FilesView team={team} />}
           {view === 'members' && (
             <MembersView team={team} onLeft={() => router.push('/teams')} />
           )}

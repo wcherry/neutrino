@@ -35,20 +35,19 @@ CREATE TABLE feature_flags (
     updated_at  TEXT NOT NULL
 );
 
--- All four default disabled: with `teamSpaces` off the application is exactly
--- what it was before this migration. The three sub-flags are meaningless on
--- their own -- each is read only after `teamSpaces` has already been checked --
--- so they gate a phase within the feature, not the feature itself.
+-- One key, defaulting to disabled: with `teamSpaces` off the application is
+-- exactly what it was before this migration.
+--
+-- One rather than a family. The issue asked for per-phase sub-flags alongside
+-- it -- teamSpacesPages, teamSpacesFiles, teamSpacesActivity -- and that is
+-- exactly how the last system reached fifteen keys: each was reasonable on its
+-- own, and together they made "what does this deployment do?" a question you
+-- answered by reading rows rather than by reading the code. The phases are not
+-- separately shippable in practice either, since a Team Space with its wiki
+-- switched off is a navigation entry leading to a page that says a feature is
+-- missing. So Team Spaces is one feature with one switch, and it is on or it
+-- is off.
 INSERT INTO feature_flags (key, enabled, description, updated_at) VALUES
-    ('teamSpaces',         0,
-     'Team Spaces: Team as a top-level object, replacing Shared Drives in the navigation. Owner: drive. Remove once Team Spaces has run enabled in production for a full release cycle with no rollback, in the same PR as the three teamSpaces* sub-flags.',
-     datetime('now')),
-    ('teamSpacesPages',    0,
-     'Team Spaces phase 2-3: the wiki page tree, markdown editing and page version history. Owner: drive. Remove with teamSpaces.',
-     datetime('now')),
-    ('teamSpacesFiles',    0,
-     'Team Spaces phase 4: the team file library -- folders, uploads and versions scoped to a team. Owner: drive. Remove with teamSpaces.',
-     datetime('now')),
-    ('teamSpacesActivity', 0,
-     'Team Spaces phase 8 groundwork: per-team activity logging and its feed. Owner: drive. Remove with teamSpaces.',
+    ('teamSpaces', 0,
+     'Team Spaces: Team as a top-level object -- members, wiki pages, file library, activity and storage -- replacing Shared Drives in the navigation. Owner: drive. Remove once Team Spaces has run enabled in production for a full release cycle with no rollback.',
      datetime('now'));

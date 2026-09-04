@@ -27,14 +27,15 @@ use crate::drive::activity::service::ActivityService;
 use crate::drive::feature_flags::gate::FeatureGate;
 use crate::shared::{ApiError, AuthenticatedUser};
 
-/// The flag every team route is behind.
+/// The flag every team route is behind — the only one.
+///
+/// Team Spaces was specified with per-phase sub-flags beside this (`teamSpacesPages`,
+/// `teamSpacesFiles`, `teamSpacesActivity`) and deliberately does not have them. Each would have
+/// been defensible on its own, which is precisely how the system this replaces reached fifteen
+/// keys; and the phases are not separately shippable anyway, since a team whose wiki is switched
+/// off is a navigation entry leading to a page that says a feature is missing. One feature, one
+/// switch: Team Spaces is on, or it is off.
 pub const FLAG_TEAM_SPACES: &str = "teamSpaces";
-/// Phases 2–3: the wiki.
-pub const FLAG_TEAM_SPACES_PAGES: &str = "teamSpacesPages";
-/// Phase 4: the file library.
-pub const FLAG_TEAM_SPACES_FILES: &str = "teamSpacesFiles";
-/// Phase 8 groundwork: per-team activity logging.
-pub const FLAG_TEAM_SPACES_ACTIVITY: &str = "teamSpacesActivity";
 
 /// The markdown a team's Home page is created with.
 ///
@@ -167,10 +168,6 @@ impl TeamsService {
     }
 
     fn log(&self, team: &Team, user: &AuthenticatedUser, action: &str, detail: serde_json::Value) {
-        // Phase 8 gates the feed, not the recording. A feed that only starts collecting when it is
-        // switched on shows an empty history on the day it ships, so the logging runs regardless
-        // and the flag governs whether anyone can read it.
-        //
         // Logged against the team's id in the shared activity table with `resource_type` set to
         // `team`, so the existing retention, export and admin tooling covers team activity without
         // learning about a second table.
@@ -633,7 +630,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamPageListResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         let pages = match query.map(str::trim).filter(|q| !q.is_empty()) {
@@ -653,7 +649,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         let page = self
@@ -670,7 +665,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::CreatePage)?;
 
         let title = req.title.trim();
@@ -777,7 +771,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::EditPage)?;
 
         let page = self
@@ -868,7 +861,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<(), ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::DeletePage)?;
 
         let page = self
@@ -921,7 +913,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::CreatePage)?;
 
         let source = self
@@ -971,7 +962,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamPageVersionListResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
         // Through the team, so a page id from another team cannot be read by a member of this one.
         self.repo
@@ -996,7 +986,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamPageVersionResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
         self.repo
             .find_page(team_id, page_id)?
@@ -1022,7 +1011,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamPageResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_PAGES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::EditPage)?;
 
         let page = self
@@ -1077,17 +1065,16 @@ impl TeamsService {
 
     /// The team's activity feed (phase 8's groundwork).
     ///
-    /// The flag gates *reading* this, not the recording — the logging in [`Self::log`] runs
-    /// whatever the flag says. A feed that only starts collecting when it is switched on shows an
-    /// empty history on the day it ships, which is the worst possible first impression of a feature
-    /// whose whole value is history.
+    /// Behind `teamSpaces` like everything else here: the feed exists exactly when teams do, and
+    /// the entries it reads were written by [`Self::log`] on every team write since the flag went
+    /// on — so it has a history from the first team that was created rather than from whenever
+    /// someone thought to look at it.
     pub fn list_activity(
         &self,
         team_id: &str,
         user: &AuthenticatedUser,
     ) -> Result<TeamActivityResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_ACTIVITY)?;
         self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         // A feed is a recent-activity list, not an audit log; the audit trail is the same table
@@ -1121,7 +1108,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamLibraryResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_FILES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::ViewTeam)?;
 
         if let Some(id) = folder_id {
@@ -1168,7 +1154,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamFolderResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_FILES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
 
         let name = req.name.trim();
@@ -1221,7 +1206,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamFileResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_FILES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
 
         if let Some(folder) = req.folder_id.as_deref() {
@@ -1291,7 +1275,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamFileResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_FILES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
 
         let name = req.name.trim();
@@ -1335,7 +1318,6 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<(), ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        self.gate.require(FLAG_TEAM_SPACES_FILES)?;
         let (team, _) = self.authorize(team_id, user, TeamAction::DeleteFile)?;
 
         let file = self

@@ -517,8 +517,9 @@ pub async fn restore_page_version(
 
 /// The team's recent activity, newest first.
 ///
-/// Behind `teamSpacesActivity`, which gates reading the feed rather than recording it: the writes
-/// are logged whatever the flag says, so the feed has a history on the day it is switched on.
+/// Behind `teamSpaces` like every other team route. The entries were written on each team write
+/// since the flag went on, so the feed has a history from the first team created rather than from
+/// whenever someone first looked at it.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/teams/{teamId}/activity",

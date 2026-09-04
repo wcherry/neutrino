@@ -387,7 +387,7 @@ mod tests {
         use diesel::prelude::*;
 
         let pool = test_pool();
-        diesel::delete(feature_flags::table.filter(feature_flags::key.eq("teamSpacesFiles")))
+        diesel::delete(feature_flags::table.filter(feature_flags::key.eq("teamSpaces")))
             .execute(&mut pool.get().expect("conn"))
             .expect("delete row");
 
@@ -405,7 +405,7 @@ mod tests {
             body["error"]["message"]
                 .as_str()
                 .unwrap_or_default()
-                .contains("teamSpacesFiles"),
+                .contains("teamSpaces"),
             "the error has to name the missing key, or it is another silent failure: {body}"
         );
     }
@@ -418,7 +418,7 @@ mod tests {
         use diesel::prelude::*;
 
         let pool = test_pool();
-        diesel::delete(feature_flags::table.filter(feature_flags::key.eq("teamSpacesFiles")))
+        diesel::delete(feature_flags::table.filter(feature_flags::key.eq("teamSpaces")))
             .execute(&mut pool.get().expect("conn"))
             .expect("delete row");
 
@@ -440,7 +440,7 @@ mod tests {
             .as_array()
             .expect("array")
             .iter()
-            .find(|f| f["key"] == "teamSpacesFiles")
+            .find(|f| f["key"] == "teamSpaces")
             .expect("the missing key still has to appear in the admin list");
         assert_eq!(row["missingRow"], true);
         assert_eq!(row["enabled"], false);

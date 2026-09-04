@@ -34,28 +34,17 @@ pub struct DeclaredFlag {
 /// The fifteen keys #183 removed are deliberately absent. Their features are unconditional now, so
 /// a row for one would describe a switch that controls nothing — which is precisely the drift that
 /// made the old system a second, invisible definition of the product.
-pub const DECLARED_FLAGS: &[DeclaredFlag] = &[
-    DeclaredFlag {
-        key: "teamSpaces",
-        owner: "drive",
-        removal: "Once Team Spaces has run enabled in production for a full release cycle with no rollback. Comes out in one PR together with the three sub-flags below.",
-    },
-    DeclaredFlag {
-        key: "teamSpacesPages",
-        owner: "drive",
-        removal: "With teamSpaces.",
-    },
-    DeclaredFlag {
-        key: "teamSpacesFiles",
-        owner: "drive",
-        removal: "With teamSpaces.",
-    },
-    DeclaredFlag {
-        key: "teamSpacesActivity",
-        owner: "drive",
-        removal: "With teamSpaces.",
-    },
-];
+///
+/// **One entry, and adding a second should be hard.** Team Spaces was specified with three
+/// per-phase sub-flags beside it; they are not here. Each would have been defensible alone, which
+/// is exactly how the last system reached fifteen — and a Team Space with its wiki switched off is
+/// not a shippable half-feature, it is a navigation entry leading to a page that says something is
+/// missing. A feature gets one switch, and the switch answers one question: is this on?
+pub const DECLARED_FLAGS: &[DeclaredFlag] = &[DeclaredFlag {
+    key: "teamSpaces",
+    owner: "drive",
+    removal: "Once Team Spaces has run enabled in production for a full release cycle with no rollback.",
+}];
 
 /// Which declared keys are missing from `present`, in declaration order.
 ///
@@ -105,10 +94,12 @@ mod tests {
 
     #[test]
     fn missing_keys_reports_only_what_is_absent() {
-        let present = vec!["teamSpaces".to_string(), "teamSpacesPages".to_string()];
+        assert!(missing_keys(&["teamSpaces".to_string()]).is_empty());
+        assert_eq!(missing_keys(&[]), vec!["teamSpaces"]);
+        // A table holding only unrelated keys is missing everything the server declares.
         assert_eq!(
-            missing_keys(&present),
-            vec!["teamSpacesFiles", "teamSpacesActivity"]
+            missing_keys(&["somethingElse".to_string()]),
+            vec!["teamSpaces"]
         );
     }
 

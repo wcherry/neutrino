@@ -11,8 +11,8 @@ own storage quota, replacing `Shared Drives` in the navigation with `Shared Spac
 on and leaving the app untouched when it is off.
 
 The issue lists ten phases. This change delivers the MVP the issue itself names — Part 1 in full,
-plus Phases 1, 2, 3, 4 and 6 — and leaves Phases 5 and 7–10 to land behind their own flags
-afterwards. See "Deliberately not in this change" at the end.
+plus Phases 1, 2, 3, 4 and 6 — and leaves Phases 5 and 7–10 to follow. They land inside the same
+`teamSpaces` flag rather than each getting one of their own; see "Feature Flag" below.
 
 ## Affected Repos
 
@@ -30,7 +30,7 @@ its own key, that is a coordinated multi-repo change and gets its own issue.
 ### Part 1 — feature flags
 
 1. `migrations/00125_admin__2026-09-03-000000_recreate_feature_flags` — recreate the table and seed
-   only the four `teamSpaces*` keys. The fifteen keys #183 collapsed do not come back; their
+   one key, `teamSpaces`. The fifteen keys #183 collapsed do not come back; their
    features are unconditional now and re-seeding them would recreate exactly the drift that was
    removed. Every row's description carries an owner and the condition under which the flag is
    removed.
@@ -63,17 +63,16 @@ its own key, that is a coordinated multi-repo change and gets its own issue.
 14. `src/drive/teams/roles.rs` — the six roles and the per-action permission matrix (Phase 6).
 15. `src/drive/teams/model.rs` — Diesel records and insertables.
 16. `src/drive/teams/repository.rs` — teams, members, and the team-scoped file and folder queries.
-17. `src/drive/teams/pages_repository.rs` — pages and page versions.
-18. `src/drive/teams/service.rs` — team CRUD, membership, the Home page a new team is created with,
-    quota accounting and activity logging.
-19. `src/drive/teams/pages_service.rs` — page CRUD, the tree, move/duplicate, soft delete, version
-    history, search.
-20. `src/drive/teams/dto.rs`, `api.rs` — the routes, each behind `teamSpaces` and its phase flag.
-21. `src/main.rs` — wiring and OpenAPI.
-22. `web/packages/api-teams` — new client package.
-23. `web/apps/web/src/app/(apps)/teams/` — Shared Spaces list, create/rename/archive/delete, the
+17. `src/drive/teams/service.rs` — team CRUD, membership, the Home page a new team is created with,
+    page CRUD and the tree, move/duplicate, soft delete, version history, page search, the file
+    library, quota accounting and activity logging.
+18. `src/drive/teams/dto.rs`, `api.rs` — the routes, every one behind `teamSpaces`.
+19. `src/main.rs` — wiring and OpenAPI.
+20. `web/packages/api-drive/src/teams.ts` — the client, added to the existing Drive package rather
+    than a new one, since a team is a Drive concept and this keeps the dependency graph unchanged.
+21. `web/apps/web/src/app/(apps)/teams/` — Shared Spaces list, create/rename/archive/delete, the
     team shell with Home / Pages / Files / Members / Settings.
-24. `web/apps/web/src/app/(apps)/navSections.ts` — `Shared Spaces` in place of `Shared Drives` when
+22. `web/apps/web/src/app/(apps)/navSections.ts` — `Shared Spaces` in place of `Shared Drives` when
     `teamSpaces` is on, unchanged when it is off.
 
 ## Test Plan
@@ -107,22 +106,36 @@ its own key, that is a coordinated multi-repo change and gets its own issue.
 
 ## Feature Flag
 
-`teamSpaces` — default `false`. Gates every team route and the navigation change. Sub-flags, each
-default `false` and each meaningless with `teamSpaces` off: `teamSpacesPages` (Phases 2–3),
-`teamSpacesFiles` (Phase 4), `teamSpacesActivity` (Phase 8 groundwork).
+`teamSpaces` — default `false`. **One flag, and only one.** It gates every team route, the whole
+team UI and the navigation change.
 
-These are database-backed rather than the environment variables `developer_workflow.md` Step 4
-describes, because the property the issue wants is toggling without a redeploy. Removal condition,
-recorded in each row's description: all four come out in one cleanup PR once Team Spaces has run
-enabled in production for a full release cycle with no rollback.
+The issue asked for per-phase sub-flags beside it — `teamSpacesPages`, `teamSpacesFiles`,
+`teamSpacesActivity` — and they are deliberately not here. Two reasons. Each would have been
+defensible on its own, and that is precisely how the system #183 deleted reached fifteen keys: no
+one of them was the mistake, the accumulation was. And the phases are not separately shippable
+anyway — a Team Space with its wiki switched off is a navigation entry leading to a screen that
+says a feature is missing, which is worse than not shipping it. One feature, one switch, one
+boolean answer to "is this on?".
+
+Tests in both suites assert the flag list is exactly `['teamSpaces']`, so a second flag fails the
+build rather than arriving unnoticed.
+
+Database-backed rather than the environment variables `developer_workflow.md` Step 4 describes,
+because the property the issue wants is toggling without a redeploy. Removal condition, recorded in
+the row's description: it comes out in one cleanup PR once Team Spaces has run enabled in production
+for a full release cycle with no rollback.
 
 ## Deliberately not in this change
 
 Phases 5 (tree navigation, Favorites, Pinned), 7 (team-scoped search over files and app documents —
 page search ships here, file search does not), 8 (the activity feed UI; the logging it reads is
 written here), 9 (the dashboard widgets replacing a blank Home) and 10 (Sheets/Slides/Diagrams
-landing in team Files, Notes in team Pages). Each is independently shippable behind its own flag
-and none of them changes the schema this lays down.
+landing in team Files, Notes in team Pages). None of them changes the schema this lays down.
+
+They ship inside `teamSpaces` rather than behind flags of their own. While Team Spaces is off they
+are invisible anyway, and once it is on a phase that is finished is finished — gating it separately
+would mean carrying a second code path to be built, tested in both states and then removed, for a
+feature already hidden behind the switch above it.
 
 ## Open Questions
 

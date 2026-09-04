@@ -12,13 +12,14 @@
  * declares (`src/drive/feature_flags/catalog.rs`), and `assertEveryFlagPresent` below refuses to
  * accept one missing a key *this* file declares. Adding a flag means a migration, an entry in the
  * server's catalog, and an entry here; the tests fail until all three agree.
+ *
+ * **The list is one key long, and it should stay hard to lengthen.** Team Spaces was specified with
+ * three per-phase sub-flags beside `teamSpaces`; they are not here. Each would have been defensible
+ * alone, which is exactly how the previous list reached nineteen declared keys — and a feature
+ * whose phases are separately switchable is a feature whose behaviour you work out by reading rows.
+ * One feature, one switch.
  */
-export const FLAG_KEYS = [
-  'teamSpaces',
-  'teamSpacesPages',
-  'teamSpacesFiles',
-  'teamSpacesActivity',
-] as const;
+export const FLAG_KEYS = ['teamSpaces'] as const;
 
 export type FeatureFlagKey = (typeof FLAG_KEYS)[number];
 

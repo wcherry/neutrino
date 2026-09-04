@@ -34,12 +34,7 @@ const BASE_URL = 'http://localhost:9880';
  * web monorepo — and a copy that has to be updated by hand is exactly what this test catches when
  * it is not.
  */
-const DECLARED_BY_CLIENT = [
-  'teamSpaces',
-  'teamSpacesPages',
-  'teamSpacesFiles',
-  'teamSpacesActivity',
-];
+const DECLARED_BY_CLIENT = ['teamSpaces'];
 
 function uniqueEmail(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`;
@@ -83,7 +78,7 @@ test.describe('feature flags', () => {
     expect(res.status()).toBe(200);
   });
 
-  test('every Team Spaces flag ships disabled', async ({ request }) => {
+  test('the Team Spaces flag ships disabled', async ({ request }) => {
     const flags = (await (await request.get(`${BASE_URL}/api/v1/feature-flags`)).json()) as Record<
       string,
       boolean
@@ -91,6 +86,22 @@ test.describe('feature flags', () => {
     for (const key of DECLARED_BY_CLIENT) {
       expect(flags[key], `${key} should be seeded off`).toBe(false);
     }
+  });
+
+  /**
+   * There is exactly one flag, and a new one should have to argue for itself.
+   *
+   * The system this replaces reached fifteen keys one defensible addition at a time, until the app
+   * a deployment served was something you worked out by reading rows. This test is the tripwire:
+   * adding a key makes it fail, which is the point at which someone has to decide the flag is worth
+   * having rather than noticing later that it is.
+   */
+  test('there is one flag, not a family of them', async ({ request }) => {
+    const flags = (await (await request.get(`${BASE_URL}/api/v1/feature-flags`)).json()) as Record<
+      string,
+      boolean
+    >;
+    expect(Object.keys(flags).sort()).toEqual(['teamSpaces']);
   });
 
   test('an ordinary user cannot read or change the flags', async ({ request, page }) => {

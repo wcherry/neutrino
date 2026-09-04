@@ -38,21 +38,14 @@ fn user(id: &str, email: &str) -> AuthenticatedUser {
 }
 
 impl Fixture {
-    /// A stack with `teamSpaces` and every sub-flag on, since a test that leaves them off is
-    /// testing the gate rather than the feature. `gated_off` covers the other side.
+    /// A stack with `teamSpaces` on, since a test that leaves it off is testing the gate rather
+    /// than the feature. `gated_off` covers the other side.
     fn new() -> Self {
         let f = Self::gated_off();
-        for key in [
-            "teamSpaces",
-            "teamSpacesPages",
-            "teamSpacesFiles",
-            "teamSpacesActivity",
-        ] {
-            diesel::update(feature_flags::table.filter(feature_flags::key.eq(key)))
-                .set(feature_flags::enabled.eq(1))
-                .execute(&mut f.pool.get().expect("conn"))
-                .expect("enable flag");
-        }
+        diesel::update(feature_flags::table.filter(feature_flags::key.eq(FLAG_TEAM_SPACES)))
+            .set(feature_flags::enabled.eq(1))
+            .execute(&mut f.pool.get().expect("conn"))
+            .expect("enable flag");
         f
     }
 
@@ -176,33 +169,58 @@ fn every_team_route_is_dark_while_the_flag_is_off() {
     assert_eq!(err.status, 404);
 }
 
-/// The sub-flags gate their own phase and nothing else: with `teamSpaces` on but
-/// `teamSpacesPages` off, a team exists and its pages do not.
+/// The one flag governs the whole feature — pages, the file library and the activity feed
+/// included. There is no state in which a team exists but its wiki does not.
 #[test]
-fn a_sub_flag_gates_only_its_own_phase() {
+fn the_single_flag_governs_every_part_of_the_feature() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    // On: every surface answers.
+    assert!(f.service.list_pages(&team.id, None, &owner).is_ok());
+    assert!(f.service.list_library(&team.id, None, &owner).is_ok());
+    assert!(f.service.list_activity(&team.id, &owner).is_ok());
+
+    // Off: all of them go dark together, and so does the team itself.
+    diesel::update(feature_flags::table.filter(feature_flags::key.eq(FLAG_TEAM_SPACES)))
+        .set(feature_flags::enabled.eq(0))
+        .execute(&mut f.pool.get().expect("conn"))
+        .expect("disable");
+
+    for status in [
+        f.service.get_team(&team.id, &owner).expect_err("gated").status,
+        f.service
+            .list_pages(&team.id, None, &owner)
+            .expect_err("gated")
+            .status,
+        f.service
+            .list_library(&team.id, None, &owner)
+            .expect_err("gated")
+            .status,
+        f.service.list_activity(&team.id, &owner).expect_err("gated").status,
+    ] {
+        assert_eq!(status, 404);
+    }
+}
+
+/// The gate is read per request, not cached at startup — which is the whole reason these are rows
+/// rather than environment variables.
+#[test]
+fn toggling_the_flag_takes_effect_without_a_restart() {
     let f = Fixture::gated_off();
+    let owner = user("u1", "owner@example.com");
+    f.add_user("u1", "owner@example.com", "Owner");
+
+    assert_eq!(f.service.list_teams(&owner).expect_err("off").status, 404);
+
     diesel::update(feature_flags::table.filter(feature_flags::key.eq(FLAG_TEAM_SPACES)))
         .set(feature_flags::enabled.eq(1))
         .execute(&mut f.pool.get().expect("conn"))
         .expect("enable");
 
-    let owner = user("u1", "owner@example.com");
-    let team = f.create_team("Marketing", &owner);
-
-    assert_eq!(
-        f.service
-            .list_pages(&team.id, None, &owner)
-            .expect_err("pages gated")
-            .status,
-        404
-    );
-    assert_eq!(
-        f.service
-            .list_library(&team.id, None, &owner)
-            .expect_err("files gated")
-            .status,
-        404
-    );
+    // The same service instance, no rebuild, no restart.
+    assert_eq!(f.service.list_teams(&owner).expect("on").total, 0);
 }
 
 // ── Phase 1: the Team object ─────────────────────────────────────────────────
@@ -1369,19 +1387,11 @@ fn team_membership_grants_a_drive_role_over_the_teams_files() {
 
 // ── Phase 8 groundwork: the activity feed ────────────────────────────────────
 
-/// The feed's flag gates *reading* it, not the recording. A feed that only starts collecting when
-/// it is switched on shows an empty history on the day it ships, which is the worst possible first
-/// impression of a feature whose whole value is history.
+/// Every team write is logged as it happens, so the feed has a history from the first team that
+/// was created rather than from whenever someone first opened it.
 #[test]
-fn activity_is_recorded_while_its_feed_is_switched_off() {
-    let f = Fixture::gated_off();
-    for key in [FLAG_TEAM_SPACES, "teamSpacesPages"] {
-        diesel::update(feature_flags::table.filter(feature_flags::key.eq(key)))
-            .set(feature_flags::enabled.eq(1))
-            .execute(&mut f.pool.get().expect("conn"))
-            .expect("enable");
-    }
-
+fn the_feed_carries_the_writes_that_came_before_it_was_read() {
+    let f = Fixture::new();
     let owner = user("u1", "owner@example.com");
     let team = f.create_team("Marketing", &owner);
     f.service
@@ -1396,20 +1406,6 @@ fn activity_is_recorded_while_its_feed_is_switched_off() {
             &owner,
         )
         .expect("page");
-
-    // The feed is dark…
-    assert_eq!(
-        f.service.list_activity(&team.id, &owner).expect_err("gated").status,
-        404
-    );
-
-    // …and the history it will show was being written the whole time.
-    diesel::update(
-        feature_flags::table.filter(feature_flags::key.eq("teamSpacesActivity")),
-    )
-    .set(feature_flags::enabled.eq(1))
-    .execute(&mut f.pool.get().expect("conn"))
-    .expect("enable");
 
     let feed = f.service.list_activity(&team.id, &owner).expect("feed");
     let actions: Vec<&str> = feed.entries.iter().map(|e| e.action.as_str()).collect();

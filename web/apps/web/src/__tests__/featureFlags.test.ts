@@ -28,14 +28,19 @@ describe('featureFlags', () => {
   it('accepts a payload carrying every declared key', () => {
     const flags = assertEveryFlagPresent(completePayload({ teamSpaces: true }));
     expect(flags.teamSpaces).toBe(true);
-    expect(flags.teamSpacesPages).toBe(false);
   });
 
   it('throws, naming the key, when one is missing', () => {
-    const payload = completePayload();
-    delete (payload as Record<string, unknown>).teamSpacesFiles;
+    expect(() => assertEveryFlagPresent({})).toThrowError(/teamSpaces/);
+  });
 
-    expect(() => assertEveryFlagPresent(payload)).toThrowError(/teamSpacesFiles/);
+  /**
+   * There is exactly one flag. The system this replaces reached fifteen keys one defensible
+   * addition at a time; this fails the moment a second is declared, which is when someone should
+   * be deciding whether it earns its place rather than noticing later that it did not.
+   */
+  it('declares one flag', () => {
+    expect([...FLAG_KEYS]).toEqual(['teamSpaces']);
   });
 
   /**

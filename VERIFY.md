@@ -3,7 +3,7 @@
 Replaces the verification steps for issue #69, which has shipped (commit `c707518`).
 
 Delete this file once Team Spaces is proven stable — in the same PR that removes the
-`teamSpaces` flags.
+`teamSpaces` flag.
 
 ## Prerequisites
 
@@ -21,8 +21,8 @@ Delete this file once Team Spaces is proven stable — in the same PR that remov
   corrupts it. See `e2e/README.md`.
 - A second ordinary account, for the membership and role checks.
 
-All four flags ship **disabled**. Nothing below is visible until you turn them on, which is the
-first thing to confirm.
+The flag ships **disabled**. Nothing below is visible until you turn it on, which is the first
+thing to confirm.
 
 ---
 
@@ -33,8 +33,9 @@ first thing to confirm.
 1. Open the app and sign in as an ordinary user.
 2. The sidebar's Team section says **Shared Drives** and points at `/drive/team`. There is no
    Shared Spaces entry. → *This is the state every existing deployment is in after this release.*
-3. `curl http://localhost:<port>/api/v1/feature-flags` returns all four `teamSpaces*` keys, every
-   one `false`. It needs no authentication.
+3. `curl http://localhost:<port>/api/v1/feature-flags` returns exactly one key, `teamSpaces`,
+   `false`. It needs no authentication. One flag is the whole switch — there are no per-phase
+   sub-flags to reason about.
 4. `curl -H "Authorization: Bearer <token>" http://localhost:<port>/api/v1/drive/teams` answers
    **404**, not 403. → *With the flag off the feature does not exist on this deployment; 403 would
    confirm it is coming.*
@@ -42,8 +43,9 @@ first thing to confirm.
 ### Turning it on
 
 5. Sign in as the admin, open **Admin → Feature Flags**.
-6. Each row shows its owner and the condition under which the flag is removed, beside the toggle.
-7. Turn on `teamSpaces`, `teamSpacesPages` and `teamSpacesFiles`. Leave `teamSpacesActivity` off.
+6. There is one row. It shows its owner and the condition under which it is removed, beside the
+   toggle.
+7. Turn on `teamSpaces`.
 8. Reload as the ordinary user. The Team section now says **Shared Spaces** and points at `/teams`.
    Shared Drives is gone — replaced, not joined. → *No restart was needed; that is the property
    these are rows rather than environment variables for.*
@@ -91,36 +93,37 @@ first thing to confirm.
   would hang the tree walk.
 - **Archiving**: Settings → Archive. Everything stays readable; every write answers 403, including
   the owner's. Restore, and writes work again.
-- **A sub-flag alone**: turn `teamSpacesFiles` off. The Files entry disappears from the team
-  sidebar and `/api/v1/drive/teams/<id>/library` answers 404, while pages keep working.
+- **The switch is whole**: turn `teamSpaces` off while a team is open and reload. Pages, Files,
+  Members and the activity feed all go dark together and the sidebar reverts to Shared Drives —
+  there is no half-on state in which a team exists but its wiki does not.
 
 ### A declared flag with no row
 
 The failure this design exists to prevent. Delete a row the server declares:
 
 ```bash
-sqlite3 <path to neutrino.db> "DELETE FROM feature_flags WHERE key='teamSpacesFiles';"
+sqlite3 ./data/neutrino.db "DELETE FROM feature_flags WHERE key='teamSpaces';"
 ```
 
-23. `GET /api/v1/feature-flags` now answers **500**, and the message names `teamSpacesFiles`.
+23. `GET /api/v1/feature-flags` now answers **500**, and the message names `teamSpaces`.
 24. **Admin → Feature Flags** still loads — it is how you diagnose this — and shows
-    `teamSpacesFiles` as a disabled row marked as having no row, with a banner above the list.
-25. The web app logs `[feature-flags] … missing: teamSpacesFiles` in the console rather than
+    `teamSpaces` as a disabled row marked as having no row, with a banner above the list.
+25. The web app logs `[feature-flags] … missing: teamSpaces` in the console rather than
     rendering the feature as quietly off.
 26. Put it back:
     ```bash
-    sqlite3 <path to neutrino.db> \
+    sqlite3 ./data/neutrino.db \
       "INSERT INTO feature_flags (key, enabled, description, updated_at) \
-       VALUES ('teamSpacesFiles', 0, 'restored by hand', datetime('now'));"
+       VALUES ('teamSpaces', 0, 'restored by hand', datetime('now'));"
     ```
 
 ### Feature disabled
 
-27. Turn all four flags off in the admin panel.
+27. Turn `teamSpaces` off in the admin panel.
 28. Reload: the sidebar says Shared Drives again, `/teams` says Team Spaces is not enabled, and
     every team route answers 404. Teams already created are untouched in the database and come back
     when the flag does.
 
 ## Cleanup
 
-Delete this file in the PR that removes the `teamSpaces` flags.
+Delete this file in the PR that removes the `teamSpaces` flag.

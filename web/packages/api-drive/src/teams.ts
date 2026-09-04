@@ -352,8 +352,8 @@ export const teamsApi = {
   /**
    * Recent activity in the team.
    *
-   * Behind `teamSpacesActivity`, which gates reading the feed rather than recording it — the
-   * writes are logged whatever the flag says, so the feed has a history the day it is switched on.
+   * Behind `teamSpaces` like every other team route. The entries were written on each team write
+   * since the flag went on, so the feed has a history from the first team created.
    */
   async listActivity(teamId: string): Promise<TeamActivityResponse> {
     return request<TeamActivityResponse>(`${base}/${encodeURIComponent(teamId)}/activity`);
