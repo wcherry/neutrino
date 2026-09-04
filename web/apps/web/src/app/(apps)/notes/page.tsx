@@ -27,9 +27,10 @@ function noteToGridItem(note: NoteMeta): GridItem {
     kind: 'doc',
     icon: NotebookPen,
     iconColor: 'var(--color-orange, #ea580c)',
-    subtitle: formatDate(note.updatedAt),
     typeText: 'Note',
     modifiedText: formatDate(note.updatedAt),
+    // No subtitle: the card's meta line is the friendly date, as everywhere else.
+    updatedAt: note.updatedAt,
   };
 }
 

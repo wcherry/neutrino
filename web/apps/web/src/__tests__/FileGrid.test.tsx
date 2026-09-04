@@ -22,7 +22,7 @@
  *   - The MIME grouping itself, including the cases where the hints overlap
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { Table2 } from 'lucide-react';
@@ -174,6 +174,69 @@ describe('FileGrid — large-grid view', () => {
     const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
     card.dispatchEvent(event);
     expect(preventDefaultSpy).toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('FileGrid — card meta line', () => {
+  // A Saturday at midday; the cards below date themselves against it.
+  const now = new Date(2024, 5, 15, 12, 0, 0);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function renderItem(item: GridItem, defaultViewMode: 'large' | 'list' = 'large') {
+    return render(
+      <FileGrid
+        items={[item]}
+        onItemClick={vi.fn()}
+        sortBy={'updatedAt' as SortField}
+        sortDir={'desc' as SortDir}
+        onSortChange={vi.fn()}
+        defaultViewMode={defaultViewMode}
+      />,
+    );
+  }
+
+  it('shows the last change as a friendly date on a large card', () => {
+    renderItem(makeItem({
+      subtitle: undefined,
+      updatedAt: new Date(2024, 5, 14, 9, 0).toISOString(),
+    }));
+    expect(screen.getByText('Yesterday')).toBeTruthy();
+  });
+
+  it('shows the subtitle and the friendly date together', () => {
+    renderItem(makeItem({
+      subtitle: '4.2 MB',
+      updatedAt: new Date(2024, 5, 15, 8, 0).toISOString(),
+    }));
+    expect(screen.getByText('4.2 MB')).toBeTruthy();
+    expect(screen.getByText('4 hours ago')).toBeTruthy();
+  });
+
+  it('shows only the subtitle when the item carries no date', () => {
+    renderItem(makeItem({ subtitle: 'Folder', updatedAt: undefined }));
+    expect(screen.getByText('Folder')).toBeTruthy();
+    expect(screen.queryByText(/ago$/)).toBeNull();
+  });
+
+  it('leaves the list view Modified column absolute', () => {
+    renderItem(
+      makeItem({
+        modifiedText: 'Jun 14, 2024',
+        updatedAt: new Date(2024, 5, 14, 9, 0).toISOString(),
+      }),
+      'list',
+    );
+    expect(screen.getByText('Jun 14, 2024')).toBeTruthy();
+    expect(screen.queryByText('Yesterday')).toBeNull();
   });
 });
 

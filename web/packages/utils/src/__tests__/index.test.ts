@@ -4,6 +4,7 @@ import {
   formatDate,
   formatDateTime,
   formatRelativeTime,
+  formatFriendlyDate,
   truncate,
   getFileExtension,
   getFilenameWithoutExtension,
@@ -276,5 +277,114 @@ describe('formatDateTime', () => {
   it('returns a human-readable date-time string containing the year', () => {
     const result = formatDateTime('2024-01-15T10:30:00Z');
     expect(result).toContain('2024');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatFriendlyDate
+// ---------------------------------------------------------------------------
+
+/**
+ * Dates are built in local time, not from UTC strings: the day-based buckets
+ * ("Yesterday", the weekday names) are calendar comparisons, so a UTC literal
+ * would land on a different day depending on the machine running the suite.
+ */
+describe('formatFriendlyDate', () => {
+  // A Saturday at midday, so "a week ago" and the weekday names have room on
+  // both sides of it.
+  const now = new Date(2024, 5, 15, 12, 0, 0);
+  const ago = (ms: number) => new Date(now.getTime() - ms);
+  const SECOND = 1000;
+  const MINUTE = 60 * SECOND;
+  const HOUR = 60 * MINUTE;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns "Just now" for the last few seconds', () => {
+    expect(formatFriendlyDate(now.toISOString())).toBe('Just now');
+    expect(formatFriendlyDate(ago(30 * SECOND).toISOString())).toBe('Just now');
+  });
+
+  it('returns "A minute ago" for around a minute', () => {
+    expect(formatFriendlyDate(ago(60 * SECOND).toISOString())).toBe('A minute ago');
+    expect(formatFriendlyDate(ago(85 * SECOND).toISOString())).toBe('A minute ago');
+  });
+
+  it('returns minutes for the rest of the hour', () => {
+    expect(formatFriendlyDate(ago(5 * MINUTE).toISOString())).toBe('5 minutes ago');
+    expect(formatFriendlyDate(ago(59 * MINUTE).toISOString())).toBe('59 minutes ago');
+  });
+
+  it('returns "An hour ago" for one hour', () => {
+    expect(formatFriendlyDate(ago(HOUR).toISOString())).toBe('An hour ago');
+    expect(formatFriendlyDate(ago(80 * MINUTE).toISOString())).toBe('An hour ago');
+  });
+
+  it('returns hours for the rest of the day', () => {
+    expect(formatFriendlyDate(ago(3 * HOUR).toISOString())).toBe('3 hours ago');
+    expect(formatFriendlyDate(ago(11 * HOUR).toISOString())).toBe('11 hours ago');
+  });
+
+  it('returns "Yesterday" for the previous calendar day', () => {
+    expect(formatFriendlyDate(new Date(2024, 5, 14, 23, 30).toISOString())).toBe('Yesterday');
+    expect(formatFriendlyDate(new Date(2024, 5, 14, 0, 5).toISOString())).toBe('Yesterday');
+  });
+
+  it('counts calendar days, so late last night is "Yesterday" rather than hours', () => {
+    vi.setSystemTime(new Date(2024, 5, 15, 1, 0));
+    expect(formatFriendlyDate(new Date(2024, 5, 14, 23, 0).toISOString())).toBe('Yesterday');
+  });
+
+  it('names the weekday for the rest of the week', () => {
+    expect(formatFriendlyDate(new Date(2024, 5, 13, 9, 0).toISOString())).toBe('Thursday');
+    expect(formatFriendlyDate(new Date(2024, 5, 10, 9, 0).toISOString())).toBe('Monday');
+    expect(formatFriendlyDate(new Date(2024, 5, 9, 9, 0).toISOString())).toBe('Sunday');
+  });
+
+  it('returns "A week ago" from seven days back', () => {
+    expect(formatFriendlyDate(new Date(2024, 5, 8, 9, 0).toISOString())).toBe('A week ago');
+    expect(formatFriendlyDate(new Date(2024, 5, 2, 9, 0).toISOString())).toBe('A week ago');
+  });
+
+  it('returns whole weeks up to a month', () => {
+    expect(formatFriendlyDate(new Date(2024, 5, 1, 9, 0).toISOString())).toBe('2 weeks ago');
+    expect(formatFriendlyDate(new Date(2024, 4, 22, 9, 0).toISOString())).toBe('3 weeks ago');
+  });
+
+  it('returns "A month ago" for the previous month', () => {
+    expect(formatFriendlyDate(new Date(2024, 4, 10, 9, 0).toISOString())).toBe('A month ago');
+  });
+
+  it('returns whole months up to a year', () => {
+    expect(formatFriendlyDate(new Date(2024, 2, 15, 9, 0).toISOString())).toBe('3 months ago');
+    expect(formatFriendlyDate(new Date(2023, 7, 15, 9, 0).toISOString())).toBe('10 months ago');
+  });
+
+  it('returns "A year ago" and then whole years', () => {
+    expect(formatFriendlyDate(new Date(2023, 5, 15, 9, 0).toISOString())).toBe('A year ago');
+    expect(formatFriendlyDate(new Date(2021, 5, 15, 9, 0).toISOString())).toBe('3 years ago');
+  });
+
+  it('treats a slightly-future timestamp as now, since clocks disagree', () => {
+    expect(formatFriendlyDate(new Date(now.getTime() + 20 * SECOND).toISOString())).toBe('Just now');
+  });
+
+  it('falls back to an absolute date for a timestamp well in the future', () => {
+    const result = formatFriendlyDate(new Date(2030, 0, 1, 9, 0).toISOString());
+    expect(result).toContain('2030');
+    expect(result).not.toContain('ago');
+  });
+
+  it('returns an empty string for a missing or unparseable date', () => {
+    expect(formatFriendlyDate(undefined)).toBe('');
+    expect(formatFriendlyDate('')).toBe('');
+    expect(formatFriendlyDate('not a date')).toBe('');
   });
 });

@@ -228,6 +228,8 @@ function DriveContent() {
       mimeType: hit.mimeType,
       typeText: hit.subtitle,
       modifiedText: hit.modified || '—',
+      // A hit dates itself in epoch millis; `updatedAt` is ISO everywhere else.
+      updatedAt: hit.updatedAt > 0 ? new Date(hit.updatedAt).toISOString() : undefined,
     }));
   }, [searchHits, sortBy, sortDir]);
 

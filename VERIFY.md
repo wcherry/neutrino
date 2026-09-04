@@ -1,61 +1,41 @@
-# Manual Verification: Retry a failed import (issue #155)
+# Manual Verification: Friendly date on the large icon (issue #69)
 
-Replaces the verification steps for issue #60, which has shipped (commit `64e9446`).
+Replaces the verification steps for issue #155, which has shipped (commit `4915570`).
 
 ## Prerequisites
 - Stack running locally: `cargo dev` (or the `docker-compose-dev.yml` stack)
-- A signed-in account with end-to-end encryption set up and unlocked
-- A Google Takeout `.zip` with at least a few notes, documents or photos in it
-
-Failures are the point of this feature and they do not happen on demand, so the reliable way to
-induce one is in the browser: open DevTools → Network and add a **request blocking** rule, or use
-the Network conditions panel to go offline for a moment mid-run. Blocking
-`*/api/v1/drive/files/*/content*` fails items at the upload step while leaving the rest of the
-run working.
+- A signed-in account with a few files in Drive and at least one document or note
 
 ## Steps
 
-### Happy Path — retry one file, then the rest
-
-1. Open http://localhost:9880/import and drop the archive in.
-2. Choose the products to bring across and press **Import**.
-3. While the progress bar is going, block the request pattern above (or toggle offline briefly)
-   so a handful of items fail, then unblock it and let the run finish.
-4. The result screen reads `N imported · M skipped · K failed` and the **Failed** list shows the
-   failures, each with the reason (`HTTP 500: …`, `Failed to fetch`, …).
-5. Confirm the list's bar now has **Retry all K failed**, and every row has its own **Retry**.
-6. Press **Retry** on one row. The progress bar comes back reading **Importing 1 of 1**, and when
-   it finishes:
-   - that row is gone from the Failed list,
-   - the counts have moved by one — `N+1 imported · … · K−1 failed`, still counting the whole
-     import and not just the retry,
-   - every other failed row is still listed, with its own reason.
-7. Press **Retry all**. The bar counts the remaining failures only. When it finishes the Failed
-   list is gone, the counts add up to the whole archive, and no Retry button remains.
-8. Open the destination app (Notes, Docs, Photos, …) and confirm the retried items are actually
-   there, once each.
+### Happy Path
+1. Open http://localhost:3000/drive and stay in the **Large grid** view (the leftmost of the
+   three view buttons).
+2. Create or edit a file so it has just been touched. Its card's meta line reads
+   `<size> · Just now`.
+3. Wait a couple of minutes and reload. It reads `2 minutes ago`, then `An hour ago` and
+   `N hours ago` as the day goes on.
+4. Hover the meta line. The tooltip shows the exact date and time.
+5. Switch to **Detailed list**. The Modified column still shows an absolute date
+   (`Jan 5, 2026`) — the friendly wording is the card's, not the column's.
 
 ### Edge Cases
-
-1. **It fails again**: keep the blocking rule on and press Retry. The row stays on the list with
-   the *new* reason, the counts do not move, and Retry is still offered.
-2. **Retry across products**: induce failures in two products (e.g. notes and photos) and press
-   Retry all — both products run again, each over its own failed files only, and the console log
-   reads `[takeout:page] retrying { steps: [ 'Notes (1)', 'Photos (2)' ] }`.
-3. **The run survives a route change**: with failures on screen, switch to Drive and back to
-   `/import`. The result screen and its Retry buttons are still there, and a retry from it still
-   works — the archive is held open for exactly this.
-4. **A clean run releases the archive**: run an import with no failures. There is no Failed list
-   and no Retry, and the console reads `[takeout:archive] reader closed for …` as the run ends —
-   the zip reader is not held open when there is nothing to retry.
-5. **Locked vault**: lock the keys (Settings → Security) after a run with failures, then press
-   Retry all. Nothing runs and the encryption warning toast appears — the same answer pressing
-   Import gives.
-6. **Dismiss releases it**: with failures on screen press **Import another archive**. The page
-   goes back to the file picker and the console reports the reader closing.
-7. **Stopped run**: press **Stop** mid-import, then retry one of the items that failed before the
-   stop. The retry runs, and the screen still says **Import stopped** — the items the run never
-   reached are still unimported.
+1. **Yesterday and the week**: a file last changed yesterday reads `Yesterday`; one from
+   earlier this week reads by weekday (`Monday` … `Sunday`). To check without waiting, edit a
+   file, then in `psql` run
+   `UPDATE files SET updated_at = NOW() - INTERVAL '3 days' WHERE name = '<file>';` and reload.
+   The same trick with `'10 days'` gives `A week ago`, `'20 days'` gives `2 weeks ago`,
+   `'40 days'` gives `A month ago`, `'400 days'` gives `A year ago`.
+2. **Late last night**: a file changed at 11pm shows `Yesterday` the next morning, not
+   `10 hours ago` — the day buckets are calendar comparisons.
+3. **Office suite and Notes**: open `/docs`, `/sheets`, `/slides`, `/drawing` and `/notes`.
+   Each card shows the friendly date alone (the absolute date these used to show as a subtitle
+   is gone; the icon already says what the item is).
+4. **Trash**: `/drive/trash` cards read `Deleted · Yesterday` — the date is when the item was
+   deleted, as the Modified column there already was.
+5. **Search**: search from the topbar and open the Drive results view (`/drive?q=…`). Hits
+   carry the same friendly date; a hit with no known date shows just its subtitle.
+6. **Small grid**: unchanged — no date, there is no room for one.
 
 ## Cleanup
-Delete VERIFY.md once the change is proven stable.
+Delete VERIFY.md once the feature is proven stable.

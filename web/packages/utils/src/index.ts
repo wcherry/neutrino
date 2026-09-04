@@ -49,6 +49,78 @@ export function formatRelativeTime(dateString: string): string {
   return formatDate(dateString);
 }
 
+const SECOND_MS = 1000;
+const MINUTE_MS = 60 * SECOND_MS;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/** Midnight local time on the day the given instant falls in. */
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/** Whole calendar months between two instants, e.g. Jan 31 → Feb 1 is 0. */
+function calendarMonthsBetween(from: Date, to: Date): number {
+  const months = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+  return to.getDate() < from.getDate() ? months - 1 : months;
+}
+
+/**
+ * A date said the way someone would say it: "Just now", "An hour ago",
+ * "Yesterday", "Monday", "A week ago", "A month ago".
+ *
+ * Written for the file cards, where the date answers "is this the one I was
+ * working on?" rather than "what date was that?" — so it is deliberately
+ * coarser than `formatDate`, which is what the sortable Modified column still
+ * shows. `formatRelativeTime` is the older, terser form of the same idea
+ * ("30m ago") and is kept for the surfaces already using it.
+ *
+ * Anything under an hour counts in elapsed time; past that the buckets are
+ * *calendar* comparisons, so 11pm last night is "Yesterday" at 1am rather than
+ * "2 hours ago". Beyond a year of weekday names being useless, it falls back to
+ * weeks, months and then years.
+ *
+ * `now` is injectable for tests; callers pass the one argument.
+ */
+export function formatFriendlyDate(
+  value: string | number | Date | null | undefined,
+  now: Date = new Date(),
+): string {
+  if (value == null || value === '') return '';
+  const date = value instanceof Date ? value : new Date(value);
+  const ms = date.getTime();
+  if (Number.isNaN(ms)) return '';
+
+  const diff = now.getTime() - ms;
+  // Clocks disagree — a server timestamp a few seconds ahead of the browser is
+  // this moment, not a date to count down to. Only a real future date, which
+  // no listing should carry, gets shown as one.
+  if (diff < -MINUTE_MS) return formatDate(date.toISOString());
+
+  if (diff < 45 * SECOND_MS) return 'Just now';
+  if (diff < 90 * SECOND_MS) return 'A minute ago';
+  if (diff < HOUR_MS) return `${Math.round(diff / MINUTE_MS)} minutes ago`;
+
+  const days = Math.round((startOfDay(now) - startOfDay(date)) / DAY_MS);
+  if (days === 0) {
+    const hours = Math.floor(diff / HOUR_MS);
+    return hours <= 1 ? 'An hour ago' : `${hours} hours ago`;
+  }
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return date.toLocaleDateString(undefined, { weekday: 'long' });
+  if (days < 14) return 'A week ago';
+
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks} weeks ago`;
+
+  const months = calendarMonthsBetween(date, now);
+  if (months <= 1) return 'A month ago';
+  if (months < 12) return `${months} months ago`;
+
+  const years = Math.floor(months / 12);
+  return years === 1 ? 'A year ago' : `${years} years ago`;
+}
+
 // ---------------------------------------------------------------------------
 // String utilities
 // ---------------------------------------------------------------------------

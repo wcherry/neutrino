@@ -236,9 +236,11 @@ export function DocumentLibrary({
     kind: 'doc',
     icon,
     iconColor,
-    subtitle: formatDate(item.updatedAt),
     typeText,
     modifiedText: formatDate(item.updatedAt),
+    // No subtitle: the icon already says what the item is, so the card's meta
+    // line is the friendly date `updatedAt` renders as.
+    updatedAt: item.updatedAt,
   }));
 
   return (

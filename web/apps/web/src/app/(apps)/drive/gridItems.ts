@@ -37,6 +37,7 @@ export function fileToGridItem(file: FileItem): GridItem {
     typeText: ext,
     sizeText: formatFileSize(file.sizeBytes),
     modifiedText: formatDate(file.updatedAt),
+    updatedAt: file.updatedAt,
     isStarred: file.isStarred,
     coverThumbnail: file.coverThumbnail,
     coverThumbnailMimeType: file.coverThumbnailMimeType,
@@ -54,13 +55,16 @@ export function folderToGridItem(folder: FolderItem): GridItem {
     typeText: 'Folder',
     sizeText: '—',
     modifiedText: formatDate(folder.updatedAt),
+    updatedAt: folder.updatedAt,
     isStarred: folder.isStarred,
   };
 }
 
 /**
  * Trash rows carry `deletedAt` instead of `updatedAt`, so the Modified column
- * shows when the item was deleted — the only date that matters in Trash.
+ * — and the card's friendly date — show when the item was deleted, the only
+ * date that matters in Trash. The subtitle says which date it is; the card
+ * renders `updatedAt` beside it, so it carries no date of its own.
  */
 export function trashFileToGridItem(file: TrashFileItem): GridItem {
   const ext = file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : '—';
@@ -70,11 +74,12 @@ export function trashFileToGridItem(file: TrashFileItem): GridItem {
     kind: 'file',
     icon: getFileIcon(file.mimeType),
     iconColor: getIconColor(file.mimeType),
-    subtitle: `Deleted ${formatDate(file.deletedAt)}`,
+    subtitle: 'Deleted',
     mimeType: file.mimeType,
     typeText: ext,
     sizeText: formatFileSize(file.sizeBytes),
     modifiedText: formatDate(file.deletedAt),
+    updatedAt: file.deletedAt,
   };
 }
 
@@ -85,10 +90,11 @@ export function trashFolderToGridItem(folder: TrashFolderItem): GridItem {
     kind: 'folder',
     icon: Folder,
     iconColor: 'var(--color-amber, #d97706)',
-    subtitle: `Deleted ${formatDate(folder.deletedAt)}`,
+    subtitle: 'Deleted',
     typeText: 'Folder',
     sizeText: '—',
     modifiedText: formatDate(folder.deletedAt),
+    updatedAt: folder.deletedAt,
   };
 }
 
