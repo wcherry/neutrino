@@ -35,16 +35,32 @@ pub struct DeclaredFlag {
 /// a row for one would describe a switch that controls nothing — which is precisely the drift that
 /// made the old system a second, invisible definition of the product.
 ///
-/// **One entry, and adding a second should be hard.** Team Spaces was specified with three
-/// per-phase sub-flags beside it; they are not here. Each would have been defensible alone, which
-/// is exactly how the last system reached fifteen — and a Team Space with its wiki switched off is
-/// not a shippable half-feature, it is a navigation entry leading to a page that says something is
-/// missing. A feature gets one switch, and the switch answers one question: is this on?
-pub const DECLARED_FLAGS: &[DeclaredFlag] = &[DeclaredFlag {
-    key: "teamSpaces",
-    owner: "drive",
-    removal: "Once Team Spaces has run enabled in production for a full release cycle with no rollback.",
-}];
+/// **Adding an entry should be hard, and the bar is a difference in blast radius.** Team Spaces was
+/// specified with three per-phase sub-flags beside it; they are not here. Each would have been
+/// defensible alone, which is exactly how the last system reached fifteen — and a Team Space with
+/// its wiki switched off is not a shippable half-feature, it is a navigation entry leading to a
+/// page that says something is missing. A feature gets one switch, and the switch answers one
+/// question: is this on?
+///
+/// `teamFileTransfers` is the second entry and clears that bar for one reason: every other Team
+/// Spaces route touches rows that belong to a team, and turning `teamSpaces` off makes all of them
+/// 404. The transfer routes reach the other way — into a member's own My Drive, at files with
+/// `team_id IS NULL` — and `team_file_shares` grants access to a personal file through a team. That
+/// is a different thing to be able to close, and closing it should not mean taking Team Spaces down
+/// with it. It is meaningless on its own, so the service requires `teamSpaces` first and this
+/// second; a deployment with only this one on is exactly a deployment with neither.
+pub const DECLARED_FLAGS: &[DeclaredFlag] = &[
+    DeclaredFlag {
+        key: "teamSpaces",
+        owner: "drive",
+        removal: "Once Team Spaces has run enabled in production for a full release cycle with no rollback.",
+    },
+    DeclaredFlag {
+        key: "teamFileTransfers",
+        owner: "drive",
+        removal: "Once moving and sharing into a team have both run enabled in production for a full release cycle with no rollback.",
+    },
+];
 
 /// Which declared keys are missing from `present`, in declaration order.
 ///
@@ -94,12 +110,14 @@ mod tests {
 
     #[test]
     fn missing_keys_reports_only_what_is_absent() {
-        assert!(missing_keys(&["teamSpaces".to_string()]).is_empty());
-        assert_eq!(missing_keys(&[]), vec!["teamSpaces"]);
+        let all: Vec<String> = DECLARED_FLAGS.iter().map(|f| f.key.to_string()).collect();
+        assert!(missing_keys(&all).is_empty());
+        assert_eq!(missing_keys(&["teamSpaces".to_string()]), vec!["teamFileTransfers"]);
+        assert_eq!(missing_keys(&[]), vec!["teamSpaces", "teamFileTransfers"]);
         // A table holding only unrelated keys is missing everything the server declares.
         assert_eq!(
             missing_keys(&["somethingElse".to_string()]),
-            vec!["teamSpaces"]
+            vec!["teamSpaces", "teamFileTransfers"]
         );
     }
 

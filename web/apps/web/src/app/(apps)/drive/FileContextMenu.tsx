@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Eye, Info, Pencil, Star, StarOff, Download, Trash2, Link, Share2, FolderInput, Tag } from 'lucide-react';
+import { Eye, Info, Pencil, Star, StarOff, Download, Trash2, Link, Share2, FolderInput, Tag, Users } from 'lucide-react';
 import { type FileItem } from '@/lib/api';
 import styles from './FileContextMenu.module.css';
 
@@ -20,8 +20,9 @@ interface Props {
   onShare: () => void;
   onMove: () => void;
   onManageTags: () => void;
-  /** Present only when `file` is a raw, not-yet-promoted office file and the
-   *  office-in-place-editing flag is on (issue #43). */
+  /** Present only when `teamSpaces` *and* `teamFileTransfers` are on (issue #185). Absent
+   *  otherwise, so a deployment without Team Spaces has no entry pointing at it. */
+  onAddToTeam?: () => void;
 }
 
 export function FileContextMenu({
@@ -39,6 +40,7 @@ export function FileContextMenu({
   onShare,
   onMove,
   onManageTags,
+  onAddToTeam,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
@@ -71,6 +73,12 @@ export function FileContextMenu({
     ...(onPreview ? [{ icon: <Eye size={14} />, label: 'Preview', action: onPreview }] : []),
     { icon: <Info size={14} />, label: 'File info', action: onInfo },
     { icon: <Share2 size={14} />, label: 'Share', action: onShare },
+    // Sits under Share because it is the same question asked of a team rather than a person, and
+    // the dialog it opens covers both moving and sharing — the choice belongs there, where each
+    // option can say what it does to ownership, not here as two menu entries a word apart.
+    ...(onAddToTeam
+      ? [{ icon: <Users size={14} />, label: 'Add to a team space', action: onAddToTeam }]
+      : []),
     { icon: <Pencil size={14} />, label: 'Rename', action: onRename },
     {
       icon: file.isStarred ? <StarOff size={14} /> : <Star size={14} />,

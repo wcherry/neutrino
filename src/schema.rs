@@ -814,6 +814,19 @@ diesel::table! {
     }
 }
 
+// Added in migration 130
+diesel::table! {
+    team_file_shares (id) {
+        id -> Text,
+        team_id -> Text,
+        file_id -> Text,
+        role -> Text,
+        shared_by -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
 diesel::table! {
     feature_flags (key) {
         key -> Text,
@@ -1179,6 +1192,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     team_join_requests,
     team_pages,
     team_page_versions,
+    team_file_shares,
     feature_flags,
     legal_holds,
     retention_policies,

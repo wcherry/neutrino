@@ -11,15 +11,48 @@ use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
 use super::model::*;
+use super::roles::Role;
 use super::visibility::Visibility;
 use crate::drive::filesystem::model::FolderRecord;
 use crate::drive::storage::model::FileRecord;
 use crate::schema::{
-    files, folders, team_join_requests, team_members, team_page_versions, team_pages, teams, users,
+    files, folders, permissions, team_file_shares, team_join_requests, team_members,
+    team_page_versions, team_pages, teams, users,
 };
 use crate::shared::ApiError;
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
+
+/// One row of the admin console's team list.
+///
+/// Its own struct rather than [`Team`], because the two say different things: `Team` is the row as
+/// stored, with a cached `storage_used_bytes`, and this is a derived view whose `used_bytes` was
+/// computed by the query that produced it. Returning a `Team` with the total patched in would
+/// invite the reader to assume the rest of it had been refreshed too.
+#[derive(Debug, Clone, diesel::QueryableByName)]
+pub struct AdminTeamRow {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub id: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub name: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub slug: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub visibility: String,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    pub created_by: String,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
+    pub storage_limit_bytes: Option<i64>,
+    #[diesel(sql_type = diesel::sql_types::Timestamp)]
+    pub created_at: NaiveDateTime,
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    pub archived: bool,
+    /// Summed from the live file rows by the listing query, not read from the cached column.
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub used_bytes: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub member_count: i64,
+}
 
 pub struct TeamsRepository {
     pool: DbPool,
@@ -908,5 +941,267 @@ impl TeamsRepository {
         .set((files::name.eq(name), files::updated_at.eq(now)))
         .execute(&mut conn)
         .map_err(db_err("team file rename"))
+    }
+
+    // ── Transfers: moving and sharing a personal file (migration 00130) ───────
+
+    /// How many people other than `mover` hold a grant on this file.
+    ///
+    /// Read *before* a move, and reported back, because the move is what makes those grants stop
+    /// applying: `get_effective_role` consults team membership first and stops there, so a file
+    /// that joins a team takes its shares out of circulation. The rows are left in place — they are
+    /// inert, not wrong, and deleting them would take the file's history with them — but somebody
+    /// is about to lose access to a file they could open this morning, and the mover should be told
+    /// how many before rather than fielding the question after.
+    pub fn count_other_permissions(&self, file_id: &str, mover: &str) -> Result<i64, ApiError> {
+        let mut conn = self.conn()?;
+        permissions::table
+            .filter(permissions::resource_type.eq("file"))
+            .filter(permissions::resource_id.eq(file_id))
+            .filter(permissions::user_id.ne(mover))
+            .count()
+            .get_result(&mut conn)
+            .map_err(db_err("file permission count"))
+    }
+
+    /// Lend a personal file to a team, or change the role it is already lent at.
+    ///
+    /// An upsert on `(team_id, file_id)` rather than an insert, because the unique index says a
+    /// file is lent to a team once and re-sharing at a different role has to be an edit of that one
+    /// row — two rows would make the answer depend on which came back first.
+    pub fn upsert_file_share(
+        &self,
+        id: &str,
+        team_id: &str,
+        file_id: &str,
+        role: &str,
+        shared_by: &str,
+        now: NaiveDateTime,
+    ) -> Result<TeamFileShare, ApiError> {
+        let mut conn = self.conn()?;
+        diesel::insert_into(team_file_shares::table)
+            .values((
+                team_file_shares::id.eq(id),
+                team_file_shares::team_id.eq(team_id),
+                team_file_shares::file_id.eq(file_id),
+                team_file_shares::role.eq(role),
+                team_file_shares::shared_by.eq(shared_by),
+                team_file_shares::created_at.eq(now),
+                team_file_shares::updated_at.eq(now),
+            ))
+            .on_conflict((team_file_shares::team_id, team_file_shares::file_id))
+            .do_update()
+            .set((
+                team_file_shares::role.eq(role),
+                team_file_shares::shared_by.eq(shared_by),
+                team_file_shares::updated_at.eq(now),
+            ))
+            .execute(&mut conn)
+            .map_err(db_err("team file share upsert"))?;
+
+        team_file_shares::table
+            .filter(team_file_shares::team_id.eq(team_id))
+            .filter(team_file_shares::file_id.eq(file_id))
+            .select(TeamFileShare::as_select())
+            .first(&mut conn)
+            .map_err(db_err("team file share fetch"))
+    }
+
+    /// What has been lent to this team, newest first, with each file's current metadata.
+    ///
+    /// The join to `files` is an inner join with `deleted_at IS NULL` and `team_id IS NULL`, which
+    /// makes three kinds of stale row invisible without a cleanup pass: the owner trashed the file,
+    /// the owner later moved it into a team (where the team's own membership governs it and the
+    /// share means nothing), or the row was orphaned. A share is a pointer at a file that is still
+    /// somebody's personal file; when that stops being true the pointer stops resolving.
+    /// The sharer's name is a *left* join: a share outlives the account that made it, and the row
+    /// still says what the team may read.
+    pub fn list_team_file_shares(
+        &self,
+        team_id: &str,
+    ) -> Result<Vec<(TeamFileShare, FileRecord, Option<String>)>, ApiError> {
+        let mut conn = self.conn()?;
+        team_file_shares::table
+            .inner_join(files::table.on(files::id.eq(team_file_shares::file_id)))
+            .left_join(users::table.on(users::id.eq(team_file_shares::shared_by)))
+            .filter(team_file_shares::team_id.eq(team_id))
+            .filter(files::deleted_at.is_null())
+            .filter(files::team_id.is_null())
+            .order(team_file_shares::created_at.desc())
+            .select((
+                TeamFileShare::as_select(),
+                FileRecord::as_select(),
+                users::name.nullable(),
+            ))
+            .load(&mut conn)
+            .map_err(db_err("team file shares list"))
+    }
+
+    pub fn find_file_share(
+        &self,
+        team_id: &str,
+        file_id: &str,
+    ) -> Result<Option<TeamFileShare>, ApiError> {
+        let mut conn = self.conn()?;
+        team_file_shares::table
+            .filter(team_file_shares::team_id.eq(team_id))
+            .filter(team_file_shares::file_id.eq(file_id))
+            .select(TeamFileShare::as_select())
+            .first(&mut conn)
+            .optional()
+            .map_err(db_err("team file share find"))
+    }
+
+    pub fn delete_file_share(&self, team_id: &str, file_id: &str) -> Result<usize, ApiError> {
+        let mut conn = self.conn()?;
+        diesel::delete(
+            team_file_shares::table
+                .filter(team_file_shares::team_id.eq(team_id))
+                .filter(team_file_shares::file_id.eq(file_id)),
+        )
+        .execute(&mut conn)
+        .map_err(db_err("team file share delete"))
+    }
+
+    // ── Administration (migration 00131) ─────────────────────────────────────
+
+    /// Every live team with its true occupancy, for the admin console.
+    ///
+    /// One query, not one per team. The console's whole job here is "which team is about to run
+    /// out?", which means every row needs a live figure — and computing that with
+    /// [`Self::recalculate_storage`] per team would be two statements per row plus a write, on a
+    /// page that exists to be scanned.
+    ///
+    /// Which is also why this **does not write the totals back**. The read is derived and correct
+    /// as displayed; making an admin opening a list repair every team's cached counter would turn
+    /// a page view into an unbounded write, and the counter is repaired on the read that actually
+    /// depends on it (`get_team`) anyway.
+    ///
+    /// Raw SQL for the reason `recalculate_storage` gives: `diesel::dsl::sum` returns Numeric,
+    /// which reaches Rust as a float, which is the wrong shape for byte counts past 2^53.
+    pub fn list_teams_for_admin(
+        &self,
+        query: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<AdminTeamRow>, ApiError> {
+        use diesel::sql_types::{BigInt, Text};
+
+        let mut conn = self.conn()?;
+        let pattern = format!("%{}%", query.unwrap_or("").trim().to_lowercase());
+        diesel::sql_query(
+            "SELECT t.id            AS id, \
+                    t.name          AS name, \
+                    t.slug          AS slug, \
+                    t.visibility    AS visibility, \
+                    t.created_by    AS created_by, \
+                    t.storage_limit_bytes AS storage_limit_bytes, \
+                    t.created_at    AS created_at, \
+                    (t.archived_at IS NOT NULL) AS archived, \
+                    COALESCE((SELECT SUM(f.size_bytes) FROM files f \
+                               WHERE f.team_id = t.id AND f.deleted_at IS NULL), 0) AS used_bytes, \
+                    (SELECT COUNT(*) FROM team_members m WHERE m.team_id = t.id) AS member_count \
+               FROM teams t \
+              WHERE t.deleted_at IS NULL \
+                AND (?1 = '%%' OR LOWER(t.name) LIKE ?1 OR LOWER(t.slug) LIKE ?1) \
+              ORDER BY used_bytes DESC, t.name ASC \
+              LIMIT ?2 OFFSET ?3",
+        )
+        .bind::<Text, _>(pattern)
+        .bind::<BigInt, _>(limit)
+        .bind::<BigInt, _>(offset)
+        .load(&mut conn)
+        .map_err(db_err("admin team list"))
+    }
+
+    /// Who owns each of these teams, as `(team_id, user_id, email, name)`.
+    ///
+    /// One query for the whole page rather than one per row, the same shape the console's user
+    /// table uses for its storage column — a listing that costs a query per row is a listing that
+    /// gets slower as the thing it monitors gets worse.
+    ///
+    /// A team can have several owners: the role is not a slot, and `remove_member` guards only
+    /// against removing the *last* one. So this returns rows, not a map to a single owner, and the
+    /// console renders however many there are. A team with **none** is also possible — the last
+    /// owner's account can be deleted out from under it — and is exactly the state the transfer
+    /// route exists to repair, so an empty list is a real answer rather than an error.
+    pub fn list_owners_of_teams(
+        &self,
+        team_ids: &[String],
+    ) -> Result<Vec<(String, String, String, String)>, ApiError> {
+        if team_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut conn = self.conn()?;
+        team_members::table
+            .filter(team_members::team_id.eq_any(team_ids))
+            .filter(team_members::role.eq(Role::Owner.as_str()))
+            .order(team_members::created_at.asc())
+            .select((
+                team_members::team_id,
+                team_members::user_id,
+                team_members::user_email,
+                team_members::user_name,
+            ))
+            .load(&mut conn)
+            .map_err(db_err("team owners list"))
+    }
+
+    /// How many live teams the same filter matches, so the console can page.
+    pub fn count_teams_for_admin(&self, query: Option<&str>) -> Result<i64, ApiError> {
+        let mut conn = self.conn()?;
+        let pattern = format!("%{}%", query.unwrap_or("").trim().to_lowercase());
+        let mut q = teams::table
+            .filter(teams::deleted_at.is_null())
+            .into_boxed();
+        if pattern != "%%" {
+            q = q.filter(
+                teams::name
+                    .like(pattern.clone())
+                    .or(teams::slug.like(pattern)),
+            );
+        }
+        q.count()
+            .get_result(&mut conn)
+            .map_err(db_err("admin team count"))
+    }
+
+    /// Set (or clear) a team's disk quota. `None` is unlimited.
+    ///
+    /// Separate from [`Self::update_team`], which is the route a team's own Owner takes: a team
+    /// must not be able to raise its own limit, or it is not a limit. Nothing in the member-facing
+    /// DTOs carries this field, and this method is reachable only from the admin surface.
+    pub fn set_storage_limit(
+        &self,
+        team_id: &str,
+        limit_bytes: Option<i64>,
+        now: NaiveDateTime,
+    ) -> Result<usize, ApiError> {
+        let mut conn = self.conn()?;
+        diesel::update(
+            teams::table
+                .filter(teams::id.eq(team_id))
+                .filter(teams::deleted_at.is_null()),
+        )
+        .set((
+            teams::storage_limit_bytes.eq(limit_bytes),
+            teams::updated_at.eq(now),
+        ))
+        .execute(&mut conn)
+        .map_err(db_err("team quota update"))
+    }
+
+    /// Drop every share of a file, whichever team it was lent to.
+    ///
+    /// Called when the file is moved into a team. A share says "this personal file of mine may be
+    /// read by your team", and once the file is a team's own that sentence has no subject left: the
+    /// owner it named no longer has any authority to lend it, and the listing would hide the rows
+    /// anyway. Deleting is what makes moving a file into team A and out again — were that ever
+    /// added — not silently restore a lend to team B that nobody has thought about since.
+    pub fn delete_all_shares_of_file(&self, file_id: &str) -> Result<usize, ApiError> {
+        let mut conn = self.conn()?;
+        diesel::delete(team_file_shares::table.filter(team_file_shares::file_id.eq(file_id)))
+            .execute(&mut conn)
+            .map_err(db_err("team file shares delete"))
     }
 }

@@ -12,13 +12,14 @@ use diesel::r2d2::{ConnectionManager, Pool};
 use diesel_migrations::MigrationHarness;
 
 use super::dto::*;
+use super::quota::DEFAULT_TEAM_QUOTA_BYTES;
 use super::repository::{DbPool, TeamsRepository};
 use super::roles::Role;
-use super::service::{TeamsService, FLAG_TEAM_SPACES};
+use super::service::{TeamsService, FLAG_TEAM_FILE_TRANSFERS, FLAG_TEAM_SPACES};
 use crate::drive::activity::{repository::ActivityRepository, service::ActivityService};
 use crate::drive::feature_flags::gate::FeatureGate;
 use crate::drive::feature_flags::repository::FeatureFlagsRepository;
-use crate::schema::{feature_flags, files, users};
+use crate::schema::{feature_flags, files, teams, users};
 use crate::shared::AuthenticatedUser;
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -47,6 +48,24 @@ impl Fixture {
             .execute(&mut f.pool.get().expect("conn"))
             .expect("enable flag");
         f
+    }
+
+    /// `teamSpaces` on *and* `teamFileTransfers` on — the stack the move and share routes need.
+    ///
+    /// A separate constructor rather than folding it into `new`, so that every test written before
+    /// the second flag existed goes on running with it off and would catch a transfer route that
+    /// forgot to ask for it.
+    fn with_transfers() -> Self {
+        let f = Self::new();
+        f.set_flag(FLAG_TEAM_FILE_TRANSFERS, true);
+        f
+    }
+
+    fn set_flag(&self, key: &str, on: bool) {
+        diesel::update(feature_flags::table.filter(feature_flags::key.eq(key)))
+            .set(feature_flags::enabled.eq(i32::from(on)))
+            .execute(&mut self.pool.get().expect("conn"))
+            .expect("set flag");
     }
 
     fn gated_off() -> Self {
@@ -1401,6 +1420,1423 @@ fn team_membership_grants_a_drive_role_over_the_teams_files() {
         Some("viewer")
     );
     assert_eq!(perms.find_team_role(&team.id, "u3").expect("role"), None);
+}
+
+// ── Disk quota and its administration ────────────────────────────────────────
+
+/// The migration's backfill and the Rust constant are two copies of one number, and this is what
+/// stops them drifting. It runs the real migrations, so a change to either without the other fails
+/// here rather than as a team that was created with one limit and backfilled to another.
+#[test]
+fn the_backfilled_quota_matches_the_constant() {
+    let f = Fixture::gated_off();
+    // Before taking the connection: the test pool holds exactly one, and `add_user` wants it.
+    f.add_user("u1", "owner@example.com", "Owner");
+    let mut conn = f.pool.get().expect("conn");
+
+    // A team from before the backfill — inserted with no limit, as 00126 through 00130 left them.
+    diesel::insert_into(teams::table)
+        .values((
+            teams::id.eq("legacy"),
+            teams::name.eq("Legacy"),
+            teams::slug.eq("legacy"),
+            teams::visibility.eq("private"),
+            teams::created_by.eq("u1"),
+        ))
+        .execute(&mut conn)
+        .expect("insert legacy team");
+
+    // Re-run the backfill statement exactly as 00131 writes it. If the constant moves and the
+    // migration does not, these disagree.
+    diesel::sql_query(
+        "UPDATE teams SET storage_limit_bytes = 10737418240 \
+          WHERE storage_limit_bytes IS NULL AND deleted_at IS NULL",
+    )
+    .execute(&mut conn)
+    .expect("backfill");
+
+    let limit: Option<i64> = teams::table
+        .filter(teams::id.eq("legacy"))
+        .select(teams::storage_limit_bytes)
+        .first(&mut conn)
+        .expect("read limit");
+    assert_eq!(
+        limit,
+        Some(DEFAULT_TEAM_QUOTA_BYTES),
+        "migration 00131's backfill and DEFAULT_TEAM_QUOTA_BYTES must be the same number"
+    );
+}
+
+/// A new team starts with a limit rather than unlimited, because a team that begins with no quota
+/// never acquires one by itself.
+#[test]
+fn a_new_team_is_created_with_the_default_quota() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    assert_eq!(team.storage_limit_bytes, Some(DEFAULT_TEAM_QUOTA_BYTES));
+    assert_eq!(team.storage_used_bytes, 0);
+}
+
+/// The figure the Settings page reads is recomputed on the read, so a counter that has drifted —
+/// a file purged or restored through the ordinary Drive routes, which do not touch it — is
+/// repaired rather than displayed wrong for ever.
+#[test]
+fn reading_a_team_repairs_a_drifted_storage_counter() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Budget.xlsx", 2048);
+    f.service
+        .move_file_into_team(&team.id, move_request("file-1"), &owner)
+        .expect("move");
+
+    // Corrupt the cached counter behind the service's back, as a purge elsewhere would.
+    diesel::update(teams::table.filter(teams::id.eq(&team.id)))
+        .set(teams::storage_used_bytes.eq(999_999_i64))
+        .execute(&mut f.pool.get().expect("conn"))
+        .expect("corrupt counter");
+
+    let read = f.service.get_team(&team.id, &owner).expect("get");
+    assert_eq!(read.storage_used_bytes, 2048, "the read should self-heal");
+}
+
+/// The listing is the console's whole reason to exist: which team is closest to full.
+#[test]
+fn the_admin_listing_orders_teams_by_how_full_they_are() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let small = f.create_team("Small", &owner);
+    let big = f.create_team("Big", &owner);
+
+    f.add_file("file-1", "u1", "Little.txt", 10);
+    f.add_file("file-2", "u1", "Large.bin", 5000);
+    f.service
+        .move_file_into_team(&small.id, move_request("file-1"), &owner)
+        .expect("move");
+    f.service
+        .move_file_into_team(&big.id, move_request("file-2"), &owner)
+        .expect("move");
+
+    let list = f.service.admin_list_teams(None, 50, 0).expect("list");
+    assert_eq!(list.total, 2);
+    assert_eq!(list.teams[0].id, big.id, "fullest first");
+    assert_eq!(list.teams[0].storage_used_bytes, 5000);
+    assert_eq!(
+        list.teams[0].storage_remaining_bytes,
+        Some(DEFAULT_TEAM_QUOTA_BYTES - 5000)
+    );
+    assert_eq!(list.teams[1].storage_used_bytes, 10);
+    assert!(!list.teams[0].over_quota);
+    assert_eq!(list.teams[0].member_count, 1);
+}
+
+/// The listing computes occupancy from the file rows, so it is right even when the cached counter
+/// is not — an administrator diagnosing a full disk must not be shown the stale number.
+#[test]
+fn the_admin_listing_does_not_trust_the_cached_counter() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Budget.xlsx", 2048);
+    f.service
+        .move_file_into_team(&team.id, move_request("file-1"), &owner)
+        .expect("move");
+
+    diesel::update(teams::table.filter(teams::id.eq(&team.id)))
+        .set(teams::storage_used_bytes.eq(0_i64))
+        .execute(&mut f.pool.get().expect("conn"))
+        .expect("corrupt counter");
+
+    let list = f.service.admin_list_teams(None, 50, 0).expect("list");
+    assert_eq!(list.teams[0].storage_used_bytes, 2048);
+}
+
+#[test]
+fn the_admin_listing_filters_and_pages() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    f.create_team("Marketing", &owner);
+    f.create_team("Design", &owner);
+    f.create_team("Engineering", &owner);
+
+    let filtered = f
+        .service
+        .admin_list_teams(Some("desi"), 50, 0)
+        .expect("filtered");
+    assert_eq!(filtered.total, 1);
+    assert_eq!(filtered.teams[0].name, "Design");
+
+    // `total` is every match, not the page — otherwise the console cannot render a pager.
+    let page = f.service.admin_list_teams(None, 2, 0).expect("page");
+    assert_eq!(page.total, 3);
+    assert_eq!(page.teams.len(), 2);
+    let rest = f.service.admin_list_teams(None, 2, 2).expect("rest");
+    assert_eq!(rest.teams.len(), 1);
+}
+
+/// A page size arriving from a URL is a number, not a promise. An unbounded one is an unbounded
+/// query, and a zero or negative one is a listing that returns nothing for no stated reason.
+#[test]
+fn the_admin_listing_clamps_its_page_size() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    for name in ["A", "B", "C"] {
+        f.create_team(name, &owner);
+    }
+
+    assert_eq!(
+        f.service.admin_list_teams(None, 100_000, 0).expect("huge").teams.len(),
+        3
+    );
+    assert_eq!(
+        f.service.admin_list_teams(None, 0, 0).expect("zero").teams.len(),
+        1,
+        "a page size of zero is clamped up to one, not down to nothing"
+    );
+    assert_eq!(
+        f.service.admin_list_teams(None, 50, -5).expect("negative offset").teams.len(),
+        3
+    );
+}
+
+/// A deleted team is gone from the console as well as from its members' lists.
+#[test]
+fn a_deleted_team_is_not_in_the_admin_listing() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.service.delete_team(&team.id, &owner).expect("delete");
+
+    assert_eq!(f.service.admin_list_teams(None, 50, 0).expect("list").total, 0);
+}
+
+#[test]
+fn an_administrator_can_set_and_clear_a_teams_quota() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    let raised = f
+        .service
+        .admin_set_team_quota(
+            &team.id,
+            SetTeamQuotaRequest {
+                storage_limit_bytes: Some(50_000),
+            },
+            "admin-1",
+        )
+        .expect("raise");
+    assert_eq!(raised.storage_limit_bytes, Some(50_000));
+    assert_eq!(raised.storage_remaining_bytes, Some(50_000));
+
+    // `null` is unlimited, and it is a choice rather than an absence.
+    let unlimited = f
+        .service
+        .admin_set_team_quota(
+            &team.id,
+            SetTeamQuotaRequest {
+                storage_limit_bytes: None,
+            },
+            "admin-1",
+        )
+        .expect("unlimited");
+    assert_eq!(unlimited.storage_limit_bytes, None);
+    assert_eq!(unlimited.storage_remaining_bytes, None);
+
+    // And the team sees it, since the member-facing DTO reads the same column.
+    assert_eq!(
+        f.service.get_team(&team.id, &owner).expect("get").storage_limit_bytes,
+        None
+    );
+}
+
+/// The change lands in the team's own activity feed. An administrator changing what a team may
+/// store is something that happened *to* the team, and finding out by hitting the limit is worse
+/// than finding out by reading the feed.
+#[test]
+fn a_quota_change_is_logged_where_the_team_can_see_it() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    f.service
+        .admin_set_team_quota(
+            &team.id,
+            SetTeamQuotaRequest {
+                storage_limit_bytes: Some(1234),
+            },
+            "admin-1",
+        )
+        .expect("set");
+
+    let feed = f.service.list_activity(&team.id, &owner).expect("activity");
+    let entry = feed
+        .entries
+        .iter()
+        .find(|e| e.action == "team.quota_changed")
+        .expect("the change should be in the feed");
+    assert_eq!(entry.detail.as_ref().expect("detail")["to"], 1234);
+}
+
+/// Lowering a limit below what a team already holds is allowed and deletes nothing. It is the only
+/// way to say "this team has grown too far" without the sentence meaning "delete some of their
+/// work": the files stay, and the next one is refused.
+#[test]
+fn a_lowered_quota_keeps_the_files_and_refuses_the_next_one() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Budget.xlsx", 5000);
+    f.service
+        .move_file_into_team(&team.id, move_request("file-1"), &owner)
+        .expect("move");
+
+    let lowered = f
+        .service
+        .admin_set_team_quota(
+            &team.id,
+            SetTeamQuotaRequest {
+                storage_limit_bytes: Some(100),
+            },
+            "admin-1",
+        )
+        .expect("lower");
+    assert!(lowered.over_quota);
+    assert_eq!(
+        lowered.storage_remaining_bytes,
+        Some(0),
+        "no room left, rather than a negative number"
+    );
+
+    // The file is still there.
+    assert_eq!(
+        f.service.list_library(&team.id, None, &owner).expect("library").files.len(),
+        1
+    );
+
+    // And the next one is refused.
+    f.add_file("file-2", "u1", "Another.txt", 1);
+    assert_eq!(
+        f.service
+            .move_file_into_team(&team.id, move_request("file-2"), &owner)
+            .expect_err("over quota")
+            .status,
+        413
+    );
+}
+
+/// A team's own Owner cannot raise its quota — a limit a team can lift is not a limit. There is no
+/// field for it on `UpdateTeamRequest` and this asserts the write path stays that way.
+#[test]
+fn a_team_owner_cannot_change_their_own_quota() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                name: Some("Renamed".into()),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("rename");
+
+    assert_eq!(
+        f.service.get_team(&team.id, &owner).expect("get").storage_limit_bytes,
+        Some(DEFAULT_TEAM_QUOTA_BYTES),
+        "nothing a team's own Owner can send should move its limit"
+    );
+}
+
+#[test]
+fn a_negative_quota_is_refused() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    let err = f
+        .service
+        .admin_set_team_quota(
+            &team.id,
+            SetTeamQuotaRequest {
+                storage_limit_bytes: Some(-1),
+            },
+            "admin-1",
+        )
+        .expect_err("negative");
+    assert_eq!(err.status, 400);
+}
+
+/// An archived team can still have its quota changed. Archiving pauses the team's own writes, and
+/// a deployment's storage policy is not one of the team's writes.
+#[test]
+fn an_archived_teams_quota_can_still_be_set() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                archived: Some(true),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("archive");
+
+    let updated = f
+        .service
+        .admin_set_team_quota(
+            &team.id,
+            SetTeamQuotaRequest {
+                storage_limit_bytes: Some(4096),
+            },
+            "admin-1",
+        )
+        .expect("set on an archived team");
+    assert!(updated.archived);
+    assert_eq!(updated.storage_limit_bytes, Some(4096));
+}
+
+/// The admin routes are behind `teamSpaces` like everything else here: with the flag off no team
+/// can exist, so a console listing them is a page about nothing, and a 404 keeps the rule that a
+/// gated feature is invisible rather than merely refused.
+#[test]
+fn the_admin_routes_are_behind_the_flag() {
+    let f = Fixture::gated_off();
+
+    assert_eq!(
+        f.service.admin_list_teams(None, 50, 0).expect_err("gated").status,
+        404
+    );
+    assert_eq!(
+        f.service
+            .admin_set_team_quota(
+                "any-team",
+                SetTeamQuotaRequest {
+                    storage_limit_bytes: Some(1),
+                },
+                "admin-1",
+            )
+            .expect_err("gated")
+            .status,
+        404
+    );
+    assert_eq!(
+        f.service
+            .admin_set_team_owner(
+                "any-team",
+                SetTeamOwnerRequest {
+                    email: "someone@example.com".into(),
+                },
+                "admin-1",
+            )
+            .expect_err("gated")
+            .status,
+        404
+    );
+    assert_eq!(
+        f.service
+            .admin_set_team_archived(
+                "any-team",
+                SetTeamArchivedRequest { archived: true },
+                "admin-1",
+            )
+            .expect_err("gated")
+            .status,
+        404
+    );
+    assert_eq!(
+        f.service
+            .admin_delete_team("any-team", "admin-1")
+            .expect_err("gated")
+            .status,
+        404
+    );
+}
+
+// ── Administering a team from outside it ─────────────────────────────────────
+
+/// Ownership is not a slot, so the console shows however many Owners a team has — including none.
+#[test]
+fn the_admin_listing_names_the_teams_owners() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "second@example.com", "Second Owner");
+    f.service
+        .add_member(
+            &team.id,
+            AddMemberRequest {
+                email: "second@example.com".into(),
+                role: "owner".into(),
+            },
+            &owner,
+        )
+        .expect("add second owner");
+
+    let list = f.service.admin_list_teams(None, 50, 0).expect("list");
+    let owners = &list.teams[0].owners;
+    assert_eq!(owners.len(), 2);
+    assert!(owners.iter().any(|o| o.user_id == "u1"));
+    assert!(owners.iter().any(|o| o.name == "Second Owner"));
+
+    // Members who are not Owners are counted, not listed.
+    assert_eq!(list.teams[0].member_count, 2);
+}
+
+/// A team whose only Owner has been removed has none, and that is a real state rather than an
+/// error — it is the one the transfer route exists to repair.
+#[test]
+fn a_team_with_no_owner_lists_none_rather_than_failing() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    // Reach past the service's last-owner guard, which is the point: this state is reachable in
+    // production by the Owner's *account* being deleted, not by anyone calling remove_member.
+    diesel::delete(
+        crate::schema::team_members::table.filter(crate::schema::team_members::team_id.eq(&team.id)),
+    )
+    .execute(&mut f.pool.get().expect("conn"))
+    .expect("orphan the team");
+
+    let list = f.service.admin_list_teams(None, 50, 0).expect("list");
+    assert!(list.teams[0].owners.is_empty());
+}
+
+/// The transfer is a transfer: the named person becomes Owner and the previous Owner is demoted to
+/// Admin — not removed, so the change is one click back.
+#[test]
+fn transferring_ownership_demotes_the_previous_owner_to_admin() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "new@example.com", "New Owner");
+
+    let updated = f
+        .service
+        .admin_set_team_owner(
+            &team.id,
+            SetTeamOwnerRequest {
+                email: "new@example.com".into(),
+            },
+            "admin-1",
+        )
+        .expect("transfer");
+
+    assert_eq!(updated.owners.len(), 1);
+    assert_eq!(updated.owners[0].user_id, "u2");
+
+    let members = f.service.list_members(&team.id, &owner).expect("members");
+    let previous = members
+        .members
+        .iter()
+        .find(|m| m.user_id == "u1")
+        .expect("the previous owner is still a member");
+    assert_eq!(previous.role, "admin", "demoted, not removed");
+}
+
+/// The new Owner does not have to be in the team already — that is the whole point when the
+/// previous one has left.
+#[test]
+fn ownership_can_be_given_to_someone_outside_the_team() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u9", "outsider@example.com", "Outsider");
+
+    let updated = f
+        .service
+        .admin_set_team_owner(
+            &team.id,
+            SetTeamOwnerRequest {
+                email: "outsider@example.com".into(),
+            },
+            "admin-1",
+        )
+        .expect("transfer");
+
+    assert_eq!(updated.owners[0].user_id, "u9");
+    assert_eq!(updated.member_count, 2, "they were added as a member");
+}
+
+/// The case only this route can fix: a team with no Owner gets one.
+#[test]
+fn an_ownerless_team_can_be_given_an_owner() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "rescuer@example.com", "Rescuer");
+    diesel::delete(
+        crate::schema::team_members::table.filter(crate::schema::team_members::team_id.eq(&team.id)),
+    )
+    .execute(&mut f.pool.get().expect("conn"))
+    .expect("orphan the team");
+
+    let updated = f
+        .service
+        .admin_set_team_owner(
+            &team.id,
+            SetTeamOwnerRequest {
+                email: "rescuer@example.com".into(),
+            },
+            "admin-1",
+        )
+        .expect("rescue");
+
+    assert_eq!(updated.owners.len(), 1);
+    assert_eq!(updated.owners[0].user_id, "u2");
+}
+
+/// Handing a team to the person who already owns it changes nothing, rather than demoting them on
+/// the way to promoting them.
+#[test]
+fn transferring_to_the_existing_owner_leaves_them_the_owner() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    let updated = f
+        .service
+        .admin_set_team_owner(
+            &team.id,
+            SetTeamOwnerRequest {
+                email: "owner@example.com".into(),
+            },
+            "admin-1",
+        )
+        .expect("no-op transfer");
+
+    assert_eq!(updated.owners.len(), 1);
+    assert_eq!(updated.owners[0].user_id, "u1");
+    assert_eq!(updated.member_count, 1);
+}
+
+/// An email nobody has is a 404, not an invitation. A team owned by an address no account has
+/// claimed is the same ownerless state this route exists to end.
+#[test]
+fn ownership_cannot_be_given_to_an_address_with_no_account() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    assert_eq!(
+        f.service
+            .admin_set_team_owner(
+                &team.id,
+                SetTeamOwnerRequest {
+                    email: "nobody@example.com".into(),
+                },
+                "admin-1",
+            )
+            .expect_err("no such account")
+            .status,
+        404
+    );
+    assert_eq!(
+        f.service
+            .admin_set_team_owner(
+                &team.id,
+                SetTeamOwnerRequest { email: "  ".into() },
+                "admin-1",
+            )
+            .expect_err("blank")
+            .status,
+        400
+    );
+}
+
+/// An archived team can still be handed over: archiving pauses the team's own writes, and deciding
+/// who is answerable for it is not one of them — a team frozen with no owner would have nobody able
+/// to unfreeze it.
+#[test]
+fn an_archived_team_can_still_be_handed_over() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "new@example.com", "New Owner");
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                archived: Some(true),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("archive");
+
+    let updated = f
+        .service
+        .admin_set_team_owner(
+            &team.id,
+            SetTeamOwnerRequest {
+                email: "new@example.com".into(),
+            },
+            "admin-1",
+        )
+        .expect("transfer on an archived team");
+    assert!(updated.archived);
+    assert_eq!(updated.owners[0].user_id, "u2");
+}
+
+#[test]
+fn an_administrator_can_archive_and_restore_a_team() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    let archived = f
+        .service
+        .admin_set_team_archived(&team.id, SetTeamArchivedRequest { archived: true }, "admin-1")
+        .expect("archive");
+    assert!(archived.archived);
+    // The team feels it: its own writes are refused.
+    assert_eq!(
+        f.service
+            .create_page(
+                &team.id,
+                CreatePageRequest {
+                    title: "Notes".into(),
+                    parent_page_id: None,
+                    content_md: None,
+                    icon: None,
+                },
+                &owner,
+            )
+            .expect_err("archived")
+            .status,
+        403
+    );
+
+    let restored = f
+        .service
+        .admin_set_team_archived(&team.id, SetTeamArchivedRequest { archived: false }, "admin-1")
+        .expect("restore");
+    assert!(!restored.archived);
+    assert!(f
+        .service
+        .create_page(
+            &team.id,
+            CreatePageRequest {
+                title: "Notes".into(),
+                parent_page_id: None,
+                content_md: None,
+                icon: None,
+            },
+            &owner,
+        )
+        .is_ok());
+}
+
+/// Sending the state it already has is a no-op that writes no audit entry — a feed full of
+/// "archived an archived team" is a feed nobody reads.
+#[test]
+fn archiving_an_already_archived_team_logs_nothing() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    f.service
+        .admin_set_team_archived(&team.id, SetTeamArchivedRequest { archived: true }, "admin-1")
+        .expect("archive");
+    f.service
+        .admin_set_team_archived(&team.id, SetTeamArchivedRequest { archived: true }, "admin-1")
+        .expect("archive again");
+
+    let feed = f.service.list_activity(&team.id, &owner).expect("activity");
+    assert_eq!(
+        feed.entries.iter().filter(|e| e.action == "team.archived").count(),
+        1,
+        "the second request should have been a no-op"
+    );
+}
+
+/// Deleting takes the team out of the console and out of its members' lists. Soft, so the row and
+/// everything cascading off it survive — but nothing here lists a deleted team, deliberately.
+#[test]
+fn an_administrator_can_delete_a_team() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+
+    f.service.admin_delete_team(&team.id, "admin-1").expect("delete");
+
+    assert_eq!(f.service.admin_list_teams(None, 50, 0).expect("list").total, 0);
+    assert_eq!(f.service.list_teams(&owner).expect("member list").total, 0);
+    assert_eq!(
+        f.service.get_team(&team.id, &owner).expect_err("gone").status,
+        404
+    );
+}
+
+/// The case the member-facing route cannot serve: `delete_team` requires an Owner, and an
+/// ownerless team has none.
+#[test]
+fn an_ownerless_team_can_still_be_deleted_by_an_administrator() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    diesel::delete(
+        crate::schema::team_members::table.filter(crate::schema::team_members::team_id.eq(&team.id)),
+    )
+    .execute(&mut f.pool.get().expect("conn"))
+    .expect("orphan the team");
+
+    // The member route is now unreachable for everyone — nobody has a role in this team.
+    assert_eq!(
+        f.service.delete_team(&team.id, &owner).expect_err("no role").status,
+        404
+    );
+    f.service.admin_delete_team(&team.id, "admin-1").expect("admin delete");
+    assert_eq!(f.service.admin_list_teams(None, 50, 0).expect("list").total, 0);
+}
+
+#[test]
+fn administering_a_team_that_does_not_exist_is_a_404() {
+    let f = Fixture::new();
+
+    for status in [
+        f.service
+            .admin_set_team_owner(
+                "no-such-team",
+                SetTeamOwnerRequest {
+                    email: "owner@example.com".into(),
+                },
+                "admin-1",
+            )
+            .expect_err("gone")
+            .status,
+        f.service
+            .admin_set_team_archived(
+                "no-such-team",
+                SetTeamArchivedRequest { archived: true },
+                "admin-1",
+            )
+            .expect_err("gone")
+            .status,
+        f.service
+            .admin_delete_team("no-such-team", "admin-1")
+            .expect_err("gone")
+            .status,
+    ] {
+        assert_eq!(status, 404);
+    }
+}
+
+/// Every administrator action lands in the team's own feed, where its members can see it. Being
+/// told is the difference between a team that knows an administrator acted and one that discovers
+/// it by hitting the consequence.
+#[test]
+fn every_admin_action_is_recorded_in_the_teams_feed() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "new@example.com", "New Owner");
+
+    f.service
+        .admin_set_team_owner(
+            &team.id,
+            SetTeamOwnerRequest {
+                email: "new@example.com".into(),
+            },
+            "admin-1",
+        )
+        .expect("transfer");
+    f.service
+        .admin_set_team_archived(&team.id, SetTeamArchivedRequest { archived: true }, "admin-1")
+        .expect("archive");
+
+    // Read as the new owner: the previous one is an Admin now and can still see the team, but
+    // reading as whoever holds it is the more honest check.
+    let reader = user("u2", "new@example.com");
+    let feed = f.service.list_activity(&team.id, &reader).expect("activity");
+    let actions: Vec<&str> = feed.entries.iter().map(|e| e.action.as_str()).collect();
+    assert!(actions.contains(&"team.owner_transferred"), "{actions:?}");
+    assert!(actions.contains(&"team.archived"), "{actions:?}");
+    // And the entry says it came from outside the team, not from a member.
+    let transfer = feed
+        .entries
+        .iter()
+        .find(|e| e.action == "team.owner_transferred")
+        .expect("entry");
+    assert_eq!(transfer.actor, "administrator");
+}
+
+// ── Transfers: moving and sharing a personal file ────────────────────────────
+
+fn move_request(file_id: &str) -> MoveFileIntoTeamRequest {
+    MoveFileIntoTeamRequest {
+        file_id: file_id.into(),
+        folder_id: None,
+    }
+}
+
+fn share_request(file_id: &str, role: Option<&str>) -> ShareFileWithTeamRequest {
+    ShareFileWithTeamRequest {
+        file_id: file_id.into(),
+        role: role.map(str::to_string),
+    }
+}
+
+/// The second flag is a switch of its own: with Team Spaces fully on and this off, the team is
+/// there, its library is there, and the two routes that reach into My Drive are not.
+#[test]
+fn transfers_are_dark_while_only_team_spaces_is_on() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Budget.xlsx", 10);
+
+    // Team Spaces itself is unaffected.
+    assert!(f.service.list_library(&team.id, None, &owner).is_ok());
+
+    for status in [
+        f.service
+            .move_file_into_team(&team.id, move_request("file-1"), &owner)
+            .expect_err("gated")
+            .status,
+        f.service
+            .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+            .expect_err("gated")
+            .status,
+        f.service
+            .list_shared_files(&team.id, &owner)
+            .expect_err("gated")
+            .status,
+        f.service
+            .unshare_file_from_team(&team.id, "file-1", &owner)
+            .expect_err("gated")
+            .status,
+    ] {
+        assert_eq!(status, 404, "a gated-off transfer route must be invisible");
+    }
+}
+
+/// `teamSpaces` is checked first, so a deployment with only the transfer flag on is
+/// indistinguishable from one with neither — no route starts answering differently for a real team
+/// id while Team Spaces is switched off.
+#[test]
+fn the_transfer_flag_alone_turns_nothing_on() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Budget.xlsx", 10);
+    f.set_flag(FLAG_TEAM_SPACES, false);
+
+    let err = f
+        .service
+        .move_file_into_team(&team.id, move_request("file-1"), &owner)
+        .expect_err("gated");
+    assert_eq!(err.status, 404);
+}
+
+#[test]
+fn moving_a_personal_file_puts_it_in_the_team_and_moves_the_meter() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Budget.xlsx", 2048);
+
+    let moved = f
+        .service
+        .move_file_into_team(&team.id, move_request("file-1"), &owner)
+        .expect("move");
+    assert_eq!(moved.file.name, "Budget.xlsx");
+    assert_eq!(moved.shares_no_longer_applied, 0);
+
+    let library = f.service.list_library(&team.id, None, &owner).expect("library");
+    assert_eq!(library.files.len(), 1);
+    assert_eq!(library.storage_used_bytes, 2048);
+}
+
+/// The move reports what it costs. Every upload writes its uploader an `owner` permission row and
+/// each share writes another, and all of them stop applying the moment the file is a team's — so
+/// the count is the number of people about to lose access, and the mover is told before rather
+/// than after.
+#[test]
+fn a_move_reports_the_shares_it_makes_inert() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Budget.xlsx", 10);
+    f.add_user("u2", "other@example.com", "Other");
+    f.add_user("u3", "third@example.com", "Third");
+
+    use crate::drive::permissions::repository::PermissionsRepository;
+    let perms = PermissionsRepository::new(f.pool.clone());
+    for (id, user_id) in [("p1", "u1"), ("p2", "u2"), ("p3", "u3")] {
+        perms
+            .upsert_permission(&crate::drive::permissions::model::NewPermissionRecord {
+                id,
+                resource_type: "file",
+                resource_id: "file-1",
+                user_id,
+                role: if user_id == "u1" { "owner" } else { "editor" },
+                granted_by: "u1",
+                user_email: "",
+                user_name: "",
+            })
+            .expect("grant");
+    }
+
+    let moved = f
+        .service
+        .move_file_into_team(&team.id, move_request("file-1"), &owner)
+        .expect("move");
+    assert_eq!(
+        moved.shares_no_longer_applied, 2,
+        "the mover's own grant is not one of the losses"
+    );
+}
+
+/// A move reaches only the caller's own untethered files, exactly as a claim does — a file already
+/// in a team, or somebody else's, cannot be pulled across by id.
+#[test]
+fn a_move_cannot_take_a_file_that_is_not_the_callers() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u2", "Someone else's.txt", 10);
+
+    let err = f
+        .service
+        .move_file_into_team(&team.id, move_request("file-1"), &owner)
+        .expect_err("not the caller's");
+    assert_eq!(err.status, 404);
+
+    // And a file already in this team cannot be moved into it again.
+    f.add_file("file-2", "u1", "Mine.txt", 10);
+    f.service
+        .move_file_into_team(&team.id, move_request("file-2"), &owner)
+        .expect("first move");
+    let err = f
+        .service
+        .move_file_into_team(&team.id, move_request("file-2"), &owner)
+        .expect_err("already a team's");
+    assert_eq!(err.status, 404);
+}
+
+/// A Viewer reads the team and writes nothing to it, and a file appearing in the library is a
+/// write however it got there.
+#[test]
+fn a_viewer_can_neither_move_nor_share_into_a_team() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let viewer = user("u2", "viewer@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "viewer@example.com", "Viewer");
+    f.service
+        .add_member(
+            &team.id,
+            AddMemberRequest {
+                email: "viewer@example.com".into(),
+                role: "viewer".into(),
+            },
+            &owner,
+        )
+        .expect("add viewer");
+    f.add_file("file-1", "u2", "Notes.txt", 10);
+
+    assert_eq!(
+        f.service
+            .move_file_into_team(&team.id, move_request("file-1"), &viewer)
+            .expect_err("viewer")
+            .status,
+        403
+    );
+    assert_eq!(
+        f.service
+            .share_file_with_team(&team.id, share_request("file-1", None), &viewer)
+            .expect_err("viewer")
+            .status,
+        403
+    );
+}
+
+/// A Contributor adds but does not remove, and both of these add.
+#[test]
+fn a_contributor_can_move_and_share() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let contributor = user("u2", "contrib@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "contrib@example.com", "Contrib");
+    f.service
+        .add_member(
+            &team.id,
+            AddMemberRequest {
+                email: "contrib@example.com".into(),
+                role: "contributor".into(),
+            },
+            &owner,
+        )
+        .expect("add contributor");
+
+    f.add_file("file-1", "u2", "Draft.md", 10);
+    f.add_file("file-2", "u2", "Lent.md", 10);
+    assert!(f
+        .service
+        .move_file_into_team(&team.id, move_request("file-1"), &contributor)
+        .is_ok());
+    assert!(f
+        .service
+        .share_file_with_team(&team.id, share_request("file-2", None), &contributor)
+        .is_ok());
+}
+
+/// A team a caller is not in does not exist, transfers included — the 404 rule does not soften for
+/// a route that happens to be about the caller's own file.
+#[test]
+fn a_non_member_cannot_move_a_file_into_a_team() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    let stranger = f.outsider("u9");
+    f.add_file("file-1", "u9", "Mine.txt", 10);
+
+    let err = f
+        .service
+        .move_file_into_team(&team.id, move_request("file-1"), &stranger)
+        .expect_err("not a member");
+    assert_eq!(err.status, 404);
+}
+
+#[test]
+fn a_move_is_refused_when_the_team_has_no_room() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    diesel::update(teams::table.filter(teams::id.eq(&team.id)))
+        .set(teams::storage_limit_bytes.eq(Some(100_i64)))
+        .execute(&mut f.pool.get().expect("conn"))
+        .expect("set limit");
+
+    f.add_file("file-1", "u1", "Huge.bin", 500);
+    let err = f
+        .service
+        .move_file_into_team(&team.id, move_request("file-1"), &owner)
+        .expect_err("over quota");
+    assert_eq!(err.status, 413);
+
+    // Refused before anything moved: the file is still the caller's to move.
+    assert!(f
+        .service
+        .list_library(&team.id, None, &owner)
+        .expect("library")
+        .files
+        .is_empty());
+}
+
+/// An archived team is read-only for everyone, and a move is a write to it.
+#[test]
+fn an_archived_team_accepts_neither_a_move_nor_a_share() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                archived: Some(true),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("archive");
+    f.add_file("file-1", "u1", "Budget.xlsx", 10);
+
+    assert_eq!(
+        f.service
+            .move_file_into_team(&team.id, move_request("file-1"), &owner)
+            .expect_err("archived")
+            .status,
+        403
+    );
+    assert_eq!(
+        f.service
+            .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+            .expect_err("archived")
+            .status,
+        403
+    );
+}
+
+/// A share leaves the file exactly where it was. That is the whole difference from a move, and it
+/// is what makes a share revocable: the file never stopped being the sharer's.
+#[test]
+fn sharing_lends_a_file_without_moving_it() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Roadmap.md", 64);
+
+    let share = f
+        .service
+        .share_file_with_team(&team.id, share_request("file-1", Some("editor")), &owner)
+        .expect("share");
+    assert_eq!(share.role, "editor");
+    assert_eq!(share.name, "Roadmap.md");
+
+    // Still in My Drive: not in the team's library, and not counted against the team's meter.
+    let library = f.service.list_library(&team.id, None, &owner).expect("library");
+    assert!(library.files.is_empty());
+    assert_eq!(library.storage_used_bytes, 0);
+
+    use crate::drive::permissions::repository::PermissionsRepository;
+    let perms = PermissionsRepository::new(f.pool.clone());
+    assert_eq!(perms.get_file_team_id("file-1").expect("team id"), None);
+
+    let shared = f.service.list_shared_files(&team.id, &owner).expect("list");
+    assert_eq!(shared.total, 1);
+    assert_eq!(shared.files[0].file_id, "file-1");
+    assert_eq!(shared.files[0].shared_by, "u1");
+}
+
+/// Sharing again edits the one row rather than adding a second, so the team's access to a file has
+/// exactly one answer and it is not decided by row order.
+#[test]
+fn re_sharing_changes_the_role_rather_than_adding_a_second_share() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", Some("viewer")), &owner)
+        .expect("share");
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", Some("editor")), &owner)
+        .expect("re-share");
+
+    let shared = f.service.list_shared_files(&team.id, &owner).expect("list");
+    assert_eq!(shared.total, 1);
+    assert_eq!(shared.files[0].role, "editor");
+}
+
+/// `owner` is a real Drive role and the one a share will not grant: lending a file to a team is not
+/// handing every member the authority to give it away.
+#[test]
+fn a_share_will_not_grant_ownership_or_an_unknown_role() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+
+    for role in ["owner", "commenter", "", "Editor"] {
+        let err = f
+            .service
+            .share_file_with_team(&team.id, share_request("file-1", Some(role)), &owner)
+            .expect_err("bad role");
+        assert_eq!(err.status, 400, "role {role:?} should be rejected");
+    }
+
+    // The default, when none is named, is the one that cannot surprise anybody.
+    let share = f
+        .service
+        .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+        .expect("default role");
+    assert_eq!(share.role, "viewer");
+}
+
+/// A file that has since been trashed, or moved into a team, drops out of the listing rather than
+/// rendering as a row pointing at nothing. There is no cleanup pass; the join is the cleanup.
+#[test]
+fn a_shared_file_that_stops_being_personal_leaves_the_listing() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    let other = f.create_team("Design", &owner);
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+        .expect("share");
+    assert_eq!(
+        f.service.list_shared_files(&team.id, &owner).expect("list").total,
+        1
+    );
+
+    // Moving it into another team takes it out of the sharer's hands entirely.
+    f.service
+        .move_file_into_team(&other.id, move_request("file-1"), &owner)
+        .expect("move");
+    assert_eq!(
+        f.service.list_shared_files(&team.id, &owner).expect("list").total,
+        0
+    );
+}
+
+/// The owner can take a lend back at any time; so can a team admin, because a team decides what
+/// appears on its own Files page. Nobody else can, including the team's other content editors.
+#[test]
+fn only_the_sharer_or_a_team_admin_can_unshare() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let editor = user("u2", "editor@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "editor@example.com", "Editor");
+    f.service
+        .add_member(
+            &team.id,
+            AddMemberRequest {
+                email: "editor@example.com".into(),
+                role: "editor".into(),
+            },
+            &owner,
+        )
+        .expect("add editor");
+
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+        .expect("share");
+
+    // An Editor has every authority over the team's *content* and none over someone's personal
+    // file, so this is the one file operation in a team they cannot perform.
+    assert_eq!(
+        f.service
+            .unshare_file_from_team(&team.id, "file-1", &editor)
+            .expect_err("editor")
+            .status,
+        403
+    );
+
+    // The sharer can.
+    f.service
+        .unshare_file_from_team(&team.id, "file-1", &owner)
+        .expect("unshare");
+    assert_eq!(
+        f.service.list_shared_files(&team.id, &owner).expect("list").total,
+        0
+    );
+}
+
+/// An admin can turn down a file lent by somebody else.
+#[test]
+fn a_team_admin_can_remove_a_file_someone_else_shared() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let contributor = user("u2", "contrib@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "contrib@example.com", "Contrib");
+    f.service
+        .add_member(
+            &team.id,
+            AddMemberRequest {
+                email: "contrib@example.com".into(),
+                role: "contributor".into(),
+            },
+            &owner,
+        )
+        .expect("add contributor");
+
+    f.add_file("file-1", "u2", "Draft.md", 10);
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", None), &contributor)
+        .expect("share");
+
+    f.service
+        .unshare_file_from_team(&team.id, "file-1", &owner)
+        .expect("admin removes it");
+    assert_eq!(
+        f.service.list_shared_files(&team.id, &owner).expect("list").total,
+        0
+    );
+}
+
+/// An archived team must not be able to hold on to somebody's personal file — archiving is the
+/// pause button for the team's own content, not a lock on other people's.
+#[test]
+fn a_lend_can_be_taken_back_from_an_archived_team() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+        .expect("share");
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                archived: Some(true),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("archive");
+
+    f.service
+        .unshare_file_from_team(&team.id, "file-1", &owner)
+        .expect("unshare from an archived team");
+}
+
+/// A member who is not in the team sees nothing, and a stranger unsharing gets the same 404 as for
+/// a team that never existed.
+#[test]
+fn shares_are_invisible_outside_the_team() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    let stranger = f.outsider("u9");
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+        .expect("share");
+
+    assert_eq!(
+        f.service
+            .list_shared_files(&team.id, &stranger)
+            .expect_err("stranger")
+            .status,
+        404
+    );
+    assert_eq!(
+        f.service
+            .unshare_file_from_team(&team.id, "file-1", &stranger)
+            .expect_err("stranger")
+            .status,
+        404
+    );
+}
+
+/// Moving a file into a team drops every lend of it, because "this personal file of mine may be
+/// read by your team" has no subject left once the file is a team's.
+#[test]
+fn moving_a_file_into_a_team_ends_its_lends_to_other_teams() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let lender = f.create_team("Design", &owner);
+    let destination = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+
+    f.service
+        .share_file_with_team(&lender.id, share_request("file-1", None), &owner)
+        .expect("share");
+    f.service
+        .move_file_into_team(&destination.id, move_request("file-1"), &owner)
+        .expect("move");
+
+    // Gone from the row, not merely hidden by the listing's join.
+    assert!(f
+        .service
+        .list_shared_files(&lender.id, &owner)
+        .expect("list")
+        .files
+        .is_empty());
+    let repo = TeamsRepository::new(f.pool.clone());
+    assert!(repo
+        .find_file_share(&lender.id, "file-1")
+        .expect("find")
+        .is_none());
 }
 
 // ── Phase 8 groundwork: the activity feed ────────────────────────────────────

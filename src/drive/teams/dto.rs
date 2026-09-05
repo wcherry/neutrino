@@ -418,6 +418,171 @@ pub struct RenameTeamFileRequest {
     pub name: String,
 }
 
+// ── Transfers: moving and sharing a personal file ─────────────────────────────
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveFileIntoTeamRequest {
+    /// A live file in the caller's own My Drive. Not one already in a team, and not one merely
+    /// shared with the caller — moving a file gives it away, which is the owner's decision alone.
+    pub file_id: String,
+    /// Where in the team's library it lands. Absent puts it at the team root.
+    pub folder_id: Option<String>,
+}
+
+/// The moved file, plus what the move cost the people the file used to be shared with.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveFileIntoTeamResponse {
+    pub file: TeamFileResponse,
+    /// How many individual grants on the file stopped applying because of the move.
+    ///
+    /// Reported rather than merely allowed to happen. A team file is governed by the team and by
+    /// nothing else, so every personal share of the file — and the mover's own ownership of it —
+    /// is inert from the moment it lands. That is the intended rule, but it is invisible from the
+    /// outside, and a number here lets the client warn before the move rather than leave the mover
+    /// to discover it when a colleague asks why a file disappeared.
+    pub shares_no_longer_applied: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareFileWithTeamRequest {
+    /// A live file in the caller's own My Drive. It stays there: this lends it, it does not move
+    /// it.
+    pub file_id: String,
+    /// `viewer` or `editor`. Absent means `viewer`, which is the answer that cannot surprise
+    /// anybody. `owner` is not accepted at all.
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamSharedFileResponse {
+    pub file_id: String,
+    pub name: String,
+    pub size_bytes: i64,
+    pub mime_type: String,
+    /// `viewer` | `editor` — what every member of this team may do with the file.
+    pub role: String,
+    /// The owner who lent it. Still the file's owner: a share is not a transfer.
+    pub shared_by: String,
+    pub shared_by_name: String,
+    pub shared_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamSharedFileListResponse {
+    pub files: Vec<TeamSharedFileResponse>,
+    pub total: i64,
+}
+
+// ── Administration ───────────────────────────────────────────────────────────
+
+/// One team as the admin console sees it: the outside of a team, and no more.
+///
+/// Name, size and membership count — enough to answer "which team is about to run out of room?"
+/// and nothing about what is inside. A team's pages, files and activity stay behind membership
+/// even for a deployment administrator; those are reached through the surfaces that log the
+/// access.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminTeamResponse {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub visibility: String,
+    /// Who created the team, as a user id. Not the same question as who owns it now — the creator
+    /// can have been demoted, removed, or had their account deleted — which is why `owners` is a
+    /// separate field read from the membership rather than this one dressed up.
+    pub created_by: String,
+    pub archived: bool,
+    /// The team's current Owners, oldest membership first.
+    ///
+    /// A list rather than one, because the role is not a slot: a team can have several Owners, and
+    /// the member routes guard only against removing the last. It can also be **empty** — the last
+    /// Owner's account can be deleted out from under a team — and that is the state the transfer
+    /// route exists to repair, so the console renders it as a warning rather than as a blank.
+    pub owners: Vec<AdminTeamOwner>,
+    pub member_count: i64,
+    /// Summed from the live file rows on this read, not the cached column.
+    pub storage_used_bytes: i64,
+    /// `null` is unlimited, which is a choice rather than an absence.
+    pub storage_limit_bytes: Option<i64>,
+    /// `null` when unlimited; never negative, so a team over its limit reads as zero room left.
+    pub storage_remaining_bytes: Option<i64>,
+    /// True when the team already holds more than its limit — which an administrator lowering a
+    /// limit can bring about deliberately, and which does not delete anything.
+    pub over_quota: bool,
+    pub created_at: String,
+}
+
+/// One Owner of a team, as the console lists them.
+///
+/// Email and name come from the denormalised copy on `team_members`, which is what makes a row
+/// still readable after the account behind it is gone — the same reason the member list stores
+/// them.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminTeamOwner {
+    pub user_id: String,
+    pub email: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminTeamListResponse {
+    pub teams: Vec<AdminTeamResponse>,
+    /// Every live team matching the filter, not just this page's worth.
+    pub total: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminTeamListQuery {
+    /// Filters on team name and slug. Absent lists them all.
+    pub q: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+/// Authoritative, not a patch: this replaces the team's limit.
+///
+/// `storageLimitBytes: null` is **unlimited**, and it has to be sent explicitly — which is why the
+/// field is required rather than `Option<Option<i64>>`. An omitted field meaning "leave it alone"
+/// and an explicit null meaning "unlimited" are one keystroke apart in a JSON body, and the cost of
+/// confusing them is a team that quietly stops having a quota.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetTeamQuotaRequest {
+    pub storage_limit_bytes: Option<i64>,
+}
+
+/// Hand a team to somebody.
+///
+/// By email rather than by user id, because the administrator doing this is reading a leavers list
+/// or a support ticket, not a database. The id is looked up server-side and the lookup failing is a
+/// 404 that names the problem — which is a better outcome than a valid-looking id that belongs to
+/// nobody.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetTeamOwnerRequest {
+    pub email: String,
+}
+
+/// Pause a team, or restart it. Authoritative, not a toggle: the caller sends the state it wants.
+///
+/// A toggle would depend on the console's copy of the team being current, and two administrators
+/// on the same screen would each undo the other. Sending the desired state makes a repeated request
+/// idempotent.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetTeamArchivedRequest {
+    pub archived: bool,
+}
+
 // ── Activity ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, ToSchema)]

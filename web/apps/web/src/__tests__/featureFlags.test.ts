@@ -12,6 +12,7 @@ import {
   FLAG_KEYS,
   allFlagsOff,
   assertEveryFlagPresent,
+  canTransferToTeams,
 } from '@/lib/featureFlags';
 
 function completePayload(overrides: Record<string, unknown> = {}) {
@@ -35,12 +36,25 @@ describe('featureFlags', () => {
   });
 
   /**
-   * There is exactly one flag. The system this replaces reached fifteen keys one defensible
-   * addition at a time; this fails the moment a second is declared, which is when someone should
-   * be deciding whether it earns its place rather than noticing later that it did not.
+   * The exact list, pinned. The system this replaces reached fifteen keys one defensible addition
+   * at a time; this fails the moment another is declared, which is when someone should be deciding
+   * whether it earns its place rather than noticing later that it did not. Updating this line is
+   * the moment to write down the argument — see the comment above `FLAG_KEYS`.
    */
-  it('declares one flag', () => {
-    expect([...FLAG_KEYS]).toEqual(['teamSpaces']);
+  it('declares exactly the flags the server does', () => {
+    expect([...FLAG_KEYS]).toEqual(['teamSpaces', 'teamFileTransfers']);
+  });
+
+  /**
+   * `teamFileTransfers` is meaningless without `teamSpaces`, and the server checks them in that
+   * order. Offering a transfer on the strength of the second alone would put "Move to a team
+   * space" in the Drive menu on a deployment with no teams.
+   */
+  it('offers transfers only when both flags are on', () => {
+    expect(canTransferToTeams({ teamSpaces: true, teamFileTransfers: true })).toBe(true);
+    expect(canTransferToTeams({ teamSpaces: true, teamFileTransfers: false })).toBe(false);
+    expect(canTransferToTeams({ teamSpaces: false, teamFileTransfers: true })).toBe(false);
+    expect(canTransferToTeams(allFlagsOff())).toBe(false);
   });
 
   /**

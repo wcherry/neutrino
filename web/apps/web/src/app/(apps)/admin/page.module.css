@@ -850,3 +850,29 @@
   font-weight: 500;
   font-size: 12px;
 }
+
+/* ── Teams tab ───────────────────────────────────────────────────────────── */
+
+.teamsToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  margin-bottom: 12px;
+}
+
+/* The search box is one input in a row with a count, so it takes the space the
+   count does not rather than the full width the form inputs assume. */
+.teamsToolbar .formInput {
+  max-width: 280px;
+}
+
+/* A team's owners, stacked — the role is not a slot, so there can be more than
+   one and they should not run together on a line. */
+.ownerCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+

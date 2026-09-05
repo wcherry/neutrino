@@ -1,4 +1,6 @@
-use crate::schema::{team_join_requests, team_members, team_page_versions, team_pages, teams};
+use crate::schema::{
+    team_file_shares, team_join_requests, team_members, team_page_versions, team_pages, teams,
+};
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
@@ -45,6 +47,13 @@ pub struct NewTeam {
     pub avatar_emoji: Option<String>,
     pub visibility: String,
     pub created_by: String,
+    /// The team's disk quota, in bytes. `None` is unlimited.
+    ///
+    /// Written at creation rather than left to a column default, because the column has none and
+    /// must not get one: a default would make `None` unreachable through an INSERT that omits the
+    /// field, and "unlimited" is a choice an administrator is allowed to make. See
+    /// [`DEFAULT_TEAM_QUOTA_BYTES`](crate::drive::teams::quota::DEFAULT_TEAM_QUOTA_BYTES).
+    pub storage_limit_bytes: Option<i64>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -208,4 +217,65 @@ pub struct NewTeamPageVersion {
     pub created_by: String,
     pub created_by_name: String,
     pub created_at: NaiveDateTime,
+}
+
+// ── Shared files ─────────────────────────────────────────────────────────────
+
+/// A personal file its owner has lent to a team (migration 00130).
+///
+/// The counterpart to a *move*, which is `files.team_id` and leaves no row anywhere: a moved file
+/// belongs to the team and is indistinguishable from one uploaded into it. A share leaves the file
+/// where it is and in its owner's hands, so it needs somewhere to say so — and somewhere to be
+/// deleted from when the owner takes it back.
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = team_file_shares)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct TeamFileShare {
+    pub id: String,
+    pub team_id: String,
+    pub file_id: String,
+    /// `viewer` | `editor`, in the Drive vocabulary rather than the six team roles — this is what
+    /// `get_effective_role` will return for every member of the team, and it is a ceiling: a team
+    /// Owner reading a file shared as `viewer` gets `viewer`.
+    pub role: String,
+    pub shared_by: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+/// The two roles a file may be lent at.
+///
+/// `owner` is deliberately not among them, for the reason `role_from_team_membership` gives for
+/// never returning it: a Drive owner may reshare a file and change its permissions, and lending a
+/// file to a team is not handing every member the authority to give it away.
+pub struct ShareRole;
+
+impl ShareRole {
+    pub const VIEWER: &'static str = "viewer";
+    pub const EDITOR: &'static str = "editor";
+
+    /// Parse an incoming role name, returning the canonical stored form.
+    ///
+    /// `None` for anything else — including `owner`, which is a real Drive role and the one this
+    /// deliberately will not grant, so it has to be rejected rather than fall through to a default.
+    pub fn parse(value: &str) -> Option<&'static str> {
+        match value {
+            Self::VIEWER => Some(Self::VIEWER),
+            Self::EDITOR => Some(Self::EDITOR),
+            _ => None,
+        }
+    }
+
+    /// The stronger of two lent roles.
+    ///
+    /// A file can be lent to two teams the same person is in, at different roles. Taking the
+    /// stronger is the only answer that does not depend on row order, and it matches what the two
+    /// shares actually said: one of the owner's decisions was that this person may edit.
+    pub fn stronger<'a>(a: &'a str, b: &'a str) -> &'a str {
+        if a == Self::EDITOR || b == Self::EDITOR {
+            Self::EDITOR
+        } else {
+            a
+        }
+    }
 }

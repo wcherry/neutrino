@@ -284,6 +284,40 @@ export interface TeamLibraryResponse {
   storageUsedBytes: number;
 }
 
+// Transfers (behind `teamFileTransfers` as well as `teamSpaces`)
+
+/** What a file may be lent to a team at. `owner` is deliberately not offered. */
+export type TeamShareRole = 'viewer' | 'editor';
+
+export interface MoveFileIntoTeamResponse {
+  file: TeamFile;
+  /**
+   * How many individual grants on the file stopped applying because of the move.
+   *
+   * A team file is governed by the team and by nothing else, so every personal share of it — and
+   * the mover's own ownership — is inert from the moment it lands. Show this before the move, not
+   * after: it is the number of people who are about to lose a file they could open this morning.
+   */
+  sharesNoLongerApplied: number;
+}
+
+export interface TeamSharedFile {
+  fileId: string;
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+  role: TeamShareRole;
+  /** The owner who lent it. Still the file's owner — a share is not a transfer. */
+  sharedBy: string;
+  sharedByName: string;
+  sharedAt: string;
+}
+
+export interface TeamSharedFileListResponse {
+  files: TeamSharedFile[];
+  total: number;
+}
+
 // ── Client ───────────────────────────────────────────────────────────────────
 
 const base = '/api/v1/drive/teams';
@@ -530,6 +564,63 @@ export const teamsApi = {
   async trashLibraryFile(teamId: string, fileId: string): Promise<void> {
     await request<void>(
       `${base}/${encodeURIComponent(teamId)}/library/files/${encodeURIComponent(fileId)}`,
+      { method: 'DELETE' }
+    );
+  },
+
+  // Transfers — behind `teamFileTransfers` as well as `teamSpaces`, so check both flags before
+  // offering either of these. A gated-off route answers 404, which is indistinguishable from a
+  // team that does not exist.
+
+  /**
+   * Move one of the caller's own My Drive files into the team's library, for good.
+   *
+   * Not `claimFile` under another name, even though the row it writes is the same: this is a
+   * decision rather than the second half of an upload. The file leaves My Drive, the team owns it,
+   * and every individual grant on it — the mover's own included — stops applying, which is what
+   * `sharesNoLongerApplied` counts. There is no route back; a team Editor can trash it.
+   *
+   * A file's encryption key is sealed to the people who hold it, not to a team, so a moved
+   * encrypted file has to have its key re-sealed to each member — see `shareFileKeyWithTeam` in
+   * the web app's `teamTransfer.ts`.
+   */
+  async moveFileIntoTeam(
+    teamId: string,
+    fileId: string,
+    folderId?: string
+  ): Promise<MoveFileIntoTeamResponse> {
+    return request<MoveFileIntoTeamResponse>(
+      `${base}/${encodeURIComponent(teamId)}/library/moves`,
+      { method: 'POST', body: JSON.stringify({ fileId, folderId }) }
+    );
+  },
+
+  /**
+   * Lend one of the caller's own My Drive files to the team, leaving it where it is.
+   *
+   * The file stays the caller's, keeps its own shares and keeps counting against their quota.
+   * Sharing the same file again changes the role rather than adding a second share.
+   */
+  async shareFileWithTeam(
+    teamId: string,
+    fileId: string,
+    role: TeamShareRole = 'viewer'
+  ): Promise<TeamSharedFile> {
+    return request<TeamSharedFile>(`${base}/${encodeURIComponent(teamId)}/shares`, {
+      method: 'POST',
+      body: JSON.stringify({ fileId, role }),
+    });
+  },
+
+  /** What members have lent to this team. Any member can read it. */
+  async listSharedFiles(teamId: string): Promise<TeamSharedFileListResponse> {
+    return request<TeamSharedFileListResponse>(`${base}/${encodeURIComponent(teamId)}/shares`);
+  },
+
+  /** Take a lend back. The owner who made it, or a team Owner/Admin. */
+  async unshareFileFromTeam(teamId: string, fileId: string): Promise<void> {
+    await request<void>(
+      `${base}/${encodeURIComponent(teamId)}/shares/${encodeURIComponent(fileId)}`,
       { method: 'DELETE' }
     );
   },

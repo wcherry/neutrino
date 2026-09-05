@@ -147,4 +147,8 @@ export type {
   TeamFile,
   TeamFolder,
   TeamLibraryResponse,
+  TeamShareRole,
+  TeamSharedFile,
+  TeamSharedFileListResponse,
+  MoveFileIntoTeamResponse,
 } from './teams';

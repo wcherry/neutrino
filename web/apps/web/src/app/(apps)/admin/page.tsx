@@ -21,11 +21,13 @@ import { adminApi, fontsApi } from '@neutrino/api-admin';
 import { ApiClientError } from '@neutrino/api-core';
 import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, FeatureFlag, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
 import { CreateUserDialog, ResetPasswordDialog, UserQuotaDialog } from './UserDialogs';
-import { MENU_SEPARATOR, UserActionsMenu } from './UserActionsMenu';
-import type { UserActionEntry } from './UserActionsMenu';
+import { MENU_SEPARATOR, RowActionsMenu } from './RowActionsMenu';
+import type { RowActionEntry } from './RowActionsMenu';
 import { PasswordPolicySection } from './PasswordPolicySection';
 import { WorkQueueTab } from './WorkQueueTab';
 import { formatBytes, formatLimit, usagePercent } from './bytes';
+import { TeamsTab } from './TeamsTab';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -439,7 +441,7 @@ function UsersTab() {
    * account state, so they are gathered behind the row's three-dot button
    * rather than spread across the column as inline buttons.
    */
-  const actionsFor = (u: AdminUser): UserActionEntry[] => {
+  const actionsFor = (u: AdminUser): RowActionEntry[] => {
     // A deleted account is on its way out, so the only thing on offer is
     // calling that back: the worker is about to erase it.
     if (u.deletedAt) {
@@ -775,7 +777,7 @@ function UsersTab() {
         </div>
       )}
       {menuFor && (
-        <UserActionsMenu
+        <RowActionsMenu
           x={menuFor.x}
           y={menuFor.y}
           entries={actionsFor(menuFor.user)}
@@ -1239,13 +1241,22 @@ type Tab =
   | 'disk'
   | 'services'
   | 'users'
+  | 'teams'
   | 'queue'
   | 'flags'
   | 'versions'
   | 'fonts'
   | 'jobs';
 
-const TABS: { id: Tab; label: string }[] = [
+/**
+ * A tab that only exists on some deployments.
+ *
+ * `flag` names the feature flag that has to be on. Teams is the first such tab and the reason the
+ * field exists: with `teamSpaces` off no team can be created or reached and the admin endpoint
+ * 404s, so the tab would render "failed to load" on a deployment that has deliberately not enabled
+ * the feature. Hiding it is the honest rendering of "this is not on here".
+ */
+const TABS: { id: Tab; label: string; flag?: 'teamSpaces' }[] = [
   { id: 'processes', label: 'Processes' },
   { id: 'disk', label: 'Disk Space' },
   { id: 'services', label: 'Services' },
@@ -1256,6 +1267,9 @@ const TABS: { id: Tab; label: string }[] = [
   // Next to Users, because it is the queue of things users have asked for and
   // acting on one lands back in that tab's data.
   { id: 'queue', label: 'Work Queue' },
+  // Beside Users, because a team's storage limit is the same kind of decision as a person's and an
+  // admin arriving to free up disk space has to look at both.
+  { id: 'teams', label: 'Teams', flag: 'teamSpaces' },
   { id: 'flags', label: 'Feature Flags' },
   { id: 'versions', label: 'Versions' },
   { id: 'fonts', label: 'Fonts' },
@@ -1266,6 +1280,8 @@ export default function AdminPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('processes');
+  const flags = useFeatureFlags();
+  const visibleTabs = TABS.filter((tab) => !tab.flag || flags[tab.flag]);
 
   // Guard: redirect non-admins
   if (!authLoading && !user?.isAdmin) {
@@ -1300,7 +1316,7 @@ export default function AdminPage() {
 
           {/* ── Tab bar ───────────────────────────────────────────────── */}
           <div className={styles.tabBar}>
-            {TABS.map((tab) => (
+            {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
                 className={`${styles.tabBtn} ${activeTab === tab.id ? styles.tabBtnActive : ''}`}
@@ -1322,6 +1338,9 @@ export default function AdminPage() {
           {activeTab === 'services' && <ServicesTab />}
           {activeTab === 'users' && <UsersTab />}
           {activeTab === 'queue' && <WorkQueueTab />}
+          {/* Guarded as well as hidden: the flag can go off while the tab is open, and rendering it
+              then would leave an admin looking at a panel whose every request 404s. */}
+          {activeTab === 'teams' && flags.teamSpaces && <TeamsTab />}
           {activeTab === 'flags' && <FeatureFlagsTab />}
           {activeTab === 'versions' && <VersionsTab />}
           {activeTab === 'fonts' && <FontsTab />}

@@ -22,6 +22,7 @@ use uuid::Uuid;
 use super::dto::*;
 use super::model::*;
 use super::repository::TeamsRepository;
+use super::quota::{TeamQuota, DEFAULT_TEAM_QUOTA_BYTES};
 use super::roles::{Role, TeamAction};
 use super::visibility::{JoinPolicy, Visibility};
 use crate::drive::activity::service::ActivityService;
@@ -37,6 +38,15 @@ use crate::shared::{ApiError, AuthenticatedUser};
 /// off is a navigation entry leading to a page that says a feature is missing. One feature, one
 /// switch: Team Spaces is on, or it is off.
 pub const FLAG_TEAM_SPACES: &str = "teamSpaces";
+
+/// The second flag, and the only one added beside `teamSpaces`.
+///
+/// It covers the two routes that reach *out* of a team, at a file with `team_id IS NULL` in a
+/// member's own My Drive: moving one in, and lending one without moving it. Every other team route
+/// only ever touches rows a team already owns, which is why one switch covered them; these two can
+/// give a team a claim on a personal file, and being able to close that without closing Team Spaces
+/// is worth a second boolean. See [`TeamsService::require_transfers`] for the ordering.
+pub const FLAG_TEAM_FILE_TRANSFERS: &str = "teamFileTransfers";
 
 /// The markdown a team's Home page is created with.
 ///
@@ -184,6 +194,32 @@ impl TeamsService {
         Ok((team, role))
     }
 
+    /// Both flags, `teamSpaces` first.
+    ///
+    /// The order is what makes the second flag safe to reason about. `teamSpaces` off has to answer
+    /// 404 whatever `teamFileTransfers` says, or a deployment with Team Spaces switched off would
+    /// still have two routes that take a team id and behave differently for a real one — which
+    /// leaks exactly the roadmap the 404 rule exists to keep. Checking `teamSpaces` first makes a
+    /// deployment with only `teamFileTransfers` on indistinguishable from one with neither.
+    fn require_transfers(&self) -> Result<(), ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+        self.gate.require(FLAG_TEAM_FILE_TRANSFERS)
+    }
+
+    /// The team's live occupancy against its limit.
+    ///
+    /// Recomputed from the file rows rather than read off `teams.storage_used_bytes`, for the same
+    /// reason `refresh_used_bytes` does it for a person: the stored number is a cache, a quota
+    /// decision is the one place where being a few files stale is the difference between refusing
+    /// a legitimate upload and admitting one that fills the disk, and recomputing self-heals a
+    /// counter that has drifted rather than leaving it wrong for ever.
+    fn quota(&self, team: &Team) -> Result<TeamQuota, ApiError> {
+        Ok(TeamQuota::new(
+            self.repo.recalculate_storage(&team.id)?,
+            team.storage_limit_bytes,
+        ))
+    }
+
     fn log(&self, team: &Team, user: &AuthenticatedUser, action: &str, detail: serde_json::Value) {
         // Logged against the team's id in the shared activity table with `resource_type` set to
         // `team`, so the existing retention, export and admin tooling covers team activity without
@@ -255,7 +291,14 @@ impl TeamsService {
         user: &AuthenticatedUser,
     ) -> Result<TeamResponse, ApiError> {
         self.gate.require(FLAG_TEAM_SPACES)?;
-        let (team, role) = self.authorize(team_id, user, TeamAction::ViewTeam)?;
+        let (mut team, role) = self.authorize(team_id, user, TeamAction::ViewTeam)?;
+        // Recomputed here, and only here, because this is what the team's Settings page reads its
+        // storage figure from. `storage_used_bytes` is maintained by every path that adds or
+        // removes a team file, but a permanent delete or a restore that happens through the
+        // ordinary Drive routes does not go through any of them — so the one read that displays
+        // the number as a fact is also the read that repairs it. `list_teams` deliberately does
+        // not: it is N teams, and a card in a list is not where anyone checks a quota.
+        team.storage_used_bytes = self.repo.recalculate_storage(&team.id)?;
         let member_count = self.repo.count_members(&team.id)?;
         Ok(TeamResponse::build(team, member_count, role.to_string()))
     }
@@ -300,6 +343,11 @@ impl TeamsService {
             avatar_emoji: req.avatar_emoji,
             visibility: visibility.as_str().to_string(),
             created_by: user.user_id.clone(),
+            // Every team starts with a limit rather than unlimited. A team that begins with no
+            // quota never acquires one by itself: somebody has to notice it, and the moment
+            // somebody notices is usually the moment the disk is full. An administrator raises it,
+            // or sets it to unlimited, from the console's Teams tab.
+            storage_limit_bytes: Some(DEFAULT_TEAM_QUOTA_BYTES),
             created_at: now,
             updated_at: now,
         })?;
@@ -1552,19 +1600,7 @@ impl TeamsService {
                     updated_at: f.updated_at.to_string(),
                 })
                 .collect(),
-            files: files
-                .into_iter()
-                .map(|f| TeamFileResponse {
-                    id: f.id,
-                    name: f.name,
-                    size_bytes: f.size_bytes,
-                    mime_type: f.mime_type,
-                    folder_id: f.folder_id,
-                    uploaded_by: f.user_id,
-                    created_at: f.created_at.to_string(),
-                    updated_at: f.updated_at.to_string(),
-                })
-                .collect(),
+            files: files.into_iter().map(Self::team_file_response).collect(),
             storage_used_bytes: team.storage_used_bytes,
         })
     }
@@ -1636,23 +1672,21 @@ impl TeamsService {
                 .ok_or_else(|| ApiError::bad_request("That folder is not in this team"))?;
         }
 
-        // The team's own quota, checked before the file joins it (phase 1's "storage quotas").
-        // The uploader's personal quota was already charged by the upload that created the file;
-        // this is the team's separate limit, which is what makes a team's storage the team's
-        // problem rather than whichever member happened to press upload.
-        if let Some(limit) = team.storage_limit_bytes {
-            if let Some(incoming) = self.repo.find_own_unclaimed_file(&req.file_id, &user.user_id)?
-            {
-                let used = self.repo.recalculate_storage(team_id)?;
-                if used + incoming.size_bytes > limit {
-                    return Err(ApiError::new(
-                        413,
-                        "TEAM_QUOTA_EXCEEDED",
-                        "This team has no room left. Delete something or raise the team's storage limit.",
-                    ));
-                }
-            }
-        }
+        // The team's own quota, checked before the file joins it. The uploader's personal quota was
+        // already charged by the upload that created the file; this is the team's separate limit,
+        // which is what makes a team's storage the team's problem rather than whichever member
+        // happened to press upload. See `teams::quota`.
+        //
+        // The file is read first so the check has a real size to work with — and so a file that is
+        // not the caller's to claim is a 404 before the quota is consulted, rather than a quota
+        // decision made about a file that does not exist.
+        let incoming = self
+            .repo
+            .find_own_unclaimed_file(&req.file_id, &user.user_id)?
+            .ok_or_else(|| {
+                ApiError::not_found("No file of yours with that id is available to move")
+            })?;
+        self.quota(&team)?.refuse(incoming.size_bytes)?;
 
         let now = Self::now();
         let file = self
@@ -1668,6 +1702,10 @@ impl TeamsService {
                 ApiError::not_found("No file of yours with that id is available to move")
             })?;
 
+        // Same as a move, for the same reason: a file that belongs to a team cannot go on being
+        // lent by the person who uploaded it. Reachable here because `claim_file` will take any
+        // untethered file of the caller's, not only one they uploaded a second ago.
+        self.repo.delete_all_shares_of_file(&req.file_id)?;
         // A team's meter counts the team's files, so it moves when a file joins the team.
         self.repo.recalculate_storage(team_id)?;
         self.log(
@@ -1677,16 +1715,7 @@ impl TeamsService {
             serde_json::json!({ "file": file.name, "sizeBytes": file.size_bytes }),
         );
 
-        Ok(TeamFileResponse {
-            id: file.id,
-            name: file.name,
-            size_bytes: file.size_bytes,
-            mime_type: file.mime_type,
-            folder_id: file.folder_id,
-            uploaded_by: file.user_id,
-            created_at: file.created_at.to_string(),
-            updated_at: file.updated_at.to_string(),
-        })
+        Ok(Self::team_file_response(file))
     }
 
     pub fn rename_library_file(
@@ -1720,16 +1749,7 @@ impl TeamsService {
             serde_json::json!({ "file": name }),
         );
 
-        Ok(TeamFileResponse {
-            id: file.id,
-            name: file.name,
-            size_bytes: file.size_bytes,
-            mime_type: file.mime_type,
-            folder_id: file.folder_id,
-            uploaded_by: file.user_id,
-            created_at: file.created_at.to_string(),
-            updated_at: file.updated_at.to_string(),
-        })
+        Ok(Self::team_file_response(file))
     }
 
     /// Trash a team file, into the same trash every other file goes to.
@@ -1758,6 +1778,622 @@ impl TeamsService {
             serde_json::json!({ "file": file.name }),
         );
         Ok(())
+    }
+
+    // ── Transfers: moving and sharing a personal file ─────────────────────────
+    //
+    // Both behind `teamFileTransfers` as well as `teamSpaces`, and both about the same file: one
+    // the caller owns, in their own My Drive. They differ in what happens to that ownership, which
+    // is the whole of the distinction and the reason the UI has to offer two things rather than
+    // one. A move gives the file to the team and cannot be undone from here. A share lends it and
+    // can be taken back.
+
+    /// Move a file out of the caller's My Drive and into a team's library.
+    ///
+    /// Mechanically the same claim `claim_file` performs as the second half of a team upload, and
+    /// it reuses the same repository call for exactly that reason: a file that arrives by being
+    /// moved must be indistinguishable afterwards from one uploaded into the team, or the library
+    /// would have two kinds of file in it and every later operation would have to ask which. What
+    /// differs is that this one is a decision rather than a mechanism, so it says more about what
+    /// it costs — see `shares_no_longer_applied` — and it clears the file's own outgoing team
+    /// shares, which a file that was never personal cannot have.
+    ///
+    /// Not reversible through this API. A file in a team is the team's, and handing it back would
+    /// be a question about who gets it — the original owner may have left, or may never have been a
+    /// member — that this phase does not answer. A team Editor can trash it, which is the ordinary
+    /// route for "this should not be here".
+    pub fn move_file_into_team(
+        &self,
+        team_id: &str,
+        req: MoveFileIntoTeamRequest,
+        user: &AuthenticatedUser,
+    ) -> Result<MoveFileIntoTeamResponse, ApiError> {
+        self.require_transfers()?;
+        // The same authority as uploading, because that is what this is from the team's side: a
+        // file appearing in its library. A Contributor may, a Viewer may not.
+        let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
+
+        if let Some(folder) = req.folder_id.as_deref() {
+            self.repo
+                .find_team_folder(team_id, folder)?
+                .ok_or_else(|| ApiError::bad_request("That folder is not in this team"))?;
+        }
+
+        // Read the file before moving it, so a file that is not the caller's to move is a 404
+        // before anything has happened, and so the team's quota is checked against a real size.
+        let incoming = self
+            .repo
+            .find_own_unclaimed_file(&req.file_id, &user.user_id)?
+            .ok_or_else(|| {
+                ApiError::not_found("No file of yours with that id is available to move")
+            })?;
+
+        self.quota(&team)?.refuse(incoming.size_bytes)?;
+
+        let shares_no_longer_applied = self
+            .repo
+            .count_other_permissions(&req.file_id, &user.user_id)?;
+
+        let now = Self::now();
+        let file = self
+            .repo
+            .claim_file_for_team(
+                &req.file_id,
+                &user.user_id,
+                team_id,
+                req.folder_id.as_deref(),
+                now,
+            )?
+            .ok_or_else(|| {
+                ApiError::not_found("No file of yours with that id is available to move")
+            })?;
+
+        // The file is a team's now, so any lend of it is a sentence with no subject — see
+        // `delete_all_shares_of_file`.
+        self.repo.delete_all_shares_of_file(&req.file_id)?;
+        self.repo.recalculate_storage(team_id)?;
+        self.log(
+            &team,
+            user,
+            "team.file_moved_in",
+            serde_json::json!({
+                "file": file.name,
+                "sizeBytes": file.size_bytes,
+                "sharesNoLongerApplied": shares_no_longer_applied,
+            }),
+        );
+
+        Ok(MoveFileIntoTeamResponse {
+            file: Self::team_file_response(file),
+            shares_no_longer_applied,
+        })
+    }
+
+    /// Lend a file the caller owns to a team, without moving it.
+    ///
+    /// The file stays in My Drive, stays the caller's, keeps every share it had and keeps counting
+    /// against the caller's own quota rather than the team's — nothing about the file changes at
+    /// all. What changes is that `get_effective_role` will now answer for the team's members, at
+    /// the role named here and no higher.
+    ///
+    /// Re-sharing at a different role edits the one row rather than adding a second, so the team's
+    /// access has one answer. Sharing a file that already belongs to a team is refused by the
+    /// "the caller's own, untethered" lookup: it is not the sharer's to lend, whoever uploaded it.
+    pub fn share_file_with_team(
+        &self,
+        team_id: &str,
+        req: ShareFileWithTeamRequest,
+        user: &AuthenticatedUser,
+    ) -> Result<TeamSharedFileResponse, ApiError> {
+        self.require_transfers()?;
+        // Adding to what the team can see is adding content to the team, so it takes the same role
+        // as putting a file in the library. That a Viewer cannot do it is deliberate: a Viewer
+        // reads the team and writes nothing to it, and a shared file is something every other
+        // member now sees on the team's Files page.
+        let (team, _) = self.authorize(team_id, user, TeamAction::UploadFile)?;
+
+        let role = ShareRole::parse(req.role.as_deref().unwrap_or(ShareRole::VIEWER))
+            .ok_or_else(|| ApiError::bad_request("A file is shared with a team as viewer or editor"))?;
+
+        let file = self
+            .repo
+            .find_own_unclaimed_file(&req.file_id, &user.user_id)?
+            .ok_or_else(|| {
+                ApiError::not_found("No file of yours with that id is available to share")
+            })?;
+
+        let now = Self::now();
+        let share = self.repo.upsert_file_share(
+            &Uuid::new_v4().to_string(),
+            team_id,
+            &req.file_id,
+            role,
+            &user.user_id,
+            now,
+        )?;
+
+        self.log(
+            &team,
+            user,
+            "team.file_shared",
+            serde_json::json!({ "file": file.name, "role": role }),
+        );
+
+        let (_, name, _) = self.identify(user)?;
+        Ok(TeamSharedFileResponse {
+            file_id: file.id,
+            name: file.name,
+            size_bytes: file.size_bytes,
+            mime_type: file.mime_type,
+            role: share.role,
+            shared_by: share.shared_by,
+            shared_by_name: name,
+            shared_at: share.created_at.to_string(),
+        })
+    }
+
+    /// What members have lent to this team.
+    ///
+    /// A read, so every role sees it — a Viewer's whole purpose is reading what the team has, and a
+    /// lent file is part of that. The listing resolves each row against the file it points at, so a
+    /// file that has since been trashed or moved into a team simply is not in the answer; there is
+    /// no cleanup pass and no row that renders as a broken link.
+    pub fn list_shared_files(
+        &self,
+        team_id: &str,
+        user: &AuthenticatedUser,
+    ) -> Result<TeamSharedFileListResponse, ApiError> {
+        self.require_transfers()?;
+        self.authorize(team_id, user, TeamAction::ViewTeam)?;
+
+        let files: Vec<TeamSharedFileResponse> = self
+            .repo
+            .list_team_file_shares(team_id)?
+            .into_iter()
+            .map(|(share, file, sharer_name)| TeamSharedFileResponse {
+                file_id: file.id,
+                name: file.name,
+                size_bytes: file.size_bytes,
+                mime_type: file.mime_type,
+                role: share.role,
+                // Falls back to the id rather than to an empty string: the account is gone, but
+                // "who lent this?" still has an answer an administrator can resolve.
+                shared_by_name: sharer_name.unwrap_or_else(|| share.shared_by.clone()),
+                shared_by: share.shared_by,
+                shared_at: share.created_at.to_string(),
+            })
+            .collect();
+
+        Ok(TeamSharedFileListResponse {
+            total: files.len() as i64,
+            files,
+        })
+    }
+
+    /// Take a lent file back, or turn one down.
+    ///
+    /// Two people may do this and for different reasons, which is why the check is not the file
+    /// matrix: the owner who lent it, because it is their file and a lend they can take back at any
+    /// time; and anyone who can manage the team's permissions, because a team gets to decide what
+    /// appears on its own Files page. Neither can touch the file itself — unsharing deletes a row
+    /// and nothing else, and the owner still has the file either way.
+    pub fn unshare_file_from_team(
+        &self,
+        team_id: &str,
+        file_id: &str,
+        user: &AuthenticatedUser,
+    ) -> Result<(), ApiError> {
+        self.require_transfers()?;
+        // Resolve rather than authorize: an owner taking their own file back is a read of the team
+        // as far as the team is concerned, and an archived team must not be able to hold on to
+        // someone's personal file. `authorize` would refuse both.
+        let (team, role) = self.resolve(team_id, user)?;
+
+        let share = self
+            .repo
+            .find_file_share(team_id, file_id)?
+            .ok_or_else(|| ApiError::not_found("That file is not shared with this team"))?;
+
+        if share.shared_by != user.user_id && !role.can(TeamAction::ManagePermissions) {
+            return Err(ApiError::forbidden(
+                "Only the person who shared this file, or a team admin, can remove it",
+            ));
+        }
+
+        self.repo.delete_file_share(team_id, file_id)?;
+        self.log(
+            &team,
+            user,
+            "team.file_unshared",
+            serde_json::json!({ "fileId": file_id }),
+        );
+        Ok(())
+    }
+
+    // ── Administration ───────────────────────────────────────────────────────
+    //
+    // Two methods reachable only from `/api/v1/admin/teams`, where the extractor is `AdminUser`.
+    // They are the one place in this module that does not resolve the caller's membership first,
+    // and that is the point: a deployment's administrator is not a member of every team on it and
+    // must not have to be to see that one of them is about to fill the disk. What they get is
+    // deliberately the *outside* of a team — its name, its size, its member count — and not its
+    // pages, its files or its activity, which stay behind membership.
+
+    /// Every live team with its true occupancy, for the console's Teams tab.
+    ///
+    /// Behind `teamSpaces` like the rest of the module: with the flag off no team can be created,
+    /// reached or written to, so a console listing them would be a page about nothing. It is not
+    /// behind `teamFileTransfers` — a quota is core Team Spaces, not part of the transfer flows.
+    pub fn admin_list_teams(
+        &self,
+        query: Option<&str>,
+        limit: i64,
+        offset: i64,
+    ) -> Result<AdminTeamListResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+
+        // Clamped rather than trusted: this is an admin route, but a page size is still a number
+        // arriving from a URL, and an unbounded one is an unbounded query.
+        let limit = limit.clamp(1, 200);
+        let offset = offset.max(0);
+
+        let rows = self.repo.list_teams_for_admin(query, limit, offset)?;
+
+        // The owners for the whole page in one query rather than one per row. A listing that costs
+        // a query per team gets slower as the thing it monitors gets worse, which is the wrong way
+        // round for a page an admin opens because something is going wrong.
+        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        let mut owners_by_team: std::collections::HashMap<String, Vec<AdminTeamOwner>> =
+            std::collections::HashMap::new();
+        for (team_id, user_id, email, name) in self.repo.list_owners_of_teams(&ids)? {
+            owners_by_team
+                .entry(team_id)
+                .or_default()
+                .push(AdminTeamOwner {
+                    user_id,
+                    email,
+                    name,
+                });
+        }
+
+        Ok(AdminTeamListResponse {
+            total: self.repo.count_teams_for_admin(query)?,
+            teams: rows
+                .into_iter()
+                .map(|r| {
+                    let quota = TeamQuota::new(r.used_bytes, r.storage_limit_bytes);
+                    AdminTeamResponse {
+                        // A team with no entry has no owners, which is a real state — the last
+                        // owner's account can be deleted out from under it — so it becomes an
+                        // empty list, not a missing team.
+                        owners: owners_by_team.remove(&r.id).unwrap_or_default(),
+                        id: r.id,
+                        name: r.name,
+                        slug: r.slug,
+                        visibility: r.visibility,
+                        created_by: r.created_by,
+                        archived: r.archived,
+                        member_count: r.member_count,
+                        storage_used_bytes: quota.used_bytes,
+                        storage_limit_bytes: quota.limit_bytes,
+                        storage_remaining_bytes: quota.remaining_bytes(),
+                        over_quota: quota.would_exceed(0),
+                        created_at: r.created_at.to_string(),
+                    }
+                })
+                .collect(),
+        })
+    }
+
+    /// Set or clear a team's disk quota.
+    ///
+    /// **Lowering a limit below what a team already stores is allowed**, and it does not touch a
+    /// byte. The team keeps every file it has and is refused the next one — which is the only
+    /// behaviour that lets an administrator say "this team has grown too far" without the sentence
+    /// meaning "delete some of their work". `over_quota` in the listing is how that state is
+    /// visible afterwards.
+    ///
+    /// An archived team can still have its quota changed: archiving pauses the team's own writes,
+    /// and a deployment's storage policy is not one of the team's writes.
+    pub fn admin_set_team_quota(
+        &self,
+        team_id: &str,
+        req: SetTeamQuotaRequest,
+        admin_id: &str,
+    ) -> Result<AdminTeamResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+
+        if let Some(limit) = req.storage_limit_bytes {
+            if limit < 0 {
+                return Err(ApiError::bad_request("A storage limit cannot be negative"));
+            }
+        }
+
+        let team = self
+            .repo
+            .find(team_id)?
+            .ok_or_else(|| ApiError::not_found("Team not found"))?;
+
+        if self
+            .repo
+            .set_storage_limit(team_id, req.storage_limit_bytes, Self::now())?
+            == 0
+        {
+            return Err(ApiError::not_found("Team not found"));
+        }
+
+        self.log_admin_action(
+            team_id,
+            admin_id,
+            "team.quota_changed",
+            serde_json::json!({
+                "from": team.storage_limit_bytes,
+                "to": req.storage_limit_bytes,
+            }),
+        );
+
+        self.admin_team_response(team_id)
+    }
+
+    /// Hand a team to somebody, and take it off whoever holds it now.
+    ///
+    /// A **transfer**, not an addition: the named person becomes the team's Owner and every
+    /// existing Owner is demoted to Admin. That is what an administrator means by "assign a new
+    /// owner" — the situation is nearly always that the previous one has left — and the alternative
+    /// reading, adding a second Owner, is something the team's own Members page already does for a
+    /// team that still has someone who can reach it. A team that does *not* is the case only this
+    /// route can fix.
+    ///
+    /// **Demoted to Admin rather than removed**, so the change is recoverable and non-destructive:
+    /// the previous Owner keeps every authority except deleting the team and handing it on, and a
+    /// transfer made in error is one click back. Removing them would be a second decision, and one
+    /// this route has no way to know is wanted.
+    ///
+    /// The new Owner does not have to be a member — that is the point when the old one is gone —
+    /// and is added as one if they are not. They must have an account: an email that matches
+    /// nobody is a 404 rather than an invitation, because a team owned by an address nobody has
+    /// claimed is the same ownerless state this is meant to end.
+    ///
+    /// An archived team can still be handed over. Archiving pauses the team's own writes; deciding
+    /// who is answerable for it is not one of them, and a team frozen with no owner would have
+    /// nobody able to unfreeze it.
+    pub fn admin_set_team_owner(
+        &self,
+        team_id: &str,
+        req: SetTeamOwnerRequest,
+        admin_id: &str,
+    ) -> Result<AdminTeamResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+
+        // Existence only — nothing about the team decides this, not even its archived state. The
+        // check is here so that handing over a team that does not exist is a 404 before an account
+        // lookup has run and before any membership row is written.
+        self.repo
+            .find(team_id)?
+            .ok_or_else(|| ApiError::not_found("Team not found"))?;
+
+        let email = req.email.trim().to_lowercase();
+        if email.is_empty() {
+            return Err(ApiError::bad_request("An owner needs an email address"));
+        }
+        let (user_id, user_email, user_name) = self
+            .repo
+            .find_user_by_email(&email)?
+            .ok_or_else(|| ApiError::not_found("No account has that email address"))?;
+
+        let now = Self::now();
+        let previous: Vec<String> = self
+            .repo
+            .list_owners_of_teams(&[team_id.to_string()])?
+            .into_iter()
+            .map(|(_, id, _, _)| id)
+            .collect();
+
+        // Demote first, then promote. The other order would briefly leave the new Owner among the
+        // "existing owners" to demote — and the guard against that would be a filter that has to
+        // be right, rather than an ordering that cannot be wrong.
+        for owner_id in &previous {
+            if owner_id != &user_id {
+                self.repo
+                    .update_member_role(team_id, owner_id, Role::Admin.as_str(), now)?;
+            }
+        }
+
+        if self.repo.find_member(team_id, &user_id)?.is_some() {
+            self.repo
+                .update_member_role(team_id, &user_id, Role::Owner.as_str(), now)?;
+        } else {
+            self.repo.insert_member(&NewTeamMember {
+                id: Uuid::new_v4().to_string(),
+                team_id: team_id.to_string(),
+                user_id: user_id.clone(),
+                user_email,
+                user_name: user_name.clone(),
+                role: Role::Owner.as_str().to_string(),
+                added_by: admin_id.to_string(),
+                created_at: now,
+                updated_at: now,
+            })?;
+        }
+
+        self.log_admin_action(
+            team_id,
+            admin_id,
+            "team.owner_transferred",
+            serde_json::json!({ "to": user_name, "demoted": previous.len() }),
+        );
+
+        self.admin_team_response(team_id)
+    }
+
+    /// Pause a team, or restart it.
+    ///
+    /// The same archive an Owner can perform from the team's own Settings, reachable by an
+    /// administrator for the case that motivates the whole file: a team whose Owners are all gone
+    /// and which therefore has nobody able to archive it.
+    ///
+    /// Idempotent by construction — the caller sends the state it wants rather than a toggle — so
+    /// two administrators on the same screen cannot each undo the other.
+    pub fn admin_set_team_archived(
+        &self,
+        team_id: &str,
+        req: SetTeamArchivedRequest,
+        admin_id: &str,
+    ) -> Result<AdminTeamResponse, ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+
+        let team = self
+            .repo
+            .find(team_id)?
+            .ok_or_else(|| ApiError::not_found("Team not found"))?;
+
+        // Nothing to do, and nothing to log: an audit trail full of "archived an archived team"
+        // is an audit trail nobody reads.
+        if team.is_archived() == req.archived {
+            return self.admin_team_response(team_id);
+        }
+
+        self.repo.update_team(
+            team_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(req.archived),
+            Self::now(),
+        )?;
+
+        self.log_admin_action(
+            team_id,
+            admin_id,
+            if req.archived {
+                "team.archived"
+            } else {
+                "team.restored"
+            },
+            serde_json::json!({ "by": "administrator" }),
+        );
+
+        self.admin_team_response(team_id)
+    }
+
+    /// Delete a team, as its Owner could.
+    ///
+    /// Soft, exactly as [`Self::delete_team`] is: the row is marked and the pages and files that
+    /// cascade off it survive, so a deletion made in error is recoverable from the database. It is
+    /// not recoverable from *this console* — nothing here lists deleted teams — and that asymmetry
+    /// is deliberate rather than an omission: an undo button would make this a routine action, and
+    /// it is not one.
+    ///
+    /// Reachable for a team whose Owners have all gone, which is the case the member-facing route
+    /// cannot serve: `delete_team` requires an Owner, and an ownerless team has none.
+    pub fn admin_delete_team(&self, team_id: &str, admin_id: &str) -> Result<(), ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+
+        let team = self
+            .repo
+            .find(team_id)?
+            .ok_or_else(|| ApiError::not_found("Team not found"))?;
+
+        // Logged *before* the delete. The entry is written against the team's id in the shared
+        // activity table, and writing it after would mean a failure between the two left a team
+        // gone with no record of who removed it.
+        self.log_admin_action(
+            team_id,
+            admin_id,
+            "team.deleted",
+            serde_json::json!({ "name": team.name, "by": "administrator" }),
+        );
+        self.repo.soft_delete_team(team_id, Self::now())
+    }
+
+    /// One team in the console's shape, read back after a write.
+    ///
+    /// Read back rather than assembled from what was just sent, so the response reflects what the
+    /// database actually holds — including the parts the write did not touch, like the owner list
+    /// after a quota change or the storage figure after a transfer.
+    fn admin_team_response(&self, team_id: &str) -> Result<AdminTeamResponse, ApiError> {
+        let team = self
+            .repo
+            .find(team_id)?
+            .ok_or_else(|| ApiError::not_found("Team not found"))?;
+        let quota = TeamQuota::new(
+            self.repo.recalculate_storage(team_id)?,
+            team.storage_limit_bytes,
+        );
+        Ok(AdminTeamResponse {
+            owners: self
+                .repo
+                .list_owners_of_teams(&[team_id.to_string()])?
+                .into_iter()
+                .map(|(_, user_id, email, name)| AdminTeamOwner {
+                    user_id,
+                    email,
+                    name,
+                })
+                .collect(),
+            id: team.id,
+            name: team.name,
+            slug: team.slug,
+            visibility: team.visibility,
+            created_by: team.created_by,
+            archived: team.archived_at.is_some(),
+            member_count: self.repo.count_members(team_id)?,
+            storage_used_bytes: quota.used_bytes,
+            storage_limit_bytes: quota.limit_bytes,
+            storage_remaining_bytes: quota.remaining_bytes(),
+            over_quota: quota.would_exceed(0),
+            created_at: team.created_at.to_string(),
+        })
+    }
+
+    /// Record an administrator's action in the team's own activity feed.
+    ///
+    /// The team's feed, where its members will see it, rather than an admin-only log: an
+    /// administrator changing a team's quota, its owner or its existence is something that happened
+    /// *to* the team, and finding out by hitting the consequence is worse than reading it.
+    ///
+    /// Written directly rather than through [`Self::log`], which takes an `AuthenticatedUser` for
+    /// its email — an `AdminUser` route does not carry one, and the actor is recorded as
+    /// "administrator" rather than as a person for the same reason the entry exists: what the team
+    /// needs to know is that this came from outside the team.
+    fn log_admin_action(
+        &self,
+        team_id: &str,
+        admin_id: &str,
+        action: &str,
+        detail: serde_json::Value,
+    ) {
+        if let Err(e) = self.activity.log_with_context(
+            team_id,
+            admin_id,
+            "administrator",
+            action,
+            Some(detail),
+            Some("team"),
+            None,
+            None,
+        ) {
+            // Activity is a record of the write, not part of it — the same rule `log` follows.
+            tracing::warn!("failed to log admin team action {}: {:?}", action, e);
+        }
+    }
+
+    /// The one mapping from a stored file row to the library's wire shape.
+    fn team_file_response(file: crate::drive::storage::model::FileRecord) -> TeamFileResponse {
+        TeamFileResponse {
+            id: file.id,
+            name: file.name,
+            size_bytes: file.size_bytes,
+            mime_type: file.mime_type,
+            folder_id: file.folder_id,
+            uploaded_by: file.user_id,
+            created_at: file.created_at.to_string(),
+            updated_at: file.updated_at.to_string(),
+        }
     }
 }
 

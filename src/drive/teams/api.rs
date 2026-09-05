@@ -861,6 +861,129 @@ pub async fn trash_library_file(
     Ok(HttpResponse::NoContent().finish())
 }
 
+// ── Transfers ────────────────────────────────────────────────────────────────
+//
+// The four routes behind the second flag, `teamFileTransfers`, and the only ones here that touch a
+// file outside a team. All four answer 404 when either flag is off — `teamSpaces` is checked first,
+// so a deployment with only the transfer flag on is indistinguishable from one with neither.
+
+/// Move a file out of the caller's My Drive and into this team's library.
+///
+/// Irreversible through the API: from the move on, the file is the team's, and every individual
+/// grant on it — including the mover's own ownership — stops applying. The response says how many
+/// those were.
+#[utoipa::path(
+    post,
+    path = "/api/v1/drive/teams/{teamId}/library/moves",
+    params(("teamId" = String, Path, description = "Team id")),
+    request_body = MoveFileIntoTeamRequest,
+    responses(
+        (status = 200, description = "The file, now the team's", body = MoveFileIntoTeamResponse),
+        (status = 400, description = "That folder is not in this team"),
+        (status = 403, description = "The caller's role cannot add to this team's library"),
+        (status = 404, description = "No file of the caller's with that id is available to move, or transfers are not enabled"),
+        (status = 413, description = "The team has no room for the file"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[post("/{team_id}/library/moves")]
+pub async fn move_file_into_team(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<String>,
+    body: web::Json<MoveFileIntoTeamRequest>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<MoveFileIntoTeamResponse>, ApiError> {
+    Ok(web::Json(state.service.move_file_into_team(
+        &path.into_inner(),
+        body.into_inner(),
+        &user,
+    )?))
+}
+
+/// Lend a file the caller owns to this team, leaving it in their My Drive.
+///
+/// Sharing the same file again changes the role rather than adding a second share.
+#[utoipa::path(
+    post,
+    path = "/api/v1/drive/teams/{teamId}/shares",
+    params(("teamId" = String, Path, description = "Team id")),
+    request_body = ShareFileWithTeamRequest,
+    responses(
+        (status = 200, description = "The share", body = TeamSharedFileResponse),
+        (status = 400, description = "A role other than viewer or editor"),
+        (status = 403, description = "The caller's role cannot add to this team"),
+        (status = 404, description = "No file of the caller's with that id is available to share, or transfers are not enabled"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[post("/{team_id}/shares")]
+pub async fn share_file_with_team(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<String>,
+    body: web::Json<ShareFileWithTeamRequest>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<TeamSharedFileResponse>, ApiError> {
+    Ok(web::Json(state.service.share_file_with_team(
+        &path.into_inner(),
+        body.into_inner(),
+        &user,
+    )?))
+}
+
+/// The files members have lent to this team, newest first.
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/teams/{teamId}/shares",
+    params(("teamId" = String, Path, description = "Team id")),
+    responses(
+        (status = 200, description = "Files shared with this team", body = TeamSharedFileListResponse),
+        (status = 404, description = "No such team, or transfers are not enabled"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[get("/{team_id}/shares")]
+pub async fn list_shared_files(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<String>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<TeamSharedFileListResponse>, ApiError> {
+    Ok(web::Json(
+        state.service.list_shared_files(&path.into_inner(), &user)?,
+    ))
+}
+
+/// Stop sharing a file with this team. The owner who lent it, or a team admin.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/drive/teams/{teamId}/shares/{fileId}",
+    params(
+        ("teamId" = String, Path, description = "Team id"),
+        ("fileId" = String, Path, description = "File id"),
+    ),
+    responses(
+        (status = 204, description = "No longer shared"),
+        (status = 403, description = "Neither the sharer nor a team admin"),
+        (status = 404, description = "That file is not shared with this team"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[delete("/{team_id}/shares/{file_id}")]
+pub async fn unshare_file_from_team(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<(String, String)>,
+    user: AuthenticatedUser,
+) -> Result<HttpResponse, ApiError> {
+    let (team_id, file_id) = path.into_inner();
+    state
+        .service
+        .unshare_file_from_team(&team_id, &file_id, &user)?;
+    Ok(HttpResponse::NoContent().finish())
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/teams")
@@ -892,9 +1015,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(list_activity)
             .service(list_library)
             .service(create_library_folder)
+            .service(move_file_into_team)
             .service(claim_library_file)
             .service(rename_library_file)
             .service(trash_library_file)
+            .service(unshare_file_from_team)
+            .service(share_file_with_team)
+            .service(list_shared_files)
             .service(list_teams)
             .service(create_team)
             .service(get_team)
@@ -936,6 +1063,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         claim_library_file,
         rename_library_file,
         trash_library_file,
+        move_file_into_team,
+        share_file_with_team,
+        list_shared_files,
+        unshare_file_from_team,
     ),
     components(schemas(
         TeamResponse,
@@ -966,10 +1097,15 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         CreateTeamFolderRequest,
         ClaimFileRequest,
         RenameTeamFileRequest,
+        MoveFileIntoTeamRequest,
+        MoveFileIntoTeamResponse,
+        ShareFileWithTeamRequest,
+        TeamSharedFileResponse,
+        TeamSharedFileListResponse,
     )),
     tags((
         name = "drive-teams",
-        description = "Team Spaces: a Team owns its members, its wiki pages, its file library, its activity and its storage. Membership decides access to everything beneath a team, and a private team a caller has no role in answers 404 rather than 403 — whether it exists is itself something membership decides. `visibility` is the one exception and the only thing that relaxes it: an `organization` team is discoverable by any signed-in user and joined by adding yourself, and an `invite_only` team is discoverable and joined by asking. Discovery is confined to GET /teams/discoverable, which returns a summary rather than the members' view — every other route still requires membership. Every route here is behind the `teamSpaces` feature flag and answers 404 when it is off."
+        description = "Team Spaces: a Team owns its members, its wiki pages, its file library, its activity and its storage. Membership decides access to everything beneath a team, and a private team a caller has no role in answers 404 rather than 403 — whether it exists is itself something membership decides. `visibility` is the one exception and the only thing that relaxes it: an `organization` team is discoverable by any signed-in user and joined by adding yourself, and an `invite_only` team is discoverable and joined by asking. Discovery is confined to GET /teams/discoverable, which returns a summary rather than the members' view — every other route still requires membership. Every route here is behind the `teamSpaces` feature flag and answers 404 when it is off. The four transfer routes — POST /{teamId}/library/moves and the /{teamId}/shares family — need `teamFileTransfers` as well, because they are the only ones that touch a file outside a team: a move gives a personal file to the team for good, and a share lends one without moving it, revocably. `teamSpaces` is checked first, so a deployment with only `teamFileTransfers` on behaves exactly like one with neither."
     )),
     security(("bearer_auth" = []))
 )]
@@ -1092,6 +1228,34 @@ mod routing {
         assert_eq!(resp.status(), 404);
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["error"]["message"], "Team not found");
+    }
+
+    /// `/{team_id}/shares/{file_id}` must reach its own handler rather than being matched as the
+    /// collection path — the same hazard the join-request routes carry, and unobservable from the
+    /// e2e suite because both flags are off there and everything answers 404 alike.
+    #[actix_web::test]
+    async fn the_share_routes_do_not_shadow_each_other() {
+        let (state, ts) = app_state();
+        let token = bearer(&ts);
+        let app = test::init_service(
+            App::new()
+                .app_data(state)
+                .app_data(ts.clone())
+                .configure(configure),
+        )
+        .await;
+
+        let req = test::TestRequest::delete()
+            .uri("/teams/t1/shares/f1")
+            .insert_header(("Authorization", token))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+
+        // 404 from the gate — `teamFileTransfers` is off in this fixture — rather than 405 from a
+        // route that only accepts the collection path, or an empty body from no route at all.
+        assert_eq!(resp.status(), 404);
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["error"]["message"], "Not found");
     }
 
     /// The join-request routes nest three deep under the same `{team_id}`, so they carry the same

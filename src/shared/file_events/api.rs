@@ -200,6 +200,8 @@ mod tests {
     use crate::auth::{repository::AuthRepository, service::AuthService};
     use crate::drive::encryption::repository::EncryptionRepository;
     use crate::drive::filesystem::repository::FilesystemRepository;
+    use crate::drive::feature_flags::gate::FeatureGate;
+    use crate::drive::feature_flags::repository::FeatureFlagsRepository;
     use crate::drive::permissions::model::NewPermissionRecord;
     use crate::drive::permissions::repository::PermissionsRepository;
     use crate::drive::permissions::service::PermissionsService;
@@ -254,11 +256,13 @@ mod tests {
         ));
         let permissions_repo_for_assertions = PermissionsRepository::new(pool.clone());
         let permissions_repo = Arc::new(PermissionsRepository::new(pool.clone()));
+        let feature_gate = FeatureGate::new(Arc::new(FeatureFlagsRepository::new(pool.clone())));
         let permissions_service = Arc::new(PermissionsService::new(
             permissions_repo,
             workspace_service,
             encryption_repo,
             auth_service,
+            feature_gate,
         ));
 
         let storage_repo_for_assertions = StorageRepository::new(pool.clone());

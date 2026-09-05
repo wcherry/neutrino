@@ -446,3 +446,40 @@
   font-style: italic;
   color: var(--color-text-secondary);
 }
+
+/* The "Shared with this team" heading, between the library list and the lent files. Its own rule
+   rather than reusing .pageHeader: this is a section inside a page, not the page's own header, and
+   it carries a line of explanation the page header does not. */
+.sharedHeading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-3);
+}
+
+/* The Storage panel on the Settings page. Sits between the saved settings and
+   the danger zone, and reads as a report rather than a form — the limit is an
+   administrator's to set, and a bordered read-only block says that more
+   plainly than a disabled input would. */
+.storageSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.storageFigures {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.storageUsed {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
