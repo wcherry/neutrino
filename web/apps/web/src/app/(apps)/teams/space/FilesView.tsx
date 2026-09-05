@@ -9,32 +9,39 @@
  * the team. Threading a team id through the upload endpoint instead would have meant a second
  * upload path with its own encryption and quota handling, which is the parallel copy the issue's
  * success criteria rule out.
+ *
+ * The listing is `FileGrid`, the same component every Drive view renders, for the same reason the
+ * upload is the same call: a team file **is** a Drive file — a row in `files` scoped by `team_id` —
+ * and the hand-written list it used to have was a second, poorer answer to a question Drive had
+ * already answered. What that buys is not cosmetic: the Large grid / Small grid / Detailed list
+ * selector, the type-filter chips, the sort bar, right-click, and one mapping (`drive/gridItems`)
+ * deciding what a file's icon, size and date look like everywhere.
+ *
+ * The chips filter **client-side** here, unlike My Drive, which sends its chip to the server as
+ * `?type=`: the library endpoint takes no type parameter and returns the folder in one response, so
+ * there is nothing to page and `FileGrid`'s own pass over the items is the whole answer.
  */
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ChevronRight,
-  File as FileIcon,
-  Folder,
-  FolderPlus,
-  Trash2,
-  Upload,
-  X,
-} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ChevronRight, Folder, FolderPlus, Trash2, Upload, X } from 'lucide-react';
 import {
   AlertDialog,
   Button,
   EmptyState,
+  FileGrid,
   Heading,
   Modal,
   ModalBody,
   ModalFooter,
   ModalHeader,
-  Spinner,
   Text,
   TextInput,
   useToast,
+  type GridItem,
+  type SortDir,
+  type SortField,
 } from '@neutrino/ui';
 import {
   authApi,
@@ -44,19 +51,99 @@ import {
   type Team,
   type TeamFile,
   type TeamFolder,
+  type TeamSharedFile,
 } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { canTransferToTeams } from '@/lib/featureFlags';
+import {
+  sortEntries,
+  teamFileToGridItem,
+  teamFolderToGridItem,
+  teamSharedFileToGridItem,
+} from '../../drive/gridItems';
+import { routeForFile } from '../../drive/routeForFile';
 import { formatBytes } from '../../admin/bytes';
 import { roleCan, teamCan } from '../permissions';
+import menuStyles from '../../drive/FileContextMenu.module.css';
 import styles from './space.module.css';
 
 const LOCKED_MESSAGE =
   'Your encryption key is locked, so the file could not be encrypted. Unlock it in Settings → Security and try again.';
 
+interface ContextMenuState {
+  id: string;
+  name: string;
+  /** Which listing the row came from — the two offer different actions. */
+  source: 'library' | 'shared';
+  x: number;
+  y: number;
+}
+
+/**
+ * The row menu, built the way `DocumentLibrary` builds its own: a handful of actions over the
+ * shared context-menu stylesheet, rather than `FileContextMenu`, which is a `FileItem`'s menu and
+ * offers eight things a team row cannot do (star, tags, personal move, copy link).
+ */
+function RowMenu({
+  x,
+  y,
+  label,
+  onClose,
+  onAction,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  onClose: () => void;
+  onAction: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className={menuStyles.menu}
+      style={{ left: Math.min(x, window.innerWidth - 200), top: Math.min(y, window.innerHeight - 120) }}
+      role="menu"
+      aria-label="File options"
+    >
+      <button
+        type="button"
+        className={[menuStyles.item, menuStyles.danger].join(' ')}
+        role="menuitem"
+        onClick={() => {
+          onAction();
+          onClose();
+        }}
+      >
+        <span className={menuStyles.itemIcon}>
+          {label === 'Stop sharing' ? <X size={14} /> : <Trash2 size={14} />}
+        </span>
+        {label}
+      </button>
+    </div>
+  );
+}
+
 export function FilesView({ team }: { team: Team }) {
   const qc = useQueryClient();
+  const router = useRouter();
   const currentUser = useUser();
   const { success, error: toastError } = useToast();
   const fileInput = useRef<HTMLInputElement | null>(null);
@@ -68,8 +155,14 @@ export function FilesView({ team }: { team: Team }) {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState('');
   const [pendingDelete, setPendingDelete] = useState<TeamFile | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
-  const { data, isLoading } = useQuery({
+  // The library endpoint takes no sort parameters, so the order is decided here — as it is on
+  // Recent, Starred and Shared with me, which are in the same position.
+  const [sortBy, setSortBy] = useState<SortField>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['team-library', team.id, folderId ?? null],
     queryFn: () => teamsApi.listLibrary(team.id, folderId),
   });
@@ -129,7 +222,7 @@ export function FilesView({ team }: { team: Team }) {
   });
 
   // Files members have lent to the team without giving them away (issue #185). A separate query and
-  // a separate section, deliberately: a lent file is not in the library, does not count against the
+  // a separate grid, deliberately: a lent file is not in the library, does not count against the
   // team's meter, and is still somebody's to take back — folding it into the list above would make
   // all three invisible.
   const transfersOn = canTransferToTeams(useFeatureFlags());
@@ -154,9 +247,64 @@ export function FilesView({ team }: { team: Team }) {
   // somebody's personal file inside it. The server takes the same view.
   const canManageShares = roleCan(team.userRole, 'managePermissions');
 
-  const folders = data?.folders ?? [];
-  const files = data?.files ?? [];
-  const shared = sharedData?.files ?? [];
+  const folders = useMemo(() => data?.folders ?? [], [data]);
+  const files = useMemo(() => data?.files ?? [], [data]);
+  const shared = useMemo(() => sharedData?.files ?? [], [sharedData]);
+
+  // Folders first, as on My Drive; each group ordered by the current sort.
+  const items: GridItem[] = useMemo(
+    () => [
+      ...sortEntries(folders, sortBy, sortDir).map(teamFolderToGridItem),
+      ...sortEntries(files, sortBy, sortDir).map(teamFileToGridItem),
+    ],
+    [folders, files, sortBy, sortDir]
+  );
+
+  // A share has one date, `sharedAt`, and it stands in for both — so "newest" and "recently
+  // modified" mean the same thing here rather than one of them meaning nothing.
+  const sharedItems: GridItem[] = useMemo(
+    () =>
+      sortEntries(
+        shared.map((f) => ({ ...f, createdAt: f.sharedAt, updatedAt: f.sharedAt })),
+        sortBy,
+        sortDir
+      ).map(teamSharedFileToGridItem),
+    [shared, sortBy, sortDir]
+  );
+
+  function openLibraryItem(item: GridItem) {
+    if (item.kind === 'folder') {
+      const folder = folders.find((f) => f.id === item.id);
+      if (folder) setTrail([...trail, folder]);
+      return;
+    }
+    const file = files.find((f) => f.id === item.id);
+    // No preview fallback: `PreviewModal` takes a `FileItem`, which a team row is not, and a file
+    // with no editor is reached from the team's Drive listing like any other.
+    if (file) routeForFile(file, router, { onPreviewFallback: () => {} });
+  }
+
+  function openSharedItem(item: GridItem) {
+    const file = shared.find((f) => f.fileId === item.id);
+    if (file) {
+      routeForFile({ id: file.fileId, name: file.name, mimeType: file.mimeType }, router, {
+        onPreviewFallback: () => {},
+      });
+    }
+  }
+
+  function openMenu(source: 'library' | 'shared', item: GridItem, e: React.MouseEvent) {
+    e.preventDefault();
+    setContextMenu({ id: item.id, name: item.name, source, x: e.clientX, y: e.clientY });
+  }
+
+  const menuFile: TeamFile | undefined =
+    contextMenu?.source === 'library' ? files.find((f) => f.id === contextMenu.id) : undefined;
+  const menuShare: TeamSharedFile | undefined =
+    contextMenu?.source === 'shared' ? shared.find((f) => f.fileId === contextMenu.id) : undefined;
+  const menuIsActionable =
+    (menuFile != null && canDelete) ||
+    (menuShare != null && (canManageShares || menuShare.sharedBy === currentUser?.id));
 
   return (
     <>
@@ -214,57 +362,35 @@ export function FilesView({ team }: { team: Team }) {
         </div>
       )}
 
-      {isLoading ? (
-        <div className={styles.loading}>
-          <Spinner size="md" />
-        </div>
-      ) : folders.length === 0 && files.length === 0 ? (
-        <EmptyState
-          icon={Folder}
-          title={trail.length > 0 ? 'This folder is empty' : 'No files yet'}
-          description="Files uploaded here belong to the team, not to whoever uploaded them."
-        />
-      ) : (
-        <div className={styles.list}>
-          {folders.map((folder) => (
-            <div key={folder.id} className={styles.row}>
-              <Folder size={16} />
-              <button
-                type="button"
-                className={styles.rowButton}
-                onClick={() => setTrail([...trail, folder])}
-              >
-                <span className={styles.rowTitle}>{folder.name}</span>
-                <span className={styles.rowMeta}>Folder</span>
-              </button>
-            </div>
-          ))}
-          {files.map((file) => (
-            <div key={file.id} className={styles.row}>
-              <FileIcon size={16} />
-              <div className={styles.rowMain}>
-                <span className={styles.rowTitle}>{file.name}</span>
-                <span className={styles.rowMeta}>
-                  {formatBytes(file.sizeBytes)} · added{' '}
-                  {new Date(file.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-              {canDelete && (
-                <div className={styles.rowActions}>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label={`Delete ${file.name}`}
-                    onClick={() => setPendingDelete(file)}
-                  >
-                    <Trash2 size={16} />
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      <FileGrid
+        items={items}
+        isLoading={isLoading}
+        isError={isError}
+        showFilter
+        onItemClick={openLibraryItem}
+        onItemMenuOpen={canDelete ? (item, e) => openMenu('library', item, e) : undefined}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onSortChange={(field, dir) => {
+          setSortBy(field);
+          setSortDir(dir);
+        }}
+        totalCount={isLoading ? undefined : folders.length + files.length}
+        emptyState={
+          isError ? (
+            <EmptyState
+              title="Could not load the team's files"
+              description="There was an error loading this team's library."
+            />
+          ) : (
+            <EmptyState
+              icon={Folder}
+              title={trail.length > 0 ? 'This folder is empty' : 'No files yet'}
+              description="Files uploaded here belong to the team, not to whoever uploaded them."
+            />
+          )
+        }
+      />
 
       {/* Only shown when there is something in it. An empty "Shared with this team" heading on
           every team's Files page would advertise a feature rather than report a fact. */}
@@ -278,34 +404,33 @@ export function FilesView({ team }: { team: Team }) {
               These stay in their owner&apos;s Drive. The owner can stop sharing them at any time.
             </Text>
           </div>
-          <div className={styles.list}>
-            {shared.map((file) => (
-              <div key={file.fileId} className={styles.row}>
-                <FileIcon size={16} />
-                <div className={styles.rowMain}>
-                  <span className={styles.rowTitle}>{file.name}</span>
-                  <span className={styles.rowMeta}>
-                    {formatBytes(file.sizeBytes)} · shared by {file.sharedByName} ·{' '}
-                    {file.role === 'editor' ? 'can edit' : 'can view'}
-                  </span>
-                </div>
-                {(canManageShares || file.sharedBy === currentUser?.id) && (
-                  <div className={styles.rowActions}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-label={`Stop sharing ${file.name}`}
-                      loading={unshare.isPending}
-                      onClick={() => unshare.mutate(file.fileId)}
-                    >
-                      <X size={16} />
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+          <FileGrid
+            items={sharedItems}
+            onItemClick={openSharedItem}
+            onItemMenuOpen={(item, e) => openMenu('shared', item, e)}
+            showSizeColumn
+            sortBy={sortBy}
+            sortDir={sortDir}
+            onSortChange={(field, dir) => {
+              setSortBy(field);
+              setSortDir(dir);
+            }}
+            totalCount={sharedItems.length}
+          />
         </>
+      )}
+
+      {contextMenu && menuIsActionable && (
+        <RowMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          label={menuShare ? 'Stop sharing' : 'Move to trash'}
+          onClose={() => setContextMenu(null)}
+          onAction={() => {
+            if (menuShare) unshare.mutate(menuShare.fileId);
+            else if (menuFile) setPendingDelete(menuFile);
+          }}
+        />
       )}
 
       <Modal

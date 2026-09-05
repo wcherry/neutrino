@@ -174,7 +174,11 @@ function TeamSpace() {
       </nav>
 
       <div className={styles.main}>
-        <div className={styles.mainInner}>
+        <div
+          className={[styles.mainInner, view === 'files' ? styles.mainInnerWide : '']
+            .filter(Boolean)
+            .join(' ')}
+        >
           {(view === 'home' || view === 'pages') && (
             <PagesView
               team={team}

@@ -23,7 +23,8 @@ import {
   SearchX,
   X,
 } from 'lucide-react';
-import { storageApi, filesystemApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
+import { storageApi, filesystemApi, teamsApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
+import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { loadKeyPair, initSodium } from '@neutrino/e2e-crypto';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -36,7 +37,6 @@ import { FileContextMenu } from './FileContextMenu';
 import { FolderContextMenu } from './FolderContextMenu';
 import { FileInfoPanel } from './FileInfoPanel';
 import { ShareDialog } from './ShareDialog';
-import { TeamTransferDialog } from './TeamTransferDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { canTransferToTeams } from '@/lib/featureFlags';
@@ -112,9 +112,9 @@ function DriveContent() {
   // "Manage tags" lands on the tag UI in one click instead of two.
   const [infoFile, setInfoFile] = useState<{ file: FileItem; focusTags: boolean } | null>(null);
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
-  // Both team flags, `teamSpaces` first — see `canTransferToTeams`. With either off there is no
-  // menu entry at all, rather than one that opens a dialog whose every action 404s.
-  const [teamTransferFile, setTeamTransferFile] = useState<FileItem | null>(null);
+  // Both team flags, `teamSpaces` first — see `canTransferToTeams`. With either off the Move
+  // dialog is offered no teams and lists My Drive alone, rather than showing destinations whose
+  // every action 404s.
   const teamTransfersOn = canTransferToTeams(useFeatureFlags());
   const [moveFile, setMoveFile] = useState<FileItem | null>(null);
   const [docPreview, setDocPreview] = useState<{ id: string; kind: DocumentKind } | null>(null);
@@ -382,6 +382,66 @@ function DriveContent() {
       setMoveFile(null);
     },
     onError: () => toast.error('Failed to move file'),
+  });
+
+  // Teams the caller may add content to. A Viewer's teams are listed nowhere: the server refuses
+  // the move with a 403, and a destination that fails is worse than a shorter list.
+  const { data: teamsData } = useQuery({
+    queryKey: ['teams'],
+    queryFn: () => teamsApi.list(),
+    enabled: teamTransfersOn,
+  });
+  const eligibleTeams = useMemo(
+    () =>
+      (teamsData?.teams ?? []).filter(
+        (t) => !t.archived && ['owner', 'admin', 'editor', 'contributor'].includes(t.userRole)
+      ),
+    [teamsData]
+  );
+
+  /**
+   * Move a file out of My Drive and into a team's library, then hand the members its key.
+   *
+   * Two calls, in this order: `POST /encryption/files/{id}/share` refuses a recipient with no
+   * access yet, so the reseal has to follow the move. Nothing in the handover is fatal — see
+   * `lib/teamTransfer.ts` — and what could not be sealed is named in the toast rather than left to
+   * be discovered as a file the team can see and cannot open.
+   */
+  const moveIntoTeamMutation = useMutation({
+    mutationFn: async ({
+      file,
+      teamId,
+      folderId,
+    }: {
+      file: FileItem;
+      teamId: string;
+      folderId: string | null;
+    }) => {
+      const moved = await teamsApi.moveFileIntoTeam(teamId, file.id, folderId ?? undefined);
+      const keys = await handFileKeyToTeam(teamId, file.id, currentUser?.id);
+      const team = eligibleTeams.find((t) => t.id === teamId);
+      return { file, moved, keys, teamName: team?.name ?? 'the team' };
+    },
+    onSuccess: ({ file, moved, keys, teamName }) => {
+      queryClient.invalidateQueries({ queryKey: ['contents'] });
+      queryClient.invalidateQueries({ queryKey: ['starred'] });
+      queryClient.invalidateQueries({ queryKey: ['team-library'] });
+      queryClient.invalidateQueries({ queryKey: ['team-shares'] });
+      setMoveFile(null);
+
+      const lost =
+        moved.sharesNoLongerApplied > 0
+          ? ` ${moved.sharesNoLongerApplied} existing ${
+              moved.sharesNoLongerApplied === 1 ? 'share' : 'shares'
+            } no longer apply.`
+          : '';
+      const headline = `"${file.name}" now belongs to ${teamName}.${lost}`;
+      const keyNote = describeKeyHandover(keys);
+      if (keyNote) toast.error(`${headline} ${keyNote}`);
+      else toast.success(headline);
+    },
+    onError: (e: unknown) =>
+      toast.error(e instanceof Error ? e.message : 'Failed to move the file into the team'),
   });
 
   const deleteMutation = useMutation({
@@ -865,7 +925,6 @@ function DriveContent() {
           onInfo={() => { setInfoFile({ file: contextMenu.file, focusTags: false }); setContextMenu(null); }}
           onManageTags={() => { setInfoFile({ file: contextMenu.file, focusTags: true }); setContextMenu(null); }}
           onShare={() => { setShareFile(contextMenu.file); setContextMenu(null); }}
-          onAddToTeam={teamTransfersOn ? () => { setTeamTransferFile(contextMenu.file); setContextMenu(null); } : undefined}
           onRename={() => { openRename(contextMenu.file); setContextMenu(null); }}
           onStarToggle={() => { handleStar(contextMenu.file); setContextMenu(null); }}
           onDownload={() => { handleDownload(contextMenu.file); setContextMenu(null); }}
@@ -935,17 +994,17 @@ function DriveContent() {
         <ShareDialog resource={shareFile} resourceType="file" onClose={() => setShareFile(null)} />
       )}
 
-      {teamTransferFile && (
-        <TeamTransferDialog file={teamTransferFile} onClose={() => setTeamTransferFile(null)} />
-      )}
-
       {moveFile && (
         <MoveFolderDialog
           itemName={moveFile.name}
           currentFolderId={moveFile.folderId}
+          teams={eligibleTeams}
           onMove={(targetFolderId) => moveMutation.mutate({ id: moveFile.id, targetFolderId })}
+          onMoveIntoTeam={(teamId, folderId) =>
+            moveIntoTeamMutation.mutate({ file: moveFile, teamId, folderId })
+          }
           onClose={() => setMoveFile(null)}
-          isPending={moveMutation.isPending}
+          isPending={moveMutation.isPending || moveIntoTeamMutation.isPending}
         />
       )}
 

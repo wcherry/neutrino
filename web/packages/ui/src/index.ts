@@ -22,6 +22,8 @@ export type { BadgeProps, BadgeVariant, BadgeSize } from './components/primitive
 
 export { Avatar } from './components/primitives/Avatar';
 export type { AvatarProps, AvatarSize, AvatarStatus } from './components/primitives/Avatar';
+export { TeamAvatar } from './components/primitives/TeamAvatar';
+export type { TeamAvatarProps, TeamAvatarSize } from './components/primitives/TeamAvatar';
 
 // Inputs
 export { TextInput } from './components/inputs/TextInput';
@@ -193,7 +195,16 @@ export { ImagePickerDialog } from './components/panels/ImagePickerDialog';
 export type { ImagePickerDialogProps, ImagePickerDriveItem, ImagePickerResult, ImageSource } from './components/panels/ImagePickerDialog';
 
 export { ShareDialog } from './components/panels/ShareDialog';
-export type { ShareDialogProps, SharePermission, ShareLinkData, SharePermissionRole, ShareUserSuggestion } from './components/panels/ShareDialog';
+export type {
+  ShareDialogProps,
+  SharePermission,
+  ShareLinkData,
+  SharePermissionRole,
+  ShareUserSuggestion,
+  ShareTeamRole,
+  ShareTeamSuggestion,
+  ShareTeamGrant,
+} from './components/panels/ShareDialog';
 
 // Collaboration
 export { PresenceBar } from './components/collab/PresenceBar';

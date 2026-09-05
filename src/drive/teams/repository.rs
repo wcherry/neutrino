@@ -1037,6 +1037,28 @@ impl TeamsRepository {
             .map_err(db_err("team file shares list"))
     }
 
+    /// The mirror image: which teams one file has been lent to, newest first.
+    ///
+    /// Asked by the file's own Share dialog, where teams sit beside the people in "who has access".
+    /// Deleted teams are joined away for the reason the listing above joins away deleted files — a
+    /// share is a pointer between two live rows — but an **archived** team is deliberately kept: it
+    /// still holds the lend, and the owner taking it back is exactly what `unshare_file_from_team`
+    /// lets them do while the team is archived.
+    pub fn list_shares_for_file(
+        &self,
+        file_id: &str,
+    ) -> Result<Vec<(TeamFileShare, Team)>, ApiError> {
+        let mut conn = self.conn()?;
+        team_file_shares::table
+            .inner_join(teams::table.on(teams::id.eq(team_file_shares::team_id)))
+            .filter(team_file_shares::file_id.eq(file_id))
+            .filter(teams::deleted_at.is_null())
+            .order(team_file_shares::created_at.desc())
+            .select((TeamFileShare::as_select(), Team::as_select()))
+            .load(&mut conn)
+            .map_err(db_err("file team shares list"))
+    }
+
     pub fn find_file_share(
         &self,
         team_id: &str,

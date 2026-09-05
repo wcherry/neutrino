@@ -1,0 +1,20 @@
+/* A rounded square, deliberately not a circle: a team is not a person, and the two appear side by
+   side — in the Share dialog's access list, and in the Move dialog beside folders — where the only
+   thing separating them at a glance is the silhouette. */
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  color: #fff;
+  line-height: 1;
+  user-select: none;
+  /* The team's own colour when it has one. Teams created before avatar colours, and any row whose
+     colour did not load, fall back to the product accent rather than to nothing. */
+  background: var(--team-avatar-color, var(--color-primary));
+}
+
+.xs { width: 1.25rem; height: 1.25rem; font-size: 0.625rem; }
+.sm { width: 2rem;    height: 2rem;    font-size: 1rem; }
+.md { width: 2.5rem;  height: 2.5rem;  font-size: 1.25rem; }

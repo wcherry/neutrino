@@ -478,6 +478,36 @@ pub struct TeamSharedFileListResponse {
     pub total: i64,
 }
 
+/// One team a personal file has been lent to.
+///
+/// The mirror image of [`TeamSharedFileResponse`], which answers "what has this team been lent?".
+/// This answers "who has this file been lent to?" — the question a file's own Share dialog asks,
+/// where teams are listed beside the people who have access. So it carries the team's identity,
+/// including the avatar the picker showed when the team was chosen, rather than the file's.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FileTeamShareResponse {
+    pub team_id: String,
+    pub name: String,
+    pub slug: String,
+    pub avatar_color: Option<String>,
+    pub avatar_emoji: Option<String>,
+    /// `viewer` | `editor` — what every member of this team may do with the file.
+    pub role: String,
+    /// Who lent it. Not always the caller: a team admin sees the same row from the team's Files
+    /// page, and a file can only be lent by its owner, so this is the owner unless it has changed
+    /// hands since.
+    pub shared_by: String,
+    pub shared_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FileTeamShareListResponse {
+    pub teams: Vec<FileTeamShareResponse>,
+    pub total: i64,
+}
+
 // ── Administration ───────────────────────────────────────────────────────────
 
 /// One team as the admin console sees it: the outside of a team, and no more.

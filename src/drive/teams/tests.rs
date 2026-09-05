@@ -2315,6 +2315,10 @@ fn transfers_are_dark_while_only_team_spaces_is_on() {
             .unshare_file_from_team(&team.id, "file-1", &owner)
             .expect_err("gated")
             .status,
+        f.service
+            .list_file_team_shares("file-1", &owner)
+            .expect_err("gated")
+            .status,
     ] {
         assert_eq!(status, 404, "a gated-off transfer route must be invisible");
     }
@@ -2806,6 +2810,118 @@ fn shares_are_invisible_outside_the_team() {
             .status,
         404
     );
+}
+
+/// The file's own view of its lends, which is what the Share dialog lists beside the people who
+/// have access: every team, with the identity the picker showed and the role each was lent at.
+#[test]
+fn a_file_says_which_teams_it_is_lent_to() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let marketing = f.create_team("Marketing", &owner);
+    let design = f.create_team("Design", &owner);
+    let untouched = f.create_team("Support", &owner);
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+
+    f.service
+        .share_file_with_team(&marketing.id, share_request("file-1", Some("viewer")), &owner)
+        .expect("share with marketing");
+    f.service
+        .share_file_with_team(&design.id, share_request("file-1", Some("editor")), &owner)
+        .expect("share with design");
+
+    let shares = f.service.list_file_team_shares("file-1", &owner).expect("list");
+    assert_eq!(shares.total, 2);
+
+    let by_id = |id: &str| {
+        shares
+            .teams
+            .iter()
+            .find(|t| t.team_id == id)
+            .unwrap_or_else(|| panic!("{id} missing"))
+    };
+    assert_eq!(by_id(&marketing.id).role, "viewer");
+    assert_eq!(by_id(&marketing.id).name, "Marketing");
+    assert_eq!(by_id(&design.id).role, "editor");
+    assert_eq!(by_id(&design.id).shared_by, "u1");
+    assert!(shares.teams.iter().all(|t| t.team_id != untouched.id));
+
+    // And it is the file's answer, not the team's: taking one lend back leaves the other.
+    f.service
+        .unshare_file_from_team(&design.id, "file-1", &owner)
+        .expect("unshare");
+    let shares = f.service.list_file_team_shares("file-1", &owner).expect("list");
+    assert_eq!(shares.total, 1);
+    assert_eq!(shares.teams[0].team_id, marketing.id);
+}
+
+/// Only the owner asks it, and the answer to "not yours" is the same 404 the two write routes give
+/// — a member of the team can see the lend from the team's own Files page, and that is where they
+/// see it. A team's own admin is not exempt: the question is about somebody's personal file.
+#[test]
+fn only_the_files_owner_can_ask_which_teams_it_is_lent_to() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let member = user("u2", "member@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_user("u2", "member@example.com", "Member");
+    f.service
+        .add_member(
+            &team.id,
+            AddMemberRequest {
+                email: "member@example.com".into(),
+                role: "admin".into(),
+            },
+            &owner,
+        )
+        .expect("add admin");
+
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+        .expect("share");
+
+    assert_eq!(
+        f.service
+            .list_file_team_shares("file-1", &member)
+            .expect_err("not their file")
+            .status,
+        404
+    );
+    assert_eq!(
+        f.service
+            .list_file_team_shares("no-such-file", &owner)
+            .expect_err("no such file")
+            .status,
+        404
+    );
+}
+
+/// An archived team still holds the lend, so the row stays — hiding it would hide the only control
+/// that ends it, which `a_lend_can_be_taken_back_from_an_archived_team` proves still works.
+#[test]
+fn an_archived_teams_lend_is_still_listed_on_the_file() {
+    let f = Fixture::with_transfers();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Marketing", &owner);
+    f.add_file("file-1", "u1", "Roadmap.md", 10);
+    f.service
+        .share_file_with_team(&team.id, share_request("file-1", None), &owner)
+        .expect("share");
+    f.service
+        .update_team(
+            &team.id,
+            UpdateTeamRequest {
+                archived: Some(true),
+                ..update_team_request()
+            },
+            &owner,
+        )
+        .expect("archive");
+
+    let shares = f.service.list_file_team_shares("file-1", &owner).expect("list");
+    assert_eq!(shares.total, 1);
+    assert_eq!(shares.teams[0].team_id, team.id);
 }
 
 /// Moving a file into a team drops every lend of it, because "this personal file of mine may be
