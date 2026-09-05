@@ -225,3 +225,9 @@ export function generateThumbnail(file: File, maxSize = 512): Promise<string | n
     img.src = url;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Performance phase marks
+// ---------------------------------------------------------------------------
+
+export { measurePhase, measurePhaseSync, PERF_MARK_PREFIX } from './perfMarks';

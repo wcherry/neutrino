@@ -3,6 +3,7 @@ import { request, buildQuery, ApiClientError, BASE_URL,
   type ContentVersionCheck,
 } from '@neutrino/api-core';
 import type { PaginatedResponse } from '@neutrino/api-core';
+import { measurePhase } from '@neutrino/utils';
 import type {
   FileItem,
   FileInfo,
@@ -672,7 +673,12 @@ export async function uploadEncryptedFile(
   // Encrypt the file bytes.
   const { encryptFile } = await import('@neutrino/e2e-crypto');
   const plainBytes = new Uint8Array(await file.arrayBuffer());
-  const cipherBytes = encryptFile(plainBytes, dek);
+  // The measure covers `encryptFile` alone, not the read before it: this is
+  // the main-thread block a large upload costs, and the number that decides
+  // whether the work belongs in a worker.
+  const cipherBytes = await measurePhase('crypto:encrypt', async () =>
+    encryptFile(plainBytes, dek),
+  );
   // Cast to ArrayBuffer for Blob compatibility across TS targets.
   const cipherBlob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const encryptedFile = new File([cipherBlob], file.name, { type: 'application/octet-stream' });
@@ -744,7 +750,9 @@ export async function downloadAndDecryptFile(
   );
   const cipherBytes = new Uint8Array(await cipherBlob.arrayBuffer());
 
-  const doc = decryptFile(cipherBytes, dek);
+  const doc = await measurePhase('crypto:decrypt', async () =>
+    decryptFile(cipherBytes, dek),
+  );
   console.log("downloadAndDecryptFile",doc);
   return doc;
 }
@@ -763,13 +771,20 @@ export async function driveAutosaveEncryptedContent(
   const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
   const plainBytes = new TextEncoder().encode(content);
-  const cipherBytes = encryptFile(plainBytes, dek);
+  // Split from the upload below: an autosave that gets slower as a document
+  // grows is either re-encrypting more bytes or sending more of them, and
+  // those have different fixes.
+  const cipherBytes = await measurePhase('crypto:encrypt', async () =>
+    encryptFile(plainBytes, dek),
+  );
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
   formData.append('file', blob, filename);
-  return request<FileItem>(
-    `/api/v1/drive/files/${fileId}/autosave${contentVersionQuery(versionCheck)}`,
-    { method: 'PUT', body: formData, ...transportInit(transport, cipherBytes.byteLength) },
+  return measurePhase('autosave:upload', () =>
+    request<FileItem>(
+      `/api/v1/drive/files/${fileId}/autosave${contentVersionQuery(versionCheck)}`,
+      { method: 'PUT', body: formData, ...transportInit(transport, cipherBytes.byteLength) },
+    ),
   );
 }
 
@@ -818,13 +833,17 @@ export async function driveAutosaveEncryptedBytes(
   const { initSodium, encryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
   const plainBytes = toUint8Array(bytes);
-  const cipherBytes = encryptFile(plainBytes, dek);
+  const cipherBytes = await measurePhase('crypto:encrypt', async () =>
+    encryptFile(plainBytes, dek),
+  );
   const blob = new Blob([cipherBytes.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   const formData = new FormData();
   formData.append('file', blob, filename);
-  return request<FileItem>(
-    `/api/v1/drive/files/${fileId}/autosave${contentVersionQuery(versionCheck)}`,
-    { method: 'PUT', body: formData, ...transportInit(transport, cipherBytes.byteLength) },
+  return measurePhase('autosave:upload', () =>
+    request<FileItem>(
+      `/api/v1/drive/files/${fileId}/autosave${contentVersionQuery(versionCheck)}`,
+      { method: 'PUT', body: formData, ...transportInit(transport, cipherBytes.byteLength) },
+    ),
   );
 }
 

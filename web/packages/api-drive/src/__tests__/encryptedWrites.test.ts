@@ -48,6 +48,11 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 const generateThumbnail = vi.fn();
 vi.mock('@neutrino/utils', () => ({
   generateThumbnail: (...a: unknown[]) => generateThumbnail(...a),
+  // The phase marks are instrumentation, not behaviour: the stand-in runs the
+  // work and reports nothing, so these tests keep asserting on what the code
+  // does rather than on how it is measured.
+  measurePhase: <T,>(_name: string, fn: () => Promise<T>) => fn(),
+  measurePhaseSync: <T,>(_name: string, fn: () => T) => fn(),
 }));
 
 import { request } from '@neutrino/api-core';
