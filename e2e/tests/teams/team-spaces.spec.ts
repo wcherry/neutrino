@@ -86,13 +86,18 @@ test.describe('with teamSpaces off', () => {
       expect(res.status(), `${path} should be 404 while the flag is off`).toBe(404);
     }
 
-    for (const path of [
-      '/api/v1/drive/teams/any-id/join',
-      '/api/v1/drive/teams/any-id/join-requests',
-      '/api/v1/drive/teams/any-id/library/moves',
-      '/api/v1/drive/teams/any-id/shares',
-    ]) {
-      const res = await request.post(`${BASE_URL}${path}`, { headers: auth(token), data: {} });
+    // Each POST carries a body its handler would accept, so what is being tested is the gate
+    // rather than the body parser. Actix deserializes `web::Json<T>` before the handler runs, so a
+    // route whose request type has a required field answers 400 for `{}` and never reaches the
+    // gate at all — which would make this loop pass or fail on the shape of the DTO instead of on
+    // whether the feature is switched off.
+    for (const [path, data] of [
+      ['/api/v1/drive/teams/any-id/join', {}],
+      ['/api/v1/drive/teams/any-id/join-requests', {}],
+      ['/api/v1/drive/teams/any-id/library/moves', { fileId: 'any-file' }],
+      ['/api/v1/drive/teams/any-id/shares', { fileId: 'any-file', role: 'viewer' }],
+    ] as const) {
+      const res = await request.post(`${BASE_URL}${path}`, { headers: auth(token), data });
       expect(res.status(), `${path} should be 404 while the flag is off`).toBe(404);
     }
 
@@ -125,8 +130,11 @@ test.describe('with teamSpaces off', () => {
     await register(request, email);
     const token = await signIn(page, email);
 
+    // Authorization only, deliberately: `auth()` also sets `Content-Type: application/json`, which
+    // overrides the multipart boundary Playwright would otherwise generate and makes the upload a
+    // 400 before it reaches anything this test is about.
     const upload = await request.post(`${BASE_URL}/api/v1/drive/files/upload`, {
-      headers: auth(token),
+      headers: { Authorization: `Bearer ${token}` },
       multipart: {
         file: { name: 'transfer.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') },
       },
