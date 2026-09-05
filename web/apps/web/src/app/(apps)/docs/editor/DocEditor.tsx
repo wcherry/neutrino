@@ -73,6 +73,7 @@ import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
+import { measurePhase } from '@neutrino/utils';
 import { aiApi } from '@neutrino/api-core';
 import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
@@ -1334,7 +1335,7 @@ export function DocEditor() {
     // no body yet, and that answers the download endpoint with 409
     // `NO_CONTENT`. It reads as the zero bytes the caller below already knows
     // how to open as a blank document.
-    const bytes = await driveReadBytes(docId);
+    const bytes = await measurePhase('doc:fetch', () => driveReadBytes(docId));
     // No body is never ciphertext — decrypting it would fail and report a new
     // document as an unopenable one.
     if (bytes.byteLength === 0) return new ArrayBuffer(0);
@@ -1345,7 +1346,7 @@ export function DocEditor() {
       if (!dek && !looksLikeOoxml(bytes)) return null;
       return bytes.buffer as ArrayBuffer;
     }
-    const plain = decryptFile(bytes, dek);
+    const plain = await measurePhase('doc:decrypt', async () => decryptFile(bytes, dek));
     return plain.buffer.slice(plain.byteOffset, plain.byteOffset + plain.byteLength) as ArrayBuffer;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, isNewEncryption]);
@@ -1395,7 +1396,12 @@ export function DocEditor() {
           return;
         }
         const { readDocx } = await import('@/lib/ooxml/docx/read');
-        const model = await readDocx(new Uint8Array(arrayBuffer));
+        // Unzipping the package and walking `document.xml` is the phase that
+        // grows with the document; `C1`'s numbers are only actionable when it
+        // is separable from the fetch and the decrypt before it.
+        const model = await measurePhase('doc:parse', () =>
+          readDocx(new Uint8Array(arrayBuffer)),
+        );
         if (cancelled) return;
         setOfficeContent({ kind: 'doc', doc: model.doc, meta: model.meta });
       } catch {

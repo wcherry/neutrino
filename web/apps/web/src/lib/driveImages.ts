@@ -24,6 +24,7 @@ import {
   decryptFile,
 } from '@neutrino/e2e-crypto';
 import type { FileItem } from '@neutrino/api-drive';
+import { measurePhase } from '@neutrino/utils';
 
 /**
  * Folder that local and linked images are uploaded into. Created for new
@@ -232,10 +233,12 @@ function imageMimeType(file: FileItem): string {
 }
 
 async function fetchDriveImageBlob(fileId: string): Promise<Blob> {
-  const [file, blob] = await Promise.all([
-    fileMetadata(fileId),
-    storageApi.downloadFile(fileId),
-  ]);
+  // Split into fetch and decrypt because they fail differently and are fixed
+  // differently: a slow fetch is a network or a request-count problem, a slow
+  // decrypt is the main-thread cost that would justify moving this to a worker.
+  const [file, blob] = await measurePhase('image:fetch', () =>
+    Promise.all([fileMetadata(fileId), storageApi.downloadFile(fileId)]),
+  );
 
   const mimeType = imageMimeType(file);
   if (!file.encryptedMetadata) return new Blob([blob], { type: mimeType });
@@ -251,9 +254,11 @@ async function fetchDriveImageBlob(fileId: string): Promise<Blob> {
   // Flagged as encrypted but no key is stored for us — take the bytes as they are.
   if (!keyRef) return new Blob([blob], { type: mimeType });
 
-  const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
-  const plain = decryptFile(new Uint8Array(await blob.arrayBuffer()), dek);
-  return new Blob([plain.buffer as ArrayBuffer], { type: mimeType });
+  return measurePhase('image:decrypt', async () => {
+    const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
+    const plain = decryptFile(new Uint8Array(await blob.arrayBuffer()), dek);
+    return new Blob([plain.buffer as ArrayBuffer], { type: mimeType });
+  });
 }
 
 /** The image's bytes, decrypted when the file is E2EE. */
@@ -271,14 +276,18 @@ function resolveDriveImageBlob(fileId: string): Promise<Blob> {
  * a blob reference costs a pointer and base64 costs a copy per element.
  */
 export function resolveDriveImageUrl(fileId: string): Promise<string> {
-  return memo(objectUrls, fileId, async () => {
-    const file = await fileMetadata(fileId);
-    const url = file.encryptedMetadata
-      ? URL.createObjectURL(await resolveDriveImageBlob(fileId))
-      : storageApi.getFileDownloadUrl(fileId);
-    settled.set(fileId, url);
-    return url;
-  });
+  return memo(objectUrls, fileId, () =>
+    // One `image:resolve` per image, so a document full of them reports the
+    // total rather than an average — see `C4`.
+    measurePhase('image:resolve', async () => {
+      const file = await fileMetadata(fileId);
+      const url = file.encryptedMetadata
+        ? URL.createObjectURL(await resolveDriveImageBlob(fileId))
+        : storageApi.getFileDownloadUrl(fileId);
+      settled.set(fileId, url);
+      return url;
+    }),
+  );
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { CellProps } from './types';
+import { measurePhaseSync } from '@neutrino/utils';
 import { expandRange, parseDeps, alphaToNum, numToAlpha, dateStringToSerial, parseCellDateValue } from './utils';
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -1336,6 +1337,19 @@ export function propagateDeps(
     visited: Set<string>,
     allSheets?: SheetRef[],
 ): void {
+    // Measured here rather than inside `walkDeps`, which recurses: one measure
+    // per edit is the number `D3` budgets ("edit one cell that hundreds of
+    // formulas depend on"), where one per visited node would be thousands of
+    // entries adding up to more than the wall time they describe.
+    measurePhaseSync('sheet:recalc', () => walkDeps(changedId, data, visited, allSheets));
+}
+
+function walkDeps(
+    changedId: string,
+    data: Map<string, CellProps>,
+    visited: Set<string>,
+    allSheets?: SheetRef[],
+): void {
     const cell = data.get(changedId);
     if (!cell?.dependents?.length) return;
     for (const depId of cell.dependents) {
@@ -1345,6 +1359,6 @@ export function propagateDeps(
         if (!depCell) continue;
         const { value } = computeCell(depCell.raw ?? '', data, allSheets);
         data.set(depId, { ...depCell, value });
-        propagateDeps(depId, data, visited, allSheets);
+        walkDeps(depId, data, visited, allSheets);
     }
 }

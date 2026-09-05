@@ -67,6 +67,7 @@ import {
   useToast,
 } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
+import { measurePhase } from '@neutrino/utils';
 import {
   slidesApi, driveReadContent, driveReadBytes, driveAutosaveEncryptedContent,
   driveAutosaveEncryptedBytes, mintFileKey, canEncryptFor, extractSlideText,
@@ -611,7 +612,7 @@ export function SlideEditor() {
         // created as has no body, which the download endpoint answers with 409
         // `NO_CONTENT` rather than with the zero bytes the empty branch below
         // is written for.
-        const stored = await driveReadBytes(slideId);
+        const stored = await measurePhase('slide:fetch', () => driveReadBytes(slideId));
         if (cancelled) return;
         // Office-mode saves are encrypted now, so a file that already has a key
         // ref holds ciphertext. `isNewEncryption` separates the two: it means
@@ -620,7 +621,7 @@ export function SlideEditor() {
         // is what encrypts it. No body at all is neither, and decrypting it
         // would report a new deck as an unreadable one.
         const plain = stored.byteLength > 0 && dekRef.current && !isNewEncryption
-          ? decryptFile(stored, dekRef.current)
+          ? await measurePhase('slide:decrypt', async () => decryptFile(stored, dekRef.current!))
           : stored;
         // A presentation created here starts with no body at all: a `.pptx` is
         // a zip, so the server writes no seed. The default deck already on
@@ -652,7 +653,9 @@ export function SlideEditor() {
         );
         const { importFromPptx } = await import('./pptxImport');
         if (cancelled) return;
-        const imported = await importFromPptx(file);
+        // Unzipping the package and walking every `slide<n>.xml` — the phase
+        // that scales with deck size, and the one `E1` is about.
+        const imported = await measurePhase('slide:import', () => importFromPptx(file));
         if (cancelled) return;
         setPresentation(imported);
         lastSavedRef.current = JSON.stringify(imported);

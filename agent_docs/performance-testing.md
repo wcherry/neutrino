@@ -1,7 +1,16 @@
 # Performance testing
 
-**Status:** proposal, for review before implementation.
+**Status:** **implemented** — phases 1–5 of §10 are in `e2e/perf/`. See
+[`e2e/perf/README.md`](../e2e/perf/README.md) for how to run it, and
+[§13](#13-what-building-it-changed) for what building it changed about this plan. Phase 6 (CI) is
+deliberately not done; phase 7 (the fix cycle) is the work this unblocks.
 **Scope:** the web front end (`web/`) as served in production. Backend load testing is explicitly out of scope — see [Out of scope](#out-of-scope).
+
+> **Two of the findings in §8 are now known to be wrong.** Response compression and
+> `Cache-Control: immutable` were both added to `src/main.rs` between this document being written
+> and the suite being built, and `F1` passes against them. They are left in §8 with corrections
+> rather than deleted, because "the suite killed two hypotheses on its first run" is the thing
+> §8 was for.
 
 ---
 
@@ -18,7 +27,7 @@ Facts that shape the design (verified by reading the code, not assumed):
 | Fact | Where | Why it matters for perf testing |
 |---|---|---|
 | Next 15 **static export** (`output: 'export'`), served by `actix-files` from the Rust binary | [next.config.ts](web/apps/web/next.config.ts), [src/main.rs:1126-1141](src/main.rs#L1126-L1141) | No SSR. First paint is gated on JS download → hydrate → client-side auth → API round-trips. All the interesting cost is client-side. |
-| No `Compress` middleware, no `Cache-Control` on static assets (ETag + Last-Modified only) | [src/main.rs](src/main.rs#L1126-L1141) | Asset delivery is a measurable, fixable lane on its own. |
+| ~~No `Compress` middleware, no `Cache-Control` on static assets (ETag + Last-Modified only)~~ — **stale.** `Compress::default()` is registered, and an `immutable_cache_control` middleware stamps `public, max-age=31536000, immutable` onto `/_next/static/*` | [src/main.rs](src/main.rs) | Asset delivery is still a lane worth having — `F1` is what keeps it true. |
 | E2EE runs **in the browser** (libsodium), on the main thread | `packages/e2e-crypto`, `lib/driveImages.ts` | Decrypt cost is user-visible jank, not server load. Must be measured with real bytes. |
 | `SheetGrid` **is** virtualized (`computeViewport`/`lowerBound`) | [SheetGrid.tsx:167-181](web/apps/web/src/app/(apps)/sheets/editor/SheetGrid.tsx#L167-L181) | Scroll should be flat with sheet size — worth asserting, so it stays that way. |
 | `FileGrid` and the photos grid are **not** virtualized — `loading="lazy"` on thumbs only | [FileGrid.tsx:263](web/packages/ui/src/components/display/FileGrid.tsx#L263), [photos/page.tsx:599](web/apps/web/src/app/(apps)/photos/page.tsx#L599) | Prime suspect for large-library slowness. Needs scale fixtures. |
@@ -61,26 +70,41 @@ A **new Playwright project** inside the existing `e2e/` config, not a new repo a
 
 ```
 e2e/
-  playwright.config.ts        # + a "perf" project, testDir ./perf
+  playwright.config.ts        # the "perf" project, selected by PERF=1
+  scripts/run-perf.sh         # what `cargo perf` runs
   perf/
+    README.md                 # how to run it, and what to know before trusting a number
     fixtures/
-      perf.ts                 # extends fixtures/base.ts — adds metrics collection
-      seed.ts                 # API-level fixture generators (files, docs, sheets, photos)
-      vitals.ts               # injects web-vitals attribution build, drains to Node
+      perf.ts                 # the rig: throttle, instrument, repeat, judge, record
+      instrument.ts           # what runs in the page, before the app does
+      env.ts                  # every knob, and the only reader of process.env
+      session.ts              # one signed-in account + the keypair to seal fixtures for it
+      seed.ts                 # API-level fixture generators
+      documents.ts            # the fixture bytes — .docx / .xlsx / .pptx / JSON / images
+      actions.ts              # the page-driving vocabulary the scenarios share
+      budgets.ts              # budgets, floors, baselines, the ratchet
+      results.ts              # perf-results.json, medians, coefficient of variation
+      sourcemap.ts            # hashed chunk + offset → file:line
+      types.ts
+      assets/                 # committed JPEGs, so the photo fixture is identical every run
     scenarios/
-      shell.spec.ts
-      drive.spec.ts
-      docs.spec.ts
-      sheets.spec.ts
-      slides.spec.ts
-      photos.spec.ts
-      crypto.spec.ts
-      delivery.spec.ts        # header/compression/bundle audit — no interaction
+      shell.spec.ts           # A1–A7
+      drive.spec.ts           # B1–B6
+      docs.spec.ts            # C1–C8
+      sheets.spec.ts          # D1–D9
+      media.spec.ts           # E1–E7
+      cross-cutting.spec.ts   # F3–F6
+      delivery.spec.ts        # F1–F2, no interaction
     baselines/
-      <machine-class>.json    # committed; the ratchet
+      <machine-class>.json    # written by --write-baselines; none committed yet
     report/
       summarize.ts            # run JSON → markdown table + regression verdict
 ```
+
+Two departures from the sketch above, both explained in §13: `vitals.ts` folded into
+`instrument.ts` (the `web-vitals` callbacks and the `PerformanceObserver`s are one init script and
+splitting them only made the ordering harder to see), and the per-app spec files are grouped by
+section rather than by app, because a section shares one seeded account.
 
 Rationale for a separate project rather than tagged tests in the existing suite: perf tests need different `use` options (no `trace: 'on'` — tracing distorts the measurement), longer timeouts, throttling, and repeat runs. Mixing them into the functional project would slow every PR run and make the functional traces useless.
 
@@ -88,9 +112,12 @@ Rationale for a separate project rather than tagged tests in the existing suite:
 
 | Mode | Command | Repeats | When |
 |---|---|---|---|
-| Smoke | `pnpm perf --grep @smoke` | 1 | Optional on PR, informational only |
-| Full | `./scripts/run-perf.sh` | 5, median reported | Nightly and on demand |
-| Attribution | `PERF_TRACE=1 ./scripts/run-perf.sh --grep "<name>"` | 1 | When investigating one regression; emits a Chrome trace to load in DevTools |
+| Smoke | `cargo perf --grep @smoke` | 1 | Optional on PR, informational only |
+| Full | `cargo perf` | 5, median reported | Nightly and on demand |
+| Attribution | `PERF_TRACE=1 cargo perf --grep "<name>"` | 1 | When investigating one regression; emits a Chrome trace to load in DevTools |
+
+`cargo perf` is the counterpart to `cargo e2e` — an xtask alias that forwards everything after it
+to `e2e/scripts/run-perf.sh`, which is equally runnable on its own from `e2e/`.
 
 ### Environment controls (every run)
 
@@ -221,17 +248,56 @@ Each perf spec should record enough for step 1 to happen from the CI artifact al
 
 These are **hypotheses, not measurements**. They are listed because they shaped the scenario list, and each one has a scenario that will confirm or kill it. Do not fix any of them before the suite can show the before/after.
 
-1. **No response compression.** [src/main.rs](src/main.rs) registers `Logger` and `NormalizePath` but no `Compress` middleware, and `actix_files::Files` does not compress on its own. Every JS chunk appears to ship uncompressed. If true this is the single largest cold-load win available and costs one line. → **F1**
-2. **No `Cache-Control` on static assets.** The static service sets `use_etag` and `use_last_modified` only. Content-hashed `/_next/static/*` files should be `immutable, max-age=31536000`; as configured, every repeat visit spends a revalidation round-trip per asset. → **F1, A3**
+1. ~~**No response compression.**~~ **Killed.** `Compress::default()` is registered and chunks ship
+   `content-encoding: br`. `F1` measured 74 text assets on `/drive`, 0 of them uncompressed.
+2. ~~**No `Cache-Control` on static assets.**~~ **Killed.** `immutable_cache_control` stamps
+   `public, max-age=31536000, immutable` onto the hashed assets; `F1` measured 61 of them, 0
+   without it. `A3` puts the practical effect at a warm load costing **0.6% of the cold load's
+   bytes** — though most of that credit belongs to the service worker rather than to the HTTP
+   cache (see §13).
 3. **`FileGrid` renders every row.** No windowing — only `loading="lazy"` on thumbnails, which defers image bytes but not DOM nodes or React work. Large Drive accounts and the photos library are the exposure. → **B1, B2, E5**
 4. **Thin route-level code splitting.** Six `next/dynamic` sites against a dependency list that includes `konva`, `xlsx`, `pdfmake`, `docx`, `pptxgenjs`, `mammoth`, `recharts`, `leaflet`, `nspell` and `dictionary-en`. Whether these actually reach the shell bundle is exactly what F2 and A6 answer.
+   **Confirmed, and it is the largest single finding so far.** `F2`'s first run, in bytes of JS
+   referenced by each route's export entry:
+
+   | Route | First-load JS |
+   |---|---|
+   | `/sheets/editor` | 2.84 MB |
+   | `/docs/editor` | 2.68 MB |
+   | `/drive` | 2.16 MB |
+   | `/slides/editor` | 2.14 MB |
+   | `/docs`, `/sheets`, `/slides`, `/notes` (landing pages) | ~2.08 MB each |
+   | `/sign-in` | **1.80 MB** |
+   | Distinct chunks across all routes | 4.16 MB |
+
+   The signed-out sign-in page pulling 1.8 MB, and every landing page being within 5% of every
+   other, is the shape of a shell that carries most of the app. `A1` puts the user-visible cost at
+   **LCP 3.2 s over Fast 3G at 4× CPU**; `A2` at **LCP 4.6 s, first Drive row at 5.1 s**.
 5. **E2EE decrypt on the main thread.** Every encrypted read decrypts in the page. A worker would fix it if measurement justifies the move. → **F5, C4, E5**
 6. **Autosave under a large document** re-serializes, re-encrypts and uploads on a debounce timer; the cost scales with document size and lands on the main thread mid-typing. → **C3, D9**
 7. **Very large editor components.** 2 000–2 900-line components tend to re-render broadly. Whether that is a real cost is a measurement question, not a style question. → **C2, D3, E2**
 
+8. **New, and not a hypothesis — a measurement.** **Under 4× CPU throttling the
+   Slides editor opens a stored `.pptx` as the default blank deck.** `E1` seeds a
+   six-slide deck and the rail reports one slide; the same fixture, the same
+   code and the same account at `PERF_CPU_THROTTLE=1` reports six. Both the
+   content (`GET /drive/files/{id}`) and the key (`GET …/key`) return 200, and
+   no autosave follows, so **the stored file is not modified** — this is a read
+   race, not data loss. The shape of `SlideEditor`'s load effect fits: it holds
+   the DEK in a *ref*, so an effect run that happens before the key resolves
+   reads ciphertext, fails to unzip it, and leaves the default presentation on
+   screen with nothing to re-trigger the read. A slow machine is exactly where
+   that ordering changes. Not fixed here — §8's rule is that nothing is fixed
+   before the suite can show the before and after, and this is the first thing
+   the suite found that the reading of the code had not. → **E1, E2, E7**
+
 ---
 
 ## 9. CI and reporting
+
+*Everything below is the design; **the workflow itself is deferred to issue #196**, with the
+reasoning in §12.1. The mechanisms it needs — `PERF_MACHINE`, `PERF_ENFORCE`, `PERF_TOLERANCE`,
+the artifacts, the ratchet flags — are all in place.*
 
 - **New workflow**, nightly plus `workflow_dispatch`, on a **fixed runner class** — perf numbers are not comparable across machine types, and the baseline file is keyed by machine class for that reason.
 - **Not a required PR check** initially. Run it in advisory mode for two weeks, watch the variance, and only then set tolerances and make it blocking. A blocking perf check with an unmeasured noise floor gets disabled within a month.
@@ -243,17 +309,21 @@ These are **hypotheses, not measurements**. They are listed because they shaped 
 
 ## 10. Implementation phases
 
-| Phase | Contents | Rough size |
+| Phase | Contents | Status |
 |---|---|---|
-| **1 — Rig** | `perf` Playwright project, `perf.ts` fixture (throttle, vitals injection, metric drain, repeat-and-median), `seed.ts` API fixtures, results JSON + markdown summarizer. Two scenarios end-to-end (A2, C2) to prove the pipeline. | Largest single chunk |
-| **2 — Delivery lane** | F1 and F2. No browser interaction, fast to write, and likely to surface the compression/caching findings immediately. | Small |
-| **3 — Baselines** | Run phase 1+2 five times, commit `baselines/<machine-class>.json`, replace every seed budget with a measured one. | Small |
-| **4 — Scenario build-out** | Sections A–F in priority order: Drive (B) → Sheets (D) → Docs (C) → Slides/Photos (E) → cross-cutting (F). | Incremental, one spec at a time |
-| **5 — Product marks** | Add the ~15 `performance.mark`/`measure` pairs to the editors, crypto helpers and image resolver. Behind no flag; `performance.mark` is free when nothing observes it. | Small, touches product code |
-| **6 — CI** | Nightly workflow, advisory mode, artifact upload, summary comment. | Small |
-| **7 — Fix cycle** | Only now: act on what the numbers show, with each fix landing alongside its before/after from the suite. | Ongoing |
+| **1 — Rig** | `perf` Playwright project, `perf.ts` fixture (throttle, vitals injection, metric drain, repeat-and-median), `seed.ts` API fixtures, results JSON + markdown summarizer. | **Done** — `e2e/perf/fixtures/`, `e2e/perf/report/` |
+| **2 — Delivery lane** | F1 and F2. No browser interaction, fast to write. | **Done** — and it killed §8 findings 1 and 2 on its first run |
+| **3 — Baselines** | Run the suite, commit `baselines/<machine-class>.json`, replace every seed budget with a measured one. | **Mechanism done**, no baseline committed — see below |
+| **4 — Scenario build-out** | Sections A–F. | **Done** — 30 scenarios across six spec files |
+| **5 — Product marks** | `performance.mark`/`measure` pairs in the editors, crypto helpers and image resolver. | **Done**, as its own commit — see §14 |
+| **6 — CI** | Nightly workflow, advisory mode, artifact upload, summary comment. | **Deferred** — issue #196 |
+| **7 — Fix cycle** | Act on what the numbers show, each fix landing alongside its before/after from the suite. | This is what the above unblocks |
 
-Phases 1–3 are the minimum useful deliverable — after them we have real numbers for the shell, one editor, and asset delivery, and a mechanism that makes every subsequent scenario cheap to add.
+**No baseline file is committed, deliberately.** A baseline is keyed by machine class, CPU throttle
+rate and fixture scale, and one recorded on a developer's laptop would be compared against nothing
+else — while looking authoritative in the repository. The first machine that runs the suite in
+earnest should write its own with `--write-baselines`; until then every budget in the specs is a
+seed from §5 and the suite reports rather than judges.
 
 ---
 
@@ -266,10 +336,120 @@ Phases 1–3 are the minimum useful deliverable — after them we have real numb
 
 ---
 
-## 12. Open questions
+## 12. Open questions — resolved
 
-1. **Where does CI run?** The baseline mechanism needs a stable runner class. GitHub-hosted runners are noisy; a self-hosted runner would give tighter tolerances. This decides whether tolerance is 20% or 10%.
-2. **Are the product `performance.mark` calls acceptable?** They are permanent, tiny, and unconditional. The alternative — inferring phases from traces — is significantly weaker attribution.
-3. **How large is a realistic large account?** The `L` fixture sizes above (5 000 Drive files, 100 k cells, 2 000 photos, 100 slides) are guesses. Real numbers from actual usage would make the budgets meaningful.
-4. **Advisory or blocking, and when?** Recommendation is advisory for two weeks, then blocking. Worth confirming.
-5. **Is the Lighthouse lane wanted at all?** Recommendation is no, with the delivery audit (F1) covering what we would actually use it for.
+1. **Where does CI run?** *Deferred, deliberately.* The suite runs locally and on demand; no
+   workflow was added. Tracked as **issue #196** so the runner-class decision is made once there is
+   variance data to make it with, rather than guessed now. `PERF_MACHINE` exists so a runner can pin
+   its own baseline key when that happens.
+2. **Are the product `performance.mark` calls acceptable?** *Yes* — added, in their own commit, so
+   the product-code change is reviewable apart from the harness. See §14.
+3. **How large is a realistic large account?** *Still a guess, but no longer a blocker.* The sizes
+   are configurable (`PERF_SCALE`), the default is smaller than this document proposed so a full
+   run stays usable, and `PERF_SCALE=full` restores the numbers here. The assertions that matter —
+   `B1`'s growth ratio, `D1`'s flatness — are about *shape* and hold at either scale.
+4. **Advisory or blocking, and when?** *Advisory*, and it is the default (`PERF_ENFORCE=1` opts
+   in). Nothing should block on a noise floor nobody has measured yet.
+5. **Is the Lighthouse lane wanted at all?** *No*, as recommended. `F1` covers it.
+
+---
+
+## 13. What building it changed
+
+Six things the plan did not anticipate. All of them are in the code with the reasoning attached;
+this is the summary.
+
+**The service worker invalidates any naive cold-load measurement.** `web/apps/web/public/sw.js` is
+a hand-rolled **cache-first** service worker for the whole app shell. Cache Storage is not the HTTP
+cache, so CDP's `Network.clearBrowserCache` does not touch it — and a response the worker answers
+never reaches the network stack, so network emulation does not apply to it either. Before this was
+found, the suite reported a "cold load of `/sign-in` over Fast 3G" at **256 ms and 51 kB**, for a
+route `F2` measures at 1.8 MB. Both numbers were plausible and both were meaningless. `coldStart()`
+now unregisters the worker, empties Cache Storage and clears the HTTP cache; the honest figure is
+3.2 s and 578 kB. This also reframes §8 finding 2: repeat visits were already cheap, but because of
+the service worker rather than because of `Cache-Control`.
+
+**`Network.emulateNetworkConditions` is a silent no-op without `Network.enable`.** It returns
+success and changes nothing. Same for `Network.clearBrowserCache`.
+
+**Cold-load scenarios have a warm V8 code cache.** The repeats share a browser context, so the
+chunks are already compiled when the measured iterations run — which is exactly what §4's discarded
+warm-up asks for, and does mean a cold-load scenario reports few long tasks, because compilation is
+where most of them come from. LCP, bytes and time-to-first-row are unaffected. "What does a
+genuinely first-ever visit cost to compile" is a question this suite does not answer, and saying so
+is better than reporting a number that looks like an answer.
+
+**Seeding has to match how the app stores each format, and the halves differ three ways.** Docs,
+Sheets and Slides store OOXML and seal it, so those fixtures are built with
+`docx`/`xlsx`/`pptxgenjs` and encrypted from Node using the account's own keypair. The native JSON
+types are seeded by the *server* in plaintext (`default_content` in `native_types.rs`) and
+encrypted by the client's first save — seed one of those sealed and the editor renders a paragraph
+of binary, which is how the first `C4` run failed. And a native type is *created* through
+`POST /drive/files` rather than uploaded, so the record exists in the state its editor is written
+to open.
+
+The models themselves have to be exact, too. A diagram shape carrying `text` where `DiagramShape`
+declares `label`, or a partial `ShapeStyle`, does not degrade: the editor renders straight from the
+stored model and the page dies with "Application error: a client-side exception has occurred". A
+fixture generator is a second implementation of a format, and it is worth writing it against the
+type rather than against a plausible reading of the default content.
+
+**Drive's listing pages at 200 and never windows.** §8 finding 3 is confirmed and sharper than
+stated: the cost of a large account does not arrive on load, it arrives as the user scrolls, onto a
+list that is never trimmed. `B1`/`B2` drive the pagination to the end rather than measuring the
+first screenful. Folder navigation is `useState`, not a route, so `B1` compares three sizes by
+clicking into three folders — which isolates grid rendering from page load, and is the better
+measurement anyway.
+
+**E4's diagram canvas is SVG, not Konva.** `DiagramCanvas` works in `svg`; Konva is the Drawing
+app. The scenario list gained `E4b` for the Konva case rather than conflating them.
+
+**Measuring INP takes more care than "read it from `web-vitals`".** Two defaults work against a
+lab suite, and both fail by reporting *nothing* rather than by reporting something wrong:
+
+- `web-vitals` reports INP as a **monotonic worst case for the page**, calling back only when an
+  interaction beats the previous worst. Almost every interaction scenario loads a page, waits for
+  it to settle, clears the buffer and then does the thing it is measuring — and an interaction
+  faster than something that happened during page load reports nothing at all. INP is therefore
+  computed from the `event` entries, grouped by `interactionId`, per measurement. The library's
+  number is kept beside it as `inpPageWorst` and never judged.
+- A `PerformanceObserver` on `event` has a default `durationThreshold` of **104 ms**, so a 40 ms
+  interaction produces no entry. The threshold is set to 16 ms, the lowest the spec allows, and a
+  scenario that budgets `inp` but sees no entry above it records 16 — meaning "at most this".
+
+**A broken scenario must not cost the section its measurements.** Sections B–E are one test each,
+running eight or nine scenarios over a fixture that took minutes to seed. `perf.scenario` records a
+body that throws as a failed scenario and carries on; the failures are re-raised together when the
+test ends. Playwright's default action timeout is also *no timeout*, so before this one bad
+selector consumed the whole 45-minute budget and discarded everything the section had already
+measured — the perf project sets `actionTimeout` and `expect.timeout` to 30 s for that reason.
+
+### Structural departures from §4
+
+- **Sections B–E are one test each**, seeding one account and running every scenario in the section
+  against it. Seeding an L fixture is minutes of uploads; paying it per scenario made the suite
+  unrunnable.
+- **The repeats live inside the fixture**, not in `repeatEach`. Playwright would run five separate
+  tests, and there would be nowhere to compute a median.
+- **The perf project replaces the functional one** when `PERF=1`, rather than sitting beside it.
+  Playwright runs every configured project by default, so a bare `playwright test` would otherwise
+  pick up the perf suite.
+- **`F7` (2 GB takeout import) is not implemented.** `archive.test.ts` already asserts the streaming
+  property in seconds; reproducing it here would cost minutes and gigabytes per run to re-assert the
+  same thing with a noisier measurement. The reasoning is recorded at the foot of
+  `cross-cutting.spec.ts` so the decision is visible rather than looking like an omission.
+- **Budgets gained floors.** A frame rate is a lower bound; judging it as a ceiling would pass a
+  scenario that dropped to 10 fps.
+
+---
+
+## 14. Product instrumentation
+
+Phase 5 of §10 — the `performance.mark`/`measure` pairs — lands as its own commit. Every mark is
+named `neutrino:<app>:<phase>`, which is the prefix `e2e/perf/fixtures/instrument.ts` filters on;
+anything else in the buffer is Next's own instrumentation and third-party libraries, and collecting
+it would make the phase table unreadable.
+
+They are unconditional and permanent. `performance.mark` on a page with no observer is a few
+microseconds and no allocation, and the alternative — inferring phases from a trace — is
+significantly weaker attribution for anyone reading a CI artifact rather than reproducing locally.

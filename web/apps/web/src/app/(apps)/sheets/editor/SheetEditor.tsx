@@ -12,6 +12,7 @@ import {
 } from '@/lib/api';
 import { withOoxmlExtension } from '@/lib/officeFormats';
 import { useToast } from '@neutrino/ui';
+import { measurePhase } from '@neutrino/utils';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { useUser } from '@neutrino/auth';
 import { useSheetPresence, type CellSyncItem } from '@/hooks/useSheetPresence';
@@ -108,7 +109,12 @@ async function parseXlsxToSheets(
     buffer: ArrayBuffer,
 ): Promise<{ name: string; data: Map<string, CellProps> }[]> {
     const { readXlsx } = await import('@/lib/ooxml/xlsx/read');
-    const file = await readXlsx(new Uint8Array(buffer));
+    // The phase `D1` is really asking about: the grid is windowed, so open
+    // time should be flat in the number of cells — and this parse, which is
+    // not windowed, is the one thing that can make it not be.
+    const file = await measurePhase('sheet:parse', () =>
+        readXlsx(new Uint8Array(buffer)),
+    );
     return file.sheets.map(sheet => ({
         name: sheet.name ?? 'Sheet',
         data: new Map(Object.entries(sheet.cells).map(([id, cell]) => [id, { ...cell, edit: false }])),

@@ -41,7 +41,7 @@ fn main() {
     let mut args = env::args().skip(1);
     let task = args.next().unwrap_or_else(|| {
         eprintln!(
-            "Usage: cargo xtask <task> [args...]\n\nTasks:\n  setup            Run every prerequisite step for backend, web and e2e\n  build-web        Build the web app\n  e2e [args...]    Run e2e tests (extra args forwarded to run-tests.sh)\n  docker           Build the Docker image\n  fetch-model      Download the worker's facial-recognition model"
+            "Usage: cargo xtask <task> [args...]\n\nTasks:\n  setup            Run every prerequisite step for backend, web and e2e\n  build-web        Build the web app\n  e2e [args...]    Run e2e tests (extra args forwarded to run-tests.sh)\n  perf [args...]   Run the performance suite (extra args forwarded to run-perf.sh)\n  docker           Build the Docker image\n  fetch-model      Download the worker's facial-recognition model"
         );
         process::exit(1);
     });
@@ -52,13 +52,14 @@ fn main() {
         "setup" => setup(&cfg),
         "build-web" => build_web(&cfg.workspace_root),
         "e2e" => run_e2e(&cfg.e2e_dir, &extra),
+        "perf" => run_perf(&cfg.e2e_dir, &extra),
         "docker" => build_docker(&cfg.workspace_root, &cfg.docker_image),
         "dev" => run_dev(&cfg.workspace_root),
         "storybook" => run_storybook(&cfg.web_dir),
         "fetch-model" => ensure_face_model(&cfg.workspace_root),
         _ => {
             eprintln!(
-                "Unknown task: {task}\n\nTasks: setup, build-web, e2e, docker, dev, storybook, fetch-model"
+                "Unknown task: {task}\n\nTasks: setup, build-web, e2e, perf, docker, dev, storybook, fetch-model"
             );
             process::exit(1);
         }
@@ -96,6 +97,7 @@ fn setup(cfg: &Config) {
     section("Setup complete");
     println!("  cargo xtask dev    backend + worker + frontend");
     println!("  cargo xtask e2e    Playwright suite against an isolated Docker stack");
+    println!("  cargo xtask perf   performance suite against the same stack");
 }
 
 fn section(title: &str) {
@@ -264,7 +266,23 @@ fn build_web(root: &Path) {
 }
 
 fn run_e2e(dir: &Path, extra: &[String]) {
-    let mut args = vec!["scripts/run-tests.sh".to_string()];
+    run_e2e_script(dir, "scripts/run-tests.sh", extra);
+}
+
+/// The performance suite, which is a separate script rather than a flag on
+/// `run-tests.sh`: `run-perf.sh` exports `PERF=1`, and that swaps the Playwright
+/// project entirely — different timeouts, no retries, tracing off — as
+/// `e2e/playwright.config.ts` explains. It also summarises `perf-results.json`
+/// afterwards, which a functional run has nothing to write.
+fn run_perf(dir: &Path, extra: &[String]) {
+    run_e2e_script(dir, "scripts/run-perf.sh", extra);
+}
+
+/// Both suites are a bash script in `e2e/` that brings the Docker stack up and
+/// down around Playwright, with everything after the task name handed straight to
+/// it — `cargo perf --grep "D3"` is `./scripts/run-perf.sh --grep "D3"`.
+fn run_e2e_script(dir: &Path, script: &str, extra: &[String]) {
+    let mut args = vec![script.to_string()];
     args.extend_from_slice(extra);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     run("bash", &args, dir);
