@@ -10,17 +10,25 @@ convention and E2EE fixtures rather than standing up a parallel rig.
 
 ## Running it
 
+`cargo perf` from anywhere in the repo, the counterpart to `cargo e2e`. Everything after it is
+handed to `run-perf.sh` unchanged, so the two forms below are the same command.
+
+```bash
+cargo perf                            # full suite, 5 repeats + a discarded warm-up
+cargo perf --skip-build               # reuse the :test images
+cargo perf --grep "D3"                # one scenario
+cargo perf --grep "@smoke"            # the quick lane
+
+PERF_SCALE=smoke PERF_REPEATS=1 cargo perf --skip-build   # does it still work?
+PERF_TRACE=1 cargo perf --grep "D3"                       # + a Chrome trace
+PERF_SCALE=full cargo perf                                # the design doc's sizes
+```
+
+Or the script directly, which is what `cargo perf` runs:
+
 ```bash
 cd e2e
-
-./scripts/run-perf.sh                            # full suite, 5 repeats + a discarded warm-up
-./scripts/run-perf.sh --skip-build               # reuse the :test images
-./scripts/run-perf.sh --grep "D3"                # one scenario
-./scripts/run-perf.sh --grep "@smoke"            # the quick lane
-
-PERF_SCALE=smoke PERF_REPEATS=1 ./scripts/run-perf.sh --skip-build   # does it still work?
-PERF_TRACE=1 ./scripts/run-perf.sh --grep "D3"                       # + a Chrome trace
-PERF_SCALE=full ./scripts/run-perf.sh                                # the design doc's sizes
+./scripts/run-perf.sh --grep "D3"
 ```
 
 Artifacts land under `$RUN_DIR/perf/`:
@@ -61,8 +69,8 @@ over its budget, or more than the tolerance away from its baseline. A metric wit
 measured, recorded and reported — never failed.
 
 ```bash
-./scripts/run-perf.sh --write-baselines    # replace the baseline with this run (phase 3)
-./scripts/run-perf.sh --update-baselines   # ratchet downwards only
+cargo perf --write-baselines    # replace the baseline with this run (phase 3)
+cargo perf --update-baselines   # ratchet downwards only
 ```
 
 Neither happens on its own. A suite that silently rewrote its own baseline would ratchet a slow

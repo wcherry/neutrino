@@ -71,7 +71,7 @@ A **new Playwright project** inside the existing `e2e/` config, not a new repo a
 ```
 e2e/
   playwright.config.ts        # the "perf" project, selected by PERF=1
-  scripts/run-perf.sh
+  scripts/run-perf.sh         # what `cargo perf` runs
   perf/
     README.md                 # how to run it, and what to know before trusting a number
     fixtures/
@@ -112,9 +112,12 @@ Rationale for a separate project rather than tagged tests in the existing suite:
 
 | Mode | Command | Repeats | When |
 |---|---|---|---|
-| Smoke | `pnpm perf --grep @smoke` | 1 | Optional on PR, informational only |
-| Full | `./scripts/run-perf.sh` | 5, median reported | Nightly and on demand |
-| Attribution | `PERF_TRACE=1 ./scripts/run-perf.sh --grep "<name>"` | 1 | When investigating one regression; emits a Chrome trace to load in DevTools |
+| Smoke | `cargo perf --grep @smoke` | 1 | Optional on PR, informational only |
+| Full | `cargo perf` | 5, median reported | Nightly and on demand |
+| Attribution | `PERF_TRACE=1 cargo perf --grep "<name>"` | 1 | When investigating one regression; emits a Chrome trace to load in DevTools |
+
+`cargo perf` is the counterpart to `cargo e2e` — an xtask alias that forwards everything after it
+to `e2e/scripts/run-perf.sh`, which is equally runnable on its own from `e2e/`.
 
 ### Environment controls (every run)
 
