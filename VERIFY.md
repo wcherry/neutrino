@@ -80,11 +80,54 @@ thing to confirm.
     are an affordance; the server is the rule.
 22. As the owner, **Settings** → try to demote yourself to Viewer. Refused: you are the only owner.
 
+### Visibility — who can find the team, and how they get in
+
+The setting decides two things at once, and the three values are the three combinations worth
+having. Marketing is `private` so far, which is the default.
+
+22a. As a second account, open **Shared Spaces**. There is no Discover section: nothing is
+     discoverable yet. `GET /api/v1/drive/teams/discoverable` returns an empty list.
+22b. As the owner, **Settings** → visibility **Organization**, save. The hint below the picker says
+     anyone signed in can find it and join it themselves.
+22c. As the second account, reload Shared Spaces. Marketing appears under **Discover** with a
+     **Join** button. Click it: you land in the team as a **Viewer** — you can read the pages, and
+     there is no Edit, no New page, no Upload. → *Making a team findable is not the same as
+     granting write access to everyone who finds it.*
+22d. As the owner, promote them to Editor in Members. They can write. → *One click, and in the
+     recoverable direction.*
+22e. Have them leave the team. Set visibility to **Invite only**. As them, Shared Spaces now shows
+     Marketing under Discover with **Request access** rather than Join; clicking it turns the
+     button into "Requested — waiting on an admin". Clicking `POST …/join` directly answers
+     **403**: they can see the team, so there is nothing left to hide — only something they may not
+     do.
+22f. As the owner, **Members** shows a **Requests to join (1)** panel above the member list, with
+     their note if they left one and a role picker defaulting to Viewer. **Approve** it. They are
+     in the team and the panel is gone.
+22g. Ask again from a third account and **Decline** it instead. They are not admitted, the panel
+     empties, and `GET …/join-requests?status=declined` still holds the row with who decided it and
+     when. → *A decline is remembered, so the same person does not reappear in the queue tomorrow
+     with nothing to say they were already answered. It is not a ban — they may ask again.*
+22h. Set visibility back to **Private**. As a fourth account, Discover no longer lists Marketing and
+     `POST …/join` answers **404**. Everyone already in the team stays in. → *Closing a team hides
+     it; it does not evict anyone.*
+22i. The team's **activity feed** carries a `team.visibility_changed` entry for each of those
+     changes, with the old and new value. → *Opening a team up is worth its own line in the log.*
+
 ### Edge cases
 
 - **A team you are not in**: as a third account, `GET /api/v1/drive/teams/<id>` answers **404** —
   the same status and message as a team id that never existed. → *Whether a team exists is itself
-  something membership decides.*
+  something membership decides.* This holds for a **discoverable** team too: it appears in
+  `/teams/discoverable` as a name, a description and a member count, and every other route about it
+  still answers 404 until you are in it. Findable is not readable.
+- **An archived team is not joinable**: archive an `organization` team and it drops out of Discover;
+  `POST …/join` answers **409**. → *Every write in an archived team is refused, so admitting someone
+  would hand them a room they cannot act in.*
+- **Requesting access to an open team**: `POST …/join-requests` on an `organization` team answers
+  **400**. There is nothing to ask for when anyone may simply join.
+- **Answering a request twice**: approve or decline the same request again — **409**.
+- **An admin cannot approve someone into ownership**: as an Admin (not the Owner), approve a request
+  with `{"role": "owner"}` — **403**, the same rule that governs inviting.
 - **An administrator is not a member**: the admin account, which is in no team, gets 404 on the
   same call. Authority over the deployment is not membership of every team on it.
 - **Deleting Home**: the Home page has no Delete button, and the API answers 400. A team always has

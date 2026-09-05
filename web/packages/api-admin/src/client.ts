@@ -9,6 +9,11 @@ import type {
   CreateAdminUserRequest,
   UserQuota,
   SetUserQuotaRequest,
+  AdminTeam,
+  AdminTeamListResponse,
+  SetTeamQuotaRequest,
+  SetTeamOwnerRequest,
+  SetTeamArchivedRequest,
   QuotaRequest,
   QuotaRequestStatus,
   PasswordPolicy,
@@ -179,6 +184,93 @@ export const adminApi = {
     return request<UserQuota>(`/api/v1/admin/users/${encodeURIComponent(userId)}/quota`, {
       method: 'PUT',
       body: JSON.stringify(body),
+    });
+  },
+
+  // ── Team Spaces (issue #185) ──────────────────────────────────────────────
+
+  /**
+   * Every live team with a live storage figure, fullest first.
+   * GET /api/v1/admin/teams
+   *
+   * Ordered by occupancy rather than by name because of what the page is for:
+   * "which team is about to run out?" should be a glance, not a search. The
+   * usage figure is summed from the file rows by the query, so it is right even
+   * when a team's cached counter has drifted.
+   *
+   * 404s when `teamSpaces` is off — with the flag down no team can exist, so
+   * the tab is hidden rather than shown empty.
+   */
+  async listTeams(
+    params: { q?: string; limit?: number; offset?: number } = {}
+  ): Promise<AdminTeamListResponse> {
+    const query = new URLSearchParams();
+    if (params.q?.trim()) query.set('q', params.q.trim());
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    if (params.offset !== undefined) query.set('offset', String(params.offset));
+    const qs = query.toString();
+    return request<AdminTeamListResponse>(`/api/v1/admin/teams${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
+   * Set or clear a team's disk quota.
+   * PATCH /api/v1/admin/teams/{teamId}/quota
+   *
+   * `storageLimitBytes: null` is unlimited. A limit below what the team already
+   * stores is allowed and deletes nothing: the files stay and the next one is
+   * refused. There is no member-facing counterpart — a team's own Owner cannot
+   * raise its quota, because a limit a team can lift is not a limit.
+   */
+  async setTeamQuota(teamId: string, body: SetTeamQuotaRequest): Promise<AdminTeam> {
+    return request<AdminTeam>(`/api/v1/admin/teams/${encodeURIComponent(teamId)}/quota`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * Hand a team to somebody.
+   * PATCH /api/v1/admin/teams/{teamId}/owner
+   *
+   * A **transfer**: the named account becomes the team's Owner and every existing Owner is demoted
+   * to Admin — recoverable, since they keep everything but deleting the team and handing it on.
+   * They are added as a member if they are not one, which is the point when the previous Owner has
+   * left; adding a *co*-owner instead is something the team's own Members page does.
+   *
+   * Works on an archived team, and on a team with no Owner at all — the case the member-facing
+   * routes cannot serve, because they all need somebody with the authority to act.
+   */
+  async setTeamOwner(teamId: string, body: SetTeamOwnerRequest): Promise<AdminTeam> {
+    return request<AdminTeam>(`/api/v1/admin/teams/${encodeURIComponent(teamId)}/owner`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * Archive a team, or restore it.
+   * PATCH /api/v1/admin/teams/{teamId}/archived
+   *
+   * Archiving makes the team read-only for everyone whatever their role, and is reversible. Send
+   * the state you want rather than a toggle.
+   */
+  async setTeamArchived(teamId: string, body: SetTeamArchivedRequest): Promise<AdminTeam> {
+    return request<AdminTeam>(`/api/v1/admin/teams/${encodeURIComponent(teamId)}/archived`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * Delete a team.
+   * DELETE /api/v1/admin/teams/{teamId}
+   *
+   * Soft, exactly as the Owner's own delete is — the row is marked and everything cascading off it
+   * survives — but nothing in the console lists deleted teams, so there is no undo here.
+   */
+  async deleteTeam(teamId: string): Promise<void> {
+    await request<void>(`/api/v1/admin/teams/${encodeURIComponent(teamId)}`, {
+      method: 'DELETE',
     });
   },
 

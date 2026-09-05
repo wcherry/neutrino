@@ -154,6 +154,93 @@ export interface SetUserQuotaRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Team Spaces, from the administrator's side (issue #185)
+//
+// Mirrors AdminTeamResponse in src/drive/teams/dto.rs. Deliberately the
+// *outside* of a team — its name, its size, its membership count — and nothing
+// about its pages, files or activity, which stay behind membership even for a
+// deployment administrator.
+// ---------------------------------------------------------------------------
+
+/**
+ * One Owner of a team.
+ *
+ * Email and name are the denormalised copy on `team_members`, which is what keeps a row readable
+ * after the account behind it is gone.
+ */
+export interface AdminTeamOwner {
+  userId: string;
+  email: string;
+  name: string;
+}
+
+export interface AdminTeam {
+  id: string;
+  name: string;
+  slug: string;
+  visibility: string;
+  /**
+   * Who created the team. Not who owns it now — the creator can have been demoted, removed, or had
+   * their account deleted — which is why `owners` is separate.
+   */
+  createdBy: string;
+  archived: boolean;
+  /**
+   * The team's current Owners, oldest membership first.
+   *
+   * A list, because the role is not a slot and a team can have several. It can also be **empty**:
+   * the last Owner's account can be deleted out from under a team, and that is the state the
+   * transfer route exists to repair — so render it as a warning, never as a blank.
+   */
+  owners: AdminTeamOwner[];
+  memberCount: number;
+  /** Summed from the live file rows on every read, not a cached counter. */
+  storageUsedBytes: number;
+  /** `null` is unlimited — a choice an administrator can make, not an absence. */
+  storageLimitBytes: number | null;
+  /** `null` when unlimited; never negative, so a full team reads as zero left. */
+  storageRemainingBytes: number | null;
+  /**
+   * The team already holds more than its limit.
+   *
+   * Reachable on purpose: lowering a limit below what a team stores is allowed
+   * and deletes nothing. The files stay and the next one is refused.
+   */
+  overQuota: boolean;
+  createdAt: string;
+}
+
+export interface AdminTeamListResponse {
+  teams: AdminTeam[];
+  /** Every live team matching the filter, not just this page. */
+  total: number;
+}
+
+/**
+ * Replaces the team's limit rather than patching it — `null` is unlimited, and
+ * has to be sent explicitly.
+ */
+export interface SetTeamQuotaRequest {
+  storageLimitBytes: number | null;
+}
+
+/**
+ * Hand a team to somebody, by email rather than by user id — an administrator doing this is reading
+ * a leavers list or a ticket, not a database.
+ */
+export interface SetTeamOwnerRequest {
+  email: string;
+}
+
+/**
+ * Authoritative, not a toggle: send the state you want, so a repeated request is idempotent and two
+ * administrators on the same screen cannot each undo the other.
+ */
+export interface SetTeamArchivedRequest {
+  archived: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Storage requests — the admin work queue (issue #144)
 //
 // Mirrors QuotaRequestDto in src/drive/quota_requests/api.rs.

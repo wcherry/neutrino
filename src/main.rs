@@ -567,12 +567,23 @@ async fn main() -> std::io::Result<()> {
         notification_hub.clone(),
     ));
 
+    // Feature flags (#185). Rows rather than environment variables, because the property this
+    // needs is toggling without a redeploy. The gate is shared with the modules that read a flag
+    // server-side, so a flag has one reader and one meaning — which now includes the permission
+    // resolver, since `teamFileTransfers` decides whether a team share grants access at all.
+    let feature_flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
+    let feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
+        repo: feature_flags_repo.clone(),
+    });
+    let feature_gate = FeatureGate::new(feature_flags_repo.clone());
+
     let drive_permissions_repo = Arc::new(PermissionsRepository::new(pool.clone()));
     let drive_permissions_service = Arc::new(PermissionsService::new(
         drive_permissions_repo.clone(),
         drive_workspace_service.clone(),
         drive_encryption_repo.clone(),
         auth_service.clone(),
+        feature_gate.clone(),
     ));
     let drive_permissions_state = web::Data::new(drive::permissions::api::PermissionsApiState {
         permissions_service: drive_permissions_service.clone(),
@@ -691,17 +702,10 @@ async fn main() -> std::io::Result<()> {
             service: drive_shared_drives_service,
         });
 
-    // Feature flags (#185). Rows rather than environment variables, because the property this
-    // needs is toggling without a redeploy. The gate is shared with the modules that read a flag
-    // server-side, so a flag has one reader and one meaning.
-    let feature_flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
-    let feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
-        repo: feature_flags_repo.clone(),
-    });
-    let feature_gate = FeatureGate::new(feature_flags_repo.clone());
-
     // Team Spaces (#185). Every route behind `teamSpaces`, which is seeded disabled — with it off
-    // the deployment is exactly what it was before this release.
+    // the deployment is exactly what it was before this release. The two transfer routes are
+    // behind `teamFileTransfers` as well, since they are the only ones that reach a file outside a
+    // team.
     let drive_teams_repo = Arc::new(TeamsRepository::new(pool.clone()));
     let drive_teams_service = Arc::new(TeamsService::new(
         drive_teams_repo,
@@ -1151,6 +1155,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(drive::shared_drives::api::SharedDrivesApiDoc::openapi());
         doc.merge(drive::teams::api::TeamsApiDoc::openapi());
         doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
+        doc.merge(drive::teams::admin_api::TeamsAdminApiDoc::openapi());
         doc.merge(drive::sharing::api::SharingApiDoc::openapi());
         doc.merge(drive::storage::api::StorageApiDoc::openapi());
         doc.merge(drive::tags::api::TagsApiDoc::openapi());
@@ -1315,6 +1320,11 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                             .configure(drive::quota_requests::api::configure_admin)
                             .configure(auth::password_policy::api::configure_admin)
                             .configure(drive::feature_flags::api::configure_admin)
+                            // The administrator's view of teams: their size and their disk quota,
+                            // and nothing about their contents. Shares `TeamsApiState` with the
+                            // member-facing routes but takes `AdminUser`, which is the whole
+                            // difference between the two files.
+                            .configure(drive::teams::admin_api::configure_admin)
                             .configure(drive::fonts::api::configure_admin),
                     )
                     // Internal routes

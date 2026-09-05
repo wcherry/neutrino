@@ -4,7 +4,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildPageTree, flattenPageTree, type TeamPage } from '@neutrino/api-drive';
+import {
+  buildPageTree,
+  flattenPageTree,
+  TEAM_VISIBILITY_DESCRIPTIONS,
+  type DiscoverableTeam,
+  type TeamPage,
+  type TeamVisibility,
+} from '@neutrino/api-drive';
 import { roleCan, teamCan } from '@/app/(apps)/teams/permissions';
 import { parseTeamView, teamHref, teamPageHref } from '@/app/(apps)/teams/teamHref';
 
@@ -134,5 +141,52 @@ describe('teamHref', () => {
     expect(parseTeamView('pages')).toBe('pages');
     expect(parseTeamView('nonsense')).toBe('home');
     expect(parseTeamView(null)).toBe('home');
+  });
+});
+
+/**
+ * Visibility (issue #185).
+ *
+ * The client's job here is narrow and the test says so: it renders what the server decided. The
+ * button a Discover card shows comes from `joinAction`, not from `visibility`, precisely so the
+ * two cannot disagree — the previous draft derived behaviour on the client from a column the
+ * server never read, and every team behaved as private while the UI said otherwise.
+ */
+describe('team visibility', () => {
+  it('describes all three values, and each says both what it does and how you join', () => {
+    const values: TeamVisibility[] = ['private', 'organization', 'invite_only'];
+    for (const v of values) {
+      expect(TEAM_VISIBILITY_DESCRIPTIONS[v], `${v} has no description`).toBeTruthy();
+    }
+
+    // The distinction the two discoverable values exist for has to be visible in the words the
+    // owner reads before choosing, not just in the server's behaviour afterwards.
+    expect(TEAM_VISIBILITY_DESCRIPTIONS.organization).toMatch(/join it themselves/i);
+    expect(TEAM_VISIBILITY_DESCRIPTIONS.invite_only).toMatch(/request access/i);
+    expect(TEAM_VISIBILITY_DESCRIPTIONS.private).toMatch(/only members/i);
+  });
+
+  /**
+   * A `DiscoverableTeam` must not be usable where a `Team` is expected. `Team` carries `userRole`
+   * and means "a team you are in"; the discovery listing is the one place a caller sees a team
+   * they have no role in, and conflating the two is how the members' view leaks.
+   */
+  it('keeps the discoverable shape separate from the member shape', () => {
+    const discovered: DiscoverableTeam = {
+      id: 't9',
+      name: 'Marketing',
+      slug: 'marketing',
+      description: null,
+      avatarColor: null,
+      avatarEmoji: null,
+      visibility: 'organization',
+      memberCount: 4,
+      joinAction: 'join',
+      createdAt: '2026-09-04T00:00:00Z',
+    };
+
+    expect('userRole' in discovered).toBe(false);
+    expect('storageUsedBytes' in discovered).toBe(false);
+    expect('defaultPageId' in discovered).toBe(false);
   });
 });

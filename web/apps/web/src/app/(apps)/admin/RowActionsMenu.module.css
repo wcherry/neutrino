@@ -1,7 +1,7 @@
 /*
- * The Users table's row menu. Fixed rather than absolute: the table scrolls
+ * An admin table's row menu. Fixed rather than absolute: the tables scroll
  * inside `.tableWrap`, and an absolutely-positioned menu would be clipped by
- * it — the same reason Drive's row menus are positioned this way.
+ * one — the same reason Drive's row menus are positioned this way.
  */
 .menu {
   position: fixed;

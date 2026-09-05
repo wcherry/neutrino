@@ -13,13 +13,19 @@
  * accept one missing a key *this* file declares. Adding a flag means a migration, an entry in the
  * server's catalog, and an entry here; the tests fail until all three agree.
  *
- * **The list is one key long, and it should stay hard to lengthen.** Team Spaces was specified with
- * three per-phase sub-flags beside `teamSpaces`; they are not here. Each would have been defensible
- * alone, which is exactly how the previous list reached nineteen declared keys — and a feature
- * whose phases are separately switchable is a feature whose behaviour you work out by reading rows.
- * One feature, one switch.
+ * **The list should stay hard to lengthen, and the bar is a difference in blast radius.** Team
+ * Spaces was specified with three per-phase sub-flags beside `teamSpaces`; they are not here. Each
+ * would have been defensible alone, which is exactly how the previous list reached nineteen
+ * declared keys — and a feature whose phases are separately switchable is a feature whose
+ * behaviour you work out by reading rows. One feature, one switch.
+ *
+ * `teamFileTransfers` is the second key and clears that bar: every other part of Team Spaces acts
+ * on rows a team already owns, and the two transfer flows act on a member's own My Drive — moving
+ * a personal file into a team for good, and lending one without moving it. Being able to close
+ * that without taking Team Spaces down is worth a boolean. It is meaningless alone: the server
+ * checks `teamSpaces` first, so the client should too, and `canTransferToTeams` below is how.
  */
-export const FLAG_KEYS = ['teamSpaces'] as const;
+export const FLAG_KEYS = ['teamSpaces', 'teamFileTransfers'] as const;
 
 export type FeatureFlagKey = (typeof FLAG_KEYS)[number];
 
@@ -54,4 +60,17 @@ export function assertEveryFlagPresent(payload: unknown): FeatureFlags {
     );
   }
   return Object.fromEntries(FLAG_KEYS.map((k) => [k, record[k] as boolean])) as FeatureFlags;
+}
+
+/**
+ * Whether to offer moving or sharing a file into a team.
+ *
+ * Both flags, `teamSpaces` first, mirroring `TeamsService::require_transfers` on the server. One
+ * function rather than `flags.teamSpaces && flags.teamFileTransfers` at each call site, because
+ * the half that is easy to forget is the first one — and forgetting it puts "Move to a team space"
+ * in a Drive context menu on a deployment that has no teams, where every option in the dialog it
+ * opens would be a 404.
+ */
+export function canTransferToTeams(flags: FeatureFlags): boolean {
+  return flags.teamSpaces && flags.teamFileTransfers;
 }

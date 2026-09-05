@@ -34,7 +34,7 @@ const BASE_URL = 'http://localhost:9880';
  * web monorepo — and a copy that has to be updated by hand is exactly what this test catches when
  * it is not.
  */
-const DECLARED_BY_CLIENT = ['teamSpaces'];
+const DECLARED_BY_CLIENT = ['teamSpaces', 'teamFileTransfers'];
 
 function uniqueEmail(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}@example.com`;
@@ -78,7 +78,7 @@ test.describe('feature flags', () => {
     expect(res.status()).toBe(200);
   });
 
-  test('the Team Spaces flag ships disabled', async ({ request }) => {
+  test('both Team Spaces flags ship disabled', async ({ request }) => {
     const flags = (await (await request.get(`${BASE_URL}/api/v1/feature-flags`)).json()) as Record<
       string,
       boolean
@@ -89,19 +89,21 @@ test.describe('feature flags', () => {
   });
 
   /**
-   * There is exactly one flag, and a new one should have to argue for itself.
+   * The exact set, and a new key should have to argue for itself.
    *
    * The system this replaces reached fifteen keys one defensible addition at a time, until the app
    * a deployment served was something you worked out by reading rows. This test is the tripwire:
    * adding a key makes it fail, which is the point at which someone has to decide the flag is worth
-   * having rather than noticing later that it is.
+   * having rather than noticing later that it is. `teamFileTransfers` is the one addition so far,
+   * and its argument is in `src/drive/feature_flags/catalog.rs`: it gates the only routes that
+   * reach a file outside a team.
    */
-  test('there is one flag, not a family of them', async ({ request }) => {
+  test('the flag list is exactly what the product declares', async ({ request }) => {
     const flags = (await (await request.get(`${BASE_URL}/api/v1/feature-flags`)).json()) as Record<
       string,
       boolean
     >;
-    expect(Object.keys(flags).sort()).toEqual(['teamSpaces']);
+    expect(Object.keys(flags).sort()).toEqual([...DECLARED_BY_CLIENT].sort());
   });
 
   test('an ordinary user cannot read or change the flags', async ({ request, page }) => {

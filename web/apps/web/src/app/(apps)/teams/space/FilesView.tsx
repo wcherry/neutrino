@@ -13,7 +13,15 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, File as FileIcon, Folder, FolderPlus, Trash2, Upload } from 'lucide-react';
+import {
+  ChevronRight,
+  File as FileIcon,
+  Folder,
+  FolderPlus,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import {
   AlertDialog,
   Button,
@@ -38,8 +46,10 @@ import {
   type TeamFolder,
 } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { canTransferToTeams } from '@/lib/featureFlags';
 import { formatBytes } from '../../admin/bytes';
-import { teamCan } from '../permissions';
+import { roleCan, teamCan } from '../permissions';
 import styles from './space.module.css';
 
 const LOCKED_MESSAGE =
@@ -118,11 +128,35 @@ export function FilesView({ team }: { team: Team }) {
     onError: () => toastError('Could not delete the file.'),
   });
 
+  // Files members have lent to the team without giving them away (issue #185). A separate query and
+  // a separate section, deliberately: a lent file is not in the library, does not count against the
+  // team's meter, and is still somebody's to take back — folding it into the list above would make
+  // all three invisible.
+  const transfersOn = canTransferToTeams(useFeatureFlags());
+  const { data: sharedData } = useQuery({
+    queryKey: ['team-shares', team.id],
+    queryFn: () => teamsApi.listSharedFiles(team.id),
+    enabled: transfersOn,
+  });
+
+  const unshare = useMutation({
+    mutationFn: (fileId: string) => teamsApi.unshareFileFromTeam(team.id, fileId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['team-shares', team.id] });
+      success('No longer shared with this team.');
+    },
+    onError: () => toastError('Could not remove that file.'),
+  });
+
   const canUpload = teamCan(team, 'uploadFile');
   const canDelete = teamCan(team, 'deleteFile');
+  // `roleCan` rather than `teamCan`: archiving a team pauses its own content, and must not lock
+  // somebody's personal file inside it. The server takes the same view.
+  const canManageShares = roleCan(team.userRole, 'managePermissions');
 
   const folders = data?.folders ?? [];
   const files = data?.files ?? [];
+  const shared = sharedData?.files ?? [];
 
   return (
     <>
@@ -230,6 +264,48 @@ export function FilesView({ team }: { team: Team }) {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Only shown when there is something in it. An empty "Shared with this team" heading on
+          every team's Files page would advertise a feature rather than report a fact. */}
+      {shared.length > 0 && (
+        <>
+          <div className={styles.sharedHeading}>
+            <Heading level={2} size="sm">
+              Shared with this team
+            </Heading>
+            <Text size="sm" color="secondary">
+              These stay in their owner&apos;s Drive. The owner can stop sharing them at any time.
+            </Text>
+          </div>
+          <div className={styles.list}>
+            {shared.map((file) => (
+              <div key={file.fileId} className={styles.row}>
+                <FileIcon size={16} />
+                <div className={styles.rowMain}>
+                  <span className={styles.rowTitle}>{file.name}</span>
+                  <span className={styles.rowMeta}>
+                    {formatBytes(file.sizeBytes)} · shared by {file.sharedByName} ·{' '}
+                    {file.role === 'editor' ? 'can edit' : 'can view'}
+                  </span>
+                </div>
+                {(canManageShares || file.sharedBy === currentUser?.id) && (
+                  <div className={styles.rowActions}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Stop sharing ${file.name}`}
+                      loading={unshare.isPending}
+                      onClick={() => unshare.mutate(file.fileId)}
+                    >
+                      <X size={16} />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <Modal

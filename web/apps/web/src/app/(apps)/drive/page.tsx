@@ -36,7 +36,10 @@ import { FileContextMenu } from './FileContextMenu';
 import { FolderContextMenu } from './FolderContextMenu';
 import { FileInfoPanel } from './FileInfoPanel';
 import { ShareDialog } from './ShareDialog';
+import { TeamTransferDialog } from './TeamTransferDialog';
 import { MoveFolderDialog } from './MoveFolderDialog';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { canTransferToTeams } from '@/lib/featureFlags';
 import { FileGrid, type GridItem, type SortField, type SortDir, type FilterType } from '@neutrino/ui';
 import { DocumentPreviewModal, type DocumentKind } from '@/components/DocumentPreviewModal';
 import { routeForFile, previewKindForMime } from './routeForFile';
@@ -109,6 +112,10 @@ function DriveContent() {
   // "Manage tags" lands on the tag UI in one click instead of two.
   const [infoFile, setInfoFile] = useState<{ file: FileItem; focusTags: boolean } | null>(null);
   const [shareFile, setShareFile] = useState<FileItem | null>(null);
+  // Both team flags, `teamSpaces` first — see `canTransferToTeams`. With either off there is no
+  // menu entry at all, rather than one that opens a dialog whose every action 404s.
+  const [teamTransferFile, setTeamTransferFile] = useState<FileItem | null>(null);
+  const teamTransfersOn = canTransferToTeams(useFeatureFlags());
   const [moveFile, setMoveFile] = useState<FileItem | null>(null);
   const [docPreview, setDocPreview] = useState<{ id: string; kind: DocumentKind } | null>(null);
   const [renaming, setRenaming] = useState<FileItem | null>(null);
@@ -858,6 +865,7 @@ function DriveContent() {
           onInfo={() => { setInfoFile({ file: contextMenu.file, focusTags: false }); setContextMenu(null); }}
           onManageTags={() => { setInfoFile({ file: contextMenu.file, focusTags: true }); setContextMenu(null); }}
           onShare={() => { setShareFile(contextMenu.file); setContextMenu(null); }}
+          onAddToTeam={teamTransfersOn ? () => { setTeamTransferFile(contextMenu.file); setContextMenu(null); } : undefined}
           onRename={() => { openRename(contextMenu.file); setContextMenu(null); }}
           onStarToggle={() => { handleStar(contextMenu.file); setContextMenu(null); }}
           onDownload={() => { handleDownload(contextMenu.file); setContextMenu(null); }}
@@ -925,6 +933,10 @@ function DriveContent() {
 
       {shareFile && (
         <ShareDialog resource={shareFile} resourceType="file" onClose={() => setShareFile(null)} />
+      )}
+
+      {teamTransferFile && (
+        <TeamTransferDialog file={teamTransferFile} onClose={() => setTeamTransferFile(null)} />
       )}
 
       {moveFile && (

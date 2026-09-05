@@ -1,5 +1,5 @@
 use crate::drive::permissions::model::{NewPermissionRecord, PermissionRecord};
-use crate::schema::{files, folders, permissions, team_members};
+use crate::schema::{files, folders, permissions, team_file_shares, team_members};
 use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -219,6 +219,37 @@ impl PermissionsRepository {
             .optional()
             .map_err(|e| {
                 tracing::error!("DB find team role error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// The roles this file has been lent at, across every team the user belongs to (migration
+    /// 00130).
+    ///
+    /// One query rather than "which teams is this person in, then which of them has this file":
+    /// the file is the selective side — most files are lent to no team at all — so the index on
+    /// `team_file_shares (file_id)` answers the common case with a miss, and the join to
+    /// `team_members` never runs.
+    ///
+    /// Returns every match rather than one, because a file can be lent to two teams the same person
+    /// is in at different roles. Choosing between them is the caller's job and it is not a database
+    /// question: see `ShareRole::stronger`.
+    pub fn list_team_share_roles(
+        &self,
+        file_id: &str,
+        user_id: &str,
+    ) -> Result<Vec<String>, ApiError> {
+        let mut conn = self.get_conn()?;
+        team_file_shares::table
+            .inner_join(
+                team_members::table.on(team_members::team_id.eq(team_file_shares::team_id)),
+            )
+            .filter(team_file_shares::file_id.eq(file_id))
+            .filter(team_members::user_id.eq(user_id))
+            .select(team_file_shares::role)
+            .load::<String>(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list team share roles error: {:?}", e);
                 ApiError::internal("Database error")
             })
     }

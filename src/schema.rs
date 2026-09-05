@@ -764,6 +764,22 @@ diesel::table! {
 }
 
 diesel::table! {
+    team_join_requests (id) {
+        id -> Text,
+        team_id -> Text,
+        user_id -> Text,
+        user_email -> Text,
+        user_name -> Text,
+        message -> Nullable<Text>,
+        status -> Text,
+        decided_by -> Nullable<Text>,
+        decided_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     team_pages (id) {
         id -> Text,
         team_id -> Text,
@@ -795,6 +811,19 @@ diesel::table! {
         created_by -> Text,
         created_by_name -> Text,
         created_at -> Timestamp,
+    }
+}
+
+// Added in migration 130
+diesel::table! {
+    team_file_shares (id) {
+        id -> Text,
+        team_id -> Text,
+        file_id -> Text,
+        role -> Text,
+        shared_by -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -1089,6 +1118,7 @@ diesel::joinable!(quota_requests -> users (user_id));
 
 // Team Spaces
 diesel::joinable!(team_members -> teams (team_id));
+diesel::joinable!(team_join_requests -> teams (team_id));
 diesel::joinable!(team_pages -> teams (team_id));
 diesel::joinable!(team_page_versions -> team_pages (page_id));
 
@@ -1159,8 +1189,10 @@ diesel::allow_tables_to_appear_in_same_query!(
     // Team Spaces
     teams,
     team_members,
+    team_join_requests,
     team_pages,
     team_page_versions,
+    team_file_shares,
     feature_flags,
     legal_holds,
     retention_policies,

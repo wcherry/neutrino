@@ -50,8 +50,122 @@ const AVATAR_COLORS = [
   '#0891b2',
 ];
 
-function teamInitial(team: Team): string {
+function teamInitial(team: { avatarEmoji: string | null; name: string }): string {
   return team.avatarEmoji || team.name.trim().charAt(0).toUpperCase() || '?';
+}
+
+/**
+ * Teams the caller can see but has not joined.
+ *
+ * Only rendered when there are any, so a deployment where every team is private looks exactly as
+ * it did before this existed. What each button says is the server's `joinAction`, not something
+ * derived from `visibility` here — the policy lives in one place and the client renders it.
+ */
+function DiscoverSection({ onJoined }: { onJoined: (teamId: string) => void }) {
+  const qc = useQueryClient();
+  const { error: toastError, success } = useToast();
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const { data } = useQuery({
+    queryKey: ['teams', 'discoverable'],
+    queryFn: () => teamsApi.listDiscoverable(),
+  });
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['teams'] });
+  };
+
+  const join = useMutation({
+    mutationFn: (teamId: string) => teamsApi.join(teamId),
+    onSuccess: (_m, teamId) => {
+      refresh();
+      onJoined(teamId);
+    },
+    onError: (e: unknown) =>
+      toastError(e instanceof Error ? e.message : 'Could not join that team.'),
+    onSettled: () => setPendingId(null),
+  });
+
+  const ask = useMutation({
+    mutationFn: (teamId: string) => teamsApi.requestAccess(teamId),
+    onSuccess: () => {
+      refresh();
+      success('Your request has been sent to the team’s admins.');
+    },
+    onError: (e: unknown) =>
+      toastError(e instanceof Error ? e.message : 'Could not send that request.'),
+    onSettled: () => setPendingId(null),
+  });
+
+  const teams = data?.teams ?? [];
+  if (teams.length === 0) return null;
+
+  return (
+    <section className={styles.discover}>
+      <div className={styles.discoverHeader}>
+        <Heading level={2} size="base">
+          Discover
+        </Heading>
+        <Text size="sm" color="secondary">
+          Teams you can see but have not joined.
+        </Text>
+      </div>
+
+      <div className={styles.grid}>
+        {teams.map((team) => (
+          <div key={team.id} className={styles.discoverCard}>
+            <div className={styles.cardTop}>
+              <span
+                className={styles.avatar}
+                style={{ ['--team-avatar-color' as string]: team.avatarColor ?? undefined }}
+                aria-hidden
+              >
+                {teamInitial(team)}
+              </span>
+              <span className={styles.cardName}>{team.name}</span>
+            </div>
+            {team.description && (
+              <span className={styles.cardDescription}>{team.description}</span>
+            )}
+            <span className={styles.cardMeta}>
+              {team.memberCount} member{team.memberCount === 1 ? '' : 's'}
+            </span>
+
+            {team.joinAction === 'join' && (
+              <Button
+                size="sm"
+                loading={pendingId === team.id && join.isPending}
+                onClick={() => {
+                  setPendingId(team.id);
+                  join.mutate(team.id);
+                }}
+              >
+                Join
+              </Button>
+            )}
+            {team.joinAction === 'request' && (
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={pendingId === team.id && ask.isPending}
+                onClick={() => {
+                  setPendingId(team.id);
+                  ask.mutate(team.id);
+                }}
+              >
+                Request access
+              </Button>
+            )}
+            {team.joinAction === 'requested' && (
+              <Text size="sm" color="secondary">
+                Requested — waiting on an admin
+              </Text>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function CreateTeamDialog({
@@ -227,7 +341,7 @@ export default function SharedSpacesPage() {
         <EmptyState
           icon={Users}
           title="No Team Spaces yet"
-          description="A Team Space gives a group somewhere to keep its pages, its files and everything it knows that isn't a document."
+          description="A Team Space gives a group somewhere to keep its pages, its files and everything it knows that isn't a document. If your organization already has open teams, they are listed below."
           action={<Button onClick={() => setCreating(true)}>Create your first team</Button>}
         />
       )}
@@ -266,6 +380,8 @@ export default function SharedSpacesPage() {
           ))}
         </div>
       )}
+
+      <DiscoverSection onJoined={(teamId) => router.push(teamHref(teamId))} />
 
       <CreateTeamDialog
         open={creating}

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import styles from './UserActionsMenu.module.css';
+import styles from './RowActionsMenu.module.css';
 
-export interface UserActionItem {
+export interface RowActionItem {
   /** Rendered label; also the accessible name of the item. */
   label: string;
   icon: React.ReactNode;
@@ -17,23 +17,30 @@ export interface UserActionItem {
 /** A rule between two groups of items. */
 export const MENU_SEPARATOR = null;
 
-export type UserActionEntry = UserActionItem | typeof MENU_SEPARATOR;
+export type RowActionEntry = RowActionItem | typeof MENU_SEPARATOR;
 
 interface Props {
   x: number;
   y: number;
-  entries: UserActionEntry[];
+  entries: RowActionEntry[];
   onClose: () => void;
   'aria-label': string;
 }
 
 /**
- * The actions for one row of the Users table, behind the row's three-dot
- * button. A row has up to six of them and every one is a different rule about
- * a different account state, which as inline buttons wrapped the column into
- * something unreadable.
+ * The actions for one row of an admin table, behind the row's three-dot button.
+ *
+ * Was `UserActionsMenu`, and renamed when the Teams table wanted the same thing
+ * — the component never knew anything about a user, and a name that says
+ * otherwise is the kind that stops the second caller reusing it. It knows about
+ * a position, a list of entries, and closing.
+ *
+ * The reason for a menu rather than inline buttons is the same in both tables:
+ * a row has four to six actions, each a different rule about a different state,
+ * and as buttons they wrap the column into something unreadable — and put a
+ * destructive action one mis-click from a routine one.
  */
-export function UserActionsMenu({ x, y, entries, onClose, 'aria-label': ariaLabel }: Props) {
+export function RowActionsMenu({ x, y, entries, onClose, 'aria-label': ariaLabel }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x, y });
 
