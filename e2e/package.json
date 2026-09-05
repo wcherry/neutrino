@@ -7,11 +7,20 @@
     "test": "./scripts/run-tests.sh",
     "test:skip-build": "./scripts/run-tests.sh --skip-build",
     "playwright": "pnpm exec playwright test",
-    "report": "pnpm exec playwright show-report"
+    "report": "pnpm exec playwright show-report",
+    "perf": "./scripts/run-perf.sh",
+    "perf:skip-build": "./scripts/run-perf.sh --skip-build",
+    "perf:summarize": "pnpm exec tsx perf/report/summarize.ts"
   },
   "devDependencies": {
+    "@jridgewell/trace-mapping": "^0.3.31",
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0"
+    "docx": "^8.5.0",
+    "pptxgenjs": "^3.12.0",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.0",
+    "web-vitals": "^6.2.1",
+    "xlsx": "^0.18.5"
   }
 }

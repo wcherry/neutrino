@@ -15,6 +15,7 @@
     "*.ts",
     "fixtures/**/*.ts",
     "tests/**/*.ts",
+    "perf/**/*.ts",
     "scripts/**/*.ts"
   ],
   "exclude": ["node_modules", "dist"]
