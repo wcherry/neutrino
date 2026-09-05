@@ -136,6 +136,13 @@
   gap: var(--space-5);
 }
 
+/* Files only. 860px is a reading measure, which is right for the wiki the other three views are
+   and wrong for a file grid — it leaves the standard Drive listing three cards wide. This is the
+   width My Drive uses (`--page-max-width`), so the same grid looks the same in both places. */
+.mainInnerWide {
+  max-width: 1200px;
+}
+
 .pageHeader {
   display: flex;
   align-items: flex-start;

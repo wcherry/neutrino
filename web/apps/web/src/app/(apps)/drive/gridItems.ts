@@ -1,5 +1,13 @@
 import type { GridItem, SortDir, SortField } from '@neutrino/ui';
-import type { FileItem, Folder as FolderItem, TrashFileItem, TrashFolderItem } from '@/lib/api';
+import type {
+  FileItem,
+  Folder as FolderItem,
+  TeamFile,
+  TeamFolder,
+  TeamSharedFile,
+  TrashFileItem,
+  TrashFolderItem,
+} from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { Folder } from 'lucide-react';
 
@@ -95,6 +103,72 @@ export function trashFolderToGridItem(folder: TrashFolderItem): GridItem {
     sizeText: '—',
     modifiedText: formatDate(folder.deletedAt),
     updatedAt: folder.deletedAt,
+  };
+}
+
+/**
+ * A team's own files and folders, mapped the same way as everybody else's.
+ *
+ * Team rows *are* Drive rows — `files`/`folders` scoped by `team_id` — so a team file should show
+ * the icon, the size and the friendly date its owner's copy would have shown, and it does because
+ * this is the same mapping. Two fields have no team answer and are deliberately left off rather
+ * than faked: a star is a personal mark on a personal file, and the library listing carries no
+ * thumbnail, so a team card falls back to the mimetype icon.
+ */
+export function teamFileToGridItem(file: TeamFile): GridItem {
+  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : '—';
+  return {
+    id: file.id,
+    name: file.name,
+    kind: 'file',
+    icon: getFileIcon(file.mimeType),
+    iconColor: getIconColor(file.mimeType),
+    subtitle: formatFileSize(file.sizeBytes),
+    mimeType: file.mimeType,
+    typeText: ext,
+    sizeText: formatFileSize(file.sizeBytes),
+    modifiedText: formatDate(file.updatedAt),
+    updatedAt: file.updatedAt,
+  };
+}
+
+export function teamFolderToGridItem(folder: TeamFolder): GridItem {
+  return {
+    id: folder.id,
+    name: folder.name,
+    kind: 'folder',
+    icon: Folder,
+    iconColor: 'var(--color-amber, #d97706)',
+    subtitle: 'Folder',
+    typeText: 'Folder',
+    sizeText: '—',
+    modifiedText: formatDate(folder.updatedAt),
+    updatedAt: folder.updatedAt,
+  };
+}
+
+/**
+ * A file somebody has *lent* to the team, which is not one of the team's own.
+ *
+ * The subtitle says whose it is and what the team may do with it, because that is the whole
+ * difference and it is otherwise invisible: the row looks like a team file, and it is somebody's
+ * personal file they can take back at any moment. The date is when it was lent — a share has no
+ * other date the team is entitled to.
+ */
+export function teamSharedFileToGridItem(file: TeamSharedFile): GridItem {
+  const ext = file.name.includes('.') ? file.name.split('.').pop()!.toUpperCase() : '—';
+  return {
+    id: file.fileId,
+    name: file.name,
+    kind: 'file',
+    icon: getFileIcon(file.mimeType),
+    iconColor: getIconColor(file.mimeType),
+    subtitle: `${file.sharedByName} · ${file.role === 'editor' ? 'can edit' : 'can view'}`,
+    mimeType: file.mimeType,
+    typeText: ext,
+    sizeText: formatFileSize(file.sizeBytes),
+    modifiedText: formatDate(file.sharedAt),
+    updatedAt: file.sharedAt,
   };
 }
 

@@ -84,6 +84,12 @@
   color: var(--color-text-muted, #9ca3af);
 }
 
+/* Sits between the browser and the confirm button, so the warning is read on the way to the click
+   that cannot be taken back. */
+.warning {
+  margin-bottom: 12px;
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;

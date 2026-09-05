@@ -150,5 +150,7 @@ export type {
   TeamShareRole,
   TeamSharedFile,
   TeamSharedFileListResponse,
+  FileTeamShare,
+  FileTeamShareListResponse,
   MoveFileIntoTeamResponse,
 } from './teams';

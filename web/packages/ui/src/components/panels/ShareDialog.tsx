@@ -9,6 +9,7 @@ import {
   Text,
   Badge,
   Avatar,
+  TeamAvatar,
   Spinner,
   Divider,
   useToast,
@@ -42,6 +43,27 @@ export interface ShareUserSuggestion {
   name?: string | null;
 }
 
+/**
+ * What a file may be lent to a team at.
+ *
+ * Two roles where a person has four: `commenter` has no meaning for a team share, and `owner` is
+ * deliberately not offered — lending a file to a team is not handing every member the authority to
+ * give it away. Mirrors `ShareRole` on the server, which rejects anything else.
+ */
+export type ShareTeamRole = 'viewer' | 'editor';
+
+export interface ShareTeamSuggestion {
+  id: string;
+  name: string;
+  avatarColor?: string | null;
+  avatarEmoji?: string | null;
+}
+
+/** A team that already has access, as the access list renders it. */
+export interface ShareTeamGrant extends ShareTeamSuggestion {
+  role: ShareTeamRole;
+}
+
 export interface ShareDialogProps {
   resourceName: string;
   permissions?: SharePermission[];
@@ -51,6 +73,19 @@ export interface ShareDialogProps {
   permissionsPending?: boolean;
   linkPending?: boolean;
   createLinkPending?: boolean;
+  /**
+   * Teams that already have access, and the handlers for changing or ending that.
+   *
+   * All optional and all read together: the dialog offers teams only when `onSearchTeams` and
+   * `onAddTeam` are both given, so a caller that knows nothing about Team Spaces — or a deployment
+   * with the flags off — gets exactly the people-only dialog it had before.
+   */
+  teams?: ShareTeamGrant[];
+  teamsLoading?: boolean;
+  onSearchTeams?: (query: string) => Promise<ShareTeamSuggestion[]>;
+  onAddTeam?: (teamId: string, role: ShareTeamRole) => Promise<void>;
+  onTeamRoleChange?: (teamId: string, role: ShareTeamRole) => void;
+  onTeamRevoke?: (teamId: string) => void;
   onClose: () => void;
   onAddPerson: (email: string, role: SharePermissionRole) => Promise<void>;
   onSearchUsers?: (query: string) => Promise<ShareUserSuggestion[]>;
@@ -89,6 +124,22 @@ const PERM_ROLE_OPTIONS: { value: SharePermissionRole; label: string }[] = [
   { value: 'commenter', label: 'Commenter' },
   { value: 'editor', label: 'Editor' },
 ];
+
+/** A team is lent a file as one of two roles — there is no team `commenter` and never an `owner`. */
+const TEAM_ROLE_OPTIONS: { value: ShareTeamRole; label: string }[] = [
+  { value: 'viewer', label: 'Viewer' },
+  { value: 'editor', label: 'Editor' },
+];
+
+/** The nearest team role to a role picked for a person, for when the picker switches to a team. */
+function asTeamRole(role: SharePermissionRole): ShareTeamRole {
+  return role === 'editor' ? 'editor' : 'viewer';
+}
+
+/** One row of the picker: somebody to invite, or a team to lend the file to. */
+type Suggestion =
+  | { kind: 'user'; user: ShareUserSuggestion }
+  | { kind: 'team'; team: ShareTeamSuggestion };
 
 const HOUR_OPTIONS = Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0'));
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
@@ -317,6 +368,58 @@ function CollaboratorRow({
           </button>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * A team in the access list.
+ *
+ * Deliberately the same row shape as a person's — avatar, name, role, remove — because access is
+ * access and reading two differently-built lists to answer "who can open this?" is the thing that
+ * put team sharing in its own dialog in the first place. What differs is what the row *says*: a
+ * square mark rather than a round one, a "Team" badge, and two roles instead of four.
+ */
+function TeamRow({
+  team,
+  onRoleChange,
+  onRevoke,
+  isPending,
+}: {
+  team: ShareTeamGrant;
+  onRoleChange: (role: ShareTeamRole) => void;
+  onRevoke: () => void;
+  isPending: boolean;
+}) {
+  return (
+    <div className={styles.collaborator}>
+      <TeamAvatar name={team.name} color={team.avatarColor} emoji={team.avatarEmoji} size="sm" />
+      <div className={styles.collaboratorInfo}>
+        <Text size="sm" weight="medium">{team.name}</Text>
+        <Text size="xs" color="muted">Every member of this team</Text>
+      </div>
+      <Badge variant="default" size="sm">Team</Badge>
+      <select
+        className={styles.roleSelectSm}
+        value={team.role}
+        onChange={(e) => onRoleChange(e.target.value as ShareTeamRole)}
+        disabled={isPending}
+        aria-label={`Role for ${team.name}`}
+      >
+        {TEAM_ROLE_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className={styles.revokeBtn}
+        onClick={onRevoke}
+        disabled={isPending}
+        aria-label={`Remove access for ${team.name}`}
+        title="Remove access"
+      >
+        <Trash2 size={13} />
+      </button>
     </div>
   );
 }
@@ -723,6 +826,12 @@ export function ShareDialog({
   resourceName,
   permissions = [],
   permissionsLoading = false,
+  teams = [],
+  teamsLoading = false,
+  onSearchTeams,
+  onAddTeam,
+  onTeamRoleChange,
+  onTeamRevoke,
   shareLink,
   shareLinkLoading = false,
   permissionsPending = false,
@@ -748,26 +857,50 @@ export function ShareDialog({
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
 
-  const [suggestions, setSuggestions] = useState<ShareUserSuggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  /**
+   * The team the input currently stands for, if the picker landed on one.
+   *
+   * A team has no email address, so it cannot be typed and cannot live in `emailInput` as text the
+   * Add button parses back. It is picked from the suggestions and held here until it is added or
+   * the input is edited, and while it is set the input is showing the team's name rather than
+   * something anyone typed.
+   */
+  const [selectedTeam, setSelectedTeam] = useState<ShareTeamSuggestion | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Teams are offered only when the caller can both find and add one. Half a pair would be a
+  // picker that lists teams and cannot act on them.
+  const teamsEnabled = Boolean(onSearchTeams && onAddTeam);
 
   useEffect(() => {
     setOpen(true);
   }, []);
 
   const runSearch = useCallback(async (query: string) => {
-    if (!onSearchUsers || !query.trim()) {
+    if ((!onSearchUsers && !onSearchTeams) || !query.trim()) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
     setSuggestionsLoading(true);
     try {
-      const results = await onSearchUsers(query);
+      // Both searches at once, and a failing half does not take the other down with it: a query
+      // that matches a team is a perfectly good query even if the user lookup is unavailable.
+      const [people, foundTeams] = await Promise.all([
+        onSearchUsers?.(query).catch(() => [] as ShareUserSuggestion[]) ?? [],
+        onSearchTeams?.(query).catch(() => [] as ShareTeamSuggestion[]) ?? [],
+      ]);
+      // Teams first: there are few of them and they are the broader grant, so they should not be
+      // below a scrolling list of people who happen to share a prefix.
+      const results: Suggestion[] = [
+        ...foundTeams.map((team) => ({ kind: 'team' as const, team })),
+        ...people.map((user) => ({ kind: 'user' as const, user })),
+      ];
       setSuggestions(results);
       setShowSuggestions(results.length > 0);
       setActiveIndex(-1);
@@ -776,12 +909,14 @@ export function ShareDialog({
     } finally {
       setSuggestionsLoading(false);
     }
-  }, [onSearchUsers]);
+  }, [onSearchUsers, onSearchTeams]);
 
   function handleEmailChange(value: string) {
     setEmailInput(value);
+    // Typing over a picked team unpicks it — the text no longer stands for that team.
+    setSelectedTeam(null);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (!value.trim() || !onSearchUsers) {
+    if (!value.trim() || (!onSearchUsers && !onSearchTeams)) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -789,8 +924,9 @@ export function ShareDialog({
     searchTimerRef.current = setTimeout(() => runSearch(value), 250);
   }
 
-  function selectSuggestion(s: ShareUserSuggestion) {
-    setEmailInput(s.email);
+  function selectSuggestion(s: Suggestion) {
+    setEmailInput(s.kind === 'team' ? s.team.name : s.user.email);
+    setSelectedTeam(s.kind === 'team' ? s.team : null);
     setSuggestions([]);
     setShowSuggestions(false);
     setActiveIndex(-1);
@@ -803,7 +939,7 @@ export function ShareDialog({
         e.preventDefault();
         selectSuggestion(suggestions[activeIndex]);
       } else {
-        handleAddPerson();
+        handleAdd();
       }
       return;
     }
@@ -820,16 +956,22 @@ export function ShareDialog({
     }
   }
 
-  async function handleAddPerson() {
+  /** One button for both, because from here they are the same act: give this thing access. */
+  async function handleAdd() {
     if (!emailInput.trim() || isAdding) return;
+    const team = selectedTeam;
     setIsAdding(true);
     setSuggestions([]);
     setShowSuggestions(false);
     try {
-      await onAddPerson(emailInput.trim(), selectedRole);
+      if (team && onAddTeam) await onAddTeam(team.id, asTeamRole(selectedRole));
+      else await onAddPerson(emailInput.trim(), selectedRole);
       setEmailInput('');
+      setSelectedTeam(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to add person');
+      toast.error(
+        e instanceof Error ? e.message : team ? 'Failed to add team' : 'Failed to add person'
+      );
     } finally {
       setIsAdding(false);
     }
@@ -858,22 +1000,36 @@ export function ShareDialog({
     <Modal open={open} onClose={onClose} size="md">
       <ModalHeader title={`Share "${resourceName}"`} onClose={onClose} />
       <ModalBody>
-        {/* Add people */}
+        {/* Add people, and — where Team Spaces is on — teams, through the same box */}
         <div className={styles.section}>
-          <Text size="sm" weight="semibold">Add people</Text>
+          <Text size="sm" weight="semibold">
+            {teamsEnabled ? 'Add people or team' : 'Add people'}
+          </Text>
           <div className={styles.addRow}>
             <div className={styles.emailInputWrap}>
+              {selectedTeam && (
+                <span className={styles.inputMark}>
+                  <TeamAvatar
+                    name={selectedTeam.name}
+                    color={selectedTeam.avatarColor}
+                    emoji={selectedTeam.avatarEmoji}
+                    size="xs"
+                  />
+                </span>
+              )}
               <input
                 ref={inputRef}
-                className={styles.emailInput}
+                className={[styles.emailInput, selectedTeam ? styles.emailInputWithMark : '']
+                  .filter(Boolean)
+                  .join(' ')}
                 type="text"
-                placeholder="Enter email address"
+                placeholder={teamsEnabled ? 'Enter an email address or team name' : 'Enter email address'}
                 value={emailInput}
                 onChange={(e) => handleEmailChange(e.target.value)}
                 onKeyDown={handleInputKeyDown}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                 onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                aria-label="Email address to share with"
+                aria-label={teamsEnabled ? 'Email address or team to share with' : 'Email address to share with'}
                 aria-autocomplete="list"
                 aria-expanded={showSuggestions}
                 autoComplete="off"
@@ -884,18 +1040,35 @@ export function ShareDialog({
                     <div className={styles.suggestionLoading}><Spinner size="sm" /></div>
                   ) : suggestions.map((s, i) => (
                     <button
-                      key={s.id}
+                      key={s.kind === 'team' ? `team:${s.team.id}` : `user:${s.user.id}`}
                       type="button"
                       role="option"
                       aria-selected={i === activeIndex}
                       className={`${styles.suggestionItem} ${i === activeIndex ? styles.suggestionItemActive : ''}`}
                       onMouseDown={(e) => { e.preventDefault(); selectSuggestion(s); }}
                     >
-                      <Avatar name={s.name || s.email} size="sm" />
-                      <div className={styles.suggestionInfo}>
-                        {s.name && <Text size="sm" weight="medium">{s.name}</Text>}
-                        <Text size="xs" color="muted">{s.email}</Text>
-                      </div>
+                      {s.kind === 'team' ? (
+                        <>
+                          <TeamAvatar
+                            name={s.team.name}
+                            color={s.team.avatarColor}
+                            emoji={s.team.avatarEmoji}
+                            size="sm"
+                          />
+                          <div className={styles.suggestionInfo}>
+                            <Text size="sm" weight="medium">{s.team.name}</Text>
+                            <Text size="xs" color="muted">Team space</Text>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Avatar name={s.user.name || s.user.email} size="sm" />
+                          <div className={styles.suggestionInfo}>
+                            {s.user.name && <Text size="sm" weight="medium">{s.user.name}</Text>}
+                            <Text size="xs" color="muted">{s.user.email}</Text>
+                          </div>
+                        </>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -903,11 +1076,14 @@ export function ShareDialog({
             </div>
             <select
               className={styles.roleSelect}
-              value={selectedRole}
+              // A team has no `commenter`, so the picker narrows to two the moment one is chosen —
+              // and a role already set to Commenter reads back as Viewer, which is what would be
+              // sent.
+              value={selectedTeam ? asTeamRole(selectedRole) : selectedRole}
               onChange={(e) => setSelectedRole(e.target.value as SharePermissionRole)}
               aria-label="Role"
             >
-              {PERM_ROLE_OPTIONS.map((o) => (
+              {(selectedTeam ? TEAM_ROLE_OPTIONS : PERM_ROLE_OPTIONS).map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
@@ -915,7 +1091,7 @@ export function ShareDialog({
               variant="primary"
               size="sm"
               icon={<UserPlus size={14} />}
-              onClick={handleAddPerson}
+              onClick={handleAdd}
               disabled={!emailInput.trim() || isAdding}
             >
               {isAdding ? 'Adding…' : 'Add'}
@@ -925,16 +1101,38 @@ export function ShareDialog({
 
         <Divider spacing="sm" />
 
-        {/* Collaborators */}
+        {/* Who has access — people and, where they are offered, teams */}
         <div className={styles.section}>
-          <Text size="sm" weight="semibold">People with access</Text>
-          {permissionsLoading ? (
+          <Text size="sm" weight="semibold">
+            {teamsEnabled ? 'People and teams with access' : 'People with access'}
+          </Text>
+          {permissionsLoading || teamsLoading ? (
             <div className={styles.loadingRow}><Spinner size="sm" /></div>
-          ) : permissions.length === 0 ? (
+          ) : permissions.length === 0 && teams.length === 0 ? (
             <Text size="sm" color="muted">No collaborators yet.</Text>
           ) : (
             <div className={styles.collaboratorList}>
-              {[...owners, ...nonOwners].map((perm) => (
+              {owners.map((perm) => (
+                <CollaboratorRow
+                  key={perm.id}
+                  perm={perm}
+                  onRoleChange={(role) => onRoleChange(perm.userId, role)}
+                  onRevoke={() => onRevoke(perm.userId)}
+                  isPending={permissionsPending}
+                />
+              ))}
+              {/* Between the owner and the individuals: a team grant covers more people than any
+                  row below it, so it should not be buried under them. */}
+              {teams.map((team) => (
+                <TeamRow
+                  key={team.id}
+                  team={team}
+                  onRoleChange={(role) => onTeamRoleChange?.(team.id, role)}
+                  onRevoke={() => onTeamRevoke?.(team.id)}
+                  isPending={permissionsPending}
+                />
+              ))}
+              {nonOwners.map((perm) => (
                 <CollaboratorRow
                   key={perm.id}
                   perm={perm}

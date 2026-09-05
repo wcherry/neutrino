@@ -8,6 +8,7 @@ import {
   usersApi,
   authApi,
   encryptionApi,
+  teamsApi,
   type FileItem,
   type Folder as FolderItem,
   type PermissionRole,
@@ -26,8 +27,24 @@ import {
 import { useUser } from '@neutrino/auth';
 import { useToast } from '@neutrino/ui';
 import { ShareDialog as ShareDialogUI } from '@neutrino/ui';
-import type { SharePermission, SharePermissionRole } from '@neutrino/ui';
+import type {
+  SharePermission,
+  SharePermissionRole,
+  ShareTeamGrant,
+  ShareTeamRole,
+} from '@neutrino/ui';
 import { KeyChangeDialog } from '@/components/KeyChangeDialog';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
+import { canTransferToTeams } from '@/lib/featureFlags';
+import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
+
+/**
+ * Team roles that may add content to a team.
+ *
+ * A Viewer's teams are not offered, because the server refuses the share with a 403 and a picker
+ * whose entries fail is worse than a shorter picker.
+ */
+const CAN_ADD_CONTENT = ['owner', 'admin', 'editor', 'contributor'];
 
 interface Props {
   resource: FileItem | FolderItem;
@@ -42,6 +59,40 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
 
   const permsKey = ['permissions', resourceType, resource.id];
   const linkKey = ['share-link', resourceType, resource.id];
+
+  // ── Teams ──────────────────────────────────────────────────────────────────
+  //
+  // Sharing with a team is sharing (issue #185 shipped it as its own dialog; it belongs here, in
+  // the one place that answers "who can open this?"). Both flags, `teamSpaces` first — see
+  // `canTransferToTeams` — and files only: a *folder* cannot be lent to a team, the server has no
+  // route for it, so for one the dialog is exactly what it always was.
+  const teamsOn = canTransferToTeams(useFeatureFlags()) && resourceType === 'file';
+  const teamSharesKey = ['file-team-shares', resource.id];
+
+  const { data: myTeams } = useQuery({
+    queryKey: ['teams'],
+    queryFn: () => teamsApi.list(),
+    enabled: teamsOn,
+  });
+
+  const { data: teamShares, isLoading: teamSharesLoading } = useQuery({
+    queryKey: teamSharesKey,
+    queryFn: () => teamsApi.listFileTeamShares(resource.id),
+    enabled: teamsOn,
+    // 404 for a file that is not the caller's own — the same answer the write routes give, and not
+    // worth retrying or reporting: someone who cannot lend the file has nothing to see here.
+    retry: false,
+  });
+
+  /**
+   * Whether to offer the team picker at all.
+   *
+   * The listing succeeding is the answer to "is this file mine to lend?", so it doubles as the
+   * gate: a collaborator who opened Share on somebody else's document is not shown a picker whose
+   * every entry would come back 404 from `share_file_with_team`. Costs a moment on open, during
+   * which the dialog is the people-only one.
+   */
+  const canLendToTeams = teamsOn && teamShares !== undefined;
 
   const { data: permsData, isLoading: permsLoading } = useQuery({
     queryKey: permsKey,
@@ -115,6 +166,51 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: linkKey }),
     onError: (e: Error) => toast.error(e.message),
   });
+
+  /** Everything a team share changes: the file's team list, and the team's own Files page. */
+  function invalidateTeamShares(): void {
+    queryClient.invalidateQueries({ queryKey: teamSharesKey });
+    queryClient.invalidateQueries({ queryKey: ['team-shares'] });
+  }
+
+  const teamRevokeMutation = useMutation({
+    mutationFn: (teamId: string) => teamsApi.unshareFileFromTeam(teamId, resource.id),
+    onSuccess: () => {
+      invalidateTeamShares();
+      toast.success('Access removed');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Re-sharing upserts the one row, so changing a role is the same call as making the share. The
+  // key handover is not repeated: everyone who could open the file a moment ago still can, and a
+  // viewer promoted to editor was already sealed to.
+  const teamRoleMutation = useMutation({
+    mutationFn: ({ teamId, role }: { teamId: string; role: ShareTeamRole }) =>
+      teamsApi.shareFileWithTeam(teamId, resource.id, role),
+    onSuccess: () => invalidateTeamShares(),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  /**
+   * Lend the file to a team, then hand its members the key.
+   *
+   * Two calls in this order and not the other: `POST /encryption/files/{id}/share` refuses a
+   * recipient with no access to the file yet, so the reseal has to follow the share. See
+   * `lib/teamTransfer.ts` — nothing in the handover is fatal, and what could not be sealed is said
+   * in the toast rather than swallowed.
+   */
+  async function handleAddTeam(teamId: string, role: ShareTeamRole): Promise<void> {
+    const team = (myTeams?.teams ?? []).find((t) => t.id === teamId);
+    await teamsApi.shareFileWithTeam(teamId, resource.id, role);
+    const keys = await handFileKeyToTeam(teamId, resource.id, currentUser?.id);
+    invalidateTeamShares();
+
+    const headline = `"${resource.name}" is shared with ${team?.name ?? 'the team'}.`;
+    const keyNote = describeKeyHandover(keys);
+    if (keyNote) toast.error(`${headline} ${keyNote}`);
+    else toast.success(headline);
+  }
 
   // ── Recipient key verification ─────────────────────────────────────────────
   //
@@ -250,6 +346,14 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
     userEmail: p.userEmail ?? null,
   }));
 
+  const teamGrants: ShareTeamGrant[] = (teamShares?.teams ?? []).map((t) => ({
+    id: t.teamId,
+    name: t.name,
+    avatarColor: t.avatarColor,
+    avatarEmoji: t.avatarEmoji,
+    role: t.role,
+  }));
+
   return (
     <>
       {keyChange && (
@@ -267,9 +371,43 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
         resourceName={resource.name}
         permissions={permissions}
         permissionsLoading={permsLoading}
+        teams={teamGrants}
+        teamsLoading={teamsOn && teamSharesLoading}
+        onSearchTeams={
+          canLendToTeams
+            ? async (query) => {
+                // Filtered here rather than by the server: the caller's own teams are a short list
+                // already fetched for the picker, and there is no team search endpoint — a team is
+                // not discoverable by name unless you are in it or it says otherwise.
+                const q = query.trim().toLowerCase();
+                return (myTeams?.teams ?? [])
+                  .filter(
+                    (t) =>
+                      !t.archived &&
+                      CAN_ADD_CONTENT.includes(t.userRole) &&
+                      t.name.toLowerCase().includes(q)
+                  )
+                  .slice(0, 5)
+                  .map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    avatarColor: t.avatarColor,
+                    avatarEmoji: t.avatarEmoji,
+                  }));
+              }
+            : undefined
+        }
+        onAddTeam={canLendToTeams ? handleAddTeam : undefined}
+        onTeamRoleChange={(teamId, role) => teamRoleMutation.mutate({ teamId, role })}
+        onTeamRevoke={(teamId) => teamRevokeMutation.mutate(teamId)}
         shareLink={shareLink ?? null}
         shareLinkLoading={linkLoading}
-        permissionsPending={updateMutation.isPending || revokeMutation.isPending}
+        permissionsPending={
+          updateMutation.isPending ||
+          revokeMutation.isPending ||
+          teamRoleMutation.isPending ||
+          teamRevokeMutation.isPending
+        }
         linkPending={
           toggleLinkMutation.isPending ||
           updateLinkRoleMutation.isPending ||

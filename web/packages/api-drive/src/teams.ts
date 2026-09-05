@@ -318,9 +318,35 @@ export interface TeamSharedFileListResponse {
   total: number;
 }
 
+/**
+ * One team a file has been lent to, as the file's own Share dialog lists it.
+ *
+ * The mirror image of `TeamSharedFile`: that answers "what has this team been lent?", this answers
+ * "who has this file been lent to?" — so it carries the team's identity, avatar included, rather
+ * than the file's.
+ */
+export interface FileTeamShare {
+  teamId: string;
+  name: string;
+  slug: string;
+  avatarColor: string | null;
+  avatarEmoji: string | null;
+  role: TeamShareRole;
+  sharedBy: string;
+  sharedAt: string;
+}
+
+export interface FileTeamShareListResponse {
+  teams: FileTeamShare[];
+  total: number;
+}
+
 // ── Client ───────────────────────────────────────────────────────────────────
 
 const base = '/api/v1/drive/teams';
+
+/** The one transfer route that hangs off a file rather than a team. */
+const filesBase = '/api/v1/drive/files';
 
 export const teamsApi = {
   async list(): Promise<TeamListResponse> {
@@ -615,6 +641,20 @@ export const teamsApi = {
   /** What members have lent to this team. Any member can read it. */
   async listSharedFiles(teamId: string): Promise<TeamSharedFileListResponse> {
     return request<TeamSharedFileListResponse>(`${base}/${encodeURIComponent(teamId)}/shares`);
+  },
+
+  /**
+   * Which teams one of the caller's own files is lent to.
+   *
+   * The file's side of the same rows `listSharedFiles` reads from the team's side, and the owner's
+   * question rather than the team's: a file that is not the caller's own live personal file answers
+   * **404**, exactly as the two write routes do. One request whatever the caller's team count —
+   * asking per team would be one per team for a file usually lent to none of them.
+   */
+  async listFileTeamShares(fileId: string): Promise<FileTeamShareListResponse> {
+    return request<FileTeamShareListResponse>(
+      `${filesBase}/${encodeURIComponent(fileId)}/team-shares`
+    );
   },
 
   /** Take a lend back. The owner who made it, or a team Owner/Admin. */

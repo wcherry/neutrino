@@ -1970,6 +1970,51 @@ impl TeamsService {
         })
     }
 
+    /// Which teams one of the caller's own files is lent to.
+    ///
+    /// The other listing above is a team's question — "what have we been lent?" — and answers it for
+    /// every member. This is the owner's, asked by the file's Share dialog, and the answer is only
+    /// ever about a file the caller still owns: the rows it returns are the ones that dialog offers
+    /// to re-role or revoke, and both of those are the owner's decision alone. A file that is not
+    /// the caller's own live personal file therefore has no answer here rather than an empty one —
+    /// the same 404 the two write routes give it, so "not yours" reads the same on all three.
+    ///
+    /// An **archived** team's share is included. The lend still stands while the team is archived
+    /// and taking it back is still the owner's to do, so hiding the row would hide the one control
+    /// that ends it.
+    pub fn list_file_team_shares(
+        &self,
+        file_id: &str,
+        user: &AuthenticatedUser,
+    ) -> Result<FileTeamShareListResponse, ApiError> {
+        self.require_transfers()?;
+
+        self.repo
+            .find_own_unclaimed_file(file_id, &user.user_id)?
+            .ok_or_else(|| ApiError::not_found("No file of yours with that id"))?;
+
+        let teams: Vec<FileTeamShareResponse> = self
+            .repo
+            .list_shares_for_file(file_id)?
+            .into_iter()
+            .map(|(share, team)| FileTeamShareResponse {
+                team_id: team.id,
+                name: team.name,
+                slug: team.slug,
+                avatar_color: team.avatar_color,
+                avatar_emoji: team.avatar_emoji,
+                role: share.role,
+                shared_by: share.shared_by,
+                shared_at: share.created_at.to_string(),
+            })
+            .collect();
+
+        Ok(FileTeamShareListResponse {
+            total: teams.len() as i64,
+            teams,
+        })
+    }
+
     /// Take a lent file back, or turn one down.
     ///
     /// Two people may do this and for different reasons, which is why the check is not the file

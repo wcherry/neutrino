@@ -984,8 +984,38 @@ pub async fn unshare_file_from_team(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// The teams one of the caller's own files is lent to.
+///
+/// The one route in this module that does not hang off `/teams`, because it is not a question about
+/// a team: the file's Share dialog lists teams beside the people who have access, and it holds a
+/// file id and no team id at all. Asking it per team instead would be one request per team the
+/// caller belongs to, for a file that is usually lent to none of them.
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/files/{fileId}/team-shares",
+    params(("fileId" = String, Path, description = "File id")),
+    responses(
+        (status = 200, description = "The teams this file is lent to", body = FileTeamShareListResponse),
+        (status = 404, description = "No file of the caller's with that id, or transfers are not enabled"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[get("/files/{file_id}/team-shares")]
+pub async fn list_file_team_shares(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<String>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<FileTeamShareListResponse>, ApiError> {
+    Ok(web::Json(
+        state
+            .service
+            .list_file_team_shares(&path.into_inner(), &user)?,
+    ))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(
+    cfg.service(list_file_team_shares).service(
         web::scope("/teams")
             // The more specific paths are registered first: actix matches in registration order,
             // and `/{team_id}` would otherwise swallow `/{team_id}/pages` for a GET.
@@ -1067,6 +1097,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         share_file_with_team,
         list_shared_files,
         unshare_file_from_team,
+        list_file_team_shares,
     ),
     components(schemas(
         TeamResponse,
@@ -1102,10 +1133,12 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         ShareFileWithTeamRequest,
         TeamSharedFileResponse,
         TeamSharedFileListResponse,
+        FileTeamShareResponse,
+        FileTeamShareListResponse,
     )),
     tags((
         name = "drive-teams",
-        description = "Team Spaces: a Team owns its members, its wiki pages, its file library, its activity and its storage. Membership decides access to everything beneath a team, and a private team a caller has no role in answers 404 rather than 403 — whether it exists is itself something membership decides. `visibility` is the one exception and the only thing that relaxes it: an `organization` team is discoverable by any signed-in user and joined by adding yourself, and an `invite_only` team is discoverable and joined by asking. Discovery is confined to GET /teams/discoverable, which returns a summary rather than the members' view — every other route still requires membership. Every route here is behind the `teamSpaces` feature flag and answers 404 when it is off. The four transfer routes — POST /{teamId}/library/moves and the /{teamId}/shares family — need `teamFileTransfers` as well, because they are the only ones that touch a file outside a team: a move gives a personal file to the team for good, and a share lends one without moving it, revocably. `teamSpaces` is checked first, so a deployment with only `teamFileTransfers` on behaves exactly like one with neither."
+        description = "Team Spaces: a Team owns its members, its wiki pages, its file library, its activity and its storage. Membership decides access to everything beneath a team, and a private team a caller has no role in answers 404 rather than 403 — whether it exists is itself something membership decides. `visibility` is the one exception and the only thing that relaxes it: an `organization` team is discoverable by any signed-in user and joined by adding yourself, and an `invite_only` team is discoverable and joined by asking. Discovery is confined to GET /teams/discoverable, which returns a summary rather than the members' view — every other route still requires membership. Every route here is behind the `teamSpaces` feature flag and answers 404 when it is off. The five transfer routes — POST /{teamId}/library/moves, the /{teamId}/shares family, and GET /files/{fileId}/team-shares — need `teamFileTransfers` as well, because they are the only ones that touch a file outside a team: a move gives a personal file to the team for good, and a share lends one without moving it, revocably. `teamSpaces` is checked first, so a deployment with only `teamFileTransfers` on behaves exactly like one with neither."
     )),
     security(("bearer_auth" = []))
 )]
