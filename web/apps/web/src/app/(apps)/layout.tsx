@@ -27,6 +27,7 @@ import {
 } from '@/lib/api';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { getNavSections, withActiveItem } from './navSections';
+import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { NewItemFAB } from './NewItemFAB';
 import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
 import { RequestStorageDialog } from '@/components/RequestStorageDialog';
@@ -116,7 +117,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
   const tags = useMemo(() => tagsData?.tags ?? [], [tagsData]);
 
-  const navSections = withActiveItem(getNavSections(isAdmin, tags), pathname);
+  // Shared Drives becomes Shared Spaces when `teamSpaces` is on. The flag reads false until
+  // the map arrives, so the sidebar starts as the pre-#185 one rather than flashing an entry that
+  // then disappears.
+  const flags = useFeatureFlags();
+  const navSections = withActiveItem(
+    getNavSections(isAdmin, tags, flags.teamSpaces),
+    pathname
+  );
 
   const { data: profileDetails } = useQuery({
     queryKey: ['profile-details'],

@@ -1,5 +1,5 @@
 use crate::drive::permissions::model::{NewPermissionRecord, PermissionRecord};
-use crate::schema::{files, folders, permissions};
+use crate::schema::{files, folders, permissions, team_members};
 use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -166,6 +166,59 @@ impl PermissionsRepository {
             .map(|opt| opt.flatten())
             .map_err(|e| {
                 tracing::error!("DB get file folder_id error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// The team a file belongs to, if any (migration 00128).
+    ///
+    /// Read during the effective-role walk so a team's members reach its files through the same
+    /// permission check every other Drive read goes through, rather than through a second access
+    /// path that download, preview, thumbnails and info would each have to learn about separately.
+    pub fn get_file_team_id(&self, file_id: &str) -> Result<Option<String>, ApiError> {
+        let mut conn = self.get_conn()?;
+        files::table
+            .filter(files::id.eq(file_id))
+            .select(files::team_id)
+            .first::<Option<String>>(&mut conn)
+            .optional()
+            .map(|opt| opt.flatten())
+            .map_err(|e| {
+                tracing::error!("DB get file team_id error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// The team a folder belongs to, if any.
+    pub fn get_folder_team_id(&self, folder_id: &str) -> Result<Option<String>, ApiError> {
+        let mut conn = self.get_conn()?;
+        folders::table
+            .filter(folders::id.eq(folder_id))
+            .select(folders::team_id)
+            .first::<Option<String>>(&mut conn)
+            .optional()
+            .map(|opt| opt.flatten())
+            .map_err(|e| {
+                tracing::error!("DB get folder team_id error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// This user's role in a team, or `None` when they are not in it.
+    pub fn find_team_role(
+        &self,
+        team_id: &str,
+        user_id: &str,
+    ) -> Result<Option<String>, ApiError> {
+        let mut conn = self.get_conn()?;
+        team_members::table
+            .filter(team_members::team_id.eq(team_id))
+            .filter(team_members::user_id.eq(user_id))
+            .select(team_members::role)
+            .first::<String>(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB find team role error: {:?}", e);
                 ApiError::internal("Database error")
             })
     }

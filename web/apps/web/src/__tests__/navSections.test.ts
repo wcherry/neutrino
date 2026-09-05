@@ -78,3 +78,38 @@ describe('withActiveItem', () => {
     expect(active.map((i) => i.href)).toEqual(['/slides']);
   });
 });
+
+/**
+ * Team Spaces replaces Shared Drives in the sidebar rather than sitting beside it (issue #185).
+ *
+ * Two entries would be two answers to "where does my team's stuff live", and replacing is also
+ * what makes the flag a real kill switch: turning it off puts the old entry back, and the Shared
+ * Drives page and its endpoint were never removed — they are what the iOS and macOS clients read.
+ */
+describe('the Team section and the teamSpaces flag', () => {
+  it('shows Shared Drives while the flag is off', () => {
+    const team = getNavSections(false, [], false).find((s) => s.id === 'team');
+    expect(team?.items.map((i) => [i.label, i.href])).toEqual([
+      ['Shared Drives', '/drive/team'],
+    ]);
+  });
+
+  it('replaces it with Shared Spaces when the flag is on', () => {
+    const team = getNavSections(false, [], true).find((s) => s.id === 'team');
+    expect(team?.items.map((i) => [i.label, i.href])).toEqual([['Shared Spaces', '/teams']]);
+  });
+
+  /**
+   * Fails closed: a caller that has not read the flag — or is rendering before the flag map has
+   * arrived — gets the pre-#185 sidebar rather than an entry that appears and then disappears.
+   */
+  it('defaults to the pre-Team-Spaces sidebar', () => {
+    const team = getNavSections(false, []).find((s) => s.id === 'team');
+    expect(team?.items[0].label).toBe('Shared Drives');
+  });
+
+  it('lights up the Shared Spaces entry inside a team', () => {
+    const sections = getNavSections(false, [], true);
+    expect(activeHref(sections, '/teams/space')).toBe('/teams');
+  });
+});

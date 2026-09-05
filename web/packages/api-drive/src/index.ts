@@ -107,3 +107,38 @@ export type {
   TaggedFile,
   ListTaggedFilesResponse,
 } from './types';
+
+// Team Spaces (issue #185). Behind the `teamSpaces` feature flag server-side, where a gated-off
+// route answers 404 — read the flag before rendering a team surface rather than inferring it from
+// a failed request.
+export {
+  teamsApi,
+  buildPageTree,
+  flattenPageTree,
+  TEAM_ROLES,
+  TEAM_ROLE_LABELS,
+  TEAM_ROLE_DESCRIPTIONS,
+} from './teams';
+
+export type {
+  Team,
+  TeamRole,
+  TeamVisibility,
+  TeamListResponse,
+  CreateTeamRequest,
+  UpdateTeamRequest,
+  TeamMember,
+  TeamMemberListResponse,
+  TeamPage,
+  TeamPageListResponse,
+  TeamPageNode,
+  CreatePageRequest,
+  UpdatePageRequest,
+  TeamPageVersion,
+  TeamPageVersionListResponse,
+  TeamActivityEntry,
+  TeamActivityResponse,
+  TeamFile,
+  TeamFolder,
+  TeamLibraryResponse,
+} from './teams';

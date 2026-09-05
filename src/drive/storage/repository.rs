@@ -117,6 +117,7 @@ impl StorageRepository {
 
         let mut base = files::table
             .filter(files::user_id.eq(user_id))
+            .filter(files::team_id.is_null())
             .filter(files::deleted_at.is_null())
             .into_boxed();
 
@@ -142,6 +143,7 @@ impl StorageRepository {
 
         let mut base = files::table
             .filter(files::user_id.eq(user_id))
+            .filter(files::team_id.is_null())
             .filter(files::deleted_at.is_null())
             .select(FileRecord::as_select())
             .limit(query.limit)

@@ -19,7 +19,7 @@ import { Spinner, Toggle, ProgressBar, useToast, DropZone } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { adminApi, fontsApi } from '@neutrino/api-admin';
 import { ApiClientError } from '@neutrino/api-core';
-import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
+import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, FeatureFlag, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
 import { CreateUserDialog, ResetPasswordDialog, UserQuotaDialog } from './UserDialogs';
 import { MENU_SEPARATOR, UserActionsMenu } from './UserActionsMenu';
 import type { UserActionEntry } from './UserActionsMenu';
@@ -790,6 +790,98 @@ function UsersTab() {
   );
 }
 
+/**
+ * The flag toggles.
+ *
+ * Each row carries its owner and the condition under which it is removed, alongside the switch.
+ * That is not decoration: the last flag system accumulated fifteen keys because nothing said who
+ * owned one or when it could go, so "can this come out yet?" had no answer short of asking whoever
+ * added it. Putting both next to the toggle is what makes the removal PR a thing anyone can start.
+ *
+ * A key the server declares but the table has no row for appears here too, marked, and cannot be
+ * toggled — there is nothing to toggle. While one exists the public flag endpoint is failing, so
+ * this row is a fault report, not a setting.
+ */
+function FeatureFlagsTab() {
+  const qc = useQueryClient();
+  const { error: toastError, success: toastSuccess } = useToast();
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['admin-feature-flags'],
+    queryFn: () => adminApi.listFeatureFlags(),
+  });
+
+  const toggleFlag = useMutation({
+    mutationFn: ({ key, enabled }: { key: string; enabled: boolean }) =>
+      adminApi.updateFeatureFlag(key, { enabled }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-feature-flags'] });
+      toastSuccess('Feature flag updated.');
+    },
+    onError: () => {
+      toastError('Failed to update feature flag. Please try again.');
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className={styles.loading}>
+        <Spinner size="md" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className={styles.error}>Failed to load feature flags.</div>;
+  }
+
+  const flags: FeatureFlag[] = data ?? [];
+  const missing = flags.filter((f) => f.missingRow);
+
+  return (
+    <div className={styles.section}>
+      <h2 className={styles.sectionTitle}>Feature Flags</h2>
+      {missing.length > 0 && (
+        <div className={styles.error}>
+          {missing.length === 1 ? 'One flag is' : `${missing.length} flags are`} declared by the
+          server but missing from the database: {missing.map((f) => f.key).join(', ')}. Until a
+          migration seeds {missing.length === 1 ? 'it' : 'them'}, the public feature flags endpoint
+          fails rather than reporting {missing.length === 1 ? 'the key' : 'these keys'} as off.
+        </div>
+      )}
+      <div className={styles.serviceList}>
+        {flags.map((flag) => (
+          <div key={flag.key} className={styles.serviceRow}>
+            <div className={styles.serviceInfo}>
+              <span className={styles.serviceName}>{flag.key}</span>
+              {flag.description && <span className={styles.serviceMeta}>{flag.description}</span>}
+              {(flag.owner || flag.removal) && (
+                <span className={styles.serviceMeta}>
+                  {flag.owner && <>Owner: {flag.owner}. </>}
+                  {flag.removal && <>Removed: {flag.removal}</>}
+                </span>
+              )}
+            </div>
+            <div className={styles.serviceControls}>
+              <span className={styles.serviceLabel}>
+                {flag.missingRow ? 'No row' : flag.enabled ? 'Enabled' : 'Disabled'}
+              </span>
+              <Toggle
+                checked={flag.enabled}
+                disabled={toggleFlag.isPending || flag.missingRow}
+                aria-label={`Toggle ${flag.key}`}
+                onChange={() => {
+                  toggleFlag.mutate({ key: flag.key, enabled: !flag.enabled });
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FontsTab() {
   const qc = useQueryClient();
   const { error: toastError, success: toastSuccess } = useToast();
@@ -1148,6 +1240,7 @@ type Tab =
   | 'services'
   | 'users'
   | 'queue'
+  | 'flags'
   | 'versions'
   | 'fonts'
   | 'jobs';
@@ -1163,6 +1256,7 @@ const TABS: { id: Tab; label: string }[] = [
   // Next to Users, because it is the queue of things users have asked for and
   // acting on one lands back in that tab's data.
   { id: 'queue', label: 'Work Queue' },
+  { id: 'flags', label: 'Feature Flags' },
   { id: 'versions', label: 'Versions' },
   { id: 'fonts', label: 'Fonts' },
   { id: 'jobs', label: 'Jobs' },
@@ -1228,6 +1322,7 @@ export default function AdminPage() {
           {activeTab === 'services' && <ServicesTab />}
           {activeTab === 'users' && <UsersTab />}
           {activeTab === 'queue' && <WorkQueueTab />}
+          {activeTab === 'flags' && <FeatureFlagsTab />}
           {activeTab === 'versions' && <VersionsTab />}
           {activeTab === 'fonts' && <FontsTab />}
           {activeTab === 'jobs' && <JobsTab />}

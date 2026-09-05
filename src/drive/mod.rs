@@ -3,6 +3,7 @@ pub mod activity;
 pub mod admin;
 pub mod comments;
 pub mod encryption;
+pub mod feature_flags;
 pub mod filesystem;
 pub mod fonts;
 pub mod key_files;
@@ -16,6 +17,7 @@ pub mod shared_drives;
 pub mod sharing;
 pub mod storage;
 pub mod tags;
+pub mod teams;
 pub mod version_retention;
 pub mod workspace;
 
@@ -35,6 +37,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
             .configure(encryption::api::configure)
             .configure(key_files::api::configure)
             .configure(quota_requests::api::configure_user)
-            .configure(shared_drives::api::configure),
+            .configure(shared_drives::api::configure)
+            .configure(teams::api::configure),
     );
 }

@@ -443,6 +443,8 @@ diesel::table! {
         starred_at -> Nullable<Timestamp>,
         // Added in migration 027
         shared_drive_id -> Nullable<Text>,
+        // Added in migration 128
+        team_id -> Nullable<Text>,
     }
 }
 
@@ -474,6 +476,8 @@ diesel::table! {
         // Added in migration 111
         imported_at -> Nullable<Timestamp>,
         import_source -> Nullable<Text>,
+        // Added in migration 128
+        team_id -> Nullable<Text>,
     }
 }
 
@@ -719,6 +723,87 @@ diesel::table! {
         file_id -> Text,
         labels -> Text,
         classified_at -> Timestamp,
+    }
+}
+
+// ── Team Spaces ──────────────────────────────────────────────────────────────
+
+diesel::table! {
+    teams (id) {
+        id -> Text,
+        name -> Text,
+        slug -> Text,
+        description -> Nullable<Text>,
+        avatar_color -> Nullable<Text>,
+        avatar_emoji -> Nullable<Text>,
+        visibility -> Text,
+        created_by -> Text,
+        default_page_id -> Nullable<Text>,
+        storage_used_bytes -> BigInt,
+        storage_limit_bytes -> Nullable<BigInt>,
+        settings_json -> Nullable<Text>,
+        archived_at -> Nullable<Timestamp>,
+        deleted_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    team_members (id) {
+        id -> Text,
+        team_id -> Text,
+        user_id -> Text,
+        user_email -> Text,
+        user_name -> Text,
+        role -> Text,
+        added_by -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    team_pages (id) {
+        id -> Text,
+        team_id -> Text,
+        parent_page_id -> Nullable<Text>,
+        title -> Text,
+        slug -> Text,
+        content_md -> Text,
+        icon -> Nullable<Text>,
+        cover_image -> Nullable<Text>,
+        sort_order -> Integer,
+        is_home -> Integer,
+        published -> Integer,
+        created_by -> Text,
+        last_edited_by -> Text,
+        deleted_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    team_page_versions (id) {
+        id -> Text,
+        page_id -> Text,
+        version_number -> Integer,
+        title -> Text,
+        content_md -> Text,
+        label -> Nullable<Text>,
+        created_by -> Text,
+        created_by_name -> Text,
+        created_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    feature_flags (key) {
+        key -> Text,
+        enabled -> Integer,
+        description -> Nullable<Text>,
+        updated_at -> Text,
     }
 }
 
@@ -1002,6 +1087,11 @@ diesel::joinable!(file_tags -> files (file_id));
 diesel::joinable!(file_tags -> tags (tag_id));
 diesel::joinable!(quota_requests -> users (user_id));
 
+// Team Spaces
+diesel::joinable!(team_members -> teams (team_id));
+diesel::joinable!(team_pages -> teams (team_id));
+diesel::joinable!(team_page_versions -> team_pages (page_id));
+
 // ── Cross-table query allowlist ───────────────────────────────────────────────
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -1066,6 +1156,12 @@ diesel::allow_tables_to_appear_in_same_query!(
     file_classifications,
     shared_drives,
     shared_drive_members,
+    // Team Spaces
+    teams,
+    team_members,
+    team_pages,
+    team_page_versions,
+    feature_flags,
     legal_holds,
     retention_policies,
     file_legal_holds,

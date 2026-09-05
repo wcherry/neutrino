@@ -467,7 +467,11 @@ async fn main() -> std::io::Result<()> {
     use drive::shared_drives::service::SharedDrivesService;
     use drive::sharing::repository::SharingRepository;
     use drive::sharing::service::SharingService;
+    use drive::feature_flags::gate::FeatureGate;
+    use drive::feature_flags::repository::FeatureFlagsRepository;
     use drive::storage::repository::StorageRepository;
+    use drive::teams::repository::TeamsRepository;
+    use drive::teams::service::TeamsService;
     use drive::storage::service::StorageService;
     use drive::storage::store::LocalFileStore;
     use drive::tags::repository::TagsRepository;
@@ -686,6 +690,27 @@ async fn main() -> std::io::Result<()> {
         web::Data::new(drive::shared_drives::api::SharedDrivesApiState {
             service: drive_shared_drives_service,
         });
+
+    // Feature flags (#185). Rows rather than environment variables, because the property this
+    // needs is toggling without a redeploy. The gate is shared with the modules that read a flag
+    // server-side, so a flag has one reader and one meaning.
+    let feature_flags_repo = Arc::new(FeatureFlagsRepository::new(pool.clone()));
+    let feature_flags_state = web::Data::new(drive::feature_flags::api::FeatureFlagsState {
+        repo: feature_flags_repo.clone(),
+    });
+    let feature_gate = FeatureGate::new(feature_flags_repo.clone());
+
+    // Team Spaces (#185). Every route behind `teamSpaces`, which is seeded disabled — with it off
+    // the deployment is exactly what it was before this release.
+    let drive_teams_repo = Arc::new(TeamsRepository::new(pool.clone()));
+    let drive_teams_service = Arc::new(TeamsService::new(
+        drive_teams_repo,
+        drive_activity_service.clone(),
+        feature_gate.clone(),
+    ));
+    let drive_teams_state = web::Data::new(drive::teams::api::TeamsApiState {
+        service: drive_teams_service,
+    });
 
     let drive_security_repo = Arc::new(SecurityRepository::new(pool.clone()));
     let drive_security_service = Arc::new(SecurityService::new(drive_security_repo, pool.clone()));
@@ -1124,6 +1149,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(drive::security::api::SecurityApiDoc::openapi());
         doc.merge(drive::service_registry::api::ServiceRegistryApiDoc::openapi());
         doc.merge(drive::shared_drives::api::SharedDrivesApiDoc::openapi());
+        doc.merge(drive::teams::api::TeamsApiDoc::openapi());
+        doc.merge(drive::feature_flags::api::FeatureFlagsApiDoc::openapi());
         doc.merge(drive::sharing::api::SharingApiDoc::openapi());
         doc.merge(drive::storage::api::StorageApiDoc::openapi());
         doc.merge(drive::tags::api::TagsApiDoc::openapi());
@@ -1199,6 +1226,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(drive_notifications_state.clone())
             .app_data(drive_comments_state.clone())
             .app_data(drive_shared_drives_state.clone())
+            .app_data(drive_teams_state.clone())
+            .app_data(feature_flags_state.clone())
             .app_data(drive_security_state.clone())
             .app_data(drive_tags_state.clone())
             .app_data(drive_encryption_state.clone())
@@ -1272,6 +1301,9 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     .configure(drive::configure)
                     // Drive public sharing
                     .configure(drive::sharing::api::configure_public)
+                    // Feature flags. Unauthenticated: the web client has to know what to render
+                    // before anyone has signed in.
+                    .configure(drive::feature_flags::api::configure_public)
                     // Background jobs
                     .configure(jobs::api::configure)
                     // Admin routes under /admin
@@ -1282,6 +1314,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                             .configure(drive::version_retention::api::configure_admin)
                             .configure(drive::quota_requests::api::configure_admin)
                             .configure(auth::password_policy::api::configure_admin)
+                            .configure(drive::feature_flags::api::configure_admin)
                             .configure(drive::fonts::api::configure_admin),
                     )
                     // Internal routes
