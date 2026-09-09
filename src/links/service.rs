@@ -13,10 +13,12 @@ use std::sync::Arc;
 /// its target is a file type this list doesn't know about yet.
 fn file_type_label(mime_type: Option<&str>) -> String {
     match mime_type {
-        Some("application/x-neutrino-note") => "note",
-        Some("application/x-neutrino-doc") => "doc",
-        Some("application/x-neutrino-sheet") => "sheet",
-        Some("application/x-neutrino-slide") => "slide",
+        // A note is a Markdown file — see `DriveFileType::Note`.
+        Some("text/markdown") => "note",
+        // The office apps store OOXML — a document is a `.docx`.
+        Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document") => "doc",
+        Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") => "sheet",
+        Some("application/vnd.openxmlformats-officedocument.presentationml.presentation") => "slide",
         Some("application/x-neutrino-diagram") => "diagram",
         Some("application/x-neutrino-drawing") => "drawing",
         _ => "file",
@@ -131,7 +133,7 @@ mod tests {
     use diesel_migrations::MigrationHarness;
     use std::path::PathBuf;
 
-    const NOTE_MIME: &str = "application/x-neutrino-note";
+    const NOTE_MIME: &str = "text/markdown";
 
     fn test_pool() -> DbPool {
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");

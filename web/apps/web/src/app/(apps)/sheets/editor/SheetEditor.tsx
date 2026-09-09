@@ -2011,9 +2011,9 @@ export function SheetEditor() {
                 />
             )}
 
-            {showShareDialog && persist.sheetRef.current && (
+            {showShareDialog && persist.fileRef.current && (
                 <ShareDialog
-                    resource={{ ...persist.sheetRef.current, name: persist.sheetRef.current.title } as unknown as FileItem}
+                    resource={persist.fileRef.current}
                     resourceType="file"
                     onClose={() => setShowShareDialog(false)}
                 />

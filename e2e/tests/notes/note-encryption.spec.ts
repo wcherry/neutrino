@@ -231,17 +231,15 @@ test.describe('Notes E2EE encryption', () => {
     await waitForKeyring(page, userId);
 
     const noteId = await createNoteViaApi(request, token, 'Legacy Note');
-    const legacyContent = JSON.stringify([
-      { id: 'legacy1', type: 'paragraph', content: 'Legacy plaintext content' },
-    ]);
+    const legacyContent = 'Legacy plaintext content\n';
     const patchRes = await request.put(
       `${BASE_URL}/api/v1/drive/files/${noteId}/autosave`,
       {
         headers: { Authorization: `Bearer ${token}` },
         multipart: {
           file: {
-            name: 'note.json',
-            mimeType: 'application/json',
+            name: 'note.md',
+            mimeType: 'text/markdown',
             buffer: Buffer.from(legacyContent, 'utf8'),
           },
         },

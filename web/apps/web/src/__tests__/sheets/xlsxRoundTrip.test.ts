@@ -20,7 +20,6 @@ import * as XLSX from 'xlsx';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const DEK = new Uint8Array(32).fill(6);
 
-const getSheet = vi.fn();
 const getFileMetadata = vi.fn();
 const downloadFile = vi.fn();
 // The office-mode read goes through `driveReadBytes`, which reads a file whose
@@ -39,7 +38,7 @@ vi.mock('@/lib/api', () => ({
       this.code = code;
     }
   },
-  sheetsApi: { getSheet: (...a: unknown[]) => getSheet(...a), saveSheet: vi.fn() },
+  sheetsApi: { saveSheet: vi.fn() },
   driveReadContent: vi.fn(),
   driveReadBytes: (...a: unknown[]) => readBytes(...a),
   driveCreateEncryptedVersion: vi.fn(),
@@ -160,7 +159,6 @@ function setupHook() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getSheet.mockRejectedValue(new ApiClientError(404, 'not_found', 'not bespoke JSON'));
   getFileMetadata.mockResolvedValue({ id: 'file-1', name: 'Budget.xlsx', mimeType: XLSX_MIME });
 });
 
@@ -174,7 +172,7 @@ async function open(bytes: Uint8Array) {
   await storedBytes(bytes);
   const harness = setupHook();
   await act(async () => { await harness.hook.result.current.load(); });
-  await waitFor(() => expect(harness.hook.result.current.officeMode).toBe(true));
+  await waitFor(() => expect(harness.hook.result.current.fileRef.current).not.toBeNull());
   return harness;
 }
 
@@ -286,6 +284,6 @@ describe('a spreadsheet that was just created', () => {
 
   it('does not mistake an empty package for an empty file', async () => {
     const { hook } = await open(await emptyWorkbookZip());
-    expect(hook.result.current.officeMode).toBe(true);
+    expect(hook.result.current.fileRef.current).not.toBeNull();
   });
 });

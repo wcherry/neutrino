@@ -1,9 +1,9 @@
 /**
  * The Office Open XML formats Neutrino stores documents in (issue #127).
  *
- * Docs, Sheets and Slides used to be written as bespoke JSON —
- * `application/x-neutrino-doc` and friends — which meant nothing outside
- * Neutrino could read a Neutrino document. A native document is now a real
+ * Docs, Sheets and Slides were once written as a bespoke JSON body, which
+ * meant nothing outside Neutrino could read a Neutrino document. No file was
+ * ever stored that way and the format is gone. A native document is a real
  * `.docx`/`.xlsx`/`.pptx` package, so Word, Excel, PowerPoint, LibreOffice and
  * Google's editors all open one directly and import/export are file copies.
  *
@@ -12,9 +12,6 @@
  * a download lands on disk as something the operating system can open. Titles
  * shown in the UI have it stripped back off — see `stripOoxmlExtension` — so a
  * document is still called "Budget", not "Budget.xlsx".
- *
- * The legacy `x-neutrino-*` mime types are still read and written: documents
- * created before this change keep their format, and there is no migration.
  */
 
 export const OOXML_MIME = {

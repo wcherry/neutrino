@@ -59,16 +59,6 @@ vi.mock('@/lib/api', () => ({
     orientation: 'portrait', pageSize: 'letter',
   },
   docsApi: {
-    getDoc: vi.fn(() =>
-      Promise.resolve({
-        id: 'test-doc-id',
-        title: 'Test Doc',
-        contentUrl: null,
-        folderId: null,
-        createdAt: '',
-        updatedAt: '',
-      })
-    ),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveDoc: vi.fn(() => Promise.resolve()),
   },

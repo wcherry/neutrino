@@ -82,7 +82,7 @@ const HIT = {
   href: '/docs/editor?id=doc-1',
   icon: FileText,
   iconColor: '#2563eb',
-  mimeType: 'application/x-neutrino-doc',
+  mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   modified: 'Mar 3, 2026',
   updatedAt: Date.parse('2026-03-03T10:00:00Z'),
 };

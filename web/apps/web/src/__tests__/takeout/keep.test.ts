@@ -8,11 +8,13 @@ import {
   keepNoteTitle,
   keepNoteToBlocks,
   looksLikeKeepNote,
-  markdownToBlocks,
   parseKeepNote,
   UNTITLED,
   type KeepNote,
 } from '@/lib/takeout/keep';
+// The Markdown parser this conversion goes through is the note format itself —
+// it lives with the editor, and `notes/noteMarkdown.test.ts` covers it.
+import { parseBlocks, serializeBlocks } from '@/app/(apps)/notes/editor/noteMarkdown';
 import { KEEP_LIST_NOTE_ITEMS, KEEP_LIST_NOTE_JSON } from './fixtures/keepNotes';
 
 describe('parseKeepNote', () => {
@@ -71,8 +73,12 @@ describe('convertKeepNote — the real list note', () => {
     expect(new Set(converted.blocks.map((b) => b.id)).size).toBe(converted.blocks.length);
   });
 
-  it('serialises to the Block[] JSON a note stores', () => {
-    expect(JSON.parse(converted.content)).toEqual(converted.blocks);
+  it('serialises to the Markdown a note stores', () => {
+    expect(converted.content).toBe(serializeBlocks(converted.blocks));
+    // Round-trips: what the importer writes is what the editor reads back.
+    expect(parseBlocks(converted.content)).toMatchObject(
+      converted.blocks.map(({ id: _id, ...rest }) => rest)
+    );
   });
 });
 
@@ -92,78 +98,6 @@ describe('keepNoteToBlocks — checklists', () => {
 
   it('treats a missing isChecked as unchecked', () => {
     expect(keepNoteToBlocks({ listContent: [{ text: 'x' }] })[0].checked).toBe(false);
-  });
-});
-
-describe('markdownToBlocks', () => {
-  it('makes one paragraph per line', () => {
-    expect(markdownToBlocks('one\ntwo')).toMatchObject([
-      { type: 'paragraph', content: 'one' },
-      { type: 'paragraph', content: 'two' },
-    ]);
-  });
-
-  it('drops blank lines rather than emitting empty blocks', () => {
-    expect(markdownToBlocks('one\n\n\ntwo')).toHaveLength(2);
-  });
-
-  it('recognises bullets, including Keep’s bullet character', () => {
-    expect(markdownToBlocks('- a\n* b\n• c')).toMatchObject([
-      { type: 'bullet', content: 'a' },
-      { type: 'bullet', content: 'b' },
-      { type: 'bullet', content: 'c' },
-    ]);
-  });
-
-  it('recognises numbered items written either way', () => {
-    expect(markdownToBlocks('1. a\n2) b')).toMatchObject([
-      { type: 'numbered', content: 'a' },
-      { type: 'numbered', content: 'b' },
-    ]);
-  });
-
-  it('recognises tasks and reads their checkbox', () => {
-    expect(markdownToBlocks('- [ ] open\n- [x] shut\n- [X] shut too')).toMatchObject([
-      { type: 'task', content: 'open', checked: false },
-      { type: 'task', content: 'shut', checked: true },
-      { type: 'task', content: 'shut too', checked: true },
-    ]);
-  });
-
-  it('prefers a task over a bullet when both could match', () => {
-    expect(markdownToBlocks('- [ ] a')[0].type).toBe('task');
-  });
-
-  it('recognises blockquotes', () => {
-    expect(markdownToBlocks('> quoted')).toMatchObject([{ type: 'blockquote', content: 'quoted' }]);
-  });
-
-  it('collects a fenced block into one code block', () => {
-    expect(markdownToBlocks('before\n```\nline 1\nline 2\n```\nafter')).toMatchObject([
-      { type: 'paragraph', content: 'before' },
-      { type: 'code', content: 'line 1\nline 2' },
-      { type: 'paragraph', content: 'after' },
-    ]);
-  });
-
-  it('keeps the lines of an unterminated fence', () => {
-    expect(markdownToBlocks('```\nstill mine')).toMatchObject([{ type: 'code', content: 'still mine' }]);
-  });
-
-  it('does not re-parse markdown inside a code block', () => {
-    expect(markdownToBlocks('```\n- not a bullet\n```')).toMatchObject([
-      { type: 'code', content: '- not a bullet' },
-    ]);
-  });
-
-  it('renders a heading as a bold paragraph, the closest the editor has', () => {
-    expect(markdownToBlocks('## Heading')).toMatchObject([
-      { type: 'paragraph', content: '**Heading**' },
-    ]);
-  });
-
-  it('returns nothing for empty input', () => {
-    expect(markdownToBlocks('')).toEqual([]);
   });
 });
 

@@ -40,10 +40,9 @@ const MIME = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  doc: 'application/x-neutrino-doc',
   diagram: 'application/x-neutrino-diagram',
   drawing: 'application/x-neutrino-drawing',
-  note: 'application/x-neutrino-note',
+  note: 'text/markdown',
   text: 'text/plain',
   jpeg: 'image/jpeg',
 } as const;
@@ -172,8 +171,8 @@ async function pool<T, R>(
  * rendering.
  *
  * The body then goes through the same autosave endpoint the editor's own first
- * save uses, in plaintext — see `seedDocWithImages` for why these types are
- * not sealed here.
+ * save uses, in plaintext: that is the state the server creates one of these
+ * in (`default_content`), and the client's first save is what seals it.
  */
 async function createNative(
   session: Session,
@@ -246,52 +245,6 @@ export async function seedDoc(session: Session, scale: Scale): Promise<SeededFil
     name: `perf-doc-${scale}.docx`,
     mimeType: MIME.docx,
     bytes,
-  });
-}
-
-/**
- * A document whose images are Drive references — the `C4` fixture.
- *
- * Written in the legacy `application/x-neutrino-doc` ProseMirror JSON rather
- * than as a `.docx`, and that is the point rather than a shortcut. A `.docx`
- * carries image *bytes*: `writeDocx` resolves every `neutrino-drive:` reference
- * to bytes before packaging, and `readDocx` hands them back as data URLs. So a
- * `.docx` fixture would measure zip extraction, and never touch the path C4
- * exists to measure — `driveImages.ts` downloading each image and decrypting
- * it on the main thread, which is §8 finding 5.
- *
- * The legacy type is still read and written unchanged (`native_types.rs`), so
- * this is a document the app genuinely opens, not a synthetic one.
- *
- * The body is seeded in **plaintext**, which is not a shortcut either: that is
- * the state the server creates a native JSON document in (`default_content`),
- * and the client's first save is what seals it. A body sealed here instead is
- * read back as ciphertext and rendered as a paragraph of binary — the legacy
- * read path has no decrypt step, because in production there is nothing at
- * that point to decrypt. The images it *references* are ordinary encrypted
- * Drive files, which is the part this scenario exists to measure.
- */
-export async function seedDocWithImages(
-  session: Session,
-  imageIds: string[],
-): Promise<SeededFile> {
-  const content: unknown[] = [];
-  imageIds.forEach((id, i) => {
-    content.push({
-      type: 'paragraph',
-      content: [{ type: 'text', text: `Figure ${i + 1}` }],
-    });
-    content.push({
-      type: 'image',
-      // Mirrors `driveImageRef` in `web/apps/web/src/lib/driveImages.ts`.
-      attrs: { src: `neutrino-drive:${id}`, alt: `Figure ${i + 1}` },
-    });
-  });
-
-  return createNative(session, {
-    name: `perf-doc-images-${imageIds.length}`,
-    mimeType: MIME.doc,
-    bytes: Buffer.from(JSON.stringify({ type: 'doc', content })),
   });
 }
 

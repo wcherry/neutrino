@@ -2,9 +2,9 @@
  * What Docs, Sheets and Slides create, list and rename since issue #127.
  *
  * These three adapters are the seam where the format change is actually
- * decided: a new document is a `.docx`/`.xlsx`/`.pptx` Drive file, the library
- * has to keep showing documents written in the bespoke JSON that predates it,
- * and the title the UI passes around has no extension on it in either case.
+ * decided: a new document is a `.docx`/`.xlsx`/`.pptx` Drive file, and the
+ * title the UI passes around has no extension on it. The bespoke JSON that
+ * predated OOXML held no files and is gone, so there is one format each.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -18,9 +18,9 @@ vi.mock('@neutrino/api-core', async (importOriginal) => ({
   request: (...args: unknown[]) => mockRequest(...args),
 }));
 
-import { docsApi, DOC_MIME_TYPE, DOCX_MIME_TYPE } from '@neutrino/api-docs';
-import { sheetsApi, SHEET_MIME_TYPE, XLSX_MIME_TYPE } from '@neutrino/api-sheets';
-import { slidesApi, SLIDE_MIME_TYPE, PPTX_MIME_TYPE } from '@neutrino/api-slides';
+import { docsApi, DOCX_MIME_TYPE } from '@neutrino/api-docs';
+import { sheetsApi, XLSX_MIME_TYPE } from '@neutrino/api-sheets';
+import { slidesApi, PPTX_MIME_TYPE } from '@neutrino/api-slides';
 
 function driveFile(over: Record<string, unknown> = {}) {
   return {
@@ -107,20 +107,20 @@ describe('creating a document', () => {
 // ---------------------------------------------------------------------------
 
 describe('listing a library', () => {
-  it('asks for both formats, so documents written before #127 still show', async () => {
+  it('asks for the OOXML format', async () => {
     mockRequest.mockResolvedValue({ files: [] });
 
     await docsApi.listDocs();
 
     const [url] = mockRequest.mock.calls[0] as [string];
     const mimeType = new URLSearchParams(url.split('?')[1]).get('mimeType');
-    expect(mimeType?.split(',')).toEqual([DOCX_MIME_TYPE, DOC_MIME_TYPE]);
+    expect(mimeType?.split(',')).toEqual([DOCX_MIME_TYPE]);
   });
 
   it.each([
-    ['sheets', () => sheetsApi.listSheets(), [XLSX_MIME_TYPE, SHEET_MIME_TYPE]],
-    ['slides', () => slidesApi.listSlides(), [PPTX_MIME_TYPE, SLIDE_MIME_TYPE]],
-  ] as const)('asks for both %s formats too', async (_label, call, expected) => {
+    ['sheets', () => sheetsApi.listSheets(), [XLSX_MIME_TYPE]],
+    ['slides', () => slidesApi.listSlides(), [PPTX_MIME_TYPE]],
+  ] as const)('asks for the %s format too', async (_label, call, expected) => {
     mockRequest.mockResolvedValue({ files: [] });
 
     await call();
@@ -138,38 +138,6 @@ describe('listing a library', () => {
     expect(docs[0].title).toBe('Report');
   });
 
-  it('leaves a bespoke-JSON document’s name exactly as it is', async () => {
-    mockRequest.mockResolvedValue({
-      files: [driveFile({ name: 'Older document', mimeType: DOC_MIME_TYPE })],
-    });
-
-    const { docs } = await docsApi.listDocs();
-
-    expect(docs[0].title).toBe('Older document');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Opening
-// ---------------------------------------------------------------------------
-
-describe('getDoc', () => {
-  /**
-   * The 404 is what tells the editor to take the OOXML path — download the
-   * package, prefer the model inside it, fall back to parsing the Word
-   * document. Answering here instead would send a `.docx` down the JSON reader.
-   */
-  it('refuses a .docx, so the editor reads it as a package', async () => {
-    mockRequest.mockResolvedValue(driveFile());
-
-    await expect(docsApi.getDoc('file-1')).rejects.toMatchObject({ statusCode: 404 });
-  });
-
-  it('answers for a bespoke-JSON document', async () => {
-    mockRequest.mockResolvedValue(driveFile({ name: 'Older', mimeType: DOC_MIME_TYPE }));
-
-    await expect(docsApi.getDoc('file-1')).resolves.toMatchObject({ id: 'file-1' });
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -185,16 +153,6 @@ describe('renaming', () => {
     await docsApi.saveDoc('file-1', { title: 'Q3 review' });
 
     expect(lastBody()).toEqual({ name: 'Q3 review.docx' });
-  });
-
-  it('leaves a bespoke-JSON document’s name bare', async () => {
-    mockRequest
-      .mockResolvedValueOnce(driveFile({ name: 'Older', mimeType: DOC_MIME_TYPE }))
-      .mockResolvedValueOnce(driveFile({ name: 'Newer', mimeType: DOC_MIME_TYPE }));
-
-    await docsApi.saveDoc('file-1', { title: 'Newer' });
-
-    expect(lastBody()).toEqual({ name: 'Newer' });
   });
 
   it('does not write when the name would not change', async () => {

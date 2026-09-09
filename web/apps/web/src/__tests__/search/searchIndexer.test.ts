@@ -90,7 +90,7 @@ function withCurrentIndexVersion() {
 }
 
 /**
- * A note whose decrypted body is one paragraph block reading "body text".
+ * A note whose decrypted body is the Markdown "body text".
  *
  * `listAllNotes` (the real implementation, per the comment above) lists notes
  * by paging `storageApi.listFiles` and filtering by MIME type client-side —
@@ -101,14 +101,14 @@ function withCurrentIndexVersion() {
  */
 function withOneNote() {
   storageApi.listFiles.mockResolvedValue({
-    items: [{ id: 'note-1', name: 'Flamingo notes', mimeType: 'application/x-neutrino-note', updatedAt: NOTE_UPDATED }],
+    items: [{ id: 'note-1', name: 'Flamingo notes', mimeType: 'text/markdown', updatedAt: NOTE_UPDATED }],
     total: 1,
     page: 1,
     pageSize: 200,
     totalPages: 1,
   });
   readDocumentText.mockResolvedValue(
-    JSON.stringify([{ id: 'b1', type: 'paragraph', content: 'body text' }]),
+    'body text\n',
   );
 }
 
@@ -178,7 +178,7 @@ describe('searchIndexer', () => {
       docsApi.listDocs.mockResolvedValue({ docs: [{ id: 'doc-1', title: 'Doc', updatedAt: NOTE_UPDATED }] });
       storageApi.listFiles.mockResolvedValue({
         items: [
-          { id: 'doc-1', name: 'Doc', mimeType: 'application/x-neutrino-doc', updatedAt: NOTE_UPDATED },
+          { id: 'doc-1', name: 'Doc', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', updatedAt: NOTE_UPDATED },
         ],
         total: 1,
         page: 1,
@@ -330,7 +330,7 @@ describe('searchIndexer', () => {
     it('does not let one failing item abort the run', async () => {
       docsApi.listDocs.mockResolvedValue({ docs: [{ id: 'doc-1', title: 'Doc', updatedAt: NOTE_UPDATED }] });
       storageApi.listFiles.mockResolvedValue({
-        items: [{ id: 'note-1', name: 'Flamingo notes', mimeType: 'application/x-neutrino-note', updatedAt: NOTE_UPDATED }],
+        items: [{ id: 'note-1', name: 'Flamingo notes', mimeType: 'text/markdown', updatedAt: NOTE_UPDATED }],
         total: 1,
         page: 1,
         pageSize: 200,
@@ -339,7 +339,7 @@ describe('searchIndexer', () => {
       readDocumentText.mockImplementation((_userId: string, id: string) =>
         id === 'doc-1'
           ? Promise.reject(new Error('decrypt failed'))
-          : Promise.resolve(JSON.stringify([{ id: 'b1', type: 'paragraph', content: 'body text' }])),
+          : Promise.resolve('body text\n'),
       );
 
       const result = await syncSearchIndex('user-1');

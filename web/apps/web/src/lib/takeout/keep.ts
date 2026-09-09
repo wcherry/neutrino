@@ -27,6 +27,7 @@
  */
 
 import type { Block, BlockType } from '@/app/(apps)/notes/editor/blockEditorTypes';
+import { markdownToBlocks, serializeBlocks } from '@/app/(apps)/notes/editor/noteMarkdown';
 import { keepTextToMarkdown, stripInlineMarkdown } from './inlineHtml';
 import { sanitiseTitle } from './titles';
 
@@ -111,7 +112,7 @@ export function parseKeepNote(json: string): KeepNote | null {
   return looksLikeKeepNote(parsed) ? parsed : null;
 }
 
-// ── Markdown → blocks ─────────────────────────────────────────────────────────
+// ── Keep note → blocks ────────────────────────────────────────────────────────
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -122,74 +123,6 @@ function block(type: BlockType, content: string, checked?: boolean): Block {
     ? { id: genId(), type, content }
     : { id: genId(), type, content, checked };
 }
-
-const FENCE = /^\s*(```|~~~)/;
-const TASK = /^\s*[-*+]\s+\[([ xX])\]\s*(.*)$/;
-const BULLET = /^\s*[-*+•]\s+(.*)$/;
-const NUMBERED = /^\s*\d+[.)]\s+(.*)$/;
-const QUOTE = /^\s*>\s?(.*)$/;
-const HEADING = /^\s*(#{1,6})\s+(.*)$/;
-
-/**
- * Parse note markdown into blocks.
- *
- * The block editor has no heading type, so `# Heading` becomes a bold
- * paragraph — the closest thing the editor can actually render. Blank lines
- * produce no block: blocks are already spaced apart, so an empty paragraph
- * between every pair of lines would double the note's height.
- */
-export function markdownToBlocks(markdown: string): Block[] {
-  const blocks: Block[] = [];
-  const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
-
-  let fence: string | null = null;
-  let code: string[] = [];
-
-  const flushCode = () => {
-    blocks.push(block('code', code.join('\n')));
-    code = [];
-    fence = null;
-  };
-
-  for (const line of lines) {
-    if (fence !== null) {
-      if (line.trim().startsWith(fence)) flushCode();
-      else code.push(line);
-      continue;
-    }
-
-    const fenceMatch = line.match(FENCE);
-    if (fenceMatch) {
-      fence = fenceMatch[1];
-      continue;
-    }
-
-    if (!line.trim()) continue;
-
-    let match: RegExpMatchArray | null;
-    if ((match = line.match(TASK))) {
-      blocks.push(block('task', match[2].trim(), match[1] !== ' '));
-    } else if ((match = line.match(BULLET))) {
-      blocks.push(block('bullet', match[1].trim()));
-    } else if ((match = line.match(NUMBERED))) {
-      blocks.push(block('numbered', match[1].trim()));
-    } else if ((match = line.match(QUOTE))) {
-      blocks.push(block('blockquote', match[1].trim()));
-    } else if ((match = line.match(HEADING))) {
-      const text = match[2].trim();
-      blocks.push(block('paragraph', text ? `**${text}**` : ''));
-    } else {
-      blocks.push(block('paragraph', line.trim()));
-    }
-  }
-
-  // An unterminated fence still holds the user's lines.
-  if (fence !== null) flushCode();
-
-  return blocks;
-}
-
-// ── Keep note → blocks ────────────────────────────────────────────────────────
 
 function annotationBlocks(annotations: KeepAnnotation[]): Block[] {
   const links = annotations.filter((a) => a.url?.trim());
@@ -249,15 +182,19 @@ export function keepNoteToBlocks(note: KeepNote): Block[] {
  *
  * Most Keep notes have no title — Keep shows the first line of the body
  * instead — so an untitled note gets its first line, matching what the user
- * saw in Keep. Titles back drive file names, so newlines and slashes are
- * flattened out.
+ * saw in Keep. The *first line*, not the first block: a paragraph block holds
+ * every consecutive prose line of the body, so taking the whole block would
+ * title the note with the paragraph. Titles back drive file names, so slashes
+ * are flattened out, and a heading's `#` prefix is dropped along with the
+ * inline markers — it is syntax, not part of what the line says.
  */
 export function keepNoteTitle(note: KeepNote, blocks: Block[]): string {
   const explicit = sanitiseTitle(note.title ?? '');
   if (explicit) return explicit;
 
   for (const b of blocks) {
-    const derived = sanitiseTitle(stripInlineMarkdown(b.content));
+    const firstLine = b.content.split('\n')[0].replace(/^\s*#{1,6}\s+/, '');
+    const derived = sanitiseTitle(stripInlineMarkdown(firstLine));
     if (derived) {
       return derived.length > DERIVED_TITLE_MAX
         ? `${derived.slice(0, DERIVED_TITLE_MAX).trimEnd()}…`
@@ -271,7 +208,7 @@ export function keepNoteTitle(note: KeepNote, blocks: Block[]): string {
 export interface ConvertedKeepNote {
   title: string;
   blocks: Block[];
-  /** `Block[]` JSON — exactly what the note editor writes as note content. */
+  /** Markdown — exactly what the note editor writes as note content. */
   content: string;
 }
 
@@ -281,6 +218,6 @@ export function convertKeepNote(note: KeepNote): ConvertedKeepNote {
   return {
     title: keepNoteTitle(note, blocks),
     blocks,
-    content: JSON.stringify(blocks),
+    content: serializeBlocks(blocks),
   };
 }

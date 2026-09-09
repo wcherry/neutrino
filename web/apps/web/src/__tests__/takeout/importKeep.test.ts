@@ -182,11 +182,11 @@ describe('runKeepImport', () => {
     expect(driveAutosaveEncryptedContent).toHaveBeenCalledTimes(1);
     const [noteId, content, filename, dek] = driveAutosaveEncryptedContent.mock.calls[0];
     expect(noteId).toBe('id-A');
-    expect(filename).toBe('note.json');
+    expect(filename).toBe('note.md');
     expect(dek).toEqual(new Uint8Array([1, 2, 3]));
     // The content passed in is plaintext — driveAutosaveEncryptedContent does
     // the encrypting itself, so the import never handles ciphertext directly.
-    expect(JSON.parse(content)[0]).toMatchObject({ type: 'paragraph', content: 'first' });
+    expect(content).toBe('first\n');
   });
 
   // Issue #95. This used to assert the opposite: that the run went ahead and

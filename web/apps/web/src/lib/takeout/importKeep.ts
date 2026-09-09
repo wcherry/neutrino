@@ -132,7 +132,7 @@ async function saveEncryptedBody(
     encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
     keyVersion: activeKeyVersion(userId) ?? undefined,
   });
-  await driveAutosaveEncryptedContent(noteId, content, 'note.json', dek);
+  await driveAutosaveEncryptedContent(noteId, content, 'note.md', dek);
 }
 
 /** Why this note is being skipped, or `null` to import it. */

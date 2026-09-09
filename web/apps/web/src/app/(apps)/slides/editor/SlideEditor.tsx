@@ -69,9 +69,8 @@ import {
 import { useUser } from '@neutrino/auth';
 import { measurePhase } from '@neutrino/utils';
 import {
-  slidesApi, driveReadContent, driveReadBytes, driveAutosaveEncryptedContent,
-  driveAutosaveEncryptedBytes, mintFileKey, canEncryptFor, extractSlideText,
-  storageApi, filesystemApi, encryptionApi, ApiClientError, type FileItem,
+  slidesApi, driveReadBytes, driveAutosaveEncryptedBytes, mintFileKey, canEncryptFor,
+  extractSlideText, storageApi, filesystemApi, type FileItem,
 } from '@/lib/api';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
@@ -81,7 +80,6 @@ import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { decryptFile, isUnlocked } from '@neutrino/e2e-crypto';
-import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { SlideTheme, CreateThemeRequest, UpdateThemeRequest } from '@neutrino/api-slides';
 import { ThemeEditorDialog, type ThemeEditorMode } from './ThemeEditorDialog';
@@ -393,13 +391,6 @@ export function SlideEditor() {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const dragSrcIdx = useRef<number | null>(null);
   const initialSaveDoneRef = useRef(false);
-  // Set when the content read finds the server still holding this deck in the
-  // clear. A ref, not state: setting state from inside a query function
-  // re-renders mid-fetch and sets a second fetch going. `contentUpdatedAt` is
-  // the reactive signal instead — it moves on every completed read, including
-  // the second one on a reload, which returns the same text as the first (that
-  // read runs while the vault is still locked).
-  const serverPlaintextRef = useRef(false);
   // Forward-ref to the content autosave — set once `contentMutation` is defined
   // below, and read from the OOXML load effect, which runs before that
   // definition point. That effect needs it for one case: a deck created here
@@ -436,113 +427,36 @@ export function SlideEditor() {
     onRemotePresentationRef,
   });
 
-  const { isLoading: metaLoading, isError: metaIsError, error: metaError, data: slideData } = useQuery({
-    queryKey: ['slide', slideId],
-    queryFn: () => slidesApi.getSlide(slideId),
-    enabled: !!slideId,
-    staleTime: 30_000,
-  });
-
-  useEffect(() => {
-    versionGuard.observe(slideData?.contentVersion);
-  }, [slideData?.contentVersion, versionGuard]);
-
-  // ── OOXML mode (issues #43, #127) ──────────────────────────────────────────
-  // `slidesApi.getSlide` answers only for the bespoke JSON format, so it 404s
-  // for a `.pptx` — which is every presentation created since #127, as well as
-  // any deck uploaded to Drive. Fall back to the generic Drive file metadata to
-  // tell that apart from a genuinely deleted or missing presentation. Named
-  // `officeMode` because that is what it was when only uploads took this path.
-  const slide404 = metaIsError
-    && metaError instanceof ApiClientError && metaError.statusCode === 404;
-
+  // A presentation is a `.pptx`, so the Drive file's own metadata identifies
+  // it. This used to ask `slidesApi.getSlide` first and read its 404 as "not
+  // bespoke JSON, therefore OOXML"; no deck was ever stored in that format and
+  // it is gone, so there is one query and no probe.
   const {
     data: officeFileMeta,
     isLoading: officeFallbackLoading,
     isError: officeFallbackIsError,
   } = useQuery({
-    queryKey: ['slide-office-fallback', slideId],
+    queryKey: ['slide-file', slideId],
     queryFn: () => storageApi.getFileMetadata(slideId),
-    enabled: slide404,
+    enabled: !!slideId,
     staleTime: 0,
     retry: false,
   });
 
   const officeApp = officeFileMeta ? officeAppForFile(officeFileMeta.mimeType, officeFileMeta.name) : null;
-  const officeMode = slide404 && officeApp === 'slides';
-  const slideNotFound = slide404 && (officeFallbackIsError || (!!officeFileMeta && officeApp !== 'slides'));
+  const officeMode = officeApp === 'slides';
+  const slideNotFound = officeFallbackIsError || (!!officeFileMeta && officeApp !== 'slides');
 
-  // Seed the stale-write guard from the revision this load saw. The effect
-  // above does it from `slideData`, which a `.pptx` never has — without this
-  // every OOXML save would assert no revision at all.
+  // Seed the stale-write guard from the revision this load saw.
   useEffect(() => {
-    if (officeMode) versionGuard.observe(officeFileMeta?.contentVersion);
-  }, [officeMode, officeFileMeta?.contentVersion, versionGuard]);
+    versionGuard.observe(officeFileMeta?.contentVersion);
+  }, [officeFileMeta?.contentVersion, versionGuard]);
 
   useEffect(() => { officeModeRef.current = officeMode; }, [officeMode]);
   const officeFileMetaRef = useRef<FileItem | null>(null);
   useEffect(() => { officeFileMetaRef.current = officeFileMeta ?? null; }, [officeFileMeta]);
   const presentationRef = useRef<SlidePresentation>(presentation);
   presentationRef.current = presentation;
-
-  const {
-    isLoading: contentLoading,
-    data: slideContent,
-    dataUpdatedAt: contentUpdatedAt,
-  } = useQuery({
-    queryKey: ['slide-content', slideId, dekResolved],
-    queryFn: async () => {
-      if (!slideData?.contentUrl) return null;
-      // `awaitDek`, not `dekRef.current`. `dekResolved` only means the *attempt*
-      // has finished, and on a reload the attempt finishes immediately with no
-      // key: the keyring is unwrapped from IndexedDB a moment later. Sampling
-      // the ref there reported "no key" for a perfectly readable deck and fell
-      // through to the raw read below, which hands back ciphertext — JSON.parse
-      // rejects it and the editor shows the empty default deck instead of the
-      // presentation. Re-resolving on unlock flips `dekResolved` false and back
-      // to true, which is the same query key, so the bad result stayed cached
-      // for its whole `staleTime` rather than being retried.
-      const dek = await awaitDek();
-      if (dek) {
-        const blob = await storageApi.downloadFile(slideId);
-        const stored = new Uint8Array(await blob.arrayBuffer());
-        // Plaintext-or-ciphertext is decided from the bytes, not from
-        // `isNewEncryption` — see `readStoredBody`. A deck created and then
-        // reloaded before the sealing write landed has a key ref and a
-        // plaintext body, and the session flag calls that ciphertext.
-        const { text, wasPlaintext } = readStoredBody(stored, dek);
-        // Tracks the read that produced the deck on screen, both ways: a later
-        // read that decrypts means the body is sealed and the effect below must
-        // not fire again.
-        serverPlaintextRef.current = wasPlaintext;
-        return text;
-      }
-      // No key in hand. A deck with a key ref on the server really is
-      // encrypted, so reading it raw would render its ciphertext; failing
-      // instead leaves an errored query, which refetches once the vault is
-      // unlocked and the key resolution runs again.
-      if (currentUser?.id && !isUnlocked(currentUser.id)) {
-        const keyRef = await encryptionApi.getFileKey(slideId);
-        if (keyRef) {
-          throw new Error('presentation content is unreadable until the vault is unlocked');
-        }
-      }
-      // This read is routine for a brand-new deck: `dekResolved` means the
-      // resolution attempt finished, not that a key exists, so the first read
-      // of a file whose key is still being minted lands here. Such a deck needs
-      // sealing as much as one read through the branch above — the effect below
-      // waits for the key. Which it is comes off the bytes, not off reaching
-      // this line: the check above catches a locked session, but a session that
-      // is unlocked with the resolution not yet started reads a real deck's
-      // ciphertext as text, and marking *that* for sealing would overwrite it.
-      const raw = await driveReadContent(slideData.contentUrl);
-      serverPlaintextRef.current = looksLikeJsonBody(raw);
-      return raw;
-    },
-    enabled: !!slideData?.contentUrl && dekResolved,
-    staleTime: 30_000,
-    retry: 0,
-  });
 
   const { data: dbThemesData } = useQuery({
     queryKey: ['slide-themes'],
@@ -583,20 +497,9 @@ export function SlideEditor() {
     onError: () => toast.error('Failed to delete theme'),
   });
 
-  // `contentUnread`: the content query is gated on `dekResolved`, and React
-  // Query reports a query it has not started as "not loading" — so without it
-  // the editor was interactive before the deck it is about to show had been
-  // read, and the read then replaced whatever had been added in the meantime.
-  const contentUnread = !!slideData?.contentUrl && !dekResolved;
-  const isLoading = metaLoading || contentLoading || contentUnread
-    || (slide404 && officeFallbackLoading);
+  const isLoading = officeFallbackLoading;
 
-  useEffect(() => {
-    if (!slideData) return;
-    setTitle(slideData.title);
-  }, [slideData]);
-
-  // ── Office mode: title + content load (issue #43) ───────────────────────
+  // ── Title + content load (issue #43) ────────────────────────────────────
   useEffect(() => {
     if (officeMode && officeFileMeta) setTitle(stripOoxmlExtension(officeFileMeta.name));
   }, [officeMode, officeFileMeta]);
@@ -669,61 +572,6 @@ export function SlideEditor() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [officeMode, officeFileMeta, slideId, dekResolved, isNewEncryption]);
 
-  useEffect(() => {
-    if (!slideContent) return;
-    try {
-      const parsed: SlidePresentation = JSON.parse(slideContent);
-      if (parsed?.slides?.length > 0) {
-        setPresentation(parsed);
-        lastSavedRef.current = slideContent;
-      }
-    } catch {
-      // keep default
-    }
-  }, [slideContent]);
-
-  // After the DEK resolves and the content query settles, seal whatever the
-  // server is holding in plaintext.
-  //
-  // `serverPlaintext` is the whole condition: the read above got the body back
-  // without decrypting it, which is the only evidence that it is not ciphertext.
-  // This used to ask `isNewEncryption` — "the DEK was minted here, so the file
-  // had no key ref, so the bytes are plaintext". True as far as it goes, but
-  // blind to the case in between: a deck created and then reloaded before this
-  // write landed has a key ref *and* a plaintext body, and was never sealed.
-  // Bytes that neither decrypt nor look like plaintext are ciphertext this key
-  // cannot open; `readStoredBody` throws on those rather than reporting them as
-  // content, so this never runs for them and real content is never overwritten.
-  //
-  // This used to also require `lastSavedRef.current === ''` — "and nothing
-  // loaded". That made sense when a new deck had no body at all, but Drive now
-  // seeds the empty-deck JSON itself from the mime type (`NATIVE_TYPES` in
-  // `src/drive/storage/native_types.rs`), so a load always produces content and
-  // the condition never held. A newly created presentation therefore kept its
-  // body in plaintext on the server indefinitely — the one thing E2EE is for —
-  // while sheets, which tracks this as `serverHasPlaintextContent`, re-sealed
-  // its own seed correctly.
-  useEffect(() => {
-    if (!dekRef.current || !slideData || contentLoading) return;
-    if (!serverPlaintextRef.current) return;
-    if (initialSaveDoneRef.current) return;
-    initialSaveDoneRef.current = true;
-    // Prefer the body just read from the server, so this re-seals exactly what
-    // is stored rather than replacing it with the client's default deck.
-    const content = lastSavedRef.current || JSON.stringify(presentationRef.current);
-    driveAutosaveEncryptedContent(slideData.id, content, 'slide.json', dekRef.current)
-      // This write bumps `contentVersion` just like any other, and nothing
-      // re-reads the metadata query afterwards — so without feeding the result
-      // back the guard keeps asserting the version we loaded and every
-      // subsequent save is rejected as stale.
-      .then((saved) => versionGuard.observe(saved?.contentVersion))
-      .catch(() => {});
-  // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
-  // `presentation` is read through presentationRef, so it is deliberately not a
-  // dependency: this runs once, not on every edit.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dekResolved, contentUpdatedAt, slideData, contentLoading, slideContent]);
-
   /**
    * Write `content` to Drive — the one place a presentation is persisted.
    *
@@ -737,10 +585,9 @@ export function SlideEditor() {
    */
   async function writeContent(content: string, keepalive = false): Promise<FileItem> {
     const transport = keepalive ? { keepalive: true } : undefined;
-    // Office mode (issue #43): re-serialize the current presentation into
-    // real PPTX bytes and write them to the SAME Drive file id via the
-    // binary-safe transport, instead of the native JSON autosave path.
-    if (officeModeRef.current) {
+    // Re-serialize the current presentation into real PPTX bytes and write
+    // them to the SAME Drive file id via the binary-safe transport.
+    {
       const meta = officeFileMetaRef.current;
       if (!meta) throw new Error('office-meta-missing');
       if (!dekRef.current) throw new Error('no-dek');
@@ -760,10 +607,6 @@ export function SlideEditor() {
         slideId, bytes, meta.name, dekRef.current, versionGuard.check(), transport,
       );
     }
-    if (!dekRef.current) throw new Error('no-dek');
-    return driveAutosaveEncryptedContent(
-      slideData!.id, content, 'slide.json', dekRef.current, versionGuard.check(), transport,
-    );
   }
 
   const contentMutation = useMutation({
@@ -798,15 +641,11 @@ export function SlideEditor() {
 
   /** Rename the presentation. Split out for the same reason as `writeContent`. */
   async function writeTitle(t: string): Promise<void> {
-    // Office mode: no `slides` row to PATCH — rename through the generic
-    // Drive rename call (same one FileContextMenu's rename action uses).
-    if (officeModeRef.current) {
-      // The extension goes back on: the title is what the user typed, and the
-      // file still has to land on disk as a deck PowerPoint opens.
-      await filesystemApi.updateFile(slideId, { name: withOoxmlExtension(t, 'slides') });
-      return;
-    }
-    await slidesApi.saveSlide(slideData!.id, { title: t });
+    // There is no `slides` row to PATCH — rename through the generic Drive
+    // rename call (the same one FileContextMenu's rename action uses). The
+    // extension goes back on: the title is what the user typed, and the file
+    // still has to land on disk as a deck PowerPoint opens.
+    await filesystemApi.updateFile(slideId, { name: withOoxmlExtension(t, 'slides') });
   }
 
   const titleMutation = useMutation({
@@ -875,9 +714,17 @@ export function SlideEditor() {
       return;
     }
     const content = JSON.stringify(presentationRef.current);
-    const copy = await slidesApi.createSlide({ title: `${title || 'Untitled presentation'} (copy)` });
+    const copyTitle = `${title || 'Untitled presentation'} (copy)`;
+    const copy = await slidesApi.createSlide({ title: copyTitle });
     const dek = await mintFileKey(currentUser?.id, copy.id);
-    await driveAutosaveEncryptedContent(copy.id, content, 'slide.json', dek);
+    // The same package `writeContent` builds: the PowerPoint deck other tools
+    // read, plus this editor's own model, which is what carries the themes and
+    // transitions pptxgenjs cannot.
+    const deck = await exportAsPptxBytes(presentationRef.current);
+    const bytes = await packNeutrinoModel(deck, 'slides', content);
+    await driveAutosaveEncryptedBytes(
+      copy.id, bytes, withOoxmlExtension(copyTitle, 'slides'), dek,
+    );
     queryClient.invalidateQueries({ queryKey: ['slides'] });
     router.push(`/slides/editor?id=${copy.id}`);
   }, [title, currentUser?.id, queryClient, router, toast]);
@@ -2779,9 +2626,9 @@ export function SlideEditor() {
         />
       )}
 
-      {showShareDialog && slideData && (
+      {showShareDialog && officeFileMeta && (
         <ShareDialog
-          resource={{ ...slideData, name: slideData.title } as unknown as FileItem}
+          resource={officeFileMeta}
           resourceType="file"
           onClose={() => setShowShareDialog(false)}
         />

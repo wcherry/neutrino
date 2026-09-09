@@ -28,7 +28,6 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const DEK = new Uint8Array(32).fill(6);
 
-const getSheet = vi.fn();
 const getFileMetadata = vi.fn();
 const downloadFile = vi.fn();
 // The office-mode read goes through `driveReadBytes` — see the module comment
@@ -50,7 +49,6 @@ vi.mock('@/lib/api', () => ({
     }
   },
   sheetsApi: {
-    getSheet: (...a: unknown[]) => getSheet(...a),
     saveSheet: vi.fn(() => Promise.resolve()),
   },
   driveReadContent: vi.fn(() => Promise.resolve('{"sheets":[]}')),
@@ -154,14 +152,13 @@ function setupHook() {
 async function loadInOfficeMode() {
   const { result } = setupHook();
   await act(async () => { await result.current.load(); });
-  await waitFor(() => expect(result.current.officeMode).toBe(true));
+  await waitFor(() => expect(result.current.fileRef.current).not.toBeNull());
   return result;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   dekNow = DEK;
-  getSheet.mockRejectedValue(new ApiClientError(404, 'not_found', 'no sheets row'));
   getFileMetadata.mockResolvedValue({ id: 'file-1', name: 'Budget.xlsx', mimeType: XLSX_MIME });
   readBytes.mockResolvedValue(asCiphertext(RAW_XLSX));
   downloadFile.mockResolvedValue(new Blob([asCiphertext(RAW_XLSX).buffer as ArrayBuffer]));

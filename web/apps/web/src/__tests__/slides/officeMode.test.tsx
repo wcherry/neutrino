@@ -1,19 +1,12 @@
 /**
- * Tests for SlideEditor's office-mode detection/fallback contract (issue #43
- * — in-place editing of MS Office docs, plan section 3).
+ * Tests that opening a `.pptx` at /slides/editor loads it: the editor
+ * identifies the file through `storageApi.getFileMetadata`, and when the
+ * metadata says pptx it downloads and parses the package rather than showing
+ * the empty default deck.
  *
- * Mirrors the Docs test (__tests__/docs/officeMode.test.tsx): when a raw
- * .pptx file is opened at /slides/editor, `slidesApi.getSlide` 404s (there is
- * no `slides` row for it). The editor must fall back to
- * `storageApi.getFileMetadata` and, when the metadata identifies a pptx file,
- * enter "office mode" — importing the raw bytes via the existing
- * `importFromPptx` (slides/editor/pptxImport.ts, already used by the manual
- * Import action, see SlideEditor.tsx:1052) instead of showing a not-found
- * state. If the fallback ALSO 404s, a genuine not-found state renders.
- *
- * Expected to fail right now (red phase): SlideEditor has no 404 handling or
- * fallback path today, so storageApi.getFileMetadata is never called and
- * importFromPptx is never invoked for a missing `slides` row.
+ * This used to describe a fallback — `slidesApi.getSlide` was asked first and
+ * its 404 meant "not bespoke JSON, therefore OOXML". No deck was ever stored
+ * in that format and it is gone, so there is one path and no probe.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -56,7 +49,6 @@ vi.mock('@neutrino/auth', () => ({
   useAuth: () => ({ user: null, isLoading: false }),
 }));
 
-const mockGetSlide = vi.fn();
 const mockGetFileMetadata = vi.fn();
 const mockDownloadFile = vi.fn();
 // The office-mode read goes through `driveReadBytes` — see its module comment.
@@ -74,7 +66,6 @@ vi.mock('@/lib/api', () => ({
     }
   },
   slidesApi: {
-    getSlide: (...args: unknown[]) => mockGetSlide(...args),
     listThemes: vi.fn(() => Promise.resolve([])),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveSlide: vi.fn(() => Promise.resolve()),
@@ -163,8 +154,7 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
     vi.clearAllMocks();
   });
 
-  it('falls back to storageApi.getFileMetadata when slidesApi.getSlide 404s', async () => {
-    mockGetSlide.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Presentation not found'));
+  it('identifies the presentation through storageApi.getFileMetadata', async () => {
     mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'deck.pptx', mimeType: PPTX_MIME });
     mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake pptx bytes'));
 
@@ -174,7 +164,6 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
   });
 
   it('enters office mode and imports via importFromPptx for a raw .pptx file', async () => {
-    mockGetSlide.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Presentation not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'deck.pptx', mimeType: PPTX_MIME });
     mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake pptx bytes'));
 
@@ -185,7 +174,6 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
   });
 
   it('shows a genuine not-found state when the storage fallback ALSO 404s', async () => {
-    mockGetSlide.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Presentation not found'));
     mockGetFileMetadata.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'File not found'));
 
     renderSlideEditor();
@@ -198,7 +186,6 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
   });
 
   it('does NOT enter office mode for a fallback file that is not an office format', async () => {
-    mockGetSlide.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Presentation not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'photo.png', mimeType: 'image/png' });
 
     renderSlideEditor();

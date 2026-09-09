@@ -8,12 +8,18 @@
 
 import { officeAppForFile, OOXML_MIME } from '@/lib/officeFormats';
 
-export const DOC_MIME = 'application/x-neutrino-doc';
-export const SHEET_MIME = 'application/x-neutrino-sheet';
-export const SLIDES_MIME = 'application/x-neutrino-slide';
+// Docs, Sheets and Slides are OOXML and are routed by `officeAppForFile`
+// below, so they have no entry of their own here. The bespoke JSON that
+// predated OOXML held no files and is gone.
 export const DIAGRAM_MIME = 'application/x-neutrino-diagram';
 export const DRAWING_MIME = 'application/x-neutrino-drawing';
-export const NOTE_MIME = 'application/x-neutrino-note';
+/**
+ * A note is a Markdown file, and it says so: notes are stored as Markdown and
+ * carry the standard MIME type rather than a private one, so a `.md` uploaded
+ * to Drive opens in the note editor and a note is readable by anything that
+ * reads Markdown — the iOS Notes app included.
+ */
+export const NOTE_MIME = 'text/markdown';
 
 export interface RoutableFile {
   id: string;
@@ -30,9 +36,6 @@ export interface RouteForFileOptions {
 }
 
 const NATIVE_ROUTE_PREFIX: Record<string, string> = {
-  [DOC_MIME]: '/docs/editor?id=',
-  [SHEET_MIME]: '/sheets/editor?id=',
-  [SLIDES_MIME]: '/slides/editor?id=',
   [DIAGRAM_MIME]: '/diagrams/editor?id=',
   [DRAWING_MIME]: '/drawing/editor?id=',
   [NOTE_MIME]: '/notes/editor?id=',
@@ -81,16 +84,10 @@ export function routeForFile(
 export type PreviewKind = 'doc' | 'sheet' | 'slide' | 'note' | 'diagram' | 'drawing' | 'image';
 
 const NATIVE_PREVIEW_KIND: Record<string, PreviewKind> = {
-  [DOC_MIME]: 'doc',
-  [SHEET_MIME]: 'sheet',
-  [SLIDES_MIME]: 'slide',
   [NOTE_MIME]: 'note',
   [DIAGRAM_MIME]: 'diagram',
   [DRAWING_MIME]: 'drawing',
-  // Both formats preview the same way — `DocumentPreviewModal` reads the model
-  // out of an OOXML package (issue #127) and the stored JSON otherwise. Leaving
-  // these out would have taken the Preview action away from every document
-  // created from that point on.
+  // `DocumentPreviewModal` reads the model out of the OOXML package (issue #127).
   [OOXML_MIME.docx]: 'doc',
   [OOXML_MIME.xlsx]: 'sheet',
   [OOXML_MIME.pptx]: 'slide',

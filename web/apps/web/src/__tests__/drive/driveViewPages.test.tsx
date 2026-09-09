@@ -137,7 +137,7 @@ describe('Drive view pages — view mode selector', () => {
 describe('Recent page', () => {
   it('opens a file through the shared route dispatch', async () => {
     api.filesystemApi.getRecent.mockResolvedValue({
-      files: [file({ id: 'doc1', name: 'Notes', mimeType: 'application/x-neutrino-doc' })],
+      files: [file({ id: 'doc1', name: 'Notes', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })],
       folders: [],
     });
     renderPage(<RecentPage />);

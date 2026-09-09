@@ -13,12 +13,10 @@
 
 import { expect, test } from '../fixtures/perf';
 import { signIn } from '../fixtures/session';
-import { seedDoc, seedDocWithImages, seedPhotos } from '../fixtures/seed';
+import { seedDoc } from '../fixtures/seed';
 import { SCALE } from '../fixtures/env';
 import { openDoc, typeSlowly, waitForIdle } from '../fixtures/actions';
 
-/** How many Drive images the `C4` document embeds. */
-const EMBEDDED_IMAGES = 20;
 
 test.describe('C — docs editor', () => {
   test('C1–C8 Docs editor at scale', async ({ perf, page, request }) => {
@@ -114,45 +112,6 @@ test.describe('C — docs editor', () => {
         await typeSlowly(editor, ' autosave probe two', 25);
         await saved;
         await page.waitForTimeout(500);
-      },
-    );
-
-    // ── C4 ────────────────────────────────────────────────────────────────
-    const photos = await seedPhotos(session, 'S');
-    const imageDoc = await seedDocWithImages(
-      session,
-      photos.slice(0, EMBEDDED_IMAGES).map((p) => p.id),
-    );
-
-    await perf.scenario(
-      {
-        id: 'C4',
-        title: `Open a doc containing ${EMBEDDED_IMAGES} encrypted Drive images`,
-        fixture: `${EMBEDDED_IMAGES} images`,
-        budgets: { allImagesResolved: 3_000 },
-      },
-      async (s) => {
-        await page.goto('/docs');
-        const start = Date.now();
-        await page.goto(`/docs/editor?id=${imageDoc.id}`);
-        await expect(editor).toBeVisible({ timeout: 60_000 });
-
-        // Every image is a `neutrino-drive:` reference that has to be
-        // downloaded and decrypted in the page before it can be shown, so
-        // "resolved" means the `<img>` elements have real sources — not that
-        // the editor mounted.
-        await expect
-          .poll(
-            async () =>
-              editor
-                .locator('img')
-                .evaluateAll((imgs) =>
-                  imgs.filter((i) => (i as HTMLImageElement).currentSrc !== '').length,
-                ),
-            { timeout: 90_000, message: 'images never resolved' },
-          )
-          .toBeGreaterThanOrEqual(Math.min(EMBEDDED_IMAGES, photos.length));
-        s.record('allImagesResolved', Date.now() - start);
       },
     );
 

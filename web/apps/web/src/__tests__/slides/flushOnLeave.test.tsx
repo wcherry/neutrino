@@ -68,6 +68,7 @@ vi.mock('@neutrino/auth', () => ({
 
 const mockAutosaveEncrypted = vi.fn(() => Promise.resolve({ contentVersion: 3 }));
 const mockSaveSlide = vi.fn(() => Promise.resolve());
+const mockUpdateFile = vi.fn(() => Promise.resolve());
 
 vi.mock('@/lib/api', () => ({
   ApiClientError: class ApiClientError extends Error {
@@ -81,30 +82,35 @@ vi.mock('@/lib/api', () => ({
     }
   },
   slidesApi: {
-    getSlide: vi.fn(() =>
-      Promise.resolve({
-        id: 'deck-id',
-        title: 'Deck',
-        contentUrl: '/api/v1/drive/files/deck-id',
-        contentWriteUrl: '/api/v1/drive/files/deck-id/versions',
-        contentVersion: 2,
-      }),
-    ),
     listThemes: vi.fn(() => Promise.resolve([])),
     saveSlide: (...args: unknown[]) => mockSaveSlide(...(args as [])),
   },
-  driveReadContent: vi.fn(() => Promise.resolve(STORED_DECK)),
-  driveAutosaveEncryptedContent: (...args: unknown[]) => mockAutosaveEncrypted(...(args as [])),
-  driveAutosaveEncryptedBytes: vi.fn(),
+  driveReadBytes: vi.fn(() => Promise.resolve(new TextEncoder().encode('stored pptx bytes'))),
+  driveAutosaveEncryptedBytes: (...args: unknown[]) => mockAutosaveEncrypted(...(args as [])),
   mintFileKey: vi.fn(),
   canEncryptFor: vi.fn(() => Promise.resolve(true)),
   extractSlideText: vi.fn(() => ''),
   storageApi: {
-    getFileMetadata: vi.fn(),
+    getFileMetadata: vi.fn(() =>
+      Promise.resolve({ id: 'deck-id', name: 'Deck.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentVersion: 2 }),
+    ),
     downloadFile: vi.fn(() => Promise.resolve(new Blob([STORED_DECK]))),
   },
-  filesystemApi: { updateFile: vi.fn(() => Promise.resolve()) },
+  filesystemApi: { updateFile: (...args: unknown[]) => mockUpdateFile(...(args as [])) },
   encryptionApi: { getFileKey: vi.fn(() => Promise.resolve(null)) },
+}));
+
+vi.mock('@/lib/ooxmlContainer', () => ({
+  // The deck's own model, packed inside the package — what the load prefers.
+  readNeutrinoModel: vi.fn(() => Promise.resolve(STORED_DECK)),
+  packNeutrinoModel: vi.fn((_deck: unknown, _app: string, content: string) =>
+    Promise.resolve(new TextEncoder().encode(content)),
+  ),
+}));
+
+vi.mock('../../app/(apps)/slides/editor/pptxExport', () => ({
+  exportAsPptx: vi.fn(),
+  exportAsPptxBytes: vi.fn(() => Promise.resolve(new Uint8Array())),
 }));
 
 vi.mock('@/lib/searchIndexUpdate', () => ({ indexOnSave: vi.fn() }));
@@ -184,13 +190,15 @@ describe('SlideEditor — flushing pending edits on the way out', () => {
     unmount();
 
     await waitFor(() => expect(mockAutosaveEncrypted).toHaveBeenCalledTimes(1));
-    const [fileId, content, filename, key, , transport] =
+    const [fileId, bytes, filename, key, , transport] =
       mockAutosaveEncrypted.mock.calls[0] as unknown[];
     expect(fileId).toBe('deck-id');
-    expect(filename).toBe('slide.json');
+    // Written under the file's own name — a package, not a JSON body.
+    expect(filename).toBe('Deck.pptx');
     expect(key).toBe(dek);
     // The edit is in it — three slides, not the two that were loaded.
-    expect(JSON.parse(content as string).slides).toHaveLength(3);
+    const written = new TextDecoder().decode(bytes as Uint8Array);
+    expect(JSON.parse(written).slides).toHaveLength(3);
     // And it is allowed to outlive the document.
     expect(transport).toEqual({ keepalive: true });
   });
@@ -249,11 +257,11 @@ describe('SlideEditor — flushing pending edits on the way out', () => {
     const titleInput = await screen.findByPlaceholderText('Untitled presentation');
 
     fireEvent.change(titleInput, { target: { value: 'Renamed deck' } });
-    expect(mockSaveSlide).not.toHaveBeenCalled();
+    expect(mockUpdateFile).not.toHaveBeenCalled();
 
     unmount();
 
-    await waitFor(() => expect(mockSaveSlide).toHaveBeenCalledTimes(1));
-    expect(mockSaveSlide.mock.calls[0]).toEqual(['deck-id', { title: 'Renamed deck' }]);
+    await waitFor(() => expect(mockUpdateFile).toHaveBeenCalledTimes(1));
+    expect(mockUpdateFile.mock.calls[0]).toEqual(['deck-id', { name: 'Renamed deck.pptx' }]);
   });
 });

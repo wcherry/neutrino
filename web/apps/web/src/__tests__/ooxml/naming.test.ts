@@ -28,7 +28,6 @@ describe('ooxmlMimeFor / ooxmlAppForMime', () => {
   });
 
   it('does not claim a mime type it does not own', () => {
-    expect(ooxmlAppForMime('application/x-neutrino-doc')).toBeNull();
     expect(ooxmlAppForMime('application/pdf')).toBeNull();
     expect(ooxmlAppForMime('')).toBeNull();
   });

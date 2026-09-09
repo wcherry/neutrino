@@ -44,17 +44,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
 
 vi.mock('@/lib/api', () => ({
   sheetsApi: {
-    getSheet: vi.fn(() =>
-      Promise.resolve({
-        id: 'sheet-test-id',
-        title: 'Test Sheet',
-        contentUrl: '/api/v1/drive/files/sheet-test-id',
-        contentWriteUrl: '/api/v1/drive/files/sheet-test-id/versions',
-        folderId: null,
-        createdAt: '',
-        updatedAt: '',
-      })
-    ),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     autosaveContent: vi.fn(() => Promise.resolve()),
     saveSheet: vi.fn(() => Promise.resolve()),
@@ -65,7 +54,22 @@ vi.mock('@/lib/api', () => ({
   driveCreateEncryptedVersion: vi.fn(() => Promise.resolve()),
   storageApi: {
     downloadFile: vi.fn(() => Promise.resolve(new Blob())),
+    getFileMetadata: vi.fn(() =>
+      Promise.resolve({
+        id: 'sheet-test-id',
+        name: 'Test Sheet.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        contentVersion: 1,
+      })
+    ),
   },
+  filesystemApi: {
+    updateFile: vi.fn(() => Promise.resolve()),
+  },
+  driveReadBytes: vi.fn(() => Promise.resolve(new Uint8Array())),
+  driveAutosaveEncryptedBytes: vi.fn(() => Promise.resolve({ contentVersion: 2 })),
+  driveCreateEncryptedVersionBytes: vi.fn(() => Promise.resolve()),
+  extractSheetText: vi.fn(() => ''),
 }));
 
 vi.mock('@neutrino/e2e-crypto', () => ({
@@ -77,7 +81,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 // ---------------------------------------------------------------------------
 
 import { usePersistence } from '../../app/(apps)/sheets/editor/hooks/usePersistence';
-import { sheetsApi } from '@/lib/api';
+import { filesystemApi } from '@/lib/api';
 
 // ---------------------------------------------------------------------------
 // Test harness
@@ -180,10 +184,14 @@ describe('usePersistence — encryption warning toast', () => {
   it('updateTitle() renames without warning, since the title is not encrypted', async () => {
     const harnessRef = renderHarness();
 
-    // Populate sheetRef via load() so updateTitle() passes its guard
+    // Populate fileRef via load() so updateTitle() passes its guard.
     await act(async () => {
       await harnessRef.current!.load();
     });
+    // Opening a spreadsheet with no stored package tries to seal a blank
+    // workbook, and with the vault locked that warns — which is the *other*
+    // test in this file. Cleared so what follows is about the rename alone.
+    mockWarning.mockClear();
 
     // Build a synthetic FocusEvent whose currentTarget.innerHTML differs from
     // the current title ('Test Sheet') so updateTitle() does not bail out early.
@@ -195,9 +203,12 @@ describe('usePersistence — encryption warning toast', () => {
       await harnessRef.current!.updateTitle(fakeEvent);
     });
 
-    // The title is plaintext metadata on the `sheets` row, so the rename goes
-    // through even with no DEK — only content saves need the key.
-    expect(sheetsApi.saveSheet).toHaveBeenCalledWith('sheet-test-id', { title: 'Renamed Sheet' });
+    // The name is plaintext metadata on the Drive file, so the rename goes
+    // through even with no DEK — only content saves need the key. The
+    // extension goes back on, since the file still has to open in Excel.
+    expect(filesystemApi.updateFile).toHaveBeenCalledWith('sheet-test-id', {
+      name: 'Renamed Sheet.xlsx',
+    });
     expect(mockWarning).not.toHaveBeenCalled();
   });
 });
