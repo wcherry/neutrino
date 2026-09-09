@@ -11,12 +11,10 @@ import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import {
   hrefForFile,
   DIAGRAM_MIME,
-  DOC_MIME,
   DRAWING_MIME,
   NOTE_MIME,
-  SHEET_MIME,
-  SLIDES_MIME,
 } from '@/app/(apps)/drive/routeForFile';
+import { OOXML_MIME } from '@neutrino/api-core';
 import {
   intersectFileIds,
   matchTagsForTerm,
@@ -59,9 +57,9 @@ export interface SearchHit {
  * icon, same colour, from the same helpers.
  */
 const DOC_TYPE_MIME: Partial<Record<SearchableDocType, string>> = {
-  document: DOC_MIME,
-  spreadsheet: SHEET_MIME,
-  slide: SLIDES_MIME,
+  document: OOXML_MIME.docx,
+  spreadsheet: OOXML_MIME.xlsx,
+  slide: OOXML_MIME.pptx,
   note: NOTE_MIME,
   diagram: DIAGRAM_MIME,
   drawing: DRAWING_MIME,

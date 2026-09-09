@@ -34,11 +34,8 @@ import { readDocumentText } from '@/lib/documentContent';
 import { OOXML_MIME, type OoxmlApp } from '@neutrino/api-core';
 import {
   DIAGRAM_MIME,
-  DOC_MIME,
   DRAWING_MIME,
   NOTE_MIME,
-  SHEET_MIME,
-  SLIDES_MIME,
 } from '@/app/(apps)/drive/routeForFile';
 
 /**
@@ -102,13 +99,10 @@ const DRIVE_MAX_PAGES = 5;
  * here stops the name-only Drive pass from overwriting a richer entry.
  */
 const APP_OWNED_MIMES = new Set([
-  DOC_MIME,
-  SHEET_MIME,
-  SLIDES_MIME,
   NOTE_MIME,
   DIAGRAM_MIME,
   DRAWING_MIME,
-  // The OOXML types belong to Docs, Sheets and Slides just as much (issue
+  // Docs, Sheets and Slides are their OOXML types and nothing else (issue
   // #127) — a `.docx` in Drive is a document, and the name-only pass must not
   // overwrite the full-text entry the docs pass just wrote for the same id.
   OOXML_MIME.docx,
