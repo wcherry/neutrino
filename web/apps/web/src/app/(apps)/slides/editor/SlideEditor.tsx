@@ -402,11 +402,26 @@ export function SlideEditor() {
   // component. Synced by an effect below.
   const officeModeRef = useRef(false);
 
+  /**
+   * The stored deck has been read and applied, so the presentation on screen is
+   * this file's rather than the default one every mount starts with.
+   */
+  const contentAppliedRef = useRef(false);
+
   const onRemotePresentationRef = useRef<((p: unknown) => void) | null>(null);
   onRemotePresentationRef.current = (incoming: unknown) => {
     try {
       const parsed = incoming as SlidePresentation;
       if (!parsed?.slides?.length) return;
+      // Not before this file has been read. Presence is keyed on the Drive file
+      // id and connects on mount, while the deck is fetched, decrypted and
+      // parsed asynchronously — so a peer's update, or the room's own state,
+      // routinely arrives while the editor is still showing
+      // `makeDefaultPresentation()`. Applying it then replaces the load that is
+      // about to land, and the next autosave writes that back over the file.
+      // Presence was skipped for `.pptx` entirely until this editor started
+      // creating them, which is why the ordering never had to be stated.
+      if (!contentAppliedRef.current) return;
       setPresentation(parsed);
     } catch {
       // ignore malformed remote presentation updates
@@ -540,6 +555,9 @@ export function SlideEditor() {
         // empty record into a real package — now rather than on the first edit,
         // or a deck opened and closed again stays a zero-byte file.
         if (plain.byteLength === 0) {
+          // The default deck on screen *is* this file's content, and the save
+          // below is what makes it so — co-editing may start from here.
+          contentAppliedRef.current = true;
           contentMutationRef.current(JSON.stringify(presentationRef.current));
           return;
         }
@@ -554,6 +572,7 @@ export function SlideEditor() {
         if (model) {
           setPresentation(JSON.parse(model) as SlidePresentation);
           lastSavedRef.current = model;
+          contentAppliedRef.current = true;
           return;
         }
 
@@ -570,6 +589,7 @@ export function SlideEditor() {
         if (cancelled) return;
         setPresentation(imported);
         lastSavedRef.current = JSON.stringify(imported);
+        contentAppliedRef.current = true;
       } catch {
         if (!cancelled) toast.error('Failed to open this file for editing');
       }
