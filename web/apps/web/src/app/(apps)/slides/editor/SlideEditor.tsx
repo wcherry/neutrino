@@ -517,14 +517,23 @@ export function SlideEditor() {
         // is written for.
         const stored = await measurePhase('slide:fetch', () => driveReadBytes(slideId));
         if (cancelled) return;
+        // `awaitDek`, not `dekRef.current`. `dekResolved` only means the
+        // *attempt* has finished, so the ref can still be empty here — and
+        // sampling it then reads the ciphertext as a package, finds no model in
+        // it, hands it to the pptx importer and opens the deck as the default
+        // one. That is a reload silently losing the deck. The bespoke-JSON read
+        // this replaced waited for the key for this reason; the wait belongs on
+        // the path that survived it.
+        const dek = await awaitDek();
+        if (cancelled) return;
         // Office-mode saves are encrypted now, so a file that already has a key
         // ref holds ciphertext. `isNewEncryption` separates the two: it means
         // the DEK was just minted for a file that had none, so what is stored
         // is still the plaintext .pptx it was uploaded as, and the first save
         // is what encrypts it. No body at all is neither, and decrypting it
         // would report a new deck as an unreadable one.
-        const plain = stored.byteLength > 0 && dekRef.current && !isNewEncryption
-          ? await measurePhase('slide:decrypt', async () => decryptFile(stored, dekRef.current!))
+        const plain = stored.byteLength > 0 && dek && !isNewEncryption
+          ? await measurePhase('slide:decrypt', async () => decryptFile(stored, dek))
           : stored;
         // A presentation created here starts with no body at all: a `.pptx` is
         // a zip, so the server writes no seed. The default deck already on

@@ -455,7 +455,12 @@ export default function NoteEditorPage() {
         // roll back a content save that already succeeded.
         // Wiki links must be extracted from the plaintext here — once
         // encrypted, the server can no longer read `[[links]]` out of `content`.
-        const linkedTitles = extractWikiLinkTitles(JSON.parse(serialized) as Block[]);
+        // `parseBlocks`, not `JSON.parse`: `serialized` is the Markdown body
+        // that was just written, and parsing it as JSON throws — which happened
+        // *after* the content write and so skipped the rename and the link
+        // update below, leaving every note called "Untitled note" and every
+        // wiki link unresolved.
+        const linkedTitles = extractWikiLinkTitles(parseBlocks(serialized));
         Promise.all([
           titleChanged ? filesystemApi.updateFile(noteId, { name: nextTitle }) : Promise.resolve(),
           linksApi.updateLinks(noteId, { linkedTitles }),
