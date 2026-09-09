@@ -1,5 +1,5 @@
 [workspace]
-members = ["xtask", "worker"]
+members = ["xtask", "worker", "decrypt"]
 
 [package]
 name = "neutrino"

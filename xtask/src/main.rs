@@ -41,7 +41,7 @@ fn main() {
     let mut args = env::args().skip(1);
     let task = args.next().unwrap_or_else(|| {
         eprintln!(
-            "Usage: cargo xtask <task> [args...]\n\nTasks:\n  setup            Run every prerequisite step for backend, web and e2e\n  build-web        Build the web app\n  e2e [args...]    Run e2e tests (extra args forwarded to run-tests.sh)\n  perf [args...]   Run the performance suite (extra args forwarded to run-perf.sh)\n  docker           Build the Docker image\n  fetch-model      Download the worker's facial-recognition model"
+            "Usage: cargo xtask <task> [args...]\n\nTasks:\n  setup              Run every prerequisite step for backend, web and e2e\n  build-web          Build the web app\n  e2e [args...]      Run e2e tests (extra args forwarded to run-tests.sh)\n  perf [args...]     Run the performance suite (extra args forwarded to run-perf.sh)\n  decrypt [args...]  Decrypt a Drive file (extra args forwarded to neutrino-decrypt)\n  docker             Build the Docker image\n  fetch-model        Download the worker's facial-recognition model"
         );
         process::exit(1);
     });
@@ -53,13 +53,14 @@ fn main() {
         "build-web" => build_web(&cfg.workspace_root),
         "e2e" => run_e2e(&cfg.e2e_dir, &extra),
         "perf" => run_perf(&cfg.e2e_dir, &extra),
+        "decrypt" => run_decrypt(&cfg.workspace_root, &extra),
         "docker" => build_docker(&cfg.workspace_root, &cfg.docker_image),
         "dev" => run_dev(&cfg.workspace_root),
         "storybook" => run_storybook(&cfg.web_dir),
         "fetch-model" => ensure_face_model(&cfg.workspace_root),
         _ => {
             eprintln!(
-                "Unknown task: {task}\n\nTasks: setup, build-web, e2e, perf, docker, dev, storybook, fetch-model"
+                "Unknown task: {task}\n\nTasks: setup, build-web, e2e, perf, decrypt, docker, dev, storybook, fetch-model"
             );
             process::exit(1);
         }
@@ -286,6 +287,41 @@ fn run_e2e_script(dir: &Path, script: &str, extra: &[String]) {
     args.extend_from_slice(extra);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     run("bash", &args, dir);
+}
+
+/// `neutrino-decrypt`, built and run in one step, with everything after the task
+/// name handed straight to it — `cargo decrypt info <id> --kit kit.txt`.
+///
+/// Release rather than debug, unlike `dev`: this one decrypts real files, and
+/// dryoc's pure-Rust XChaCha20 is an order of magnitude slower unoptimised —
+/// the difference between seconds and minutes on a large video.
+///
+/// The child keeps the **caller's** working directory instead of moving to the
+/// workspace root, which is why cargo is pointed at the workspace with
+/// `--manifest-path` rather than by `current_dir`. Everything the tool resolves
+/// relatively — `--kit`, `--out`, and the `.env` it reads `DATABASE_URL` and
+/// `STORAGE_PATH` from — then means what the operator typed rather than
+/// something a directory above it.
+///
+/// Like every other task, this one only runs from inside the workspace:
+/// `config_from_metadata` shells out to `cargo metadata` first. A deployment
+/// with no checkout runs the built `target/release/neutrino-decrypt` directly;
+/// this task is the convenience wrapper, not the only way in.
+fn run_decrypt(root: &Path, extra: &[String]) {
+    let mut args = vec![
+        "run".to_string(),
+        "--release".to_string(),
+        "--manifest-path".to_string(),
+        root.join("Cargo.toml").to_string_lossy().into_owned(),
+        "-p".to_string(),
+        "neutrino-decrypt".to_string(),
+        "--".to_string(),
+    ];
+    args.extend_from_slice(extra);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+
+    let cwd = env::current_dir().expect("cannot read the current working directory");
+    run("cargo", &args, &cwd);
 }
 
 fn build_docker(root: &Path, image: &str) {

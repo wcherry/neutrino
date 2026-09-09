@@ -1,0 +1,30 @@
+[package]
+name = "neutrino-decrypt"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "neutrino-decrypt"
+path = "src/main.rs"
+
+[dependencies]
+# The same SQLite file the app and the worker use. Versions are pinned to the
+# main app's so all three processes link one copy of libsqlite3 and agree on
+# how the file is opened.
+diesel = { version = "2", features = ["sqlite", "chrono"] }
+libsqlite3-sys = { version = "0.27", features = ["bundled"] }
+chrono = "0.4"
+
+# libsodium-compatible primitives, pure Rust. The clients encrypt with
+# libsodium (`libsodium-wrappers` on the web, libsodium proper on Apple
+# platforms); dryoc's `classic` API is byte-compatible with it, which is the
+# only property that matters here.
+dryoc = "1"
+
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Reads the same `.env` as the app, so `neutrino-decrypt` run from the deploy
+# directory finds the database and storage root without being told.
+dotenvy = "0.15"
