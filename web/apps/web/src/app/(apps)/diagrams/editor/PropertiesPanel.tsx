@@ -4,6 +4,7 @@ import React from 'react';
 import { ColorPickerPopover } from '@neutrino/ui';
 import type { DiagramPage, EditorSelection, DiagramShape, DiagramConnector } from '../types';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
+import { DiagramFillPicker } from './DiagramFillPicker';
 import styles from './PropertiesPanel.module.css';
 
 interface PropertiesPanelProps {
@@ -124,10 +125,9 @@ function ShapeProperties({
       <div className={styles.sectionTitle}>Style</div>
       <div className={styles.row}>
         <label>Fill</label>
-        <ColorPickerPopover showAlpha
-          color={style.fill}
-          onChange={(hex) => onUpdate({ style: { ...style, fill: hex } })}
-          title="Fill color"
+        <DiagramFillPicker
+          style={style}
+          onChange={(change) => onUpdate({ style: { ...style, ...change } })}
         />
       </div>
       <div className={styles.row}>
@@ -305,10 +305,9 @@ function MultiShapeProperties({
       </div>
       <div className={styles.row}>
         <label>Fill</label>
-        <ColorPickerPopover showAlpha
-          color={firstStyle.fill}
-          onChange={(hex) => onUpdate({ style: { ...firstStyle, fill: hex } })}
-          title="Fill color"
+        <DiagramFillPicker
+          style={firstStyle}
+          onChange={(change) => onUpdate({ style: { ...firstStyle, ...change } })}
         />
       </div>
       <div className={styles.row}>

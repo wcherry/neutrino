@@ -40,6 +40,13 @@ export interface FillPickerProps {
   presetsKey?: string;
   /** Label shown on the trigger button (default: 'BG') */
   triggerLabel?: string;
+  /**
+   * Lets the Color tab pick a translucent colour, stored as `#rrggbbaa`.
+   *
+   * Off by default: a slide or a canvas background sits on nothing, so its
+   * alpha has nowhere to show. A shape fill has the diagram behind it.
+   */
+  showAlpha?: boolean;
   /** If provided, a Drive source tab appears in the image picker. Called when the Drive tab is first opened. */
   onFetchDriveImages?: () => Promise<DriveImageItem[]>;
   /**
@@ -213,6 +220,7 @@ export function FillPicker({
   theme,
   presetsKey,
   triggerLabel,
+  showAlpha,
   onFetchDriveImages,
   onStoreImage,
   onResolveImageValue,
@@ -441,6 +449,7 @@ export function FillPicker({
               <ColorPicker
                 value={background.type === 'color' ? background.value : '#ffffff'}
                 onChange={(val) => onChange({ type: 'color', value: val })}
+                showAlpha={showAlpha}
                 flat
               />
             )}

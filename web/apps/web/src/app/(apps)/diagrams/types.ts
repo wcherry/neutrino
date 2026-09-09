@@ -91,8 +91,34 @@ export type ShapeType =
   // Standalone text box (no fill/border, just a label)
   | 'text';
 
+/**
+ * What paints the inside of a shape.
+ *
+ * Structurally the `Background` the shared `FillPicker` produces, declared here
+ * rather than imported so the stored document format does not depend on a UI
+ * package. An image `value` is a `neutrino-drive:<fileId>` reference on the same
+ * terms as an image in a document or on a slide — the bytes live in Drive and
+ * are resolved at render time, never stored in the diagram.
+ */
+export type ShapeFill =
+  | { type: 'color'; value: string }
+  | { type: 'gradient'; value: string }
+  | { type: 'image'; value: string; objectFit?: 'cover' | 'contain' | 'fill' };
+
 export interface ShapeStyle {
+  /**
+   * The solid fill, and the colour every surface that cannot paint a gradient
+   * or an image falls back to — the minimap, a Mermaid or drawio export, a
+   * shape-library preview. Always a plain colour, even when `fillStyle` is set.
+   */
   fill: string;
+  /**
+   * Set when the fill is a gradient or an image, in which case it is what the
+   * canvas paints; `fill` stays beside it as the representative colour. Absent
+   * on every diagram written before fills could be anything but a colour, which
+   * is why `fill` remains the field the rest of the model reads.
+   */
+  fillStyle?: ShapeFill;
   stroke: string;
   strokeWidth: number;
   strokeDash?: string;

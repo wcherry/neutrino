@@ -9,6 +9,7 @@
 
 import { diagramsApi } from '@neutrino/api-diagrams';
 import type { DiagramDocument, DiagramPage, DiagramShape, DiagramConnector } from '../types';
+import { fillDefFor, fillPaint } from './utils/shapeFill';
 
 export function getShapePath(shape: DiagramShape): string {
   const { x, y, width: w, height: h } = shape;
@@ -78,6 +79,42 @@ export interface DiagramSvgOptions {
   height: number;
   /** Painted behind the shapes; omit for a transparent diagram. */
   background?: string | null;
+  /**
+   * Image fills resolved to something loadable, keyed by the value stored on
+   * the shape (`collectFillImages` lists what to resolve). The markup this
+   * produces has to stand alone — a PDF has no way to fetch a Drive file — so
+   * these must be data URLs, and a fill left out of the map falls back to the
+   * shape's colour rather than rendering as a hole.
+   */
+  images?: ReadonlyMap<string, string>;
+}
+
+/** The `<defs>` entries for gradient and image fills, as markup. */
+function fillDefsMarkup(shapes: DiagramShape[], images?: ReadonlyMap<string, string>): string {
+  const parts: string[] = [];
+  for (const shape of shapes) {
+    const def = fillDefFor(shape, shape.style, images);
+    if (!def) continue;
+
+    if (def.kind === 'gradient') {
+      const stops = def.gradient.stops
+        .map((s) => `<stop offset="${s.position}%" stop-color="${xml(s.color)}"/>`)
+        .join('');
+      parts.push(def.gradient.kind === 'radial'
+        ? `<radialGradient id="${xml(def.id)}" cx="50%" cy="50%" r="50%">${stops}</radialGradient>`
+        : `<linearGradient id="${xml(def.id)}" x1="${def.gradient.x1}" y1="${def.gradient.y1}"` +
+          ` x2="${def.gradient.x2}" y2="${def.gradient.y2}">${stops}</linearGradient>`);
+      continue;
+    }
+
+    parts.push(
+      `<pattern id="${xml(def.id)}" patternUnits="userSpaceOnUse" x="${def.x}" y="${def.y}"` +
+      ` width="${def.width}" height="${def.height}">` +
+      `<image href="${xml(def.href)}" x="0" y="0" width="${def.width}" height="${def.height}"` +
+      ` preserveAspectRatio="${xml(def.aspect)}"/></pattern>`,
+    );
+  }
+  return parts.join('');
 }
 
 /**
@@ -88,14 +125,16 @@ export interface DiagramSvgOptions {
  * than stretching to whatever box it was dropped into.
  */
 export function diagramPageToSvg(page: DiagramPage, opts: DiagramSvgOptions): string {
-  const { width, height, background = null } = opts;
+  const { width, height, background = null, images } = opts;
   const viewBox = computeViewBox(page);
   const [vbX, vbY, vbW, vbH] = viewBox.split(' ').map(Number);
 
   const parts: string[] = [];
   parts.push(
     '<defs><marker id="d-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">' +
-    '<polygon points="0 0, 8 3, 0 6" fill="#64748b"/></marker></defs>',
+    '<polygon points="0 0, 8 3, 0 6" fill="#64748b"/></marker>' +
+    fillDefsMarkup(page.shapes, images) +
+    '</defs>',
   );
   if (background) {
     parts.push(`<rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="${xml(background)}"/>`);
@@ -103,7 +142,8 @@ export function diagramPageToSvg(page: DiagramPage, opts: DiagramSvgOptions): st
 
   for (const shape of page.shapes) {
     parts.push(
-      `<path d="${xml(getShapePath(shape))}" fill="${xml(shape.style.fill)}"` +
+      `<path d="${xml(getShapePath(shape))}"` +
+      ` fill="${xml(fillPaint(shape.id, shape.style, fillDefFor(shape, shape.style, images) !== null))}"` +
       ` stroke="${xml(shape.style.stroke)}" stroke-width="${xml(shape.style.strokeWidth)}"` +
       ` opacity="${xml(shape.style.opacity)}"/>`,
     );

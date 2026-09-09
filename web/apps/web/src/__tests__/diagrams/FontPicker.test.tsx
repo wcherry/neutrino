@@ -32,6 +32,7 @@ import type { DiagramShape, DiagramPage, EditorSelection, ShapeStyle } from '../
 
 vi.mock('@neutrino/ui', () => ({
   ColorPickerPopover: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  FillPicker: () => <div data-testid="fill-picker" />,
 }));
 
 vi.mock('../../app/(apps)/diagrams/editor/PropertiesPanel.module.css', () => ({

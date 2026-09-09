@@ -3,6 +3,8 @@
 import React from 'react';
 import type { DiagramPage } from '../types';
 import { computeViewBox, connectorLabelAnchor, getConnectorPoints, getShapePath } from './diagramSvg';
+import { ShapeFillDefs, useFillImages } from './ShapeFillDefs';
+import { fillDefFor, fillPaint } from './utils/shapeFill';
 import styles from './EmbeddedDiagramView.module.css';
 
 export interface EmbeddedDiagramViewProps {
@@ -26,6 +28,7 @@ export function EmbeddedDiagramView({
 }: EmbeddedDiagramViewProps) {
   const viewBox = computeViewBox(page);
   const [vbX, vbY, vbW, vbH] = viewBox.split(' ').map(Number);
+  const fillImages = useFillImages(page.shapes);
 
   // Use diagramId for unique SVG IDs; fall back to a stable index-based suffix.
   const uid = diagramId ?? 'default';
@@ -63,6 +66,7 @@ export function EmbeddedDiagramView({
           <marker id={arrowMarkerId} markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
             <polygon points="0 0, 8 3, 0 6" fill="#64748b" />
           </marker>
+          <ShapeFillDefs shapes={page.shapes} images={fillImages} />
         </defs>
 
         {/* Background */}
@@ -77,7 +81,7 @@ export function EmbeddedDiagramView({
           <g key={shape.id}>
             <path
               d={getShapePath(shape)}
-              fill={shape.style.fill}
+              fill={fillPaint(shape.id, shape.style, fillDefFor(shape, shape.style, fillImages) !== null)}
               stroke={shape.style.stroke}
               strokeWidth={shape.style.strokeWidth}
               opacity={shape.style.opacity}

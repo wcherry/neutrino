@@ -38,7 +38,7 @@ import {
   // Phase 10 — AI
   Sparkles,
 } from 'lucide-react';
-import { ShareButton } from '@neutrino/ui';
+import { ColorPickerPopover, ShareButton } from '@neutrino/ui';
 import type { EditorSelection, SelectionMode } from '../types';
 import type { AlignDirection } from './utils/shapeUtils';
 import type { LayoutAlgorithm } from './layout/layoutEngine';
@@ -218,12 +218,16 @@ export function DiagramToolbar({
                 </div>
                 <div className={styles.textDefaultsRow}>
                   <label>Color</label>
-                  <input
-                    type="color"
-                    value={textDefaults.textColor}
-                    onChange={(e) => onTextDefaultsChange({ textColor: e.target.value })}
-                    className={styles.colorPicker}
-                  />
+                  <ColorPickerPopover
+                    color={textDefaults.textColor}
+                    onChange={(hex) => onTextDefaultsChange({ textColor: hex })}
+                    title="Text color"
+                  >
+                    <span
+                      className={styles.colorSwatch}
+                      style={{ background: textDefaults.textColor }}
+                    />
+                  </ColorPickerPopover>
                 </div>
               </div>
             )}
@@ -256,13 +260,13 @@ export function DiagramToolbar({
         </button>
 
         {isDrawing && (
-          <input
-            type="color"
-            value={drawColor}
-            onChange={(e) => onDrawColorChange(e.target.value)}
+          <ColorPickerPopover
+            color={drawColor}
+            onChange={onDrawColorChange}
             title="Drawing color"
-            className={styles.colorPicker}
-          />
+          >
+            <span className={styles.colorSwatch} style={{ background: drawColor }} />
+          </ColorPickerPopover>
         )}
 
         <div className={styles.divider} />
