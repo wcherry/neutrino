@@ -340,7 +340,7 @@ export function SlideEditor() {
     setAuthToken(localStorage.getItem('access_token'));
   }, []);
 
-  const { dekRef, dekResolved, awaitDek } =
+  const { dekRef, dekResolved } =
     useEncryptedDocumentContent({ id: slideId, filename: 'slide.json' });
   const toast = useToast();
   // Rejects a save that would overwrite a revision written elsewhere since this
@@ -517,38 +517,20 @@ export function SlideEditor() {
         // is written for.
         const stored = await measurePhase('slide:fetch', () => driveReadBytes(slideId));
         if (cancelled) return;
-        // `awaitDek`, not `dekRef.current`. `dekResolved` only means the
-        // *attempt* has finished, so the ref can still be empty here — and
-        // sampling it then reads the ciphertext as a package, finds no model in
-        // it, hands it to the pptx importer and opens the deck as the default
-        // one. That is a reload silently losing the deck. The bespoke-JSON read
-        // this replaced waited for the key for this reason; the wait belongs on
-        // the path that survived it.
-        const dek = await awaitDek();
-        if (cancelled) return;
-        // Ciphertext, and no key to open it. The unlock gate is an overlay
-        // rather than a hard gate, so this editor mounts while the vault is
-        // still locked and `dekResolved` goes true with nothing resolved.
-        // Reading on from here hands the ciphertext to the pptx importer, which
-        // fails, and the catch below opens the *default deck* — a reload
-        // quietly replacing the user's presentation, and the next autosave
-        // writing that replacement back. Leave the deck untouched and clear the
-        // one-shot guard, so the run that arrives with the key reads again
-        // rather than being swallowed as a duplicate. Sheets refuses the same
-        // read for the same reason.
-        if (!dek && stored.byteLength > 0 && !looksLikeOoxml(stored)) {
-          officeContentLoadStartedRef.current = false;
-          return;
-        }
+        // The effect is gated on `dekResolved`, which is set when the
+        // resolution finishes — so the ref holds this file's key by now, or
+        // there is genuinely none. (`awaitDek()` is not a stronger guarantee
+        // here: it awaits the in-flight resolution, and when none has *started*
+        // it returns the same empty ref immediately.)
+        const dek = dekRef.current;
         // Whether the stored bytes are ciphertext is read off the bytes, the
         // same way `readStoredWorkbook` does it for sheets. Asking
-        // `isNewEncryption` reads the *session* rather than the file and is
-        // wrong at both ends — and worse here, because `awaitDek()` above is
-        // what mints the key for a file that had none, so the flag this closure
-        // captured is still false at the moment it says "already encrypted".
-        // That is an uploaded `.pptx` being handed to `decryptFile`, which
-        // throws, which opens the deck as the default one. A package is a zip,
-        // and ciphertext opening with the zip magic is a 1-in-2^32 accident.
+        // `isNewEncryption` reads the *session* rather than the file, and is
+        // wrong at both ends: a deck created and then reopened before the
+        // sealing save landed has a key and a plaintext body, and a load racing
+        // the mint has the flag unset for a body that is already ciphertext.
+        // A package is a zip, and ciphertext opening with the zip magic is a
+        // 1-in-2^32 accident.
         const plain = stored.byteLength > 0 && dek && !looksLikeOoxml(stored)
           ? await measurePhase('slide:decrypt', async () => decryptFile(stored, dek))
           : stored;
