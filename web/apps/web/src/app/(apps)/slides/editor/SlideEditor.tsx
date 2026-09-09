@@ -521,6 +521,16 @@ export function SlideEditor() {
 
   const officeContentLoadStartedRef = useRef(false);
   useEffect(() => {
+    // `currentUser?.id` as well as `dekResolved`, because the two can disagree.
+    // `useEncryptedDocumentContent` reports "resolved" straight away when it
+    // has no user yet — there is nothing to resolve a key *for* — and auth
+    // arriving a moment later starts the real resolution. Reading on that first
+    // signal takes the one-shot guard below with it, so the file is read with
+    // no key and the resolution that follows never gets to re-read: an
+    // encrypted deck opens as the default one, and the next autosave writes
+    // that over it. The probe this path replaced took long enough to settle
+    // that the window never opened.
+    if (!currentUser?.id) return;
     if (!officeMode || !officeFileMeta || !dekResolved || officeContentLoadStartedRef.current) return;
     officeContentLoadStartedRef.current = true;
     let cancelled = false;
@@ -598,7 +608,7 @@ export function SlideEditor() {
   // toast is intentionally omitted — a fresh identity on every render would
   // otherwise cancel this one-shot load via the cleanup function above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [officeMode, officeFileMeta, slideId, dekResolved]);
+  }, [officeMode, officeFileMeta, slideId, dekResolved, currentUser?.id]);
 
   /**
    * Write `content` to Drive — the one place a presentation is persisted.

@@ -45,7 +45,9 @@ vi.mock('@neutrino/ui', () => ({
 }));
 
 vi.mock('@neutrino/auth', () => ({
-  useUser: () => null,
+  // The editor is only reachable signed in, and the content load waits for a
+  // real user — `dekResolved` alone goes true before auth has arrived.
+  useUser: () => ({ id: 'user-1', name: 'Tester' }),
   useAuth: () => ({ user: null, isLoading: false }),
 }));
 
