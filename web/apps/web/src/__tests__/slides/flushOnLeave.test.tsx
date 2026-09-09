@@ -101,6 +101,9 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@/lib/ooxmlContainer', () => ({
+  // The stored bytes above stand in for ciphertext, so they are deliberately
+  // not a package: the load decrypts exactly what does not open as one.
+  looksLikeOoxml: () => false,
   // The deck's own model, packed inside the package — what the load prefers.
   readNeutrinoModel: vi.fn(() => Promise.resolve(STORED_DECK)),
   packNeutrinoModel: vi.fn((_deck: unknown, _app: string, content: string) =>

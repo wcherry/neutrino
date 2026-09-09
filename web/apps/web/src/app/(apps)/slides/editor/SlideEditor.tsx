@@ -75,7 +75,7 @@ import {
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension } from '@/lib/officeFormats';
-import { packNeutrinoModel, readNeutrinoModel } from '@/lib/ooxmlContainer';
+import { looksLikeOoxml, packNeutrinoModel, readNeutrinoModel } from '@/lib/ooxmlContainer';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useSlidePresence } from '@/hooks/useSlidePresence';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -340,7 +340,7 @@ export function SlideEditor() {
     setAuthToken(localStorage.getItem('access_token'));
   }, []);
 
-  const { dekRef, dekResolved, isNewEncryption, awaitDek } =
+  const { dekRef, dekResolved, awaitDek } =
     useEncryptedDocumentContent({ id: slideId, filename: 'slide.json' });
   const toast = useToast();
   // Rejects a save that would overwrite a revision written elsewhere since this
@@ -526,13 +526,16 @@ export function SlideEditor() {
         // the path that survived it.
         const dek = await awaitDek();
         if (cancelled) return;
-        // Office-mode saves are encrypted now, so a file that already has a key
-        // ref holds ciphertext. `isNewEncryption` separates the two: it means
-        // the DEK was just minted for a file that had none, so what is stored
-        // is still the plaintext .pptx it was uploaded as, and the first save
-        // is what encrypts it. No body at all is neither, and decrypting it
-        // would report a new deck as an unreadable one.
-        const plain = stored.byteLength > 0 && dek && !isNewEncryption
+        // Whether the stored bytes are ciphertext is read off the bytes, the
+        // same way `readStoredWorkbook` does it for sheets. Asking
+        // `isNewEncryption` reads the *session* rather than the file and is
+        // wrong at both ends — and worse here, because `awaitDek()` above is
+        // what mints the key for a file that had none, so the flag this closure
+        // captured is still false at the moment it says "already encrypted".
+        // That is an uploaded `.pptx` being handed to `decryptFile`, which
+        // throws, which opens the deck as the default one. A package is a zip,
+        // and ciphertext opening with the zip magic is a 1-in-2^32 accident.
+        const plain = stored.byteLength > 0 && dek && !looksLikeOoxml(stored)
           ? await measurePhase('slide:decrypt', async () => decryptFile(stored, dek))
           : stored;
         // A presentation created here starts with no body at all: a `.pptx` is
@@ -579,7 +582,7 @@ export function SlideEditor() {
   // toast is intentionally omitted — a fresh identity on every render would
   // otherwise cancel this one-shot load via the cleanup function above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [officeMode, officeFileMeta, slideId, dekResolved, isNewEncryption]);
+  }, [officeMode, officeFileMeta, slideId, dekResolved]);
 
   /**
    * Write `content` to Drive — the one place a presentation is persisted.
