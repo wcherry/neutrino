@@ -1,8 +1,10 @@
 # Client-only keys, QR device transfer, and key rotation
 
-Status: **web, server and iOS Notes done.** Phase 0 (sharing key verification), Phase 1a
-(server, additive), Phase 2 (web) and Phase 3 for the Notes app have shipped. Phase 1b
-(dropping the vault tables), Phase 3 for the Docs app and Phase 4 (macOS) remain — see §5.
+Status: **web, server, iOS Notes and macOS Drive done.** Phase 0 (sharing key verification),
+Phase 1a (server, additive), Phase 2 (web), Phase 3 for the Notes app and Phase 4 (macOS Drive)
+have shipped. Phase 1b (dropping the vault tables) and Phase 3 for the Docs app remain — see §5.
+With macOS done, nothing outside `src/auth/keyvault/` still calls the vault endpoints, so Phase 1b
+is now unblocked.
 
 Supersedes the server-side key vault introduced in migration 105 (`user_key_vaults` /
 `user_key_unlocks`) and the PIN-only QR export that used to live in
@@ -329,23 +331,48 @@ Making unverifiable crypto changes on top of a broken mid-refactor, in files wit
 edits, is how a bad merge happens, so it was left alone. The Notes work is the template: the
 same seven files, the same order.
 
-### Phase 4 — macOS (Drive)
+### Phase 4 — macOS (Drive) **(done, except the keychain entitlement — see 2)**
 
-1. Same keyring and keychain work as Phase 3 in `NeutrinoDriveCore/Services/`.
-2. Adopt the data-protection keychain (`kSecUseDataProtectionKeychain`), the question
-   already documented at length in `KeychainService.swift`. The keyring must be reachable
-   from the sandboxed File Provider extension, which is exactly the case that note says
-   data-protection would fix. Of the two blockers it lists, one evaporates with the wipe —
-   "switching would strand the app's EXISTING legacy items and needs a read-from-legacy
-   migration" no longer applies, since those items should be deleted rather than migrated.
-   The other is still real: unsigned SPM test binaries lack an application-identifier
-   entitlement and every data-protection query returns `errSecMissingEntitlement` (-34018).
-   The `KeychainStoring` protocol already in that file exists for this, so tests take the
-   in-memory substitute and never reach the real keychain.
-3. `SyncEngine` resolves the key version per file on download and re-seals on upload.
-4. The desktop app is a plausible *sender* for the handshake (large screen, camera on most
-   Macs); build the sender half here and the receiver half only if a headless Mac needs
-   enrolling.
+1. `Keyring.swift`, `KeyringStore.swift`, `RecoveryKit.swift` and `Pairing.swift` in
+   `NeutrinoDriveCore/Services/`, ported from Phase 3. `KeyVaultService` and `KeyVaultCrypto`
+   are deleted; `KeyImportService` keeps only the JSON key-file parse and hands the result to
+   `KeyringCoder.fromKeyPair`, with persistence moved to `KeyringStore`. The vault-unlock UI
+   became a recovery-kit restore, with deliberately **no** "create a key" path — this account's
+   files are sealed to an identity that exists. `KeyringStore.purgeLegacyItems` runs once at
+   launch and deletes the pre-keyring `key_bundle` item rather than migrating it.
+2. The data-protection keychain is **implemented but dormant**, and the reason is a third
+   blocker the earlier note did not know about. `keychain-access-groups` is profile-backed:
+   unlike `application-groups`, which macOS signs straight into the signature, it must be
+   whitelisted by a provisioning profile, so automatic signing demands a Mac App Development
+   profile — and this team has no registered devices, which makes `scripts/build-dmg.sh` fail at
+   the archive step. Verified by archiving with and without the entitlement. It is therefore
+   commented out of both entitlements files, with the restore instructions inline.
+
+   Nothing regresses meanwhile, because `KeychainService` always names the access group
+   explicitly and never falls back to a *default* one: an unentitled process gets
+   `errSecMissingEntitlement` (-34018) on both read and add, latches that result, and uses the
+   legacy keychain for the process — which is how the app and agent share items today. That rule
+   also protects the future: with a profile embedded, the app and the agent have different
+   application-identifiers, so relying on default groups would silently give them separate
+   keychains and the daemon would find no keyring. Registering a Mac and restoring the five
+   entitlement lines switches the whole thing on with no code change.
+
+   Of the two blockers the earlier note listed, the first — stranded legacy items — is handled by
+   a read-from-legacy migration on `retrieve`, which is worth having after all: it is the OAuth
+   *session* that would otherwise be stranded, and signing the user out is a needless cost even
+   though the key material genuinely should be purged rather than carried. The second holds:
+   unsigned SPM test hosts land in the same -34018 fallback, and tests still take the
+   `KeychainStoring` in-memory substitute rather than reaching the real keychain.
+3. `SyncEngine` resolves the key version per file on download — `GET /files/{id}/key` now returns
+   `keyVersion`, which `DriveAPIService` surfaces as `SealedFileKey` — and re-seals to the active
+   entry on upload, sending its version to `PUT /files/{id}/key`. A file naming a version this Mac
+   lacks reports that version rather than an unexplained unseal failure.
+4. The **sender** half of the handshake only, which is the direction a Mac is good for: it scans
+   QR-A with the camera (`PairingScanner`, with a paste field beside the viewfinder for a Mac with
+   no camera or a declined permission) and shows QR-B plus the confirmation code. The receiver half
+   is deliberately absent — a Mac enrols from its recovery kit — and should be added only when a
+   headless Mac needs enrolling. `EncryptionService.encryptKeysWithPin` is deleted along with the
+   PIN QR it served, not merely left unused.
 
 ---
 
