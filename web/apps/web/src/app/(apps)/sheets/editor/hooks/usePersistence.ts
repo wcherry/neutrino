@@ -5,12 +5,10 @@ import { flushSync } from 'react-dom';
 import type { CellProps, SheetFile, CFRule, TableRegion } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import {
-    sheetsApi, driveReadContent, driveReadBytes, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
-    driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes, extractSheetText,
-    storageApi, filesystemApi, ApiClientError, type SheetResponse, type FileItem,
+    driveReadBytes, driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes,
+    extractSheetText, storageApi, filesystemApi, type FileItem,
 } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
-import { readStoredBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
@@ -87,8 +85,7 @@ function looksLikeWorkbook(bytes: Uint8Array): boolean {
 /**
  * The stored bytes of an `.xlsx`, decrypted when they need it.
  *
- * Which of the two they are is read off the bytes, the same rule
- * `readStoredBody` follows for the JSON format and for the same reason. This
+ * Whether they are ciphertext or plaintext is read off the bytes. This
  * used to ask `isNewEncryption` — "this session minted the key, so what is
  * stored must still be plaintext" — which reads the session rather than the
  * file and is wrong at both ends: a workbook created and then reopened before
@@ -155,14 +152,13 @@ export function usePersistence({
     flushActiveTableRegions?: () => void;
     setTableRegions?: React.Dispatch<React.SetStateAction<TableRegion[]>>;
 }) {
-    const sheetRef = useRef<SheetResponse | null>(null);
     // `awaitDek`, not `dekRef` — the rule docs, slides, notes and drawing
     // already follow. `dekResolved` means the resolution *attempt* finished,
     // and for a spreadsheet created a moment ago the key is still being minted
     // when the editor's load effect first fires; sampling the ref there reports
     // "no key" for a file that is about to have one, and every save made in
     // that window warned the user their changes were not saved (issue #157).
-    const { dekResolved, awaitDek } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.json' });
+    const { dekResolved, awaitDek } = useEncryptedDocumentContent({ id: sheetId, filename: 'sheet.xlsx' });
     const toast = useToast();
     // Rejects a save that would overwrite a revision written elsewhere since
     // this spreadsheet was loaded. See `useContentVersionGuard`.
@@ -170,13 +166,15 @@ export function usePersistence({
     const currentUser = useUser();
     const [title, setTitle] = useState('Untitled');
     const [yourRole, setYourRole] = useState<string>('owner');
-    // ── OOXML mode (issue #127) ──────────────────────────────────────────────
-    // True when this file is an `.xlsx` — which every spreadsheet created since
-    // #127 is, as well as any workbook uploaded to Drive. False only for a
-    // spreadsheet still in the bespoke JSON that predates it. Named `officeMode`
-    // because that is what it was when only uploads took this path.
-    const [officeMode, setOfficeMode] = useState(false);
-    const officeFileMetaRef = useRef<FileItem | null>(null);
+    /**
+     * The Drive file this spreadsheet is, once the load has resolved it.
+     *
+     * A spreadsheet is an `.xlsx`, so this is the only shape it has; there was
+     * a second one — a bespoke JSON body with its own `SheetResponse` — and it
+     * is gone, along with the `officeMode` flag that used to say which of the
+     * two a given file was.
+     */
+    const fileRef = useRef<FileItem | null>(null);
     /**
      * The package this spreadsheet was loaded from, decrypted.
      *
@@ -287,12 +285,10 @@ export function usePersistence({
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
-        // The ref, not the `officeMode` state: `load()` writes it and then
-        // saves in the same turn for a newly created spreadsheet, and a state
-        // update is not visible to this closure until the next render — so
-        // reading the state here would send that first save down the JSON path,
-        // which bails on the missing `sheetRef` and writes nothing at all.
-        const meta = officeFileMetaRef.current;
+        // A ref rather than state: `load()` writes it and then saves in the
+        // same turn for a newly created spreadsheet, and a state update is not
+        // visible to this closure until the next render.
+        const meta = fileRef.current;
         if (meta) {
             const bytes = await buildXlsxBytes();
             let saved;
@@ -318,9 +314,7 @@ export function usePersistence({
             }
             versionGuard.observe(saved?.contentVersion);
             // Search runs against a client-side index, so a spreadsheet the
-            // editor never announces is one the user cannot find. The JSON path
-            // below has always done this; the OOXML path is the one every new
-            // spreadsheet takes now, so it has to as well.
+            // editor never announces is one the user cannot find.
             indexOnSave(currentUser?.id, {
                 id: sheetId,
                 type: 'spreadsheet',
@@ -329,55 +323,11 @@ export function usePersistence({
             });
             return;
         }
-        if (!sheetRef.current) return;
-        const savedTitle = sheetRef.current.title;
-        const content = serialize();
-        // Retry once on failure: the autosave PUT has been observed to occasionally
-        // fail with a transient transport-level error (e.g. a truncated request body)
-        // when it follows closely after another request to the same endpoint. This
-        // save is often the last chance to persist an edit before the user navigates
-        // away, so silently swallowing a transient failure would lose real data.
-        // The retry must not swallow a rejected save: a 409 is a decision for
-        // the user, and retrying it would only fail again against the same
-        // stale revision.
-        //
-        // It waits first. "Follows closely after another request" is the condition
-        // that breaks these requests, and an immediate retry follows more closely
-        // than anything — it reproduces the fault it is meant to recover from, and
-        // the retry has been seen to hang outright rather than fail.
-        let saved;
-        try {
-            saved = await driveAutosaveEncryptedContent(
-                sheetId, content, 'sheet.json', dek, versionGuard.check(), transport,
-            );
-        } catch (err) {
-            if (versionGuard.handleError(err)) {
-                toast.warning(
-                    'This spreadsheet changed elsewhere since you opened it. Reload to get ' +
-                    'the latest version, or save again to keep your copy.',
-                );
-                return;
-            }
-            // Nothing to retry into on the unload path — this document is going
-            // away, and the keepalive request above was the one chance to land.
-            if (keepalive) throw err;
-            await delay(SAVE_RETRY_DELAY_MS);
-            saved = await driveAutosaveEncryptedContent(
-                sheetId, content, 'sheet.json', dek, versionGuard.check(), transport,
-            );
-        }
-        versionGuard.observe(saved.contentVersion);
-        indexOnSave(currentUser?.id, {
-            id: sheetId,
-            type: 'spreadsheet',
-            title: savedTitle,
-            content: extractSheetText(content),
-        });
     };
     saveRef.current = save;
 
     const manualSave = async () => {
-        // No key, no write — for either shape of file. The plaintext fallback
+        // No key, no write. The plaintext fallback
         // this used to have wrote a readable version snapshot of an encrypted
         // spreadsheet, which is a file with no key ref and so no way back
         // (issue #95). The content is still in the editor, so unlocking and
@@ -387,14 +337,12 @@ export function usePersistence({
             toast.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
         }
-        const meta = officeFileMetaRef.current;
+        const meta = fileRef.current;
         if (meta) {
             const bytes = await buildXlsxBytes();
             await driveCreateEncryptedVersionBytes(sheetId, bytes, meta.name, dek);
             return;
         }
-        if (!sheetRef.current) return;
-        await driveCreateEncryptedVersion(sheetId, serialize(), 'sheet.json', dek);
     };
 
     const timedSave = async () => {
@@ -420,7 +368,7 @@ export function usePersistence({
                 intervalRef.current = null;
             }
         };
-    // timedSave captures refs (dirtyRef, sheetRef) and awaitDek, none of which change identity,
+    // timedSave captures refs (dirtyRef, fileRef) and awaitDek, none of which change identity,
     // so it is safe to omit it from the deps array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadCount]);
@@ -430,7 +378,7 @@ export function usePersistence({
     // saveRef.current always points to the latest save, avoiding stale closure issues.
     useEffect(() => {
         const flush = () => {
-            if (!dirtyRef.current || (!sheetRef.current && !officeFileMetaRef.current)) return;
+            if (!dirtyRef.current || !fileRef.current) return;
             dirtyRef.current = false;
             // Flush any pending startTransition updates so dataRef.current reflects
             // the latest committed cell values before serialising (same as timedSave).
@@ -546,33 +494,28 @@ export function usePersistence({
         // minted. Reading the ref there reports "no key" and the whole load
         // then treats ciphertext as plaintext (issue #157).
         const dek = await awaitDek();
-        let sheet: SheetResponse;
+
+        // A spreadsheet is an `.xlsx` and nothing else, so the Drive file's own
+        // metadata is the whole of what identifies it. This used to ask
+        // `sheetsApi.getSheet` first and treat its 404 as "not bespoke JSON,
+        // therefore OOXML"; that format never held a file and is gone, and so
+        // is the probe.
+        let meta: FileItem;
         try {
-            sheet = await sheetsApi.getSheet(sheetId);
-        } catch (err) {
-            const is404 = err instanceof ApiClientError && err.statusCode === 404;
-            if (!is404) throw err;
-            // Not bespoke JSON — so an `.xlsx`, which is what every spreadsheet
-            // created since #127 is. Fall back to the generic Drive file
-            // metadata to tell that apart from a genuinely deleted or missing
-            // spreadsheet.
-            let meta: FileItem;
-            try {
-                meta = await storageApi.getFileMetadata(sheetId);
-            } catch {
-                // Genuinely missing — leave the sheet in its existing
-                // "not loaded" state; do NOT start autosave.
-                return;
-            }
-            const app = officeAppForFile(meta.mimeType, meta.name);
-            if (app !== 'sheets') return; // not an .xlsx this editor can open
-            officeFileMetaRef.current = meta;
-            setOfficeMode(true);
-            setTitle(stripOoxmlExtension(meta.name));
-            setYourRole('owner');
-            // Seed the stale-write guard from the revision this load saw, the
-            // same thing the JSON branch does with `sheet.contentVersion`.
-            versionGuard.observe(meta.contentVersion);
+            meta = await storageApi.getFileMetadata(sheetId);
+        } catch {
+            // Genuinely missing — leave the sheet in its existing
+            // "not loaded" state; do NOT start autosave.
+            return;
+        }
+        const app = officeAppForFile(meta.mimeType, meta.name);
+        if (app !== 'sheets') return; // not an .xlsx this editor can open
+        fileRef.current = meta;
+        setTitle(stripOoxmlExtension(meta.name));
+        setYourRole('owner');
+        // Seed the stale-write guard from the revision this load saw.
+        versionGuard.observe(meta.contentVersion);
+        {
             try {
                 // `driveReadBytes`, not `downloadFile`: a workbook created a
                 // moment ago has no body, and the download endpoint answers
@@ -630,64 +573,6 @@ export function usePersistence({
             }
             return;
         }
-        sheetRef.current = sheet;
-        versionGuard.observe(sheet.contentVersion);
-        setTitle(sheet.title);
-        setYourRole(sheet.yourRole ?? 'owner');
-        // True when the stored bytes read back as plaintext with a DEK in hand:
-        // the default content written at sheet creation, or a spreadsheet saved
-        // before E2EE. `readStoredBody` decides that from the bytes rather than
-        // from `isNewEncryption`, which is blind to the case in the middle — a
-        // sheet created and then reloaded before the sealing save landed keeps
-        // its key ref and its plaintext body. Bytes that neither decrypt nor
-        // look like plaintext throw out of here: that is ciphertext this key
-        // cannot open, and it must not be overwritten.
-        let serverHasPlaintextContent = false;
-        // Set to true only when the try block completes without a download error.
-        // Kept false on network failures so autosave never starts after a failed load.
-        let loadOk = false;
-        try {
-            let raw: string;
-            if (dek) {
-                const blob = await storageApi.downloadFile(sheetId);
-                const stored = new Uint8Array(await blob.arrayBuffer());
-                const read = readStoredBody(stored, dek);
-                raw = read.text;
-                serverHasPlaintextContent = read.wasPlaintext;
-            } else {
-                raw = await driveReadContent(sheet.contentUrl);
-            }
-            applySheetFileJson(raw);
-            loadOk = true;
-        } catch {
-            // empty sheet, start fresh — but do NOT start autosave if this was a
-            // network/download failure; loadOk stays false and autosave is skipped
-            // so we never overwrite existing server content with an empty file.
-            //
-            // With no key in hand it is also what a locked vault looks like: the
-            // body read raw is ciphertext, which does not parse. Marked so the
-            // load that follows the unlock reads it again rather than being
-            // folded into this one.
-            if (!dek) loadBlockedRef.current = true;
-        }
-        // Signal the autosave useEffect to (re-)start the interval with a fresh closure.
-        // Guard: only start when content was successfully loaded OR when we know the
-        // server holds plaintext content that needs to be encrypted (new file).
-        if (loadOk || serverHasPlaintextContent) {
-            setLoadCount(c => c + 1);
-        }
-
-        // Seal whatever the server is holding in the clear — the content seeded by
-        // POST /api/v1/drive/files at creation, or a spreadsheet saved before E2EE.
-        // For a sheet that is already ciphertext the read above decrypts and
-        // serverHasPlaintextContent stays false, so this does not run.
-        // Routed through queueSave (not called directly) so this request can
-        // never overlap a save triggered moments later by a fast edit-then-navigate —
-        // two autosave PUTs in flight at once have been observed to truncate the
-        // second request's body in transit, which would silently drop the user's edit.
-        if (serverHasPlaintextContent && dek) {
-            await queueSave();
-        }
     };
 
     /**
@@ -741,28 +626,18 @@ export function usePersistence({
     const updateTitle = async (event: React.FocusEvent<HTMLElement>) => {
         const newTitle = (event.currentTarget as HTMLElement).innerHTML;
         setTitle(newTitle);
-        if (officeMode) {
-            // Both branches land on the same Drive rename endpoint; they differ
-            // only in the local state they keep in step — the OOXML path tracks
-            // the Drive file's metadata, the JSON one the loaded sheet.
-            //
-            // The extension goes back on: the title is what the user typed, and
-            // the file still has to land on disk as a workbook Excel opens.
-            const name = withOoxmlExtension(newTitle, 'sheets');
-            if (officeFileMetaRef.current && name !== officeFileMetaRef.current.name) {
-                officeFileMetaRef.current = { ...officeFileMetaRef.current, name };
-                await filesystemApi.updateFile(sheetId, { name });
-            }
-            return;
-        }
-        if (sheetRef.current && newTitle !== sheetRef.current.title) {
-            sheetRef.current.title = newTitle;
-            await sheetsApi.saveSheet(sheetId, { title: newTitle });
+        // The extension goes back on: the title is what the user typed, and the
+        // file still has to land on disk as a workbook Excel opens.
+        const name = withOoxmlExtension(newTitle, 'sheets');
+        if (fileRef.current && name !== fileRef.current.name) {
+            fileRef.current = { ...fileRef.current, name };
+            await filesystemApi.updateFile(sheetId, { name });
         }
     };
 
     return {
-        sheetRef,
+        /** The Drive file this spreadsheet is, once loaded. */
+        fileRef,
         title,
         setTitle,
         yourRole,
@@ -781,7 +656,5 @@ export function usePersistence({
         activeSheetIndexRef,
         /** True once the E2EE DEK resolution attempt has completed. */
         dekResolved,
-        /** True when this spreadsheet is stored as `.xlsx` rather than as JSON. */
-        officeMode,
     };
 }

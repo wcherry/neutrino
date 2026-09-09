@@ -44,7 +44,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   }),
 }));
 
-const mockGetDoc = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   DEFAULT_PAGE_SETUP: {
@@ -62,7 +61,6 @@ vi.mock('@/lib/api', () => ({
     }
   },
   docsApi: {
-    getDoc: (...args: unknown[]) => mockGetDoc(...args),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveDoc: vi.fn(() => Promise.resolve()),
   },
@@ -71,6 +69,9 @@ vi.mock('@/lib/api', () => ({
   driveCreateEncryptedVersion: vi.fn(() => Promise.resolve()),
   driveAutosaveEncryptedContent: vi.fn(() => Promise.resolve()),
   storageApi: {
+    getFileInfo: vi.fn(() =>
+      Promise.resolve({ id: 'test-doc-id', name: 'Doc.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', contentVersion: 1 }),
+    ),
     getFileMetadata: vi.fn(() => Promise.resolve(null)),
     downloadFile: vi.fn(() => Promise.resolve(new Blob())),
     uploadFile: vi.fn(() => Promise.resolve()),
@@ -205,11 +206,6 @@ function renderEditor() {
 }
 
 beforeEach(() => {
-  mockGetDoc.mockResolvedValue({
-    id: 'test-doc-id',
-    title: 'Doc',
-    content: '',
-  });
 });
 
 afterEach(() => { vi.clearAllMocks(); });

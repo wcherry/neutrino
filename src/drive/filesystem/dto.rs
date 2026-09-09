@@ -204,19 +204,27 @@ impl DriveFileType {
                 "application/vnd.%",
                 "application/rtf",
             ],
-            DriveFileType::Doc => &["application/x-neutrino-doc"],
-            DriveFileType::Sheet => &["application/x-neutrino-sheet"],
-            DriveFileType::Slide => &["application/x-neutrino-slide"],
+            // The office apps store OOXML: a document *is* a `.docx`. These
+            // filters used to name a bespoke JSON type that no file was ever
+            // stored in, so `type=doc` answered nothing at all.
+            DriveFileType::Doc => &[
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ],
+            DriveFileType::Sheet => &[
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ],
+            DriveFileType::Slide => &[
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ],
             DriveFileType::Diagram => &["application/x-neutrino-diagram"],
             DriveFileType::Drawing => &["application/x-neutrino-drawing"],
-            DriveFileType::Note => &["application/x-neutrino-note"],
+            // A note is a Markdown file and carries the standard MIME type, so
+            // `type=note` answers with every `.md` in the drive — one uploaded
+            // to Drive opens in the note editor like one the editor wrote.
+            DriveFileType::Note => &["text/markdown"],
 
             DriveFileType::Media => &["image/%", "video/%", "audio/%"],
             DriveFileType::Office => &[
-                "application/x-neutrino-doc",
-                "application/x-neutrino-sheet",
-                "application/x-neutrino-slide",
-                "application/x-neutrino-note",
                 "%officedocument%",
                 "%opendocument%",
                 "%msword%",
@@ -565,9 +573,9 @@ mod tests {
 
     #[test]
     fn matches_handles_exact_mimes() {
-        assert!(DriveFileType::Doc.matches("application/x-neutrino-doc"));
-        assert!(!DriveFileType::Doc.matches("application/x-neutrino-note"));
-        assert!(DriveFileType::Note.matches("application/x-neutrino-note"));
+        assert!(DriveFileType::Doc.matches("application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+        assert!(!DriveFileType::Doc.matches("text/markdown"));
+        assert!(DriveFileType::Note.matches("text/markdown"));
         assert!(!DriveFileType::Note.matches("image/png"));
     }
 
@@ -628,16 +636,13 @@ mod tests {
 
     /// A drive's worth of MIME types, including every one that answers to two
     /// categories at once.
-    const CORPUS: [&str; 20] = [
+    const CORPUS: [&str; 17] = [
         "image/png",
         "image/svg+xml",
         "video/mp4",
         "audio/mpeg",
         "application/pdf",
-        "application/x-neutrino-doc",
-        "application/x-neutrino-sheet",
-        "application/x-neutrino-slide",
-        "application/x-neutrino-note",
+        "text/markdown",
         "application/x-neutrino-diagram",
         "application/x-neutrino-drawing",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -686,10 +691,8 @@ mod tests {
     #[test]
     fn office_gathers_the_suite_and_its_uploaded_equivalents() {
         for mime in [
-            "application/x-neutrino-doc",
-            "application/x-neutrino-sheet",
-            "application/x-neutrino-slide",
-            "application/x-neutrino-note",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "text/markdown",
             "application/msword",
             "application/vnd.oasis.opendocument.text",
             "text/csv",
@@ -703,7 +706,7 @@ mod tests {
     fn canvas_gathers_diagrams_and_drawings() {
         assert!(DriveFileType::Canvas.matches("application/x-neutrino-diagram"));
         assert!(DriveFileType::Canvas.matches("application/x-neutrino-drawing"));
-        assert!(!DriveFileType::Canvas.matches("application/x-neutrino-doc"));
+        assert!(!DriveFileType::Canvas.matches("application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
     }
 
     /// The precedence the `exclude` half of a [`MimeFilter`] exists for: both of
@@ -767,10 +770,10 @@ mod tests {
         assert!(DriveFileType::Photo.matches("image/png"));
         assert!(!DriveFileType::Photo.matches("video/mp4"));
         assert!(DriveFileType::Video.matches("video/mp4"));
-        assert!(DriveFileType::Doc.matches("application/x-neutrino-doc"));
-        assert!(!DriveFileType::Doc.matches("application/x-neutrino-note"));
-        assert!(DriveFileType::Sheet.matches("application/x-neutrino-sheet"));
-        assert!(DriveFileType::Slide.matches("application/x-neutrino-slide"));
+        assert!(DriveFileType::Doc.matches("application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+        assert!(!DriveFileType::Doc.matches("text/markdown"));
+        assert!(DriveFileType::Sheet.matches("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        assert!(DriveFileType::Slide.matches("application/vnd.openxmlformats-officedocument.presentationml.presentation"));
         // `drawing` is still the drawing app alone; `canvas` is the group.
         assert!(DriveFileType::Drawing.matches("application/x-neutrino-drawing"));
         assert!(!DriveFileType::Drawing.matches("application/x-neutrino-diagram"));
@@ -810,27 +813,18 @@ mod tests {
     }
 
     #[test]
-    fn doc_matches_only_its_own_exact_mime() {
-        assert_eq!(
-            DriveFileType::Doc.mime_patterns(),
-            &["application/x-neutrino-doc"]
-        );
+    fn doc_matches_only_the_docx_mime() {
+        assert_eq!(DriveFileType::Doc.mime_patterns(), &["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]);
     }
 
     #[test]
-    fn sheet_matches_only_its_own_exact_mime() {
-        assert_eq!(
-            DriveFileType::Sheet.mime_patterns(),
-            &["application/x-neutrino-sheet"]
-        );
+    fn sheet_matches_only_the_xlsx_mime() {
+        assert_eq!(DriveFileType::Sheet.mime_patterns(), &["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]);
     }
 
     #[test]
-    fn slide_matches_only_its_own_exact_mime() {
-        assert_eq!(
-            DriveFileType::Slide.mime_patterns(),
-            &["application/x-neutrino-slide"]
-        );
+    fn slide_matches_only_the_pptx_mime() {
+        assert_eq!(DriveFileType::Slide.mime_patterns(), &["application/vnd.openxmlformats-officedocument.presentationml.presentation"]);
     }
 
     #[test]
@@ -850,11 +844,11 @@ mod tests {
     }
 
     #[test]
-    fn note_matches_only_its_own_exact_mime() {
-        assert_eq!(
-            DriveFileType::Note.mime_patterns(),
-            &["application/x-neutrino-note"]
-        );
+    fn note_matches_the_markdown_mime() {
+        assert_eq!(DriveFileType::Note.mime_patterns(), &["text/markdown"]);
+        // A `.md` somebody uploaded is a note, which is the point of using the
+        // standard type rather than a private one.
+        assert!(DriveFileType::Note.matches("text/markdown"));
     }
 
     #[test]

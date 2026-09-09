@@ -3,7 +3,6 @@ import {
   request,
   ApiClientError,
   ooxmlMimeFor,
-  isOoxmlMime,
   withOoxmlExtension,
   stripOoxmlExtension,
 } from '@neutrino/api-core';
@@ -15,16 +14,16 @@ import {
 export const PPTX_MIME_TYPE = ooxmlMimeFor('slides');
 
 /**
- * The bespoke JSON presentations were written in before OOXML. Still read and
- * still written — a deck created in it stays in it, there is no migration —
- * which is why the library asks for both types.
+ * The mime types a file may be a native Neutrino presentation in.
+ *
+ * One entry: presentations are OOXML and nothing else. A bespoke JSON body under
+ * `application/x-neutrino-*` came before it; no file was ever stored in that
+ * format and it is gone, along with the reader that served it. Still a list
+ * because the library filter takes one.
  *
  * Mirrors `src/drive/storage/native_types.rs` on the backend.
  */
-export const SLIDE_MIME_TYPE = 'application/x-neutrino-slide';
-
-/** Both formats a file may be a native Neutrino presentation in. */
-export const SLIDE_MIME_TYPES = [PPTX_MIME_TYPE, SLIDE_MIME_TYPE] as const;
+export const SLIDE_MIME_TYPES = [PPTX_MIME_TYPE] as const;
 
 // ---------------------------------------------------------------------------
 // Slide text extraction helpers
@@ -162,7 +161,7 @@ export interface ListThemesResponse {
 //
 // Presentation CRUD is served by the generic drive file endpoints; a
 // presentation is a Drive file whose mime type is
-// `application/x-neutrino-slide`. These functions keep the slide-shaped
+// the `.pptx` mime type. These functions keep the slide-shaped
 // contract their callers were written against and translate it to and from
 // drive's file DTOs. Themes below are user-owned records rather than files, so
 // they keep their own endpoints.
@@ -233,22 +232,6 @@ export const slidesApi = {
     return toSlide(file);
   },
 
-  /**
-   * Fetch a file as a presentation in the *bespoke JSON* format.
-   *
-   * Throws 404 for anything else, `.pptx` included. That is load-bearing and
-   * not an oversight: the two formats are read and written by different code
-   * paths in the editor, and this 404 is how it learns to take the OOXML one —
-   * download the package, prefer the model inside it, fall back to parsing the
-   * deck.
-   */
-  async getSlide(slideId: string): Promise<SlideResponse> {
-    const file = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}/info`);
-    if (file.mimeType !== SLIDE_MIME_TYPE) {
-      throw new ApiClientError(404, 'NOT_FOUND', 'Presentation not found');
-    }
-    return toSlide(file);
-  },
 
   /**
    * Rename.
@@ -262,9 +245,7 @@ export const slidesApi = {
   async saveSlide(slideId: string, body: SaveSlideRequest): Promise<SlideMetaResponse> {
     const current = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}/info`);
     if (body.title === undefined) return toSlideMeta(current);
-    const name = isOoxmlMime(current.mimeType ?? '')
-      ? withOoxmlExtension(body.title, 'slides')
-      : body.title;
+    const name = withOoxmlExtension(body.title, 'slides');
     if (name === current.name) return toSlideMeta(current);
 
     const file = await request<DriveFileDto>(`/api/v1/drive/files/${slideId}`, {

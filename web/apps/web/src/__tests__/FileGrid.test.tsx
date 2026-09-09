@@ -321,8 +321,8 @@ describe('FileGrid — type filter', () => {
     makeItem({ id: 'folder-1', name: 'Reports', kind: 'folder', mimeType: undefined }),
     makeItem({ id: 'photo-1', name: 'Beach.jpg', kind: 'file', mimeType: 'image/jpeg' }),
     makeItem({ id: 'clip-1', name: 'Surf.mp4', kind: 'file', mimeType: 'video/mp4' }),
-    makeItem({ id: 'note-1', name: 'Groceries', kind: 'file', mimeType: 'application/x-neutrino-note' }),
-    makeItem({ id: 'sheet-2', name: 'Budget', kind: 'file', mimeType: 'application/x-neutrino-sheet' }),
+    makeItem({ id: 'note-1', name: 'Groceries', kind: 'file', mimeType: 'text/markdown' }),
+    makeItem({ id: 'sheet-2', name: 'Budget', kind: 'file', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     makeItem({ id: 'diagram-1', name: 'Architecture', kind: 'file', mimeType: 'application/x-neutrino-diagram' }),
     makeItem({ id: 'pdf-1', name: 'Invoice.pdf', kind: 'file', mimeType: 'application/pdf' }),
     makeItem({ id: 'zip-1', name: 'backup.zip', kind: 'file', mimeType: 'application/zip' }),
@@ -419,10 +419,10 @@ describe('categorizeMime', () => {
   });
 
   it('puts Neutrino documents beside their uploaded equivalents', () => {
-    expect(categorizeMime('application/x-neutrino-doc')).toBe('office');
-    expect(categorizeMime('application/x-neutrino-sheet')).toBe('office');
-    expect(categorizeMime('application/x-neutrino-slide')).toBe('office');
-    expect(categorizeMime('application/x-neutrino-note')).toBe('office');
+    expect(categorizeMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe('office');
+    expect(categorizeMime('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe('office');
+    expect(categorizeMime('application/vnd.openxmlformats-officedocument.presentationml.presentation')).toBe('office');
+    expect(categorizeMime('text/markdown')).toBe('office');
     expect(categorizeMime('application/msword')).toBe('office');
     expect(categorizeMime('application/vnd.oasis.opendocument.text')).toBe('office');
     expect(categorizeMime('text/csv')).toBe('office');

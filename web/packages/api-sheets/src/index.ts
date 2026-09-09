@@ -4,7 +4,6 @@ import {
   contentVersionQuery,
   ApiClientError,
   ooxmlMimeFor,
-  isOoxmlMime,
   withOoxmlExtension,
   stripOoxmlExtension,
   type ContentVersionCheck,
@@ -17,17 +16,16 @@ import {
 export const XLSX_MIME_TYPE = ooxmlMimeFor('sheets');
 
 /**
- * The bespoke JSON spreadsheets were written in before OOXML. Still read and
- * still written — a spreadsheet created in it stays in it, there is no
- * migration — which is why the library asks for both types.
+ * The mime types a file may be a native Neutrino spreadsheet in.
  *
- * There is no `sheets` table behind either of them; the mime type is the whole
- * marker. Mirrors `src/drive/storage/native_types.rs` on the backend.
+ * One entry: spreadsheets are OOXML and nothing else. A bespoke JSON body under
+ * `application/x-neutrino-*` came before it; no file was ever stored in that
+ * format and it is gone, along with the reader that served it. Still a list
+ * because the library filter takes one.
+ *
+ * Mirrors `src/drive/storage/native_types.rs` on the backend.
  */
-export const SHEET_MIME_TYPE = 'application/x-neutrino-sheet';
-
-/** Both formats a file may be a native Neutrino spreadsheet in. */
-export const SHEET_MIME_TYPES = [XLSX_MIME_TYPE, SHEET_MIME_TYPE] as const;
+export const SHEET_MIME_TYPES = [XLSX_MIME_TYPE] as const;
 
 // ---------------------------------------------------------------------------
 // Sheet text extraction helpers
@@ -243,23 +241,6 @@ export const sheetsApi = {
     return toSheet(file);
   },
 
-  /**
-   * Fetch a file as a spreadsheet in the *bespoke JSON* format.
-   *
-   * Throws 404 for anything else, `.xlsx` included. That is load-bearing and
-   * not an oversight: the two formats are read and written by different code
-   * paths in the editor, and this 404 is how it learns to take the OOXML one —
-   * download the package, prefer the model inside it, fall back to parsing the
-   * workbook. Drive's `/info` answers for any file type, so the type check
-   * lives here.
-   */
-  async getSheet(sheetId: string): Promise<SheetResponse> {
-    const file = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}/info`);
-    if (file.mimeType !== SHEET_MIME_TYPE) {
-      throw new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found');
-    }
-    return toSheet(file);
-  },
 
   /**
    * Rename.
@@ -273,9 +254,7 @@ export const sheetsApi = {
   async saveSheet(sheetId: string, body: SaveSheetRequest): Promise<SheetMetaResponse> {
     const current = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}/info`);
     if (body.title === undefined) return toSheetMeta(current);
-    const name = isOoxmlMime(current.mimeType ?? '')
-      ? withOoxmlExtension(body.title, 'sheets')
-      : body.title;
+    const name = withOoxmlExtension(body.title, 'sheets');
     if (name === current.name) return toSheetMeta(current);
 
     const file = await request<DriveFileDto>(`/api/v1/drive/files/${sheetId}`, {

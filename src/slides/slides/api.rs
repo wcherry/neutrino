@@ -1,8 +1,8 @@
 //! Slide theme endpoints.
 //!
 //! Presentation CRUD is served by the generic drive file endpoints now — a
-//! presentation is a Drive file with `application/x-neutrino-slide` as its
-//! mime type. Themes are user-owned records rather than files, so they keep
+//! presentation is a Drive file with the `.pptx` mime type — a presentation
+//! *is* an OOXML package. Themes are user-owned records rather than files, so they keep
 //! their own endpoints here.
 
 use crate::shared::{ApiError, AuthenticatedUser};

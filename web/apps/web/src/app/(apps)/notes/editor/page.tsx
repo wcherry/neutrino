@@ -152,7 +152,7 @@ export default function NoteEditorPage() {
 
   const { dekResolved, isNewEncryption, awaitDek } = useEncryptedDocumentContent({
     id: noteId,
-    filename: 'note.json',
+    filename: 'note.md',
   });
 
   // ── Live updates ──────────────────────────────────────────────────────────
@@ -400,7 +400,7 @@ export default function NoteEditorPage() {
       .then((dek) => {
         if (!dek) return;
         return driveAutosaveEncryptedContent(
-          noteId, noteContent, 'note.json', dek, versionGuard.check(),
+          noteId, noteContent, 'note.md', dek, versionGuard.check(),
         ).then((meta) => versionGuard.observe(meta.contentVersion));
         // `appliedUpdatedAtRef` is deliberately left alone: this write changes
         // how the body is stored, not what it says, so the revision the editor
@@ -440,7 +440,7 @@ export default function NoteEditorPage() {
         const meta = await driveAutosaveEncryptedContent(
           noteId,
           serialized,
-          'note.json',
+          'note.md',
           dek,
           versionGuard.check(),
         );
@@ -455,7 +455,12 @@ export default function NoteEditorPage() {
         // roll back a content save that already succeeded.
         // Wiki links must be extracted from the plaintext here — once
         // encrypted, the server can no longer read `[[links]]` out of `content`.
-        const linkedTitles = extractWikiLinkTitles(JSON.parse(serialized) as Block[]);
+        // `parseBlocks`, not `JSON.parse`: `serialized` is the Markdown body
+        // that was just written, and parsing it as JSON throws — which happened
+        // *after* the content write and so skipped the rename and the link
+        // update below, leaving every note called "Untitled note" and every
+        // wiki link unresolved.
+        const linkedTitles = extractWikiLinkTitles(parseBlocks(serialized));
         Promise.all([
           titleChanged ? filesystemApi.updateFile(noteId, { name: nextTitle }) : Promise.resolve(),
           linksApi.updateLinks(noteId, { linkedTitles }),
@@ -562,7 +567,7 @@ export default function NoteEditorPage() {
     const newNote = await createNote(`${title || 'Untitled note'} (copy)`);
     try {
       const dek = await mintFileKey(currentUser?.id, newNote.id);
-      await driveAutosaveEncryptedContent(newNote.id, serialized, 'note.json', dek);
+      await driveAutosaveEncryptedContent(newNote.id, serialized, 'note.md', dek);
       await linksApi.updateLinks(newNote.id, { linkedTitles: extractWikiLinkTitles(blocks) });
     } catch {
       toast.error('Note duplicated, but its content failed to copy.');

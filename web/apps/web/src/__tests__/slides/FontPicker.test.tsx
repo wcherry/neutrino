@@ -86,7 +86,6 @@ vi.mock('@neutrino/auth', () => ({
   useAuth: () => ({ user: null, isLoading: false }),
 }));
 
-const mockGetSlide = vi.fn();
 const mockGetFileMetadata = vi.fn();
 const mockDownloadFile = vi.fn();
 
@@ -102,7 +101,6 @@ vi.mock('@/lib/api', () => ({
     }
   },
   slidesApi: {
-    getSlide: (...args: unknown[]) => mockGetSlide(...args),
     listThemes: vi.fn(() => Promise.resolve([])),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveSlide: vi.fn(() => Promise.resolve()),
@@ -208,13 +206,15 @@ function renderSlideEditor() {
 describe('SlideEditor — font-family picker (feature/custom-fonts)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetSlide.mockResolvedValue({ id: 'test-slide-id', title: 'Test deck', contentUrl: 'x' });
+    mockGetFileMetadata.mockResolvedValue({
+      id: 'test-slide-id', name: 'Test deck.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentVersion: 1,
+    });
   });
 
   it('shows the font-family select once a text element is selected', async () => {
     renderSlideEditor();
 
-    await waitFor(() => expect(mockGetSlide).toHaveBeenCalled());
+    await waitFor(() => expect(mockGetFileMetadata).toHaveBeenCalled());
     await userEvent.click(await screen.findByText('select-element-0'));
 
     expect(await screen.findByTitle('Font family')).toBeTruthy();
@@ -223,7 +223,7 @@ describe('SlideEditor — font-family picker (feature/custom-fonts)', () => {
   it('renders an option for every built-in font name', async () => {
     renderSlideEditor();
 
-    await waitFor(() => expect(mockGetSlide).toHaveBeenCalled());
+    await waitFor(() => expect(mockGetFileMetadata).toHaveBeenCalled());
     await userEvent.click(await screen.findByText('select-element-0'));
 
     const select = await screen.findByTitle('Font family');
@@ -236,7 +236,7 @@ describe('SlideEditor — font-family picker (feature/custom-fonts)', () => {
   it('renders an option for a custom font returned by useAvailableFonts', async () => {
     renderSlideEditor();
 
-    await waitFor(() => expect(mockGetSlide).toHaveBeenCalled());
+    await waitFor(() => expect(mockGetFileMetadata).toHaveBeenCalled());
     await userEvent.click(await screen.findByText('select-element-0'));
 
     const select = await screen.findByTitle('Font family');

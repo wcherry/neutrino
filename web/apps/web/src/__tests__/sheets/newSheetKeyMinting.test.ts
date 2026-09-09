@@ -21,7 +21,6 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const DEK = new Uint8Array(32).fill(9);
 
-const getSheet = vi.fn();
 const getFileMetadata = vi.fn();
 const readBytes = vi.fn();
 const driveAutosaveEncryptedBytes = vi.fn();
@@ -39,7 +38,7 @@ vi.mock('@/lib/api', () => ({
       this.code = code;
     }
   },
-  sheetsApi: { getSheet: (...a: unknown[]) => getSheet(...a), saveSheet: vi.fn() },
+  sheetsApi: { saveSheet: vi.fn() },
   driveReadContent: vi.fn(),
   driveReadBytes: (...a: unknown[]) => readBytes(...a),
   driveCreateEncryptedVersion: vi.fn(),
@@ -127,7 +126,6 @@ beforeEach(() => {
   // Locked by default; the tests below that hold a key mint one.
   mintedDek = null;
   mint = Promise.resolve();
-  getSheet.mockRejectedValue(new ApiClientError(404, 'not_found', 'not bespoke JSON'));
   getFileMetadata.mockResolvedValue({ id: 'file-1', name: 'Untitled spreadsheet.xlsx', mimeType: XLSX_MIME });
   // What `driveReadBytes` reports for a file whose body was never written.
   readBytes.mockResolvedValue(new Uint8Array(0));
@@ -150,7 +148,7 @@ describe('opening a spreadsheet created a moment ago', () => {
     const { result } = setupHook();
 
     await act(async () => { await result.current.load(); });
-    await waitFor(() => expect(result.current.officeMode).toBe(true));
+    await waitFor(() => expect(result.current.fileRef.current).not.toBeNull());
 
     expect(toastWarning).not.toHaveBeenCalled();
     expect(toastError).not.toHaveBeenCalled();

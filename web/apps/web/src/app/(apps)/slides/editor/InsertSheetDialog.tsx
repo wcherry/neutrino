@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { sheetsApi, driveReadContent } from '@/lib/api';
+import { sheetsApi } from '@/lib/api';
+import { useUser } from '@neutrino/auth';
+import { readDocumentText } from '@/lib/documentContent';
 import type { SheetEmbedAttrsShape, CellValue } from '@neutrino/sheet-embed';
 import type { SheetFile, CellProps } from '../../sheets/editor/types';
 import { computeCell, type SheetRef } from '../../sheets/editor/formula';
@@ -110,6 +112,7 @@ function extractCachedData(
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function InsertSheetDialog({ onInsert, onClose }: Props) {
+  const currentUser = useUser();
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
   const [selectedSheetTitle, setSelectedSheetTitle] = useState('');
   const [rangeInput, setRangeInput] = useState('');
@@ -147,8 +150,13 @@ export function InsertSheetDialog({ onInsert, onClose }: Props) {
     const aborted = { value: false };
     (async () => {
       try {
-        const sheet = await sheetsApi.getSheet(selectedSheetId);
-        const raw = await driveReadContent(sheet.contentUrl);
+        // A spreadsheet is an `.xlsx`, so the preview reads it the same way
+        // every other cross-app reader does: `readDocumentText` resolves the
+        // file's key, decrypts, and hands back the model read out of the
+        // workbook. The bespoke JSON this used to fetch through
+        // `sheetsApi.getSheet` is gone.
+        const raw = await readDocumentText(currentUser?.id ?? '', selectedSheetId, 'sheets');
+        if (!raw) throw new Error('sheet body unreadable');
         const file = JSON.parse(raw) as SheetFile;
         const evaluated = evaluateSheetFile(file);
         if (aborted.value) return;
@@ -163,7 +171,7 @@ export function InsertSheetDialog({ onInsert, onClose }: Props) {
     })();
 
     return () => { aborted.value = true; };
-  }, [selectedSheetId]);
+  }, [selectedSheetId, currentUser?.id]);
 
   // Global mouseup commits the drag selection into the range input.
   useEffect(() => {

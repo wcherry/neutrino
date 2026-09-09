@@ -401,7 +401,7 @@ function SlidePreview({ id }: { id: string }) {
 function NotePreview({ id }: { id: string }) {
   const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
     id,
-    filename: 'note.json',
+    filename: 'note.md',
   });
 
   const { data: note, isLoading: metaLoading, isError: metaIsError } = useQuery({

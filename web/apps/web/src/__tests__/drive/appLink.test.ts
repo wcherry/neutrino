@@ -34,10 +34,10 @@ describe('isAppLinkKind', () => {
 describe('MIME_FOR_KIND', () => {
   /** The MIME types the backend actually writes — see `src/notes/service.rs` and friends. */
   it('matches the types the server stores', () => {
-    expect(MIME_FOR_KIND.note).toBe('application/x-neutrino-note');
-    expect(MIME_FOR_KIND.doc).toBe('application/x-neutrino-doc');
-    expect(MIME_FOR_KIND.sheet).toBe('application/x-neutrino-sheet');
-    expect(MIME_FOR_KIND.slide).toBe('application/x-neutrino-slide');
+    expect(MIME_FOR_KIND.note).toBe('text/markdown');
+    expect(MIME_FOR_KIND.doc).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    expect(MIME_FOR_KIND.sheet).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(MIME_FOR_KIND.slide).toBe('application/vnd.openxmlformats-officedocument.presentationml.presentation');
     expect(MIME_FOR_KIND.diagram).toBe('application/x-neutrino-diagram');
     expect(MIME_FOR_KIND.drawing).toBe('application/x-neutrino-drawing');
   });
@@ -74,7 +74,7 @@ describe('hrefForKind', () => {
 
 describe('hrefForMime', () => {
   it('routes a native type to its editor', () => {
-    expect(hrefForMime('f1', 'application/x-neutrino-doc')).toBe('/docs/editor?id=f1');
+    expect(hrefForMime('f1', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe('/docs/editor?id=f1');
   });
 
   it('routes an image to the photo editor', () => {

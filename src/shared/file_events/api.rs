@@ -217,7 +217,7 @@ mod tests {
     use diesel_migrations::MigrationHarness;
     use std::path::PathBuf;
 
-    const NOTE_MIME: &str = "application/x-neutrino-note";
+    const NOTE_MIME: &str = "text/markdown";
 
     fn test_pool() -> DbPool {
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");

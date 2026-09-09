@@ -1204,9 +1204,10 @@ mod tests {
 
     // ── Shared wiring for the tests below ────────────────────────────────────
 
-    const XLSX_MIME: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    const NATIVE_SHEET_MIME: &str = "application/x-neutrino-sheet";
-    const SHEET_CONTENT: &str = r#"[{"index":"0","name":"Sheet1","celldata":[]}]"#;
+    // A diagram is one of the two types the server still seeds a body for, so
+    // it is what `write_text_content` is exercised with.
+    const DIAGRAM_MIME: &str = "application/x-neutrino-diagram";
+    const DIAGRAM_CONTENT: &str = r#"{"version":1,"pages":[]}"#;
 
     /// Same wiring as `test_storage_service`, but also hands back the
     /// permissions repository and the pool, for tests that need to grant roles
@@ -1260,17 +1261,17 @@ mod tests {
     #[test]
     fn write_text_content_persists_the_body_and_bumps_the_version() {
         let (service, repo, base) = test_storage_service();
-        insert_test_file(&repo, "file-9", "user-1", NATIVE_SHEET_MIME);
+        insert_test_file(&repo, "file-9", "user-1", DIAGRAM_MIME);
 
         let version = service
-            .write_text_content("file-9", SHEET_CONTENT, ContentVersionCheck::UNCHECKED)
+            .write_text_content("file-9", DIAGRAM_CONTENT, ContentVersionCheck::UNCHECKED)
             .expect("write content");
 
         let stored = repo.find_file_by_id("file-9").unwrap().unwrap();
         assert_eq!(stored.content_version, version);
-        assert_eq!(stored.size_bytes, SHEET_CONTENT.len() as i64);
+        assert_eq!(stored.size_bytes, DIAGRAM_CONTENT.len() as i64);
         let on_disk = std::fs::read_to_string(base.join(&stored.storage_path)).expect("read blob");
-        assert_eq!(on_disk, SHEET_CONTENT);
+        assert_eq!(on_disk, DIAGRAM_CONTENT);
         let _ = std::fs::remove_dir_all(base);
     }
 
@@ -1279,7 +1280,7 @@ mod tests {
         let (service, _repo, base) = test_storage_service();
 
         let err = service
-            .write_text_content("nope", SHEET_CONTENT, ContentVersionCheck::UNCHECKED)
+            .write_text_content("nope", DIAGRAM_CONTENT, ContentVersionCheck::UNCHECKED)
             .expect_err("unknown file");
 
         assert_eq!(err.status, 404);

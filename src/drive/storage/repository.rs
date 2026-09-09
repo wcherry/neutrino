@@ -770,6 +770,7 @@ mod tests {
     use super::*;
 
     const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const XLSX_MIME: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     fn test_pool() -> DbPool {
         use crate::MIGRATIONS;
@@ -801,12 +802,10 @@ mod tests {
 
     // ── The mimeType filter (issue #127) ──────────────────────────────────────
     //
-    // Docs, Sheets and Slides create OOXML now but still open the bespoke JSON
-    // written before that, so each library asks for both of its mime types in
-    // one call. A filter that only understood a single value would show half a
-    // user's documents and hide the rest with no error anywhere.
-
-    const NATIVE_DOC_MIME: &str = "application/x-neutrino-doc";
+    // The filter takes one mime type or a comma-separated list, so a caller can
+    // gather several types in one listing. A filter that only understood a
+    // single value would show part of a listing and hide the rest with no error
+    // anywhere.
 
     fn mime_filter_query(mime_type: &str) -> ListQuery<FileOrderField> {
         ListQuery {
@@ -825,7 +824,7 @@ mod tests {
     fn one_mime_type_lists_only_files_of_that_type() {
         let repo = StorageRepository::new(test_pool());
         insert_test_file(&repo, "docx-1", "user-1", DOCX_MIME);
-        insert_test_file(&repo, "json-1", "user-1", NATIVE_DOC_MIME);
+        insert_test_file(&repo, "xlsx-1", "user-1", XLSX_MIME);
 
         let listed = repo
             .list_files_by_user("user-1", &mime_filter_query(DOCX_MIME))
@@ -839,19 +838,19 @@ mod tests {
     fn a_comma_separated_mime_type_lists_every_type_in_the_list() {
         let repo = StorageRepository::new(test_pool());
         insert_test_file(&repo, "docx-1", "user-1", DOCX_MIME);
-        insert_test_file(&repo, "json-1", "user-1", NATIVE_DOC_MIME);
+        insert_test_file(&repo, "xlsx-1", "user-1", XLSX_MIME);
         insert_test_file(&repo, "other-1", "user-1", "text/plain");
 
         let listed = repo
             .list_files_by_user(
                 "user-1",
-                &mime_filter_query(&format!("{DOCX_MIME},{NATIVE_DOC_MIME}")),
+                &mime_filter_query(&format!("{DOCX_MIME},{XLSX_MIME}")),
             )
             .expect("list files");
 
         let mut ids: Vec<&str> = listed.iter().map(|f| f.id.as_str()).collect();
         ids.sort();
-        assert_eq!(ids, vec!["docx-1", "json-1"]);
+        assert_eq!(ids, vec!["docx-1", "xlsx-1"]);
     }
 
     /// An empty or all-separator value must not silently narrow the listing to
@@ -908,7 +907,7 @@ mod tests {
         let repo = StorageRepository::new(test_pool());
         insert_test_file(&repo, "docx-1", "user-1", DOCX_MIME);
         insert_test_file(&repo, "docx-2", "user-1", DOCX_MIME);
-        insert_test_file(&repo, "json-1", "user-1", NATIVE_DOC_MIME);
+        insert_test_file(&repo, "xlsx-1", "user-1", XLSX_MIME);
 
         let total = repo
             .count_files_by_user("user-1", &mime_filter_query(DOCX_MIME))

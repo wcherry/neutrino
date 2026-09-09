@@ -5,11 +5,14 @@ export type { ImportItem, ImportProgress, ImportStatus, ImportSummary } from './
 
 export { htmlToMarkdown, keepTextToMarkdown, stripInlineMarkdown } from './inlineHtml';
 
+// `markdownToBlocks` used to be re-exported here. It moved to the note
+// editor's `noteMarkdown` module when notes became Markdown — it is the
+// storage format's parser, not a takeout concern — and callers import it
+// from there.
 export {
   convertKeepNote,
   keepNoteToBlocks,
   keepNoteTitle,
-  markdownToBlocks,
   looksLikeKeepNote,
   parseKeepNote,
   UNTITLED,

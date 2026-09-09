@@ -105,7 +105,7 @@ describe('InsertImageDialog', () => {
 
   it('pages past a full page of non-images to reach the images behind it', async () => {
     const documents = Array.from({ length: 200 }, (_, i) =>
-      driveFile({ id: `doc-${i}`, name: `note-${i}.txt`, mimeType: 'application/x-neutrino-note' }));
+      driveFile({ id: `doc-${i}`, name: `note-${i}.txt`, mimeType: 'text/markdown' }));
     listFiles.mockReset();
     listFiles
       // `total` counts every file the listing matched, not the page — 200
@@ -126,7 +126,7 @@ describe('InsertImageDialog', () => {
   /** Issue: a drive of exactly one page still fetched `?offset=200` to find it empty. */
   it('stops at a full page that already covers the total', async () => {
     const documents = Array.from({ length: 200 }, (_, i) =>
-      driveFile({ id: `doc-${i}`, name: `note-${i}.txt`, mimeType: 'application/x-neutrino-note' }));
+      driveFile({ id: `doc-${i}`, name: `note-${i}.txt`, mimeType: 'text/markdown' }));
     listFiles.mockReset();
     listFiles.mockResolvedValue({
       items: documents, total: 200, page: 1, pageSize: 200, totalPages: 1,

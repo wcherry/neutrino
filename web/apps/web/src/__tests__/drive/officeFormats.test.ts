@@ -124,7 +124,7 @@ describe('officeAppForFile — unrelated files', () => {
     expect(officeAppForFile('application/octet-stream', 'archive.zip')).toBeNull();
   });
 
-  it('returns null for a native Neutrino doc mimetype', () => {
-    expect(officeAppForFile('application/x-neutrino-doc', 'My Doc')).toBeNull();
+  it('returns null for a Neutrino type no office app owns', () => {
+    expect(officeAppForFile('application/x-neutrino-diagram', 'My Diagram')).toBeNull();
   });
 });

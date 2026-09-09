@@ -1,24 +1,18 @@
 /**
- * A newly created presentation must not be left in plaintext on the server.
+ * A newly created presentation must become a real, sealed package rather than
+ * being left as the zero-byte record Drive creates.
  *
- * Drive seeds a new deck's body itself from the mime type (`NATIVE_TYPES` in
- * `src/drive/storage/native_types.rs`), so the bytes on disk after creation are
- * readable JSON. The editor is what turns them into ciphertext: once the DEK it
- * minted for the file is ready, it re-saves the body through
- * `driveAutosaveEncryptedContent`.
+ * A `.pptx` is a zip, so the server writes no seed for one — `native_types.rs`
+ * gives the OOXML types an empty `default_content` deliberately, because a seed
+ * written there would be plaintext in object storage until the first save.
+ * The editor is what closes that: opening a deck whose stored body is empty
+ * writes the default deck through the ordinary encrypted autosave, now rather
+ * than on the first edit, so a deck opened and closed again is not a zero-byte
+ * file.
  *
- * The regression this pins down: that re-save was also gated on "and nothing
- * loaded" (`lastSavedRef.current === ''`), which stopped holding the moment
- * Drive started seeding a body — so a new deck kept its plaintext on the server
- * indefinitely. `sheet-encryption.spec.ts` covers the same property for sheets,
- * where it is tracked as `serverHasPlaintextContent`.
- *
- * What decides it now is the body itself (`readStoredBody`), not the session's
- * `isNewEncryption` flag. The flag is blind to a deck created and then reloaded
- * before the sealing write landed: that one has a key ref *and* a plaintext
- * body, and was never sealed by anything. The last case below is the other half
- * of the rule — bytes that will not decrypt and do not read as a deck are
- * ciphertext, and must be left alone.
+ * This used to describe the opposite arrangement, in which Drive seeded a JSON
+ * body from the bespoke mime type and the editor re-saved that plaintext as
+ * ciphertext. No deck was ever stored in that format and it is gone.
  *
  * Mocking follows `officeMode.test.tsx`.
  */
@@ -28,7 +22,7 @@ import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-/** The body Drive seeds for `application/x-neutrino-slide`, in plaintext. */
+/** A deck body, as the editor would serialise one. */
 const SEEDED_PLAINTEXT_DECK = JSON.stringify({
   slides: [
     {
@@ -78,7 +72,9 @@ vi.mock('@neutrino/ui', () => ({
 }));
 
 vi.mock('@neutrino/auth', () => ({
-  useUser: () => null,
+  // The editor is only reachable signed in, and the content load waits for a
+  // real user — `dekResolved` alone goes true before auth has arrived.
+  useUser: () => ({ id: 'user-1', name: 'Tester' }),
   useAuth: () => ({ user: null, isLoading: false }),
 }));
 
@@ -96,29 +92,43 @@ vi.mock('@/lib/api', () => ({
     }
   },
   slidesApi: {
-    getSlide: vi.fn(() =>
-      Promise.resolve({
-        id: 'new-deck-id',
-        title: 'Untitled presentation',
-        contentUrl: '/api/v1/drive/files/new-deck-id',
-        contentWriteUrl: '/api/v1/drive/files/new-deck-id/versions',
-      }),
-    ),
     listThemes: vi.fn(() => Promise.resolve([])),
-    autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveSlide: vi.fn(() => Promise.resolve()),
   },
-  // The server holds plaintext, so this is what a read comes back with.
-  driveReadContent: vi.fn(() => Promise.resolve(SEEDED_PLAINTEXT_DECK)),
-  driveAutosaveEncryptedContent: (...args: unknown[]) => mockAutosaveEncrypted(...args),
+  // A record created a moment ago has no body at all.
+  driveReadBytes: vi.fn(() => Promise.resolve(new Uint8Array())),
+  driveAutosaveEncryptedBytes: (...args: unknown[]) => mockAutosaveEncrypted(...args),
   storageApi: {
-    getFileMetadata: vi.fn(),
-    downloadFile: vi.fn(() => Promise.resolve(new Blob([SEEDED_PLAINTEXT_DECK]))),
+    getFileMetadata: vi.fn(() =>
+      Promise.resolve({
+        id: 'new-deck-id',
+        name: 'Untitled presentation.pptx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        contentVersion: 1,
+      }),
+    ),
+    downloadFile: vi.fn(() => Promise.resolve(new Blob())),
   },
+  filesystemApi: { updateFile: vi.fn(() => Promise.resolve()) },
+  extractSlideText: vi.fn(() => ''),
   encryptionApi: { getFileKey: vi.fn(() => Promise.resolve(null)) },
 }));
 
 vi.mock('@/app/(apps)/drive/ShareDialog', () => ({ ShareDialog: () => null }));
+
+vi.mock('@/lib/ooxmlContainer', () => ({
+  readNeutrinoModel: vi.fn(() => Promise.resolve(null)),
+  // Hands the model through as the bytes, so what the save writes is readable
+  // here without building a real package.
+  packNeutrinoModel: vi.fn((_deck: unknown, _app: string, content: string) =>
+    Promise.resolve(new TextEncoder().encode(content)),
+  ),
+}));
+
+vi.mock('../../app/(apps)/slides/editor/pptxExport', () => ({
+  exportAsPptx: vi.fn(),
+  exportAsPptxBytes: vi.fn(() => Promise.resolve(new Uint8Array())),
+}));
 
 vi.mock('@/hooks/useSlidePresence', () => ({
   useSlidePresence: () => ({ remoteUsers: [], broadcastPresentation: vi.fn() }),
@@ -188,52 +198,23 @@ beforeEach(() => {
   dekRef.current = dek;
 });
 
-describe('SlideEditor — sealing a newly created deck', () => {
-  it('re-saves the seeded plaintext body as ciphertext', async () => {
+describe('SlideEditor — writing a newly created deck', () => {
+  it('writes the empty record as a sealed package', async () => {
     renderSlideEditor();
 
     await waitFor(() => expect(mockAutosaveEncrypted).toHaveBeenCalled(), { timeout: 3000 });
 
-    const [fileId, content, filename, key] = mockAutosaveEncrypted.mock.calls[0] as unknown[];
+    const [fileId, bytes, filename, key] = mockAutosaveEncrypted.mock.calls[0] as unknown[];
     expect(fileId).toBe('new-deck-id');
-    expect(filename).toBe('slide.json');
+    // Under the file's own name — a package, not a body beside it.
+    expect(filename).toBe('Untitled presentation.pptx');
     expect(key).toBe(dek);
 
-    // What gets sealed is the body the read produced — the server's own seed,
-    // handed back as plaintext by `readStoredBody` once decrypting it failed.
-    const written = JSON.parse(content as string);
+    // What gets written is the default deck already on screen. `packNeutrinoModel`
+    // is mocked to hand the model through as the bytes, so it reads back here.
+    const written = JSON.parse(new TextDecoder().decode(bytes as Uint8Array));
     expect(written.slides).toHaveLength(1);
     expect(written.theme).toBeTruthy();
-  });
-
-  /**
-   * The regression, in the order it actually happens.
-   *
-   * `dekResolved` means "resolution finished", not "a key exists", so the
-   * content query fires while the DEK for a brand-new file is still being
-   * minted. With no key in hand the body is read as plaintext and lands in
-   * `lastSavedRef` — and the old guard, which also demanded
-   * `lastSavedRef.current === ''`, then refused to seal it. The deck stayed
-   * readable on the server for good.
-   */
-  it('seals the body even when it was read before the DEK arrived', async () => {
-    dekRef.current = null;
-    const { driveReadContent } = (await import('@/lib/api')) as unknown as {
-      driveReadContent: { mockImplementation: (f: () => Promise<string>) => void };
-    };
-    // The key lands as the read comes back, exactly as the PUT does in a real load.
-    driveReadContent.mockImplementation(async () => {
-      dekRef.current = dek;
-      return SEEDED_PLAINTEXT_DECK;
-    });
-
-    renderSlideEditor();
-
-    await waitFor(() => expect(mockAutosaveEncrypted).toHaveBeenCalled(), { timeout: 3000 });
-
-    const [, content] = mockAutosaveEncrypted.mock.calls[0] as unknown[];
-    // Read as plaintext, so this is the server's own seed going back sealed.
-    expect(JSON.parse(content as string).slides[0].id).toBe('s1');
   });
 
   it('writes exactly once, not on every render', async () => {
@@ -252,23 +233,15 @@ describe('SlideEditor — sealing a newly created deck', () => {
     expect(mockAutosaveEncrypted).toHaveBeenCalledTimes(1);
   });
 
-  it('never writes when the stored body is ciphertext it cannot open', async () => {
-    // The other half of the rule. Sealing is decided by what the bytes turn out
-    // to be, so the case it must refuse is a body that will not decrypt *and*
-    // does not read as a deck: ciphertext this key cannot open, whose real
-    // content overwriting would destroy.
-    //
-    // This used to ask `isNewEncryption` instead, which said the same thing for
-    // this fixture and the wrong thing for the one in between — a deck created
-    // and then reloaded before the sealing write landed, which has a key ref
-    // and a plaintext body both.
+  it('never writes over a deck that already has a stored package', async () => {
+    // The other half of the rule: the opening write exists to turn an *empty*
+    // record into a real file. A deck with bytes already stored is content this
+    // must not overwrite before the user has touched it.
     encryptionState.isNewEncryption = false;
-    const { storageApi } = (await import('@/lib/api')) as unknown as {
-      storageApi: { downloadFile: { mockResolvedValue: (b: Blob) => void } };
+    const { driveReadBytes } = (await import('@/lib/api')) as unknown as {
+      driveReadBytes: { mockResolvedValue: (b: Uint8Array) => void };
     };
-    storageApi.downloadFile.mockResolvedValue(
-      new Blob([new Uint8Array([0x8f, 0x1d, 0xff, 0x02, 0xc3, 0x28]).buffer as ArrayBuffer]),
-    );
+    driveReadBytes.mockResolvedValue(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00]));
 
     renderSlideEditor();
 

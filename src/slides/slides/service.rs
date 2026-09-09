@@ -2,8 +2,8 @@
 //!
 //! Presentation CRUD used to live here as a pass-through to `DriveClient`; it
 //! now goes straight to the generic drive file endpoints, with
-//! `application/x-neutrino-slide` (see `drive::storage::native_types`) marking
-//! a file as a presentation. Themes are user-owned records, not files, so they
+//! the `.pptx` mime type (see `drive::storage::native_types`) marking a file as
+//! a presentation — a presentation *is* an OOXML package. Themes are user-owned records, not files, so they
 //! stay.
 
 use crate::shared::{ApiError, AuthenticatedUser};

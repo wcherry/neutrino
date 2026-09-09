@@ -1,6 +1,6 @@
 /**
- * Tests for the sheets `usePersistence` hook's office-mode detection/fallback
- * contract (issue #43 — in-place editing of MS Office docs, plan section 3).
+ * Tests for how the sheets `usePersistence` hook resolves and loads a file
+ * (issue #43 — in-place editing of MS Office docs, plan section 3).
  *
  * There is no existing hook-level test precedent under __tests__/sheets/ (all
  * current sheets tests exercise pure helper functions, not hooks) — this is a
@@ -9,21 +9,18 @@
  * usePersistence.ts (not SheetEditor.tsx) is where the plan places the
  * metadata/content query + save-path integration for office mode.
  *
- * Mirrors the Docs/Slides office-mode contract: when `sheetsApi.getSheet`
- * 404s (no `sheets` row exists for this file id — it's a raw .xlsx), the hook
- * must fall back to `storageApi.getFileMetadata`. If that metadata identifies
- * an xlsx file, office mode is entered: the raw bytes are downloaded and
+ * A spreadsheet is an `.xlsx`, so `storageApi.getFileMetadata` is what
+ * identifies it: if the metadata says xlsx, the raw bytes are downloaded and
  * parsed (via the `xlsx` package's `XLSX.read`, the same library already used
  * for import/export in SheetEditor.tsx/useExport.ts) and the parsed cells are
  * pushed into the grid via `setData`, instead of leaving the sheet in a blank
  * "start fresh" state that is indistinguishable from a genuinely new/empty
- * sheet. If the fallback ALSO 404s, `load()` must leave the sheet in the
- * existing "not loaded" state without ever calling `setData` from XLSX
- * content (today's behavior for a truly missing sheet).
+ * sheet. If the metadata 404s, `load()` must leave the sheet in the existing
+ * "not loaded" state without ever calling `setData` from XLSX content.
  *
- * Expected to fail right now (red phase): usePersistence.ts has no fallback
- * path today, so `storageApi.getFileMetadata` is never called on a 404 from
- * `sheetsApi.getSheet`.
+ * This used to describe a fallback: `sheetsApi.getSheet` was asked first and
+ * its 404 meant "not bespoke JSON, therefore OOXML". No file was ever stored
+ * in that format and it is gone, so there is one path and no probe.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -31,7 +28,6 @@ import { renderHook, waitFor } from '@testing-library/react';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-const mockGetSheet = vi.fn();
 const mockGetFileMetadata = vi.fn();
 const mockDownloadFile = vi.fn();
 // The office-mode read goes through `driveReadBytes` — see its module comment.
@@ -49,7 +45,6 @@ vi.mock('@/lib/api', () => ({
     }
   },
   sheetsApi: {
-    getSheet: (...args: unknown[]) => mockGetSheet(...args),
     saveSheet: vi.fn(() => Promise.resolve()),
   },
   driveReadContent: vi.fn(() => Promise.resolve('{"sheets":[]}')),
@@ -144,9 +139,8 @@ beforeEach(() => {
   sessionDek = null;
 });
 
-describe('usePersistence — office-mode detection/fallback (issue #43)', () => {
-  it('falls back to storageApi.getFileMetadata when sheetsApi.getSheet 404s', async () => {
-    mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
+describe('usePersistence — resolving and loading the file (issue #43)', () => {
+  it('identifies the spreadsheet through storageApi.getFileMetadata', async () => {
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
     mockReadBytes.mockResolvedValue(workbookBytes('fake xlsx bytes'));
 
@@ -156,8 +150,7 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
     expect(mockGetFileMetadata).toHaveBeenCalledWith('test-sheet-id');
   });
 
-  it('enters office mode and applies the parsed workbook for a raw .xlsx file', async () => {
-    mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
+  it('applies the parsed workbook for an .xlsx file', async () => {
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
     mockReadBytes.mockResolvedValue(workbookBytes('fake xlsx bytes'));
 
@@ -176,7 +169,6 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
    * being handed the keyless load's promise.
    */
   it('does not read ciphertext as a workbook, and reads again once the key arrives', async () => {
-    mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
     const ciphertext = new TextEncoder().encode('not a zip — this is E2EE ciphertext');
     let releaseRead: () => void = () => {};
@@ -200,7 +192,6 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
   });
 
   it('applies nothing at all when the key never arrives', async () => {
-    mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
     mockGetFileMetadata.mockResolvedValue({ id: 'test-sheet-id', name: 'budget.xlsx', mimeType: XLSX_MIME });
     mockReadBytes.mockResolvedValue(new TextEncoder().encode('not a zip — this is E2EE ciphertext'));
 
@@ -211,26 +202,7 @@ describe('usePersistence — office-mode detection/fallback (issue #43)', () => 
     expect(setData).not.toHaveBeenCalled();
   });
 
-  it('does not call getFileMetadata when sheetsApi.getSheet succeeds (native sheet, unaffected)', async () => {
-    mockGetSheet.mockResolvedValue({
-      id: 'test-sheet-id',
-      title: 'My Sheet',
-      contentUrl: '/api/v1/drive/files/test-sheet-id',
-      contentWriteUrl: '/api/v1/drive/files/test-sheet-id/versions',
-      folderId: null,
-      createdAt: '',
-      updatedAt: '',
-      yourRole: 'owner',
-    });
-
-    const { result } = setupHook();
-    await result.current.load();
-
-    expect(mockGetFileMetadata).not.toHaveBeenCalled();
-  });
-
-  it('does NOT enter office mode when the storage fallback ALSO 404s', async () => {
-    mockGetSheet.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Spreadsheet not found'));
+  it('applies nothing when the file metadata 404s', async () => {
     mockGetFileMetadata.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'File not found'));
 
     const { result, setData } = setupHook();

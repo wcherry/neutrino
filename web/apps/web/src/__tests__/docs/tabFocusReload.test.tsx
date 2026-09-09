@@ -2,7 +2,7 @@
  * Regression test for issue #141 — the docs editor rebuilt itself every time
  * the user came back to the browser tab.
  *
- * `docsApi.getDoc` 404s for a `.docx`, which is every document created since
+ * The metadata query is asked once for a `.docx`, which is every document since
  * #127, so `['doc', id]` is a query that holds no data. React Query treats a
  * dataless query as stale whatever its `staleTime`, refetches it on every
  * window focus, and — because refetching with `data === undefined` resets the
@@ -65,7 +65,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
 // getDoc / getFileInfo behavior per-scenario.
 // ---------------------------------------------------------------------------
 
-const mockGetDoc = vi.fn();
 const mockGetFileInfo = vi.fn();
 const mockDownloadFile = vi.fn();
 /**
@@ -96,7 +95,6 @@ vi.mock('@/lib/api', () => ({
     }
   },
   docsApi: {
-    getDoc: (...args: unknown[]) => mockGetDoc(...args),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveDoc: vi.fn(() => Promise.resolve()),
   },
@@ -302,7 +300,6 @@ describe('DocEditor — returning to the browser tab (issue #141)', () => {
   });
 
   it('keeps a .docx open — no reload of the document, no spinner', async () => {
-    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
@@ -315,21 +312,14 @@ describe('DocEditor — returning to the browser tab (issue #141)', () => {
 
     await switchAwayAndBack();
 
-    // The 404 is the answer, not a failure to be re-asked for: re-running it is
+    // Asked once, and not re-asked on a return to the tab: re-running it is
     // what reset the query to `pending` and took the editor down with it.
-    expect(mockGetDoc).toHaveBeenCalledTimes(1);
     expect(mockGetFileInfo).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
     expect(screen.getByTestId('editor-content')).toBeInTheDocument();
   });
 
-  it('does not re-download the body of a native document', async () => {
-    mockGetDoc.mockResolvedValue({
-      id: 'test-doc-id',
-      title: 'Report',
-      contentUrl: '/api/v1/drive/files/test-doc-id',
-      contentVersion: 3,
-    });
+  it('does not re-download the body on a return to the tab', async () => {
     mockDownloadFile.mockResolvedValue(new Blob(['{"type":"doc","content":[]}']));
 
     renderDocEditor();
@@ -338,7 +328,7 @@ describe('DocEditor — returning to the browser tab (issue #141)', () => {
 
     await switchAwayAndBack();
 
-    expect(mockGetDoc).toHaveBeenCalledTimes(1);
+    expect(mockGetFileInfo).toHaveBeenCalledTimes(1);
     expect(mockDownloadFile.mock.calls.length + mockReadContent.mock.calls.length).toBe(bodyReads);
     expect(screen.queryByTestId('spinner')).not.toBeInTheDocument();
   });
@@ -350,7 +340,6 @@ describe('DocEditor — returning to the browser tab (issue #141)', () => {
    * we already have.
    */
   it('does not reopen the loading gate once the document has been resolved', async () => {
-    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
@@ -365,9 +354,6 @@ describe('DocEditor — returning to the browser tab (issue #141)', () => {
     await waitFor(() => expect(screen.getByTestId('editor-content')).toBeInTheDocument());
 
     let pending: (v: unknown) => void = () => {};
-    mockGetDoc.mockImplementation(() => new Promise((_, reject) => {
-      pending = () => reject(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
-    }));
     await act(async () => {
       void qc.refetchQueries({ queryKey: ['doc', 'test-doc-id'] });
       await Promise.resolve();

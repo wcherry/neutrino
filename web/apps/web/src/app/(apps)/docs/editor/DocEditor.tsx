@@ -63,8 +63,8 @@ import {
 import { ShareButton, Spinner, useToast, ZoomSlider } from '@neutrino/ui';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import {
-  docsApi, driveReadContent, driveReadBytes, driveCreateEncryptedVersion, driveAutosaveEncryptedContent,
-  driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes, extractDocText,
+  docsApi, driveReadBytes, driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes,
+  extractDocText,
   uploadDriveFile, mintFileKey, canEncryptFor, isMissingEncryptionKey,
   storageApi, filesystemApi, ApiClientError, DEFAULT_PAGE_SETUP,
   type PageSetup, type FileItem,
@@ -75,7 +75,6 @@ import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { measurePhase } from '@neutrino/utils';
 import { aiApi } from '@neutrino/api-core';
-import { readStoredBody, looksLikeJsonBody } from '@/lib/storedBody';
 import { useUser } from '@neutrino/auth';
 import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension, OFFICE_MIME } from '@/lib/officeFormats';
 import { looksLikeOoxml, readNeutrinoModel } from '@/lib/ooxmlContainer';
@@ -680,7 +679,6 @@ export function DocEditor() {
   // every completed read, including the second one on a reload, which returns
   // the same text as the first (that read runs while the vault is still locked)
   // and so changes nothing else the effect could depend on.
-  const serverPlaintextRef = useRef(false);
   // Stable ref to latest layout metadata — read inside the useEditor onUpdate
   // closure so we always serialise the most recent values without needing to
   // re-create the editor.
@@ -696,57 +694,32 @@ export function DocEditor() {
   // own: it rides in `layoutMetaRef` with the rest of the layout metadata.
   const titleRef = useRef<string>('');
 
-  // `refetchOnWindowFocus`/`refetchOnReconnect` are off on every query in this
-  // component, and this one is why (issue #141). `getDoc` 404s for a `.docx` —
-  // which every document created since #127 is — so the query holds no data,
-  // and a query holding no data is *permanently* stale whatever its staleTime:
-  // React Query refetches it on every return to the tab. Worse, a refetch of a
-  // dataless query resets its status to `pending`, which puts `isLoading` back
-  // up and swaps the whole editor for the spinner below — so alt-tabbing tore
-  // the open document down and rebuilt it. Nothing here wants a background
-  // refetch anyway: the document is loaded once and from then on it is the
-  // collab room and the autosave that keep it current, which is also why the
-  // body load below has to guard against a stale refetch clobbering live edits.
-  const { data: doc, isLoading: metaLoading, isError: metaIsError, error: metaError } = useQuery({
-    queryKey: ['doc', docId],
-    queryFn: () => docsApi.getDoc(docId),
-    staleTime: 0,
-    enabled: !!docId,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
   // Rejects a save that would overwrite a revision written elsewhere since this
   // document was loaded. See `useContentVersionGuard`.
   const versionGuard = useContentVersionGuard();
-  useEffect(() => {
-    versionGuard.observe(doc?.contentVersion);
-  }, [doc?.contentVersion, versionGuard]);
 
-  // ── OOXML mode (issues #43, #127) ──────────────────────────────────────────
-  // `docsApi.getDoc` answers only for the bespoke JSON format, so it 404s for a
-  // `.docx` — which is every document created since #127, as well as any Word
-  // file uploaded to Drive. Named `officeMode` because that is what it was when
-  // only uploads took this path. When
-  // that happens, fall back to the generic Drive file metadata to distinguish
-  // "this is a `.docx`" — which every document created since #127 is — from a
-  // genuinely deleted or missing document.
-  const doc404 = metaIsError
-    && metaError instanceof ApiClientError && metaError.statusCode === 404;
-
+  // A document is a `.docx`, so the Drive file's own metadata is what
+  // identifies it. This used to ask `docsApi.getDoc` first and read its 404 as
+  // "not bespoke JSON, therefore OOXML"; no document was ever stored in that
+  // format and it is gone, so there is one query and no probe.
+  //
+  // `refetchOnWindowFocus`/`refetchOnReconnect` are off on every query in this
+  // component (issue #141): nothing here wants a background refetch, since the
+  // document is loaded once and from then on it is the collab room and the
+  // autosave that keep it current.
   const {
     data: officeFileMeta,
     isLoading: officeFallbackLoading,
     isError: officeFallbackIsError,
   } = useQuery({
-    queryKey: ['doc-office-fallback', docId],
+    queryKey: ['doc-file', docId],
     // `getFileInfo`, not `getFileMetadata`: the metadata endpoint looks the file
     // up under the caller's own id, so it 404s for everyone the file was shared
     // with — and since #127 that is the only thing standing between a shared
     // document and its reader. `/info` resolves the file for anyone with a role
     // on it, which is why it is the endpoint the editors open with.
     queryFn: () => storageApi.getFileInfo(docId),
-    enabled: doc404,
+    enabled: !!docId,
     staleTime: 0,
     retry: false,
     refetchOnWindowFocus: false,
@@ -756,79 +729,22 @@ export function DocEditor() {
   const officeApp = officeFileMeta
     ? officeAppForFile(officeFileMeta.mimeType ?? '', officeFileMeta.name)
     : null;
-  const officeMode = doc404 && officeApp === 'docs';
+  const officeMode = officeApp === 'docs';
 
-  // Seed the stale-write guard from the revision this load saw. The effect
-  // above does it from `doc`, which a `.docx` never has — without this every
-  // OOXML save would assert no revision at all.
+  // Seed the stale-write guard from the revision this load saw.
   useEffect(() => {
-    if (officeMode) versionGuard.observe(officeFileMeta?.contentVersion);
-  }, [officeMode, officeFileMeta?.contentVersion, versionGuard]);
-  // Genuinely missing: the doc row is gone AND either the storage fallback
-  // also 404d, or it resolved to something that isn't a .docx this editor
-  // can open.
-  const docNotFound = doc404 && (officeFallbackIsError || (!!officeFileMeta && officeApp !== 'docs'));
+    versionGuard.observe(officeFileMeta?.contentVersion);
+  }, [officeFileMeta?.contentVersion, versionGuard]);
+  // Genuinely missing: the metadata 404d, or it resolved to something that
+  // isn't a `.docx` this editor can open.
+  const docNotFound = officeFallbackIsError || (!!officeFileMeta && officeApp !== 'docs');
 
   const officeModeRef = useRef(false);
   useEffect(() => { officeModeRef.current = officeMode; }, [officeMode]);
 
-  const {
-    data: docContent,
-    isLoading: contentLoading,
-    isError: contentError,
-    dataUpdatedAt: contentUpdatedAt,
-  } = useQuery({
-    // Include contentUrl in the key so the queryFn closure is always consistent
-    // with the key and the query re-fires if the URL changes (e.g. after restore).
-    queryKey: ['doc-content', docId, dekResolved, doc?.contentUrl ?? ''],
-    queryFn: async () => {
-      if (!doc?.contentUrl) return null;
-      // `awaitDek`, not `dekRef.current` — the rule slides and notes already
-      // follow. `dekResolved` means the resolution *attempt* finished, and for
-      // a brand-new document the key is still being minted when this first
-      // runs; sampling the ref there reports "no key" for a document that is
-      // about to have one.
-      const dek = await awaitDek();
-      if (dek) {
-        const blob = await storageApi.downloadFile(docId);
-        const stored = new Uint8Array(await blob.arrayBuffer());
-        // Whether the body is still plaintext is read off the bytes, not off
-        // `isNewEncryption` — see `readStoredBody`. A document created and then
-        // reloaded before the sealing write landed has a key ref and a
-        // plaintext body, and the session flag calls that ciphertext.
-        const { text, wasPlaintext } = readStoredBody(stored, dek);
-        // Tracks the read that produced the content on screen, both ways: a
-        // later read that decrypts means the body is sealed and the effect
-        // below must not fire again.
-        serverPlaintextRef.current = wasPlaintext;
-        return text;
-      }
-      // No key, and none on the way: the resolution finished without one, or it
-      // never started because auth had not settled when this query was enabled.
-      // Read the body as it is stored and judge it by the same evidence — a
-      // document that parses is one still in the clear, waiting to be sealed by
-      // a key that may land a moment from now. Ciphertext read as text does not
-      // parse, so a locked session cannot mark a real document for sealing.
-      const raw = await driveReadContent(doc.contentUrl);
-      serverPlaintextRef.current = looksLikeJsonBody(raw);
-      return raw;
-    },
-    enabled: !!doc?.contentUrl && dekResolved,
-    staleTime: 0,
-    // Omit retry:0 — use the global retry policy so transient failures
-    // (e.g. a race on first load or a brief network hiccup) are retried,
-    // matching the try/catch fallback in sheets' usePersistence.load().
-    //
-    // No background refetch, for the reason on the metadata query above: this
-    // one re-downloads and re-decrypts the entire body, and the only thing it
-    // could do with the result is fight the copy the user is editing.
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const isFetchingDoc = metaLoading || contentLoading || (doc404 && officeFallbackLoading);
-  // Latches once the document has been resolved — as a native doc, as a `.docx`
-  // or as genuinely missing. The gate at the foot of this component replaces the
+  const isFetchingDoc = officeFallbackLoading;
+  // Latches once the document has been resolved — as a `.docx` or as genuinely
+  // missing. The gate at the foot of this component replaces the
   // entire editor with a spinner, so it has to mean "nothing has loaded yet"
   // rather than "a request is in flight": every later fetch of these queries
   // happens with a document already open, and unmounting it would throw away the
@@ -836,86 +752,10 @@ export function DocEditor() {
   // over an answer we already have. The refetch flags above stop the two ways
   // that used to happen; this stops the rest of them (issue #141).
   const docSettledRef = useRef(false);
-  if (!isFetchingDoc && (doc || officeFileMeta || officeFallbackIsError)) {
+  if (!isFetchingDoc && (officeFileMeta || officeFallbackIsError)) {
     docSettledRef.current = true;
   }
   const isLoading = isFetchingDoc && !docSettledRef.current;
-
-  const contentMutation = useMutation({
-    mutationFn: async ({ content }: { content: string }) => {
-      // Await resolution rather than reading dekRef: the first autosave often
-      // fires while the key is still being fetched, and reading the ref there
-      // reports "no key" for a document that is perfectly encryptable.
-      const dek = await awaitDek();
-      if (!dek) throw new Error('no-dek');
-      return driveAutosaveEncryptedContent(
-        docId,
-        content,
-        'doc.json',
-        dek,
-        versionGuard.check(),
-      );
-    },
-    onMutate: () => setSaveStatus('saving'),
-    onSuccess: (data, { content }) => {
-      setSaveStatus('saved');
-      // Chain the guard: the next save asserts the revision this one produced.
-      versionGuard.observe(data?.contentVersion);
-      queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
-      indexOnSave(currentUser?.id, {
-        id: docId,
-        type: 'document',
-        title: titleRef.current,
-        content: extractDocText(content),
-      });
-    },
-    onError: (err) => {
-      setSaveStatus('unsaved');
-      if (err instanceof Error && err.message === 'no-dek') {
-        toast.warning(ENCRYPTION_WARNING_MESSAGE);
-        return;
-      }
-      // The document changed elsewhere while this tab was editing. Saving
-      // anyway would erase that change, so the choice is the user's.
-      if (versionGuard.handleError(err)) {
-        toast.warning(
-          'This document changed elsewhere since you opened it. Reload to get the ' +
-            'latest version, or save again to keep your copy.',
-        );
-      }
-    },
-  });
-
-  const versionMutation = useMutation({
-    mutationFn: async (content: string) => {
-      // Same race as the autosave, with a sharper edge: reading dekRef before
-      // resolution settles reports no key for a document that has one.
-      // `awaitDek` returns null only for a genuinely locked session, and that
-      // is a refusal — a plaintext version snapshot of an encrypted document
-      // is a file that can never be encrypted (issue #95).
-      const dek = await awaitDek();
-      if (!dek) throw new Error('no-dek');
-      return driveCreateEncryptedVersion(docId, content, 'doc.json', dek);
-    },
-    onMutate: () => setSaveStatus('saving'),
-    onSuccess: () => {
-      setSaveStatus('saved');
-      queryClient.invalidateQueries({ queryKey: ['versions', docId] });
-      queryClient.invalidateQueries({ queryKey: ['folder-contents'] });
-    },
-    onError: (err) => {
-      setSaveStatus('unsaved');
-      if (isMissingEncryptionKey(err)) toast.warning(ENCRYPTION_WARNING_MESSAGE);
-    },
-  });
-
-  const metaMutation = useMutation({
-    mutationFn: (body: Parameters<typeof docsApi.saveDoc>[1]) =>
-      docsApi.saveDoc(docId, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['docs'] });
-    },
-  });
 
   // ── OOXML save mutations (issues #43, #127) ─────────────────────────────
   // Every autosave/version-save tick re-serializes the editor into real DOCX
@@ -1027,20 +867,13 @@ export function DocEditor() {
       if (!isLocalWriterRef.current) return;
       // A `.docx` is written as a package — `officeAutosaveMutation` builds it
       // from the editor and `layoutMetaRef`, which every caller here has
-      // already updated. Writing `content` instead would put the bespoke JSON
-      // body in a file that is a Word document, and the next open finds bytes
-      // that are neither: page setup and header/footer changes went down this
-      // path and left the document unreadable, its `_meta` — the only place
-      // the page setup lives — gone with it. The keystroke autosave, the flush
-      // and the back button each made this same choice already.
-      if (officeModeRef.current) {
-        officeAutosaveRef.current();
-        return;
-      }
-      contentMutation.mutate({ content });
-      if (metadata) metaMutation.mutate(metadata);
+      // already updated. `content` is still taken, because the callers that
+      // have one have already serialised it and the signature is theirs.
+      void content;
+      void metadata;
+      officeAutosaveRef.current();
     },
-    [contentMutation, metaMutation]
+    []
   );
 
   // Sheet-embed paste interceptor — only active when the feature flag is on.
@@ -1241,12 +1074,7 @@ export function DocEditor() {
 
   useEffect(() => { titleRef.current = title; }, [title]);
 
-  useEffect(() => {
-    if (!doc || !editor) return;
-    setTitle(doc.title);
-  }, [doc, editor]);
-
-  // ── Office mode: title + content load (issue #43) ───────────────────────
+  // ── Title + content load (issue #43) ────────────────────────────────────
   useEffect(() => {
     if (officeMode && officeFileMeta) setTitle(stripOoxmlExtension(officeFileMeta.name));
   }, [officeMode, officeFileMeta]);
@@ -1455,94 +1283,8 @@ export function DocEditor() {
   const metaAppliedRef = useRef(false);
   useEffect(() => {
     metaAppliedRef.current = false;
-    serverPlaintextRef.current = false;
   }, [docId]);
 
-  useEffect(() => {
-    if (!docContent || !editor || !syncReady) return;
-
-    let parsed: { doc?: object; _meta?: Record<string, unknown> } | null = null;
-    try {
-      parsed = JSON.parse(docContent);
-    } catch {
-      parsed = null;
-    }
-    // The wrapper format is `{ doc, _meta }`. Detecting it is not conditioned on
-    // the layout flag: a document saved with a header in it is a wrapper whatever
-    // the flags are now, and reading it as a bare Tiptap doc would load the
-    // wrapper object itself as the content — an empty document on screen and, on
-    // the next autosave, an empty document on disk.
-    const wrapped = Boolean(parsed?._meta);
-
-    // ── Layout metadata ──────────────────────────────────────────────────────
-    // `_meta` rides only on the stored file: it is not in the Y.Doc, and it is
-    // not in any metadata call any more either. So it must be read back even
-    // when the body load below is skipped — and both of those skips are the
-    // common case, not the exception. The room holds the body of any document
-    // that has been edited before, and the collab sync applying that body fires
-    // `onUpdate`, which sets `pendingContent` and trips the unsaved-edits guard.
-    // Reading `_meta` after either guard (as this used to) left page setup,
-    // headers, watermark and theme at their defaults for exactly the documents
-    // most likely to have set them, and the next autosave wrote those defaults
-    // down over the stored values.
-    if (parsed && !metaAppliedRef.current) {
-      metaAppliedRef.current = true;
-      applyLayoutMeta(wrapped ? (parsed._meta as Partial<LayoutMeta>) : null);
-    }
-
-    // ── Body ─────────────────────────────────────────────────────────────────
-    // Skip if the user has unsaved edits — a stale refetch (e.g. triggered by
-    // window.focus after a prompt dialog) must not clobber in-progress work.
-    if (pendingContent.current !== null) return;
-
-    // If the Y.Doc already has content from an active collab session (or from
-    // the room's persisted state, seeded back on reopening), don't overwrite it
-    // with the older REST snapshot.
-    if (ydoc.getXmlFragment('default').length > 0) {
-      console.log('[collab] Y.Doc has content from server — skipping REST body load');
-      return;
-    }
-
-    console.log('[collab] Y.Doc is empty after sync — loading body from REST');
-    if (!parsed) {
-      editor.commands.setContent(docContent, false);
-      return;
-    }
-    editor.commands.setContent((wrapped ? parsed.doc : parsed) as object, false);
-  }, [docContent, editor, syncReady, ydoc, docId, applyLayoutMeta]);
-
-  // Seal a body the server is still holding in the clear: the content seeded at
-  // creation, or a document written before E2EE. `serverPlaintext` says the
-  // stored bytes read back as plaintext with a DEK in hand, which is the only
-  // evidence that matters — a body that failed to decrypt and does *not* look
-  // like plaintext is ciphertext this key cannot open, and `readStoredBody`
-  // reports that as an error rather than as content, so this never runs for it.
-  // Guard on contentError for the same reason: a failed download is
-  // indistinguishable from "the server holds nothing", and writing there would
-  // put an empty document over a body we simply failed to fetch.
-  useEffect(() => {
-    if (!dekRef.current || !editor || !doc || contentLoading) return;
-    if (!serverPlaintextRef.current || contentError) return;
-    if (initialSaveDoneRef.current) return;
-    if (!isLocalWriterRef.current) return;
-    // The user got there first: their edit is already queued for the encrypted
-    // autosave, and re-writing what we loaded would undo it.
-    if (pendingContent.current !== null) return;
-    initialSaveDoneRef.current = true;
-    // Re-encrypt exactly what was read rather than re-serialising the editor:
-    // the body reaches the editor from a separate effect that waits on collab
-    // sync, so its JSON is not necessarily this document's content yet.
-    const content = docContent ?? JSON.stringify(editor.getJSON());
-    driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current)
-      // This write bumps `contentVersion` just like any other, and nothing
-      // re-reads the metadata query afterwards — so without feeding the result
-      // back the guard keeps asserting the version we loaded and the first real
-      // autosave is rejected as stale.
-      .then((saved) => versionGuard.observe(saved?.contentVersion))
-      .catch(() => {});
-  // dekRef is a stable ref; use dekResolved (state) as the reactive signal.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dekResolved, editor, doc, contentLoading, contentError, contentUpdatedAt, docContent, docId]);
 
   useEffect(() => {
     const flush = () => {
@@ -1552,19 +1294,8 @@ export function DocEditor() {
         clearTimeout(autoSaveTimer.current);
         autoSaveTimer.current = null;
       }
-      if (officeModeRef.current) {
-        pendingContent.current = null;
-        officeAutosaveRef.current();
-        return;
-      }
-      const content = pendingContent.current;
       pendingContent.current = null;
-      if (!dekRef.current) {
-        console.warn('[neutrino] Autosave skipped on flush: encryption key unavailable');
-        return;
-      }
-      driveAutosaveEncryptedContent(docId, content, 'doc.json', dekRef.current);
-      docsApi.saveDoc(docId, { title: titleRef.current });
+      officeAutosaveRef.current();
     };
     const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -1586,24 +1317,13 @@ export function DocEditor() {
 
   const handleTitleBlur = () => {
     if (!title.trim()) return;
-    if (officeMode) {
-      // No `docs` row to PATCH — a `.docx` is renamed through the generic Drive
-      // call (the same one FileContextMenu's rename action uses). The extension
-      // goes back on: the title is what the user typed, and the file still has
-      // to land on disk as a Word document.
-      const name = withOoxmlExtension(title, 'docs');
-      if (name === officeFileMeta?.name) return;
-      filesystemApi.updateFile(docId, { name }).catch(() => toast.error('Failed to rename file'));
-      return;
-    }
-    if (title === doc?.title) return;
-    // Save title together with current content in one combined call.
-    if (editor) {
-      const content = serializeContent(editor.getJSON(), layoutMetaRef.current);
-      triggerSave(content, { title });
-    } else {
-      metaMutation.mutate({ title });
-    }
+    // There is no `docs` row to PATCH — a `.docx` is renamed through the
+    // generic Drive call (the same one FileContextMenu's rename action uses).
+    // The extension goes back on: the title is what the user typed, and the
+    // file still has to land on disk as a Word document.
+    const name = withOoxmlExtension(title, 'docs');
+    if (name === officeFileMeta?.name) return;
+    filesystemApi.updateFile(docId, { name }).catch(() => toast.error('Failed to rename file'));
   };
 
   const handleBack = useCallback(async () => {
@@ -1614,32 +1334,17 @@ export function DocEditor() {
     if (pendingContent.current !== null && isLocalWriterRef.current) {
       const content = pendingContent.current;
       pendingContent.current = null;
-      if (officeModeRef.current) {
-        await officeAutosaveMutation.mutateAsync();
-      } else {
-        await Promise.all([
-          contentMutation.mutateAsync({ content }),
-          metaMutation.mutateAsync({ title: titleRef.current }),
-        ]);
-      }
+      await officeAutosaveMutation.mutateAsync();
     }
     queryClient.invalidateQueries({ queryKey: ['docs'] });
     router.push('/drive');
-  }, [contentMutation, metaMutation, officeAutosaveMutation, queryClient, router]);
+  }, [officeAutosaveMutation, queryClient, router]);
 
   const handleManualSave = useCallback(() => {
     if (!editor || !isLocalWriterRef.current) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    if (officeMode) {
-      officeVersionMutation.mutate(undefined);
-      return;
-    }
-    const content = serializeContent(editor.getJSON(), {
-      headerFooter, ...legacyFieldsFor(headerFooter), watermarkText, bgColor, docTheme,
-      properties: docProperties, pageSetup,
-    });
-    versionMutation.mutate(content);
-  }, [editor, versionMutation, officeMode, officeVersionMutation, headerFooter, watermarkText, bgColor, docTheme, docProperties, pageSetup]);
+    officeVersionMutation.mutate(undefined);
+  }, [editor, officeVersionMutation]);
 
   // Sync grammar-enabled state into the GrammarCheckExtension plugin
   useEffect(() => {
@@ -1708,7 +1413,7 @@ export function DocEditor() {
   }, [router]);
 
   const handleDuplicate = useCallback(async () => {
-    if (!editor || !doc) return;
+    if (!editor) return;
     // The copy is a new Drive row with no key of its own, so it needs one
     // minted before anything is written to it. This used to write the copy
     // unconditionally in the clear — every "Make a copy" produced a document
@@ -1718,12 +1423,17 @@ export function DocEditor() {
       toast.warning(ENCRYPTION_WARNING_MESSAGE);
       return;
     }
-    const newDoc = await docsApi.createDoc({ title: `${title} (copy)` });
-    const content = JSON.stringify(editor.getJSON());
+    const copyTitle = `${title} (copy)`;
+    const newDoc = await docsApi.createDoc({ title: copyTitle });
     const dek = await mintFileKey(currentUser?.id, newDoc.id);
-    await driveCreateEncryptedVersion(newDoc.id, content, 'doc.json', dek);
+    // The copy is a `.docx` like its original, so it is written as a package —
+    // the same bytes an autosave would write, under the new file's own name.
+    const bytes = await buildDocxPackage();
+    await driveCreateEncryptedVersionBytes(
+      newDoc.id, bytes, withOoxmlExtension(copyTitle, 'docs'), dek,
+    );
     router.push(`/docs/editor?id=${newDoc.id}`);
-  }, [editor, doc, title, router, currentUser?.id, toast]);
+  }, [editor, title, router, currentUser?.id, toast, buildDocxPackage]);
 
   /**
    * Page setup is part of the document body now, so changing it is a content
@@ -2585,7 +2295,7 @@ export function DocEditor() {
           <button
             className={styles.exportBtn}
             onClick={handleManualSave}
-            disabled={versionMutation.isPending || !isLocalWriter}
+            disabled={officeVersionMutation.isPending || !isLocalWriter}
             title={isLocalWriter ? 'Save version (Ctrl+S)' : 'Another collaborator is the active writer'}
             style={{ background: '#1a73e8', color: 'white', border: 'none' }}
           >
@@ -3023,9 +2733,9 @@ export function DocEditor() {
         </div>
       )}
 
-      {showShareDialog && doc && (
+      {showShareDialog && officeFileMeta && (
         <ShareDialog
-          resource={{ ...doc, name: doc.title } as unknown as FileItem}
+          resource={officeFileMeta as unknown as FileItem}
           resourceType="file"
           onClose={() => setShowShareDialog(false)}
         />

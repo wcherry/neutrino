@@ -1,6 +1,6 @@
 /**
- * A note is a Drive file with the `application/x-neutrino-note` MIME type and
- * nothing else notes-specific server-side (see `agent_docs/notes-links-roadmap.md`
+ * A note is a Drive file with the `text/markdown` MIME type and nothing else
+ * notes-specific server-side (see `agent_docs/notes-links-roadmap.md`
  * Phase 3) — these are the helpers `@neutrino/api-notes` used to centralize:
  * creating one, listing every note the caller owns across all folders (the
  * generic `filesystemApi.getFolderContents` is folder-scoped, so a global
@@ -10,6 +10,7 @@
 
 import { storageApi, type FileInfo } from '@neutrino/api-drive';
 import { NOTE_MIME } from '@/app/(apps)/drive/routeForFile';
+import { markdownToBlocks } from '@/app/(apps)/notes/editor/noteMarkdown';
 
 const LIST_PAGE_SIZE = 200;
 const LIST_MAX_PAGES = 5;
@@ -53,17 +54,15 @@ export async function listAllNotes(): Promise<NoteMeta[]> {
   return notes;
 }
 
-type NoteTableCell = { content?: string };
-type NoteTableRow = { cells?: NoteTableCell[] };
-type NoteBlock = { content?: string; tableData?: { rows?: NoteTableRow[] } };
-
 /**
  * Flatten a stored note body into searchable plain text — every block's prose
  * plus any table cells.
  *
- * Note bodies are `JSON.stringify(Block[])`, so indexing the raw string would
- * feed block ids and JSON keys to the tokenizer. Legacy notes were saved as
- * plain text and are returned as-is.
+ * A note body is Markdown, so this parses it the way the editor does rather
+ * than indexing the raw string: a table's metadata comment and its `|` row
+ * pipes are structure, and feeding them to the tokenizer indexes punctuation
+ * as words. Inline markers (`**bold**`, `[[wiki link]]`) are left in place —
+ * they are part of the prose, and the tokenizer splits them off either way.
  *
  * Takes the already-decrypted body rather than fetching it: note content is
  * E2EE, so only the caller holds the DEK needed to read it (see
@@ -72,20 +71,11 @@ type NoteBlock = { content?: string; tableData?: { rows?: NoteTableRow[] } };
 export function extractNoteText(raw: string): string {
   if (!raw.trim()) return '';
 
-  let blocks: NoteBlock[];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return raw.replace(/\s+/g, ' ').trim();
-    blocks = parsed as NoteBlock[];
-  } catch {
-    return raw.replace(/\s+/g, ' ').trim();
-  }
-
   const parts: string[] = [];
-  for (const block of blocks) {
+  for (const block of markdownToBlocks(raw)) {
     if (block.content) parts.push(block.content);
     for (const row of block.tableData?.rows ?? []) {
-      for (const cell of row.cells ?? []) {
+      for (const cell of row.cells) {
         if (cell.content) parts.push(cell.content);
       }
     }

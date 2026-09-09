@@ -16,7 +16,7 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
 
 /** Mirrors `NOTE_MIME` in `apps/web/src/app/(apps)/drive/routeForFile.ts`. */
-export const NOTE_MIME = 'application/x-neutrino-note';
+export const NOTE_MIME = 'text/markdown';
 
 const BASE_URL = 'http://localhost:9880';
 

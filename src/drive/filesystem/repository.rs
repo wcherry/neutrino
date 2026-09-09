@@ -1222,14 +1222,8 @@ mod tests {
         insert_file(repo, "pdf", user, "report.pdf", "application/pdf");
         insert_file(repo, "txt", user, "notes.txt", "text/plain");
         insert_file(repo, "bin", user, "blob.bin", "application/octet-stream");
-        insert_file(repo, "doc", user, "my-doc", "application/x-neutrino-doc");
-        insert_file(
-            repo,
-            "sheet",
-            user,
-            "my-sheet",
-            "application/x-neutrino-sheet",
-        );
+        insert_file(repo, "doc", user, "my-doc.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        insert_file(repo, "sheet", user, "my-sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 
     /// `list_recent_files` is the only caller left of the SQL mime filter
@@ -1274,8 +1268,12 @@ mod tests {
             .list_recent_files("user-1", 100, Some(&DriveFileType::Document.mime_filter()))
             .unwrap();
 
-        // pdf + text/plain, but not the generic octet-stream blob.
-        assert_eq!(sorted_names(&docs), vec!["notes.txt", "report.pdf"]);
+        // pdf + text/plain + the OOXML office files (`application/vnd.%`), but
+        // not the generic octet-stream blob.
+        assert_eq!(
+            sorted_names(&docs),
+            vec!["my-doc.docx", "my-sheet.xlsx", "notes.txt", "report.pdf"]
+        );
     }
 
     #[test]
@@ -1298,12 +1296,12 @@ mod tests {
         let docs = repo
             .list_recent_files("user-1", 100, Some(&DriveFileType::Doc.mime_filter()))
             .unwrap();
-        assert_eq!(names(&docs), vec!["my-doc"]);
+        assert_eq!(names(&docs), vec!["my-doc.docx"]);
 
         let sheets = repo
             .list_recent_files("user-1", 100, Some(&DriveFileType::Sheet.mime_filter()))
             .unwrap();
-        assert_eq!(names(&sheets), vec!["my-sheet"]);
+        assert_eq!(names(&sheets), vec!["my-sheet.xlsx"]);
     }
 
     // ── Categories, in SQL ────────────────────────────────────────────────────
@@ -1317,8 +1315,8 @@ mod tests {
             ("clip.mp4", "video/mp4"),
             ("song.mp3", "audio/mpeg"),
             ("report.pdf", "application/pdf"),
-            ("my-doc", "application/x-neutrino-doc"),
-            ("my-note", "application/x-neutrino-note"),
+            ("my-doc.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            ("my-note", "text/markdown"),
             ("my-diagram", "application/x-neutrino-diagram"),
             ("my-drawing", "application/x-neutrino-drawing"),
             (
@@ -1397,7 +1395,7 @@ mod tests {
         );
         assert_eq!(
             listed(DriveFileType::Office),
-            vec!["budget.ods", "contract.docx", "my-doc", "my-note", "notes.txt"]
+            vec!["budget.ods", "contract.docx", "my-doc.docx", "my-note", "notes.txt"]
         );
         assert_eq!(listed(DriveFileType::Canvas), vec!["my-diagram", "my-drawing"]);
         assert_eq!(listed(DriveFileType::Pdf), vec!["report.pdf"]);
@@ -1493,7 +1491,7 @@ mod tests {
         let files = repo
             .list_recent_files("user-1", 100, Some(&DriveFileType::Doc.mime_filter()))
             .unwrap();
-        assert_eq!(names(&files), vec!["my-doc"]);
+        assert_eq!(names(&files), vec!["my-doc.docx"]);
     }
 
     /// The filter has to run in SQL, before `LIMIT`. If it ran afterwards, a
@@ -1509,7 +1507,7 @@ mod tests {
         let files = repo
             .list_recent_files("user-1", 1, Some(&DriveFileType::Doc.mime_filter()))
             .unwrap();
-        assert_eq!(names(&files), vec!["my-doc"]);
+        assert_eq!(names(&files), vec!["my-doc.docx"]);
     }
 
     #[test]

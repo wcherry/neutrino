@@ -8,16 +8,6 @@ import { ApiClientError, getShareDownloadUrl, getSharePreviewUrl, sharingApi } f
 import { officeAppForFile, type OfficeApp } from '@/lib/officeFormats';
 import styles from './page.module.css';
 
-const DOC_MIME = 'application/x-neutrino-doc';
-const SHEET_MIME = 'application/x-neutrino-sheet';
-const SLIDE_MIME = 'application/x-neutrino-slide';
-
-const NATIVE_APP: Record<string, OfficeApp> = {
-  [DOC_MIME]: 'docs',
-  [SHEET_MIME]: 'sheets',
-  [SLIDE_MIME]: 'slides',
-};
-
 const EDITOR_PATH: Record<OfficeApp, string> = {
   docs: '/docs/editor?id=',
   sheets: '/sheets/editor?id=',
@@ -43,7 +33,7 @@ function editorAppFor(
 ): OfficeApp | null {
   if (resource.resourceType !== 'file') return null;
   const mime = resource.mimeType ?? '';
-  return NATIVE_APP[mime] ?? officeAppForFile(mime, resource.resourceName);
+  return officeAppForFile(mime, resource.resourceName);
 }
 
 function formatExpiresAt(expiresAt: string | null): string | null {

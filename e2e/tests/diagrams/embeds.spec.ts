@@ -52,7 +52,7 @@ async function createDocViaApi(
 ): Promise<string> {
   const res = await request.post(`${BASE_URL}/api/v1/drive/files`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: { id: randomUUID(), name: title, mimeType: 'application/x-neutrino-doc', folderId: null },
+    data: { id: randomUUID(), name: title, mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', folderId: null },
   });
   expect(res.ok(), `create doc failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   const data = await res.json() as { id: string };

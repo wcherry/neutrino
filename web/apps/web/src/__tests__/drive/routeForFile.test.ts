@@ -4,7 +4,7 @@
  * routeForFile encapsulates the mimetype -> route dispatch previously
  * duplicated 3x in drive/page.tsx (handleGridItemClick, the starred
  * quick-access onClick, and FileContextMenu.onPreview). It must:
- *  - Route the bespoke-JSON Neutrino mimetypes (doc/sheet/slide/diagram/
+ *  - Route the Neutrino mimetypes (doc/sheet/slide/diagram/
  *    drawing/note) into their editors.
  *  - Route `.docx`/`.xlsx`/`.pptx` into Docs/Sheets/Slides. Since issue #127
  *    that is the format those editors *write*, so a file uploaded from Word
@@ -23,12 +23,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { routeForFile, previewKindForMime } from '../../app/(apps)/drive/routeForFile';
 
-const DOC_MIME = 'application/x-neutrino-doc';
-const SHEET_MIME = 'application/x-neutrino-sheet';
-const SLIDES_MIME = 'application/x-neutrino-slide';
+const DOC_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const SHEET_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const SLIDES_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 const DIAGRAM_MIME = 'application/x-neutrino-diagram';
 const DRAWING_MIME = 'application/x-neutrino-drawing';
-const NOTE_MIME = 'application/x-neutrino-note';
+const NOTE_MIME = 'text/markdown';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -42,7 +42,7 @@ function makeOpts() {
   return { onPreviewFallback: vi.fn() };
 }
 
-describe('routeForFile — bespoke-JSON mimetypes', () => {
+describe('routeForFile — the Neutrino mimetypes', () => {
   it.each([
     ['doc', DOC_MIME, '/docs/editor?id='],
     ['sheet', SHEET_MIME, '/sheets/editor?id='],

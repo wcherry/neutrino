@@ -2,7 +2,6 @@ import {
   request,
   ApiClientError,
   ooxmlMimeFor,
-  isOoxmlMime,
   withOoxmlExtension,
   stripOoxmlExtension,
 } from '@neutrino/api-core';
@@ -14,16 +13,16 @@ import {
 export const DOCX_MIME_TYPE = ooxmlMimeFor('docs');
 
 /**
- * The bespoke JSON documents were written in before OOXML. Still read and
- * still written — a document created in it stays in it, there is no
- * migration — which is why the library asks for both types.
+ * The mime types a file may be a native Neutrino document in.
+ *
+ * One entry: documents are OOXML and nothing else. A bespoke JSON body under
+ * `application/x-neutrino-*` came before it; no file was ever stored in that
+ * format and it is gone, along with the reader that served it. Still a list
+ * because the library filter takes one.
  *
  * Mirrors `src/drive/storage/native_types.rs` on the backend.
  */
-export const DOC_MIME_TYPE = 'application/x-neutrino-doc';
-
-/** Both formats a file may be a native Neutrino document in. */
-export const DOC_MIME_TYPES = [DOCX_MIME_TYPE, DOC_MIME_TYPE] as const;
+export const DOC_MIME_TYPES = [DOCX_MIME_TYPE] as const;
 
 /**
  * What a document with no stored page setup lays out to.
@@ -227,22 +226,6 @@ export const docsApi = {
     return toDoc(file);
   },
 
-  /**
-   * Fetch a file as a document in the *bespoke JSON* format.
-   *
-   * Throws 404 for anything else, `.docx` included. That is load-bearing and
-   * not an oversight: the two formats are read and written by different code
-   * paths in the editor, and this 404 is how it learns to take the OOXML one —
-   * download the package, prefer the model inside it, fall back to parsing the
-   * Word document. See `DocEditor`'s `officeMode`.
-   */
-  async getDoc(docId: string): Promise<DocResponse> {
-    const file = await request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`);
-    if (file.mimeType !== DOC_MIME_TYPE) {
-      throw new ApiClientError(404, 'NOT_FOUND', 'Document not found');
-    }
-    return toDoc(file);
-  },
 
   /**
    * Rename. A document's name is its Drive file's name, so this is a PATCH on
@@ -259,9 +242,7 @@ export const docsApi = {
     const current = await request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`);
     if (body.title === undefined) return toDocMeta(current);
 
-    const name = isOoxmlMime(current.mimeType ?? '')
-      ? withOoxmlExtension(body.title, 'docs')
-      : body.title;
+    const name = withOoxmlExtension(body.title, 'docs');
     if (name === current.name) return toDocMeta(current);
 
     const file = await request<DriveFileDto>(`/api/v1/drive/files/${docId}`, {

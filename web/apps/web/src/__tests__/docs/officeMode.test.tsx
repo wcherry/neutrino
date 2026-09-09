@@ -72,7 +72,6 @@ vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
 // getDoc / getFileInfo behavior per-scenario.
 // ---------------------------------------------------------------------------
 
-const mockGetDoc = vi.fn();
 const mockGetFileInfo = vi.fn();
 const mockDownloadFile = vi.fn();
 /**
@@ -101,7 +100,6 @@ vi.mock('@/lib/api', () => ({
     }
   },
   docsApi: {
-    getDoc: (...args: unknown[]) => mockGetDoc(...args),
     autosaveEncryptedContent: vi.fn(() => Promise.resolve()),
     saveDoc: vi.fn(() => Promise.resolve()),
   },
@@ -301,7 +299,6 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
   });
 
   it('falls back to storageApi.getFileInfo when docsApi.getDoc 404s', async () => {
-    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
@@ -315,7 +312,6 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
   });
 
   it('enters office mode and parses the Word document for a raw .docx file', async () => {
-    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
@@ -339,7 +335,6 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
    * as one is there.
    */
   it('prefers a legacy packed model over parsing the Word document', async () => {
-    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'report.docx',
@@ -360,7 +355,6 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
   });
 
   it('shows a genuine not-found state when the storage fallback ALSO 404s', async () => {
-    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileInfo.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'File not found'));
 
     renderDocEditor();
@@ -380,7 +374,6 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
    * document could not be opened at all. `driveReadBytes` reads it as no bytes.
    */
   it('opens a document whose body has never been written', async () => {
-    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'Untitled document.docx',
@@ -399,7 +392,6 @@ describe('DocEditor — office-mode detection/fallback (issue #43)', () => {
   });
 
   it('does NOT enter office mode for a fallback file that is not an office format', async () => {
-    mockGetDoc.mockRejectedValue(new ApiClientError(404, 'NOT_FOUND', 'Document not found'));
     mockGetFileInfo.mockResolvedValue({
       id: 'test-doc-id',
       name: 'photo.png',

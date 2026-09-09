@@ -1,7 +1,22 @@
 import React from 'react';
 import type { Block, MarkdownShortcut } from './blockEditorTypes';
 import { DIVIDER_PATTERN, INLINE_PATTERN, MARKDOWN_SHORTCUTS } from './blockEditorConstants';
+import { DEFAULT_COLUMN_WIDTH, genId } from './noteMarkdown';
 import styles from './BlockEditor.module.css';
+
+// A note is stored as Markdown, and `noteMarkdown.ts` is that format end to
+// end. The conversions are re-exported here because this is where the editor
+// has always imported them from.
+export {
+  genId,
+  parseBlocks,
+  serializeBlocks,
+  markdownToBlocks,
+  blocksToMarkdown,
+  blockToMarkdown,
+  blockToMarkdownLines,
+  numberedIndexInGroup,
+} from './noteMarkdown';
 
 /** The subset of a note's identity the editor needs for wiki-link autocomplete/rendering. */
 export interface NoteLinkTarget {
@@ -9,17 +24,13 @@ export interface NoteLinkTarget {
   title: string;
 }
 
-export function genId(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
 export function createDefaultTable() {
   const c1 = genId(); const c2 = genId(); const c3 = genId();
   return {
     columns: [
-      { id: c1, width: 160 },
-      { id: c2, width: 160 },
-      { id: c3, width: 160 },
+      { id: c1, width: DEFAULT_COLUMN_WIDTH },
+      { id: c2, width: DEFAULT_COLUMN_WIDTH },
+      { id: c3, width: DEFAULT_COLUMN_WIDTH },
     ],
     rows: [
       { id: genId(), cells: [{ id: genId(), content: '' }, { id: genId(), content: '' }, { id: genId(), content: '' }] },
@@ -27,24 +38,6 @@ export function createDefaultTable() {
       { id: genId(), cells: [{ id: genId(), content: '' }, { id: genId(), content: '' }, { id: genId(), content: '' }] },
     ],
   };
-}
-
-export function parseBlocks(content: string): Block[] {
-  if (!content.trim()) {
-    return [{ id: genId(), type: 'paragraph', content: '' }];
-  }
-  try {
-    const parsed = JSON.parse(content);
-    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0]?.type === 'string') {
-      return parsed as Block[];
-    }
-  } catch {}
-  // Legacy plain text / markdown: wrap as single paragraph
-  return [{ id: genId(), type: 'paragraph', content }];
-}
-
-export function serializeBlocks(blocks: Block[]): string {
-  return JSON.stringify(blocks);
 }
 
 /**
@@ -303,65 +296,7 @@ export function renderInline(
   return nodes;
 }
 
-export function numberedIndexInGroup(blocks: Block[], blockIndex: number): number {
-  let count = 1;
-  for (let i = blockIndex - 1; i >= 0; i--) {
-    if (blocks[i].type === 'numbered') count++;
-    else break;
-  }
-  return count;
-}
-
 // ── Export ──────────────────────────────────────────────────────────────────
-
-/**
- * Render a single block as Markdown lines — block content is already stored
- * using the same `**bold**` / `[[wiki link]]` markdown-ish syntax shown in
- * the editor, so blocks only need their type-specific prefix. `blocks` and
- * `index` are the block's position in the *full* note, not just whatever
- * subset is being rendered (e.g. a copied selection) — a numbered item's
- * number depends on the unbroken run of numbered blocks before it there.
- */
-export function blockToMarkdownLines(block: Block, blocks: Block[], index: number): string[] {
-  switch (block.type) {
-    case 'bullet':
-      return [`- ${block.content}`];
-    case 'numbered':
-      return [`${numberedIndexInGroup(blocks, index)}. ${block.content}`];
-    case 'task':
-      return [`- [${block.checked ? 'x' : ' '}] ${block.content}`];
-    case 'blockquote':
-      return [`> ${block.content}`];
-    case 'code':
-      return ['```', block.content, '```'];
-    case 'table': {
-      const rows = block.tableData?.rows ?? [];
-      const lines: string[] = [];
-      rows.forEach((row, i) => {
-        lines.push(`| ${row.cells.map((c) => c.content).join(' | ')} |`);
-        if (i === 0) lines.push(`| ${row.cells.map(() => '---').join(' | ')} |`);
-      });
-      return lines;
-    }
-    default:
-      return [block.content];
-  }
-}
-
-/** A single block's Markdown, e.g. for copying just that block to the clipboard. */
-export function blockToMarkdown(block: Block, blocks: Block[], index: number): string {
-  return blockToMarkdownLines(block, blocks, index).join('\n');
-}
-
-/** Render a note's blocks as Markdown. */
-export function blocksToMarkdown(blocks: Block[]): string {
-  const lines: string[] = [];
-  blocks.forEach((block, index) => {
-    lines.push(...blockToMarkdownLines(block, blocks, index));
-    lines.push('');
-  });
-  return lines.join('\n').trim() + '\n';
-}
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

@@ -17,13 +17,11 @@
 
 import {
   hrefForFile,
-  DOC_MIME,
-  SHEET_MIME,
-  SLIDES_MIME,
   DIAGRAM_MIME,
   DRAWING_MIME,
   NOTE_MIME,
 } from '../drive/routeForFile';
+import { OOXML_MIME } from '@/lib/officeFormats';
 import { DRIVE_PREVIEW_PARAM } from '../drive/searchParams';
 
 /** Every `/open/<kind>/…` path the apps mint. `file` means "whatever this is, open it in Drive". */
@@ -34,9 +32,9 @@ export type AppLinkKind = (typeof APP_LINK_KINDS)[number];
 /** The MIME each kind stands for. `file` is absent: it is a property of the link, not a format. */
 export const MIME_FOR_KIND: Record<Exclude<AppLinkKind, 'file'>, string> = {
   note: NOTE_MIME,
-  doc: DOC_MIME,
-  sheet: SHEET_MIME,
-  slide: SLIDES_MIME,
+  doc: OOXML_MIME.docx,
+  sheet: OOXML_MIME.xlsx,
+  slide: OOXML_MIME.pptx,
   diagram: DIAGRAM_MIME,
   drawing: DRAWING_MIME,
 };

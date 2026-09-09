@@ -15,12 +15,14 @@ import {
   Sheet,
 } from 'lucide-react';
 
-const DOC_MIME = 'application/x-neutrino-doc';
-const SHEET_MIME = 'application/x-neutrino-sheet';
-const SLIDES_MIME = 'application/x-neutrino-slide';
+// The office apps store OOXML — a document *is* a `.docx`.
+const DOC_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const SHEET_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const SLIDES_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 const DIAGRAM_MIME = 'application/x-neutrino-diagram';
 const DRAWING_MIME = 'application/x-neutrino-drawing';
-const NOTE_MIME = 'application/x-neutrino-note';
+// A note is a Markdown file — see `NOTE_MIME` in `drive/routeForFile.ts`.
+const NOTE_MIME = 'text/markdown';
 
 export function getFileIcon(mimeType: string) {
   // Neutrino app types
