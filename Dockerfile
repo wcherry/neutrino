@@ -68,11 +68,16 @@ WORKDIR /app
 COPY Cargo.toml ./
 COPY Cargo.lock* ./
 
+# Every workspace member needs a manifest and a stub entry point here, even the
+# ones this image never builds: cargo reads the whole workspace before it will
+# fetch or build any part of it, so a missing member fails `cargo fetch` outright.
 RUN mkdir src && echo "fn main(){}" > src/main.rs && \
     mkdir -p xtask/src && echo "fn main(){}" > xtask/src/main.rs && \
-    mkdir -p worker/src && echo "fn main(){}" > worker/src/main.rs
+    mkdir -p worker/src && echo "fn main(){}" > worker/src/main.rs && \
+    mkdir -p decrypt/src && echo "fn main(){}" > decrypt/src/main.rs
 COPY xtask/Cargo.toml xtask/Cargo.toml
 COPY worker/Cargo.toml worker/Cargo.toml
+COPY decrypt/Cargo.toml decrypt/Cargo.toml
 
 RUN mkdir -p -m 0700 ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts
 ARG GITHUB_TOKEN
