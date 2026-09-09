@@ -565,9 +565,7 @@ export function DrawingEditor() {
         id: f.id,
         name: f.name,
         url: storageApi.getFileDownloadUrl(f.id),
-        thumbnailUrl: f.coverThumbnail
-          ? `data:${f.coverThumbnailMimeType ?? 'image/jpeg'};base64,${f.coverThumbnail}`
-          : undefined,
+        thumbnailUrl: storageApi.getThumbnailUrl(f.coverThumbnailUrl) ?? undefined,
       }));
   }, []);
 

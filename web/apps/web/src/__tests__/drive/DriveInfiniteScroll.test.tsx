@@ -67,6 +67,7 @@ vi.mock('@/lib/api', () => ({
   storageApi: {
     getFileMetadata: vi.fn(),
     getFileDownloadUrl: vi.fn(() => 'https://example.com/file'),
+    getThumbnailUrl: vi.fn(() => null),
   },
   filesystemApi: {
     getFolderContents: vi.fn((_folderId: string, query: { offset?: number; limit?: number } = {}) => {

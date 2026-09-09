@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { Button, Heading, Spinner } from '@neutrino/ui';
 import { Sliders, Image as ImageIcon, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
-import { photosApi, type PhotoEditParams } from '@/lib/api';
+import { photosApi, storageApi, type PhotoEditParams } from '@/lib/api';
 import styles from './page.module.css';
 
 const FILTERS = ['none', 'vintage', 'bw', 'sepia', 'vivid', 'cool', 'warm'];
@@ -107,11 +107,7 @@ export default function PhotoEditPage() {
   }, []);
 
   const photo = photoQuery.data;
-  const thumbSrc = photo?.thumbnail && photo?.thumbnailMimeType
-    ? `data:${photo.thumbnailMimeType};base64,${photo.thumbnail}`
-    : photo
-    ? `/api/v1/photos/${photoId}/thumbnail`
-    : null;
+  const thumbSrc = storageApi.getThumbnailUrl(photo?.thumbnailUrl);
 
   if (!photoId) {
     return (

@@ -4,7 +4,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Spinner } from '@neutrino/ui';
 import { Image as ImageIcon } from 'lucide-react';
-import { personsApi, type PersonResponse, type PhotoResponse } from '@/lib/api';
+import { personsApi, storageApi, type PersonResponse, type PhotoResponse } from '@/lib/api';
 import styles from './PersonTimelinePanel.module.css';
 
 function isImageMime(mime: string) {
@@ -12,10 +12,7 @@ function isImageMime(mime: string) {
 }
 
 function TimelinePhoto({ photo }: { photo: PhotoResponse }) {
-  const src =
-    photo.thumbnail && photo.thumbnailMimeType
-      ? `data:${photo.thumbnailMimeType};base64,${photo.thumbnail}`
-      : null;
+  const src = storageApi.getThumbnailUrl(photo.thumbnailUrl);
 
   return (
     <div className={styles.timelinePhoto} title={photo.fileName}>

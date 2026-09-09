@@ -85,7 +85,7 @@ function tokenFor(userId: string): string {
 function driveFile(over: Record<string, unknown> = {}) {
   return {
     id: 'f1', name: 'photo.png', mimeType: 'image/png', sizeBytes: 1,
-    folderId: null, isStarred: false, coverThumbnail: null, coverThumbnailMimeType: null,
+    folderId: null, isStarred: false, coverThumbnailUrl: null,
     encryptedMetadata: null, contentVersion: 1,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     ...over,

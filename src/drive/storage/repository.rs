@@ -1,3 +1,5 @@
+use crate::drive::filesystem::dto::MimeFilter;
+use crate::drive::filesystem::repository::mime_matches;
 use crate::drive::storage::dto::FileOrderField;
 use crate::drive::storage::model::{
     AutosaveFileContent, FileRecord, FileVersionRecord, ImportProvenance, NewFileRecord,
@@ -11,7 +13,12 @@ use diesel::r2d2::{ConnectionManager, Pool};
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
-/// The `mimeType` types a listing query asks for, or `None` for "any".
+/// The exact `mimeType` values a listing query asks for, or `None` for "any".
+///
+/// The sibling of `?type=`, not a replacement for it: this matches whole MIME
+/// strings a caller names outright (the office libraries ask for their two
+/// formats by name), where `?type=` names a *category* and is answered by
+/// `MimeFilter`'s `LIKE` patterns. Both may be given, and then both apply.
 ///
 /// `mimeType` takes a comma-separated list, not just one value. Docs, Sheets
 /// and Slides each span two formats now — the OOXML one every new document is
@@ -112,6 +119,7 @@ impl StorageRepository {
         &self,
         user_id: &str,
         query: &ListQuery<FileOrderField>,
+        mime_filter: Option<&MimeFilter>,
     ) -> Result<i64, ApiError> {
         let mut conn = self.get_conn()?;
 
@@ -124,6 +132,9 @@ impl StorageRepository {
         if let Some(wanted) = mime_type_filter(query) {
             base = base.filter(files::mime_type.eq_any(wanted));
         }
+        if let Some(mime_filter) = mime_filter {
+            base = base.filter(mime_matches(mime_filter));
+        }
 
         base.count().get_result(&mut conn).map_err(|e| {
             tracing::error!("DB count files error: {:?}", e);
@@ -135,6 +146,7 @@ impl StorageRepository {
         &self,
         user_id: &str,
         query: &ListQuery<FileOrderField>,
+        mime_filter: Option<&MimeFilter>,
     ) -> Result<Vec<FileRecord>, ApiError> {
         let mut conn = self.get_conn()?;
 
@@ -152,6 +164,9 @@ impl StorageRepository {
 
         if let Some(wanted) = mime_type_filter(query) {
             base = base.filter(files::mime_type.eq_any(wanted));
+        }
+        if let Some(mime_filter) = mime_filter {
+            base = base.filter(mime_matches(mime_filter));
         }
 
         let result = match (order_by, direction) {
@@ -732,18 +747,25 @@ impl StorageRepository {
         }
     }
 
-    pub fn set_cover_thumbnail(
+    /// Record that a file has a cover thumbnail, and what it is.
+    ///
+    /// The bytes are not here — they are in the store at `<user>/<file>/.thumb`
+    /// (issue #175). `updated_at` moves with the write because it is what the
+    /// thumbnail URL's cache-busting `v` is taken from, so a replaced image is
+    /// asked for under a new URL rather than served from a year-long cache; it
+    /// is passed in rather than read off the clock here so the caller can build
+    /// that URL from the same value it stored.
+    pub fn set_cover_thumbnail_mime(
         &self,
         file_id: &str,
-        thumbnail: String,
-        mime_type: String,
+        mime_type: &str,
+        updated_at: chrono::NaiveDateTime,
     ) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         diesel::update(files::table.filter(files::id.eq(file_id)))
             .set((
-                files::cover_thumbnail.eq(Some(thumbnail)),
                 files::cover_thumbnail_mime_type.eq(Some(mime_type)),
-                files::updated_at.eq(Utc::now().naive_utc()),
+                files::updated_at.eq(updated_at),
             ))
             .execute(&mut conn)
             .map_err(|e| {
@@ -768,6 +790,7 @@ impl StorageRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::filesystem::dto::DriveFileType;
 
     const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     const XLSX_MIME: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -827,7 +850,7 @@ mod tests {
         insert_test_file(&repo, "xlsx-1", "user-1", XLSX_MIME);
 
         let listed = repo
-            .list_files_by_user("user-1", &mime_filter_query(DOCX_MIME))
+            .list_files_by_user("user-1", &mime_filter_query(DOCX_MIME), None)
             .expect("list files");
 
         assert_eq!(listed.len(), 1);
@@ -845,6 +868,7 @@ mod tests {
             .list_files_by_user(
                 "user-1",
                 &mime_filter_query(&format!("{DOCX_MIME},{XLSX_MIME}")),
+                None,
             )
             .expect("list files");
 
@@ -861,10 +885,153 @@ mod tests {
         insert_test_file(&repo, "docx-1", "user-1", DOCX_MIME);
 
         let listed = repo
-            .list_files_by_user("user-1", &mime_filter_query(" , "))
+            .list_files_by_user("user-1", &mime_filter_query(" , "), None)
             .expect("list files");
 
         assert_eq!(listed.len(), 1);
+    }
+
+    // ── The `?type=` category filter (issue #175 follow-up) ───────────────────
+    //
+    // The flat listing has no folder predicate at all, which is the whole point
+    // of it: an app-wide library — Photos is the one that needed this — wants
+    // every picture in the drive, and asking the *root folder* for them showed
+    // nothing whatsoever for a library imported from Google Takeout, which
+    // files every photo under a `Google Photos` folder.
+
+    fn type_query() -> ListQuery<FileOrderField> {
+        ListQuery {
+            limit: 50,
+            offset: 0,
+            order_by: None,
+            direction: None,
+            filters: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Insert a file inside a folder, creating the folder row the foreign key
+    /// requires.
+    fn insert_file_in_folder(
+        pool: &DbPool,
+        repo: &StorageRepository,
+        id: &str,
+        user_id: &str,
+        mime_type: &str,
+        folder_id: &str,
+    ) {
+        use crate::schema::folders;
+        let mut conn = pool.get().expect("conn");
+        let now = Utc::now().naive_utc();
+        diesel::insert_into(folders::table)
+            .values((
+                folders::id.eq(folder_id),
+                folders::user_id.eq(user_id),
+                folders::name.eq("Google Photos"),
+                folders::created_at.eq(now),
+                folders::updated_at.eq(now),
+            ))
+            .on_conflict_do_nothing()
+            .execute(&mut conn)
+            .expect("insert folder");
+        drop(conn);
+
+        repo.insert_file(NewFileRecord {
+            id,
+            user_id,
+            name: "photo.jpg",
+            size_bytes: 0,
+            mime_type,
+            storage_path: "",
+            folder_id: Some(folder_id),
+            encrypted_metadata: None,
+        })
+        .expect("insert file");
+    }
+
+    /// The bug this filter exists to fix: photos nested in a folder are still
+    /// the caller's photos, and a library listing has to return them.
+    #[test]
+    fn the_type_filter_finds_files_wherever_they_sit_in_the_drive() {
+        let pool = test_pool();
+        let repo = StorageRepository::new(pool.clone());
+        insert_test_file(&repo, "root-photo", "user-1", "image/jpeg");
+        insert_file_in_folder(&pool, &repo, "filed-photo", "user-1", "image/png", "folder-1");
+        insert_file_in_folder(&pool, &repo, "filed-doc", "user-1", DOCX_MIME, "folder-1");
+
+        let filter = DriveFileType::Photo.mime_filter();
+        let listed = repo
+            .list_files_by_user("user-1", &type_query(), Some(&filter))
+            .expect("list files");
+
+        let mut ids: Vec<&str> = listed.iter().map(|f| f.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["filed-photo", "root-photo"]);
+    }
+
+    /// A category is a family of MIME types, not one of them: `photo` has to
+    /// answer for every `image/*` a browser might have uploaded, which is what
+    /// the exact-match `mimeType` filter beside it cannot do.
+    #[test]
+    fn the_type_filter_matches_a_whole_category_not_one_mime_type() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "jpeg", "user-1", "image/jpeg");
+        insert_test_file(&repo, "png", "user-1", "image/png");
+        insert_test_file(&repo, "gif", "user-1", "image/gif");
+        insert_test_file(&repo, "clip", "user-1", "video/mp4");
+
+        let photos = DriveFileType::Photo.mime_filter();
+        let mut ids: Vec<String> = repo
+            .list_files_by_user("user-1", &type_query(), Some(&photos))
+            .expect("list files")
+            .into_iter()
+            .map(|f| f.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["gif", "jpeg", "png"]);
+
+        let videos = DriveFileType::Video.mime_filter();
+        let clips = repo
+            .list_files_by_user("user-1", &type_query(), Some(&videos))
+            .expect("list files");
+        assert_eq!(clips.len(), 1);
+        assert_eq!(clips[0].id, "clip");
+    }
+
+    /// `total` drives the client's paging, so it has to count what the filter
+    /// matched rather than the whole drive — otherwise a library of three
+    /// photos in a drive of thousands pages forever through empty results.
+    #[test]
+    fn the_count_applies_the_type_filter_too() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "jpeg", "user-1", "image/jpeg");
+        insert_test_file(&repo, "png", "user-1", "image/png");
+        for i in 0..5 {
+            insert_test_file(&repo, &format!("doc-{i}"), "user-1", DOCX_MIME);
+        }
+
+        let filter = DriveFileType::Photo.mime_filter();
+        let total = repo
+            .count_files_by_user("user-1", &type_query(), Some(&filter))
+            .expect("count");
+
+        assert_eq!(total, 2);
+    }
+
+    /// The two filters are independent and both apply, so a caller can name
+    /// exact types *and* a category without one quietly winning.
+    #[test]
+    fn the_type_and_mime_type_filters_both_apply() {
+        let repo = StorageRepository::new(test_pool());
+        insert_test_file(&repo, "jpeg", "user-1", "image/jpeg");
+        insert_test_file(&repo, "png", "user-1", "image/png");
+
+        let filter = DriveFileType::Photo.mime_filter();
+        let listed = repo
+            .list_files_by_user("user-1", &mime_filter_query("image/png"), Some(&filter))
+            .expect("list files");
+
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, "png");
     }
 
     // ── The listing count ─────────────────────────────────────────────────────
@@ -892,10 +1059,10 @@ mod tests {
         insert_test_file(&repo, "other-user", "user-2", DOCX_MIME);
 
         let page = repo
-            .list_files_by_user("user-1", &page_query(2, 0))
+            .list_files_by_user("user-1", &page_query(2, 0), None)
             .expect("list files");
         let total = repo
-            .count_files_by_user("user-1", &page_query(2, 0))
+            .count_files_by_user("user-1", &page_query(2, 0), None)
             .expect("count files");
 
         assert_eq!(page.len(), 2);
@@ -910,7 +1077,7 @@ mod tests {
         insert_test_file(&repo, "xlsx-1", "user-1", XLSX_MIME);
 
         let total = repo
-            .count_files_by_user("user-1", &mime_filter_query(DOCX_MIME))
+            .count_files_by_user("user-1", &mime_filter_query(DOCX_MIME), None)
             .expect("count files");
 
         assert_eq!(total, 2);
@@ -927,7 +1094,7 @@ mod tests {
             .expect("trash");
 
         let total = repo
-            .count_files_by_user("user-1", &page_query(50, 0))
+            .count_files_by_user("user-1", &page_query(50, 0), None)
             .expect("count files");
 
         assert_eq!(total, 1);

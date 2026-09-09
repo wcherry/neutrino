@@ -438,8 +438,7 @@ impl PhotosService {
         let mime_type = file
             .and_then(|f| f.mime_type.as_deref())
             .unwrap_or("application/octet-stream");
-        let thumbnail = file.and_then(|f| f.cover_thumbnail.clone());
-        let thumbnail_mime_type = file.and_then(|f| f.cover_thumbnail_mime_type.clone());
+        let thumbnail_url = file.and_then(|f| f.cover_thumbnail_url.clone());
         let metadata = photo
             .metadata
             .as_deref()
@@ -451,8 +450,7 @@ impl PhotosService {
             mime_type: mime_type.to_string(),
             size_bytes: file.map(|f| f.size_bytes).unwrap_or(0),
             content_url: format!("/api/v1/drive/files/{}", photo.file_id),
-            thumbnail,
-            thumbnail_mime_type,
+            thumbnail_url,
             is_starred: photo.is_starred,
             is_archived: photo.is_archived,
             capture_date: photo.capture_date.map(|d| d.and_utc().to_rfc3339()),

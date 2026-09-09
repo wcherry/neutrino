@@ -27,6 +27,7 @@ import {
   albumsApi,
   personsApi,
   facesApi,
+  storageApi,
   uploadEncryptedFile,
   type PhotoResponse,
   type AlbumResponse,
@@ -113,11 +114,9 @@ function PhotoCard({
 }) {
   const photo = item.photo;
   const [active, setActive] = useState(false);
-  const thumbDataUrl = photo.thumbnail && photo.thumbnailMimeType
-    ? `data:${photo.thumbnailMimeType};base64,${photo.thumbnail}`
-    : null;
-  const blobUrl = useAuthBlobUrl(thumbDataUrl ? null : (isImageMime(photo.mimeType) ? photo.contentUrl : null));
-  const imgSrc = thumbDataUrl ?? blobUrl;
+  const thumbUrl = storageApi.getThumbnailUrl(photo.thumbnailUrl);
+  const blobUrl = useAuthBlobUrl(thumbUrl ? null : (isImageMime(photo.mimeType) ? photo.contentUrl : null));
+  const imgSrc = thumbUrl ?? blobUrl;
 
   return (
     <div

@@ -34,12 +34,13 @@ pub struct DriveFileRecord {
     pub mime_type: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    pub cover_thumbnail: Option<String>,
-    pub cover_thumbnail_mime_type: Option<String>,
+    /// Where to fetch the file's cover thumbnail, or `None` when it has none.
+    pub cover_thumbnail_url: Option<String>,
     pub content_version: i32,
 }
 
 fn to_drive_record(file: FileRecord, role: String) -> DriveFileRecord {
+    let cover_thumbnail_url = file.cover_thumbnail_url();
     DriveFileRecord {
         id: file.id,
         name: file.name,
@@ -59,8 +60,7 @@ fn to_drive_record(file: FileRecord, role: String) -> DriveFileRecord {
         },
         created_at: file.created_at,
         updated_at: file.updated_at,
-        cover_thumbnail: file.cover_thumbnail,
-        cover_thumbnail_mime_type: file.cover_thumbnail_mime_type,
+        cover_thumbnail_url,
         content_version: file.content_version,
     }
 }
@@ -98,7 +98,7 @@ impl DriveClient {
             direction: None,
             filters: std::collections::HashMap::new(),
         };
-        let resp = self.storage.list_files(&user.user_id, &query)?;
+        let resp = self.storage.list_files(&user.user_id, &query, None)?;
         Ok(resp
             .files
             .into_iter()

@@ -754,8 +754,7 @@ function DriveContent() {
                   iconColor: getIconColor(file.mimeType),
                   name: file.name,
                   date: file.updatedAt,
-                  coverThumbnail: file.coverThumbnail,
-                  coverThumbnailMimeType: file.coverThumbnailMimeType,
+                  thumbnailUrl: storageApi.getThumbnailUrl(file.coverThumbnailUrl),
                   onClick: () => {
                     routeForFile(file, router, {
                                       onPreviewFallback: () => setPreviewFile(file),
@@ -768,8 +767,7 @@ function DriveContent() {
                   iconColor: folder.color ?? 'var(--color-amber, #d97706)',
                   name: folder.name,
                   date: folder.updatedAt,
-                  coverThumbnail: null as string | null,
-                  coverThumbnailMimeType: null as string | null,
+                  thumbnailUrl: null as string | null,
                   onClick: () => openFolder(folder),
                 }));
                 const items = [...starredFiles, ...starredFolders];
@@ -785,9 +783,9 @@ function DriveContent() {
                   return (
                     <Card key={item.key} hoverable padding="sm" className={styles['quick-card']} role="button" tabIndex={0} aria-label={`Open ${item.name}`} onClick={item.onClick}>
                       <div className={styles['quick-card-inner']}>
-                        <div className={styles['file-icon-sm']} style={!item.coverThumbnail ? { color: item.iconColor } : undefined}>
-                          {item.coverThumbnail && item.coverThumbnailMimeType
-                            ? <img src={`data:${item.coverThumbnailMimeType};base64,${item.coverThumbnail}`} alt="" className={styles['file-icon-sm-thumb']} loading="lazy" />
+                        <div className={styles['file-icon-sm']} style={!item.thumbnailUrl ? { color: item.iconColor } : undefined}>
+                          {item.thumbnailUrl
+                            ? <img src={item.thumbnailUrl} alt="" className={styles['file-icon-sm-thumb']} loading="lazy" />
                             : <IconComponent size={20} strokeWidth={1.5} />
                           }
                         </div>

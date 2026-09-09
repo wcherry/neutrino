@@ -34,9 +34,11 @@ pub struct PhotoResponse {
     pub size_bytes: i64,
     /// URL to download/preview the photo via drive API
     pub content_url: String,
-    /// Base64-encoded thumbnail string (null if not yet generated)
-    pub thumbnail: Option<String>,
-    pub thumbnail_mime_type: Option<String>,
+    /// Where to fetch the photo's thumbnail, or null if it has none yet.
+    ///
+    /// A URL rather than base64 bytes since issue #175 — a library page used to
+    /// carry one inline thumbnail per photo, which no browser could cache.
+    pub thumbnail_url: Option<String>,
     pub is_starred: bool,
     pub is_archived: bool,
     pub capture_date: Option<String>,

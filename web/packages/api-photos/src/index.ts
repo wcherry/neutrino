@@ -1,5 +1,5 @@
-import { aiCredentials, request, buildQuery, ApiClientError, getCurrentUserId } from '@neutrino/api-core';
-import { filesystemApi } from '@neutrino/api-drive';
+import { aiCredentials, request, buildQuery, ApiClientError } from '@neutrino/api-core';
+import { storageApi } from '@neutrino/api-drive';
 import type { FileItem } from '@neutrino/api-drive';
 import type { MotionPhotoInfo } from './motionPhoto';
 
@@ -41,9 +41,14 @@ export interface PhotoResponse {
   sizeBytes: number;
   /** URL to read/stream the media via Drive API */
   contentUrl: string;
-  /** Base64-encoded thumbnail bytes, null if not yet generated */
-  thumbnail: string | null;
-  thumbnailMimeType: string | null;
+  /**
+   * Relative URL of the photo's thumbnail, or null if it has none yet.
+   *
+   * Not the bytes: a library page carried one base64 thumbnail per photo, and
+   * a screen of them is megabytes the browser could not cache (issue #175).
+   * Pass it through `storageApi.getThumbnailUrl` to get an `<img src>`.
+   */
+  thumbnailUrl: string | null;
   isStarred: boolean;
   isArchived: boolean;
   captureDate: string | null;
@@ -332,8 +337,7 @@ function fileToPhoto(file: FileItem): PhotoResponse {
     mimeType: file.mimeType,
     sizeBytes: file.sizeBytes,
     contentUrl: `/api/v1/drive/files/${file.id}`,
-    thumbnail: file.coverThumbnail,
-    thumbnailMimeType: file.coverThumbnailMimeType,
+    thumbnailUrl: file.coverThumbnailUrl,
     isStarred: file.isStarred,
     isArchived: false,
     captureDate: null,
@@ -346,6 +350,15 @@ function fileToPhoto(file: FileItem): PhotoResponse {
   };
 }
 
+/**
+ * How many library items one listing call fetches.
+ *
+ * The Photos grid is unvirtualised and loads in one go — there is no paging UI
+ * to hang a smaller number off — so this is a ceiling rather than a page size,
+ * and it is the same 200 the Drive grid pages by.
+ */
+const LIBRARY_PAGE_SIZE = 200;
+
 export const photosApi = {
   async listPhotos(opts?: {
     archivedOnly?: boolean;
@@ -353,22 +366,28 @@ export const photosApi = {
     personIds?: string[];
     excludePersonIds?: string[];
   }): Promise<ListPhotosResponse> {
-    // The unfiltered listing is served by the generic Drive folder endpoint
-    // (`/api/v1/drive/folders/{rootId}?type=photo`), root-scoped only. The
-    // photo-specific filters (archived/starred/person) aren't expressible
-    // there, so those keep hitting the dedicated photos endpoint.
+    // The unfiltered listing is served by the generic Drive *file* listing
+    // (`/api/v1/drive/files?type=photo`), which ignores folder structure. It
+    // used to ask the root folder instead, and that made the library empty for
+    // anyone whose photos were not sitting at the top of their drive — a
+    // Google Takeout import files every picture under a `Google Photos`
+    // folder, so a 2,500-photo library listed as nothing at all.
+    //
+    // The photo-specific filters (archived/starred/person) aren't expressible
+    // here, so those keep hitting the dedicated photos endpoint.
     const hasFilters =
       opts?.archivedOnly ||
       opts?.starredOnly ||
       opts?.personIds?.length ||
       opts?.excludePersonIds?.length;
-    const rootId = getCurrentUserId();
-    if (!hasFilters && rootId) {
-      const contents = await filesystemApi.getFolderContents(rootId, { type: 'photo' });
-      return {
-        photos: contents.files.map(fileToPhoto),
-        total: contents.files.length,
-      };
+    if (!hasFilters) {
+      const { items, total } = await storageApi.listFiles({
+        type: 'photo',
+        limit: LIBRARY_PAGE_SIZE,
+        orderBy: 'createdAt',
+        direction: 'desc',
+      });
+      return { photos: items.map(fileToPhoto), total };
     }
 
     const qs = buildQuery({
@@ -381,19 +400,25 @@ export const photosApi = {
   },
 
   /**
-   * The movies in the library's root, as pairing candidates for `pairLivePhotos`.
+   * The movies in the caller's drive, as pairing candidates for `pairLivePhotos`.
    *
    * The main listing above asks Drive for `type=photo`, which is `image/%` only,
    * so a Live Photo's motion half is not in it — the still would show with no
    * clip attached. These are fetched to be paired, not to be listed: anything
    * that pairs with nothing is dropped by `pairLivePhotos` rather than turning
    * the Photos library into a video library.
+   *
+   * Drive-wide, like the listing it pairs against: a clip filed in a folder
+   * beside its still has to be found, or the pair is broken by where it sits.
    */
   async listMotionCandidates(): Promise<PhotoResponse[]> {
-    const rootId = getCurrentUserId();
-    if (!rootId) return [];
-    const contents = await filesystemApi.getFolderContents(rootId, { type: 'video' });
-    return contents.files.map(fileToPhoto);
+    const { items } = await storageApi.listFiles({
+      type: 'video',
+      limit: LIBRARY_PAGE_SIZE,
+      orderBy: 'createdAt',
+      direction: 'desc',
+    });
+    return items.map(fileToPhoto);
   },
 
   async registerPhoto(body: RegisterPhotoRequest): Promise<PhotoResponse> {

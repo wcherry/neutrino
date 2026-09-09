@@ -3,8 +3,6 @@ use std::sync::Arc;
 use actix_web::dev::Payload;
 use actix_web::FromRequest;
 use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
-use base64::engine::general_purpose::STANDARD as BASE64;
-use base64::Engine as _;
 use std::future::{ready, Ready};
 
 use crate::jobs::{
@@ -359,10 +357,9 @@ async fn put_file_thumbnail(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("image/jpeg")
         .to_string();
-    let b64 = BASE64.encode(&body);
     state
         .storage_service
-        .set_cover_thumbnail(&file_id, b64, mime_type)?;
+        .set_cover_thumbnail(&file_id, &body, &mime_type)?;
     Ok(HttpResponse::NoContent().finish())
 }
 

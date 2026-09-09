@@ -301,8 +301,9 @@ export async function seedDrawing(session: Session, shapes: number): Promise<See
  *
  * The registration is the difference between a photo and an image sitting in
  * Drive: `/photos` lists what `POST /api/v1/photos` knows about. Each one gets
- * the same thumbnail, which is what the grid paints — and, per issue #175,
- * what it inlines into the listing response.
+ * the same thumbnail, which is what the grid paints. Since issue #175 that is
+ * one cacheable request per tile rather than base64 inlined into the listing
+ * response, which is what `B6` counts.
  */
 export async function seedPhotos(
   session: Session,

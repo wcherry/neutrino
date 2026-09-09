@@ -1,0 +1,32 @@
+-- Take the inline cover thumbnails out of `files` (issue #175).
+--
+-- `files.cover_thumbnail` held a base64 JPEG in the row — up to ~100KB each,
+-- and on a real install after a Google Takeout load ~88% of the entire
+-- database. Migration 00119 stopped the folder listing from *reading* the ones
+-- it was never going to return, but every query that legitimately returns a
+-- page of files still transferred `limit` × ~37KB, and `/api/v1/drive/folders/`
+-- was timing out in front of a proxy as a result.
+--
+-- The bytes now live in the file store as `<user>/<file>/.thumb` — a hidden
+-- entry in the file's own directory, beside its versions, so a permanent
+-- delete takes it along — and are served from
+-- `GET /api/v1/drive/files/{id}/thumbnail`, which a browser can cache. What
+-- stays in the row is `cover_thumbnail_mime_type`: a dozen bytes that say the
+-- thumbnail exists and what it is.
+--
+-- ## Why the blobs are already gone by the time this runs
+--
+-- SQL cannot write files, so the move itself is done by
+-- `drive::storage::thumbnails::drain_inline_thumbnails`, which runs at boot
+-- *before* the migrations for exactly this reason — the same split migration
+-- 00118 used for the one-directory-per-file layout. It reads the column
+-- through raw SQL rather than the Diesel schema (which no longer names it),
+-- writes each thumbnail to the store, and nulls the row it came from. By the
+-- time this file executes there is nothing left in the column to lose.
+--
+-- A thumbnail whose bytes could not be written is logged and left behind, and
+-- dies here with the column. That is a blank tile in the grid on a file whose
+-- content is untouched — the reason the drain is allowed to be best-effort and
+-- must never fail the boot.
+
+ALTER TABLE files DROP COLUMN cover_thumbnail;
