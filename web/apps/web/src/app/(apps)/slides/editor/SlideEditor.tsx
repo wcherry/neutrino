@@ -526,6 +526,20 @@ export function SlideEditor() {
         // the path that survived it.
         const dek = await awaitDek();
         if (cancelled) return;
+        // Ciphertext, and no key to open it. The unlock gate is an overlay
+        // rather than a hard gate, so this editor mounts while the vault is
+        // still locked and `dekResolved` goes true with nothing resolved.
+        // Reading on from here hands the ciphertext to the pptx importer, which
+        // fails, and the catch below opens the *default deck* — a reload
+        // quietly replacing the user's presentation, and the next autosave
+        // writing that replacement back. Leave the deck untouched and clear the
+        // one-shot guard, so the run that arrives with the key reads again
+        // rather than being swallowed as a duplicate. Sheets refuses the same
+        // read for the same reason.
+        if (!dek && stored.byteLength > 0 && !looksLikeOoxml(stored)) {
+          officeContentLoadStartedRef.current = false;
+          return;
+        }
         // Whether the stored bytes are ciphertext is read off the bytes, the
         // same way `readStoredWorkbook` does it for sheets. Asking
         // `isNewEncryption` reads the *session* rather than the file and is

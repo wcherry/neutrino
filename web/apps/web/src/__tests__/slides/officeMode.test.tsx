@@ -54,6 +54,19 @@ const mockDownloadFile = vi.fn();
 // The office-mode read goes through `driveReadBytes` — see its module comment.
 const mockReadBytes = vi.fn();
 
+/**
+ * Stand-in for stored `.pptx` bytes.
+ *
+ * The zip local-file-header magic is the load-bearing part: these tests hold no
+ * key, and the load tells "an unencrypted package" from "ciphertext it cannot
+ * open" by that magic. Bytes without it are the latter, and are left alone
+ * rather than handed to the importer — so a body that only *claims* to be a
+ * deck would assert the opposite of what these tests are about.
+ */
+function fakePptxBytes(): Uint8Array {
+  return new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...new TextEncoder().encode('fake pptx bytes')]);
+}
+
 vi.mock('@/lib/api', () => ({
   ApiClientError: class ApiClientError extends Error {
     statusCode: number;
@@ -156,7 +169,7 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
 
   it('identifies the presentation through storageApi.getFileMetadata', async () => {
     mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'deck.pptx', mimeType: PPTX_MIME });
-    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake pptx bytes'));
+    mockReadBytes.mockResolvedValue(fakePptxBytes());
 
     renderSlideEditor();
 
@@ -165,7 +178,7 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
 
   it('enters office mode and imports via importFromPptx for a raw .pptx file', async () => {
     mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'deck.pptx', mimeType: PPTX_MIME });
-    mockReadBytes.mockResolvedValue(new TextEncoder().encode('fake pptx bytes'));
+    mockReadBytes.mockResolvedValue(fakePptxBytes());
 
     renderSlideEditor();
 
