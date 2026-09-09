@@ -35,6 +35,7 @@ import type {
 import { parseDriveImageRef, resolveDriveImageDataUrl } from '@/lib/driveImages';
 import { hasTransparency, loadImage } from '@/lib/pdfImages';
 import { diagramPageToSvg, fetchDiagramPage } from '@/app/(apps)/diagrams/editor/diagramSvg';
+import { resolveFillImages } from '@/app/(apps)/diagrams/editor/utils/fillImages';
 
 // ── Page geometry ─────────────────────────────────────────────────────────────
 
@@ -709,6 +710,9 @@ export async function prepareSlidesPdfAssets(presentation: SlidePresentation): P
             assets.diagrams.set(el.id, diagramPageToSvg(page, {
               width: px(el.w),
               height: py(el.h),
+              // A PDF cannot fetch a Drive file, so a shape filled with an image
+              // carries its bytes or falls back to its colour.
+              images: await resolveFillImages(page.shapes),
             }));
           } catch (err) {
             console.warn('[slides:pdf] diagram skipped', el.id, err);

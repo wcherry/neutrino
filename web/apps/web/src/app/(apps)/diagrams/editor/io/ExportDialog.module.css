@@ -103,24 +103,12 @@
 }
 
 .colorSwatch {
-  -webkit-appearance: none;
-  width: 36px;
-  height: 36px;
-  padding: 2px;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
   border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 6px;
-  cursor: pointer;
-  background: none;
-  flex-shrink: 0;
-}
-
-.colorSwatch::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
-
-.colorSwatch::-webkit-color-swatch {
-  border: none;
   border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .colorLabel {

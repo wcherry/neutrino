@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { ColorPickerPopover } from '@neutrino/ui';
 import type { DiagramDocument, DiagramPage, Viewport } from '../../types';
 import { exportSVG, exportPNG, exportJPEG, exportPNGCropped, exportJPEGCropped, exportSVGCropped, exportJSON, exportMermaid, triggerDownload } from './exportUtils';
 import styles from './ExportDialog.module.css';
@@ -220,15 +221,15 @@ export function ExportDialog({ document, activePage, canvasContainer, title, onC
 
         {isImageFormat && (
           <div className={styles.field}>
-            <label className={styles.label} htmlFor="export-bgcolor">Background</label>
+            <span className={styles.label}>Background</span>
             <div className={styles.colorRow}>
-              <input
-                id="export-bgcolor"
-                type="color"
-                className={styles.colorSwatch}
-                value={bgColor}
-                onChange={(e) => setBgColor(e.target.value)}
-              />
+              <ColorPickerPopover
+                color={bgColor}
+                onChange={setBgColor}
+                title="Background color"
+              >
+                <span className={styles.colorSwatch} style={{ background: bgColor }} />
+              </ColorPickerPopover>
               <span className={styles.colorLabel}>{bgColor}</span>
             </div>
           </div>

@@ -18,6 +18,8 @@ import type {
 import type { RemoteUser } from './hooks/useDiagramCollab';
 import { getShapeAtPoint, getShapesInRect, buildConnectorPath, getConnectorEndpoints, getPortPosition, getElbowPoints, getCurvedControlPoints } from './utils/shapeUtils';
 import { getShapePath } from './shapes/ShapeLibrary';
+import { ShapeFillDefs, useFillImages } from './ShapeFillDefs';
+import { fillDefFor, fillPaint } from './utils/shapeFill';
 import styles from './DiagramCanvas.module.css';
 
 // ---------------------------------------------------------------------------
@@ -152,7 +154,7 @@ function ConnectorArrowHead({ x, y, dx, dy, arrowType, color, strokeWidth }: Arr
 // Conditional formatting evaluation
 // ---------------------------------------------------------------------------
 
-function resolveStyle(shape: DiagramShape): ShapeStyle {
+export function resolveStyle(shape: DiagramShape): ShapeStyle {
   const { style, boundData, conditionalRules } = shape;
   if (!conditionalRules || !boundData) return style;
 
@@ -180,14 +182,24 @@ interface ShapeRendererProps {
   shape: DiagramShape;
   selected: boolean;
   isEditing: boolean;
+  /** Resolved image fills, keyed by the value stored on the shape. */
+  fillImages: ReadonlyMap<string, string>;
   onMouseDown: (e: React.MouseEvent, id: string) => void;
   onDoubleClick: (e: React.MouseEvent, id: string) => void;
   onResizeHandleMouseDown?: (e: React.MouseEvent, id: string, handle: string) => void;
 }
 
-function ShapeRenderer({ shape, selected, isEditing, onMouseDown, onDoubleClick, onResizeHandleMouseDown }: ShapeRendererProps) {
+function ShapeRenderer({ shape, selected, isEditing, fillImages, onMouseDown, onDoubleClick, onResizeHandleMouseDown }: ShapeRendererProps) {
   const { type, x, y, width: w, height: h, label, rotation } = shape;
-  const style = resolveStyle(shape);
+  const resolved = resolveStyle(shape);
+  // A gradient or an image is painted through `<defs>`, so what the elements
+  // below put in `fill` is a reference to it. Swapping it in here rather than at
+  // each element keeps every `style.fill` site — there are two dozen — reading
+  // the one field, and leaves a shape whose def could not be built (an image
+  // still loading) painted with its colour instead of nothing.
+  const style = fillDefFor(shape, resolved, fillImages)
+    ? { ...resolved, fill: fillPaint(shape.id, resolved, true) }
+    : resolved;
   const transform = rotation ? `rotate(${rotation}, ${x + w / 2}, ${y + h / 2})` : undefined;
 
   const cx = x + w / 2;
@@ -1084,6 +1096,7 @@ export function DiagramCanvas({
   drawColor = '#1e293b',
 }: DiagramCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const fillImages = useFillImages(page.shapes);
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 });
   const [smartGuides, setSmartGuides] = useState<SmartGuide[]>([]);
   const [shiftHeld, setShiftHeld] = useState(false);
@@ -1906,6 +1919,12 @@ export function DiagramCanvas({
         onDrop={handleDrop}
         style={{ display: 'block' }}
       >
+        {/* Gradient and image fills. At the SVG root so the export's
+            `:scope > defs` lookup finds this one rather than the grid's. */}
+        <defs>
+          <ShapeFillDefs shapes={page.shapes} images={fillImages} styleOf={resolveStyle} />
+        </defs>
+
         {/* Grid */}
         {(page.gridEnabled !== false) && (
           <GridOverlay viewport={viewport} width={canvasSize.width} height={canvasSize.height} />
@@ -1944,6 +1963,7 @@ export function DiagramCanvas({
               shape={s}
               selected={selection.shapeIds.has(s.id)}
               isEditing={editingShapeId === s.id}
+              fillImages={fillImages}
               onMouseDown={handleShapeMouseDown}
               onDoubleClick={handleShapeDoubleClick}
               onResizeHandleMouseDown={handleResizeHandleMouseDown}
