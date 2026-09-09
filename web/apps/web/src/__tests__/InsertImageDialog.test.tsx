@@ -31,6 +31,8 @@ vi.mock('@/lib/api', () => ({
     downloadFile: (...a: unknown[]) => downloadFile(...a),
     getFileMetadata: (...a: unknown[]) => getFileMetadata(...a),
     getFileDownloadUrl: (id: string) => `https://drive.test/files/${id}?token=t`,
+    getThumbnailUrl: (url: string | null | undefined) =>
+      url ? `https://drive.test/thumb/${url.split('/')[5]}` : null,
   },
   filesystemApi: {
     getFolderContents: (...a: unknown[]) => getFolderContents(...a),
@@ -54,7 +56,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
 function driveFile(over: Record<string, unknown>) {
   return {
     id: 'x', name: 'x', mimeType: 'image/png', sizeBytes: 1, folderId: null, isStarred: false,
-    coverThumbnail: null, coverThumbnailMimeType: null, encryptedMetadata: null, contentVersion: 1,
+    coverThumbnailUrl: null, encryptedMetadata: null, contentVersion: 1,
     createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     ...over,
   };
@@ -74,7 +76,7 @@ beforeEach(() => {
   listFiles.mockResolvedValue({
     items: [
       driveFile({ id: 'img-1', name: 'poster.png', mimeType: 'image/png' }),
-      driveFile({ id: 'img-2', name: 'scan.jpg', mimeType: 'image/jpeg', coverThumbnail: 'AAA', coverThumbnailMimeType: 'image/jpeg' }),
+      driveFile({ id: 'img-2', name: 'scan.jpg', mimeType: 'image/jpeg', coverThumbnailUrl: '/api/v1/drive/files/img-2/thumbnail?v=7' }),
       driveFile({ id: 'doc-1', name: 'report.pdf', mimeType: 'application/pdf' }),
     ],
     total: 3, page: 1, pageSize: 50, totalPages: 1,
@@ -99,7 +101,7 @@ describe('InsertImageDialog', () => {
     const withThumb = (await screen.findByTitle('scan.jpg')).querySelector('img')!;
     const withoutThumb = screen.getByTitle('poster.png').querySelector('img')!;
 
-    expect(withThumb.getAttribute('src')).toBe('data:image/jpeg;base64,AAA');
+    expect(withThumb.getAttribute('src')).toBe('https://drive.test/thumb/img-2');
     expect(withoutThumb.getAttribute('src')).toBe('https://drive.test/files/img-1?token=t');
   });
 

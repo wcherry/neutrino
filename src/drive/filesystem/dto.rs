@@ -71,8 +71,13 @@ pub struct FileResponse {
     pub is_starred: bool,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
-    pub cover_thumbnail: Option<String>,
-    pub cover_thumbnail_mime_type: Option<String>,
+    /// Where to fetch the file's cover thumbnail, or null when it has none.
+    ///
+    /// A URL rather than the bytes: a page of files used to serialise a
+    /// base64 thumbnail per row — `limit` × ~37KB, enough to time this listing
+    /// out behind a proxy — and none of it could be cached, because it arrived
+    /// inside a JSON body with no URL of its own (issue #175).
+    pub cover_thumbnail_url: Option<String>,
     pub encrypted_metadata: Option<String>,
     /// Server-side content revision. Present here too so a rename response can
     /// be used to refresh a client's optimistic-concurrency guard without a
@@ -82,6 +87,7 @@ pub struct FileResponse {
 
 impl From<FileRecord> for FileResponse {
     fn from(f: FileRecord) -> Self {
+        let cover_thumbnail_url = f.cover_thumbnail_url();
         FileResponse {
             id: f.id,
             name: f.name,
@@ -91,8 +97,7 @@ impl From<FileRecord> for FileResponse {
             is_starred: f.is_starred,
             created_at: f.created_at,
             updated_at: f.updated_at,
-            cover_thumbnail: f.cover_thumbnail,
-            cover_thumbnail_mime_type: f.cover_thumbnail_mime_type,
+            cover_thumbnail_url,
             encrypted_metadata: f.encrypted_metadata,
             content_version: f.content_version,
         }

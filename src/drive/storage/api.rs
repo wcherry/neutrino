@@ -1,3 +1,4 @@
+use crate::drive::filesystem::dto::DriveFileType;
 use crate::drive::filesystem::repository::FilesystemRepository;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
@@ -19,6 +20,8 @@ use crate::shared::{
 };
 use actix_files::NamedFile;
 use actix_multipart::{Field, Multipart};
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
 use actix_web::{delete, get, patch, post, put, web, HttpRequest, HttpResponse};
 use futures_util::StreamExt;
 use std::path::Path;
@@ -219,7 +222,7 @@ pub async fn upload_file(
 
         let size = stream_field_to_file(&mut field, temp.path(), &allowance, "upload").await?;
 
-        let response = state
+        let mut response = state
             .storage_service
             .finalize_upload(
                 &user,
@@ -233,26 +236,41 @@ pub async fn upload_file(
             .await?;
         temp.commit();
 
-        // Save client-generated thumbnail if provided.
+        // Save client-generated thumbnail if provided. The wire format is
+        // still base64 — every shipped client sends `thumbnail_b64` — but it is
+        // decoded here and stored as bytes rather than kept as text in the row
+        // (issue #175). A thumbnail is a nicety: nothing about it, not even
+        // base64 the client got wrong, may fail an upload whose content has
+        // already been committed.
         if let Some(b64) = thumbnail_b64.take() {
-            tracing::info!(
-                "saving thumbnail for file {}, base64 length: {}",
-                response.id,
-                b64.len()
-            );
-            match state.storage_service.set_cover_thumbnail(
-                &response.id,
-                b64,
-                "image/jpeg".to_string(),
-            ) {
-                Ok(_) => tracing::info!("thumbnail saved successfully for file {}", response.id),
-                Err(e) => tracing::warn!("failed to save thumbnail for {}: {:?}", response.id, e),
+            match BASE64.decode(b64.as_bytes()) {
+                Ok(bytes) => match state.storage_service.set_cover_thumbnail(
+                    &response.id,
+                    &bytes,
+                    "image/jpeg",
+                ) {
+                    // Filled in here rather than left null: the record was
+                    // built before the thumbnail existed, and a client that
+                    // renders straight from this response would otherwise show
+                    // an icon until something refetched the file.
+                    Ok(url) => {
+                        tracing::info!(
+                            "stored a {} byte thumbnail for file {}",
+                            bytes.len(),
+                            response.id
+                        );
+                        response.cover_thumbnail_url = Some(url);
+                    }
+                    Err(e) => {
+                        tracing::warn!("failed to save thumbnail for {}: {:?}", response.id, e)
+                    }
+                },
+                Err(e) => tracing::warn!(
+                    "discarding malformed thumbnail for {}: {:?}",
+                    response.id,
+                    e
+                ),
             }
-        } else {
-            tracing::info!(
-                "no thumbnail_b64 in upload request for file {}",
-                response.id
-            );
         }
 
         return Ok(web::Json(response));
@@ -319,6 +337,7 @@ pub async fn create_file_record(
             .ok_or_else(|| ApiError::internal("File vanished after creation"))?;
     }
 
+    let cover_thumbnail_url = file.cover_thumbnail_url();
     let response = DocFileMetadataResponse {
         id: file.id,
         name: file.name,
@@ -336,8 +355,7 @@ pub async fn create_file_record(
         }, //TODO: Mime type can be None
         created_at: file.created_at,
         updated_at: file.updated_at,
-        cover_thumbnail: file.cover_thumbnail,
-        cover_thumbnail_mime_type: file.cover_thumbnail_mime_type,
+        cover_thumbnail_url,
         tags: vec![],
         encrypted_metadata: file.encrypted_metadata,
         content_version: file.content_version,
@@ -413,6 +431,7 @@ pub async fn get_file_info(
         .tags_service
         .get_tag_names_for_file(&file_id, &user.user_id)
         .unwrap_or_default();
+    let cover_thumbnail_url = file.cover_thumbnail_url();
     Ok(web::Json(DocFileMetadataResponse {
         id: file.id,
         name: file.name,
@@ -430,8 +449,7 @@ pub async fn get_file_info(
         }, //TODO: Mime type can be None
         created_at: file.created_at,
         updated_at: file.updated_at,
-        cover_thumbnail: file.cover_thumbnail,
-        cover_thumbnail_mime_type: file.cover_thumbnail_mime_type,
+        cover_thumbnail_url,
         tags,
         encrypted_metadata: file.encrypted_metadata,
         content_version: file.content_version,
@@ -442,6 +460,11 @@ pub async fn get_file_info(
 ///
 /// Ignores folder structure — use the filesystem endpoints to walk the tree — and sorts by the
 /// requested field, defaulting to 50 per page.
+///
+/// `type` is the same category filter the folder listing takes, answered in SQL against the same
+/// `MimeFilter` patterns, and it is what makes this the endpoint an app-wide library should read:
+/// asking one folder for its pictures shows nothing for a library whose files live somewhere
+/// else in the drive.
 #[utoipa::path(
     get,
     path = "/api/v1/drive/files",
@@ -450,9 +473,12 @@ pub async fn get_file_info(
         ("offset" = Option<i64>, Query, description = "Pagination offset"),
         ("orderBy" = Option<FileOrderField>, Query, description = "Sort field"),
         ("direction" = Option<String>, Query, description = "asc or desc"),
+        ("type" = Option<DriveFileType>, Query, description = "Narrow to one kind of file, e.g. `photo`"),
+        ("mimeType" = Option<String>, Query, description = "Comma-separated exact MIME types; ANDs with `type`"),
     ),
     responses(
         (status = 200, description = "List of files", body = ListFilesResponse),
+        (status = 400, description = "Unrecognised `type`"),
     ),
     security(("bearer_auth" = [])),
     tag = "storage"
@@ -463,10 +489,31 @@ pub async fn list_files(
     user: AuthenticatedUser,
     query: web::Query<ListQuery<FileOrderField>>,
 ) -> Result<web::Json<ListFilesResponse>, ApiError> {
+    let query = query.into_inner();
+    let file_type = parse_file_type(query.filters.get("type"))?;
     let response = state
         .storage_service
-        .list_files(&user.user_id, &query.into_inner())?;
+        .list_files(&user.user_id, &query, file_type)?;
     Ok(web::Json(response))
+}
+
+/// Read `?type=` off a flat listing query.
+///
+/// `ListQuery` collects unknown parameters as strings, so the value is handed
+/// back to serde rather than matched by hand — `DriveFileType`'s own
+/// `rename_all` is then the single spelling of every category, and a new
+/// variant needs nothing here.
+///
+/// An unrecognised value is a 400 rather than a silently unfiltered listing:
+/// a client asking for photos and being given the whole drive is a worse
+/// answer than an error naming what it got wrong.
+fn parse_file_type(raw: Option<&String>) -> Result<Option<DriveFileType>, ApiError> {
+    let Some(raw) = raw.map(String::as_str).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    serde_json::from_value(serde_json::Value::String(raw.to_string()))
+        .map(Some)
+        .map_err(|_| ApiError::bad_request(&format!("Unknown file type filter: {raw}")))
 }
 
 /// Fetch one file's metadata.
@@ -609,6 +656,71 @@ pub async fn preview_file(
     response.headers_mut().insert(
         actix_web::http::header::CACHE_CONTROL,
         actix_web::http::header::HeaderValue::from_static("no-store"),
+    );
+    Ok(response)
+}
+
+/// Serve a file's cover thumbnail.
+///
+/// The grid's picture, split out of the listing that used to carry it inline as base64 (issue
+/// #175). Answered from the file store, and cached hard: the URL a listing hands out carries a
+/// `v` taken from the file's `updatedAt`, so a replaced thumbnail arrives under a URL the browser
+/// has never seen and the year-long `max-age` never serves a stale one.
+///
+/// A file with no thumbnail is a 404, not an empty 200 — the client draws its type icon instead.
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/files/{id}/thumbnail",
+    params(
+        ("id" = String, Path, description = "File ID"),
+        ("v" = Option<String>, Query, description = "Cache-busting token from `coverThumbnailUrl`; ignored by the server"),
+    ),
+    responses(
+        (status = 200, description = "Thumbnail image, cacheable for a year"),
+        (status = 403, description = "Access denied"),
+        (status = 404, description = "File not found, or it has no thumbnail"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "storage"
+)]
+#[get("/files/{id}/thumbnail")]
+pub async fn get_file_thumbnail(
+    state: web::Data<StorageApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ApiError> {
+    let file_id = path.into_inner();
+
+    state
+        .permissions_service
+        .get_effective_role(&user.user_id, "file", &file_id)?
+        .ok_or_else(|| ApiError::new(403, "FORBIDDEN", "Access denied"))?;
+
+    let (thumbnail_path, mime_type) = state
+        .storage_service
+        .resolve_thumbnail_by_id(&file_id)?
+        .ok_or_else(|| ApiError::not_found("File has no thumbnail"))?;
+
+    let content_type: mime::Mime = mime_type.parse().unwrap_or(mime::IMAGE_JPEG);
+
+    let named_file = NamedFile::open(&thumbnail_path)
+        .map_err(|e| {
+            tracing::error!("Failed to open thumbnail {:?}: {:?}", thumbnail_path, e);
+            ApiError::internal("Failed to serve thumbnail")
+        })?
+        .set_content_type(content_type)
+        .set_content_disposition(actix_web::http::header::ContentDisposition {
+            disposition: actix_web::http::header::DispositionType::Inline,
+            parameters: vec![],
+        });
+
+    let mut response = named_file.into_response(&req);
+    // `private` because a thumbnail is one user's picture and the URL carries
+    // their token: it belongs in that browser's cache and in no shared one.
+    response.headers_mut().insert(
+        actix_web::http::header::CACHE_CONTROL,
+        actix_web::http::header::HeaderValue::from_static("private, max-age=31536000, immutable"),
     );
     Ok(response)
 }
@@ -1180,6 +1292,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
         .service(list_files)
         .service(get_file_metadata)
         .service(preview_file)
+        .service(get_file_thumbnail)
         .service(zip_contents)
         .service(download_file)
         .service(get_quota)
@@ -1197,7 +1310,7 @@ pub fn configure(conf: &mut web::ServiceConfig) {
 #[openapi(
     paths(
         upload_file, create_file_record, set_import_metadata, get_file_info, list_files, get_file_metadata,
-        preview_file, zip_contents, download_file, get_quota, autosave_file, save_version,
+        preview_file, get_file_thumbnail, zip_contents, download_file, get_quota, autosave_file, save_version,
         list_versions, get_version, update_version_label, restore_version, download_version, delete_version,
     ),
     components(schemas(

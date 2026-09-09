@@ -106,8 +106,8 @@ impl FilesystemService {
         };
 
         // Sorted, type-filtered and paged in SQL. Doing any of it here instead
-        // would mean loading every row in the folder — each carrying a
-        // `cover_thumbnail` of up to ~100KB — to return one page of them.
+        // would mean loading every row in the folder to return one page of
+        // them — see `FilesystemRepository::list_files_in_folder`.
         let subfolders = self.repo.list_subfolders(user_id, folder_id, query)?;
         let mime_filter = file_type.map(|t| t.mime_filter());
         let files =

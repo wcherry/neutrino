@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Users, Image as ImageIcon, Pencil, Check, GitMerge, Trash2, Clock, FolderPlus, Link } from 'lucide-react';
-import { personsApi, type PersonResponse } from '@/lib/api';
+import { personsApi, storageApi, type PersonResponse } from '@/lib/api';
 import { PersonTimelinePanel } from './PersonTimelinePanel';
 import styles from './PersonPhotosPanel.module.css';
 
@@ -312,10 +312,7 @@ export function PersonPhotosPanel({ person, allPersons, onClose, onPersonUpdated
         ) : (
           <div className={styles.grid}>
             {photos.map((photo) => {
-              const src =
-                photo.thumbnail && photo.thumbnailMimeType
-                  ? `data:${photo.thumbnailMimeType};base64,${photo.thumbnail}`
-                  : null;
+              const src = storageApi.getThumbnailUrl(photo.thumbnailUrl);
               return (
                 <div key={photo.id} className={styles.thumb}>
                   {src ? (

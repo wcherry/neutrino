@@ -94,11 +94,20 @@ export const storageApi = {
   // forever — issue #95. Upload through `uploadDriveFile` in
   // `encryptedWrites.ts`, which refuses to write at all without a key.
 
+  /**
+   * The caller's files, flat and paged — folder structure ignored.
+   *
+   * `type` is sent now rather than dropped: it is answered in SQL against the
+   * same `MimeFilter` patterns as the folder listing's, which is what makes
+   * this the endpoint an app-wide library should read. Photos used to list the
+   * *root folder* and so showed nothing at all for a library imported from
+   * Google Takeout, which files every picture under a `Google Photos` folder.
+   */
   async listFiles(
     query: FileListQuery = {}
   ): Promise<PaginatedResponse<FileItem>> {
-    const { limit = 50, offset = 0, orderBy, direction } = query;
-    const qs = buildQuery({ limit, offset, orderBy, direction });
+    const { limit = 50, offset = 0, orderBy, direction, type } = query;
+    const qs = buildQuery({ limit, offset, orderBy, direction, type });
     const raw = await request<BackendFileListResponse>(`/api/v1/drive/files${qs}`);
     return {
       items: raw.files,
@@ -144,6 +153,22 @@ export const storageApi = {
   getFileDownloadUrl(fileId: string): string {
     const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : '';
     return `${BASE_URL}/api/v1/drive/files/${fileId}?token=${token ?? ''}`;
+  },
+
+  /**
+   * Turn a `coverThumbnailUrl` from the API into something an `<img src>` can
+   * load, or null when the file has no thumbnail.
+   *
+   * Same shape as `getFileDownloadUrl`: the API hands back a relative path, and
+   * the origin and the token are added here. The path already carries the `v`
+   * that busts the cache when the thumbnail is replaced, so this only ever
+   * appends the token.
+   */
+  getThumbnailUrl(coverThumbnailUrl: string | null | undefined): string | null {
+    if (!coverThumbnailUrl) return null;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : '';
+    const separator = coverThumbnailUrl.includes('?') ? '&' : '?';
+    return `${BASE_URL}${coverThumbnailUrl}${separator}token=${token ?? ''}`;
   },
 
   async downloadFile(fileId: string): Promise<Blob> {

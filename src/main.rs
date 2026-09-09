@@ -310,12 +310,32 @@ async fn main() -> std::io::Result<()> {
         error!("{}", e);
         std::process::exit(1);
     });
+    // Take the inline cover thumbnails out of `files` before the migration
+    // that drops the column runs — SQL cannot write the blobs to the store, so
+    // the move has to happen here first (issue #175). Self-detecting and
+    // idempotent: a database already past 00132 costs one pragma.
+    let thumbnails = {
+        let store = drive::storage::store::LocalFileStore::new(&config.storage_path)
+            .unwrap_or_else(|e| {
+                error!("{}", e);
+                std::process::exit(1);
+            });
+        drive::storage::thumbnails::drain_inline_thumbnails(&pool, &store)
+    };
+
     run_migrations(&pool).unwrap_or_else(|e| {
         error!("Database migrations: {}", e);
         std::process::exit(1);
     });
 
     info!("All database migrations applied");
+
+    // Only worth doing on the boot that actually emptied the column: dropping
+    // it frees those pages inside the file, and nothing but a vacuum hands
+    // them back to the filesystem.
+    if thumbnails.moved > 0 || thumbnails.failed > 0 {
+        drive::storage::thumbnails::reclaim_space(&pool);
+    }
 
     // ── Shared token service ──────────────────────────────────────────────────
 

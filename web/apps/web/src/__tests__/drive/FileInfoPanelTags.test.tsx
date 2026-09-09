@@ -58,8 +58,7 @@ const FILE: FileItem = {
   isStarred: false,
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-02T00:00:00Z',
-  coverThumbnail: null,
-  coverThumbnailMimeType: null,
+  coverThumbnailUrl: null,
   contentVersion: 1,
 };
 

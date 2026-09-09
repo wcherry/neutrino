@@ -3,10 +3,8 @@ import type { FileItem } from '@neutrino/api-drive';
 
 // API modules are always mocked — no real HTTP in tests.
 vi.mock('@neutrino/api-drive', () => ({
-  filesystemApi: { getFolderContents: vi.fn() },
+  storageApi: { listFiles: vi.fn() },
 }));
-
-const ROOT_ID = 'user-1';
 
 vi.mock('@neutrino/api-core', () => ({
   request: vi.fn(),
@@ -20,16 +18,13 @@ vi.mock('@neutrino/api-core', () => ({
     return '?' + entries.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
   },
   ApiClientError: class ApiClientError extends Error {},
-  // `photosApi` addresses the drive root by the caller's own user id — see
-  // `getCurrentUserId` in `@neutrino/api-core`.
-  getCurrentUserId: () => ROOT_ID,
 }));
 
 import { photosApi } from '../index';
-import { filesystemApi } from '@neutrino/api-drive';
+import { storageApi } from '@neutrino/api-drive';
 import { request } from '@neutrino/api-core';
 
-const getFolderContents = vi.mocked(filesystemApi.getFolderContents);
+const listFiles = vi.mocked(storageApi.listFiles);
 const mockRequest = vi.mocked(request);
 
 function fileItem(overrides: Partial<FileItem> = {}): FileItem {
@@ -42,14 +37,13 @@ function fileItem(overrides: Partial<FileItem> = {}): FileItem {
     isStarred: true,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-02T00:00:00Z',
-    coverThumbnail: 'dGh1bWI=',
-    coverThumbnailMimeType: 'image/jpeg',
+    coverThumbnailUrl: '/api/v1/drive/files/file-1/thumbnail?v=1767312000000',
     ...overrides,
   };
 }
 
-function rootContents(files: FileItem[]) {
-  return { folder: null, folders: [], files };
+function listing(items: FileItem[], total = items.length) {
+  return { items, total, page: 1, pageSize: 200, totalPages: 1 };
 }
 
 describe('photosApi.listPhotos', () => {
@@ -57,17 +51,45 @@ describe('photosApi.listPhotos', () => {
     vi.clearAllMocks();
   });
 
-  it('routes the unfiltered listing to the Drive endpoint via type=photo', async () => {
-    getFolderContents.mockResolvedValue(rootContents([fileItem()]));
+  /**
+   * The listing is drive-wide, not root-scoped. It used to ask the root folder,
+   * which made the library empty for anyone whose photos were filed anywhere
+   * else — a Google Takeout import puts every picture under a `Google Photos`
+   * folder, so a 2,500-photo library listed as nothing at all.
+   */
+  it('routes the unfiltered listing to the flat Drive listing via type=photo', async () => {
+    listFiles.mockResolvedValue(listing([fileItem()]));
 
     await photosApi.listPhotos();
 
-    expect(getFolderContents).toHaveBeenCalledWith(ROOT_ID, { type: 'photo' });
+    expect(listFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'photo' }),
+    );
     expect(mockRequest).not.toHaveBeenCalled();
   });
 
+  /** A photo inside a folder is still the caller's photo. */
+  it('lists photos that are not at the drive root', async () => {
+    listFiles.mockResolvedValue(
+      listing([fileItem({ id: 'filed', folderId: 'google-photos' })]),
+    );
+
+    const result = await photosApi.listPhotos();
+
+    expect(result.photos.map((p) => p.id)).toEqual(['filed']);
+  });
+
+  /** `total` is the server's count of matches, not the page just returned. */
+  it('reports the total the server counted, not the page length', async () => {
+    listFiles.mockResolvedValue(listing([fileItem()], 2583));
+
+    const result = await photosApi.listPhotos();
+
+    expect(result.total).toBe(2583);
+  });
+
   it('maps Drive FileItems into PhotoResponses', async () => {
-    getFolderContents.mockResolvedValue(rootContents([fileItem()]));
+    listFiles.mockResolvedValue(listing([fileItem()]));
 
     const result = await photosApi.listPhotos();
 
@@ -80,8 +102,7 @@ describe('photosApi.listPhotos', () => {
         mimeType: 'image/jpeg',
         sizeBytes: 2048,
         contentUrl: '/api/v1/drive/files/file-1',
-        thumbnail: 'dGh1bWI=',
-        thumbnailMimeType: 'image/jpeg',
+        thumbnailUrl: '/api/v1/drive/files/file-1/thumbnail?v=1767312000000',
         isStarred: true,
         isArchived: false,
         captureDate: null,
@@ -96,7 +117,7 @@ describe('photosApi.listPhotos', () => {
   });
 
   it('returns an empty list when the drive has no photos', async () => {
-    getFolderContents.mockResolvedValue(rootContents([]));
+    listFiles.mockResolvedValue(listing([]));
 
     const result = await photosApi.listPhotos();
 
@@ -108,7 +129,7 @@ describe('photosApi.listPhotos', () => {
 
     await photosApi.listPhotos({ starredOnly: true });
 
-    expect(getFolderContents).not.toHaveBeenCalled();
+    expect(listFiles).not.toHaveBeenCalled();
     expect(mockRequest).toHaveBeenCalledWith('/api/v1/photos?starredOnly=true');
   });
 
@@ -117,7 +138,7 @@ describe('photosApi.listPhotos', () => {
 
     await photosApi.listPhotos({ archivedOnly: true });
 
-    expect(getFolderContents).not.toHaveBeenCalled();
+    expect(listFiles).not.toHaveBeenCalled();
     expect(mockRequest).toHaveBeenCalledWith('/api/v1/photos?archivedOnly=true');
   });
 
@@ -126,18 +147,34 @@ describe('photosApi.listPhotos', () => {
 
     await photosApi.listPhotos({ personIds: ['p1', 'p2'], excludePersonIds: ['p3'] });
 
-    expect(getFolderContents).not.toHaveBeenCalled();
+    expect(listFiles).not.toHaveBeenCalled();
     expect(mockRequest).toHaveBeenCalledWith(
       '/api/v1/photos?personIds=p1%2Cp2&excludePersonIds=p3',
     );
   });
 
   it('treats empty person-id arrays as unfiltered and uses Drive', async () => {
-    getFolderContents.mockResolvedValue(rootContents([]));
+    listFiles.mockResolvedValue(listing([]));
 
     await photosApi.listPhotos({ personIds: [], excludePersonIds: [] });
 
-    expect(getFolderContents).toHaveBeenCalledWith(ROOT_ID, { type: 'photo' });
+    expect(listFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'photo' }),
+    );
     expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The motion half of a Live Photo is `video/%`, which the photo listing does
+   * not return, and it is just as likely to be filed in a folder as its still.
+   */
+  it('fetches motion candidates drive-wide too', async () => {
+    listFiles.mockResolvedValue(listing([]));
+
+    await photosApi.listMotionCandidates();
+
+    expect(listFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'video' }),
+    );
   });
 });

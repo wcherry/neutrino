@@ -4,7 +4,12 @@
  * Verifies that when a photo is uploaded through the Photos UI, a thumbnail is
  * generated client-side (in the browser via the Canvas API) and saved to the
  * server as part of the same upload request. The Photos API should return a
- * non-null `thumbnail` field immediately after upload — no background job needed.
+ * non-null `thumbnailUrl` immediately after upload — no background job needed.
+ *
+ * Since issue #175 the thumbnail is stored in the file store rather than inline
+ * in the `files` row, and the API returns a URL instead of base64 bytes, so the
+ * test follows that URL: a link that cannot be fetched is the same blank tile
+ * the inline bytes used to be, and only the round trip catches it.
  */
 
 import { test, expect } from '../../fixtures/base';
@@ -131,18 +136,25 @@ test.describe('Photo thumbnail generation', () => {
     expect(listRes.ok(), `listing photos must succeed: ${listRes.status()}`).toBeTruthy();
 
     const { photos } = await listRes.json() as {
-      photos: { id: string; fileId: string; thumbnail: string | null }[];
+      photos: { id: string; fileId: string; thumbnailUrl: string | null }[];
     };
     expect(photos.length, 'at least one photo must exist after upload').toBeGreaterThan(0);
 
+    const thumbnailUrl = photos[0].thumbnailUrl;
     expect(
-      photos[0].thumbnail,
-      'thumbnail must be non-null — it should be generated client-side and saved during upload',
+      thumbnailUrl,
+      'thumbnailUrl must be non-null — it should be generated client-side and saved during upload',
     ).not.toBeNull();
 
-    expect(
-      (photos[0].thumbnail as string).length,
-      'thumbnail must be non-empty base64',
-    ).toBeGreaterThan(0);
+    // The URL has to actually serve the image. It carries a `v` that lets the
+    // response be cached for a year, so a wrong one is a picture the browser
+    // would keep asking for and never get.
+    const thumbRes = await request.get(`${BASE_URL}${thumbnailUrl}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(thumbRes.ok(), `fetching the thumbnail must succeed: ${thumbRes.status()}`).toBeTruthy();
+    expect(thumbRes.headers()['content-type']).toContain('image/');
+    expect(thumbRes.headers()['cache-control']).toContain('immutable');
+    expect((await thumbRes.body()).length, 'thumbnail must not be empty').toBeGreaterThan(0);
   });
 });

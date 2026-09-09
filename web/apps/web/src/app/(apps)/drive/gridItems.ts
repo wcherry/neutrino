@@ -8,6 +8,7 @@ import type {
   TrashFileItem,
   TrashFolderItem,
 } from '@/lib/api';
+import { storageApi } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
 import { Folder } from 'lucide-react';
 
@@ -47,8 +48,7 @@ export function fileToGridItem(file: FileItem): GridItem {
     modifiedText: formatDate(file.updatedAt),
     updatedAt: file.updatedAt,
     isStarred: file.isStarred,
-    coverThumbnail: file.coverThumbnail,
-    coverThumbnailMimeType: file.coverThumbnailMimeType,
+    thumbnailUrl: storageApi.getThumbnailUrl(file.coverThumbnailUrl),
   };
 }
 

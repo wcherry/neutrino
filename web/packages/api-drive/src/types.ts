@@ -11,8 +11,17 @@ export interface FileItem {
   isStarred: boolean;
   createdAt: string;
   updatedAt: string;
-  coverThumbnail: string | null;
-  coverThumbnailMimeType: string | null;
+  /**
+   * Relative URL of the file's cover thumbnail, or null when it has none.
+   *
+   * Not the bytes: a page of files used to carry a base64 thumbnail per row —
+   * ~37KB each, several megabytes for a grid of photos, and uncacheable
+   * because it arrived inside a JSON body with no URL of its own (issue #175).
+   * Pass it through `driveApi.getThumbnailUrl` to get something an `<img>` can
+   * load; the `v` it already carries is what busts the cache when the
+   * thumbnail changes.
+   */
+  coverThumbnailUrl: string | null;
   /** Base64url-encoded encrypted metadata blob. Present only for E2EE files. */
   encryptedMetadata?: string | null;
   /** Server-side content revision counter, incremented on every autosave/version save. */
@@ -65,8 +74,8 @@ export interface FileInfo {
   mimeType: string | null;
   createdAt: string;
   updatedAt: string;
-  coverThumbnail: string | null;
-  coverThumbnailMimeType: string | null;
+  /** Relative URL of the file's cover thumbnail — see `FileItem.coverThumbnailUrl`. */
+  coverThumbnailUrl: string | null;
   tags: string[];
   encryptedMetadata: string | null;
   /** Server-side content revision counter, incremented on every autosave/version save. */
@@ -116,7 +125,11 @@ export interface FileListQuery {
   offset?: number;
   orderBy?: 'name' | 'size' | 'createdAt' | 'updatedAt';
   direction?: 'asc' | 'desc';
-  /** List only files of this type within the folder being listed. */
+  /**
+   * Narrow the listing to one kind of file. Answered in SQL against the
+   * category's MIME patterns, and — on the flat `/drive/files` listing —
+   * across the whole drive rather than one folder.
+   */
   type?: DriveFileType;
 }
 

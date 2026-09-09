@@ -1,3 +1,4 @@
+use crate::drive::filesystem::dto::DriveFileType;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
@@ -6,8 +7,8 @@ use crate::drive::storage::{
         VersionOrderField,
     },
     model::{
-        AutosaveFileContent, FileRecord, ImportProvenance, NewFileRecord, NewFileVersionRecord,
-        UpdateFileContent,
+        cover_thumbnail_url, AutosaveFileContent, FileRecord, ImportProvenance, NewFileRecord,
+        NewFileVersionRecord, UpdateFileContent,
     },
     repository::StorageRepository,
     store::{LocalFileStore, ServeResolveError},
@@ -16,8 +17,6 @@ use crate::shared::{
     apply_list_query, ApiError, AuthenticatedUser, ContentVersionCheck, ListQuery, ListQueryParams,
     OrderDirection,
 };
-use base64::engine::general_purpose::STANDARD as BASE64;
-use base64::Engine as _;
 use chrono::Utc;
 use std::path::Path;
 use std::sync::Arc;
@@ -672,16 +671,30 @@ impl StorageService {
         Ok(())
     }
 
+    /// The caller's files, flat and paged, optionally narrowed to one
+    /// [`DriveFileType`].
+    ///
+    /// The type filter is what lets an app ask for its own files across the
+    /// whole drive rather than one folder at a time. The Photos library is the
+    /// case that needed it: it listed the *root* folder and so showed nothing
+    /// at all for a library that arrived through a Takeout import, which files
+    /// every picture under a `Google Photos` folder.
     pub fn list_files(
         &self,
         user_id: &str,
         query: &ListQuery<FileOrderField>,
+        file_type: Option<DriveFileType>,
     ) -> Result<ListFilesResponse, ApiError> {
-        let files = self.repo.list_files_by_user(user_id, query)?;
+        let mime_filter = file_type.map(|t| t.mime_filter());
+        let files = self
+            .repo
+            .list_files_by_user(user_id, query, mime_filter.as_ref())?;
         // Every file the query matches, not the length of the page just built:
         // a client paging with `offset` has no other way to know it has reached
         // the end, and used to find out by fetching one more empty page.
-        let total = self.repo.count_files_by_user(user_id, query)? as usize;
+        let total = self
+            .repo
+            .count_files_by_user(user_id, query, mime_filter.as_ref())? as usize;
         Ok(ListFilesResponse {
             files: files.into_iter().map(FileMetadataResponse::from).collect(),
             total,
@@ -843,7 +856,7 @@ impl StorageService {
     /// Decode an image file, resize it to fit within 512×512, and return base64 JPEG + MIME type.
     /// Returns None if the file cannot be decoded (e.g. unsupported format or encrypted).
     #[allow(dead_code)]
-    pub fn generate_image_thumbnail(path: &Path) -> Option<(String, String)> {
+    pub fn generate_image_thumbnail(path: &Path) -> Option<(Vec<u8>, String)> {
         let img = image::open(path).ok()?;
         let thumb = img.thumbnail(512, 512);
         let mut buf: Vec<u8> = Vec::new();
@@ -853,16 +866,64 @@ impl StorageService {
                 image::ImageFormat::Jpeg,
             )
             .ok()?;
-        Some((BASE64.encode(&buf), "image/jpeg".to_string()))
+        Some((buf, "image/jpeg".to_string()))
     }
 
+    /// Store a file's cover thumbnail: the bytes into the file's directory,
+    /// the MIME type into its row.
+    ///
+    /// The two halves used to be one column of base64, which made the
+    /// thumbnails ~88% of the database and put a copy of every one of them in
+    /// each page of a listing (issue #175). The blob is written first, so a
+    /// row that says a thumbnail exists is never ahead of the disk; a store
+    /// write that fails leaves the file with whatever thumbnail it had.
+    ///
+    /// Returns the URL the thumbnail is now served from, so the upload that
+    /// stored it can hand a usable one straight back rather than a null the
+    /// client has to refetch to fill in.
     pub fn set_cover_thumbnail(
         &self,
         file_id: &str,
-        thumbnail: String,
-        mime_type: String,
-    ) -> Result<(), ApiError> {
-        self.repo.set_cover_thumbnail(file_id, thumbnail, mime_type)
+        bytes: &[u8],
+        mime_type: &str,
+    ) -> Result<String, ApiError> {
+        let file = self
+            .repo
+            .find_file_by_id(file_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
+        self.store
+            .write_thumbnail(&file.user_id, file_id, bytes)
+            .map_err(|e| {
+                tracing::error!("{}", e);
+                ApiError::internal("Failed to store thumbnail")
+            })?;
+        let now = Utc::now().naive_utc();
+        self.repo
+            .set_cover_thumbnail_mime(file_id, mime_type, now)?;
+        Ok(cover_thumbnail_url(file_id, now))
+    }
+
+    /// Resolve a file's cover thumbnail to a path to serve and the MIME type to
+    /// serve it as, or `None` when it has neither.
+    ///
+    /// Both halves have to agree: a row claiming a thumbnail whose blob is
+    /// gone, and a stray `.thumb` beside a row that does not mention one, are
+    /// each a 404 rather than a broken image or an untyped body.
+    pub fn resolve_thumbnail_by_id(
+        &self,
+        file_id: &str,
+    ) -> Result<Option<(std::path::PathBuf, String)>, ApiError> {
+        let file = self
+            .repo
+            .find_file_by_id(file_id)?
+            .ok_or_else(|| ApiError::not_found("File not found"))?;
+        let Some(mime_type) = file.cover_thumbnail_mime_type else {
+            return Ok(None);
+        };
+        Ok(self
+            .store
+            .resolve_thumbnail_for_serving(&file.user_id, file_id)
+            .map(|path| (path, mime_type)))
     }
 
     // ── Private helpers ────────────────────────────────────────────────────────
@@ -1758,6 +1819,129 @@ mod tests {
 
         assert_eq!(allowance.check(1).unwrap_err().code, "QUOTA_EXCEEDED");
         assert!(allowance.check(0).is_ok());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    // ── Cover thumbnails (issue #175) ────────────────────────────────────────
+
+    /// The move the issue asked for: the bytes end up on disk beside the file's
+    /// versions and the row carries only the MIME type, so a listing that maps
+    /// the record no longer serialises an image per row.
+    #[tokio::test]
+    async fn a_cover_thumbnail_is_stored_on_disk_and_not_in_the_row() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let file = upload(&service, &user, "photo.jpg", b"original bytes").await;
+
+        let url = service
+            .set_cover_thumbnail(&file.id, b"jpeg thumbnail", "image/jpeg")
+            .expect("store thumbnail");
+
+        let stored = repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert_eq!(stored.cover_thumbnail_mime_type.as_deref(), Some("image/jpeg"));
+        // What the write returned and what a later read builds are the same
+        // URL — the upload response is filled in from the former.
+        assert_eq!(Some(url), stored.cover_thumbnail_url());
+        assert_eq!(
+            std::fs::read(base.join("user-1").join(&file.id).join(".thumb")).expect("read"),
+            b"jpeg thumbnail",
+        );
+
+        let (path, mime) = service
+            .resolve_thumbnail_by_id(&file.id)
+            .expect("resolve")
+            .expect("a thumbnail");
+        assert_eq!(std::fs::read(path).expect("read"), b"jpeg thumbnail");
+        assert_eq!(mime, "image/jpeg");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// The URL is what replaced the inline bytes, and its `v` is what lets the
+    /// response be cached for a year: replacing a thumbnail has to change it,
+    /// or the browser keeps the old picture until the cache expires.
+    #[tokio::test]
+    async fn the_thumbnail_url_changes_when_the_thumbnail_does() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let file = upload(&service, &user, "photo.jpg", b"original bytes").await;
+
+        let before = repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert_eq!(before.cover_thumbnail_url(), None, "no thumbnail, no URL");
+
+        service
+            .set_cover_thumbnail(&file.id, b"first", "image/jpeg")
+            .expect("store thumbnail");
+        let first = repo
+            .find_file_by_id(&file.id)
+            .unwrap()
+            .unwrap()
+            .cover_thumbnail_url()
+            .expect("a URL");
+        assert!(
+            first.starts_with(&format!("/api/v1/drive/files/{}/thumbnail?v=", file.id)),
+            "unexpected URL: {first}",
+        );
+
+        // `updated_at` has millisecond resolution, so a rewrite inside the same
+        // millisecond would produce the same URL — which is right, since the
+        // test is that the URL tracks the row, not that it is unique per call.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        service
+            .set_cover_thumbnail(&file.id, b"second", "image/jpeg")
+            .expect("replace thumbnail");
+        let second = repo
+            .find_file_by_id(&file.id)
+            .unwrap()
+            .unwrap()
+            .cover_thumbnail_url()
+            .expect("a URL");
+
+        assert_ne!(first, second, "a replaced thumbnail must bust the cache");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// Both halves have to agree before anything is served. A row claiming a
+    /// thumbnail whose blob is gone is a 404, not a broken image.
+    #[tokio::test]
+    async fn a_thumbnail_missing_from_either_half_resolves_to_nothing() {
+        let (service, _repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let file = upload(&service, &user, "photo.jpg", b"original bytes").await;
+
+        // Neither half.
+        assert!(service.resolve_thumbnail_by_id(&file.id).unwrap().is_none());
+
+        // A stray blob with nothing in the row to type it.
+        service
+            .store()
+            .write_thumbnail(&user.user_id, &file.id, b"orphan")
+            .expect("write");
+        assert!(service.resolve_thumbnail_by_id(&file.id).unwrap().is_none());
+
+        // A row that names a thumbnail whose blob has gone.
+        service
+            .set_cover_thumbnail(&file.id, b"thumb", "image/jpeg")
+            .expect("store thumbnail");
+        std::fs::remove_file(service.store().thumbnail_path(&user.user_id, &file.id))
+            .expect("remove blob");
+        assert!(service.resolve_thumbnail_by_id(&file.id).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A thumbnail belongs to its file, so deleting the file for good takes it
+    /// — the whole reason it lives in the file's own directory.
+    #[tokio::test]
+    async fn deleting_a_file_takes_its_thumbnail() {
+        let (service, _repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let file = upload(&service, &user, "photo.jpg", b"original bytes").await;
+        service
+            .set_cover_thumbnail(&file.id, b"thumb", "image/jpeg")
+            .expect("store thumbnail");
+
+        service.store().remove_file_dir(&user.user_id, &file.id);
+
+        assert!(!service.store().thumbnail_path(&user.user_id, &file.id).exists());
         let _ = std::fs::remove_dir_all(base);
     }
 }

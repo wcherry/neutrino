@@ -462,8 +462,9 @@ diesel::table! {
         folder_id -> Nullable<Text>,
         is_starred -> Bool,
         deleted_at -> Nullable<Timestamp>,
-        // Added in migration 020
-        cover_thumbnail -> Nullable<Text>,
+        // Added in migration 020; the blob half moved to the file store and
+        // was dropped in migration 132, leaving the MIME type to say that a
+        // `<user>/<file>/.thumb` exists and what it is.
         cover_thumbnail_mime_type -> Nullable<Text>,
         // Added in migration 021
         starred_at -> Nullable<Timestamp>,

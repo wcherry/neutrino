@@ -6,6 +6,27 @@ use std::time::{Duration, SystemTime};
 /// place, so anything still carrying this prefix is by definition uncommitted.
 pub const TEMP_PREFIX: &str = "tmp_";
 
+/// Filename a file's cover thumbnail is stored under, inside the file's own
+/// directory.
+///
+/// Hidden, and deliberately not a UUID: every other entry in a file directory
+/// is named for a `file_versions.id`, so a leading dot is what keeps the
+/// thumbnail out of that namespace — it can neither collide with a version nor
+/// be mistaken for one by anything walking the directory. It also means the
+/// blob travels with the file: `remove_file_dir` takes it on a permanent
+/// delete without needing to know it exists.
+pub const THUMBNAIL_NAME: &str = ".thumb";
+
+/// Name the replacement bytes are written under before being renamed over the
+/// live thumbnail, so a reader never sees a half-written image.
+///
+/// A fixed name rather than a unique one, so a crash between the write and the
+/// rename strands at most one of these per file and the next thumbnail written
+/// for that file overwrites it. Uploads need [`TempUpload`]'s guard because a
+/// staging file there is unique per attempt and is the only copy of content
+/// nobody can regenerate; neither is true of a preview.
+const THUMBNAIL_STAGING_NAME: &str = ".thumb.new";
+
 /// A staging file that deletes itself unless the upload commits.
 ///
 /// The commit is the `rename` at the end of `StorageService::finalize_upload`
@@ -138,6 +159,54 @@ impl LocalFileStore {
     /// Resolve a relative DB key to its absolute path using STORAGE_PATH.
     pub fn resolve(&self, key: &str) -> PathBuf {
         self.base_path.join(key)
+    }
+
+    /// Absolute path to a file's cover thumbnail.
+    ///
+    /// The thumbnail has no key of its own in the database — it is derived
+    /// entirely from the owner and the file id, the same way `file_dir` is —
+    /// because there is exactly one per file and it is not versioned.
+    /// `files.cover_thumbnail_mime_type` records that it exists and what it is.
+    pub fn thumbnail_path(&self, user_id: &str, file_id: &str) -> PathBuf {
+        self.file_dir(user_id, file_id).join(THUMBNAIL_NAME)
+    }
+
+    /// Write (or replace) a file's cover thumbnail.
+    ///
+    /// Staged and renamed rather than written in place: the grid fetches this
+    /// through its own cacheable endpoint, and a request that arrived mid-write
+    /// would otherwise be served a truncated image. The rename is within the
+    /// file's own directory, so it is atomic.
+    pub fn write_thumbnail(
+        &self,
+        user_id: &str,
+        file_id: &str,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        // A file whose content was never uploaded has no directory yet, and a
+        // thumbnail can legitimately arrive first (the client generates it from
+        // the plaintext it is about to encrypt).
+        self.ensure_file_dir(user_id, file_id)?;
+
+        let dir = self.file_dir(user_id, file_id);
+        let staging = dir.join(THUMBNAIL_STAGING_NAME);
+        std::fs::write(&staging, bytes)
+            .map_err(|e| format!("Failed to write thumbnail for {}: {}", file_id, e))?;
+        std::fs::rename(&staging, dir.join(THUMBNAIL_NAME)).map_err(|e| {
+            let _ = std::fs::remove_file(&staging);
+            format!("Failed to commit thumbnail for {}: {}", file_id, e)
+        })
+    }
+
+    /// Resolve a file's thumbnail to a path safe to hand to the file streamer,
+    /// or `None` when there is nothing on disk.
+    ///
+    /// Unlike [`Self::resolve_for_serving`] a miss is not an error worth
+    /// distinguishing: a thumbnail is a nicety, and the caller answers 404
+    /// whether the file never had one or its blob has since gone.
+    pub fn resolve_thumbnail_for_serving(&self, user_id: &str, file_id: &str) -> Option<PathBuf> {
+        let path = self.thumbnail_path(user_id, file_id);
+        path.is_file().then_some(path)
     }
 
     /// Resolve a relative DB key to a path safe to hand to a file streamer.
@@ -469,6 +538,54 @@ mod tests {
         // A second delete, and a file that never had content, are both no-ops.
         store.remove_file_dir("user1", "file1");
         store.remove_file_dir("user1", "never-uploaded");
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A thumbnail lands in the file's own directory under a hidden name, so a
+    /// permanent delete takes it with the versions and nothing walking the
+    /// directory mistakes it for one.
+    #[test]
+    fn thumbnails_live_beside_the_versions_and_go_with_them() {
+        let (store, base) = temp_store();
+
+        store.write_thumbnail("user1", "file1", b"jpeg bytes").expect("write");
+        std::fs::write(store.version_path("user1", "file1", "ver-1"), b"content").expect("write");
+
+        assert_eq!(
+            std::fs::read(store.thumbnail_path("user1", "file1")).expect("read"),
+            b"jpeg bytes",
+        );
+        assert_eq!(
+            store.resolve_thumbnail_for_serving("user1", "file1"),
+            Some(base.join("user1/file1/.thumb")),
+        );
+        // Nothing staged is left behind for a directory walk to trip over.
+        assert!(!base.join("user1/file1/.thumb.new").exists());
+
+        store.remove_file_dir("user1", "file1");
+        assert_eq!(store.resolve_thumbnail_for_serving("user1", "file1"), None);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A replacement overwrites the old image rather than accumulating, and a
+    /// file that never had one resolves to nothing rather than a bogus path.
+    #[test]
+    fn writing_a_thumbnail_twice_replaces_it() {
+        let (store, base) = temp_store();
+
+        assert_eq!(store.resolve_thumbnail_for_serving("user1", "file1"), None);
+
+        store.write_thumbnail("user1", "file1", b"first").expect("write");
+        store.write_thumbnail("user1", "file1", b"second").expect("rewrite");
+
+        assert_eq!(
+            std::fs::read(store.thumbnail_path("user1", "file1")).expect("read"),
+            b"second",
+        );
+        let entries = std::fs::read_dir(store.file_dir("user1", "file1"))
+            .expect("file dir")
+            .count();
+        assert_eq!(entries, 1, "staging left a second file behind");
         let _ = std::fs::remove_dir_all(base);
     }
 

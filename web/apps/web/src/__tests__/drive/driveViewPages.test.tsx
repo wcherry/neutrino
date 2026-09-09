@@ -25,6 +25,8 @@ const { pushMock, api } = vi.hoisted(() => ({
       deleteFolderPermanently: vi.fn(),
     },
     sharedWithMeApi: { list: vi.fn() },
+    // `fileToGridItem` builds the thumbnail's <img src> from this.
+    storageApi: { getThumbnailUrl: vi.fn(() => null) },
   },
 }));
 
@@ -58,8 +60,7 @@ function file(overrides: Partial<Record<string, unknown>> = {}) {
     isStarred: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-02-01T00:00:00Z',
-    coverThumbnail: null,
-    coverThumbnailMimeType: null,
+    coverThumbnailUrl: null,
     contentVersion: 1,
     ...overrides,
   };

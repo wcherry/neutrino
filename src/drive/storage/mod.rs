@@ -7,3 +7,4 @@ pub mod native_types;
 pub mod repository;
 pub mod service;
 pub mod store;
+pub mod thumbnails;

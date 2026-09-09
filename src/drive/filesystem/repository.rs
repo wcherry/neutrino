@@ -12,6 +12,47 @@ use diesel::r2d2::{ConnectionManager, Pool};
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
+/// `(mime LIKE i1 OR ...) AND NOT (mime LIKE e1 OR ...)` as one boxed
+/// expression, so it ANDs correctly with the surrounding filters rather than
+/// binding loosely.
+///
+/// The `NOT` half is the category precedence (`MimeFilter::exclude`): it is
+/// how `code` gives up the `.docx` that `office` has already claimed. It is
+/// empty for the per-app types, which overlap each other by design.
+///
+/// Free-standing rather than a method because the flat listing in
+/// `drive::storage` answers the same `?type=` with the same table: the photo
+/// library asks it for every image in the drive, and a second translation of
+/// `MimeFilter` into SQL would be a second thing to keep in step.
+pub(crate) fn mime_matches(
+    filter: &MimeFilter,
+) -> Box<
+    dyn BoxableExpression<files::table, diesel::sqlite::Sqlite, SqlType = diesel::sql_types::Bool>,
+> {
+    use diesel::sql_types::Bool;
+    use diesel::sqlite::Sqlite;
+
+    type MimeExpr = Box<dyn BoxableExpression<files::table, Sqlite, SqlType = Bool>>;
+
+    /// `mime LIKE p1 OR mime LIKE p2 OR …`; no patterns matches nothing.
+    fn any_of(patterns: &[&'static str]) -> MimeExpr {
+        let mut expr: MimeExpr = match patterns.first() {
+            Some(first) => Box::new(files::mime_type.like(*first)),
+            None => Box::new(diesel::dsl::sql::<Bool>("0")),
+        };
+        for pattern in patterns.iter().skip(1) {
+            expr = Box::new(expr.or(files::mime_type.like(*pattern)));
+        }
+        expr
+    }
+
+    let included = any_of(filter.include);
+    if filter.exclude.is_empty() {
+        return included;
+    }
+    Box::new(included.and(diesel::dsl::not(any_of(&filter.exclude))))
+}
+
 /// Drop the version history of files that are about to be deleted for good.
 ///
 /// Left behind, these rows point at blobs the caller has just removed and go on
@@ -288,11 +329,12 @@ impl FilesystemRepository {
     /// `folder_id` of `None` lists the drive root.
     ///
     /// Sorting, the type filter and the page window all belong in SQL rather
-    /// than in the caller because a `FileRecord` carries `cover_thumbnail` —
-    /// up to ~100KB of base64 per row. Loading the whole folder to hand back
-    /// `limit` rows means reading every one of those thumbnails off disk only
-    /// to drop it, which is what made this listing take twenty seconds in a
-    /// drive holding a Google Takeout import (issue #147).
+    /// than in the caller: loading a whole folder to hand back `limit` rows
+    /// reads every row off disk only to drop it, which is what made this
+    /// listing take twenty seconds in a drive holding a Google Takeout import
+    /// (issue #147). The rows were far worse then — each carried up to ~100KB
+    /// of base64 thumbnail, since moved to the file store (issue #175) — but
+    /// the shape of the mistake does not depend on how fat they are.
     pub fn list_files_in_folder(
         &self,
         user_id: &str,
@@ -318,7 +360,7 @@ impl FilesystemRepository {
         };
 
         if let Some(mime_filter) = mime_filter {
-            base = base.filter(Self::mime_matches(mime_filter));
+            base = base.filter(mime_matches(mime_filter));
         }
 
         let result = match listing_order(query) {
@@ -1031,7 +1073,7 @@ impl FilesystemRepository {
             .into_boxed();
 
         if let Some(mime_filter) = mime_filter {
-            query = query.filter(Self::mime_matches(mime_filter));
+            query = query.filter(mime_matches(mime_filter));
         }
 
         query
@@ -1043,46 +1085,6 @@ impl FilesystemRepository {
                 tracing::error!("DB list recent files error: {:?}", e);
                 ApiError::internal("Database error")
             })
-    }
-
-    /// `(mime LIKE i1 OR ...) AND NOT (mime LIKE e1 OR ...)` as one boxed
-    /// expression, so it ANDs correctly with the surrounding filters rather than
-    /// binding loosely.
-    ///
-    /// The `NOT` half is the category precedence (`MimeFilter::exclude`): it is
-    /// how `code` gives up the `.docx` that `office` has already claimed. It is
-    /// empty for the per-app types, which overlap each other by design.
-    fn mime_matches(
-        filter: &MimeFilter,
-    ) -> Box<
-        dyn BoxableExpression<
-            files::table,
-            diesel::sqlite::Sqlite,
-            SqlType = diesel::sql_types::Bool,
-        >,
-    > {
-        use diesel::sql_types::Bool;
-        use diesel::sqlite::Sqlite;
-
-        type MimeExpr = Box<dyn BoxableExpression<files::table, Sqlite, SqlType = Bool>>;
-
-        /// `mime LIKE p1 OR mime LIKE p2 OR …`; no patterns matches nothing.
-        fn any_of(patterns: &[&'static str]) -> MimeExpr {
-            let mut expr: MimeExpr = match patterns.first() {
-                Some(first) => Box::new(files::mime_type.like(*first)),
-                None => Box::new(diesel::dsl::sql::<Bool>("0")),
-            };
-            for pattern in patterns.iter().skip(1) {
-                expr = Box::new(expr.or(files::mime_type.like(*pattern)));
-            }
-            expr
-        }
-
-        let included = any_of(filter.include);
-        if filter.exclude.is_empty() {
-            return included;
-        }
-        Box::new(included.and(diesel::dsl::not(any_of(&filter.exclude))))
     }
 
     // ── Starred (Quick Access) ─────────────────────────────────────────────────

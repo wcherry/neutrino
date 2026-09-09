@@ -48,9 +48,7 @@ function toPickerItem(item: FileItem): ImagePickerDriveItem {
     url: storageApi.getFileDownloadUrl(item.id),
     // Browse the grid off the stored thumbnails where they exist, so opening the
     // picker doesn't download every full-size image in the user's Drive.
-    thumbnailUrl: item.coverThumbnail
-      ? `data:${item.coverThumbnailMimeType ?? 'image/jpeg'};base64,${item.coverThumbnail}`
-      : undefined,
+    thumbnailUrl: storageApi.getThumbnailUrl(item.coverThumbnailUrl) ?? undefined,
   };
 }
 

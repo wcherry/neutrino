@@ -69,7 +69,10 @@ separately, because they leak content regardless of how well keys are protected:
 - **Docs and Diagrams persist plaintext server-side.** The collab room holds a server-side
   Y.Doc and writes it to `doc_yjs_state` when the last session leaves
   (`src/docs/collab/api.rs:113`, `:231`).
-- **`cover_thumbnail` is an unencrypted preview** of files whose bytes are ciphertext.
+- **The cover thumbnail is an unencrypted preview** of files whose bytes are ciphertext. Since
+  issue #175 it is a blob in the file store (`<user>/<file>/.thumb`) served from
+  `GET /api/v1/drive/files/{id}/thumbnail` rather than base64 in the `files` row, which moved
+  where the plaintext sits without changing that it is plaintext.
 
 ---
 
@@ -416,5 +419,5 @@ flight when the app takes real users, revisit this section before shipping Phase
   no cryptographic evidence of who shared a file. Moving `file_key_refs` to authenticated
   `crypto_box` would fix it and would compose well with Phase 0's fingerprints, but it
   changes the sealed-DEK format and is deferred.
-- **The plaintext-on-server defects** of §2 — the Docs/Diagrams Y.Doc and `cover_thumbnail`.
+- **The plaintext-on-server defects** of §2 — the Docs/Diagrams Y.Doc and the cover thumbnail.
   Tracked separately. They will still be there when this work lands.

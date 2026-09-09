@@ -68,9 +68,16 @@ export interface GridItem {
    */
   updatedAt?: string;
   isStarred?: boolean;
-  /** Base64-encoded cover thumbnail, shown in grid cards when available */
-  coverThumbnail?: string | null;
-  coverThumbnailMimeType?: string | null;
+  /**
+   * Ready-to-load URL of the item's cover thumbnail, shown in grid cards and
+   * list rows when present.
+   *
+   * A URL rather than an inline data URI since issue #175: the bytes used to
+   * ride along in the listing JSON, which made a grid of photos a multi-
+   * megabyte response the browser had to re-download every time. Callers build
+   * this with `driveApi.getThumbnailUrl(file.coverThumbnailUrl)`.
+   */
+  thumbnailUrl?: string | null;
 }
 
 const FILTER_CHIPS: { key: FilterType; label: string }[] = [
@@ -353,9 +360,7 @@ export function FileGrid({
         /* ── Large grid ── */
         <div className={styles['grid-large']} role="list">
           {filteredItems.map((item) => {
-            const thumbSrc = item.coverThumbnail && item.coverThumbnailMimeType
-              ? `data:${item.coverThumbnailMimeType};base64,${item.coverThumbnail}`
-              : null;
+            const thumbSrc = item.thumbnailUrl ?? null;
             const isSelected = selectedIds?.has(item.id) ?? false;
             return (
             <Card
@@ -419,9 +424,7 @@ export function FileGrid({
         /* ── Small grid ── */
         <div className={styles['grid-small']} role="list">
           {filteredItems.map((item) => {
-            const thumbSrc = item.coverThumbnail && item.coverThumbnailMimeType
-              ? `data:${item.coverThumbnailMimeType};base64,${item.coverThumbnail}`
-              : null;
+            const thumbSrc = item.thumbnailUrl ?? null;
             const isSelected = selectedIds?.has(item.id) ?? false;
             return (
             <Card
@@ -513,9 +516,7 @@ export function FileGrid({
           </div>
           <div role="list">
             {filteredItems.map((item) => {
-              const thumbSrc = item.coverThumbnail && item.coverThumbnailMimeType
-                ? `data:${item.coverThumbnailMimeType};base64,${item.coverThumbnail}`
-                : null;
+              const thumbSrc = item.thumbnailUrl ?? null;
               const isSelected = selectedIds?.has(item.id) ?? false;
               return (
               <div

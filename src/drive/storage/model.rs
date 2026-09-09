@@ -17,7 +17,10 @@ pub struct FileRecord {
     pub folder_id: Option<String>,
     pub is_starred: bool,
     pub deleted_at: Option<NaiveDateTime>,
-    pub cover_thumbnail: Option<String>,
+    /// MIME type of the file's cover thumbnail, and by its presence the record
+    /// that there is one. The bytes are in the store at `<user>/<file>/.thumb`
+    /// — see [`FileRecord::cover_thumbnail_url`] — never in this row: they used
+    /// to be, as base64, and were ~88% of the database (issue #175).
     pub cover_thumbnail_mime_type: Option<String>,
     pub starred_at: Option<NaiveDateTime>,
     pub shared_drive_id: Option<String>,
@@ -35,6 +38,34 @@ pub struct FileRecord {
     /// The file's path inside the archive it was imported from, e.g.
     /// `Takeout/Drive/Work/Q3 plan.docx`. Null unless `imported_at` is set.
     pub import_source: Option<String>,
+}
+
+/// Where a client fetches a file's cover thumbnail.
+///
+/// Relative, like `PhotoResponse::content_url`, so the caller supplies the
+/// origin and its own credentials. The `v` parameter is what makes the URL
+/// safe to cache for a year: `set_cover_thumbnail` stamps `updated_at`, so a
+/// replaced thumbnail is a different URL and the old one is never asked for
+/// again. A rename also moves it, which costs one needless re-fetch of a few
+/// tens of KB — the price of never serving a stale picture.
+///
+/// Free-standing as well as reachable through [`FileRecord`] because the write
+/// path has the new timestamp in hand and no row read back to build one from.
+pub fn cover_thumbnail_url(file_id: &str, updated_at: NaiveDateTime) -> String {
+    format!(
+        "/api/v1/drive/files/{}/thumbnail?v={}",
+        file_id,
+        updated_at.and_utc().timestamp_millis(),
+    )
+}
+
+impl FileRecord {
+    /// Where a client fetches this file's cover thumbnail, or `None` when it
+    /// has none — see [`cover_thumbnail_url`].
+    pub fn cover_thumbnail_url(&self) -> Option<String> {
+        self.cover_thumbnail_mime_type.as_ref()?;
+        Some(cover_thumbnail_url(&self.id, self.updated_at))
+    }
 }
 
 #[derive(Debug, Insertable)]

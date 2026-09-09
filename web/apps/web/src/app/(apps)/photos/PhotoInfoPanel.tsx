@@ -16,7 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Text, Heading } from '@neutrino/ui';
-import { facesApi, type PhotoResponse } from '@/lib/api';
+import { facesApi, storageApi, type PhotoResponse } from '@/lib/api';
 import type { MotionPhotoSubtype } from '@neutrino/api-photos';
 import { LocationMap } from './LocationMap';
 import styles from './PhotoInfoPanel.module.css';
@@ -78,6 +78,7 @@ export function PhotoInfoPanel({
   });
   const faces = facesQuery.data?.faces ?? [];
 
+  const thumbnailSrc = storageApi.getThumbnailUrl(photo.thumbnailUrl);
   const isVideo = photo.mimeType.startsWith('video/');
   const ext = photo.fileName.includes('.')
     ? photo.fileName.split('.').pop()!.toUpperCase()
@@ -98,9 +99,9 @@ export function PhotoInfoPanel({
       </div>
 
       <div className={styles.preview}>
-        {photo.thumbnail && photo.thumbnailMimeType ? (
+        {thumbnailSrc ? (
           <img
-            src={`data:${photo.thumbnailMimeType};base64,${photo.thumbnail}`}
+            src={thumbnailSrc}
             alt={photo.fileName}
             className={styles.previewImg}
           />

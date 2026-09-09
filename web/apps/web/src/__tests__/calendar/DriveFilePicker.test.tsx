@@ -50,8 +50,7 @@ const mockRootContents = {
       isStarred: false,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-02T00:00:00Z',
-      coverThumbnail: null,
-      coverThumbnailMimeType: null,
+      coverThumbnailUrl: null,
     },
     {
       id: 'file-2',
@@ -62,8 +61,7 @@ const mockRootContents = {
       isStarred: false,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-02T00:00:00Z',
-      coverThumbnail: null,
-      coverThumbnailMimeType: null,
+      coverThumbnailUrl: null,
     },
   ],
 };
@@ -89,8 +87,7 @@ const mockFolderContents = {
       isStarred: false,
       createdAt: '2024-01-01T00:00:00Z',
       updatedAt: '2024-01-02T00:00:00Z',
-      coverThumbnail: null,
-      coverThumbnailMimeType: null,
+      coverThumbnailUrl: null,
     },
   ],
 };
