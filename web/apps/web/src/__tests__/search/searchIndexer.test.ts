@@ -219,7 +219,10 @@ describe('searchIndexer', () => {
         'sheet-1': JSON.stringify({ sheets: [{ cells: { A1: { raw: 'Modesto', value: 'Modesto' } } }] }),
         'slide-1': JSON.stringify({ slides: [{ elements: [{ type: 'text', content: 'Modesto' }] }] }),
         'dia-1': JSON.stringify({ pages: [{ shapes: [{ label: 'Modesto' }], connectors: [] }] }),
-        'draw-1': JSON.stringify({ version: 1, shapes: [{ text: 'Modesto' }] }),
+        'draw-1': JSON.stringify({
+          version: 2,
+          root: { type: 'stack', name: 'Root', children: [{ type: 'text', name: 'Modesto', text: '' }] },
+        }),
       };
       readDocumentText.mockImplementation((_userId: string, id: string) => Promise.resolve(bodies[id] ?? ''));
 

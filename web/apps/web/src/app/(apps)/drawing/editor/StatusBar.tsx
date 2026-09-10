@@ -9,11 +9,17 @@ interface StatusBarProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
   onFitToScreen: () => void;
+  /** The canvas dimensions, e.g. `1920 × 1080`. */
+  canvasSize: string;
+  empty: boolean;
 }
 
-export function StatusBar({ zoom, onZoomChange, onFitToScreen }: StatusBarProps) {
+export function StatusBar({ zoom, onZoomChange, onFitToScreen, canvasSize, empty }: StatusBarProps) {
   return (
     <div className={styles.bar}>
+      <span className={styles.info}>
+        {canvasSize} px{empty ? ' · empty' : ''}
+      </span>
       <div className={styles.spacer} />
       <div className={styles.zoomArea}>
         <button

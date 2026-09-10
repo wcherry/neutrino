@@ -2,6 +2,7 @@ import { test, expect } from '../../fixtures/base';
 import { setUpEncryption } from '../../fixtures/e2ee';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 
 const BASE_URL = 'http://localhost:9880';
 
@@ -69,6 +70,7 @@ test.describe('Export flow', () => {
     const formatSelect = page.getByLabel('Format');
     await expect(formatSelect).toContainText('PNG');
     await expect(formatSelect).toContainText('SVG');
+    await expect(formatSelect).toContainText('OpenRaster');
   });
 
   test('cancel button closes the export dialog', async ({ page, request }) => {
@@ -121,6 +123,42 @@ test.describe('Export flow', () => {
     expect(download.suggestedFilename()).toMatch(/\.svg$/);
   });
 
+  /**
+   * The point of the OpenRaster export: a real `.ora`, which is a zip whose
+   * first entry is an uncompressed `mimetype` reading `image/openraster`. Those
+   * bytes are how Krita and GIMP recognise the file, and getting them wrong
+   * still produces something that unzips — so the download is opened and read
+   * rather than only counted.
+   */
+  test('OpenRaster export downloads a valid .ora package', async ({ page, request }) => {
+    await registerAndLogin(request, page);
+    await openEditorWithShape(request, page);
+    await openExportDialog(page);
+
+    await page.getByLabel('Format').selectOption('ora');
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 15_000 }),
+      page.getByRole('button', { name: 'Export' }).click(),
+    ]);
+
+    expect(download.suggestedFilename()).toMatch(/\.ora$/);
+
+    const path = await download.path();
+    if (!path) throw new Error('download had no path');
+    const bytes = await readFile(path);
+
+    // Local file header: signature, then the compression method at offset 8
+    // (0 = stored), then the entry name at offset 30.
+    expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    expect(bytes.readUInt16LE(8)).toBe(0);
+    const nameLength = bytes.readUInt16LE(26);
+    const extraLength = bytes.readUInt16LE(28);
+    expect(bytes.subarray(30, 30 + nameLength).toString()).toBe('mimetype');
+    const contentAt = 30 + nameLength + extraLength;
+    expect(bytes.subarray(contentAt, contentAt + 16).toString()).toBe('image/openraster');
+  });
+
   test('filename field defaults to the drawing title', async ({ page, request }) => {
     await registerAndLogin(request, page);
     await openEditorWithShape(request, page);
@@ -147,7 +185,7 @@ test.describe('Export flow', () => {
     expect(download.suggestedFilename()).toBe('my_export.png');
   });
 
-  test('export button is disabled when the canvas has no shapes', async ({ page, request }) => {
+  test('export button is disabled when the canvas is empty', async ({ page, request }) => {
     await registerAndLogin(request, page);
     const token = await page.evaluate(() => localStorage.getItem('access_token'));
     if (!token) throw new Error('access_token not found');

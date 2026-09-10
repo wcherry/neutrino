@@ -1,1470 +1,1123 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback, useState, useImperativeHandle, forwardRef } from 'react';
-import type { Shape, Layer, ToolType, Transform, Point, ResizeHandle } from './types';
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
+
+import {
+  findNode,
+  isEffectivelyLocked,
+  isEffectivelyVisible,
+  nodeCanvasBounds,
+} from './document/tree';
+import {
+  addNode,
+  addObjects,
+  deleteNode,
+  mapObjects,
+  patchTextLayer,
+  removeObjects,
+  resizeObject,
+  setNodeProps,
+  translateNode,
+  translateObject,
+} from './document/edits';
+import {
+  createEllipse,
+  createLine,
+  createPath,
+  createRect,
+  createTextLayer,
+} from './document/factory';
+import {
+  normalizeRect,
+  rectCenter,
+  rectsIntersect,
+  unionRects,
+  unrotatePoint,
+} from './document/geometry';
+import { drawVectorObject, hitTestObject, objectSelectionBox } from './render/vectorObject';
+import { documentToSvg } from './render/documentSvg';
+import { domSurfaceFactory, renderDocument, type Surface } from './render/renderDocument';
+import type {
+  DrawingDocument,
+  DrawingNode,
+  Point,
+  Rect,
+  ResizeHandle,
+  Selection,
+  ToolType,
+  Transform,
+  VectorObject,
+  VectorStyle,
+} from './types';
 
 export interface DrawingCanvasHandle {
   setTransform: (t: Transform) => void;
-  exportPNG: (options?: { scale?: number; bgColor?: string }) => Promise<Blob>;
-  exportSVG: (options?: { bgColor?: string }) => string;
+  fitToScreen: () => void;
+  exportPNG: (options?: { scale?: number; background?: string | null }) => Promise<Blob>;
+  exportSVG: (options?: { background?: string | null }) => string;
 }
 
 interface DrawingCanvasProps {
-  shapes: Shape[];
+  doc: DrawingDocument;
+  onDocumentChange: (next: DrawingDocument) => void;
   tool: ToolType;
-  selectedIds: string[];
-  onShapesChange: (shapes: Shape[]) => void;
-  onSelectionChange: (ids: string[]) => void;
+  onToolChange: (tool: ToolType) => void;
+  selection: Selection;
+  onSelectionChange: (selection: Selection) => void;
+  activeLayerId: string;
+  newObjectStyle: VectorStyle;
   onTransformChange?: (t: Transform) => void;
-  showGrid?: boolean;
-  layers?: Layer[];
-  activeLayerId?: string;
+  bitmaps: ReadonlyMap<string, CanvasImageSource>;
+  images?: ReadonlyMap<string, CanvasImageSource>;
 }
 
-const GRID_SIZE = 16;
 const HANDLE_SIZE = 8;
-const ROTATE_OFFSET = 20;
-const EXPORT_PAD = 24;
+const ROTATE_OFFSET = 22;
+const SELECTION_COLOR = '#2563eb';
+const MIN_SCALE = 0.05;
+const MAX_SCALE = 16;
 
-export function shapeToSVGElement(shape: Shape): string {
-  if (shape.hidden) return '';
-  const stroke = shape.stroke || '#000000';
-  const fill = shape.fill || 'transparent';
-  const sw = shape.strokeWidth || 2;
-  const opacity = shape.opacity ?? 1;
-  const effectiveStyle = shape.strokeStyle ?? (shape.strokeDash ? 'dashed' : 'solid');
-  const dash = effectiveStyle === 'dashed' ? `stroke-dasharray="${sw * 4} ${sw * 3}"`
-    : effectiveStyle === 'dotted' ? `stroke-dasharray="${sw} ${sw * 2}"`
-    : effectiveStyle === 'long-dash' ? `stroke-dasharray="${sw * 8} ${sw * 3}"`
-    : '';
-  const rot = shape.rotation ? `transform="rotate(${shape.rotation}, ${shape.x + shape.width / 2}, ${shape.y + shape.height / 2})"` : '';
-
-  switch (shape.type) {
-    case 'rectangle':
-      return `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}" ${dash} ${rot}/>`;
-    case 'ellipse': {
-      const rx = Math.abs(shape.width) / 2;
-      const ry = Math.abs(shape.height) / 2;
-      const cx = shape.x + shape.width / 2;
-      const cy = shape.y + shape.height / 2;
-      return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}" ${dash} ${rot}/>`;
-    }
-    case 'line':
-      return `<line x1="${shape.x}" y1="${shape.y}" x2="${shape.x + shape.width}" y2="${shape.y + shape.height}" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}" ${dash} ${rot}/>`;
-    case 'arrow': {
-      const ex = shape.x + shape.width;
-      const ey = shape.y + shape.height;
-      const angle = Math.atan2(ey - shape.y, ex - shape.x);
-      const headLen = 14;
-      const x1 = ex - headLen * Math.cos(angle - Math.PI / 6);
-      const y1 = ey - headLen * Math.sin(angle - Math.PI / 6);
-      const x2 = ex - headLen * Math.cos(angle + Math.PI / 6);
-      const y2 = ey - headLen * Math.sin(angle + Math.PI / 6);
-      return `<g opacity="${opacity}" ${rot}><line x1="${shape.x}" y1="${shape.y}" x2="${ex}" y2="${ey}" stroke="${stroke}" stroke-width="${sw}" ${dash}/><polygon points="${ex},${ey} ${x1},${y1} ${x2},${y2}" fill="${stroke}"/></g>`;
-    }
-    case 'pen': {
-      if (shape.points.length < 2) return '';
-      const d = shape.points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-      return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" ${dash} ${rot}/>`;
-    }
-    case 'text': {
-      const fontSize = Math.abs(shape.height) || 16;
-      const fontFam = shape.fontFamily || 'sans-serif';
-      const lines = (shape.text || '').split('\n');
-      const lineHeight = fontSize * 1.2;
-      const textEls = lines.map((line, i) =>
-        `<tspan x="${shape.x}" dy="${i === 0 ? 0 : lineHeight}">${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</tspan>`
-      ).join('');
-      return `<text x="${shape.x}" y="${shape.y + fontSize}" font-size="${fontSize}" font-family="${fontFam}" fill="${stroke}" opacity="${opacity}" ${rot}>${textEls}</text>`;
-    }
-    default:
-      return '';
-  }
-}
-
-export function contentBounds(shapes: Shape[]): { x: number; y: number; w: number; h: number } | null {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const s of shapes) {
-    if (s.hidden) continue;
-    const { x, y, w, h } = getBounds(s);
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (x + w > maxX) maxX = x + w;
-    if (y + h > maxY) maxY = y + h;
-  }
-  if (!isFinite(minX)) return null;
-  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-}
+// ---------------------------------------------------------------------------
+// Coordinates
+// ---------------------------------------------------------------------------
 
 function screenToCanvas(sx: number, sy: number, t: Transform): Point {
   return { x: (sx - t.x) / t.scale, y: (sy - t.y) / t.scale };
 }
 
-function snapToGrid(v: number): number {
-  return Math.round(v / GRID_SIZE) * GRID_SIZE;
+/** Snaps a coordinate to the grid on one axis. The origin differs per axis. */
+function snapTo(value: number, doc: DrawingDocument, axis: 'x' | 'y'): number {
+  if (!doc.grid.snap) return value;
+  const size = doc.grid.size || 1;
+  const origin = doc.grid.origin[axis];
+  return Math.round((value - origin) / size) * size + origin;
 }
 
-// ── Bezier helpers ────────────────────────────────────────────────
-function bezPt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
-  const mt = 1 - t;
+function handlePositions(rect: Rect): Record<ResizeHandle, Point> {
+  const { x, y, width: w, height: h } = rect;
   return {
-    x: mt*mt*mt*p0.x + 3*mt*mt*t*p1.x + 3*mt*t*t*p2.x + t*t*t*p3.x,
-    y: mt*mt*mt*p0.y + 3*mt*mt*t*p1.y + 3*mt*t*t*p2.y + t*t*t*p3.y,
-  };
-}
-function bezTan(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
-  const mt = 1 - t;
-  return {
-    x: 3*(mt*mt*(p1.x-p0.x) + 2*mt*t*(p2.x-p1.x) + t*t*(p3.x-p2.x)),
-    y: 3*(mt*mt*(p1.y-p0.y) + 2*mt*t*(p2.y-p1.y) + t*t*(p3.y-p2.y)),
-  };
-}
-function bezLen(p0: Point, p1: Point, p2: Point, p3: Point, steps = 80): number {
-  let len = 0, prev = p0;
-  for (let i = 1; i <= steps; i++) {
-    const cur = bezPt(p0, p1, p2, p3, i / steps);
-    len += Math.hypot(cur.x - prev.x, cur.y - prev.y);
-    prev = cur;
-  }
-  return len;
-}
-function bezTAtLen(p0: Point, p1: Point, p2: Point, p3: Point, target: number, steps = 80): number {
-  let len = 0, prev = p0;
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    const cur = bezPt(p0, p1, p2, p3, t);
-    const seg = Math.hypot(cur.x - prev.x, cur.y - prev.y);
-    if (len + seg >= target) return t - (1 / steps) * (1 - (target - len) / Math.max(seg, 0.0001));
-    len += seg;
-    prev = cur;
-  }
-  return 1;
-}
-
-// Exact bounding box of a cubic bezier (finds t where dx/dt=0 and dy/dt=0)
-function bezierBounds(p0: Point, p1: Point, p2: Point, p3: Point) {
-  const ts = [0, 1];
-  for (const axis of ['x', 'y'] as const) {
-    const A = p1[axis] - p0[axis];
-    const B = p2[axis] - p1[axis];
-    const C = p3[axis] - p2[axis];
-    const a = A - 2 * B + C;
-    const b = -2 * A + 2 * B;
-    const c = A;
-    if (Math.abs(a) < 1e-10) {
-      if (Math.abs(b) > 1e-10) { const t = -c / b; if (t > 0 && t < 1) ts.push(t); }
-    } else {
-      const disc = b * b - 4 * a * c;
-      if (disc >= 0) {
-        const sq = Math.sqrt(disc);
-        const t1 = (-b + sq) / (2 * a);
-        const t2 = (-b - sq) / (2 * a);
-        if (t1 > 0 && t1 < 1) ts.push(t1);
-        if (t2 > 0 && t2 < 1) ts.push(t2);
-      }
-    }
-  }
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const t of ts) {
-    const pt = bezPt(p0, p1, p2, p3, t);
-    minX = Math.min(minX, pt.x); minY = Math.min(minY, pt.y);
-    maxX = Math.max(maxX, pt.x); maxY = Math.max(maxY, pt.y);
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-function generateId(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-let _measureCtx: CanvasRenderingContext2D | null = null;
-function measureTextWidth(text: string, fontSize: number, fontFamily: string): number {
-  if (!_measureCtx) {
-    _measureCtx = document.createElement('canvas').getContext('2d')!;
-  }
-  _measureCtx.font = `${fontSize}px ${fontFamily}`;
-  const lines = text.split('\n');
-  return Math.max(...lines.map((l) => _measureCtx!.measureText(l).width), 1);
-}
-
-function getBounds(shape: Shape): { x: number; y: number; w: number; h: number } {
-  if (shape.type === 'pen' && shape.points.length > 0) {
-    const xs = shape.points.map((p) => p.x);
-    const ys = shape.points.map((p) => p.y);
-    const x = Math.min(...xs);
-    const y = Math.min(...ys);
-    const w = Math.max(...xs) - x || 1;
-    const h = Math.max(...ys) - y || 1;
-    return { x, y, w, h };
-  }
-  if (shape.type === 'text') {
-    const fontSize = Math.abs(shape.height) || 16;
-    if (shape.textCurve) {
-      const { bottom, top, mode } = shape.textCurve;
-      const b = bezierBounds(bottom.p0, bottom.p1, bottom.p2, bottom.p3);
-      let minX = b.minX, minY = b.minY, maxX = b.maxX, maxY = b.maxY;
-      if (mode === 'double' && top) {
-        const tb = bezierBounds(top.p0, top.p1, top.p2, top.p3);
-        minX = Math.min(minX, tb.minX); minY = Math.min(minY, tb.minY);
-        maxX = Math.max(maxX, tb.maxX); maxY = Math.max(maxY, tb.maxY);
-      }
-      // Expand for ascenders above baseline and descenders below
-      return {
-        x: minX,
-        y: minY - fontSize * 0.75,
-        w: maxX - minX,
-        h: (maxY - minY) + fontSize * 0.75 + fontSize * 0.2,
-      };
-    }
-    const fontFamily = shape.fontFamily || 'sans-serif';
-    const lines = (shape.text || '').split('\n');
-    const measuredW = measureTextWidth(shape.text || '', fontSize, fontFamily);
-    const topInset = fontSize * 0.25;
-    const h = fontSize * (lines.length * 1.2 - 0.25);
-    return { x: shape.x, y: shape.y + topInset, w: measuredW, h };
-  }
-  if ((shape.type === 'line' || shape.type === 'arrow') && shape.lineCurve) {
-    const c = shape.lineCurve;
-    const b = bezierBounds(c.p0, c.p1, c.p2, c.p3);
-    const pad = (shape.strokeWidth || 2) / 2 + 4;
-    return { x: b.minX - pad, y: b.minY - pad, w: b.maxX - b.minX + pad * 2, h: b.maxY - b.minY + pad * 2 };
-  }
-  return { x: shape.x, y: shape.y, w: shape.width || 1, h: shape.height || 1 };
-}
-
-function unrotatePoint(px: number, py: number, scx: number, scy: number, angleDeg: number): Point {
-  const rad = (-angleDeg * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  return {
-    x: scx + (px - scx) * cos - (py - scy) * sin,
-    y: scy + (px - scx) * sin + (py - scy) * cos,
-  };
-}
-
-function hitTest(shape: Shape, cx: number, cy: number): boolean {
-  const { x, y, w, h } = getBounds(shape);
-  let testX = cx;
-  let testY = cy;
-  if (shape.rotation) {
-    const p = unrotatePoint(cx, cy, x + w / 2, y + h / 2, shape.rotation);
-    testX = p.x;
-    testY = p.y;
-  }
-  if (shape.type === 'pen') {
-    return shape.points.some((p) => Math.hypot(p.x - testX, p.y - testY) < 8);
-  }
-  const pad = 4;
-  return testX >= x - pad && testX <= x + w + pad && testY >= y - pad && testY <= y + h + pad;
-}
-
-function getHandlePositions(
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-): Record<ResizeHandle, { x: number; y: number }> {
-  return {
-    nw:     { x,           y           },
-    n:      { x: x + w / 2, y          },
-    ne:     { x: x + w,     y          },
-    e:      { x: x + w,     y: y + h / 2 },
-    se:     { x: x + w,     y: y + h   },
-    s:      { x: x + w / 2, y: y + h   },
-    sw:     { x,             y: y + h   },
-    w:      { x,             y: y + h / 2 },
+    nw: { x, y },
+    n: { x: x + w / 2, y },
+    ne: { x: x + w, y },
+    e: { x: x + w, y: y + h / 2 },
+    se: { x: x + w, y: y + h },
+    s: { x: x + w / 2, y: y + h },
+    sw: { x, y: y + h },
+    w: { x, y: y + h / 2 },
     rotate: { x: x + w / 2, y: y - ROTATE_OFFSET },
   };
 }
 
-function hitTestHandle(
-  hx: number,
-  hy: number,
-  cx: number,
-  cy: number,
-  isRotate: boolean,
-): boolean {
-  const r = isRotate ? HANDLE_SIZE : HANDLE_SIZE / 2 + 2;
-  return Math.abs(hx - cx) <= r && Math.abs(hy - cy) <= r;
+// ---------------------------------------------------------------------------
+// Selection geometry
+// ---------------------------------------------------------------------------
+
+interface SelectionFrame {
+  rect: Rect;
+  /** Set only for a single rotated object, so the frame can be drawn rotated too. */
+  rotation: number;
+  center: Point;
+  /** Handles are offered for a single target; a multi-selection only moves. */
+  resizable: boolean;
 }
 
-function splitGradArgs(s: string): string[] {
-  const out: string[] = []; let depth = 0, cur = '';
-  for (const ch of s) {
-    if (ch === '(') depth++;
-    else if (ch === ')') depth--;
-    else if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; continue; }
-    cur += ch;
+function selectionFrame(doc: DrawingDocument, selection: Selection): SelectionFrame | null {
+  if (!selection) return null;
+
+  if (selection.kind === 'objects') {
+    const layer = findNode(doc.root, selection.layerId);
+    if (!layer || layer.type !== 'vector') return null;
+    const chosen = layer.objects.filter((o) => selection.ids.includes(o.id));
+    if (chosen.length === 0) return null;
+
+    if (chosen.length === 1) {
+      const object = chosen[0];
+      const frame = normalizeRect(object.frame);
+      return {
+        rect: frame,
+        rotation: object.rotation,
+        center: rectCenter(frame),
+        resizable: true,
+      };
+    }
+    const rect = unionRects(chosen.map(objectSelectionBox));
+    if (!rect) return null;
+    return { rect, rotation: 0, center: rectCenter(rect), resizable: false };
   }
-  if (cur.trim()) out.push(cur.trim());
-  return out;
+
+  const rects = selection.ids
+    .map((id) => findNode(doc.root, id))
+    .filter((n): n is DrawingNode => n !== null)
+    .map((node) => nodeCanvasBounds(doc.root, node));
+  const rect = unionRects(rects);
+  if (!rect) return null;
+  return { rect, rotation: 0, center: rectCenter(rect), resizable: selection.ids.length === 1 };
 }
 
-function parseGradStops(parts: string[]): { color: string; position: number }[] {
-  const raw = parts.map((s) => {
-    const p = s.trim().split(/\s+/);
-    if (!/^#[0-9a-fA-F]{3,8}$/.test(p[0])) return null;
-    const pct = p[1]?.match(/^(\d+(?:\.\d+)?)%$/);
-    return { color: p[0], position: pct ? parseFloat(pct[1]) : -1 };
-  }).filter((x): x is { color: string; position: number } => x !== null);
-  return raw.map((s, i) => ({ ...s, position: s.position >= 0 ? s.position : Math.round(i * 100 / Math.max(1, raw.length - 1)) }));
+// ---------------------------------------------------------------------------
+// Hit testing
+// ---------------------------------------------------------------------------
+
+interface ObjectHit {
+  kind: 'object';
+  layerId: string;
+  object: VectorObject;
 }
 
-const DIR_ANGLE: Record<string, number> = {
-  'to top': 0, 'to top right': 45, 'to right': 90, 'to bottom right': 135,
-  'to bottom': 180, 'to bottom left': 225, 'to left': 270, 'to top left': 315,
-};
-
-function resolveCanvasFill(
-  ctx: CanvasRenderingContext2D,
-  fill: string,
-  x: number, y: number, w: number, h: number,
-): string | CanvasGradient {
-  const lin = fill.match(/^linear-gradient\((.+)\)$/is);
-  if (lin) {
-    const args = splitGradArgs(lin[1]);
-    let angle = 180, startIdx = 0;
-    const first = args[0]?.trim() ?? '';
-    const deg = first.match(/^(-?\d+(?:\.\d+)?)deg$/i);
-    if (deg) { angle = parseFloat(deg[1]); startIdx = 1; }
-    else if (/^to\s+/i.test(first)) { angle = DIR_ANGLE[first.toLowerCase().trim()] ?? 180; startIdx = 1; }
-    const dx = Math.sin((angle * Math.PI) / 180);
-    const dy = -Math.cos((angle * Math.PI) / 180);
-    const cx = x + w / 2, cy = y + h / 2;
-    const halfLen = (Math.abs(w * dx) + Math.abs(h * dy)) / 2;
-    const grad = ctx.createLinearGradient(cx - dx * halfLen, cy - dy * halfLen, cx + dx * halfLen, cy + dy * halfLen);
-    parseGradStops(args.slice(startIdx)).forEach(({ color, position }) => grad.addColorStop(position / 100, color));
-    return grad;
-  }
-  const rad = fill.match(/^radial-gradient\((.+)\)$/is);
-  if (rad) {
-    const args = splitGradArgs(rad[1]);
-    const startIdx = /^#/.test(args[0]?.trim() ?? '') ? 0 : 1;
-    const cx = x + w / 2, cy = y + h / 2;
-    const r = Math.max(Math.abs(w), Math.abs(h)) / 2;
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    parseGradStops(args.slice(startIdx)).forEach(({ color, position }) => grad.addColorStop(position / 100, color));
-    return grad;
-  }
-  return fill || 'transparent';
+interface NodeHit {
+  kind: 'node';
+  node: DrawingNode;
 }
 
-function renderShape(ctx: CanvasRenderingContext2D, shape: Shape, isSelected: boolean) {
-  if (shape.hidden) return;
-  ctx.save();
-  ctx.globalAlpha = shape.opacity ?? 1;
-  ctx.strokeStyle = shape.stroke || '#000000';
-  ctx.lineWidth = shape.strokeWidth || 2;
-  const { x, y, w, h } = getBounds(shape);
-  ctx.fillStyle = resolveCanvasFill(ctx, shape.fill || 'transparent', x, y, w, h);
-  const dashStyle = shape.strokeStyle ?? (shape.strokeDash ? 'dashed' : 'solid');
-  const dsw = shape.strokeWidth || 2;
-  switch (dashStyle) {
-    case 'dashed':    ctx.setLineDash([dsw * 4, dsw * 3]); break;
-    case 'dotted':    ctx.setLineDash([dsw, dsw * 2]);      break;
-    case 'long-dash': ctx.setLineDash([dsw * 8, dsw * 3]); break;
-    default:          ctx.setLineDash([]);
-  }
+type Hit = ObjectHit | NodeHit;
 
-  const cx = x + w / 2;
-  const cy = y + h / 2;
+/**
+ * What is under the cursor, topmost first.
+ *
+ * The walk follows paint order in reverse — the last thing painted is the first
+ * thing hit — and skips anything hidden or locked, directly or through a group.
+ * A vector layer reports the *object* that was hit rather than the layer,
+ * because objects are what the select tool moves; every other layer type
+ * reports itself.
+ */
+function hitTest(doc: DrawingDocument, point: Point): Hit | null {
+  let found: Hit | null = null;
 
-  if (shape.rotation) {
-    ctx.translate(cx, cy);
-    ctx.rotate((shape.rotation * Math.PI) / 180);
-    ctx.translate(-cx, -cy);
-  }
+  const walk = (node: DrawingNode): void => {
+    if (found) return;
+    if (!isEffectivelyVisible(doc.root, node.id)) return;
 
-  switch (shape.type) {
-    case 'rectangle': {
-      ctx.beginPath();
-      ctx.rect(shape.x, shape.y, shape.width, shape.height);
-      if (shape.fill && shape.fill !== 'transparent') ctx.fill();
-      ctx.stroke();
-      break;
-    }
-    case 'ellipse': {
-      const rx = Math.abs(shape.width) / 2;
-      const ry = Math.abs(shape.height) / 2;
-      const ecx = shape.x + shape.width / 2;
-      const ecy = shape.y + shape.height / 2;
-      ctx.beginPath();
-      ctx.ellipse(ecx, ecy, rx || 1, ry || 1, 0, 0, Math.PI * 2);
-      if (shape.fill && shape.fill !== 'transparent') ctx.fill();
-      ctx.stroke();
-      break;
-    }
-    case 'line': {
-      ctx.beginPath();
-      if (shape.lineCurve) {
-        const c = shape.lineCurve;
-        ctx.moveTo(c.p0.x, c.p0.y);
-        ctx.bezierCurveTo(c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y);
-      } else {
-        ctx.moveTo(shape.x, shape.y);
-        ctx.lineTo(shape.x + shape.width, shape.y + shape.height);
+    if (node.type === 'stack') {
+      // `children` order is topmost-first, which is exactly hit-test order —
+      // the reverse of the order the renderer paints in.
+      for (const child of node.children) {
+        walk(child);
+        if (found) return;
       }
-      ctx.stroke();
-      break;
+      return;
     }
-    case 'arrow': {
-      let ex: number, ey: number, angle: number;
-      ctx.beginPath();
-      if (shape.lineCurve) {
-        const c = shape.lineCurve;
-        ctx.moveTo(c.p0.x, c.p0.y);
-        ctx.bezierCurveTo(c.p1.x, c.p1.y, c.p2.x, c.p2.y, c.p3.x, c.p3.y);
-        ex = c.p3.x; ey = c.p3.y;
-        const tan = bezTan(c.p0, c.p1, c.p2, c.p3, 1);
-        angle = Math.atan2(tan.y, tan.x);
-      } else {
-        ex = shape.x + shape.width; ey = shape.y + shape.height;
-        angle = Math.atan2(ey - shape.y, ex - shape.x);
-        ctx.moveTo(shape.x, shape.y);
-        ctx.lineTo(ex, ey);
-      }
-      ctx.stroke();
-      const headLen = 14;
-      ctx.beginPath();
-      ctx.moveTo(ex, ey);
-      ctx.lineTo(ex - headLen * Math.cos(angle - Math.PI / 6), ey - headLen * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(ex - headLen * Math.cos(angle + Math.PI / 6), ey - headLen * Math.sin(angle + Math.PI / 6));
-      ctx.closePath();
-      ctx.fillStyle = shape.stroke || '#000000';
-      ctx.fill();
-      break;
-    }
-    case 'pen': {
-      if (shape.points.length < 2) break;
-      ctx.beginPath();
-      ctx.moveTo(shape.points[0].x, shape.points[0].y);
-      for (let i = 1; i < shape.points.length; i++) {
-        ctx.lineTo(shape.points[i].x, shape.points[i].y);
-      }
-      ctx.stroke();
-      break;
-    }
-    case 'text': {
-      const fontSize = Math.abs(shape.height) || 16;
-      const fontFam = shape.fontFamily || 'sans-serif';
-      ctx.font = `${fontSize}px ${fontFam}`;
-      ctx.fillStyle = shape.stroke || '#000000';
-      if (shape.shadowEnabled) {
-        ctx.shadowColor = shape.shadowColor || 'rgba(0,0,0,0.5)';
-        ctx.shadowBlur = shape.shadowBlur ?? 4;
-        ctx.shadowOffsetX = shape.shadowOffsetX ?? 2;
-        ctx.shadowOffsetY = shape.shadowOffsetY ?? 2;
-      }
-      if (shape.textCurve) {
-        const tc = shape.textCurve;
-        const { p0, p1, p2, p3 } = tc.bottom;
-        const text = shape.text || '';
-        const totalLen = bezLen(p0, p1, p2, p3);
-        const totalW = ctx.measureText(text).width;
-        let offset = Math.max(0, (totalLen - totalW) / 2);
-        for (const char of text) {
-          const cw = ctx.measureText(char).width;
-          const t = bezTAtLen(p0, p1, p2, p3, offset + cw / 2);
-          const pos = bezPt(p0, p1, p2, p3, t);
-          const tan = bezTan(p0, p1, p2, p3, t);
-          const ang = Math.atan2(tan.y, tan.x);
-          if (tc.mode === 'double' && tc.top) {
-            // Stretch character vertically between bottom and top curves
-            const tp = { p0: tc.top.p0, p1: tc.top.p1, p2: tc.top.p2, p3: tc.top.p3 };
-            const tPos = bezPt(tp.p0, tp.p1, tp.p2, tp.p3, t);
-            const dist = Math.hypot(tPos.x - pos.x, tPos.y - pos.y);
-            ctx.save();
-            ctx.translate(pos.x, pos.y);
-            ctx.rotate(ang);
-            ctx.scale(1, dist / fontSize);
-            ctx.fillText(char, -cw / 2, 0);
-            ctx.restore();
-          } else {
-            ctx.save();
-            ctx.translate(pos.x, pos.y);
-            ctx.rotate(ang);
-            ctx.fillText(char, -cw / 2, 0);
-            ctx.restore();
-          }
-          offset += cw;
+
+    if (isEffectivelyLocked(doc.root, node.id)) return;
+
+    if (node.type === 'vector') {
+      for (const object of node.objects) {
+        if (object.locked) continue;
+        if (hitTestObject(object, point)) {
+          found = { kind: 'object', layerId: node.id, object };
+          return;
         }
-      } else {
-        const lines = (shape.text || '').split('\n');
-        const lineHeight = fontSize * 1.2;
-        lines.forEach((line, i) => {
-          ctx.fillText(line, shape.x, shape.y + fontSize + i * lineHeight);
-        });
       }
-      break;
+      return;
     }
-  }
 
-  ctx.restore();
-
-  if (isSelected) {
-    renderHandles(ctx, shape);
-  }
-}
-
-function renderHandles(ctx: CanvasRenderingContext2D, shape: Shape) {
-  const { x, y, w, h } = getBounds(shape);
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  ctx.save();
-  if (shape.rotation) {
-    ctx.translate(cx, cy);
-    ctx.rotate((shape.rotation * Math.PI) / 180);
-    ctx.translate(-cx, -cy);
-  }
-  ctx.strokeStyle = '#2563eb';
-  ctx.fillStyle = '#ffffff';
-  ctx.lineWidth = 1.5;
-
-  ctx.setLineDash([4, 3]);
-  ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
-  ctx.setLineDash([]);
-
-  const handles = getHandlePositions(x, y, w, h);
-  const resizeHandles: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-
-  for (const key of resizeHandles) {
-    const hp = handles[key];
-    ctx.beginPath();
-    ctx.rect(hp.x - HANDLE_SIZE / 2, hp.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  const rp = handles.rotate;
-  ctx.beginPath();
-  ctx.arc(rp.x, rp.y, HANDLE_SIZE / 2, 0, Math.PI * 2);
-  ctx.fillStyle = '#2563eb';
-  ctx.fill();
-  ctx.strokeStyle = '#ffffff';
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(x + w / 2, y);
-  ctx.lineTo(rp.x, rp.y);
-  ctx.strokeStyle = '#2563eb';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  ctx.restore();
-
-  // Bezier curve control handles (drawn outside the rotation transform)
-  if (shape.lineCurve) {
-    renderCurveHandles(ctx, [shape.lineCurve]);
-  }
-  if (shape.textCurve) {
-    const curves = [shape.textCurve.bottom];
-    if (shape.textCurve.mode === 'double' && shape.textCurve.top) curves.push(shape.textCurve.top);
-    renderCurveHandles(ctx, curves);
-  }
-}
-
-const CURVE_HANDLE_R = 5;
-
-function renderCurveHandles(ctx: CanvasRenderingContext2D, curves: { p0: Point; p1: Point; p2: Point; p3: Point }[]) {
-  ctx.save();
-  ctx.strokeStyle = '#2563eb';
-  ctx.fillStyle = '#ffffff';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([3, 2]);
-  for (const c of curves) {
-    // Guide lines: p0→p1 and p3→p2
-    ctx.beginPath(); ctx.moveTo(c.p0.x, c.p0.y); ctx.lineTo(c.p1.x, c.p1.y); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(c.p3.x, c.p3.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  for (const c of curves) {
-    for (const pt of [c.p1, c.p2]) {
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, CURVE_HANDLE_R, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.strokeStyle = '#2563eb';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+    const bounds = nodeCanvasBounds(doc.root, node);
+    if (bounds && point.x >= bounds.x && point.x <= bounds.x + bounds.width &&
+        point.y >= bounds.y && point.y <= bounds.y + bounds.height) {
+      found = { kind: 'node', node };
     }
+  };
+
+  for (const child of doc.root.children) {
+    walk(child);
+    if (found) break;
   }
-  ctx.restore();
+  return found;
 }
 
-function renderGrid(ctx: CanvasRenderingContext2D, transform: Transform, width: number, height: number) {
-  if (transform.scale < 0.3) return;
-  ctx.save();
-  ctx.strokeStyle = '#e5e7eb';
-  ctx.lineWidth = 0.5;
+// ---------------------------------------------------------------------------
+// Drag state
+// ---------------------------------------------------------------------------
 
-  const startX = Math.floor(-transform.x / transform.scale / GRID_SIZE) * GRID_SIZE;
-  const startY = Math.floor(-transform.y / transform.scale / GRID_SIZE) * GRID_SIZE;
-  const endX = startX + width / transform.scale + GRID_SIZE * 2;
-  const endY = startY + height / transform.scale + GRID_SIZE * 2;
-
-  for (let gx = startX; gx <= endX; gx += GRID_SIZE) {
-    const sx = gx * transform.scale + transform.x;
-    ctx.beginPath();
-    ctx.moveTo(sx, 0);
-    ctx.lineTo(sx, height);
-    ctx.stroke();
-  }
-  for (let gy = startY; gy <= endY; gy += GRID_SIZE) {
-    const sy = gy * transform.scale + transform.y;
-    ctx.beginPath();
-    ctx.moveTo(0, sy);
-    ctx.lineTo(width, sy);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-type DragMode = 'none' | 'drawing' | 'moving' | 'resizing' | 'rotating' | 'box-select' | 'panning' | 'curve-control';
-
-// which bezier control point is being dragged
-type CurvePointId =
-  | { kind: 'line'; point: 'p1' | 'p2' }
-  | { kind: 'text-bottom'; point: 'p1' | 'p2' }
-  | { kind: 'text-top'; point: 'p1' | 'p2' };
+type DragMode =
+  | 'none'
+  | 'panning'
+  | 'drawing'
+  | 'moving'
+  | 'resizing'
+  | 'rotating'
+  | 'marquee'
+  | 'erasing';
 
 interface DragState {
   mode: DragMode;
+  /** Canvas-space anchor for content drags, screen-space for a pan. */
   startX: number;
   startY: number;
   lastX: number;
   lastY: number;
   handle?: ResizeHandle;
-  initialShapes?: Shape[];
-  boxX?: number;
-  boxY?: number;
-  boxW?: number;
-  boxH?: number;
-  penShapeId?: string;
-  curvePoint?: CurvePointId;
+  /** The document as it was when the drag began — every frame is a delta from it. */
+  originalDoc?: DrawingDocument;
+  marquee?: Rect;
 }
 
-export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(function DrawingCanvas({
-  shapes,
-  tool,
-  selectedIds,
-  onShapesChange,
-  onSelectionChange,
-  onTransformChange,
-  showGrid = true,
-  layers = [],
-  activeLayerId = 'background',
-}: DrawingCanvasProps, ref) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const transformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
-  const shapesRef = useRef(shapes);
-  const toolRef = useRef(tool);
-  const selectedIdsRef = useRef(selectedIds);
-  const showGridRef = useRef(showGrid);
-  const layersRef = useRef(layers);
-  const activeLayerIdRef = useRef(activeLayerId);
-  const dragRef = useRef<DragState>({ mode: 'none', startX: 0, startY: 0, lastX: 0, lastY: 0 });
-  const spaceDownRef = useRef(false);
-  const currentShapeRef = useRef<Shape | null>(null);
+const IDLE: DragState = { mode: 'none', startX: 0, startY: 0, lastX: 0, lastY: 0 };
 
-  const [, forceRender] = useState(0);
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
-  const [textEdit, setTextEdit] = useState<{
-    shapeId: string | null;
-    x: number;
-    y: number;
-    fontSize: number;
-    value: string;
-    capturedTransform: Transform;
-  } | null>(null);
-  // Metadata ref set synchronously when a text edit session starts/ends — never stale.
-  // value is updated on every onChange keystroke so commitTextEdit never reads a stale/null DOM ref.
-  const textEditMetaRef = useRef<{
-    shapeId: string | null;
-    x: number;
-    y: number;
-    fontSize: number;
-    capturedTransform: Transform;
-    value: string;
-  } | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // True only after the first animation frame after textarea mounts.
-  // Guards onBlur against spurious blur fired by React 18 StrictMode's DOM removal during effect cleanup.
-  const textEditReadyRef = useRef(false);
+export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>(
+  function DrawingCanvas(props, ref) {
+    const {
+      doc,
+      onDocumentChange,
+      tool,
+      onToolChange,
+      selection,
+      onSelectionChange,
+      activeLayerId,
+      newObjectStyle,
+      onTransformChange,
+      bitmaps,
+      images,
+    } = props;
 
-  useEffect(() => { shapesRef.current = shapes; }, [shapes]);
-  useEffect(() => { toolRef.current = tool; }, [tool]);
-  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
-  useEffect(() => { layersRef.current = layers; }, [layers]);
-  useEffect(() => { activeLayerIdRef.current = activeLayerId; }, [activeLayerId]);
-  showGridRef.current = showGrid;
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const transformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
+    const dragRef = useRef<DragState>(IDLE);
+    const spaceRef = useRef(false);
+    /** The shape being dragged out, drawn on top but not yet in the document. */
+    const draftRef = useRef<VectorObject | null>(null);
 
-  function layerOf(s: Shape) {
-    return layersRef.current.find((l) => l.id === s.layerId)
-      ?? layersRef.current.find((l) => l.isBackground);
-  }
-  function shapeEffectivelyHidden(s: Shape) { return s.hidden || (layerOf(s)?.hidden ?? false); }
-  function shapeEffectivelyLocked(s: Shape) { return s.locked || (layerOf(s)?.locked ?? false); }
+    // Event handlers are registered once and read live values through refs, so
+    // the listeners never need re-binding mid-drag.
+    const docRef = useRef(doc);
+    const toolRef = useRef(tool);
+    const selectionRef = useRef(selection);
+    const activeLayerRef = useRef(activeLayerId);
+    const styleRef = useRef(newObjectStyle);
+    const bitmapsRef = useRef(bitmaps);
+    const imagesRef = useRef(images);
+    docRef.current = doc;
+    toolRef.current = tool;
+    selectionRef.current = selection;
+    activeLayerRef.current = activeLayerId;
+    styleRef.current = newObjectStyle;
+    bitmapsRef.current = bitmaps;
+    imagesRef.current = images;
 
-  const render = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const { width, height } = canvas;
-    const t = transformRef.current;
+    const [textEdit, setTextEdit] = useState<{ nodeId: string | null; box: Rect; value: string } | null>(null);
+    const textEditRef = useRef(textEdit);
+    textEditRef.current = textEdit;
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    // Guards against the spurious blur React 18 StrictMode fires while removing
+    // the textarea during effect cleanup, which would commit an empty edit.
+    const textReadyRef = useRef(false);
 
-    ctx.clearRect(0, 0, width, height);
-    if (showGridRef.current) renderGrid(ctx, t, width, height);
+    // ---------------------------------------------------------------------
+    // Painting
+    // ---------------------------------------------------------------------
 
-    ctx.save();
-    ctx.translate(t.x, t.y);
-    ctx.scale(t.scale, t.scale);
+    const render = useCallback(() => {
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (!canvas || !ctx) return;
 
-    for (const shape of shapesRef.current) {
-      if (shape.id === textEditMetaRef.current?.shapeId) continue;
-      if (shapeEffectivelyHidden(shape)) continue;
-      renderShape(ctx, shape, selectedIdsRef.current.includes(shape.id));
-    }
-    if (currentShapeRef.current) {
-      renderShape(ctx, currentShapeRef.current, false);
-    }
+      const document_ = docRef.current;
+      const t = transformRef.current;
+      const { width, height } = canvas;
 
-    const drag = dragRef.current;
-    if (drag.mode === 'box-select' && drag.boxW !== undefined && drag.boxH !== undefined) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#f3f4f6';
+      ctx.fillRect(0, 0, width, height);
+
       ctx.save();
-      ctx.fillStyle = 'rgba(37,99,235,0.08)';
-      ctx.strokeStyle = '#2563eb';
-      ctx.lineWidth = 1 / t.scale;
-      ctx.setLineDash([4 / t.scale, 3 / t.scale]);
-      ctx.fillRect(drag.boxX!, drag.boxY!, drag.boxW, drag.boxH);
-      ctx.strokeRect(drag.boxX!, drag.boxY!, drag.boxW, drag.boxH);
+      ctx.translate(t.x, t.y);
+      ctx.scale(t.scale, t.scale);
+
+      // The page: a bordered rectangle with a drop shadow, so the fixed canvas
+      // reads as a sheet of paper rather than as an arbitrary crop.
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.18)';
+      ctx.shadowBlur = 16 / t.scale;
+      ctx.shadowOffsetY = 2 / t.scale;
+      ctx.fillStyle = document_.canvas.background ?? '#ffffff';
+      ctx.fillRect(0, 0, document_.canvas.width, document_.canvas.height);
       ctx.restore();
-    }
 
-    ctx.restore();
-  }, []);
+      // Everything outside the page is clipped away: a layer can extend past
+      // the canvas, and the export crops it, so the editor must too or the two
+      // disagree about what the drawing is.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, document_.canvas.width, document_.canvas.height);
+      ctx.clip();
 
-  useImperativeHandle(ref, () => ({
-    setTransform: (t: Transform) => {
-      transformRef.current = t;
-      onTransformChange?.(t);
-      render();
-    },
-    exportPNG: ({ scale = 2, bgColor = '' } = {}): Promise<Blob> => {
-      const visibleShapes = shapesRef.current.filter((s) => !shapeEffectivelyHidden(s));
-      const bounds = contentBounds(visibleShapes);
-      const padX = bounds ? bounds.x - EXPORT_PAD : 0;
-      const padY = bounds ? bounds.y - EXPORT_PAD : 0;
-      const cw = Math.max(1, (bounds ? bounds.w + EXPORT_PAD * 2 : 100)) * scale;
-      const ch = Math.max(1, (bounds ? bounds.h + EXPORT_PAD * 2 : 100)) * scale;
-
-      const offscreen = document.createElement('canvas');
-      offscreen.width = cw;
-      offscreen.height = ch;
-      const ctx = offscreen.getContext('2d')!;
-      if (bgColor) {
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, cw, ch);
-      }
-      ctx.scale(scale, scale);
-      ctx.translate(-padX, -padY);
-      for (const shape of visibleShapes) {
-        renderShape(ctx, shape, false);
-      }
-      return new Promise<Blob>((resolve, reject) => {
-        offscreen.toBlob((blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error('toBlob failed'));
-        }, 'image/png');
+      renderDocument(ctx, document_, {
+        bitmaps: bitmapsRef.current,
+        images: imagesRef.current,
+        // The background is already painted as the page, above.
+        drawBackground: false,
+        skipNodeIds: textEditRef.current?.nodeId
+          ? new Set([textEditRef.current.nodeId])
+          : undefined,
       });
-    },
-    exportSVG: ({ bgColor = '' } = {}): string => {
-      const visibleShapes = shapesRef.current.filter((s) => !shapeEffectivelyHidden(s));
-      const bounds = contentBounds(visibleShapes);
-      const x = bounds ? bounds.x - EXPORT_PAD : 0;
-      const y = bounds ? bounds.y - EXPORT_PAD : 0;
-      const w = Math.max(1, bounds ? bounds.w + EXPORT_PAD * 2 : 100);
-      const h = Math.max(1, bounds ? bounds.h + EXPORT_PAD * 2 : 100);
-      const bgRect = bgColor ? `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${bgColor}"/>` : '';
-      const els = visibleShapes.map(shapeToSVGElement).filter(Boolean).join('\n');
-      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${w} ${h}" width="${w}" height="${h}">\n${bgRect}\n${els}\n</svg>`;
-    },
-  }), [onTransformChange, render]);
 
-  useEffect(() => { render(); }, [shapes, selectedIds, showGrid, layers, render]);
-  useEffect(() => { render(); }, [textEdit !== null, render]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Focus the textarea and guard onBlur against spurious blur from React 18 StrictMode.
-  // StrictMode removes DOM nodes between effect cleanup/setup; the focused textarea fires blur
-  // when removed. We set textEditReadyRef=true only after a requestAnimationFrame so any blur
-  // that fires before the DOM has stabilised is ignored by onBlur.
-  useEffect(() => {
-    if (textEdit !== null) {
-      textEditReadyRef.current = false;
-      const rafId = requestAnimationFrame(() => {
+      if (draftRef.current) drawVectorObject(ctx, draftRef.current, imagesRef.current);
+
+      if (document_.grid.visible) drawGrid(ctx, document_, t.scale);
+      ctx.restore();
+
+      drawPageBorder(ctx, document_, t.scale);
+      drawGuides(ctx, document_, t.scale);
+      drawSelection(ctx, document_, selectionRef.current, t.scale);
+
+      const marquee = dragRef.current.marquee;
+      if (marquee) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(37,99,235,0.08)';
+        ctx.strokeStyle = SELECTION_COLOR;
+        ctx.lineWidth = 1 / t.scale;
+        ctx.setLineDash([4 / t.scale, 3 / t.scale]);
+        ctx.fillRect(marquee.x, marquee.y, marquee.width, marquee.height);
+        ctx.strokeRect(marquee.x, marquee.y, marquee.width, marquee.height);
+        ctx.restore();
+      }
+
+      ctx.restore();
+    }, []);
+
+    useEffect(() => { render(); }, [doc, selection, bitmaps, images, textEdit, render]);
+
+    // ---------------------------------------------------------------------
+    // Viewport
+    // ---------------------------------------------------------------------
+
+    const applyTransform = useCallback((next: Transform) => {
+      transformRef.current = next;
+      onTransformChange?.(next);
+      render();
+    }, [onTransformChange, render]);
+
+    const fitToScreen = useCallback(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      const { clientWidth, clientHeight } = container;
+      const document_ = docRef.current;
+      const margin = 48;
+      const scale = Math.max(
+        MIN_SCALE,
+        Math.min(
+          MAX_SCALE,
+          Math.min(
+            (clientWidth - margin) / document_.canvas.width,
+            (clientHeight - margin) / document_.canvas.height,
+          ),
+        ),
+      );
+      applyTransform({
+        scale,
+        x: (clientWidth - document_.canvas.width * scale) / 2,
+        y: (clientHeight - document_.canvas.height * scale) / 2,
+      });
+    }, [applyTransform]);
+
+    // Centre the page on first mount, so a new drawing does not open with its
+    // canvas half off-screen.
+    const centredRef = useRef(false);
+    useEffect(() => {
+      if (centredRef.current) return;
+      centredRef.current = true;
+      fitToScreen();
+    }, [fitToScreen]);
+
+    useImperativeHandle(ref, () => ({
+      setTransform: applyTransform,
+      fitToScreen,
+      exportPNG: async ({ scale = 2, background } = {}) => {
+        const document_ = docRef.current;
+        const width = Math.max(1, Math.round(document_.canvas.width * scale));
+        const height = Math.max(1, Math.round(document_.canvas.height * scale));
+        const surface = domSurfaceFactory(width, height);
+        const ctx = surface.getContext('2d');
+        if (!ctx) throw new Error('cannot render the export');
+        ctx.scale(scale, scale);
+        renderDocument(
+          ctx,
+          background === undefined ? document_ : { ...document_, canvas: { ...document_.canvas, background } },
+          { bitmaps: bitmapsRef.current, images: imagesRef.current },
+        );
+        return surfaceToBlob(surface);
+      },
+      exportSVG: ({ background } = {}) => documentToSvg(docRef.current, { background }),
+    }), [applyTransform, fitToScreen]);
+
+    // ---------------------------------------------------------------------
+    // Text editing
+    // ---------------------------------------------------------------------
+
+    const commitText = useCallback(() => {
+      const edit = textEditRef.current;
+      if (!edit) return;
+      textEditRef.current = null;
+      setTextEdit(null);
+
+      const trimmed = edit.value.trim();
+      const document_ = docRef.current;
+
+      if (edit.nodeId === null) {
+        if (!trimmed) return;
+        const layer = createTextLayer(edit.box, trimmed);
+        onDocumentChange(addNode(document_, layer));
+        onSelectionChange({ kind: 'nodes', ids: [layer.id] });
+        return;
+      }
+
+      // An emptied text layer is deleted rather than left as an invisible node
+      // nothing can select and nothing draws.
+      if (!trimmed) {
+        onDocumentChange(deleteNode(document_, edit.nodeId));
+        onSelectionChange(null);
+        return;
+      }
+      onDocumentChange(setTextContent(document_, edit.nodeId, trimmed));
+    }, [onDocumentChange, onSelectionChange]);
+
+    useEffect(() => {
+      if (!textEdit) return;
+      textReadyRef.current = false;
+      const raf = requestAnimationFrame(() => {
         textareaRef.current?.focus();
-        textEditReadyRef.current = true;
+        textareaRef.current?.select();
+        textReadyRef.current = true;
       });
       return () => {
-        cancelAnimationFrame(rafId);
-        textEditReadyRef.current = false;
+        cancelAnimationFrame(raf);
+        textReadyRef.current = false;
       };
-    }
-  }, [textEdit !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [textEdit?.nodeId, textEdit !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const getCanvasPos = useCallback((e: MouseEvent): Point => {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    return screenToCanvas(e.clientX - rect.left, e.clientY - rect.top, transformRef.current);
-  }, []);
+    const beginTextEdit = useCallback((point: Point) => {
+      const document_ = docRef.current;
+      const hit = hitTest(document_, point);
+      if (hit?.kind === 'node' && hit.node.type === 'text') {
+        const edit = { nodeId: hit.node.id, box: hit.node.box, value: hit.node.text };
+        textEditRef.current = edit;
+        setTextEdit(edit);
+        onSelectionChange({ kind: 'nodes', ids: [hit.node.id] });
+        return;
+      }
+      const box: Rect = { x: point.x, y: point.y, width: 320, height: 48 };
+      const edit = { nodeId: null, box, value: '' };
+      textEditRef.current = edit;
+      setTextEdit(edit);
+      onSelectionChange(null);
+    }, [onSelectionChange]);
 
-  const findHitCurvePoint = useCallback((cp: Point): { shapeId: string; curvePoint: CurvePointId } | null => {
-    for (const id of selectedIdsRef.current) {
-      const shape = shapesRef.current.find((s) => s.id === id);
-      if (!shape) continue;
-      const candidates: { pt: Point; cpId: CurvePointId }[] = [];
-      if (shape.lineCurve) {
-        candidates.push({ pt: shape.lineCurve.p1, cpId: { kind: 'line', point: 'p1' } });
-        candidates.push({ pt: shape.lineCurve.p2, cpId: { kind: 'line', point: 'p2' } });
-      }
-      if (shape.textCurve) {
-        candidates.push({ pt: shape.textCurve.bottom.p1, cpId: { kind: 'text-bottom', point: 'p1' } });
-        candidates.push({ pt: shape.textCurve.bottom.p2, cpId: { kind: 'text-bottom', point: 'p2' } });
-        if (shape.textCurve.top) {
-          candidates.push({ pt: shape.textCurve.top.p1, cpId: { kind: 'text-top', point: 'p1' } });
-          candidates.push({ pt: shape.textCurve.top.p2, cpId: { kind: 'text-top', point: 'p2' } });
-        }
-      }
-      for (const { pt, cpId } of candidates) {
-        if (Math.hypot(pt.x - cp.x, pt.y - cp.y) <= CURVE_HANDLE_R + 3) {
-          return { shapeId: id, curvePoint: cpId };
-        }
-      }
-    }
-    return null;
-  }, []);
+    // ---------------------------------------------------------------------
+    // Pointer handling
+    // ---------------------------------------------------------------------
 
-  const findHitHandle = useCallback(
-    (cp: Point): { shapeId: string; handle: ResizeHandle } | null => {
-      for (const id of selectedIdsRef.current) {
-        const shape = shapesRef.current.find((s) => s.id === id);
-        if (!shape) continue;
-        const { x, y, w, h } = getBounds(shape);
-        const handles = getHandlePositions(x, y, w, h);
-        // Unrotate the cursor into the shape's local space so handle positions match what's rendered
-        const local = shape.rotation
-          ? unrotatePoint(cp.x, cp.y, x + w / 2, y + h / 2, shape.rotation)
-          : cp;
-        for (const [key, hp] of Object.entries(handles) as [ResizeHandle, Point][]) {
-          if (hitTestHandle(hp.x, hp.y, local.x, local.y, key === 'rotate')) {
-            return { shapeId: id, handle: key };
-          }
-        }
+    const canvasPoint = useCallback((e: MouseEvent): Point => {
+      const rect = canvasRef.current!.getBoundingClientRect();
+      return screenToCanvas(e.clientX - rect.left, e.clientY - rect.top, transformRef.current);
+    }, []);
+
+    const findHandle = useCallback((point: Point): ResizeHandle | null => {
+      const frame = selectionFrame(docRef.current, selectionRef.current);
+      if (!frame || !frame.resizable) return null;
+      const local = frame.rotation ? unrotatePoint(point, frame.center, frame.rotation) : point;
+      const reach = (HANDLE_SIZE / 2 + 3) / transformRef.current.scale;
+      for (const [key, position] of Object.entries(handlePositions(frame.rect)) as [ResizeHandle, Point][]) {
+        const r = key === 'rotate' ? reach * 1.6 : reach;
+        if (Math.abs(position.x - local.x) <= r && Math.abs(position.y - local.y) <= r) return key;
       }
       return null;
-    },
-    [],
-  );
+    }, []);
 
-  const commitTextEdit = useCallback(() => {
-    const meta = textEditMetaRef.current;
-    if (!meta) return;
-    textEditMetaRef.current = null;
-    const trimmed = (meta.value ?? '').trim();
-    setTextEdit(null);
-    if (meta.shapeId === null) {
-      if (trimmed) {
-        const tmpCtx = document.createElement('canvas').getContext('2d')!;
-        tmpCtx.font = `${meta.fontSize}px sans-serif`;
-        const lines = trimmed.split('\n');
-        const measuredW = Math.max(...lines.map((l) => tmpCtx.measureText(l).width));
-        const newShape: Shape = {
-          id: generateId(),
-          type: 'text',
-          x: meta.x, y: meta.y,
-          width: Math.max(measuredW, 40),
-          height: meta.fontSize,
-          points: [],
-          text: trimmed,
-          fill: 'transparent',
-          stroke: '#000000',
-          strokeWidth: 1,
-          rotation: 0,
-          opacity: 1,
-          layerId: activeLayerIdRef.current,
-        };
-        onShapesChange([...shapesRef.current, newShape]);
-        onSelectionChange([newShape.id]);
-      }
-    } else {
-      if (trimmed) {
-        const orig = shapesRef.current.find((s) => s.id === meta.shapeId);
-        const tmpCtx = document.createElement('canvas').getContext('2d')!;
-        tmpCtx.font = `${orig?.height || meta.fontSize}px sans-serif`;
-        const lines = trimmed.split('\n');
-        const measuredW = Math.max(...lines.map((l) => tmpCtx.measureText(l).width));
-        onShapesChange(
-          shapesRef.current.map((s) =>
-            s.id === meta.shapeId ? { ...s, text: trimmed, width: Math.max(measuredW, 40) } : s
-          )
-        );
-      } else {
-        onShapesChange(shapesRef.current.filter((s) => s.id !== meta.shapeId));
-        onSelectionChange(selectedIdsRef.current.filter((id) => id !== meta.shapeId));
-      }
-    }
-  }, [onShapesChange, onSelectionChange]);
-
-  const cancelTextEdit = useCallback(() => {
-    textEditMetaRef.current = null;
-    setTextEdit(null);
-  }, []);
-
-  const onMouseDown = useCallback(
-    (e: MouseEvent) => {
-      if (e.button === 1 || (e.button === 0 && spaceDownRef.current)) {
-        dragRef.current = {
-          mode: 'panning',
-          startX: e.clientX,
-          startY: e.clientY,
-          lastX: e.clientX,
-          lastY: e.clientY,
-        };
+    const onMouseDown = useCallback((e: MouseEvent) => {
+      if (e.button === 1 || (e.button === 0 && spaceRef.current)) {
+        dragRef.current = { ...IDLE, mode: 'panning', startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY };
         e.preventDefault();
         return;
       }
       if (e.button !== 0) return;
+      if (textEditRef.current) commitText();
 
-      const cp = getCanvasPos(e);
+      const point = canvasPoint(e);
       const currentTool = toolRef.current;
+      const document_ = docRef.current;
 
-      if (currentTool === 'select') {
-        // Check curve control points first (they sit on top of the shape)
-        const hitCurve = findHitCurvePoint(cp);
-        if (hitCurve) {
-          dragRef.current = {
-            mode: 'curve-control',
-            startX: cp.x, startY: cp.y,
-            lastX: cp.x, lastY: cp.y,
-            curvePoint: hitCurve.curvePoint,
-            initialShapes: shapesRef.current.map((s) => ({ ...s, points: [...s.points] })),
-          };
-          return;
-        }
-
-        const hitHandle = findHitHandle(cp);
-        if (hitHandle) {
-          const initialShapes = shapesRef.current.map((s) => ({ ...s, points: [...s.points] }));
-          if (hitHandle.handle === 'rotate') {
-            dragRef.current = {
-              mode: 'rotating',
-              startX: cp.x, startY: cp.y,
-              lastX: cp.x, lastY: cp.y,
-              handle: hitHandle.handle,
-              initialShapes,
-            };
-          } else {
-            dragRef.current = {
-              mode: 'resizing',
-              startX: cp.x, startY: cp.y,
-              lastX: cp.x, lastY: cp.y,
-              handle: hitHandle.handle,
-              initialShapes,
-            };
-          }
-          return;
-        }
-
-        const hit = [...shapesRef.current].reverse().find((s) => !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y));
-        if (hit) {
-          const newSel = e.shiftKey
-            ? selectedIdsRef.current.includes(hit.id)
-              ? selectedIdsRef.current.filter((id) => id !== hit.id)
-              : [...selectedIdsRef.current, hit.id]
-            : selectedIdsRef.current.includes(hit.id)
-            ? selectedIdsRef.current
-            : [hit.id];
-          onSelectionChange(newSel);
-          const initialShapes = shapesRef.current.map((s) => ({ ...s, points: [...s.points] }));
-          dragRef.current = {
-            mode: 'moving',
-            startX: cp.x, startY: cp.y,
-            lastX: cp.x, lastY: cp.y,
-            initialShapes,
-          };
-        } else {
-          if (!e.shiftKey) onSelectionChange([]);
-          dragRef.current = {
-            mode: 'box-select',
-            startX: cp.x, startY: cp.y,
-            lastX: cp.x, lastY: cp.y,
-            boxX: cp.x, boxY: cp.y, boxW: 0, boxH: 0,
-          };
-        }
+      if (currentTool === 'text') {
+        beginTextEdit(point);
         return;
       }
 
       if (currentTool === 'eraser') {
-        const hit = [...shapesRef.current].reverse().find((s) => !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y));
-        if (hit) {
-          onShapesChange(shapesRef.current.filter((s) => s.id !== hit.id));
-          onSelectionChange(selectedIdsRef.current.filter((id) => id !== hit.id));
+        dragRef.current = { ...IDLE, mode: 'erasing', startX: point.x, startY: point.y, lastX: point.x, lastY: point.y };
+        eraseAt(point);
+        return;
+      }
+
+      if (currentTool === 'select') {
+        const handle = findHandle(point);
+        if (handle) {
+          dragRef.current = {
+            mode: handle === 'rotate' ? 'rotating' : 'resizing',
+            startX: point.x, startY: point.y, lastX: point.x, lastY: point.y,
+            handle,
+            originalDoc: document_,
+          };
+          return;
         }
-        dragRef.current = { mode: 'drawing', startX: cp.x, startY: cp.y, lastX: cp.x, lastY: cp.y };
+
+        const hit = hitTest(document_, point);
+        if (hit) {
+          const next = extendSelection(selectionRef.current, hit, e.shiftKey);
+          onSelectionChange(next);
+          dragRef.current = {
+            mode: 'moving',
+            startX: point.x, startY: point.y, lastX: point.x, lastY: point.y,
+            originalDoc: document_,
+          };
+          return;
+        }
+
+        if (!e.shiftKey) onSelectionChange(null);
+        dragRef.current = {
+          ...IDLE,
+          mode: 'marquee',
+          startX: point.x, startY: point.y, lastX: point.x, lastY: point.y,
+          marquee: { x: point.x, y: point.y, width: 0, height: 0 },
+        };
         return;
       }
 
-      const snappedX = snapToGrid(cp.x);
-      const snappedY = snapToGrid(cp.y);
+      // A drawing tool. The draft lives outside the document until the mouse is
+      // released, so a drag that produces nothing leaves no undo step behind.
+      const x = snapTo(point.x, document_, 'x');
+      const y = snapTo(point.y, document_, 'y');
+      const style = styleRef.current;
 
-      if (currentTool === 'pen') {
-        const newShape: Shape = {
-          id: generateId(),
-          type: 'pen',
-          x: snappedX, y: snappedY,
-          width: 0, height: 0,
-          points: [{ x: snappedX, y: snappedY }],
-          text: '',
-          fill: 'transparent',
-          stroke: '#000000',
-          strokeWidth: 2,
-          rotation: 0,
-          opacity: 1,
-          layerId: activeLayerIdRef.current,
-        };
-        currentShapeRef.current = newShape;
-        dragRef.current = {
-          mode: 'drawing',
-          startX: snappedX, startY: snappedY,
-          lastX: snappedX, lastY: snappedY,
-          penShapeId: newShape.id,
-        };
-      } else if (currentTool === 'text') {
-        // Text tool is handled by the React synthetic onMouseDown on the canvas element.
-        // The native listener just resets drag state and returns.
-        dragRef.current = { mode: 'none', startX: 0, startY: 0, lastX: 0, lastY: 0 };
-        return;
-      } else {
-        const shapeType = currentTool as Shape['type'];
-        const newShape: Shape = {
-          id: generateId(),
-          type: shapeType,
-          x: snappedX, y: snappedY,
-          width: 0, height: 0,
-          points: [],
-          text: '',
-          fill: 'transparent',
-          stroke: '#000000',
-          strokeWidth: 2,
-          rotation: 0,
-          opacity: 1,
-          layerId: activeLayerIdRef.current,
-        };
-        currentShapeRef.current = newShape;
-        dragRef.current = {
-          mode: 'drawing',
-          startX: snappedX, startY: snappedY,
-          lastX: snappedX, lastY: snappedY,
-        };
-      }
+      draftRef.current =
+        currentTool === 'pen' ? createPath([{ x: point.x, y: point.y }], style)
+        : currentTool === 'rectangle' ? createRect({ x, y, width: 0, height: 0 }, style)
+        : currentTool === 'ellipse' ? createEllipse({ x, y, width: 0, height: 0 }, style)
+        : createLine({ x, y, width: 0, height: 0 }, { arrowEnd: currentTool === 'arrow' }, style);
+
+      dragRef.current = { ...IDLE, mode: 'drawing', startX: x, startY: y, lastX: x, lastY: y };
       render();
-    },
-    [getCanvasPos, findHitCurvePoint, findHitHandle, onSelectionChange, onShapesChange, render],
-  );
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [beginTextEdit, canvasPoint, commitText, findHandle, onSelectionChange, render]);
 
-  const onMouseMove = useCallback(
-    (e: MouseEvent) => {
+    const eraseAt = useCallback((point: Point) => {
+      const document_ = docRef.current;
+      const hit = hitTest(document_, point);
+      if (!hit) return;
+      if (hit.kind === 'object') {
+        onDocumentChange(removeObjects(document_, hit.layerId, [hit.object.id]));
+      } else {
+        onDocumentChange(deleteNode(document_, hit.node.id));
+      }
+      onSelectionChange(null);
+    }, [onDocumentChange, onSelectionChange]);
+
+    const onMouseMove = useCallback((e: MouseEvent) => {
       const drag = dragRef.current;
       if (drag.mode === 'none') return;
 
       if (drag.mode === 'panning') {
-        const dx = e.clientX - drag.lastX;
-        const dy = e.clientY - drag.lastY;
-        transformRef.current = {
-          ...transformRef.current,
-          x: transformRef.current.x + dx,
-          y: transformRef.current.y + dy,
-        };
+        const t = transformRef.current;
+        applyTransform({ ...t, x: t.x + (e.clientX - drag.lastX), y: t.y + (e.clientY - drag.lastY) });
         drag.lastX = e.clientX;
         drag.lastY = e.clientY;
-        onTransformChange?.(transformRef.current);
-        render();
         return;
       }
 
-      const cp = getCanvasPos(e);
+      const point = canvasPoint(e);
+      const document_ = docRef.current;
 
-      if (drag.mode === 'drawing') {
-        const cur = currentShapeRef.current;
-        if (!cur) {
-          if (toolRef.current === 'eraser') {
-            const hit = [...shapesRef.current].reverse().find((s) => !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y));
-            if (hit) {
-              onShapesChange(shapesRef.current.filter((s) => s.id !== hit.id));
-              onSelectionChange(selectedIdsRef.current.filter((id) => id !== hit.id));
+      switch (drag.mode) {
+        case 'erasing':
+          eraseAt(point);
+          return;
+
+        case 'drawing': {
+          const draft = draftRef.current;
+          if (!draft) return;
+          if (draft.kind === 'path') {
+            draft.points.push({ x: point.x, y: point.y });
+          } else {
+            const x = snapTo(point.x, document_, 'x');
+            const y = snapTo(point.y, document_, 'y');
+            if (draft.kind === 'line') {
+              // Signed width and height: a line's frame records direction.
+              draft.frame = { x: drag.startX, y: drag.startY, width: x - drag.startX, height: y - drag.startY };
+            } else {
+              draft.frame = {
+                x: Math.min(drag.startX, x),
+                y: Math.min(drag.startY, y),
+                width: Math.abs(x - drag.startX),
+                height: Math.abs(y - drag.startY),
+              };
             }
+          }
+          render();
+          return;
+        }
+
+        case 'moving': {
+          const original = drag.originalDoc;
+          const current = selectionRef.current;
+          if (!original || !current) return;
+          const dx = point.x - drag.startX;
+          const dy = point.y - drag.startY;
+
+          if (current.kind === 'objects') {
+            onDocumentChange(mapObjects(original, current.layerId, current.ids, (object) =>
+              translateObject(object, dx, dy)));
+          } else {
+            let next = original;
+            for (const id of current.ids) next = translateNode(next, id, dx, dy);
+            onDocumentChange(next);
           }
           return;
         }
-        const sx = drag.startX;
-        const sy = drag.startY;
 
-        if (cur.type === 'pen') {
-          cur.points.push({ x: cp.x, y: cp.y });
-        } else {
-          const snappedX2 = snapToGrid(cp.x);
-          const snappedY2 = snapToGrid(cp.y);
-          cur.x = Math.min(sx, snappedX2);
-          cur.y = Math.min(sy, snappedY2);
-          cur.width = Math.abs(snappedX2 - sx);
-          cur.height = Math.abs(snappedY2 - sy);
-          if (cur.type === 'line' || cur.type === 'arrow') {
-            cur.x = sx;
-            cur.y = sy;
-            cur.width = snappedX2 - sx;
-            cur.height = snappedY2 - sy;
-          }
+        case 'resizing': {
+          const original = drag.originalDoc;
+          const current = selectionRef.current;
+          if (!original || !current || !drag.handle) return;
+          onDocumentChange(applyResize(original, current, drag, point));
+          return;
         }
-        render();
-        return;
-      }
 
-      if (drag.mode === 'moving' && drag.initialShapes) {
-        const dx = cp.x - drag.startX;
-        const dy = cp.y - drag.startY;
-        const updated = shapesRef.current.map((s) => {
-          if (!selectedIdsRef.current.includes(s.id)) return s;
-          const orig = drag.initialShapes!.find((o) => o.id === s.id);
-          if (!orig) return s;
-          if (s.type === 'pen') {
-            return {
-              ...s,
-              x: orig.x + dx,
-              y: orig.y + dy,
-              points: orig.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
-            };
-          }
-          return { ...s, x: snapToGrid(orig.x + dx), y: snapToGrid(orig.y + dy) };
-        });
-        onShapesChange(updated);
-        return;
-      }
-
-      if (drag.mode === 'resizing' && drag.initialShapes && drag.handle) {
-        const targetId = selectedIdsRef.current[0];
-        if (!targetId) return;
-        const orig = drag.initialShapes.find((s) => s.id === targetId);
-        if (!orig) return;
-        const dx = cp.x - drag.startX;
-        const dy = cp.y - drag.startY;
-        let { x, y, width: w, height: h } = orig;
-        const snapH = orig.type === 'text'
-          ? (v: number) => Math.max(1, Math.round(v))
-          : snapToGrid;
-
-        switch (drag.handle) {
-          case 'se': w = snapToGrid(orig.width + dx); h = snapH(orig.height + dy); break;
-          case 'sw': x = snapToGrid(orig.x + dx); w = snapToGrid(orig.width - dx); h = snapH(orig.height + dy); break;
-          case 'ne': w = snapToGrid(orig.width + dx); y = snapToGrid(orig.y + dy); h = snapH(orig.height - dy); break;
-          case 'nw': x = snapToGrid(orig.x + dx); y = snapToGrid(orig.y + dy); w = snapToGrid(orig.width - dx); h = snapH(orig.height - dy); break;
-          case 'e':  w = snapToGrid(orig.width + dx); break;
-          case 'w':  x = snapToGrid(orig.x + dx); w = snapToGrid(orig.width - dx); break;
-          case 's':  h = snapH(orig.height + dy); break;
-          case 'n':  y = snapToGrid(orig.y + dy); h = snapH(orig.height - dy); break;
+        case 'rotating': {
+          const original = drag.originalDoc;
+          const current = selectionRef.current;
+          if (!original || !current || current.kind !== 'objects') return;
+          const frame = selectionFrame(original, current);
+          if (!frame) return;
+          const angle = (Math.atan2(point.y - frame.center.y, point.x - frame.center.x) * 180) / Math.PI + 90;
+          onDocumentChange(mapObjects(original, current.layerId, current.ids, (object) => ({
+            ...object,
+            rotation: Math.round(angle),
+          })));
+          return;
         }
-        if (orig.type === 'text') {
-          w = measureTextWidth(orig.text || '', h, orig.fontFamily || 'sans-serif');
+
+        case 'marquee': {
+          drag.marquee = {
+            x: Math.min(drag.startX, point.x),
+            y: Math.min(drag.startY, point.y),
+            width: Math.abs(point.x - drag.startX),
+            height: Math.abs(point.y - drag.startY),
+          };
+          render();
+          return;
         }
-        onShapesChange(
-          shapesRef.current.map((s) =>
-            s.id === targetId ? { ...s, x, y, width: w, height: h } : s,
-          ),
-        );
-        return;
       }
+    }, [applyTransform, canvasPoint, eraseAt, onDocumentChange, render]);
 
-      if (drag.mode === 'rotating' && drag.initialShapes) {
-        const targetId = selectedIdsRef.current[0];
-        if (!targetId) return;
-        const orig = drag.initialShapes.find((s) => s.id === targetId);
-        if (!orig) return;
-        const { x, y, w, h } = getBounds(orig);
-        const cx = x + w / 2;
-        const cy = y + h / 2;
-        const angle = (Math.atan2(cp.y - cy, cp.x - cx) * 180) / Math.PI + 90;
-        onShapesChange(
-          shapesRef.current.map((s) => (s.id === targetId ? { ...s, rotation: angle } : s)),
-        );
-        return;
-      }
-
-      if (drag.mode === 'curve-control' && drag.curvePoint && drag.initialShapes) {
-        const targetId = selectedIdsRef.current[0];
-        if (!targetId) return;
-        const orig = drag.initialShapes.find((s) => s.id === targetId);
-        if (!orig) return;
-        const dx = cp.x - drag.startX;
-        const dy = cp.y - drag.startY;
-        const { kind, point } = drag.curvePoint;
-        onShapesChange(shapesRef.current.map((s) => {
-          if (s.id !== targetId) return s;
-          if (kind === 'line' && s.lineCurve && orig.lineCurve) {
-            return { ...s, lineCurve: { ...s.lineCurve, [point]: { x: orig.lineCurve[point].x + dx, y: orig.lineCurve[point].y + dy } } };
-          }
-          if ((kind === 'text-bottom' || kind === 'text-top') && s.textCurve && orig.textCurve) {
-            const tc = { ...s.textCurve };
-            if (kind === 'text-bottom') {
-              tc.bottom = { ...tc.bottom, [point]: { x: orig.textCurve.bottom[point].x + dx, y: orig.textCurve.bottom[point].y + dy } };
-            } else if (kind === 'text-top' && tc.top && orig.textCurve.top) {
-              tc.top = { ...tc.top, [point]: { x: orig.textCurve.top[point].x + dx, y: orig.textCurve.top[point].y + dy } };
-            }
-            return { ...s, textCurve: tc };
-          }
-          return s;
-        }));
-        return;
-      }
-
-      if (drag.mode === 'box-select') {
-        const bx = Math.min(drag.startX, cp.x);
-        const by = Math.min(drag.startY, cp.y);
-        const bw = Math.abs(cp.x - drag.startX);
-        const bh = Math.abs(cp.y - drag.startY);
-        drag.boxX = bx;
-        drag.boxY = by;
-        drag.boxW = bw;
-        drag.boxH = bh;
-        render();
-      }
-    },
-    [getCanvasPos, onShapesChange, onSelectionChange, onTransformChange, render],
-  );
-
-  const onMouseUp = useCallback(
-    (e: MouseEvent) => {
+    const onMouseUp = useCallback((e: MouseEvent) => {
       const drag = dragRef.current;
       if (drag.mode === 'none') return;
+      const document_ = docRef.current;
 
       if (drag.mode === 'drawing') {
-        const cur = currentShapeRef.current;
-        if (cur) {
-          const hasContent =
-            cur.type === 'pen'
-              ? cur.points.length > 1
-              : Math.abs(cur.width) > 2 || Math.abs(cur.height) > 2;
-          if (hasContent) {
-            onShapesChange([...shapesRef.current, cur]);
-            onSelectionChange([cur.id]);
+        const draft = draftRef.current;
+        draftRef.current = null;
+        if (draft) {
+          const meaningful = draft.kind === 'path'
+            ? draft.points.length > 1
+            : Math.abs(draft.frame.width) > 2 || Math.abs(draft.frame.height) > 2;
+          if (meaningful) {
+            const finished = draft.kind === 'path'
+              ? createPath(draft.points, draft.style)
+              : draft;
+            const layer = findNode(document_.root, activeLayerRef.current);
+            // Nothing to draw into: a raster or text layer is active, or the id
+            // is stale. Refusing beats silently retargeting another layer.
+            if (layer && layer.type === 'vector') {
+              onDocumentChange(addObjects(document_, layer.id, [finished]));
+              onSelectionChange({ kind: 'objects', layerId: layer.id, ids: [finished.id] });
+            }
           }
-          currentShapeRef.current = null;
         }
       }
 
-      if (drag.mode === 'box-select') {
-        const bx = drag.boxX ?? 0;
-        const by = drag.boxY ?? 0;
-        const bw = drag.boxW ?? 0;
-        const bh = drag.boxH ?? 0;
-        const newSel = shapesRef.current
-          .filter((s) => {
-            const { x, y, w, h } = getBounds(s);
-            return x < bx + bw && x + w > bx && y < by + bh && y + h > by;
-          })
-          .map((s) => s.id);
-        onSelectionChange(e.shiftKey ? [...new Set([...selectedIdsRef.current, ...newSel])] : newSel);
+      if (drag.mode === 'marquee' && drag.marquee) {
+        onSelectionChange(marqueeSelection(document_, drag.marquee, activeLayerRef.current, e.shiftKey ? selectionRef.current : null));
       }
 
-      dragRef.current = { mode: 'none', startX: 0, startY: 0, lastX: 0, lastY: 0 };
+      dragRef.current = IDLE;
       render();
-    },
-    [onShapesChange, onSelectionChange, render],
-  );
+    }, [onDocumentChange, onSelectionChange, render]);
 
-  const handleTextMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (toolRef.current !== 'text') return;
-    if (e.button !== 0) return;
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    const cp = screenToCanvas(e.clientX - rect.left, e.clientY - rect.top, transformRef.current);
-    const snappedX = snapToGrid(cp.x);
-    const snappedY = snapToGrid(cp.y);
-    const hitText = [...shapesRef.current].reverse().find(
-      (s) => s.type === 'text' && !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y)
-    );
-    if (hitText) {
-      const meta = { shapeId: hitText.id, x: hitText.x, y: hitText.y, fontSize: hitText.height || 16, capturedTransform: { ...transformRef.current }, value: hitText.text || '' };
-      textEditMetaRef.current = meta;
-      setTextEdit({ ...meta });
-      onSelectionChange([hitText.id]);
-    } else {
-      const meta = { shapeId: null, x: snappedX, y: snappedY, fontSize: 16, capturedTransform: { ...transformRef.current }, value: '' };
-      textEditMetaRef.current = meta;
-      setTextEdit({ ...meta });
-      onSelectionChange([]);
-    }
-  }, [onSelectionChange]);
+    const onDoubleClick = useCallback((e: MouseEvent) => {
+      if (toolRef.current !== 'select') return;
+      const point = canvasPoint(e);
+      const hit = hitTest(docRef.current, point);
+      if (hit?.kind === 'node' && hit.node.type === 'text') {
+        onToolChange('text');
+        beginTextEdit(point);
+      }
+    }, [beginTextEdit, canvasPoint, onToolChange]);
 
-  const onDblClick = useCallback((e: MouseEvent) => {
-    if (toolRef.current !== 'select') return;
-    const cp = getCanvasPos(e);
-    const hit = [...shapesRef.current].reverse().find(
-      (s) => s.type === 'text' && !shapeEffectivelyLocked(s) && !shapeEffectivelyHidden(s) && hitTest(s, cp.x, cp.y)
-    );
-    if (!hit) return;
-    const meta = { shapeId: hit.id, x: hit.x, y: hit.y, fontSize: hit.height || 16, capturedTransform: { ...transformRef.current }, value: hit.text || '' };
-    textEditMetaRef.current = meta;
-    setTextEdit({ ...meta });
-    onSelectionChange([hit.id]);
-  }, [getCanvasPos, onSelectionChange]);
-
-  const onWheel = useCallback(
-    (e: WheelEvent) => {
+    const onWheel = useCallback((e: WheelEvent) => {
       e.preventDefault();
       const t = transformRef.current;
 
-      if (e.ctrlKey) {
-        // Pinch-to-zoom: browser sets ctrlKey=true for trackpad pinch gestures
-        const canvas = canvasRef.current!;
-        const rect = canvas.getBoundingClientRect();
+      if (e.ctrlKey || e.metaKey) {
+        const rect = canvasRef.current!.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
         const factor = e.deltaY > 0 ? 0.9 : 1 / 0.9;
-        const newScale = Math.max(0.1, Math.min(10, t.scale * factor));
-        const newX = mx - (mx - t.x) * (newScale / t.scale);
-        const newY = my - (my - t.y) * (newScale / t.scale);
-        transformRef.current = { x: newX, y: newY, scale: newScale };
-      } else {
-        // Two-finger scroll: pan the canvas
-        transformRef.current = {
-          ...t,
-          x: t.x - e.deltaX,
-          y: t.y - e.deltaY,
-        };
+        const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, t.scale * factor));
+        applyTransform({
+          scale,
+          x: mx - (mx - t.x) * (scale / t.scale),
+          y: my - (my - t.y) * (scale / t.scale),
+        });
+        return;
       }
+      applyTransform({ ...t, x: t.x - e.deltaX, y: t.y - e.deltaY });
+    }, [applyTransform]);
 
-      onTransformChange?.(transformRef.current);
-      forceRender((n) => n + 1);
-      render();
-    },
-    [onTransformChange, render],
-  );
+    // ---------------------------------------------------------------------
+    // Listeners
+    // ---------------------------------------------------------------------
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (!canvas || !container) return;
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
 
-    const resize = () => {
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
-      render();
-    };
-    resize();
+      const resize = () => {
+        canvas.width = container.clientWidth;
+        canvas.height = container.clientHeight;
+        render();
+      };
+      resize();
+      const observer = new ResizeObserver(resize);
+      observer.observe(container);
 
-    const observer = new ResizeObserver(resize);
-    observer.observe(container);
+      const keyDown = (e: KeyboardEvent) => {
+        const tag = (e.target as HTMLElement | null)?.tagName;
+        if (e.code === 'Space' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
+          spaceRef.current = true;
+          e.preventDefault();
+        }
+      };
+      const keyUp = (e: KeyboardEvent) => {
+        if (e.code === 'Space') spaceRef.current = false;
+      };
 
-    const onKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (e.code === 'Space' && tag !== 'INPUT' && tag !== 'TEXTAREA') {
-        spaceDownRef.current = true;
-        e.preventDefault();
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') spaceDownRef.current = false;
-    };
+      canvas.addEventListener('mousedown', onMouseDown);
+      canvas.addEventListener('dblclick', onDoubleClick);
+      canvas.addEventListener('wheel', onWheel, { passive: false });
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+      window.addEventListener('keydown', keyDown);
+      window.addEventListener('keyup', keyUp);
 
-    canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('dblclick', onDblClick);
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    canvas.addEventListener('wheel', onWheel, { passive: false });
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
+      return () => {
+        observer.disconnect();
+        canvas.removeEventListener('mousedown', onMouseDown);
+        canvas.removeEventListener('dblclick', onDoubleClick);
+        canvas.removeEventListener('wheel', onWheel);
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        window.removeEventListener('keydown', keyDown);
+        window.removeEventListener('keyup', keyUp);
+      };
+    }, [onDoubleClick, onMouseDown, onMouseMove, onMouseUp, onWheel, render]);
 
-    return () => {
-      observer.disconnect();
-      canvas.removeEventListener('mousedown', onMouseDown);
-      canvas.removeEventListener('dblclick', onDblClick);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      canvas.removeEventListener('wheel', onWheel);
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-    };
-  }, [onMouseDown, onDblClick, onMouseMove, onMouseUp, onWheel, render]);
+    // ---------------------------------------------------------------------
 
-  useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta || !textEdit) return;
-    ta.style.height = 'auto';
-    ta.style.height = `${ta.scrollHeight}px`;
-    ta.style.width = 'auto';
-    ta.style.width = `${Math.max(ta.scrollWidth, 80)}px`;
-  }, [textEdit?.value, textEdit]);
+    const cursor = spaceRef.current ? 'grab'
+      : tool === 'select' ? 'default'
+      : tool === 'text' ? 'text'
+      : 'crosshair';
 
-  const cursorStyle: React.CSSProperties['cursor'] = (() => {
-    if (spaceDownRef.current) return 'grab';
-    switch (tool) {
-      case 'select': return 'default';
-      case 'eraser': return 'crosshair';
-      case 'text': return 'text';
-      default: return 'crosshair';
+    const t = transformRef.current;
+    const editorStyle: React.CSSProperties | null = textEdit
+      ? {
+          position: 'absolute',
+          left: textEdit.box.x * t.scale + t.x,
+          top: textEdit.box.y * t.scale + t.y,
+          width: Math.max(80, textEdit.box.width * t.scale),
+          fontSize: 24 * t.scale,
+          lineHeight: 1.2,
+          fontFamily: 'sans-serif',
+          border: `1.5px dashed ${SELECTION_COLOR}`,
+          borderRadius: 2,
+          outline: 'none',
+          background: 'transparent',
+          color: '#000000',
+          resize: 'none',
+          overflow: 'hidden',
+          padding: '0 2px',
+          zIndex: 10,
+        }
+      : null;
+
+    return (
+      <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+        <canvas ref={canvasRef} style={{ display: 'block', cursor }} />
+        {textEdit && editorStyle && (
+          <textarea
+            ref={textareaRef}
+            aria-label="Text layer content"
+            value={textEdit.value}
+            style={editorStyle}
+            onChange={(e) => {
+              const next = { ...textEdit, value: e.target.value };
+              textEditRef.current = next;
+              setTextEdit(next);
+            }}
+            onBlur={() => { if (textReadyRef.current) commitText(); }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Escape') {
+                textEditRef.current = null;
+                setTextEdit(null);
+              }
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                commitText();
+              }
+            }}
+          />
+        )}
+      </div>
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Chrome
+// ---------------------------------------------------------------------------
+
+function drawGrid(ctx: CanvasRenderingContext2D, doc: DrawingDocument, scale: number): void {
+  const size = doc.grid.size;
+  // Below this the lines are closer together than they are wide and the grid
+  // reads as a grey wash.
+  if (size * scale < 6) return;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth = 1 / scale;
+  ctx.beginPath();
+  for (let x = doc.grid.origin.x % size; x <= doc.canvas.width; x += size) {
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, doc.canvas.height);
+  }
+  for (let y = doc.grid.origin.y % size; y <= doc.canvas.height; y += size) {
+    ctx.moveTo(0, y);
+    ctx.lineTo(doc.canvas.width, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPageBorder(ctx: CanvasRenderingContext2D, doc: DrawingDocument, scale: number): void {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 1 / scale;
+  ctx.strokeRect(0, 0, doc.canvas.width, doc.canvas.height);
+  ctx.restore();
+}
+
+function drawGuides(ctx: CanvasRenderingContext2D, doc: DrawingDocument, scale: number): void {
+  if (doc.guides.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = '#22d3ee';
+  ctx.lineWidth = 1 / scale;
+  ctx.beginPath();
+  for (const guide of doc.guides) {
+    if (guide.orientation === 'vertical') {
+      ctx.moveTo(guide.position, 0);
+      ctx.lineTo(guide.position, doc.canvas.height);
+    } else {
+      ctx.moveTo(0, guide.position);
+      ctx.lineTo(doc.canvas.width, guide.position);
     }
-  })();
+  }
+  ctx.stroke();
+  ctx.restore();
+}
 
-  const tePos = textEdit
-    ? {
-        x: textEdit.x * textEdit.capturedTransform.scale + textEdit.capturedTransform.x,
-        y: (textEdit.y + textEdit.fontSize * 0.25) * textEdit.capturedTransform.scale + textEdit.capturedTransform.y,
-        fontSize: textEdit.fontSize * textEdit.capturedTransform.scale,
-      }
-    : null;
+function drawSelection(
+  ctx: CanvasRenderingContext2D,
+  doc: DrawingDocument,
+  selection: Selection,
+  scale: number,
+): void {
+  const frame = selectionFrame(doc, selection);
+  if (!frame) return;
 
-  return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative' }}>
-      <canvas
-        ref={canvasRef}
-        style={{ display: 'block', cursor: cursorStyle }}
-        onMouseDown={handleTextMouseDown}
-      />
-      {textEdit && tePos && (
-        <textarea
-          ref={textareaRef}
-          value={textEdit.value}
-          onChange={(e) => {
-            if (textEditMetaRef.current) textEditMetaRef.current.value = e.target.value;
-            setTextEdit((prev) => prev ? { ...prev, value: e.target.value } : null);
-          }}
-          onBlur={() => { if (textEditReadyRef.current) commitTextEdit(); }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); cancelTextEdit(); }
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitTextEdit(); }
-          }}
-          style={{
-            position: 'absolute',
-            left: tePos.x,
-            top: tePos.y,
-            fontSize: tePos.fontSize,
-            fontFamily: 'sans-serif',
-            border: '1.5px dashed #2563eb',
-            borderRadius: 2,
-            outline: 'none',
-            background: 'transparent',
-            color: '#000000',
-            resize: 'none',
-            overflow: 'hidden',
-            minWidth: 80,
-            padding: '0 2px',
-            lineHeight: 1.2,
-            whiteSpace: 'pre',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-            zIndex: 10,
-          }}
-        />
-      )}
-    </div>
-  );
-});
+  ctx.save();
+  if (frame.rotation) {
+    ctx.translate(frame.center.x, frame.center.y);
+    ctx.rotate((frame.rotation * Math.PI) / 180);
+    ctx.translate(-frame.center.x, -frame.center.y);
+  }
+
+  ctx.strokeStyle = SELECTION_COLOR;
+  ctx.lineWidth = 1.5 / scale;
+  ctx.setLineDash([4 / scale, 3 / scale]);
+  ctx.strokeRect(frame.rect.x, frame.rect.y, frame.rect.width, frame.rect.height);
+  ctx.setLineDash([]);
+
+  if (frame.resizable) {
+    const size = HANDLE_SIZE / scale;
+    const handles = handlePositions(frame.rect);
+    ctx.fillStyle = '#ffffff';
+    for (const key of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as ResizeHandle[]) {
+      const p = handles[key];
+      ctx.beginPath();
+      ctx.rect(p.x - size / 2, p.y - size / 2, size, size);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    const rotate = handles.rotate;
+    ctx.beginPath();
+    ctx.moveTo(frame.rect.x + frame.rect.width / 2, frame.rect.y);
+    ctx.lineTo(rotate.x, rotate.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(rotate.x, rotate.y, size / 2, 0, Math.PI * 2);
+    ctx.fillStyle = SELECTION_COLOR;
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Selection helpers
+// ---------------------------------------------------------------------------
+
+function extendSelection(current: Selection, hit: Hit, additive: boolean): Selection {
+  if (hit.kind === 'object') {
+    const sameLayer = current?.kind === 'objects' && current.layerId === hit.layerId;
+    if (additive && sameLayer) {
+      const ids = current.ids.includes(hit.object.id)
+        ? current.ids.filter((id) => id !== hit.object.id)
+        : [...current.ids, hit.object.id];
+      return ids.length ? { kind: 'objects', layerId: hit.layerId, ids } : null;
+    }
+    if (sameLayer && current.ids.includes(hit.object.id)) return current;
+    return { kind: 'objects', layerId: hit.layerId, ids: [hit.object.id] };
+  }
+
+  if (additive && current?.kind === 'nodes') {
+    const ids = current.ids.includes(hit.node.id)
+      ? current.ids.filter((id) => id !== hit.node.id)
+      : [...current.ids, hit.node.id];
+    return ids.length ? { kind: 'nodes', ids } : null;
+  }
+  if (current?.kind === 'nodes' && current.ids.includes(hit.node.id)) return current;
+  return { kind: 'nodes', ids: [hit.node.id] };
+}
+
+/**
+ * What a marquee caught.
+ *
+ * Objects on the active layer win over whole nodes: a rubber band inside a
+ * drawing almost always means "these shapes", and returning a mix of objects
+ * and layers would give the style panel two different things to edit at once.
+ */
+function marqueeSelection(
+  doc: DrawingDocument,
+  marquee: Rect,
+  activeLayerId: string,
+  additiveTo: Selection,
+): Selection {
+  const layer = findNode(doc.root, activeLayerId);
+  if (layer && layer.type === 'vector') {
+    const ids = layer.objects
+      .filter((o) => o.visible && !o.locked && rectsIntersect(objectSelectionBox(o), marquee))
+      .map((o) => o.id);
+    if (ids.length > 0) {
+      const existing = additiveTo?.kind === 'objects' && additiveTo.layerId === activeLayerId
+        ? additiveTo.ids
+        : [];
+      return { kind: 'objects', layerId: activeLayerId, ids: [...new Set([...existing, ...ids])] };
+    }
+  }
+
+  const nodeIds: string[] = [];
+  for (const child of doc.root.children) {
+    if (child.type === 'vector') continue;
+    if (!isEffectivelyVisible(doc.root, child.id)) continue;
+    const bounds = nodeCanvasBounds(doc.root, child);
+    if (bounds && rectsIntersect(bounds, marquee)) nodeIds.push(child.id);
+  }
+  if (nodeIds.length === 0) return null;
+  const existing = additiveTo?.kind === 'nodes' ? additiveTo.ids : [];
+  return { kind: 'nodes', ids: [...new Set([...existing, ...nodeIds])] };
+}
+
+/**
+ * The document with a resize applied.
+ *
+ * Only ever one target — `selectionFrame` withholds handles from a
+ * multi-selection, because resizing several rotated objects against one box
+ * needs a transform per object and this phase has no UI for the result.
+ */
+function applyResize(
+  original: DrawingDocument,
+  selection: Selection,
+  drag: DragState,
+  point: Point,
+): DrawingDocument {
+  const frame = selectionFrame(original, selection);
+  if (!frame || !selection || !drag.handle) return original;
+
+  const dx = point.x - drag.startX;
+  const dy = point.y - drag.startY;
+  const next = resizeRect(frame.rect, drag.handle, dx, dy);
+
+  if (selection.kind === 'objects') {
+    return mapObjects(original, selection.layerId, selection.ids, (object) =>
+      resizeObject(object, next));
+  }
+
+  // A node has no frame to set, so the difference is expressed as a move. A
+  // true node resize needs a transform, which arrives with the transform tool
+  // in phase 4.
+  const node = findNode(original.root, selection.ids[0]);
+  if (!node) return original;
+  return translateNode(original, node.id, next.x - frame.rect.x, next.y - frame.rect.y);
+}
+
+function resizeRect(rect: Rect, handle: ResizeHandle, dx: number, dy: number): Rect {
+  let { x, y, width, height } = rect;
+  if (handle.includes('n')) { y += dy; height -= dy; }
+  if (handle.includes('s')) { height += dy; }
+  if (handle.includes('w')) { x += dx; width -= dx; }
+  if (handle.includes('e')) { width += dx; }
+  return normalizeRect({ x, y, width, height });
+}
+
+// ---------------------------------------------------------------------------
+
+/** Rewrites a text layer's content, keeping its layer name in step. */
+function setTextContent(doc: DrawingDocument, id: string, text: string): DrawingDocument {
+  return setNodeProps(patchTextLayer(doc, id, { text }), id, { name: text.slice(0, 24) });
+}
+
+function surfaceToBlob(surface: Surface): Promise<Blob> {
+  const canvas = surface as HTMLCanvasElement;
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('canvas.toBlob produced nothing'));
+    }, 'image/png');
+  });
+}
+
+export { hitTest, selectionFrame };

@@ -17,6 +17,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor, act } from '@testing-library/react';
 import React from 'react';
 
+import { createDocument, createRect } from '../../app/(apps)/drawing/editor/document/factory';
+import { addObjects, setTitle } from '../../app/(apps)/drawing/editor/document/edits';
+import { flattenTree } from '../../app/(apps)/drawing/editor/document/tree';
+
 const DRAWING_ID = 'draw-1';
 const DEK = new Uint8Array(32).fill(5);
 
@@ -95,11 +99,11 @@ vi.mock('@/hooks/useContentVersionGuard', () => ({
 
 vi.mock('next/dynamic', () => ({ default: () => () => null }));
 
-/** Captures the canvas' onShapesChange so a test can make the editor dirty. */
-let onShapesChange: (shapes: unknown[]) => void = () => {};
+/** Captures the canvas' onDocumentChange so a test can make the editor dirty. */
+let onDocumentChange: (doc: unknown) => void = () => {};
 vi.mock('../../app/(apps)/drawing/editor/DrawingCanvas', () => ({
-  DrawingCanvas: (props: { onShapesChange?: (s: unknown[]) => void }) => {
-    if (props.onShapesChange) onShapesChange = props.onShapesChange;
+  DrawingCanvas: (props: { onDocumentChange?: (doc: unknown) => void; doc?: unknown }) => {
+    if (props.onDocumentChange) onDocumentChange = props.onDocumentChange;
     return <div data-testid="canvas" />;
   },
 }));
@@ -117,11 +121,20 @@ vi.mock('../../app/(apps)/drawing/editor/page.module.css', () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
-const BODY = JSON.stringify({
-  version: 1,
-  shapes: [{ id: 's1', type: 'rect', layerId: 'bg', text: 'hello' }],
-  layers: [{ id: 'bg', name: 'Background', isBackground: true }],
-});
+/**
+ * A stored drawing: one vector layer holding one rectangle.
+ *
+ * Built through the real factory rather than written out by hand, so a change
+ * to the document model cannot leave this file asserting a round trip through a
+ * shape the editor no longer reads.
+ */
+const STORED_DOC = (() => {
+  const base = createDocument({ title: 'Sketch' });
+  const layer = flattenTree(base.root).find((f) => f.node.type === 'vector')!.node;
+  return addObjects(base, layer.id, [createRect({ x: 4, y: 4, width: 40, height: 20 })]);
+})();
+
+const BODY = JSON.stringify(STORED_DOC);
 
 /** The stored form of `BODY` once encrypted: a 4-byte marker, then the text. */
 function asCiphertext(text: string): Uint8Array {
@@ -141,9 +154,9 @@ async function renderEditor() {
  * Render and wait until the canvas is on screen.
  *
  * The editor shows a spinner while loading, so the canvas — and with it the
- * `onShapesChange` handle these tests drive — does not exist until the load
+ * `onDocumentChange` handle these tests drive — does not exist until the load
  * settles. Waiting on `getDrawing` alone is not enough: it resolves the moment
- * the request goes out, leaving `onShapesChange` pointing at the previous
+ * the request goes out, leaving `onDocumentChange` pointing at the previous
  * test's unmounted editor, where setting state is a silent no-op.
  */
 async function renderLoadedEditor() {
@@ -231,17 +244,17 @@ describe('saving a drawing', () => {
     await renderLoadedEditor();
 
     await act(async () => {
-      onShapesChange([{ id: 's2', type: 'ellipse', layerId: 'bg' }]);
-      // Past the 1 s shape debounce.
+      onDocumentChange(setTitle(STORED_DOC, 'Edited'));
+      // Past the 1 s autosave debounce.
       await new Promise((r) => setTimeout(r, 1200));
     });
 
-    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled());
+    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled(), { timeout: 5_000 });
     const [id, content, filename, dek] = autosaveEncryptedContent.mock.calls[0];
     expect(id).toBe(DRAWING_ID);
     expect(filename).toBe('drawing.json');
     expect(dek).toBe(DEK);
-    expect(JSON.parse(content as string)).toMatchObject({ version: 1 });
+    expect(JSON.parse(content as string)).toMatchObject({ version: 2 });
   });
 
   it('writes nothing when the vault is locked', async () => {
@@ -249,11 +262,11 @@ describe('saving a drawing', () => {
     dekNow = null;
 
     await act(async () => {
-      onShapesChange([{ id: 's2', type: 'ellipse', layerId: 'bg' }]);
+      onDocumentChange(setTitle(STORED_DOC, 'Edited'));
       await new Promise((r) => setTimeout(r, 1200));
     });
 
     expect(autosaveEncryptedContent).not.toHaveBeenCalled();
-    await waitFor(() => expect(toastWarning).toHaveBeenCalled());
+    await waitFor(() => expect(toastWarning).toHaveBeenCalled(), { timeout: 5_000 });
   });
 });

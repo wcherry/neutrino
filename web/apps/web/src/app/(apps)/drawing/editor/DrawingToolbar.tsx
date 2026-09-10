@@ -2,34 +2,37 @@
 
 import React from 'react';
 import {
+  ArrowRight,
+  Circle,
+  Eraser,
+  Image as ImageIcon,
+  Minus,
   MousePointer2,
   Pen,
-  Minus,
   Square,
-  Circle,
-  ArrowRight,
   Type,
-  Eraser,
   type LucideIcon,
 } from 'lucide-react';
 import type { ToolType } from './types';
 
 interface DrawingToolbarProps {
   tool: ToolType;
-  onToolChange: (t: ToolType) => void;
+  onToolChange: (tool: ToolType) => void;
+  /** Opens the image picker. Not a tool — see `ToolType`. */
+  onAddImage: () => void;
 }
 
 const TOOLS: { id: ToolType; icon: LucideIcon; label: string }[] = [
-  { id: 'select',    icon: MousePointer2, label: 'Select' },
-  { id: 'pen',       icon: Pen,           label: 'Pen' },
-  { id: 'line',      icon: Minus,         label: 'Line' },
-  { id: 'rectangle', icon: Square,        label: 'Rectangle' },
-  { id: 'ellipse',   icon: Circle,        label: 'Ellipse' },
-  { id: 'arrow',     icon: ArrowRight,    label: 'Arrow' },
-  { id: 'text',      icon: Type,          label: 'Text' },
+  { id: 'select', icon: MousePointer2, label: 'Select' },
+  { id: 'pen', icon: Pen, label: 'Pen' },
+  { id: 'line', icon: Minus, label: 'Line' },
+  { id: 'rectangle', icon: Square, label: 'Rectangle' },
+  { id: 'ellipse', icon: Circle, label: 'Ellipse' },
+  { id: 'arrow', icon: ArrowRight, label: 'Arrow' },
+  { id: 'text', icon: Type, label: 'Text' },
 ];
 
-export function DrawingToolbar({ tool, onToolChange }: DrawingToolbarProps) {
+export function DrawingToolbar({ tool, onToolChange, onAddImage }: DrawingToolbarProps) {
   const btnStyle = (active: boolean): React.CSSProperties => ({
     width: 36,
     height: 36,
@@ -80,6 +83,15 @@ export function DrawingToolbar({ tool, onToolChange }: DrawingToolbarProps) {
       ))}
 
       <div style={dividerStyle} />
+
+      <button
+        title="Insert image"
+        style={btnStyle(false)}
+        onClick={onAddImage}
+        aria-label="Insert image"
+      >
+        <ImageIcon size={16} />
+      </button>
 
       <button
         title="Eraser"

@@ -162,3 +162,14 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.note {
+  margin: -4px 0 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6b7280;
+  background: #f9fafb;
+  border-left: 2px solid #d1d5db;
+  padding: 6px 8px;
+  border-radius: 0 4px 4px 0;
+}
