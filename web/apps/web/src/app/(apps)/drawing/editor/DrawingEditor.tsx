@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { ArrowLeft } from 'lucide-react';
 import { Spinner, useToast } from '@neutrino/ui';
 import { drawingApi, extractDrawingText } from '@neutrino/api-drawing';
-import { storageApi, isMissingEncryptionKey } from '@neutrino/api-drive';
+import { driveReadBytes, isMissingEncryptionKey } from '@neutrino/api-drive';
 import { useUser } from '@neutrino/auth';
 
 import { readStoredBody } from '@/lib/storedBody';
@@ -122,10 +122,14 @@ interface StoredDrawing {
 }
 
 async function readStoredDrawing(drawingId: string, dek: Uint8Array): Promise<StoredDrawing> {
-  // A failed download is not an unreadable body; it throws, and the caller
-  // reports it as a load failure rather than as a file it refuses to open.
-  const blob = await storageApi.downloadFile(drawingId);
-  const stored = new Uint8Array(await blob.arrayBuffer());
+  // `driveReadBytes`, not `storageApi.downloadFile`: a drawing is created with
+  // no body at all (see `native_types.rs`), and the download endpoint answers a
+  // row with no blob with 409 `NO_CONTENT` rather than with zero bytes. Reading
+  // that as an error meant every newly created drawing opened on "Failed to
+  // load drawing" — the same bug the OOXML editors had, which is what this
+  // helper was written for. It still throws `CONTENT_MISSING`, so a row that
+  // outlived its blob stays a real failure and not an empty canvas.
+  const stored = await driveReadBytes(drawingId);
   if (stored.length === 0) return { raw: '', wasPlaintext: false, unreadable: false };
 
   try {

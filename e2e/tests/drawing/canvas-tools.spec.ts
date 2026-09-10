@@ -38,6 +38,17 @@ async function openEditor(request: APIRequestContext, page: Page): Promise<void>
   await expect(page.getByLabel('Drawing title')).toBeVisible({ timeout: 15_000 });
 }
 
+/**
+ * A layer row in the layers panel, by exact name.
+ *
+ * Scoped deliberately: selecting a layer also shows its name in the style
+ * panel's Name field, so `getByText('Layer 2')` matches two elements and trips
+ * strict mode. The panel is the one that means "this layer exists".
+ */
+function layerNamed(page: Page, name: string) {
+  return page.locator('[class*="layerName"]').filter({ hasText: new RegExp(`^${name}$`) });
+}
+
 test.describe('Canvas tools', () => {
   test('all toolbar tool buttons are present', async ({ page, request }) => {
     await registerAndLogin(request, page);
@@ -155,13 +166,13 @@ test.describe('Canvas tools', () => {
 
     await expect(page.getByText('Layers')).toBeVisible({ timeout: 5_000 });
     // Every new drawing starts with one layer to draw into.
-    await expect(page.getByText('Layer 1')).toBeVisible({ timeout: 5_000 });
+    await expect(layerNamed(page, 'Layer 1')).toBeVisible({ timeout: 5_000 });
 
     await page.getByLabel('Add layer').click();
     await expect(page.getByRole('menuitem', { name: 'New layer' })).toBeVisible({ timeout: 5_000 });
     await page.getByRole('menuitem', { name: 'New layer' }).click();
 
-    await expect(page.getByText('Layer 2')).toBeVisible({ timeout: 5_000 });
+    await expect(layerNamed(page, 'Layer 2')).toBeVisible({ timeout: 5_000 });
   });
 
   test('the add-layer menu creates a group', async ({ page, request }) => {
@@ -171,7 +182,7 @@ test.describe('Canvas tools', () => {
     await page.getByLabel('Add layer').click();
     await page.getByRole('menuitem', { name: 'New group' }).click();
 
-    await expect(page.getByText('Group')).toBeVisible({ timeout: 5_000 });
+    await expect(layerNamed(page, 'Group')).toBeVisible({ timeout: 5_000 });
   });
 
   test('layer rename is persisted within the session', async ({ page, request }) => {
@@ -180,7 +191,7 @@ test.describe('Canvas tools', () => {
 
     await page.getByLabel('Add layer').click();
     await page.getByRole('menuitem', { name: 'New layer' }).click();
-    const newLayerEntry = page.getByText('Layer 2').first();
+    const newLayerEntry = layerNamed(page, 'Layer 2');
     await expect(newLayerEntry).toBeVisible({ timeout: 5_000 });
 
     // Double-click the label to enter rename mode
@@ -190,8 +201,8 @@ test.describe('Canvas tools', () => {
     await nameInput.fill('Foreground');
     await nameInput.press('Enter');
 
-    await expect(page.getByText('Foreground')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('Layer 2')).not.toBeVisible({ timeout: 3_000 });
+    await expect(layerNamed(page, 'Foreground')).toBeVisible({ timeout: 5_000 });
+    await expect(layerNamed(page, 'Layer 2')).toHaveCount(0, { timeout: 3_000 });
   });
 
   /**
@@ -203,7 +214,7 @@ test.describe('Canvas tools', () => {
     await registerAndLogin(request, page);
     await openEditor(request, page);
 
-    await page.getByText('Layer 1').click();
+    await layerNamed(page, 'Layer 1').click();
 
     await expect(page.getByLabel('Blend mode')).toBeVisible({ timeout: 5_000 });
     await expect(page.getByLabel('Layer opacity')).toBeVisible({ timeout: 5_000 });

@@ -46,9 +46,17 @@ vi.mock('@neutrino/api-core', () => ({
   request: (...a: unknown[]) => readContentAsText(...a),
 }));
 
-const downloadFile = vi.fn();
+/**
+ * The read path is `driveReadBytes`, not `storageApi.downloadFile`.
+ *
+ * The difference is the whole of the "opens a drawing that has no body yet"
+ * case below: a drawing is created with no blob, and the download endpoint
+ * answers that with 409 `NO_CONTENT` rather than with zero bytes.
+ * `driveReadBytes` is where that is turned back into an empty body.
+ */
+const readBytes = vi.fn();
 vi.mock('@neutrino/api-drive', () => ({
-  storageApi: { downloadFile: (...a: unknown[]) => downloadFile(...a) },
+  driveReadBytes: (...a: unknown[]) => readBytes(...a),
   isMissingEncryptionKey: (err: unknown) => err instanceof Error && err.message === 'no-dek',
 }));
 
@@ -175,7 +183,7 @@ beforeEach(() => {
     contentUrl: `/api/v1/drive/files/${DRAWING_ID}`,
     contentVersion: 1,
   });
-  downloadFile.mockResolvedValue(new Blob([asCiphertext(BODY).buffer as ArrayBuffer]));
+  readBytes.mockResolvedValue(asCiphertext(BODY));
   readContentAsText.mockResolvedValue(BODY);
   autosaveEncryptedContent.mockResolvedValue({ contentVersion: 2 });
 });
@@ -188,7 +196,7 @@ describe('loading a drawing', () => {
   it('downloads and decrypts a drawing that has a key', async () => {
     await renderEditor();
 
-    await waitFor(() => expect(downloadFile).toHaveBeenCalledWith(DRAWING_ID));
+    await waitFor(() => expect(readBytes).toHaveBeenCalledWith(DRAWING_ID));
     // `responseType: 'text'` on ciphertext is a UTF-8 decode of random bytes —
     // mojibake, and a silently empty canvas. The blob path is the only correct
     // one for an encrypted body.
@@ -208,7 +216,7 @@ describe('loading a drawing', () => {
    * and never written since.
    */
   it('reads a pre-existing plaintext drawing as text', async () => {
-    downloadFile.mockResolvedValue(new Blob([BODY]));
+    readBytes.mockResolvedValue(new TextEncoder().encode(BODY));
 
     await renderEditor();
 
@@ -221,15 +229,43 @@ describe('loading a drawing', () => {
     expect(JSON.parse(content as string)).toEqual(JSON.parse(BODY));
   });
 
+  /**
+   * A newly created drawing has **no body at all**: the server writes no seed,
+   * because a constant one would give every drawing in the system the same
+   * layer UUIDs and would sit in storage in the clear until the first save.
+   *
+   * `driveReadBytes` reports that as zero bytes (the download endpoint answers
+   * a row with no blob with 409 `NO_CONTENT`), and the editor has to read it as
+   * "new document, write the first body" rather than as a failure. Reading it
+   * as a failure is what left every newly created drawing on "Failed to load
+   * drawing" — every drawing e2e spec failed on it, none of them about loading.
+   */
+  it('opens a drawing that has no stored body yet, and writes one', async () => {
+    readBytes.mockResolvedValue(new Uint8Array(0));
+
+    const { findByTestId, queryByText } = await renderEditor();
+
+    // It opens rather than erroring.
+    await findByTestId('canvas');
+    expect(queryByText('Failed to load drawing')).toBeNull();
+
+    // …and seeds itself, so the file does not stay empty until someone
+    // happens to draw on it.
+    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled(), { timeout: 5_000 });
+    const [, content] = autosaveEncryptedContent.mock.calls[0];
+    expect(JSON.parse(content as string)).toMatchObject({ version: 2 });
+  });
+
   it('leaves a body it cannot decrypt alone', async () => {
     // Neither decryptable nor a drawing: ciphertext this key cannot open, whose
     // content sealing would destroy.
-    downloadFile.mockResolvedValue(
-      new Blob([new Uint8Array([0x8f, 0x1d, 0xff, 0x02, 0xc3, 0x28]).buffer as ArrayBuffer]),
-    );
+    readBytes.mockResolvedValue(new Uint8Array([0x8f, 0x1d, 0xff, 0x02, 0xc3, 0x28]));
 
-    await renderEditor();
+    const { findByText } = await renderEditor();
 
+    // Refused, not opened: opening a blank canvas here would let the first
+    // autosave replace a drawing whose key is merely unavailable.
+    await findByText(/could not be decrypted/i);
     await new Promise((r) => setTimeout(r, 200));
     expect(autosaveEncryptedContent).not.toHaveBeenCalled();
   });
