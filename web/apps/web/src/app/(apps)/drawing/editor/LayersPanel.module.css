@@ -300,3 +300,99 @@
 .confirmNo:hover {
   background: #f3f4f6;
 }
+
+/* ── Add menu ────────────────────────────────────────────── */
+
+.addWrap {
+  position: relative;
+  display: flex;
+}
+
+.addMenu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  min-width: 150px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.addMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #374151;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.addMenuItem:hover {
+  background: #f3f4f6;
+}
+
+/* ── Selected node ───────────────────────────────────────── */
+
+.layerRowSelected {
+  background: #eff6ff;
+}
+
+.layerRowSelected:hover {
+  background: #dbeafe;
+}
+
+/* ── Layer properties strip ──────────────────────────────── */
+
+.propsRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px 6px 16px;
+  background: #f9fafb;
+  border-top: 1px solid #f3f4f6;
+}
+
+.propLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+}
+
+.blendSelect {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #374151;
+}
+
+.opacityInput {
+  flex: 1;
+  min-width: 0;
+  accent-color: #2563eb;
+}
+
+.propValue {
+  font-size: 10px;
+  color: #6b7280;
+  width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+}

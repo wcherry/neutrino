@@ -10,12 +10,34 @@ export const DRAWING_MIME_TYPE = 'application/x-neutrino-drawing';
 // Drawing text extraction helpers
 // ---------------------------------------------------------------------------
 
-type DrawingShapeContent = { text?: string };
-type DrawingFileContent = { shapes?: DrawingShapeContent[] };
+/**
+ * The parts of the drawing document this module reads.
+ *
+ * Deliberately structural rather than the editor's full `DrawingDocument`: this
+ * package is imported by the search indexer and by the iOS-facing clients, and
+ * it has no business depending on the editor's model. What it needs is the two
+ * places text lives — a text layer's own content, and the name a user gave a
+ * layer or group.
+ */
+interface DrawingNodeContent {
+  type?: string;
+  name?: string;
+  text?: string;
+  children?: DrawingNodeContent[];
+}
+
+interface DrawingFileContent {
+  version?: number;
+  root?: DrawingNodeContent;
+}
 
 /**
- * Flatten a stored drawing body into searchable plain text — the text carried
- * by each shape. Freehand strokes contribute nothing.
+ * Flatten a stored drawing body into searchable plain text.
+ *
+ * Two things are indexed: the content of every text layer, and every layer and
+ * group *name*. Names count because a drawing is often all shapes and no prose
+ * — "Network diagram / Load balancer / Failover path" is the only text such a
+ * file has, and without it the drawing is unfindable by anything but its title.
  *
  * Takes the already-decrypted body rather than fetching it: drawing content is
  * E2EE, so only the caller holds the DEK needed to read it (see
@@ -26,9 +48,17 @@ export function extractDrawingText(raw: string): string {
   try {
     const parsed = JSON.parse(raw) as DrawingFileContent;
     const parts: string[] = [];
-    for (const shape of parsed.shapes ?? []) {
-      if (shape.text) parts.push(shape.text);
-    }
+
+    const walk = (node: DrawingNodeContent | undefined): void => {
+      if (!node) return;
+      if (typeof node.text === 'string' && node.text) parts.push(node.text);
+      if (typeof node.name === 'string' && node.name) parts.push(node.name);
+      for (const child of node.children ?? []) walk(child);
+    };
+    // The root stack's own name is "Root" and is not the user's word for
+    // anything, so the walk starts one level down.
+    for (const child of parsed.root?.children ?? []) walk(child);
+
     return parts.join(' ').replace(/\s+/g, ' ').trim();
   } catch {
     return '';

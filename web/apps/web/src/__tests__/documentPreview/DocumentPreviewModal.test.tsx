@@ -156,6 +156,13 @@ vi.mock('../../app/(apps)/notes/editor/blockEditorHelpers', () => ({
 // ── Import subject ────────────────────────────────────────────────────────────
 
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
+import {
+  createDocument as createDrawingDocument,
+  createRect as createDrawingRect,
+} from '../../app/(apps)/drawing/editor/document/factory';
+import { addObjects as addDrawingObjects } from '../../app/(apps)/drawing/editor/document/edits';
+import { flattenTree as flattenDrawing } from '../../app/(apps)/drawing/editor/document/tree';
+import { serializeDocument as serializeDrawing } from '../../app/(apps)/drawing/editor/document/serialize';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -248,16 +255,18 @@ function makeDiagramContent() {
   });
 }
 
+/** A drawing document holding one rectangle on its one vector layer. */
 function makeDrawingContent() {
-  return JSON.stringify({
-    version: 1,
-    shapes: [
-      {
-        id: 'shape-1', type: 'rectangle', x: 0, y: 0, width: 40, height: 30, points: [], text: '',
-        fill: '#fff', stroke: '#000', strokeWidth: 1, rotation: 0, opacity: 1,
-      },
-    ],
-  });
+  const doc = createDrawingDocument({ title: 'Sketch' });
+  const layer = flattenDrawing(doc.root).find((f) => f.node.type === 'vector')!.node;
+  return serializeDrawing(
+    addDrawingObjects(doc, layer.id, [createDrawingRect({ x: 0, y: 0, width: 40, height: 30 })]),
+  );
+}
+
+/** The same document with nothing drawn on it. */
+function makeEmptyDrawingContent() {
+  return serializeDrawing(createDrawingDocument({ title: 'Sketch' }));
 }
 
 // ── Shared query setup helpers ────────────────────────────────────────────────
@@ -784,18 +793,29 @@ describe('DiagramPreview', () => {
 // content isn't E2EE (see DrawingEditor.tsx's load path), so unlike the other
 // kinds this preview reads content directly via driveReadContent, no dekRef.
 describe('DrawingPreview', () => {
-  it('renders shapes as an inline SVG', () => {
+  /**
+   * The picture is an `<img>` pointing at a data URL, not markup in the page.
+   * The SVG carries layer names and text straight out of the document, and
+   * injecting that inline would make a drawing's own content a script vector.
+   */
+  it('renders the drawing as an SVG image rather than inline markup', () => {
     setupDrawingQueries();
     const { container } = render(<DocumentPreviewModal id="drawing-1" kind="drawing" onClose={vi.fn()} />);
-    const rect = container.querySelector('svg rect');
-    expect(rect).not.toBeNull();
+
+    const image = container.querySelector('img') as HTMLImageElement | null;
+    expect(image).not.toBeNull();
+    expect(image!.src.startsWith('data:image/svg+xml;base64,')).toBe(true);
+
+    const svg = atob(image!.src.replace('data:image/svg+xml;base64,', ''));
+    expect(svg).toContain('<rect');
+    expect(container.querySelector('svg rect')).toBeNull();
   });
 
   it('shows empty state when the drawing has no shapes', () => {
     mockUseQuery
       .mockReturnValueOnce({ data: { id: 'drawing-1', contentUrl: '/content' }, isLoading: false, isError: false })
       .mockReturnValueOnce({
-        data: JSON.stringify({ version: 1, shapes: [] }),
+        data: makeEmptyDrawingContent(),
         isLoading: false,
         isError: false,
       });

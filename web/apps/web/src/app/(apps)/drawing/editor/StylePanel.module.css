@@ -241,3 +241,64 @@
   border-color: #93c5fd;
   color: #1d4ed8;
 }
+
+/* ── Segmented control ───────────────────────────────────── */
+
+.segmented {
+  display: flex;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.segmentedBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  border: none;
+  background: #ffffff;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.segmentedBtn + .segmentedBtn {
+  border-left: 1px solid #e5e7eb;
+}
+
+.segmentedBtn:hover {
+  background: #f3f4f6;
+}
+
+.segmentedBtnActive {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.segmentedBtnActive:hover {
+  background: #1d4ed8;
+}
+
+/* ── Misc ────────────────────────────────────────────────── */
+
+.rangeInput {
+  flex: 1;
+  min-width: 0;
+  accent-color: #2563eb;
+}
+
+.readonlyValue {
+  font-size: 11px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint {
+  margin: 4px 0 0;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #9ca3af;
+}

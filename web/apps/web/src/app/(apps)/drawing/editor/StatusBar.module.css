@@ -38,3 +38,10 @@
   background: var(--color-bg-hover, #f1f5f9);
   color: var(--color-text, #1e293b);
 }
+
+.info {
+  font-size: 11px;
+  color: #9ca3af;
+  padding-left: 12px;
+  white-space: nowrap;
+}

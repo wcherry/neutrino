@@ -1,322 +1,441 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Square, Circle, Minus, ArrowRight, Pencil, Type,
-  Eye, EyeOff, Lock, Unlock, ChevronRight, ChevronDown,
-  Plus, Trash2, GripVertical,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Eye,
+  EyeOff,
+  Folder,
+  GripVertical,
+  Image as ImageIcon,
+  Lock,
+  Minus,
+  Pencil,
+  Plus,
+  Square,
+  Trash2,
+  Type,
+  Unlock,
+  Layers as LayersIcon,
 } from 'lucide-react';
-import type { Shape, ShapeType, Layer } from './types';
+
+import { findNode, findParent, flattenTree } from './document/tree';
+import {
+  addNode,
+  deleteNode,
+  patchObjects,
+  setNodeProps,
+} from './document/edits';
+import { createStack, createVectorLayer } from './document/factory';
+import { moveNode } from './document/tree';
+import {
+  BLEND_MODES,
+  BLEND_MODE_LABELS,
+  type BlendMode,
+  type DrawingDocument,
+  type DrawingNode,
+  type Selection,
+  type VectorObject,
+} from './types';
 import styles from './LayersPanel.module.css';
 
 interface LayersPanelProps {
-  shapes: Shape[];
-  selectedIds: string[];
-  layers: Layer[];
+  doc: DrawingDocument;
+  onDocumentChange: (doc: DrawingDocument) => void;
+  selection: Selection;
+  onSelectionChange: (selection: Selection) => void;
   activeLayerId: string;
-  onSelectIds: (ids: string[]) => void;
-  onSetActiveLayer: (id: string) => void;
-  onAddLayer: () => void;
-  onDeleteLayer: (id: string) => void;
-  onRenameLayer: (id: string, name: string) => void;
-  onToggleLayerHide: (id: string) => void;
-  onToggleLayerLock: (id: string) => void;
-  onMoveShapeToLayer: (shapeId: string, toLayerId: string) => void;
-  onReorderLayers: (layers: Layer[]) => void;
-  onToggleLock: (shapeId: string) => void;
+  onActiveLayerChange: (id: string) => void;
+  /** Opens the image picker; the parent turns the result into a raster layer. */
+  onAddImageLayer: () => void;
 }
 
-function shapeIcon(type: ShapeType) {
-  switch (type) {
-    case 'rectangle': return <Square size={11} />;
-    case 'ellipse':   return <Circle size={11} />;
-    case 'line':      return <Minus size={11} />;
-    case 'arrow':     return <ArrowRight size={11} />;
-    case 'pen':       return <Pencil size={11} />;
-    case 'text':      return <Type size={11} />;
+function nodeIcon(node: DrawingNode) {
+  switch (node.type) {
+    case 'stack': return <Folder size={11} />;
+    case 'raster': return <ImageIcon size={11} />;
+    case 'text': return <Type size={11} />;
+    case 'vector': return <LayersIcon size={11} />;
   }
 }
 
-function shapeName(shape: Shape): string {
-  if (shape.type === 'text') return shape.text?.trim().slice(0, 22) || 'Text';
-  const labels: Record<ShapeType, string> = {
-    rectangle: 'Rectangle', ellipse: 'Ellipse',
-    line: 'Line', arrow: 'Arrow', pen: 'Path', text: 'Text',
-  };
-  return labels[shape.type];
+function objectIcon(object: VectorObject) {
+  switch (object.kind) {
+    case 'rect': return <Square size={11} />;
+    case 'ellipse': return <Circle size={11} />;
+    case 'line': return <Minus size={11} />;
+    case 'path': return <Pencil size={11} />;
+  }
 }
 
-type DragPayload =
-  | { kind: 'shape'; shapeId: string; fromLayerId: string }
-  | { kind: 'layer'; layerId: string };
+/** What a node is called in the panel when it has no name of its own. */
+function nodeLabel(node: DrawingNode): string {
+  if (node.name) return node.name;
+  return node.type === 'stack' ? 'Group' : 'Layer';
+}
 
 export function LayersPanel({
-  shapes,
-  selectedIds,
-  layers,
+  doc,
+  onDocumentChange,
+  selection,
+  onSelectionChange,
   activeLayerId,
-  onSelectIds,
-  onSetActiveLayer,
-  onAddLayer,
-  onDeleteLayer,
-  onRenameLayer,
-  onToggleLayerHide,
-  onToggleLayerLock,
-  onMoveShapeToLayer,
-  onReorderLayers,
-  onToggleLock,
+  onActiveLayerChange,
+  onAddImageLayer,
 }: LayersPanelProps) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
-    const bgLayer = layers.find(l => l.isBackground);
-    return new Set(bgLayer ? [bgLayer.id] : []);
-  });
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([activeLayerId]));
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
-  const [dragOverLayerId, setDragOverLayerId] = useState<string | null>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const renameRef = useRef<HTMLInputElement>(null);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!addOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!addMenuRef.current?.contains(e.target as Node)) setAddOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [addOpen]);
+
+  const rows = flattenTree(doc.root).filter(({ node }) => {
+    // A node is shown only when every group above it is open.
+    let parent = findParent(doc.root, node.id);
+    while (parent && parent.id !== doc.root.id) {
+      if (!expanded.has(parent.id)) return false;
+      parent = findParent(doc.root, parent.id);
+    }
+    return true;
+  });
+
+  const selectedNodeIds = selection?.kind === 'nodes' ? selection.ids : [];
+  const selectedObjectIds = selection?.kind === 'objects' ? selection.ids : [];
 
   function toggleExpanded(id: string) {
-    setExpandedIds((prev) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
 
-  function startRename(layer: Layer) {
-    setEditingId(layer.id);
-    setEditingName(layer.name);
-    setTimeout(() => editInputRef.current?.select(), 0);
+  function beginRename(node: DrawingNode) {
+    setRenamingId(node.id);
+    setRenameValue(nodeLabel(node));
+    setTimeout(() => renameRef.current?.select(), 0);
   }
 
   function commitRename() {
-    if (editingId && editingName.trim()) {
-      onRenameLayer(editingId, editingName.trim());
+    if (renamingId && renameValue.trim()) {
+      onDocumentChange(setNodeProps(doc, renamingId, { name: renameValue.trim() }));
     }
-    setEditingId(null);
+    setRenamingId(null);
   }
 
-  function handleShapeClick(e: React.MouseEvent, shape: Shape) {
-    if (e.shiftKey && selectedIds.length > 0) {
-      const allIds = shapes.map((s) => s.id);
-      const last = allIds.indexOf(selectedIds[selectedIds.length - 1]);
-      const current = allIds.indexOf(shape.id);
-      const lo = Math.min(last, current);
-      const hi = Math.max(last, current);
-      onSelectIds(allIds.slice(lo, hi + 1));
-    } else if (e.metaKey || e.ctrlKey) {
-      onSelectIds(selectedIds.includes(shape.id)
-        ? selectedIds.filter((x) => x !== shape.id)
-        : [...selectedIds, shape.id]);
+  function selectNode(node: DrawingNode, additive: boolean) {
+    if (node.type === 'vector') onActiveLayerChange(node.id);
+    const ids = additive && selection?.kind === 'nodes'
+      ? selection.ids.includes(node.id)
+        ? selection.ids.filter((id) => id !== node.id)
+        : [...selection.ids, node.id]
+      : [node.id];
+    onSelectionChange(ids.length ? { kind: 'nodes', ids } : null);
+  }
+
+  function addLayer() {
+    const layer = createVectorLayer(`Layer ${flattenTree(doc.root).length + 1}`);
+    onDocumentChange(addNode(doc, layer));
+    onActiveLayerChange(layer.id);
+    onSelectionChange({ kind: 'nodes', ids: [layer.id] });
+    setAddOpen(false);
+  }
+
+  function addGroup() {
+    const group = createStack('Group');
+    onDocumentChange(addNode(doc, group));
+    setExpanded((prev) => new Set([...prev, group.id]));
+    onSelectionChange({ kind: 'nodes', ids: [group.id] });
+    setAddOpen(false);
+  }
+
+  function removeNodeAt(id: string) {
+    const next = deleteNode(doc, id);
+    // The document must always keep somewhere to draw. Deleting the last vector
+    // layer would leave every drawing tool with no target and no way back.
+    const remaining = flattenTree(next.root).filter((f) => f.node.type === 'vector');
+    if (remaining.length === 0) {
+      const layer = createVectorLayer('Layer 1');
+      onDocumentChange(addNode(next, layer));
+      onActiveLayerChange(layer.id);
     } else {
-      onSelectIds([shape.id]);
+      onDocumentChange(next);
+      if (id === activeLayerId) onActiveLayerChange(remaining[0].node.id);
     }
+    onSelectionChange(null);
+    setConfirmDeleteId(null);
   }
 
-  // ── Drag handlers ──────────────────────────────────────────────
+  // ── Drag and drop ────────────────────────────────────────────────
 
-  function handleShapeDragStart(e: React.DragEvent, shape: Shape) {
-    const bgLayer = layers.find(l => l.isBackground);
-    const payload: DragPayload = { kind: 'shape', shapeId: shape.id, fromLayerId: shape.layerId ?? bgLayer?.id ?? '' };
-    setDragPayload(payload);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', JSON.stringify(payload));
-  }
+  function handleDrop(targetId: string) {
+    setDropTargetId(null);
+    const dragged = draggingId;
+    setDraggingId(null);
+    if (!dragged || dragged === targetId) return;
 
-  function handleLayerDragStart(e: React.DragEvent, layerId: string) {
-    const layer = layers.find(l => l.id === layerId);
-    if (layer?.isBackground) { e.preventDefault(); return; }
-    const payload: DragPayload = { kind: 'layer', layerId };
-    setDragPayload(payload);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', JSON.stringify(payload));
-    e.stopPropagation();
-  }
+    const target = findNode(doc.root, targetId);
+    if (!target) return;
 
-  function handleLayerDragOver(e: React.DragEvent, layerId: string) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverLayerId(layerId);
-  }
-
-  function handleLayerDrop(e: React.DragEvent, targetLayerId: string) {
-    e.preventDefault();
-    setDragOverLayerId(null);
-    if (!dragPayload) return;
-
-    if (dragPayload.kind === 'shape') {
-      if (dragPayload.fromLayerId !== targetLayerId) {
-        onMoveShapeToLayer(dragPayload.shapeId, targetLayerId);
-        setExpandedIds((prev) => new Set([...prev, targetLayerId]));
-      }
-    } else if (dragPayload.kind === 'layer') {
-      const fromId = dragPayload.layerId;
-      const targetLayer = layers.find(l => l.id === targetLayerId);
-      if (fromId === targetLayerId || targetLayer?.isBackground) return;
-      const next = [...layers];
-      const fromIdx = next.findIndex((l) => l.id === fromId);
-      const toIdx = next.findIndex((l) => l.id === targetLayerId);
-      if (fromIdx === -1 || toIdx === -1) return;
-      const [moved] = next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, moved);
-      onReorderLayers(next);
+    // Dropping on a group puts the node inside it, at the top. Dropping on
+    // anything else puts it beside that row, in the same parent.
+    if (target.type === 'stack') {
+      onDocumentChange({ ...doc, root: moveNode(doc.root, dragged, { parentId: target.id, index: 0 }) });
+      setExpanded((prev) => new Set([...prev, target.id]));
+      return;
     }
-    setDragPayload(null);
+    const parent = findParent(doc.root, targetId);
+    if (!parent) return;
+    const index = parent.children.findIndex((c) => c.id === targetId);
+    onDocumentChange({ ...doc, root: moveNode(doc.root, dragged, { parentId: parent.id, index }) });
   }
 
-  function handleDragEnd() {
-    setDragPayload(null);
-    setDragOverLayerId(null);
-  }
+  // ── Rendering ────────────────────────────────────────────────────
 
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
         <span className={styles.headerLabel}>Layers</span>
-        <button className={styles.addBtn} onClick={onAddLayer} title="Add layer">
-          <Plus size={13} />
-        </button>
+        <div ref={addMenuRef} className={styles.addWrap}>
+          <button className={styles.addBtn} onClick={() => setAddOpen((v) => !v)} title="Add layer" aria-label="Add layer">
+            <Plus size={13} />
+          </button>
+          {addOpen && (
+            <div className={styles.addMenu} role="menu">
+              <button className={styles.addMenuItem} role="menuitem" onClick={addLayer}>
+                <LayersIcon size={12} /> New layer
+              </button>
+              <button className={styles.addMenuItem} role="menuitem" onClick={addGroup}>
+                <Folder size={12} /> New group
+              </button>
+              <button
+                className={styles.addMenuItem}
+                role="menuitem"
+                onClick={() => { setAddOpen(false); onAddImageLayer(); }}
+              >
+                <ImageIcon size={12} /> Image layer…
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className={styles.list}>
-        {layers.map((layer) => {
-          const layerShapes = shapes.filter((s) => s.layerId === layer.id);
-          const isActive = layer.id === activeLayerId;
-          const isExpanded = expandedIds.has(layer.id);
-          const isOver = dragOverLayerId === layer.id && dragPayload?.kind === 'shape' &&
-            (dragPayload as { fromLayerId: string }).fromLayerId !== layer.id;
-          const isLayerDragOver = dragOverLayerId === layer.id && dragPayload?.kind === 'layer';
-          const isDraggingThis = dragPayload?.kind === 'layer' && (dragPayload as { layerId: string }).layerId === layer.id;
+        {rows.map(({ node, depth }) => {
+          const isSelected = selectedNodeIds.includes(node.id);
+          const isActive = node.id === activeLayerId;
+          const isOpen = expanded.has(node.id);
+          const hasChildren = node.type === 'stack'
+            ? node.children.length > 0
+            : node.type === 'vector' && node.objects.length > 0;
 
           return (
             <div
-              key={layer.id}
-              className={`${styles.layerBlock} ${isLayerDragOver ? styles.layerBlockDragOver : ''} ${isDraggingThis ? styles.layerBlockDragging : ''}`}
-              onDragOver={(e) => handleLayerDragOver(e, layer.id)}
-              onDrop={(e) => handleLayerDrop(e, layer.id)}
-              onDragEnd={handleDragEnd}
+              key={node.id}
+              className={`${styles.layerBlock} ${draggingId === node.id ? styles.layerBlockDragging : ''}`}
+              onDragOver={(e) => { e.preventDefault(); setDropTargetId(node.id); }}
+              onDrop={(e) => { e.preventDefault(); handleDrop(node.id); }}
+              onDragEnd={() => { setDraggingId(null); setDropTargetId(null); }}
             >
-              {/* Layer header row */}
               <div
-                className={`${styles.layerRow} ${isActive ? styles.layerRowActive : ''} ${isOver ? styles.layerRowDropTarget : ''}`}
-                onClick={() => onSetActiveLayer(layer.id)}
+                className={[
+                  styles.layerRow,
+                  isActive ? styles.layerRowActive : '',
+                  isSelected ? styles.layerRowSelected : '',
+                  dropTargetId === node.id && draggingId ? styles.layerRowDropTarget : '',
+                ].filter(Boolean).join(' ')}
+                style={{ paddingLeft: 4 + depth * 12 }}
+                onClick={(e) => selectNode(node, e.shiftKey || e.metaKey || e.ctrlKey)}
               >
-                {!layer.isBackground && (
-                  <span
-                    className={styles.layerGrip}
-                    draggable
-                    onDragStart={(e) => handleLayerDragStart(e, layer.id)}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <GripVertical size={11} />
-                  </span>
-                )}
-                {layer.isBackground && <span className={styles.layerGripPlaceholder} />}
-
-                <button
-                  className={styles.chevronBtn}
-                  onClick={(e) => { e.stopPropagation(); toggleExpanded(layer.id); }}
+                <span
+                  className={styles.layerGrip}
+                  draggable
+                  onDragStart={(e) => {
+                    setDraggingId(node.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', node.id);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                </button>
+                  <GripVertical size={11} />
+                </span>
 
-                {editingId === layer.id ? (
+                {hasChildren ? (
+                  <button
+                    className={styles.chevronBtn}
+                    onClick={(e) => { e.stopPropagation(); toggleExpanded(node.id); }}
+                    aria-label={isOpen ? 'Collapse' : 'Expand'}
+                  >
+                    {isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                  </button>
+                ) : (
+                  <span className={styles.layerGripPlaceholder} />
+                )}
+
+                <span className={styles.typeIcon}>{nodeIcon(node)}</span>
+
+                {renamingId === node.id ? (
                   <input
-                    ref={editInputRef}
+                    ref={renameRef}
                     className={styles.renameInput}
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
                     onBlur={commitRename}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitRename();
-                      if (e.key === 'Escape') setEditingId(null);
-                      e.stopPropagation();
-                    }}
                     onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter') commitRename();
+                      if (e.key === 'Escape') setRenamingId(null);
+                    }}
                   />
                 ) : (
                   <span
                     className={styles.layerName}
-                    onDoubleClick={(e) => { e.stopPropagation(); startRename(layer); }}
+                    onDoubleClick={(e) => { e.stopPropagation(); beginRename(node); }}
                     title="Double-click to rename"
                   >
-                    {layer.name}
+                    {nodeLabel(node)}
                   </span>
                 )}
 
-                <span className={styles.layerCount}>{layerShapes.length}</span>
+                {node.type === 'vector' && node.objects.length > 0 && (
+                  <span className={styles.layerCount}>{node.objects.length}</span>
+                )}
 
                 <button
                   className={styles.iconBtn}
-                  onClick={(e) => { e.stopPropagation(); onToggleLayerLock(layer.id); }}
-                  title={layer.locked ? 'Unlock layer' : 'Lock layer'}
+                  onClick={(e) => { e.stopPropagation(); onDocumentChange(setNodeProps(doc, node.id, { locked: !node.locked })); }}
+                  title={node.locked ? 'Unlock layer' : 'Lock layer'}
+                  aria-label={node.locked ? 'Unlock layer' : 'Lock layer'}
                 >
-                  {layer.locked ? <Lock size={11} /> : <Unlock size={11} />}
+                  {node.locked ? <Lock size={11} /> : <Unlock size={11} />}
                 </button>
                 <button
                   className={styles.iconBtn}
-                  onClick={(e) => { e.stopPropagation(); onToggleLayerHide(layer.id); }}
-                  title={layer.hidden ? 'Show layer' : 'Hide layer'}
+                  onClick={(e) => { e.stopPropagation(); onDocumentChange(setNodeProps(doc, node.id, { visible: !node.visible })); }}
+                  title={node.visible ? 'Hide layer' : 'Show layer'}
+                  aria-label={node.visible ? 'Hide layer' : 'Show layer'}
                 >
-                  {layer.hidden ? <EyeOff size={11} /> : <Eye size={11} />}
+                  {node.visible ? <Eye size={11} /> : <EyeOff size={11} />}
                 </button>
-                {!layer.isBackground && confirmDeleteId !== layer.id && (
+                {confirmDeleteId !== node.id && (
                   <button
                     className={`${styles.iconBtn} ${styles.deleteBtn}`}
-                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(layer.id); }}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(node.id); }}
                     title="Delete layer"
+                    aria-label="Delete layer"
                   >
                     <Trash2 size={11} />
                   </button>
                 )}
               </div>
 
-              {/* Inline delete confirmation */}
-              {confirmDeleteId === layer.id && (
+              {confirmDeleteId === node.id && (
                 <div className={styles.confirmRow}>
-                  <span className={styles.confirmText}>Delete layer?</span>
-                  <button
-                    className={styles.confirmYes}
-                    onClick={(e) => { e.stopPropagation(); onDeleteLayer(layer.id); setConfirmDeleteId(null); }}
-                  >
-                    Delete
-                  </button>
-                  <button
-                    className={styles.confirmNo}
-                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
-                  >
-                    Cancel
-                  </button>
+                  <span className={styles.confirmText}>Delete “{nodeLabel(node)}”?</span>
+                  <button className={styles.confirmYes} onClick={() => removeNodeAt(node.id)}>Delete</button>
+                  <button className={styles.confirmNo} onClick={() => setConfirmDeleteId(null)}>Cancel</button>
                 </div>
               )}
 
-              {/* Shapes in this layer */}
-              {isExpanded && layerShapes.length === 0 && (
-                <p className={styles.emptyLayer}>Empty layer</p>
+              {/* The properties strip: opacity and blend mode, shown for the
+                  selected layer only, so the panel stays a list rather than a
+                  wall of controls. */}
+              {isSelected && (
+                <div className={styles.propsRow} style={{ paddingLeft: 16 + depth * 12 }}>
+                  <label className={styles.propLabel}>
+                    Blend
+                    <select
+                      className={styles.blendSelect}
+                      value={node.blendMode}
+                      aria-label="Blend mode"
+                      onChange={(e) => onDocumentChange(setNodeProps(doc, node.id, { blendMode: e.target.value as BlendMode }))}
+                    >
+                      {BLEND_MODES.map((mode) => (
+                        <option key={mode} value={mode}>{BLEND_MODE_LABELS[mode]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className={styles.propLabel}>
+                    Opacity
+                    <input
+                      className={styles.opacityInput}
+                      type="range"
+                      min={0}
+                      max={100}
+                      aria-label="Layer opacity"
+                      value={Math.round(node.opacity * 100)}
+                      onChange={(e) => onDocumentChange(setNodeProps(doc, node.id, { opacity: Number(e.target.value) / 100 }))}
+                    />
+                    <span className={styles.propValue}>{Math.round(node.opacity * 100)}%</span>
+                  </label>
+                </div>
               )}
-              {isExpanded && layerShapes.map((shape) => {
-                const selected = selectedIds.includes(shape.id);
+
+              {node.type === 'vector' && isOpen && node.objects.map((object) => {
+                const objectSelected = selection?.kind === 'objects'
+                  && selection.layerId === node.id
+                  && selectedObjectIds.includes(object.id);
                 return (
                   <div
-                    key={shape.id}
-                    className={`${styles.shapeRow} ${selected ? styles.shapeRowSelected : ''}`}
-                    onClick={(e) => handleShapeClick(e, shape)}
-                    draggable
-                    onDragStart={(e) => handleShapeDragStart(e, shape)}
-                    onDragEnd={handleDragEnd}
+                    key={object.id}
+                    className={`${styles.shapeRow} ${objectSelected ? styles.shapeRowSelected : ''}`}
+                    style={{ paddingLeft: 28 + depth * 12 }}
+                    onClick={(e) => {
+                      onActiveLayerChange(node.id);
+                      const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+                      const existing = selection?.kind === 'objects' && selection.layerId === node.id
+                        ? selection.ids
+                        : [];
+                      const ids = additive
+                        ? existing.includes(object.id)
+                          ? existing.filter((id) => id !== object.id)
+                          : [...existing, object.id]
+                        : [object.id];
+                      onSelectionChange(ids.length ? { kind: 'objects', layerId: node.id, ids } : null);
+                    }}
                   >
-                    <span className={styles.typeIcon}>{shapeIcon(shape.type)}</span>
-                    <span className={styles.shapeName}>
-                      {shapeName(shape)}
+                    <span className={styles.typeIcon}>{objectIcon(object)}</span>
+                    <span className={`${styles.shapeName} ${object.visible ? '' : styles.shapeNameFaded}`}>
+                      {object.name}
                     </span>
                     <button
                       className={styles.iconBtn}
-                      onClick={(e) => { e.stopPropagation(); onToggleLock(shape.id); }}
-                      title={shape.locked ? 'Unlock' : 'Lock'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDocumentChange(patchObjects(doc, node.id, [object.id], { locked: !object.locked }));
+                      }}
+                      title={object.locked ? 'Unlock' : 'Lock'}
+                      aria-label={object.locked ? 'Unlock object' : 'Lock object'}
                     >
-                      {shape.locked ? <Lock size={10} /> : <Unlock size={10} />}
+                      {object.locked ? <Lock size={10} /> : <Unlock size={10} />}
+                    </button>
+                    <button
+                      className={styles.iconBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDocumentChange(patchObjects(doc, node.id, [object.id], { visible: !object.visible }));
+                      }}
+                      title={object.visible ? 'Hide' : 'Show'}
+                      aria-label={object.visible ? 'Hide object' : 'Show object'}
+                    >
+                      {object.visible ? <Eye size={10} /> : <EyeOff size={10} />}
                     </button>
                   </div>
                 );

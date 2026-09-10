@@ -17,6 +17,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor, act } from '@testing-library/react';
 import React from 'react';
 
+import { createDocument, createRect } from '../../app/(apps)/drawing/editor/document/factory';
+import { addObjects, setTitle } from '../../app/(apps)/drawing/editor/document/edits';
+import { flattenTree } from '../../app/(apps)/drawing/editor/document/tree';
+
 const DRAWING_ID = 'draw-1';
 const DEK = new Uint8Array(32).fill(5);
 
@@ -42,9 +46,17 @@ vi.mock('@neutrino/api-core', () => ({
   request: (...a: unknown[]) => readContentAsText(...a),
 }));
 
-const downloadFile = vi.fn();
+/**
+ * The read path is `driveReadBytes`, not `storageApi.downloadFile`.
+ *
+ * The difference is the whole of the "opens a drawing that has no body yet"
+ * case below: a drawing is created with no blob, and the download endpoint
+ * answers that with 409 `NO_CONTENT` rather than with zero bytes.
+ * `driveReadBytes` is where that is turned back into an empty body.
+ */
+const readBytes = vi.fn();
 vi.mock('@neutrino/api-drive', () => ({
-  storageApi: { downloadFile: (...a: unknown[]) => downloadFile(...a) },
+  driveReadBytes: (...a: unknown[]) => readBytes(...a),
   isMissingEncryptionKey: (err: unknown) => err instanceof Error && err.message === 'no-dek',
 }));
 
@@ -95,11 +107,11 @@ vi.mock('@/hooks/useContentVersionGuard', () => ({
 
 vi.mock('next/dynamic', () => ({ default: () => () => null }));
 
-/** Captures the canvas' onShapesChange so a test can make the editor dirty. */
-let onShapesChange: (shapes: unknown[]) => void = () => {};
+/** Captures the canvas' onDocumentChange so a test can make the editor dirty. */
+let onDocumentChange: (doc: unknown) => void = () => {};
 vi.mock('../../app/(apps)/drawing/editor/DrawingCanvas', () => ({
-  DrawingCanvas: (props: { onShapesChange?: (s: unknown[]) => void }) => {
-    if (props.onShapesChange) onShapesChange = props.onShapesChange;
+  DrawingCanvas: (props: { onDocumentChange?: (doc: unknown) => void; doc?: unknown }) => {
+    if (props.onDocumentChange) onDocumentChange = props.onDocumentChange;
     return <div data-testid="canvas" />;
   },
 }));
@@ -117,11 +129,20 @@ vi.mock('../../app/(apps)/drawing/editor/page.module.css', () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
-const BODY = JSON.stringify({
-  version: 1,
-  shapes: [{ id: 's1', type: 'rect', layerId: 'bg', text: 'hello' }],
-  layers: [{ id: 'bg', name: 'Background', isBackground: true }],
-});
+/**
+ * A stored drawing: one vector layer holding one rectangle.
+ *
+ * Built through the real factory rather than written out by hand, so a change
+ * to the document model cannot leave this file asserting a round trip through a
+ * shape the editor no longer reads.
+ */
+const STORED_DOC = (() => {
+  const base = createDocument({ title: 'Sketch' });
+  const layer = flattenTree(base.root).find((f) => f.node.type === 'vector')!.node;
+  return addObjects(base, layer.id, [createRect({ x: 4, y: 4, width: 40, height: 20 })]);
+})();
+
+const BODY = JSON.stringify(STORED_DOC);
 
 /** The stored form of `BODY` once encrypted: a 4-byte marker, then the text. */
 function asCiphertext(text: string): Uint8Array {
@@ -141,9 +162,9 @@ async function renderEditor() {
  * Render and wait until the canvas is on screen.
  *
  * The editor shows a spinner while loading, so the canvas — and with it the
- * `onShapesChange` handle these tests drive — does not exist until the load
+ * `onDocumentChange` handle these tests drive — does not exist until the load
  * settles. Waiting on `getDrawing` alone is not enough: it resolves the moment
- * the request goes out, leaving `onShapesChange` pointing at the previous
+ * the request goes out, leaving `onDocumentChange` pointing at the previous
  * test's unmounted editor, where setting state is a silent no-op.
  */
 async function renderLoadedEditor() {
@@ -162,7 +183,7 @@ beforeEach(() => {
     contentUrl: `/api/v1/drive/files/${DRAWING_ID}`,
     contentVersion: 1,
   });
-  downloadFile.mockResolvedValue(new Blob([asCiphertext(BODY).buffer as ArrayBuffer]));
+  readBytes.mockResolvedValue(asCiphertext(BODY));
   readContentAsText.mockResolvedValue(BODY);
   autosaveEncryptedContent.mockResolvedValue({ contentVersion: 2 });
 });
@@ -175,7 +196,7 @@ describe('loading a drawing', () => {
   it('downloads and decrypts a drawing that has a key', async () => {
     await renderEditor();
 
-    await waitFor(() => expect(downloadFile).toHaveBeenCalledWith(DRAWING_ID));
+    await waitFor(() => expect(readBytes).toHaveBeenCalledWith(DRAWING_ID));
     // `responseType: 'text'` on ciphertext is a UTF-8 decode of random bytes —
     // mojibake, and a silently empty canvas. The blob path is the only correct
     // one for an encrypted body.
@@ -195,7 +216,7 @@ describe('loading a drawing', () => {
    * and never written since.
    */
   it('reads a pre-existing plaintext drawing as text', async () => {
-    downloadFile.mockResolvedValue(new Blob([BODY]));
+    readBytes.mockResolvedValue(new TextEncoder().encode(BODY));
 
     await renderEditor();
 
@@ -208,15 +229,43 @@ describe('loading a drawing', () => {
     expect(JSON.parse(content as string)).toEqual(JSON.parse(BODY));
   });
 
+  /**
+   * A newly created drawing has **no body at all**: the server writes no seed,
+   * because a constant one would give every drawing in the system the same
+   * layer UUIDs and would sit in storage in the clear until the first save.
+   *
+   * `driveReadBytes` reports that as zero bytes (the download endpoint answers
+   * a row with no blob with 409 `NO_CONTENT`), and the editor has to read it as
+   * "new document, write the first body" rather than as a failure. Reading it
+   * as a failure is what left every newly created drawing on "Failed to load
+   * drawing" — every drawing e2e spec failed on it, none of them about loading.
+   */
+  it('opens a drawing that has no stored body yet, and writes one', async () => {
+    readBytes.mockResolvedValue(new Uint8Array(0));
+
+    const { findByTestId, queryByText } = await renderEditor();
+
+    // It opens rather than erroring.
+    await findByTestId('canvas');
+    expect(queryByText('Failed to load drawing')).toBeNull();
+
+    // …and seeds itself, so the file does not stay empty until someone
+    // happens to draw on it.
+    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled(), { timeout: 5_000 });
+    const [, content] = autosaveEncryptedContent.mock.calls[0];
+    expect(JSON.parse(content as string)).toMatchObject({ version: 2 });
+  });
+
   it('leaves a body it cannot decrypt alone', async () => {
     // Neither decryptable nor a drawing: ciphertext this key cannot open, whose
     // content sealing would destroy.
-    downloadFile.mockResolvedValue(
-      new Blob([new Uint8Array([0x8f, 0x1d, 0xff, 0x02, 0xc3, 0x28]).buffer as ArrayBuffer]),
-    );
+    readBytes.mockResolvedValue(new Uint8Array([0x8f, 0x1d, 0xff, 0x02, 0xc3, 0x28]));
 
-    await renderEditor();
+    const { findByText } = await renderEditor();
 
+    // Refused, not opened: opening a blank canvas here would let the first
+    // autosave replace a drawing whose key is merely unavailable.
+    await findByText(/could not be decrypted/i);
     await new Promise((r) => setTimeout(r, 200));
     expect(autosaveEncryptedContent).not.toHaveBeenCalled();
   });
@@ -231,17 +280,40 @@ describe('saving a drawing', () => {
     await renderLoadedEditor();
 
     await act(async () => {
-      onShapesChange([{ id: 's2', type: 'ellipse', layerId: 'bg' }]);
-      // Past the 1 s shape debounce.
+      onDocumentChange(setTitle(STORED_DOC, 'Edited'));
+      // Past the 1 s autosave debounce.
       await new Promise((r) => setTimeout(r, 1200));
     });
 
-    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled());
+    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled(), { timeout: 5_000 });
     const [id, content, filename, dek] = autosaveEncryptedContent.mock.calls[0];
     expect(id).toBe(DRAWING_ID);
     expect(filename).toBe('drawing.json');
     expect(dek).toBe(DEK);
-    expect(JSON.parse(content as string)).toMatchObject({ version: 1 });
+    expect(JSON.parse(content as string)).toMatchObject({ version: 2 });
+  });
+
+  /**
+   * The autosave endpoint applies a rename carried in its `metadata` part, so a
+   * save that sends a title renames the file. A body-only save must send none.
+   *
+   * Without this the first save of a newly created drawing — which is written
+   * as soon as it opens, since the server writes no seed — carries the name the
+   * file had at load and undoes any rename made in between. That is what
+   * reverted a freshly renamed drawing to "Untitled drawing" a second later,
+   * with the PATCH that renamed it already returned 200.
+   */
+  it('does not send a title with a save that only writes the body', async () => {
+    await renderLoadedEditor();
+
+    await act(async () => {
+      onDocumentChange(setTitle(STORED_DOC, 'Edited'));
+      await new Promise((r) => setTimeout(r, 1200));
+    });
+
+    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled(), { timeout: 5_000 });
+    const [, , , , metadata] = autosaveEncryptedContent.mock.calls[0];
+    expect(metadata).toBeUndefined();
   });
 
   it('writes nothing when the vault is locked', async () => {
@@ -249,11 +321,11 @@ describe('saving a drawing', () => {
     dekNow = null;
 
     await act(async () => {
-      onShapesChange([{ id: 's2', type: 'ellipse', layerId: 'bg' }]);
+      onDocumentChange(setTitle(STORED_DOC, 'Edited'));
       await new Promise((r) => setTimeout(r, 1200));
     });
 
     expect(autosaveEncryptedContent).not.toHaveBeenCalled();
-    await waitFor(() => expect(toastWarning).toHaveBeenCalled());
+    await waitFor(() => expect(toastWarning).toHaveBeenCalled(), { timeout: 5_000 });
   });
 });

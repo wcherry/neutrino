@@ -38,6 +38,17 @@ async function openEditor(request: APIRequestContext, page: Page): Promise<void>
   await expect(page.getByLabel('Drawing title')).toBeVisible({ timeout: 15_000 });
 }
 
+/**
+ * A layer row in the layers panel, by exact name.
+ *
+ * Scoped deliberately: selecting a layer also shows its name in the style
+ * panel's Name field, so `getByText('Layer 2')` matches two elements and trips
+ * strict mode. The panel is the one that means "this layer exists".
+ */
+function layerNamed(page: Page, name: string) {
+  return page.locator('[class*="layerName"]').filter({ hasText: new RegExp(`^${name}$`) });
+}
+
 test.describe('Canvas tools', () => {
   test('all toolbar tool buttons are present', async ({ page, request }) => {
     await registerAndLogin(request, page);
@@ -144,25 +155,43 @@ test.describe('Canvas tools', () => {
     await autosaved;
   });
 
-  test('layers panel is visible and the add-layer button works', async ({ page, request }) => {
+  /**
+   * "+" opens a menu rather than adding a layer directly: a drawing has more
+   * than one kind of layer now — a vector layer, a group, and an image — and a
+   * button that silently picks one of the three is a button you have to undo.
+   */
+  test('layers panel is visible and the add-layer menu creates a layer', async ({ page, request }) => {
     await registerAndLogin(request, page);
     await openEditor(request, page);
 
-    // The Layers panel header should be visible
     await expect(page.getByText('Layers')).toBeVisible({ timeout: 5_000 });
+    // Every new drawing starts with one layer to draw into.
+    await expect(layerNamed(page, 'Layer 1')).toBeVisible({ timeout: 5_000 });
 
-    // Click "Add layer" — a new "New layer" entry should appear
-    await page.getByTitle('Add layer').click();
-    await expect(page.getByText('New layer')).toBeVisible({ timeout: 5_000 });
+    await page.getByLabel('Add layer').click();
+    await expect(page.getByRole('menuitem', { name: 'New layer' })).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('menuitem', { name: 'New layer' }).click();
+
+    await expect(layerNamed(page, 'Layer 2')).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('the add-layer menu creates a group', async ({ page, request }) => {
+    await registerAndLogin(request, page);
+    await openEditor(request, page);
+
+    await page.getByLabel('Add layer').click();
+    await page.getByRole('menuitem', { name: 'New group' }).click();
+
+    await expect(layerNamed(page, 'Group')).toBeVisible({ timeout: 5_000 });
   });
 
   test('layer rename is persisted within the session', async ({ page, request }) => {
     await registerAndLogin(request, page);
     await openEditor(request, page);
 
-    // Add a new layer first (the Background layer cannot be renamed via double-click in this test)
-    await page.getByTitle('Add layer').click();
-    const newLayerEntry = page.getByText('New layer').first();
+    await page.getByLabel('Add layer').click();
+    await page.getByRole('menuitem', { name: 'New layer' }).click();
+    const newLayerEntry = layerNamed(page, 'Layer 2');
     await expect(newLayerEntry).toBeVisible({ timeout: 5_000 });
 
     // Double-click the label to enter rename mode
@@ -172,7 +201,29 @@ test.describe('Canvas tools', () => {
     await nameInput.fill('Foreground');
     await nameInput.press('Enter');
 
-    await expect(page.getByText('Foreground')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('New layer')).not.toBeVisible({ timeout: 3_000 });
+    await expect(layerNamed(page, 'Foreground')).toBeVisible({ timeout: 5_000 });
+    await expect(layerNamed(page, 'Layer 2')).toHaveCount(0, { timeout: 3_000 });
+  });
+
+  /**
+   * Opacity and blend mode are per layer, and they are what the OpenRaster
+   * writer puts on each `<layer>` element — so a drawing that sets them is the
+   * one whose export is worth anything.
+   */
+  test('selecting a layer reveals its opacity and blend mode', async ({ page, request }) => {
+    await registerAndLogin(request, page);
+    await openEditor(request, page);
+
+    await layerNamed(page, 'Layer 1').click();
+
+    await expect(page.getByLabel('Blend mode')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByLabel('Layer opacity')).toBeVisible({ timeout: 5_000 });
+
+    const autosaved = page.waitForResponse(
+      (r) => r.url().includes('/api/v1/drive/files/') && r.url().includes('/autosave'),
+      { timeout: 15_000 },
+    );
+    await page.getByLabel('Blend mode').selectOption('multiply');
+    await autosaved;
   });
 });

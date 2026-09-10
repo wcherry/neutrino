@@ -1,34 +1,90 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft } from 'lucide-react';
 import { Spinner, useToast } from '@neutrino/ui';
 import { drawingApi, extractDrawingText } from '@neutrino/api-drawing';
-import { request } from '@neutrino/api-core';
-import { storageApi, isMissingEncryptionKey } from '@neutrino/api-drive';
-import { readStoredBody } from '@/lib/storedBody';
+import { driveReadBytes, isMissingEncryptionKey } from '@neutrino/api-drive';
 import { useUser } from '@neutrino/auth';
+
+import { readStoredBody } from '@/lib/storedBody';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
-import type { DriveImageItem } from '@neutrino/ui';
-import type { Shape, Layer, ToolType, DrawingContent, Transform } from './types';
+import type { ImagePickerResult } from '@/components/InsertImageDialog';
+
+import { createDocument, createRasterLayer, DEFAULT_VECTOR_STYLE } from './document/factory';
+import { parseDocument, serializeDocument } from './document/serialize';
+import {
+  findNode,
+  flattenTree,
+  groupNodes,
+  isDocumentEmpty,
+  reorderWithinParent,
+  ungroupNode,
+} from './document/tree';
+import {
+  addNode,
+  addObjects,
+  cloneNode,
+  deleteNode,
+  duplicateNode,
+  newGroup,
+  offsetCopies,
+  patchObjects,
+  removeObjects,
+  setGrid,
+  setLayerObjects,
+  setNodesProps,
+  setTitle,
+} from './document/edits';
+import { loadDocumentBitmaps } from './render/renderDocument';
+import { createCanvasRenderer, writeOra } from './io/ora';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
 import { DrawingToolbar } from './DrawingToolbar';
 import { DrawingMenuBar } from './DrawingMenuBar';
 import { StatusBar } from './StatusBar';
 import { StylePanel } from './StylePanel';
 import { LayersPanel } from './LayersPanel';
-import { ExportDialog } from './ExportDialog';
+import { ExportDialog, type OraExportOptions, type PngExportOptions, type SvgExportOptions } from './ExportDialog';
+import {
+  selectionCount,
+  type DrawingDocument,
+  type DrawingNode,
+  type Selection,
+  type ToolType,
+  type Transform,
+  type VectorObject,
+  type VectorStyle,
+} from './types';
 import styles from './page.module.css';
 
 const VersionHistoryPanel = dynamic(
   () => import('@/components/VersionHistoryPanel').then((m) => ({ default: m.VersionHistoryPanel })),
   { ssr: false },
 );
+
+/**
+ * Loaded on demand, like the version history panel.
+ *
+ * Not only for the bundle: the picker reaches Drive through `@/lib/api`, the
+ * barrel that re-exports every `@neutrino/api-*` package, so importing it at
+ * module scope pulls the whole API surface into the editor's graph for a dialog
+ * most sessions never open.
+ */
+const InsertImageDialog = dynamic(
+  () => import('@/components/InsertImageDialog').then((m) => ({ default: m.InsertImageDialog })),
+  { ssr: false },
+);
+
+const AUTOSAVE_DELAY = 1000;
+/** How long to wait before trying again when a save is already on the wire. */
+const SAVE_RETRY_DELAY = 300;
+const HISTORY_DELAY = 500;
+const HISTORY_LIMIT = 100;
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -42,46 +98,98 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 /**
- * The stored drawing body, decrypted.
- *
- * Downloads the blob rather than reading `contentUrl` as text: the stored bytes
- * are ciphertext, and `responseType: 'text'` would hand back the mojibake a
- * UTF-8 decode makes of random bytes. Returns '' on failure, which the caller
- * already treats as "empty drawing" — the same as it did for an unreadable
- * plaintext body.
- */
-/**
  * The stored drawing as text, and whether the server was holding it in the
- * clear — the content seeded at creation, or a drawing saved before E2EE.
+ * clear — the body seeded at creation, or one saved before drawings were
+ * encrypted.
  *
- * Which one it is comes off the bytes rather than off `isNewEncryption` (see
- * `readStoredBody`): a drawing created and then reloaded before anything
- * encrypted it has a key ref *and* a plaintext body, and the session flag calls
- * that ciphertext — which used to mean decrypting the plaintext, failing, and
- * opening the drawing empty.
+ * Which one it is comes off the bytes rather than off a session flag: a drawing
+ * created and then reloaded before anything encrypted it has a key reference
+ * *and* a plaintext body, and trusting the flag there means decrypting
+ * plaintext, failing, and opening the drawing empty.
  */
-async function readEncryptedDrawing(
-  drawingId: string,
-  dek: Uint8Array,
-): Promise<{ raw: string; wasPlaintext: boolean }> {
+interface StoredDrawing {
+  raw: string;
+  wasPlaintext: boolean;
+  /**
+   * The file held bytes that would not open with this key.
+   *
+   * Kept separate from an empty `raw`, and the distinction is the whole point:
+   * a *zero-byte* file is a newly created drawing that the editor should seed
+   * and save, while bytes that failed to decrypt are somebody's content that
+   * saving would destroy. Collapsing the two — as returning `''` for both does
+   * — means the first autosave writes a blank canvas over a drawing whose key
+   * was merely unavailable.
+   */
+  unreadable: boolean;
+}
+
+async function readStoredDrawing(drawingId: string, dek: Uint8Array): Promise<StoredDrawing> {
+  // `driveReadBytes`, not `storageApi.downloadFile`: a drawing is created with
+  // no body at all (see `native_types.rs`), and the download endpoint answers a
+  // row with no blob with 409 `NO_CONTENT` rather than with zero bytes. Reading
+  // that as an error meant every newly created drawing opened on "Failed to
+  // load drawing" — the same bug the OOXML editors had, which is what this
+  // helper was written for. It still throws `CONTENT_MISSING`, so a row that
+  // outlived its blob stays a real failure and not an empty canvas.
+  const stored = await driveReadBytes(drawingId);
+  if (stored.length === 0) return { raw: '', wasPlaintext: false, unreadable: false };
+
   try {
-    const blob = await storageApi.downloadFile(drawingId);
-    const stored = new Uint8Array(await blob.arrayBuffer());
     const { text, wasPlaintext } = readStoredBody(stored, dek);
-    return { raw: text, wasPlaintext };
+    return { raw: text, wasPlaintext, unreadable: false };
   } catch {
-    return { raw: '', wasPlaintext: false };
+    return { raw: '', wasPlaintext: false, unreadable: true };
   }
 }
 
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
+/**
+ * An image as pixels on the canvas.
+ *
+ * The picker hands back a URL — a Drive download, a remote link, or a data URL
+ * for an encrypted file it already decrypted. A raster layer needs the bytes
+ * themselves, so the image is decoded and re-encoded as a PNG data URL: the
+ * document is one encrypted blob, and a layer pointing at a URL would be a
+ * second thing to fetch, keep in step and lose.
+ */
+async function rasterSourceFromImage(
+  src: string,
+  canvas: { width: number; height: number },
+): Promise<ReturnType<typeof createRasterLayer>['source'] | null> {
+  const image = await new Promise<HTMLImageElement | null>((resolve) => {
+    const element = new Image();
+    element.crossOrigin = 'anonymous';
+    element.onload = () => resolve(element);
+    element.onerror = () => resolve(null);
+    element.src = src;
+  });
+  if (!image || !image.naturalWidth || !image.naturalHeight) return null;
+
+  // Fitted inside the canvas and centred, never enlarged — an image dropped in
+  // at 4000px on a 1920px canvas should arrive usable, not mostly off-page.
+  const scale = Math.min(1, canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+  const surface = document.createElement('canvas');
+  surface.width = width;
+  surface.height = height;
+  const ctx = surface.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(image, 0, 0, width, height);
+
+  return {
+    dataUrl: surface.toDataURL('image/png'),
+    width,
+    height,
+    x: Math.round((canvas.width - width) / 2),
+    y: Math.round((canvas.height - height) / 2),
+  };
 }
+
+type Clipboard =
+  | { kind: 'objects'; objects: VectorObject[] }
+  | { kind: 'nodes'; nodes: DrawingNode[] }
+  | null;
 
 export function DrawingEditor() {
   const searchParams = useSearchParams();
@@ -89,79 +197,115 @@ export function DrawingEditor() {
   const drawingId = searchParams.get('id');
   const currentUser = useUser();
   const toast = useToast();
-  // Rejects a save that would overwrite a revision written elsewhere since this
-  // drawing was loaded. See `useContentVersionGuard`.
   const versionGuard = useContentVersionGuard();
 
-  // Drawing content is E2EE like every other app's. It was the one exception
-  // until issue #95: `drawingApi.autosaveContent` wrote the body to Drive as
-  // readable JSON, so every drawing ever saved sat in storage in the clear.
   const { dekRef, dekResolved, awaitDek } = useEncryptedDocumentContent({
     id: drawingId ?? '',
     filename: 'drawing.json',
   });
 
-  const bgLayerIdRef = useRef(Math.random().toString(36).slice(2, 10));
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [title, setTitle] = useState('Untitled drawing');
-  const [shapes, setShapes] = useState<Shape[]>([]);
-  const [layers, setLayers] = useState<Layer[]>([{ id: bgLayerIdRef.current, name: 'Background', isBackground: true }]);
-  const [activeLayerId, setActiveLayerId] = useState(bgLayerIdRef.current);
+  const [title, setTitleState] = useState('Untitled drawing');
+  const [doc, setDoc] = useState<DrawingDocument>(() => createDocument());
+  const [selection, setSelection] = useState<Selection>(null);
+  const [activeLayerId, setActiveLayerId] = useState('');
   const [tool, setTool] = useState<ToolType>('select');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [scale, setScale] = useState(1);
-  const [transform, setTransform] = useState<Transform>({ x: 0, y: 0, scale: 1 });
+  const [newObjectStyle, setNewObjectStyle] = useState<VectorStyle>({ ...DEFAULT_VECTOR_STYLE });
+  const [bitmaps, setBitmaps] = useState<ReadonlyMap<string, CanvasImageSource>>(new Map());
+  const [zoom, setZoom] = useState(100);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [showGrid, setShowGrid] = useState(true);
-  const [hasClipboard, setHasClipboard] = useState(false);
+  const [showImagePicker, setShowImagePicker] = useState(false);
+  const [clipboard, setClipboard] = useState<Clipboard>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const transformStateRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
-  const shapesRef = useRef(shapes);
-  const selectedIdsRef = useRef(selectedIds);
-  const clipboardRef = useRef<Shape[]>([]);
-  const historyRef = useRef<Shape[][]>([]);
-  const historyIndexRef = useRef<number>(-1);
-  const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isUndoRedoRef = useRef(false);
-  useEffect(() => { shapesRef.current = shapes; }, [shapes]);
-  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+  const docRef = useRef(doc);
+  const selectionRef = useRef(selection);
+  const activeLayerRef = useRef(activeLayerId);
+  const clipboardRef = useRef(clipboard);
+  /**
+   * The file name the server last told us it holds.
+   *
+   * The autosave endpoint applies a rename carried in its `metadata` part, so a
+   * save that sends a title *renames the file*. A body-only save must therefore
+   * send none: the first save of a newly created drawing would otherwise carry
+   * the name the file had when it was opened and undo a rename made in between
+   * — which is what reverted "My New Drawing" back to "Untitled drawing" a
+   * second after the PATCH that set it.
+   */
+  const serverTitleRef = useRef('');
+  docRef.current = doc;
+  selectionRef.current = selection;
+  activeLayerRef.current = activeLayerId;
+  clipboardRef.current = clipboard;
 
-  // Debounced history tracking. Ordered before the dirty effect so it reads afterLoadRef = true
-  // (set during load) before the dirty effect resets it to false.
-  useEffect(() => {
-    if (!hasMounted.current || afterLoadRef.current) return;
-    if (isUndoRedoRef.current) { isUndoRedoRef.current = false; return; }
-    const timer = setTimeout(() => {
-      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
-      historyRef.current.push([...shapes]);
+  // ── History ───────────────────────────────────────────────────────
+  //
+  // Snapshots of the whole document. The tree is persistent — every edit
+  // rewrites only the path to the node it touched — so a snapshot shares almost
+  // all of its structure with the one before it, and the cost is a pointer per
+  // step rather than a copy of the drawing.
+  const historyRef = useRef<DrawingDocument[]>([]);
+  const historyIndexRef = useRef(-1);
+  const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipHistoryRef = useRef(false);
+
+  const pushHistory = useCallback((next: DrawingDocument) => {
+    if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+    historyTimerRef.current = setTimeout(() => {
+      historyTimerRef.current = null;
+      const trimmed = historyRef.current.slice(0, historyIndexRef.current + 1);
+      trimmed.push(next);
+      // A long session should not grow without bound; the oldest steps go first.
+      const overflow = Math.max(0, trimmed.length - HISTORY_LIMIT);
+      historyRef.current = trimmed.slice(overflow);
       historyIndexRef.current = historyRef.current.length - 1;
       setCanUndo(historyIndexRef.current > 0);
       setCanRedo(false);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [shapes]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, HISTORY_DELAY);
+  }, []);
 
-  // Mark dirty on any user-initiated change. The first fire after load is swallowed via afterLoadRef.
-  useEffect(() => {
-    if (!hasMounted.current || afterLoadRef.current) {
-      afterLoadRef.current = false;
-      return;
-    }
-    isDirtyRef.current = true;
-  }, [shapes, layers, title]);
-
-  const debouncedShapes = useDebounce(shapes, 1000);
-  const saveInProgress = useRef(false);
-  const hasMounted = useRef(false);
   const isDirtyRef = useRef(false);
-  const afterLoadRef = useRef(false);
+
+  /** The single entry point for changing the drawing. */
+  const applyDocument = useCallback((next: DrawingDocument) => {
+    setDoc((prev) => {
+      if (next === prev) return prev;
+      isDirtyRef.current = true;
+      if (skipHistoryRef.current) skipHistoryRef.current = false;
+      else pushHistory(next);
+      return next;
+    });
+  }, [pushHistory]);
+
+  const restore = useCallback((step: number) => {
+    // A pending debounced snapshot would land after the restore and re-push the
+    // state being undone, so it is flushed into history first.
+    if (historyTimerRef.current) {
+      clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = null;
+      historyRef.current = [...historyRef.current.slice(0, historyIndexRef.current + 1), docRef.current];
+      historyIndexRef.current = historyRef.current.length - 1;
+    }
+    const index = historyIndexRef.current + step;
+    if (index < 0 || index >= historyRef.current.length) return;
+    historyIndexRef.current = index;
+    skipHistoryRef.current = true;
+    isDirtyRef.current = true;
+    setDoc(historyRef.current[index]);
+    setSelection(null);
+    setCanUndo(index > 0);
+    setCanRedo(index < historyRef.current.length - 1);
+  }, []);
+
+  const handleUndo = useCallback(() => restore(-1), [restore]);
+  const handleRedo = useCallback(() => restore(1), [restore]);
+
+  // ── Load ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!drawingId) {
@@ -169,26 +313,34 @@ export function DrawingEditor() {
       setLoading(false);
       return;
     }
+    if (!dekResolved) return;
+
+    let cancelled = false;
 
     async function load() {
       try {
         const drawing = await drawingApi.getDrawing(drawingId!);
-        setTitle(drawing.title);
+        if (cancelled) return;
+        setTitleState(drawing.title);
+        serverTitleRef.current = drawing.title;
         versionGuard.observe(drawing.contentVersion);
-        // A drawing saved since #95 is ciphertext; one saved before it — or one
-        // never saved at all, still holding the content seeded at creation — is
-        // the plaintext JSON it always was. `readEncryptedDrawing` tells them
-        // apart from the bytes and reports which it found.
-        const { raw, wasPlaintext } = dekRef.current
-          ? await readEncryptedDrawing(drawingId!, dekRef.current)
-          : {
-              raw: await request<string>(drawing.contentUrl, {}, { responseType: 'text' })
-                .catch(() => ''),
-              wasPlaintext: false,
-            };
-        // Seal it: nothing else will. The autosave only fires on a user edit, so
-        // a drawing opened and closed untouched keeps its plaintext body. The
-        // write goes out with exactly what was read.
+
+        const { raw, wasPlaintext, unreadable } = dekRef.current
+          ? await readStoredDrawing(drawingId!, dekRef.current)
+          : { raw: '', wasPlaintext: false, unreadable: false };
+        if (cancelled) return;
+
+        // Bytes this key cannot open. Nothing is rendered and nothing is
+        // written: opening a blank canvas here would let the first autosave
+        // replace a drawing whose key is merely unavailable — a locked vault,
+        // a rotated key, a file shared before it was resealed.
+        if (unreadable) {
+          setError('This drawing could not be decrypted. Unlock your encryption key and reload.');
+          return;
+        }
+
+        // Seal it: nothing else will. Autosave only fires on an edit, so a
+        // drawing opened and closed untouched would keep its plaintext body.
         if (wasPlaintext && raw && dekRef.current) {
           drawingApi
             .autosaveEncryptedContent(
@@ -198,396 +350,449 @@ export function DrawingEditor() {
             .then((meta) => versionGuard.observe(meta.contentVersion))
             .catch(() => {});
         }
-        if (raw) {
-          try {
-            const content = JSON.parse(raw) as DrawingContent;
 
-            // Determine background layer from saved content (last layer by convention,
-            // or the one marked isBackground, or the legacy 'background' id).
-            if (content.layers && content.layers.length > 0) {
-              const bgLayer = content.layers.find(l => l.isBackground || l.id === 'background')
-                ?? content.layers[content.layers.length - 1];
-              bgLayerIdRef.current = bgLayer.id;
-              const normalizedLayers = content.layers.map(l =>
-                l === bgLayer ? { ...l, isBackground: true as const } : l
-              );
-              setLayers(normalizedLayers);
-              setActiveLayerId(bgLayerIdRef.current);
-            }
+        const stored = parseDocument(raw);
 
-            // Normalize shapes: migrate legacy undefined/`'background'` layerIds to the actual bg id.
-            const bgId = bgLayerIdRef.current;
-            const loaded = (content.shapes ?? []).map(s => ({
-              ...s,
-              layerId: (!s.layerId || s.layerId === 'background') ? bgId : s.layerId,
-            }));
-            historyRef.current = [[...loaded]];
-            historyIndexRef.current = 0;
-            setShapes(loaded);
-          } catch {
-            historyRef.current = [[]];
-            historyIndexRef.current = 0;
-            setShapes([]);
-          }
-        } else {
-          historyRef.current = [[]];
-          historyIndexRef.current = 0;
+        // Bytes that are not a drawing this build understands. They are still
+        // somebody's bytes: opening a blank canvas over them would let the very
+        // next autosave overwrite the file, and a body that failed to decrypt
+        // looks exactly like this. So the editor refuses rather than opens —
+        // the same rule the diagrams canvas applies to a foreign SVG.
+        if (!stored && raw) {
+          setError('This file is not a drawing this version can open.');
+          return;
         }
+
+        // A newly created drawing is a zero-byte file: the server writes no seed
+        // (see `native_types.rs`), so the first body is this one, and it has to
+        // be written even if nothing is drawn — otherwise the drawing has no
+        // content at all until somebody happens to touch it.
+        const loaded = stored ?? createDocument({ title: drawing.title });
+        if (!stored) isDirtyRef.current = true;
+        historyRef.current = [loaded];
+        historyIndexRef.current = 0;
+        setCanUndo(false);
+        setCanRedo(false);
+        setDoc(loaded);
+
+        const firstVectorLayer = flattenTree(loaded.root).find((f) => f.node.type === 'vector');
+        setActiveLayerId(firstVectorLayer?.node.id ?? '');
       } catch {
-        setError('Failed to load drawing');
+        if (!cancelled) setError('Failed to load drawing');
       } finally {
-        setLoading(false);
-        afterLoadRef.current = true;
-        hasMounted.current = true;
+        if (!cancelled) setLoading(false);
       }
     }
-    if (!dekResolved) return;
+
     load();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawingId, dekResolved]);
 
+  // Raster layers and masks hold PNG data URLs; decoding is asynchronous while
+  // painting a frame is not, so they are decoded here and handed to the canvas.
   useEffect(() => {
-    if (!hasMounted.current || !drawingId || saveInProgress.current || !isDirtyRef.current) return;
-    isDirtyRef.current = false;
-    saveInProgress.current = true;
-    const content: DrawingContent = { version: 1, shapes: debouncedShapes, layers };
-    const serialized = JSON.stringify(content);
-    // `awaitDek`, not `dekRef.current`: the first autosave after a reload
-    // routinely lands while the key is still resolving, and reading the ref
-    // there reports "no key" for a drawing that has one.
-    awaitDek()
-      .then((dek) => {
-        if (!dek) throw new Error('no-dek');
-        return drawingApi.autosaveEncryptedContent(
-          drawingId, serialized, 'drawing.json', dek, { title }, versionGuard.check(),
-        );
-      })
-      .then((meta) => {
-        versionGuard.observe(meta.contentVersion);
-        indexOnSave(currentUser?.id, {
-          id: drawingId,
-          type: 'drawing',
-          title,
-          content: extractDrawingText(serialized),
-        });
-      })
-      .catch((err) => {
-        // Locked vault. The drawing is still on the canvas, so unlocking and
-        // touching it again saves it — nothing is written in the clear.
-        if (isMissingEncryptionKey(err)) {
-          toast.warning(ENCRYPTION_WARNING_MESSAGE);
-          return;
-        }
-        // A drawing changed elsewhere would be silently overwritten otherwise.
-        if (versionGuard.handleError(err)) {
-          toast.warning(
-            'This document changed elsewhere since you opened it. Reload to get the ' +
-            'latest version, or save again to keep your copy.',
+    let cancelled = false;
+    loadDocumentBitmaps(doc).then((next) => {
+      if (!cancelled) setBitmaps(next);
+    });
+    return () => { cancelled = true; };
+  }, [doc]);
+
+  // ── Autosave ──────────────────────────────────────────────────────
+
+  const saveInProgress = useRef(false);
+
+  /**
+   * Everything the save needs that is not part of *what* is being saved.
+   *
+   * These are read through a ref rather than listed as dependencies because
+   * several of them — `awaitDek`, `versionGuard`, `toast` — are rebuilt on
+   * every render. Depending on them re-runs the effect whenever anything at all
+   * re-renders, and since the effect's cleanup clears the pending timer, the
+   * save is pushed a further second into the future each time. The history
+   * debounce alone (a `setCanUndo` half a second after every edit) is enough to
+   * do it, and on a canvas that re-renders as the pointer moves the save would
+   * never land at all.
+   */
+  const saveDepsRef = useRef({ awaitDek, versionGuard, toast, userId: currentUser?.id });
+  saveDepsRef.current = { awaitDek, versionGuard, toast, userId: currentUser?.id };
+
+  useEffect(() => {
+    if (loading || !drawingId || !isDirtyRef.current) return;
+
+    let timer: ReturnType<typeof setTimeout>;
+
+    const attempt = () => {
+      // A save is already in flight, so this one holds newer state than the one
+      // on the wire. Retry rather than return: `isDirtyRef` staying true does
+      // not bring us back here, because nothing re-runs this effect until the
+      // document changes again — so dropping it strands the edit until the next
+      // keystroke, or forever if there is none.
+      if (saveInProgress.current) {
+        timer = setTimeout(attempt, SAVE_RETRY_DELAY);
+        return;
+      }
+      if (!isDirtyRef.current) return;
+
+      isDirtyRef.current = false;
+      saveInProgress.current = true;
+
+      const { awaitDek: resolveDek, versionGuard: guard, toast: notify, userId } = saveDepsRef.current;
+      const body = serializeDocument(setTitle(docRef.current, title));
+      // Only when it actually changed here — see `serverTitleRef`.
+      const metadata = title === serverTitleRef.current ? undefined : { title };
+
+      // `awaitDek`, not `dekRef.current`: the first autosave after a reload
+      // routinely lands while the key is still resolving, and reading the ref
+      // there reports "no key" for a drawing that has one.
+      resolveDek()
+        .then((dek) => {
+          if (!dek) throw new Error('no-dek');
+          return drawingApi.autosaveEncryptedContent(
+            drawingId, body, 'drawing.json', dek, metadata, guard.check(),
           );
-        }
-      })
-      .finally(() => { saveInProgress.current = false; });
-  }, [debouncedShapes, drawingId, title, layers, currentUser?.id, awaitDek]);
+        })
+        .then((meta) => {
+          guard.observe(meta.contentVersion);
+          serverTitleRef.current = meta.title;
+          indexOnSave(userId, {
+            id: drawingId,
+            type: 'drawing',
+            title,
+            content: extractDrawingText(body),
+          });
+        })
+        .catch((err) => {
+          if (isMissingEncryptionKey(err)) {
+            notify.warning(ENCRYPTION_WARNING_MESSAGE);
+            return;
+          }
+          if (guard.handleError(err)) {
+            notify.warning(
+              'This document changed elsewhere since you opened it. Reload to get the ' +
+              'latest version, or save again to keep your copy.',
+            );
+          }
+        })
+        .finally(() => { saveInProgress.current = false; });
+    };
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    timer = setTimeout(attempt, AUTOSAVE_DELAY);
+    return () => clearTimeout(timer);
+  }, [doc, title, drawingId, loading]);
 
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedIdsRef.current.length > 0) {
-          setShapes((prev) => prev.filter((s) => !selectedIdsRef.current.includes(s.id)));
-          setSelectedIds([]);
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
-        e.preventDefault();
-        if (selectedIdsRef.current.length > 0) {
-          const originals = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
-          const copies = originals.map((s) => ({
-            ...s,
-            id: Math.random().toString(36).slice(2, 10),
-            x: s.x + 16,
-            y: s.y + 16,
-            points: s.points.map((p) => ({ x: p.x + 16, y: p.y + 16 })),
-          }));
-          setShapes((prev) => [...prev, ...copies]);
-          setSelectedIds(copies.map((c) => c.id));
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        e.preventDefault();
-        if (selectedIdsRef.current.length > 0) {
-          clipboardRef.current = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
-          setHasClipboard(true);
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
-        e.preventDefault();
-        if (selectedIdsRef.current.length > 0) {
-          clipboardRef.current = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
-          setHasClipboard(true);
-          setShapes((prev) => prev.filter((s) => !selectedIdsRef.current.includes(s.id)));
-          setSelectedIds([]);
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        e.preventDefault();
-        if (clipboardRef.current.length > 0) {
-          const pastes = clipboardRef.current.map((s) => ({
-            ...s,
-            id: Math.random().toString(36).slice(2, 10),
-            x: s.x + 16,
-            y: s.y + 16,
-            points: s.points.map((p) => ({ x: p.x + 16, y: p.y + 16 })),
-          }));
-          setShapes((prev) => [...prev, ...pastes]);
-          setSelectedIds(pastes.map((p) => p.id));
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
-        e.preventDefault();
-        if (historyTimerRef.current !== null) {
-          clearTimeout(historyTimerRef.current);
-          historyTimerRef.current = null;
-          historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
-          historyRef.current.push([...shapesRef.current]);
-          historyIndexRef.current = historyRef.current.length - 1;
-        }
-        if (historyIndexRef.current <= 0) return;
-        isUndoRedoRef.current = true;
-        historyIndexRef.current--;
-        setShapes([...historyRef.current[historyIndexRef.current]]);
-        setSelectedIds([]);
-        setCanUndo(historyIndexRef.current > 0);
-        setCanRedo(true);
-      }
-      if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && e.key === 'z') || e.key === 'y')) {
-        e.preventDefault();
-        if (historyIndexRef.current >= historyRef.current.length - 1) return;
-        isUndoRedoRef.current = true;
-        historyIndexRef.current++;
-        setShapes([...historyRef.current[historyIndexRef.current]]);
-        setSelectedIds([]);
-        setCanUndo(true);
-        setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "'") {
-        e.preventDefault();
-        setShowGrid((v) => !v);
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+  // ── Selection-derived actions ─────────────────────────────────────
+
+  const selectedNodes = useMemo(
+    () => (selection?.kind === 'nodes'
+      ? selection.ids.map((id) => findNode(doc.root, id)).filter((n): n is DrawingNode => n !== null)
+      : []),
+    [doc.root, selection],
   );
 
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
-
-  const handleTransformChange = useCallback((t: Transform) => {
-    transformStateRef.current = t;
-    setTransform(t);
-    setScale(t.scale);
-  }, []);
-
-  const handleZoomChange = useCallback((percent: number) => {
-    const newScale = percent / 100;
-    const newT = { ...transformStateRef.current, scale: newScale };
-    transformStateRef.current = newT;
-    setTransform(newT);
-    setScale(newScale);
-    canvasRef.current?.setTransform(newT);
-  }, []);
-
-  const handleZoomReset = useCallback(() => {
-    const newT = { x: 0, y: 0, scale: 1 };
-    transformStateRef.current = newT;
-    setTransform(newT);
-    setScale(1);
-    canvasRef.current?.setTransform(newT);
-  }, []);
-
-  const handleZoomIn = useCallback(() => {
-    const newScale = Math.min(10, transformStateRef.current.scale * (1 / 0.9));
-    handleZoomChange(Math.round(newScale * 100));
-  }, [handleZoomChange]);
-
-  const handleZoomOut = useCallback(() => {
-    const newScale = Math.max(0.1, transformStateRef.current.scale * 0.9);
-    handleZoomChange(Math.round(newScale * 100));
-  }, [handleZoomChange]);
-
-  const handleSelectAll = useCallback(() => {
-    setSelectedIds(shapesRef.current.map((s) => s.id));
-  }, []);
+  const canGroup = selectedNodes.length > 1;
+  const canUngroup = selectedNodes.length === 1 && selectedNodes[0].type === 'stack';
 
   const handleDelete = useCallback(() => {
-    if (selectedIdsRef.current.length === 0) return;
-    setShapes((prev) => prev.filter((s) => !selectedIdsRef.current.includes(s.id)));
-    setSelectedIds([]);
-  }, []);
+    const current = selectionRef.current;
+    if (!current) return;
+    if (current.kind === 'objects') {
+      applyDocument(removeObjects(docRef.current, current.layerId, current.ids));
+    } else {
+      let next = docRef.current;
+      for (const id of current.ids) next = deleteNode(next, id);
+      applyDocument(next);
+    }
+    setSelection(null);
+  }, [applyDocument]);
 
   const handleDuplicate = useCallback(() => {
-    if (selectedIdsRef.current.length === 0) return;
-    const originals = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
-    const copies = originals.map((s) => ({
-      ...s,
-      id: Math.random().toString(36).slice(2, 10),
-      x: s.x + 16,
-      y: s.y + 16,
-      points: s.points.map((p) => ({ x: p.x + 16, y: p.y + 16 })),
-    }));
-    setShapes((prev) => [...prev, ...copies]);
-    setSelectedIds(copies.map((c) => c.id));
-  }, []);
+    const current = selectionRef.current;
+    const document_ = docRef.current;
+    if (!current) return;
+
+    if (current.kind === 'objects') {
+      const layer = findNode(document_.root, current.layerId);
+      if (layer?.type !== 'vector') return;
+      const copies = offsetCopies(layer.objects.filter((o) => current.ids.includes(o.id)));
+      applyDocument(addObjects(document_, current.layerId, copies));
+      setSelection({ kind: 'objects', layerId: current.layerId, ids: copies.map((c) => c.id) });
+      return;
+    }
+
+    let next = document_;
+    const ids: string[] = [];
+    for (const id of current.ids) {
+      const result = duplicateNode(next, id);
+      next = result.doc;
+      if (result.newId) ids.push(result.newId);
+    }
+    applyDocument(next);
+    if (ids.length) setSelection({ kind: 'nodes', ids });
+  }, [applyDocument]);
 
   const handleCopy = useCallback(() => {
-    if (selectedIdsRef.current.length === 0) return;
-    clipboardRef.current = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
-    setHasClipboard(true);
+    const current = selectionRef.current;
+    const document_ = docRef.current;
+    if (!current) return;
+    if (current.kind === 'objects') {
+      const layer = findNode(document_.root, current.layerId);
+      if (layer?.type !== 'vector') return;
+      setClipboard({ kind: 'objects', objects: layer.objects.filter((o) => current.ids.includes(o.id)) });
+      return;
+    }
+    setClipboard({
+      kind: 'nodes',
+      nodes: current.ids.map((id) => findNode(document_.root, id)).filter((n): n is DrawingNode => n !== null),
+    });
   }, []);
 
   const handleCut = useCallback(() => {
-    if (selectedIdsRef.current.length === 0) return;
-    clipboardRef.current = shapesRef.current.filter((s) => selectedIdsRef.current.includes(s.id));
-    setHasClipboard(true);
-    setShapes((prev) => prev.filter((s) => !selectedIdsRef.current.includes(s.id)));
-    setSelectedIds([]);
-  }, []);
+    handleCopy();
+    handleDelete();
+  }, [handleCopy, handleDelete]);
 
   const handlePaste = useCallback(() => {
-    if (clipboardRef.current.length === 0) return;
-    const pastes = clipboardRef.current.map((s) => ({
-      ...s,
-      id: Math.random().toString(36).slice(2, 10),
-      x: s.x + 16,
-      y: s.y + 16,
-      points: s.points.map((p) => ({ x: p.x + 16, y: p.y + 16 })),
-    }));
-    setShapes((prev) => [...prev, ...pastes]);
-    setSelectedIds(pastes.map((p) => p.id));
-  }, []);
+    const board = clipboardRef.current;
+    const document_ = docRef.current;
+    if (!board) return;
 
-  const handleUndo = useCallback(() => {
-    if (historyTimerRef.current !== null) {
-      clearTimeout(historyTimerRef.current);
-      historyTimerRef.current = null;
-      historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
-      historyRef.current.push([...shapesRef.current]);
-      historyIndexRef.current = historyRef.current.length - 1;
+    if (board.kind === 'objects') {
+      const layerId = activeLayerRef.current;
+      const layer = findNode(document_.root, layerId);
+      if (layer?.type !== 'vector') return;
+      const copies = offsetCopies(board.objects);
+      applyDocument(addObjects(document_, layerId, copies));
+      setSelection({ kind: 'objects', layerId, ids: copies.map((c) => c.id) });
+      return;
     }
-    if (historyIndexRef.current <= 0) return;
-    isUndoRedoRef.current = true;
-    historyIndexRef.current--;
-    setShapes([...historyRef.current[historyIndexRef.current]]);
-    setSelectedIds([]);
-    setCanUndo(historyIndexRef.current > 0);
-    setCanRedo(true);
-  }, []);
 
-  const handleRedo = useCallback(() => {
-    if (historyIndexRef.current >= historyRef.current.length - 1) return;
-    isUndoRedoRef.current = true;
-    historyIndexRef.current++;
-    setShapes([...historyRef.current[historyIndexRef.current]]);
-    setSelectedIds([]);
-    setCanUndo(true);
-    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+    // Cloned rather than inserted as-is: the clipboard holds the nodes that
+    // were copied, and pasting twice must not put the same ids in the tree
+    // twice — nor must cutting and pasting resurrect a node the delete removed.
+    let next = document_;
+    const ids: string[] = [];
+    for (const node of board.nodes) {
+      const copy = cloneNode(node);
+      next = addNode(next, copy);
+      ids.push(copy.id);
+    }
+    applyDocument(next);
+    if (ids.length) setSelection({ kind: 'nodes', ids });
+  }, [applyDocument]);
+
+  const handleSelectAll = useCallback(() => {
+    const document_ = docRef.current;
+    const layer = findNode(document_.root, activeLayerRef.current);
+    if (layer?.type === 'vector' && layer.objects.length > 0) {
+      setSelection({ kind: 'objects', layerId: layer.id, ids: layer.objects.map((o) => o.id) });
+      return;
+    }
+    const ids = document_.root.children.map((c) => c.id);
+    setSelection(ids.length ? { kind: 'nodes', ids } : null);
   }, []);
 
   const handleToggleLock = useCallback(() => {
-    const ids = selectedIdsRef.current;
-    if (ids.length === 0) return;
-    const anyLocked = shapesRef.current.some((s) => ids.includes(s.id) && s.locked);
-    setShapes((prev) => prev.map((s) => ids.includes(s.id) ? { ...s, locked: !anyLocked } : s));
+    const current = selectionRef.current;
+    const document_ = docRef.current;
+    if (!current) return;
+    if (current.kind === 'objects') {
+      const layer = findNode(document_.root, current.layerId);
+      if (layer?.type !== 'vector') return;
+      const anyLocked = layer.objects.some((o) => current.ids.includes(o.id) && o.locked);
+      applyDocument(patchObjects(document_, current.layerId, current.ids, { locked: !anyLocked }));
+      return;
+    }
+    const anyLocked = current.ids.some((id) => findNode(document_.root, id)?.locked);
+    applyDocument(setNodesProps(document_, current.ids, { locked: !anyLocked }));
+  }, [applyDocument]);
+
+  const handleGroup = useCallback(() => {
+    const current = selectionRef.current;
+    if (current?.kind !== 'nodes' || current.ids.length < 2) return;
+    const group = newGroup();
+    applyDocument({ ...docRef.current, root: groupNodes(docRef.current.root, current.ids, group) });
+    setSelection({ kind: 'nodes', ids: [group.id] });
+  }, [applyDocument]);
+
+  const handleUngroup = useCallback(() => {
+    const current = selectionRef.current;
+    if (current?.kind !== 'nodes' || current.ids.length !== 1) return;
+    const group = findNode(docRef.current.root, current.ids[0]);
+    if (group?.type !== 'stack') return;
+    const childIds = group.children.map((c) => c.id);
+    applyDocument({ ...docRef.current, root: ungroupNode(docRef.current.root, group.id) });
+    setSelection(childIds.length ? { kind: 'nodes', ids: childIds } : null);
+  }, [applyDocument]);
+
+  /**
+   * Reordering means two different things depending on what is selected: a
+   * layer moves within its parent stack, and an object moves within its layer.
+   * `delta` is negative for "forward", because index 0 is the top.
+   */
+  const reorder = useCallback((delta: number) => {
+    const current = selectionRef.current;
+    const document_ = docRef.current;
+    if (!current) return;
+
+    if (current.kind === 'nodes') {
+      let next = document_;
+      for (const id of current.ids) {
+        next = { ...next, root: reorderWithinParent(next.root, id, delta) };
+      }
+      applyDocument(next);
+      return;
+    }
+
+    const layer = findNode(document_.root, current.layerId);
+    if (layer?.type !== 'vector') return;
+    const objects = [...layer.objects];
+    const indices = current.ids
+      .map((id) => objects.findIndex((o) => o.id === id))
+      .filter((i) => i >= 0)
+      .sort((a, b) => (delta < 0 ? a - b : b - a));
+    for (const from of indices) {
+      const to = Math.max(0, Math.min(objects.length - 1, from + delta));
+      if (to === from) continue;
+      const [moved] = objects.splice(from, 1);
+      objects.splice(to, 0, moved);
+    }
+    applyDocument(setLayerObjects(document_, layer.id, objects));
+  }, [applyDocument]);
+
+  // ── Keyboard ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        handleDelete();
+        return;
+      }
+      if (!mod) {
+        const shortcuts: Record<string, ToolType> = {
+          s: 'select', p: 'pen', l: 'line', r: 'rectangle', e: 'ellipse', t: 'text',
+        };
+        const next = shortcuts[e.key.toLowerCase()];
+        if (next) {
+          setTool(next);
+          return;
+        }
+      }
+      if (!mod) return;
+
+      switch (e.key.toLowerCase()) {
+        case 'z':
+          e.preventDefault();
+          if (e.shiftKey) handleRedo();
+          else handleUndo();
+          break;
+        case 'y':
+          e.preventDefault();
+          handleRedo();
+          break;
+        case 'a': e.preventDefault(); handleSelectAll(); break;
+        case 'c': e.preventDefault(); handleCopy(); break;
+        case 'x': e.preventDefault(); handleCut(); break;
+        case 'v': e.preventDefault(); handlePaste(); break;
+        case 'd': e.preventDefault(); handleDuplicate(); break;
+        case 'g':
+          e.preventDefault();
+          if (e.shiftKey) handleUngroup();
+          else handleGroup();
+          break;
+        case ']': e.preventDefault(); reorder(-1); break;
+        case '[': e.preventDefault(); reorder(1); break;
+        case "'":
+          e.preventDefault();
+          applyDocument(setGrid(docRef.current, { visible: !docRef.current.grid.visible }));
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    applyDocument, handleCopy, handleCut, handleDelete, handleDuplicate, handleGroup,
+    handlePaste, handleRedo, handleSelectAll, handleUndo, handleUngroup, reorder,
+  ]);
+
+  // ── Viewport ──────────────────────────────────────────────────────
+
+  const transformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
+
+  const handleTransformChange = useCallback((t: Transform) => {
+    transformRef.current = t;
+    setZoom(Math.round(t.scale * 100));
   }, []);
 
-  const handleToggleLockById = useCallback((id: string) => {
-    setShapes((prev) => prev.map((s) => s.id === id ? { ...s, locked: !s.locked } : s));
+  const handleZoomChange = useCallback((percent: number) => {
+    const next = { ...transformRef.current, scale: percent / 100 };
+    canvasRef.current?.setTransform(next);
   }, []);
 
-  // --- Layer operations ---
+  const handleFitToScreen = useCallback(() => canvasRef.current?.fitToScreen(), []);
+  const handleZoomIn = useCallback(() => handleZoomChange(Math.min(1600, Math.round(zoom / 0.9))), [handleZoomChange, zoom]);
+  const handleZoomOut = useCallback(() => handleZoomChange(Math.max(5, Math.round(zoom * 0.9))), [handleZoomChange, zoom]);
 
-  const handleAddLayer = useCallback(() => {
-    const id = Math.random().toString(36).slice(2, 10);
-    const newLayer: Layer = { id, name: 'New layer' };
-    setLayers((prev) => {
-      const bg = prev.find((l) => l.isBackground);
-      const rest = prev.filter((l) => !l.isBackground);
-      return bg ? [newLayer, ...rest, bg] : [newLayer, ...rest];
-    });
-    setActiveLayerId(id);
-  }, []);
+  // ── Images ────────────────────────────────────────────────────────
 
-  const handleDeleteLayer = useCallback((id: string) => {
-    if (id === bgLayerIdRef.current) return;
-    setShapes((prev) => prev.map((s) => s.layerId === id ? { ...s, layerId: bgLayerIdRef.current } : s));
-    setLayers((prev) => prev.filter((l) => l.id !== id));
-    setActiveLayerId((prev) => (prev === id ? bgLayerIdRef.current : prev));
-  }, []);
+  const handleInsertImage = useCallback(async (result: ImagePickerResult) => {
+    setShowImagePicker(false);
+    const source = await rasterSourceFromImage(result.src, docRef.current.canvas);
+    if (!source) {
+      toast.error('That image could not be read.');
+      return;
+    }
+    const layer = createRasterLayer(source, result.name ?? 'Image');
+    applyDocument(addNode(docRef.current, layer));
+    setSelection({ kind: 'nodes', ids: [layer.id] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyDocument]);
 
-  const handleRenameLayer = useCallback((id: string, name: string) => {
-    setLayers((prev) => prev.map((l) => l.id === id ? { ...l, name } : l));
-  }, []);
+  // ── Export ────────────────────────────────────────────────────────
 
-  const handleToggleLayerHide = useCallback((id: string) => {
-    setLayers((prev) => prev.map((l) => l.id === id ? { ...l, hidden: !l.hidden } : l));
-  }, []);
-
-  const handleToggleLayerLock = useCallback((id: string) => {
-    setLayers((prev) => prev.map((l) => l.id === id ? { ...l, locked: !l.locked } : l));
-  }, []);
-
-  const handleMoveShapeToLayer = useCallback((shapeId: string, toLayerId: string) => {
-    setShapes((prev) => prev.map((s) => s.id === shapeId ? { ...s, layerId: toLayerId } : s));
-  }, []);
-
-  const handleReorderLayers = useCallback((newLayers: Layer[]) => {
-    setLayers(newLayers);
-  }, []);
-
-  // --- Style changes ---
-
-  const handleStyleChange = useCallback((ids: string[], patch: Partial<Shape>) => {
-    setShapes((prev) => prev.map((s) => ids.includes(s.id) ? { ...s, ...patch } : s));
-  }, []);
-
-  // --- Drive image picker ---
-
-  const handleFetchDriveImages = useCallback(async (): Promise<DriveImageItem[]> => {
-    const IMAGE_MIME_PREFIXES = ['image/'];
-    const result = await storageApi.listFiles({ limit: 200, orderBy: 'updatedAt', direction: 'desc' });
-    return result.items
-      .filter((f) => IMAGE_MIME_PREFIXES.some((prefix) => f.mimeType.startsWith(prefix)))
-      .map((f) => ({
-        id: f.id,
-        name: f.name,
-        url: storageApi.getFileDownloadUrl(f.id),
-        thumbnailUrl: storageApi.getThumbnailUrl(f.coverThumbnailUrl) ?? undefined,
-      }));
-  }, []);
-
-  // --- Export ---
-
-  const handleExportPNG = useCallback(async (options: { scale: number; bgColor: string; filename: string }) => {
-    const blob = await canvasRef.current?.exportPNG(options);
+  const handleExportPNG = useCallback(async (options: PngExportOptions) => {
+    const blob = await canvasRef.current?.exportPNG({ scale: options.scale, background: options.background });
     if (blob) triggerDownload(blob, `${options.filename || 'drawing'}.png`);
   }, []);
 
-  const handleExportSVG = useCallback((options: { bgColor: string; filename: string }) => {
-    const svg = canvasRef.current?.exportSVG(options);
-    if (svg) {
-      const blob = new Blob([svg], { type: 'image/svg+xml' });
-      triggerDownload(blob, `${options.filename || 'drawing'}.svg`);
-    }
+  const handleExportSVG = useCallback((options: SvgExportOptions) => {
+    const svg = canvasRef.current?.exportSVG({ background: options.background });
+    if (svg) triggerDownload(new Blob([svg], { type: 'image/svg+xml' }), `${options.filename || 'drawing'}.svg`);
   }, []);
+
+  const handleExportORA = useCallback(async (options: OraExportOptions) => {
+    try {
+      const renderer = createCanvasRenderer(docRef.current, {
+        bitmaps,
+        background: options.background,
+      });
+      const blob = await writeOra(docRef.current, renderer);
+      triggerDownload(blob, `${options.filename || 'drawing'}.ora`);
+    } catch {
+      toast.error('That drawing could not be exported as OpenRaster.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bitmaps]);
+
+  // ── Title ─────────────────────────────────────────────────────────
 
   const handleTitleBlur = useCallback(() => {
     if (!drawingId || !title.trim()) return;
-    drawingApi.saveDrawing(drawingId, { title }).catch(() => {});
-  }, [drawingId, title]);
+    drawingApi
+      .saveDrawing(drawingId, { title })
+      .then((meta) => { serverTitleRef.current = meta.title; })
+      .catch(() => {});
+    applyDocument(setTitle(docRef.current, title.trim()));
+  }, [applyDocument, drawingId, title]);
+
+  // ── Render ────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -617,7 +822,7 @@ export function DrawingEditor() {
         <DrawingMenuBar
           tool={tool}
           onToolChange={setTool}
-          selectedCount={selectedIds.length}
+          selectedCount={selectionCount(selection)}
           onUndo={handleUndo}
           onRedo={handleRedo}
           canUndo={canUndo}
@@ -626,68 +831,70 @@ export function DrawingEditor() {
           onCut={handleCut}
           onCopy={handleCopy}
           onPaste={handlePaste}
-          hasClipboard={hasClipboard}
+          hasClipboard={clipboard !== null}
           onDelete={handleDelete}
           onDuplicate={handleDuplicate}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
-          onResetZoom={handleZoomReset}
-          onFitToScreen={handleZoomReset}
+          onResetZoom={() => handleZoomChange(100)}
+          onFitToScreen={handleFitToScreen}
           onToggleLock={handleToggleLock}
           onExport={() => setShowExport(true)}
           onVersionHistory={() => setShowVersionHistory(true)}
-          showGrid={showGrid}
-          onToggleGrid={() => setShowGrid((v) => !v)}
+          onAddImage={() => setShowImagePicker(true)}
+          onGroup={handleGroup}
+          onUngroup={handleUngroup}
+          canGroup={canGroup}
+          canUngroup={canUngroup}
+          onBringForward={() => reorder(-1)}
+          onSendBackward={() => reorder(1)}
+          showGrid={doc.grid.visible}
+          onToggleGrid={() => applyDocument(setGrid(doc, { visible: !doc.grid.visible }))}
           titleInputRef={titleInputRef}
         />
         <input
           ref={titleInputRef}
           className={styles.titleInput}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => setTitleState(e.target.value)}
           onBlur={handleTitleBlur}
           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
           aria-label="Drawing title"
         />
       </div>
+
       <div className={styles.editorBody}>
-        <DrawingToolbar tool={tool} onToolChange={setTool} />
+        <DrawingToolbar tool={tool} onToolChange={setTool} onAddImage={() => setShowImagePicker(true)} />
         <LayersPanel
-          shapes={shapes}
-          selectedIds={selectedIds}
-          layers={layers}
+          doc={doc}
+          onDocumentChange={applyDocument}
+          selection={selection}
+          onSelectionChange={setSelection}
           activeLayerId={activeLayerId}
-          onSelectIds={setSelectedIds}
-          onSetActiveLayer={setActiveLayerId}
-          onAddLayer={handleAddLayer}
-          onDeleteLayer={handleDeleteLayer}
-          onRenameLayer={handleRenameLayer}
-          onToggleLayerHide={handleToggleLayerHide}
-          onToggleLayerLock={handleToggleLayerLock}
-          onMoveShapeToLayer={handleMoveShapeToLayer}
-          onReorderLayers={handleReorderLayers}
-          onToggleLock={handleToggleLockById}
+          onActiveLayerChange={setActiveLayerId}
+          onAddImageLayer={() => setShowImagePicker(true)}
         />
         <div className={styles.canvasArea}>
           <DrawingCanvas
             ref={canvasRef}
-            shapes={shapes}
+            doc={doc}
+            onDocumentChange={applyDocument}
             tool={tool}
-            selectedIds={selectedIds}
-            onShapesChange={setShapes}
-            onSelectionChange={setSelectedIds}
-            onTransformChange={handleTransformChange}
-            showGrid={showGrid}
-            layers={layers}
+            onToolChange={setTool}
+            selection={selection}
+            onSelectionChange={setSelection}
             activeLayerId={activeLayerId}
+            newObjectStyle={newObjectStyle}
+            onTransformChange={handleTransformChange}
+            bitmaps={bitmaps}
           />
         </div>
         <StylePanel
-          shapes={shapes}
-          selectedIds={selectedIds}
-          onStyleChange={handleStyleChange}
-          onToggleLock={handleToggleLock}
-          onFetchDriveImages={handleFetchDriveImages}
+          doc={doc}
+          onDocumentChange={applyDocument}
+          selection={selection}
+          newObjectStyle={newObjectStyle}
+          onNewObjectStyleChange={setNewObjectStyle}
         />
         {showVersionHistory && drawingId && (
           <div className={styles.versionHistoryPanel}>
@@ -702,18 +909,31 @@ export function DrawingEditor() {
           </div>
         )}
       </div>
+
       <StatusBar
-        zoom={Math.round(scale * 100)}
+        zoom={zoom}
         onZoomChange={handleZoomChange}
-        onFitToScreen={handleZoomReset}
+        onFitToScreen={handleFitToScreen}
+        canvasSize={`${doc.canvas.width} × ${doc.canvas.height}`}
+        empty={isDocumentEmpty(doc)}
       />
+
       {showExport && (
         <ExportDialog
-          shapes={shapes}
-          title={title}
+          doc={doc}
           onClose={() => setShowExport(false)}
           onExportPNG={handleExportPNG}
           onExportSVG={handleExportSVG}
+          onExportORA={handleExportORA}
+        />
+      )}
+
+      {showImagePicker && (
+        <InsertImageDialog
+          onInsert={handleInsertImage}
+          onClose={() => setShowImagePicker(false)}
+          title="Insert image layer"
+          confirmLabel="Add layer"
         />
       )}
     </div>

@@ -25,6 +25,16 @@
 //! Drawing and Diagrams have no OOXML counterpart, so their JSON is not a
 //! legacy format the way the bespoke office bodies were.
 //!
+//! Drawing nonetheless has **no seed**, for the same reason the OOXML types do
+//! not. A drawing is a layer tree whose every node carries a UUID, and a
+//! constant here would give every drawing ever created the same layer ids — and
+//! would be plaintext in object storage until the first save sealed it. The
+//! editor opens an empty body as a new document and immediately saves one,
+//! encrypted, which is both the seed and the sealing in one step. Its portable
+//! export is OpenRaster (`.ora`), which is not in this table either and for the
+//! same reason `image/svg+xml` is not: most `.ora` files are not ours, and the
+//! reader that would make one openable here is still to come.
+//!
 //! Diagrams is nonetheless not limited to it: a diagram can also be saved as a
 //! plain `image/svg+xml`, with the document carried inside the file in a
 //! `<metadata>` element so the picture anything can render and the diagram this
@@ -66,9 +76,6 @@ pub const PPTX: &str = "application/vnd.openxmlformats-officedocument.presentati
 // editor would have to special-case. These are the same constants the
 // per-app create paths used before they were collapsed into drive.
 
-/// Default drawing: one empty canvas.
-const EMPTY_DRAWING_CONTENT: &str = r#"{"version":1,"shapes":[]}"#;
-
 /// Default diagram: one blank page.
 const EMPTY_DIAGRAM_CONTENT: &str = r#"{"version":1,"pages":[{"id":"page-1","name":"Page 1","shapes":[],"connectors":[]}],"viewport":{"x":0,"y":0,"zoom":1}}"#;
 
@@ -89,7 +96,7 @@ pub const NATIVE_TYPES: &[NativeType] = &[
     // ── The canvas apps' own JSON, which is the only format they have ─────
     NativeType {
         mime_type: DRAWING,
-        default_content: EMPTY_DRAWING_CONTENT,
+        default_content: "",
     },
     NativeType {
         mime_type: DIAGRAM,
@@ -125,6 +132,23 @@ mod tests {
         for mime in [DOCX, XLSX, PPTX] {
             assert_eq!(lookup(mime).unwrap().default_content, "");
         }
+    }
+
+    /// So does drawing, since this version. Its document is a tree of nodes with
+    /// generated UUIDs: a constant seed would hand every drawing in the system
+    /// the same layer ids, and would sit in storage in the clear until the first
+    /// save replaced it.
+    #[test]
+    fn drawings_are_seeded_by_the_client() {
+        assert_eq!(lookup(DRAWING).unwrap().default_content, "");
+    }
+
+    /// OpenRaster is what a drawing *exports* to, not what it is stored as.
+    /// Registering it would claim every uploaded `.ora` as a Neutrino document
+    /// and seed newly created ones with a body that is not a zip.
+    #[test]
+    fn openraster_is_not_a_native_type() {
+        assert!(lookup("image/openraster").is_none());
     }
 
     /// Opening a document is dispatched on its mime type, and a `.docx` is a

@@ -55,8 +55,10 @@ import { numToAlpha } from '@/app/(apps)/sheets/editor/utils';
 import { EmbeddedDiagramView } from '@/app/(apps)/diagrams/editor/EmbeddedDiagramView';
 import type { DiagramDocument } from '@/app/(apps)/diagrams/types';
 
-import { shapeToSVGElement, contentBounds } from '@/app/(apps)/drawing/editor/DrawingCanvas';
-import type { DrawingContent } from '@/app/(apps)/drawing/editor/types';
+import { parseDocument as parseDrawing } from '@/app/(apps)/drawing/editor/document/serialize';
+import { documentToSvg as drawingToSvg } from '@/app/(apps)/drawing/editor/render/documentSvg';
+import { isDocumentEmpty as drawingIsEmpty } from '@/app/(apps)/drawing/editor/document/tree';
+import { readStoredBody } from '@/lib/storedBody';
 
 import styles from './DocumentPreviewModal.module.css';
 
@@ -600,6 +602,12 @@ function DiagramPreview({ id }: { id: string }) {
 // ── Drawing preview ───────────────────────────────────────────────────────────
 
 function DrawingPreview({ id }: { id: string }) {
+  // Drawings are E2EE like every other document (issue #95). This preview used
+  // to read the body as plaintext with a comment saying drawings were the
+  // exception, which stopped being true when the editor started encrypting
+  // them — so every encrypted drawing previewed as "could not parse".
+  const { dekRef, dekResolved } = useEncryptedDocumentContent({ id, filename: 'drawing.json' });
+
   const { data: drawing } = useQuery({
     queryKey: ['drawing', id],
     queryFn: () => drawingApi.getDrawing(id),
@@ -607,12 +615,16 @@ function DrawingPreview({ id }: { id: string }) {
     enabled: !!id,
   });
 
-  // Drawing content is not E2EE (see DrawingEditor.tsx's load path), so the
-  // preview reads it the same way the editor does — no dekRef/decrypt step.
   const { data: content, isLoading, isError } = useQuery({
-    queryKey: ['drawing-content-preview', id, drawing?.contentUrl ?? ''],
-    queryFn: () => driveReadContent(drawing!.contentUrl),
-    enabled: !!drawing?.contentUrl,
+    queryKey: ['drawing-content-preview', id, dekResolved],
+    queryFn: async () => {
+      const blob = await storageApi.downloadFile(id);
+      const stored = new Uint8Array(await blob.arrayBuffer());
+      // `readStoredBody` decides from the bytes whether the body is ciphertext,
+      // so a drawing seeded before its first save still previews.
+      return readStoredBody(stored, dekRef.current ?? new Uint8Array(32)).text;
+    },
+    enabled: !!drawing && dekResolved,
     staleTime: 0,
   });
 
@@ -625,7 +637,7 @@ function DrawingPreview({ id }: { id: string }) {
     );
   }
 
-  if (isLoading || !content) {
+  if (isLoading || content == null) {
     return (
       <div className={styles.centered}>
         <Spinner size="lg" />
@@ -633,10 +645,8 @@ function DrawingPreview({ id }: { id: string }) {
     );
   }
 
-  let drawingContent: DrawingContent | null = null;
-  try {
-    drawingContent = JSON.parse(content) as DrawingContent;
-  } catch {
+  const doc = parseDrawing(content);
+  if (!doc) {
     return (
       <div className={styles.centered}>
         <Text color="muted">Could not parse drawing content.</Text>
@@ -644,9 +654,7 @@ function DrawingPreview({ id }: { id: string }) {
     );
   }
 
-  const shapes = (drawingContent?.shapes ?? []).filter((s) => !s.hidden);
-  const bounds = contentBounds(shapes);
-  if (!bounds) {
+  if (drawingIsEmpty(doc)) {
     return (
       <div className={styles.centered}>
         <Text color="muted">This drawing is empty.</Text>
@@ -654,25 +662,20 @@ function DrawingPreview({ id }: { id: string }) {
     );
   }
 
-  const pad = 24;
-  const x = bounds.x - pad;
-  const y = bounds.y - pad;
-  const w = Math.max(1, bounds.w + pad * 2);
-  const h = Math.max(1, bounds.h + pad * 2);
-  const els = shapes.map(shapeToSVGElement).filter(Boolean).join('\n');
+  // The same renderer the editor exports with, so the preview and the file
+  // agree. `<img>` rather than inline markup: the SVG carries layer names and
+  // text straight from the document, and injecting that into the page would
+  // make a drawing's own content a script vector.
+  const svg = drawingToSvg(doc);
+  const src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
 
   return (
     <div className={styles.canvasWrapper}>
       <div className={styles.canvasFrame}>
-        <svg
-          width="100%"
-          height="100%"
-          viewBox={`${x} ${y} ${w} ${h}`}
-          preserveAspectRatio="xMidYMid meet"
-          // Built from shapeToSVGElement (see DrawingCanvas.tsx), which serializes
-          // structurally-typed Shape fields, not user-supplied HTML.
-          // eslint-disable-next-line react/no-danger
-          dangerouslySetInnerHTML={{ __html: els }}
+        <img
+          src={src}
+          alt={doc.metadata.title}
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
         />
       </div>
     </div>
