@@ -31,6 +31,50 @@
   height: 100vh;
 }
 
+/* An SVG this editor did not write: the picture, and the two ways forward. */
+.foreign {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4, 16px);
+  height: 100vh;
+  padding: var(--space-6, 24px);
+  text-align: center;
+}
+
+.foreignPreview {
+  max-width: min(420px, 60vw);
+  max-height: 40vh;
+  object-fit: contain;
+  padding: var(--space-4, 16px);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  /* The file may be transparent or drawn for a light ground, so it is given one
+     rather than being read against whatever the theme happens to be. */
+  background: #ffffff;
+}
+
+.foreignTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #0f172a);
+}
+
+.foreignBody {
+  max-width: 46ch;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary, #64748b);
+}
+
+.foreignActions {
+  display: flex;
+  gap: var(--space-2, 8px);
+}
+
 .disabled {
   display: flex;
   align-items: center;

@@ -23,7 +23,19 @@
 //! readable without Neutrino.
 //!
 //! Drawing and Diagrams have no OOXML counterpart, so their JSON is not a
-//! legacy format but the only one they have.
+//! legacy format the way the bespoke office bodies were.
+//!
+//! Diagrams is nonetheless not limited to it: a diagram can also be saved as a
+//! plain `image/svg+xml`, with the document carried inside the file in a
+//! `<metadata>` element so the picture anything can render and the diagram this
+//! app reopens are the same file. That type is deliberately **not** in the
+//! table below. Membership here means "a file of this type is a Neutrino
+//! document", and most SVGs are not — an SVG is a general image type, and
+//! seeding every newly created one with a blank diagram body, or claiming every
+//! uploaded one as a native document, would both be wrong. Which format a
+//! diagram file is in is read from its mime type by the client
+//! (`packages/api-diagrams`), and the SVG one is created with no seed at all,
+//! exactly as the OOXML types are.
 
 /// A document type Neutrino edits natively.
 pub struct NativeType {
@@ -130,6 +142,19 @@ mod tests {
         // Legacy binary Office formats are not OOXML and nothing here reads them.
         assert!(lookup("application/vnd.ms-excel").is_none());
         assert!(lookup("application/msword").is_none());
+    }
+
+    /// A diagram can be *stored* as an SVG, and it is still not a native type.
+    ///
+    /// Membership here means "a file of this type is a Neutrino document", and
+    /// most SVGs are somebody's logo. Registering it would seed every newly
+    /// created SVG with a blank diagram body — which is not even an SVG, so the
+    /// file would be born unreadable by anything, this app included. The
+    /// SVG-stored diagram is created with no seed and the client writes the
+    /// first body, exactly as the OOXML types do.
+    #[test]
+    fn the_svg_a_diagram_can_be_stored_as_is_not_a_native_type() {
+        assert!(lookup("image/svg+xml").is_none());
     }
 
     #[test]

@@ -20,6 +20,7 @@ import { getShapeAtPoint, getShapesInRect, buildConnectorPath, getConnectorEndpo
 import { getShapePath } from './shapes/ShapeLibrary';
 import { ShapeFillDefs, useFillImages } from './ShapeFillDefs';
 import { fillDefFor, fillPaint } from './utils/shapeFill';
+import { freehandStrokePath, freehandStrokePaint } from './diagramSvg';
 import styles from './DiagramCanvas.module.css';
 
 // ---------------------------------------------------------------------------
@@ -641,35 +642,26 @@ function ConnectorRenderer({ connector, shapes, selected, shiftHeld, onMouseDown
 // Freehand stroke renderer
 // ---------------------------------------------------------------------------
 
+// The path and the per-tool paint come from `diagramSvg`, which is also what
+// draws a stroke into an exported or saved SVG — a second copy here is how the
+// two drift apart.
 function StrokeRenderer({ stroke }: { stroke: FreehandStroke }) {
-  const pts = stroke.points;
-  if (pts.length < 4) return null;
+  const d = freehandStrokePath(stroke);
+  if (!d) return null;
+  const paint = freehandStrokePaint(stroke);
 
-  let d = `M ${pts[0]} ${pts[1]}`;
-  for (let i = 2; i < pts.length - 2; i += 2) {
-    const mx = (pts[i] + pts[i + 2]) / 2;
-    const my = (pts[i + 1] + pts[i + 3]) / 2;
-    d += ` Q ${pts[i]} ${pts[i + 1]} ${mx} ${my}`;
-  }
-  d += ` L ${pts[pts.length - 2]} ${pts[pts.length - 1]}`;
-
-  const strokeProps: React.SVGProps<SVGPathElement> = {
-    d,
-    fill: 'none',
-    stroke: stroke.color,
-    strokeWidth: stroke.width,
-    opacity: stroke.opacity,
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-  };
-
-  if (stroke.tool === 'highlighter') {
-    return <path {...strokeProps} strokeWidth={stroke.width * 2} opacity={0.35} />;
-  }
-  if (stroke.tool === 'pencil') {
-    return <path {...strokeProps} strokeDasharray="1 1" />;
-  }
-  return <path {...strokeProps} />;
+  return (
+    <path
+      d={d}
+      fill="none"
+      stroke={stroke.color}
+      strokeWidth={paint.strokeWidth}
+      opacity={paint.opacity}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeDasharray={paint.dash ?? undefined}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------

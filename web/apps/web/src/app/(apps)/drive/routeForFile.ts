@@ -12,6 +12,20 @@ import { officeAppForFile, OOXML_MIME } from '@/lib/officeFormats';
 // below, so they have no entry of their own here. The bespoke JSON that
 // predated OOXML held no files and is gone.
 export const DIAGRAM_MIME = 'application/x-neutrino-diagram';
+/**
+ * A diagram can also be saved as a plain `.svg`, and an SVG is the one image
+ * type Neutrino can *edit* rather than only view — the diagrams canvas is a
+ * vector editor and the photo editor is a raster one, which can do nothing with
+ * an SVG but show it. So SVG opens in Diagrams, ahead of the `image/` rule
+ * below that sends every other picture to Photos.
+ *
+ * An SVG that was not written here opens as a blank canvas rather than as its
+ * own picture: the editor is about to save over the file, and re-deriving
+ * shapes from arbitrary markup is guesswork. Import (which does not overwrite
+ * anything) is where a foreign SVG becomes something to draw on — see
+ * `diagrams/editor/io/svgFormat.ts`.
+ */
+export const SVG_MIME = 'image/svg+xml';
 export const DRAWING_MIME = 'application/x-neutrino-drawing';
 /**
  * A note is a Markdown file, and it says so: notes are stored as Markdown and
@@ -37,6 +51,7 @@ export interface RouteForFileOptions {
 
 const NATIVE_ROUTE_PREFIX: Record<string, string> = {
   [DIAGRAM_MIME]: '/diagrams/editor?id=',
+  [SVG_MIME]: '/diagrams/editor?id=',
   [DRAWING_MIME]: '/drawing/editor?id=',
   [NOTE_MIME]: '/notes/editor?id=',
 };

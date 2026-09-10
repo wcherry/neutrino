@@ -44,6 +44,7 @@ import type { AlignDirection } from './utils/shapeUtils';
 import type { LayoutAlgorithm } from './layout/layoutEngine';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { DiagramHamburgerMenu } from './DiagramHamburgerMenu';
+import type { DiagramFormat } from '@neutrino/api-diagrams';
 import styles from './DiagramToolbar.module.css';
 
 export interface TextDefaults {
@@ -95,6 +96,9 @@ interface DiagramToolbarProps {
   onTextDefaultsChange: (changes: Partial<TextDefaults>) => void;
   onBack: () => void;
   onNewDiagram: () => void;
+  /** The format the open file is stored in; shown on the menu's Save entry. */
+  format: DiagramFormat;
+  onSaveAs: (format: DiagramFormat) => void;
   onDuplicate: () => void;
   onDeleteClick: () => void;
 }
@@ -122,6 +126,8 @@ export function DiagramToolbar({
   onTextDefaultsChange,
   onBack,
   onNewDiagram,
+  format,
+  onSaveAs,
   onDuplicate,
   onDeleteClick,
 }: DiagramToolbarProps) {
@@ -148,6 +154,8 @@ export function DiagramToolbar({
         <DiagramHamburgerMenu
           onNew={onNewDiagram}
           onSave={onSave}
+          format={format}
+          onSaveAs={onSaveAs}
           onDuplicate={onDuplicate}
           onDeleteClick={onDeleteClick}
         />

@@ -33,7 +33,10 @@ export interface SaveAsBreadcrumb {
 
 export interface SaveAsDialogProps {
   defaultFilename: string;
-  /** One of: 'pdf' | 'docx' | 'html' | 'txt' — controls security section visibility and labels. */
+  /**
+   * One of: 'pdf' | 'docx' | 'html' | 'txt' | 'ndiagram' | 'svg' — controls
+   * security section visibility and labels.
+   */
   format: string;
   onSave: (opts: SaveAsOptions) => Promise<void>;
   onClose: () => void;
@@ -54,6 +57,11 @@ const FORMAT_LABELS: Record<string, string> = {
   docx: 'Word Document (.docx)',
   html: 'HTML File (.html)',
   txt:  'Plain Text (.txt)',
+  // Both formats a diagram can be stored in. The SVG carries the diagram
+  // inside it, so it is a picture *and* a file that reopens here — the label
+  // says so, because "SVG" alone reads as a one-way export.
+  ndiagram: 'Neutrino Diagram (.json)',
+  svg:  'SVG Image (.svg) — reopens in Diagrams',
 };
 
 // ── Component ───────────────────────────────────────────────────────────────

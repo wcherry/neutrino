@@ -26,6 +26,7 @@ vi.mock('@neutrino/api-core', () => ({
 
 import { request, ApiClientError } from '@neutrino/api-core';
 import { diagramsApi, DIAGRAM_MIME_TYPE } from '../../app/(apps)/diagrams/api';
+import { DIAGRAM_SVG_MIME_TYPE } from '@neutrino/api-diagrams';
 
 const mockRequest = request as ReturnType<typeof vi.fn>;
 
@@ -74,6 +75,20 @@ describe('diagramsApi.createDiagram', () => {
     await expect(diagramsApi.createDiagram({ title: '   ' })).rejects.toThrow();
     expect(mockRequest).not.toHaveBeenCalled();
   });
+
+  /**
+   * A diagram can also be stored as a plain `.svg`. The mime type is the whole
+   * of that decision — it is what the editor reads the format back off, and
+   * what stops the server seeding the file with a JSON body that is not an SVG.
+   */
+  it('POSTs the SVG mime type when asked for that format', async () => {
+    mockRequest.mockResolvedValue({ ...fakeDriveFile, mimeType: DIAGRAM_SVG_MIME_TYPE });
+    const result = await diagramsApi.createDiagram({ title: 'My Diagram', format: 'svg' });
+
+    const body = JSON.parse(mockRequest.mock.calls[0][1].body);
+    expect(body.mimeType).toBe(DIAGRAM_SVG_MIME_TYPE);
+    expect(result.format).toBe('svg');
+  });
 });
 
 describe('diagramsApi.getDiagram', () => {
@@ -92,11 +107,25 @@ describe('diagramsApi.getDiagram', () => {
    * file is not a diagram. Without this the editor would open a PDF as a blank
    * canvas rather than reporting it missing.
    */
-  it('404s for a file that exists but is not a native diagram', async () => {
+  it('404s for a file that exists but is neither format a diagram is stored in', async () => {
     mockRequest.mockResolvedValue({ ...fakeDriveFile, mimeType: 'application/pdf' });
 
     await expect(diagramsApi.getDiagram('diag-1')).rejects.toMatchObject({ statusCode: 404 });
     expect(ApiClientError).toBeDefined();
+  });
+
+  /**
+   * The format decides which body the editor writes back, so getting it from
+   * the mime type — rather than assuming the native one — is what keeps a
+   * `.svg` in Drive from quietly starting to hold JSON.
+   */
+  it.each([
+    [DIAGRAM_MIME_TYPE, 'diagram'],
+    [DIAGRAM_SVG_MIME_TYPE, 'svg'],
+  ])('reports %s as the %s format', async (mimeType, expected) => {
+    mockRequest.mockResolvedValue({ ...fakeDriveFile, mimeType });
+    const result = await diagramsApi.getDiagram('diag-1');
+    expect(result.format).toBe(expected);
   });
 
   /**
@@ -132,16 +161,27 @@ describe('diagramsApi.saveDiagram', () => {
 });
 
 describe('diagramsApi.listDiagrams', () => {
-  it('lists drive files filtered to the native diagram mime type', async () => {
+  it('lists drive files filtered to both formats a diagram is stored in', async () => {
     mockRequest.mockResolvedValue({ files: [fakeDriveFile] });
     const result = await diagramsApi.listDiagrams();
 
     const url = mockRequest.mock.calls[0][0] as string;
     expect(url.startsWith('/api/v1/drive/files?')).toBe(true);
-    expect(decodeURIComponent(url)).toContain(`mimeType=${DIAGRAM_MIME_TYPE}`);
+    // One request, not two: `mimeType` takes a comma-separated list.
+    expect(decodeURIComponent(url)).toContain(
+      `mimeType=${DIAGRAM_MIME_TYPE},${DIAGRAM_SVG_MIME_TYPE}`,
+    );
     expect(result.diagrams).toHaveLength(1);
     expect(result.diagrams[0].id).toBe('diag-1');
     expect(result.diagrams[0].title).toBe('My Diagram');
+  });
+
+  it('carries each listed diagram\u2019s format, so the two are tellable apart', async () => {
+    mockRequest.mockResolvedValue({
+      files: [fakeDriveFile, { ...fakeDriveFile, id: 'diag-2', mimeType: DIAGRAM_SVG_MIME_TYPE }],
+    });
+    const result = await diagramsApi.listDiagrams();
+    expect(result.diagrams.map((d) => d.format)).toEqual(['diagram', 'svg']);
   });
 
   it('tolerates a response with no files array', async () => {
