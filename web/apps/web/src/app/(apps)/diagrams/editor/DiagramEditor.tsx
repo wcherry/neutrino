@@ -358,14 +358,26 @@ export function DiagramEditor() {
           // an empty diagram over the file. So the editor refuses it and offers
           // to build a new diagram around it instead (`foreignSvg`).
           //
-          // A *zero-byte* SVG is not that: it is a file this editor created and
-          // has not written a body to yet, and it opens blank as it should.
-          if (diagram.format === 'svg' && raw!.trim() && !parseSvgDiagram(raw!)) {
+          // The test is `looksLikeSvg`, not "there are bytes here that did not
+          // parse", and the difference is load-bearing. This query runs once
+          // before the DEK is in hand — the hook resolves `dekResolved` true
+          // with no key while auth is still loading — and that pass reads the
+          // stored *ciphertext* as text through the branch above. Ciphertext is
+          // bytes that do not parse, so the looser test called every encrypted
+          // SVG diagram somebody else's artwork and refused to open it; it
+          // cannot start with `<svg`, so this one does not. A zero-byte body
+          // (created here, not yet written to) is excluded for the same reason.
+          if (diagram.format === 'svg' && looksLikeSvg(raw!) && !parseSvgDiagram(raw!)) {
             sealPlaintextRef.current = false;
             foreignSvgRef.current = raw!;
             setForeignSvg(raw!);
             return diagram;
           }
+          // Not foreign — and say so, rather than leaving a verdict from an
+          // earlier read standing. The keyless pass above is a read of this
+          // same file that could not see what it holds.
+          foreignSvgRef.current = null;
+          setForeignSvg(null);
           const doc = parseDocument(raw!);
           editor.setDocument(doc);
           // An SVG shows one page, and that is the page to reopen on — the

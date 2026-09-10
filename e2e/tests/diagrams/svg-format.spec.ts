@@ -139,7 +139,14 @@ test.describe('Diagrams — the SVG storage format', () => {
       timeout: 5_000,
     });
     await page.getByRole('button', { name: 'Neutrino Drive' }).click();
+    // The copy's record is created before its body is written, so waiting on
+    // the listing alone would race the content — wait for the write itself.
+    const written = page.waitForResponse(
+      (r) => /\/autosave(\?|$)/.test(r.url()) && r.request().method() === 'PUT' && r.ok(),
+      { timeout: 20_000 },
+    );
     await page.getByRole('button', { name: 'Save to Drive' }).click();
+    await written;
 
     // The copy is a Drive file carrying the SVG mime type — not a private one.
     let copies: Array<{ id: string; name: string }> = [];

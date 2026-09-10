@@ -43,10 +43,13 @@ vi.mock('@neutrino/ui', () => ({
 
 // Hoisted: `vi.mock` factories run before the module body, so a plain `const`
 // here would not exist yet when the factory below closes over it.
-const { autosaveEncryptedContent, createDiagram, getDiagram } = vi.hoisted(() => ({
+const { autosaveEncryptedContent, createDiagram, getDiagram, dek } = vi.hoisted(() => ({
   autosaveEncryptedContent: vi.fn(() => Promise.resolve({ contentVersion: 2 })),
   createDiagram: vi.fn(),
   getDiagram: vi.fn(),
+  // Mutable so a test can put the editor in the state it is in before the key
+  // arrives: `dekResolved` true, no key. Set `dek.current = null` for that.
+  dek: { current: new Uint8Array(32) as Uint8Array | null },
 }));
 
 vi.mock('@neutrino/api-diagrams', async () => {
@@ -94,7 +97,7 @@ vi.mock('@/lib/api', () => ({
 
 vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
   useEncryptedDocumentContent: () => ({
-    dekRef: { current: new Uint8Array(32) },
+    dekRef: dek,
     dekResolved: true,
     isNewEncryption: true,
     awaitDek: vi.fn(async () => new Uint8Array(32)),
@@ -266,6 +269,64 @@ describe('DiagramEditor — an SVG it did write', () => {
 
     await waitFor(() => expect(screen.getByTestId('diagram-canvas')).toBeTruthy());
     expect(screen.queryByText(/will not save over it/i)).toBeNull();
+  });
+});
+
+/**
+ * The editor reads the file once before the DEK is in hand — the hook resolves
+ * `dekResolved` true with no key while auth is still loading — and that read
+ * goes through the plaintext `contentUrl` branch, so what it gets back is the
+ * stored *ciphertext* as text.
+ *
+ * Those are bytes that do not parse as a diagram. Treating that as "somebody
+ * else's artwork" made every encrypted SVG diagram unopenable: the refusal
+ * latched, and the later read that could actually decrypt the file arrived too
+ * late to undo it. Ciphertext cannot start with `<svg`, which is what separates
+ * the two.
+ */
+describe('DiagramEditor — an SVG it cannot read yet', () => {
+  const realFetch = global.fetch;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serve('svg-file-id', 'svg');
+    // No key: exactly the state of the first read, which then fetches the
+    // stored bytes directly and gets ciphertext.
+    dek.current = null;
+  });
+
+  afterEach(() => {
+    dek.current = new Uint8Array(32);
+    global.fetch = realFetch;
+  });
+
+  it('does not call undecryptable bytes a foreign SVG', async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      text: async () => '\u00a7ciphertext-not-markup\u00ff',
+    })) as unknown as typeof fetch;
+
+    render(React.createElement(DiagramEditor), { wrapper: makeWrapper() });
+
+    await waitFor(() => expect(screen.getByTestId('diagram-canvas')).toBeTruthy());
+    expect(screen.queryByText(/will not save over it/i)).toBeNull();
+  });
+
+  /**
+   * The other half of the same rule: a *plaintext* foreign SVG read on that
+   * same keyless pass is still refused. Narrowing the test to `looksLikeSvg`
+   * must not have narrowed away the protection it exists for.
+   */
+  it('still refuses a foreign SVG it can read', async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      text: async () => FOREIGN_SVG,
+    })) as unknown as typeof fetch;
+
+    render(React.createElement(DiagramEditor), { wrapper: makeWrapper() });
+
+    await waitFor(() => expect(screen.getByText(/will not save over it/i)).toBeTruthy());
+    expect(screen.queryByTestId('diagram-canvas')).toBeNull();
   });
 });
 
