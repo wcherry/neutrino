@@ -14,14 +14,16 @@
  *    from that point on unopenable.
  *  - Detect the format from the extension when the mimetype is a generic
  *    `application/octet-stream`, which is what a browser reports for an upload.
- *  - Route images to the photo editor.
+ *  - Route images to the photo editor — except SVG, which a diagram can be
+ *    stored as and which the diagrams canvas, alone among the editors, can
+ *    actually draw.
  *  - Call onPreviewFallback for anything else — including legacy
  *    `.doc`/`.xls`/`.ppt`, which `officeAppForFile` never matches, since the
  *    in-browser parsers cannot read them.
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { routeForFile, previewKindForMime } from '../../app/(apps)/drive/routeForFile';
+import { routeForFile, previewKindForMime, hrefForFile } from '../../app/(apps)/drive/routeForFile';
 
 const DOC_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const SHEET_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -119,6 +121,24 @@ describe('routeForFile — images and fallback', () => {
     expect(router.push).toHaveBeenCalledWith('/photos/editor?fileId=file-9');
   });
 
+  /**
+   * SVG is the exception to the rule above, and it has to be checked before it:
+   * a diagram can be *stored* as an SVG, and the diagrams canvas is a vector
+   * editor while the photo editor is a raster one that can only display an SVG.
+   */
+  it('routes an SVG to the diagram editor rather than the photo editor', () => {
+    const router = makeRouter();
+    const opts = makeOpts();
+    routeForFile({ id: 'file-11', mimeType: 'image/svg+xml', name: 'architecture.svg' }, router, opts);
+    expect(router.push).toHaveBeenCalledWith('/diagrams/editor?id=file-11');
+    expect(opts.onPreviewFallback).not.toHaveBeenCalled();
+  });
+
+  it('links an SVG at the diagram editor too', () => {
+    expect(hrefForFile({ id: 'file-11', mimeType: 'image/svg+xml', name: 'a.svg' }))
+      .toBe('/diagrams/editor?id=file-11');
+  });
+
   it('calls onPreviewFallback for an unrelated file type', () => {
     const router = makeRouter();
     const opts = makeOpts();
@@ -166,6 +186,15 @@ describe('previewKindForMime', () => {
   it('resolves images to the "image" preview kind', () => {
     expect(previewKindForMime('image/png')).toBe('image');
     expect(previewKindForMime('image/jpeg')).toBe('image');
+  });
+
+  /**
+   * An SVG *opens* in Diagrams but previews as a picture: the diagram preview
+   * renderer draws a stored document's pages, and an SVG in Drive may not hold
+   * one at all — while every SVG is, by definition, an image.
+   */
+  it('previews an SVG as an image even though it opens in Diagrams', () => {
+    expect(previewKindForMime('image/svg+xml')).toBe('image');
   });
 
   it('returns null for types with no dedicated preview renderer', () => {

@@ -110,6 +110,11 @@ export default function DiagramsPage() {
                     day: 'numeric',
                     year: 'numeric',
                   })}
+                  {/* Only the one that is not the default is worth a badge:
+                      saying "Neutrino diagram" on every other card would be
+                      noise, and what a reader needs to know is which of these
+                      files is also a picture anything can open. */}
+                  {d.format === 'svg' && <span className={styles.formatBadge}>SVG</span>}
                 </div>
               </div>
             </div>

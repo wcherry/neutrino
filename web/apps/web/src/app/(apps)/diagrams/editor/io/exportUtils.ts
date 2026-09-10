@@ -1,3 +1,4 @@
+import { embedDiagramSource } from '@neutrino/api-diagrams';
 import type { DiagramDocument, DiagramPage, DiagramShape, DiagramConnector } from '../../types';
 
 function addDotGridToSVG(clone: SVGSVGElement, x: number, y: number, w: number, h: number): void {
@@ -182,6 +183,19 @@ async function rasterizeCropped(
 export function exportJSON(doc: DiagramDocument): Blob {
   const json = JSON.stringify(doc, null, 2);
   return new Blob([json], { type: 'application/json' });
+}
+
+/**
+ * An exported SVG with the diagram itself inside it, so the download can be
+ * dragged back into the editor and come back whole.
+ *
+ * The picture is untouched — the payload is a `<metadata>` element every SVG
+ * reader skips — so this costs the export nothing and turns what used to be a
+ * one-way image into a file the Import dialog and Drive both understand. See
+ * `io/svgFormat.ts` for the format.
+ */
+export function withDiagramSource(svg: string, doc: DiagramDocument): string {
+  return embedDiagramSource(svg, JSON.stringify(doc));
 }
 
 export function exportMermaid(page: DiagramPage): string {

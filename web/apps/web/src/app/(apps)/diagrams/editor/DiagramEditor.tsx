@@ -8,14 +8,19 @@ import React, {
 } from 'react';
 import type { ExportFormat, RasterSize } from './io/ExportDialog';
 import { RASTER_SIZE_SCALE } from './io/ExportDialog';
-import { exportPNGCropped, exportJPEGCropped, exportSVGCropped, triggerDownload } from './io/exportUtils';
+import { exportPNGCropped, exportJPEGCropped, exportSVGCropped, triggerDownload, withDiagramSource } from './io/exportUtils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spinner, useToast, Modal, ModalHeader, ModalBody, ModalFooter, Button } from '@neutrino/ui';
-import { diagramsApi, extractDiagramText } from '@neutrino/api-diagrams';
+import {
+  diagramsApi,
+  extractDiagramText,
+  DIAGRAM_CONTENT_FILENAME,
+  type DiagramFormat,
+} from '@neutrino/api-diagrams';
 import { authApi, useUser } from '@neutrino/auth';
 import { readStoredBody } from '@/lib/storedBody';
-import { storageApi, type FileItem } from '@/lib/api';
+import { storageApi, encryptionApi, type FileItem } from '@/lib/api';
 import { ShareDialog } from '@/app/(apps)/drive/ShareDialog';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { indexOnSave } from '@/lib/searchIndexUpdate';
@@ -31,6 +36,17 @@ import { CommentsPanel } from './collab/CommentsPanel';
 import { DataPanel } from './data/DataPanel';
 import { ExportDialog } from './io/ExportDialog';
 import { ImportDialog } from './io/ImportDialog';
+import {
+  diagramDocumentToSvg,
+  looksLikeSvg,
+  parseSvgDiagram,
+  svgAsImageDocument,
+  svgDataUrl,
+  svgPictureIndex,
+  type SvgBackedDocument,
+} from './io/svgFormat';
+import { resolveFillImages } from './utils/fillImages';
+import { SaveAsDialog, type SaveAsOptions } from '@/components/SaveAsDialog';
 import { MermaidPanel } from './developer/MermaidPanel';
 import { AiDiagramPanel } from './ai/AiDiagramPanel';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
@@ -61,7 +77,17 @@ function makeEmptyDocument(): DiagramDocument {
   };
 }
 
+/**
+ * A stored body as a document, in either format.
+ *
+ * An SVG body is one this editor wrote, so its embedded source is the document;
+ * an SVG *without* one is not something to guess at here — the file is
+ * somebody's picture and this editor is about to save over it, so it opens
+ * blank rather than as an import. Dropping a foreign SVG onto the canvas
+ * through the Import dialog is the path that turns one into a diagram.
+ */
 function parseDocument(raw: string): DiagramDocument {
+  if (looksLikeSvg(raw)) return parseSvgDiagram(raw) ?? makeEmptyDocument();
   try {
     const parsed = JSON.parse(raw) as DiagramDocument;
     if (!parsed.pages || !Array.isArray(parsed.pages)) {
@@ -71,6 +97,32 @@ function parseDocument(raw: string): DiagramDocument {
   } catch {
     return makeEmptyDocument();
   }
+}
+
+/**
+ * The bytes to store for a document, in the format the file is held in.
+ *
+ * An SVG document is one canvas, so its picture is the page that was open when
+ * it was saved, recorded as `svgPageIndex` so reopening the file lands back on
+ * it. Every page is in the embedded source either way — the choice is only
+ * about what a reader outside Neutrino sees.
+ *
+ * Image fills are resolved to data URLs so the file stands alone: an
+ * `<image href>` pointing at a Drive object is a hole in every renderer outside
+ * this app, and outside this app is the reason to save as SVG at all.
+ * `resolveFillImages` caches per session, so this is one fetch per image rather
+ * than one per save.
+ */
+async function serializeDocument(
+  doc: DiagramDocument,
+  format: DiagramFormat,
+  activePageIndex: number,
+): Promise<string> {
+  if (format !== 'svg') return JSON.stringify(doc, null, 0);
+  const backed: SvgBackedDocument = { ...doc, svgPageIndex: activePageIndex };
+  const page = backed.pages[svgPictureIndex(backed)];
+  const images = await resolveFillImages(page?.shapes ?? []);
+  return diagramDocumentToSvg(backed, { images });
 }
 
 // ---------------------------------------------------------------------------
@@ -182,12 +234,33 @@ export function DiagramEditor() {
   const [textDefaults, setTextDefaults] = useState({ fontSize: 14, fontFamily: 'Inter', textColor: '#111827' });
   const [title, setTitle] = useState('Untitled diagram');
   const [titleEditing, setTitleEditing] = useState(false);
+  /**
+   * Which format the open file is stored in. Set from its mime type on load and
+   * never changed after: saving must write back what the file already is, or a
+   * `.svg` in Drive would quietly start holding JSON.
+   */
+  const [format, setFormat] = useState<DiagramFormat>('diagram');
+  const [saveAsFormat, setSaveAsFormat] = useState<DiagramFormat | null>(null);
+  /**
+   * The markup of an SVG that this editor did not write, when that is what the
+   * open file turned out to be. Set means "do not write to this file" — see the
+   * load below and the guards on autosave.
+   */
+  const [foreignSvg, setForeignSvg] = useState<string | null>(null);
+  // The same fact where the save mutation can read it. `mutationFn` closes over
+  // the render that created it, and a save can be in flight before the state
+  // update from the load has re-rendered — which is exactly the save that must
+  // not land, so the ref is written by the load itself rather than by a render.
+  const foreignSvgRef = useRef<string | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [userName, setUserName] = useState('');
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
 
-  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({ id: diagramId, filename: 'diagram.json' });
+  const { dekRef, dekResolved, isNewEncryption } = useEncryptedDocumentContent({
+    id: diagramId,
+    filename: DIAGRAM_CONTENT_FILENAME[format],
+  });
   const toast = useToast();
   // Rejects a save that would overwrite a revision written elsewhere since this
   // diagram was loaded. See `useContentVersionGuard`.
@@ -222,11 +295,28 @@ export function DiagramEditor() {
   // in the clear; cleared by the effect that writes it back encrypted.
   const sealPlaintextRef = useRef(false);
 
+  // Opening another diagram is a navigation, not a remount — `/diagrams/editor`
+  // is one route and only the `id` changes — so everything the last file left
+  // behind has to be cleared by hand. Missing this is not cosmetic: `foreignSvg`
+  // set from the previous file would show its refusal screen over the new
+  // diagram and its ref would block every save to it, which is exactly the path
+  // "Create a diagram from this image" takes.
+  useEffect(() => {
+    foreignSvgRef.current = null;
+    setForeignSvg(null);
+    setFormat('diagram');
+    sealPlaintextRef.current = false;
+  }, [diagramId]);
+
   const { isLoading: contentLoading } = useQuery({
     queryKey: ['diagram', diagramId, dekResolved],
     queryFn: async () => {
+      // Cleared here too, and not only in the effect above: an effect runs after
+      // the render that scheduled it, and this can be in flight by then.
+      foreignSvgRef.current = null;
       const diagram = await diagramsApi.getDiagram(diagramId);
       setTitle(diagram.title);
+      setFormat(diagram.format);
       versionGuard.observe(diagram.contentVersion);
       if (diagram.contentUrl) {
         try {
@@ -240,7 +330,15 @@ export function DiagramEditor() {
             // plaintext body, and the session flag calls that ciphertext. Bytes
             // that neither decrypt nor look like a diagram throw out of here,
             // into the catch below that leaves the canvas empty.
-            const read = readStoredBody(stored, dekRef.current);
+            //
+            // An SVG-stored diagram is not JSON, so the plaintext test has to
+            // know that — otherwise an unencrypted `.svg` reads as ciphertext
+            // that failed to open and the file appears empty.
+            const read = readStoredBody(
+              stored,
+              dekRef.current,
+              diagram.format === 'svg' ? looksLikeSvg : undefined,
+            );
             raw = read.text;
             if (read.wasPlaintext) sealPlaintextRef.current = true;
           } else {
@@ -253,8 +351,40 @@ export function DiagramEditor() {
             if (!res.ok) return diagram;
             raw = await res.text();
           }
+          // An SVG with no diagram inside it is somebody's picture, not a
+          // document this editor owns — a logo, an icon, an export from another
+          // tool. Opening it as a blank canvas would be the last thing that ever
+          // happened to it: the seal below, or the first autosave, would write
+          // an empty diagram over the file. So the editor refuses it and offers
+          // to build a new diagram around it instead (`foreignSvg`).
+          //
+          // The test is `looksLikeSvg`, not "there are bytes here that did not
+          // parse", and the difference is load-bearing. This query runs once
+          // before the DEK is in hand — the hook resolves `dekResolved` true
+          // with no key while auth is still loading — and that pass reads the
+          // stored *ciphertext* as text through the branch above. Ciphertext is
+          // bytes that do not parse, so the looser test called every encrypted
+          // SVG diagram somebody else's artwork and refused to open it; it
+          // cannot start with `<svg`, so this one does not. A zero-byte body
+          // (created here, not yet written to) is excluded for the same reason.
+          if (diagram.format === 'svg' && looksLikeSvg(raw!) && !parseSvgDiagram(raw!)) {
+            sealPlaintextRef.current = false;
+            foreignSvgRef.current = raw!;
+            setForeignSvg(raw!);
+            return diagram;
+          }
+          // Not foreign — and say so, rather than leaving a verdict from an
+          // earlier read standing. The keyless pass above is a read of this
+          // same file that could not see what it holds.
+          foreignSvgRef.current = null;
+          setForeignSvg(null);
           const doc = parseDocument(raw!);
           editor.setDocument(doc);
+          // An SVG shows one page, and that is the page to reopen on — the
+          // file's picture and the editor's canvas then agree.
+          if (diagram.format === 'svg') {
+            editor.setActivePage(svgPictureIndex(doc as SvgBackedDocument));
+          }
         } catch {
           // Use empty document on fetch failure
         }
@@ -278,12 +408,16 @@ export function DiagramEditor() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!diagramId) return null;
+      // The one write this component makes to the open file, so this is where
+      // "never overwrite an SVG we did not author" is enforced — not only in
+      // the callers, which are three effects and two buttons.
+      if (foreignSvgRef.current) return null;
       if (!dekRef.current) throw new Error('no-dek');
-      const content = JSON.stringify(editor.document, null, 0);
+      const content = await serializeDocument(editor.document, format, editor.activePageIndex);
       const meta = await diagramsApi.autosaveEncryptedContent(
         diagramId,
         content,
-        'diagram.json',
+        DIAGRAM_CONTENT_FILENAME[format],
         dekRef.current,
         { title },
         versionGuard.check(),
@@ -314,6 +448,108 @@ export function DiagramEditor() {
         );
       }
     },
+  });
+
+  // ── Save a copy, in either format ──────────────────────────────────────────
+  //
+  // A copy rather than a conversion: the open file keeps the format it is
+  // stored in. Turning a `.svg` into a native diagram in place would rewrite a
+  // file other things may be pointing at — a README, a shared link, an <img>
+  // somewhere — and there is no route back from a mime type once the link is
+  // broken. Saving beside it leaves both.
+
+  const handleSaveAs = useCallback(
+    async (target: DiagramFormat, opts: SaveAsOptions) => {
+      const extension = target === 'svg' ? '.svg' : '.json';
+      const filename = opts.filename.endsWith(extension)
+        ? opts.filename
+        : `${opts.filename}${extension}`;
+      const content = await serializeDocument(editor.document, target, editor.activePageIndex);
+
+      if (opts.location === 'local') {
+        triggerDownload(
+          new Blob([content], {
+            type: target === 'svg' ? 'image/svg+xml' : 'application/json',
+          }),
+          filename,
+        );
+        setSaveAsFormat(null);
+        return;
+      }
+
+      // A copy is a new file, so it gets a key of its own rather than the open
+      // file's — sharing a DEK between two files means revoking one revokes
+      // both. Minted and registered here, and not left to the copy's own editor
+      // to mint on first open (which is how `Duplicate` does it), because
+      // nothing navigates to it: the body is written now or never.
+      const { initSodium, loadKeyPair, generateFileKey, encryptFileKey, activeKeyVersion } =
+        await import('@neutrino/e2e-crypto');
+      await initSodium();
+      const keyPair = currentUser?.id ? loadKeyPair(currentUser.id) : null;
+      if (!keyPair || !currentUser?.id) {
+        // Writing it in the clear is not the fallback: a copy of an encrypted
+        // diagram is still the diagram.
+        toast.warning(ENCRYPTION_WARNING_MESSAGE);
+        return;
+      }
+
+      const copy = await diagramsApi.createDiagram({
+        title: filename,
+        folderId: opts.folderId ?? null,
+        format: target,
+      });
+      const dek = generateFileKey();
+      await encryptionApi.setFileKey(copy.id, {
+        encryptedFileKey: encryptFileKey(dek, keyPair.publicKey),
+        keyVersion: activeKeyVersion(currentUser.id) ?? undefined,
+      });
+      // `createDiagram` seeds a native file with a blank page and an SVG one
+      // with nothing at all, so the real body is this write either way — and it
+      // goes through the encrypted path, which is the only one that can seal it.
+      await diagramsApi.autosaveEncryptedContent(
+        copy.id,
+        content,
+        DIAGRAM_CONTENT_FILENAME[target],
+        dek,
+        { title: filename },
+      );
+      queryClient.invalidateQueries({ queryKey: ['diagrams'] });
+      indexOnSave(currentUser?.id, {
+        id: copy.id,
+        type: 'diagram',
+        title: filename,
+        content: extractDiagramText(content),
+      });
+      setSaveAsFormat(null);
+      toast.success(`Saved “${filename}” to Drive`);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor.document, editor.activePageIndex, currentUser?.id, queryClient],
+  );
+
+  // ── A foreign SVG: build a diagram around it rather than over it ───────────
+
+  const traceSvgMutation = useMutation({
+    mutationFn: async () => {
+      if (!foreignSvg) return null;
+      const created = await diagramsApi.createDiagram({ title: `${title} (Diagram)` });
+      // Seeded through sessionStorage, exactly as `Duplicate` and the template
+      // picker do it: the new diagram's own editor writes the first body, which
+      // is the only path that encrypts it.
+      try {
+        sessionStorage.setItem(
+          `neutrino:diagram-template:${created.id}`,
+          JSON.stringify(svgAsImageDocument(foreignSvg)),
+        );
+      } catch {
+        // sessionStorage unavailable — the diagram still opens, just blank
+      }
+      return created;
+    },
+    onSuccess: (created) => {
+      if (created) router.push(`/diagrams/editor?id=${created.id}`);
+    },
+    onError: () => toast.error('Failed to create a diagram from this image'),
   });
 
   // ── Main menu: back / new / duplicate / delete ──────────────────────────────
@@ -591,6 +827,37 @@ export function DiagramEditor() {
     );
   }
 
+  // An SVG that this editor did not write. Shown rather than opened: the canvas
+  // has nothing to load from it, and every path out of the canvas ends in a
+  // write to the file. Building a diagram *around* it is the way forward, and
+  // it leaves the original alone.
+  if (foreignSvg) {
+    return (
+      <div className={styles.foreign}>
+        {/* As an image, never as markup in the page — see `svgDataUrl`. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className={styles.foreignPreview} src={svgDataUrl(foreignSvg)} alt={title} />
+        <h2 className={styles.foreignTitle}>{title}</h2>
+        <p className={styles.foreignBody}>
+          This SVG was not created in Diagrams, so there are no shapes or connectors to
+          edit — only the finished picture. Neutrino will not save over it.
+        </p>
+        <div className={styles.foreignActions}>
+          <Button
+            variant="primary"
+            onClick={() => traceSvgMutation.mutate()}
+            disabled={traceSvgMutation.isPending}
+          >
+            {traceSvgMutation.isPending ? 'Creating…' : 'Create a diagram from this image'}
+          </Button>
+          <Button variant="secondary" onClick={() => router.push('/diagrams')}>
+            Back to Diagrams
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (presentationMode) {
     return (
       <div className={styles.presentation}>
@@ -667,6 +934,8 @@ export function DiagramEditor() {
         onTextDefaultsChange={(changes) => setTextDefaults((prev) => ({ ...prev, ...changes }))}
         onBack={handleBack}
         onNewDiagram={handleNewDiagram}
+        format={format}
+        onSaveAs={setSaveAsFormat}
         onDuplicate={() => duplicateMutation.mutate()}
         onDeleteClick={() => setShowDeleteConfirm(true)}
       />
@@ -705,7 +974,10 @@ export function DiagramEditor() {
                   triggerDownload(blob, `${filename}.jpeg`);
                 } else if (format === 'svg') {
                   const svg = exportSVGCropped(container, rect.x, rect.y, rect.width, rect.height, bgColor, showGrid);
-                  triggerDownload(new Blob([svg], { type: 'image/svg+xml' }), `${filename}.svg`);
+                  triggerDownload(
+                    new Blob([withDiagramSource(svg, editor.document)], { type: 'image/svg+xml' }),
+                    `${filename}.svg`,
+                  );
                 }
               }}
               onCancel={() => setPendingExport(null)}
@@ -844,6 +1116,15 @@ export function DiagramEditor() {
             setPendingExport({ format, filename, size, showGrid, bgColor });
             setShowExport(false);
           }}
+        />
+      )}
+
+      {saveAsFormat && (
+        <SaveAsDialog
+          defaultFilename={`${title || 'Untitled diagram'}.${saveAsFormat === 'svg' ? 'svg' : 'json'}`}
+          format={saveAsFormat === 'svg' ? 'svg' : 'ndiagram'}
+          onSave={(opts) => handleSaveAs(saveAsFormat, opts)}
+          onClose={() => setSaveAsFormat(null)}
         />
       )}
 

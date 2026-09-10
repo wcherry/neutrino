@@ -158,3 +158,17 @@
   font-size: 11px;
   color: var(--color-text-secondary, #94a3b8);
 }
+
+/* Marks the diagrams stored as `.svg`. Pushed to the end of the meta row so it
+   reads as a property of the card rather than part of the date beside it. */
+.formatBadge {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  color: var(--color-text-secondary, #94a3b8);
+}

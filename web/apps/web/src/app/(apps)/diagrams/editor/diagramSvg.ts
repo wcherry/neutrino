@@ -8,7 +8,13 @@
  */
 
 import { diagramsApi } from '@neutrino/api-diagrams';
-import type { DiagramDocument, DiagramPage, DiagramShape, DiagramConnector } from '../types';
+import type {
+  DiagramDocument,
+  DiagramPage,
+  DiagramShape,
+  DiagramConnector,
+  FreehandStroke,
+} from '../types';
 import { fillDefFor, fillPaint } from './utils/shapeFill';
 
 export function getShapePath(shape: DiagramShape): string {
@@ -47,15 +53,76 @@ export function getConnectorPoints(conn: DiagramConnector, shapes: DiagramShape[
   return pts.join(' ');
 }
 
+/**
+ * The box that holds everything drawn on a page, padded.
+ *
+ * Everything, not just the shapes: a connector between two free points and a
+ * freehand stroke are drawn by every renderer that uses this, so leaving them
+ * out of the box clipped them out of the picture. That matters most for a page
+ * saved as an SVG file, where the box is the whole document rather than a
+ * viewport someone can scroll.
+ */
 export function computeViewBox(page: DiagramPage): string {
-  const shapes = page.shapes;
-  if (shapes.length === 0) return '0 0 400 300';
   const pad = 20;
-  const minX = Math.min(...shapes.map((s) => s.x)) - pad;
-  const minY = Math.min(...shapes.map((s) => s.y)) - pad;
-  const maxX = Math.max(...shapes.map((s) => s.x + s.width)) + pad;
-  const maxY = Math.max(...shapes.map((s) => s.y + s.height)) + pad;
-  return `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const expand = (x: number, y: number) => {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  };
+
+  for (const s of page.shapes) {
+    expand(s.x, s.y);
+    expand(s.x + s.width, s.y + s.height);
+  }
+  for (const c of page.connectors) {
+    if (c.startPoint) expand(c.startPoint.x, c.startPoint.y);
+    if (c.endPoint) expand(c.endPoint.x, c.endPoint.y);
+    for (const wp of c.waypoints) expand(wp.x, wp.y);
+  }
+  for (const stroke of page.strokes ?? []) {
+    for (let i = 0; i + 1 < stroke.points.length; i += 2) {
+      expand(stroke.points[i], stroke.points[i + 1]);
+    }
+  }
+
+  if (!isFinite(minX)) return '0 0 400 300';
+  return `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`;
+}
+
+/**
+ * A freehand stroke as a path, smoothed through the midpoints between samples.
+ *
+ * Shared with the canvas's `StrokeRenderer` so a stroke drawn on screen and the
+ * same stroke in an exported or saved SVG are the same curve.
+ */
+export function freehandStrokePath(stroke: FreehandStroke): string | null {
+  const pts = stroke.points;
+  if (pts.length < 4) return null;
+  let d = `M ${pts[0]} ${pts[1]}`;
+  for (let i = 2; i < pts.length - 2; i += 2) {
+    const mx = (pts[i] + pts[i + 2]) / 2;
+    const my = (pts[i + 1] + pts[i + 3]) / 2;
+    d += ` Q ${pts[i]} ${pts[i + 1]} ${mx} ${my}`;
+  }
+  d += ` L ${pts[pts.length - 2]} ${pts[pts.length - 1]}`;
+  return d;
+}
+
+/** How each drawing tool paints its path, over the stroke's own colour and width. */
+export function freehandStrokePaint(stroke: FreehandStroke): {
+  strokeWidth: number;
+  opacity: number;
+  dash: string | null;
+} {
+  if (stroke.tool === 'highlighter') {
+    return { strokeWidth: stroke.width * 2, opacity: 0.35, dash: null };
+  }
+  if (stroke.tool === 'pencil') {
+    return { strokeWidth: stroke.width, opacity: stroke.opacity, dash: '1 1' };
+  }
+  return { strokeWidth: stroke.width, opacity: stroke.opacity, dash: null };
 }
 
 /** The midpoint label position `EmbeddedDiagramView` uses for a connector. */
@@ -138,6 +205,20 @@ export function diagramPageToSvg(page: DiagramPage, opts: DiagramSvgOptions): st
   );
   if (background) {
     parts.push(`<rect x="${vbX}" y="${vbY}" width="${vbW}" height="${vbH}" fill="${xml(background)}"/>`);
+  }
+
+  // Below the shapes, as the canvas draws them.
+  for (const stroke of page.strokes ?? []) {
+    const d = freehandStrokePath(stroke);
+    if (!d) continue;
+    const paint = freehandStrokePaint(stroke);
+    parts.push(
+      `<path d="${xml(d)}" fill="none" stroke="${xml(stroke.color)}"` +
+      ` stroke-width="${xml(paint.strokeWidth)}" opacity="${xml(paint.opacity)}"` +
+      ' stroke-linecap="round" stroke-linejoin="round"' +
+      (paint.dash ? ` stroke-dasharray="${xml(paint.dash)}"` : '') +
+      '/>',
+    );
   }
 
   for (const shape of page.shapes) {

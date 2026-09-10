@@ -1,5 +1,6 @@
 import type { DiagramDocument, DiagramPage, DiagramShape, DiagramConnector, ShapeType } from '../../types';
 import { defaultShapeStyle, defaultConnectorStyle } from '../utils/shapeUtils';
+import { looksLikeSvg, svgToDiagramDocument } from './svgFormat';
 
 const uid = () => crypto.randomUUID();
 
@@ -9,6 +10,17 @@ export function importJSON(text: string): DiagramDocument {
     throw new Error('Invalid Neutrino diagram JSON');
   }
   return parsed;
+}
+
+/**
+ * An `.svg` file as a diagram.
+ *
+ * One this editor wrote carries its own source and comes back whole; any other
+ * SVG comes in as its picture on a page. See `io/svgFormat.ts`.
+ */
+export function importSVG(text: string): DiagramDocument {
+  if (!looksLikeSvg(text)) throw new Error('Not an SVG file');
+  return svgToDiagramDocument(text);
 }
 
 export function importDrawioXML(xmlText: string): DiagramDocument {
@@ -73,6 +85,48 @@ export function importDrawioXML(xmlText: string): DiagramDocument {
     pages: [page],
     viewport: { x: 0, y: 0, zoom: 1 },
   };
+}
+
+/**
+ * What an import produced: a whole document, which replaces what is open, or
+ * loose elements, which are added to the current page.
+ */
+export type ImportResult =
+  | { kind: 'document'; document: DiagramDocument }
+  | { kind: 'elements'; shapes: DiagramShape[]; connectors: DiagramConnector[] };
+
+/**
+ * Read pasted text or a dropped file as whichever format it is.
+ *
+ * The extension is a hint, not the answer — a file dragged out of another tool
+ * may have none, and the paste box has none by definition — so the content
+ * decides and the extension only breaks ties. SVG is tested before drawio
+ * because both open with `<`, and an SVG fed to the drawio parser finds no
+ * `mxCell` and yields a silently empty diagram.
+ */
+export function parseImport(text: string, extension?: string): ImportResult {
+  const body = text.trim();
+  const ext = extension?.toLowerCase();
+
+  if (ext === 'mmd' || ext === 'md') {
+    return { kind: 'elements', ...importMermaid(body) };
+  }
+  if (ext === 'json' || (!ext && body.startsWith('{'))) {
+    return { kind: 'document', document: importJSON(body) };
+  }
+  if (ext === 'svg' || looksLikeSvg(body)) {
+    return { kind: 'document', document: importSVG(body) };
+  }
+  if (ext === 'xml' || ext === 'drawio' || (!ext && body.startsWith('<'))) {
+    return { kind: 'document', document: importDrawioXML(body) };
+  }
+  if (body.startsWith('{')) {
+    return { kind: 'document', document: importJSON(body) };
+  }
+  if (body.startsWith('<')) {
+    return { kind: 'document', document: importDrawioXML(body) };
+  }
+  return { kind: 'elements', ...importMermaid(body) };
 }
 
 export function importMermaid(text: string): { shapes: DiagramShape[]; connectors: DiagramConnector[] } {

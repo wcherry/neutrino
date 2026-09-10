@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { ColorPickerPopover } from '@neutrino/ui';
 import type { DiagramDocument, DiagramPage, Viewport } from '../../types';
-import { exportSVG, exportPNG, exportJPEG, exportPNGCropped, exportJPEGCropped, exportSVGCropped, exportJSON, exportMermaid, triggerDownload } from './exportUtils';
+import { exportSVG, exportPNG, exportJPEG, exportPNGCropped, exportJPEGCropped, exportSVGCropped, exportJSON, exportMermaid, triggerDownload, withDiagramSource } from './exportUtils';
 import styles from './ExportDialog.module.css';
 
 export type ExportFormat = 'png' | 'jpeg' | 'svg' | 'json' | 'mermaid';
@@ -25,7 +25,7 @@ interface ExportDialogProps {
 const FORMATS: { id: ExportFormat; label: string }[] = [
   { id: 'png',     label: 'PNG — Raster image, transparent background' },
   { id: 'jpeg',    label: 'JPEG — Raster image, white background' },
-  { id: 'svg',     label: 'SVG — Scalable vector graphic' },
+  { id: 'svg',     label: 'SVG — Scalable vector graphic, reopens in Diagrams' },
   { id: 'json',    label: 'JSON — Neutrino diagram format' },
   { id: 'mermaid', label: 'Mermaid — Flowchart text' },
 ];
@@ -141,7 +141,12 @@ export function ExportDialog({ document, activePage, canvasContainer, title, onC
           const svg = fitRect
             ? exportSVGCropped(canvasContainer, fitRect.x, fitRect.y, fitRect.width, fitRect.height, bgColor, showGrid)
             : exportSVG(canvasContainer, bgColor, showGrid);
-          triggerDownload(new Blob([svg], { type: 'image/svg+xml' }), `${fname}.svg`);
+          // With the diagram inside it, so the download is a file that opens
+          // again rather than a picture of one.
+          triggerDownload(
+            new Blob([withDiagramSource(svg, document)], { type: 'image/svg+xml' }),
+            `${fname}.svg`,
+          );
           break;
         }
         case 'json': {

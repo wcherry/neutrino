@@ -2,7 +2,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import type { DiagramDocument, DiagramShape, DiagramConnector } from '../../types';
-import { importJSON, importDrawioXML, importMermaid } from './importUtils';
+import { parseImport, type ImportResult } from './importUtils';
 import styles from './ImportDialog.module.css';
 
 interface ImportDialogProps {
@@ -28,35 +28,20 @@ export function ImportDialog({ onImportDocument, onImportShapes, onClose }: Impo
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  function apply(result: ImportResult) {
+    if (result.kind === 'document') {
+      onImportDocument(result.document);
+    } else {
+      onImportShapes(result.shapes, result.connectors);
+    }
+    onClose();
+  }
+
   async function handleFile(file: File) {
     setError(null);
     const text = await file.text();
-    const ext = file.name.split('.').pop()?.toLowerCase();
     try {
-      if (ext === 'json') {
-        onImportDocument(importJSON(text));
-        onClose();
-      } else if (ext === 'xml' || ext === 'drawio') {
-        onImportDocument(importDrawioXML(text));
-        onClose();
-      } else if (ext === 'mmd' || ext === 'md') {
-        const { shapes, connectors } = importMermaid(text);
-        onImportShapes(shapes, connectors);
-        onClose();
-      } else {
-        // Sniff by content
-        if (text.trim().startsWith('{')) {
-          onImportDocument(importJSON(text));
-          onClose();
-        } else if (text.trim().startsWith('<')) {
-          onImportDocument(importDrawioXML(text));
-          onClose();
-        } else {
-          const { shapes, connectors } = importMermaid(text);
-          onImportShapes(shapes, connectors);
-          onClose();
-        }
-      }
+      apply(parseImport(text, file.name.split('.').pop()));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to import file');
     }
@@ -67,17 +52,7 @@ export function ImportDialog({ onImportDocument, onImportShapes, onClose }: Impo
     const text = pasteText.trim();
     if (!text) return;
     try {
-      if (text.startsWith('{')) {
-        onImportDocument(importJSON(text));
-        onClose();
-      } else if (text.startsWith('<')) {
-        onImportDocument(importDrawioXML(text));
-        onClose();
-      } else {
-        const { shapes, connectors } = importMermaid(text);
-        onImportShapes(shapes, connectors);
-        onClose();
-      }
+      apply(parseImport(text));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to parse content');
     }
@@ -108,13 +83,13 @@ export function ImportDialog({ onImportDocument, onImportShapes, onClose }: Impo
               }}
             >
               <div className={styles.dropLabel}>Click or drag a file here</div>
-              <div className={styles.dropHint}>.json, .xml, .drawio, .mmd, .md</div>
+              <div className={styles.dropHint}>.json, .svg, .xml, .drawio, .mmd, .md</div>
             </div>
             <input
               ref={fileInputRef}
               type="file"
               className={styles.fileInput}
-              accept=".json,.xml,.drawio,.md,.mmd"
+              accept=".json,.svg,.xml,.drawio,.md,.mmd"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) handleFile(file);
@@ -126,11 +101,11 @@ export function ImportDialog({ onImportDocument, onImportShapes, onClose }: Impo
           <>
             <textarea
               className={styles.textarea}
-              placeholder="Paste Mermaid, Draw.io XML, or Neutrino JSON here…"
+              placeholder="Paste Mermaid, SVG, Draw.io XML, or Neutrino JSON here…"
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
             />
-            <p className={styles.hint}>Supports: Mermaid flowchart, Draw.io XML, Neutrino JSON</p>
+            <p className={styles.hint}>Supports: Mermaid flowchart, SVG, Draw.io XML, Neutrino JSON</p>
           </>
         )}
 
