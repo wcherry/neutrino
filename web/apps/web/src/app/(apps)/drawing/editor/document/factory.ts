@@ -9,20 +9,24 @@
  */
 
 import { newId } from './ids';
+import { pathBounds } from './path';
 import {
   DOCUMENT_VERSION,
   IDENTITY,
   type CanvasSettings,
   type DrawingDocument,
+  type DrawingNode,
   type GridSettings,
+  type InstanceNode,
   type LayerMask,
   type NodeBase,
   type PathObject,
-  type Point,
+  type PathPoint,
   type RasterLayerNode,
   type RasterSource,
   type Rect,
   type StackNode,
+  type SymbolDefinition,
   type TextLayerNode,
   type VectorLayerNode,
   type VectorObject,
@@ -113,6 +117,45 @@ export function createRasterLayer(
   };
 }
 
+/**
+ * A 1×1 fully transparent PNG.
+ *
+ * This is what a freshly created paint layer holds. A layer's `RasterSource`
+ * declares its own `width`/`height` and the renderer draws the bitmap stretched
+ * to them, so a one-pixel transparent image covering a 1920×1080 layer is
+ * indistinguishable from a 1920×1080 transparent image — and costs 70 bytes
+ * instead of encoding eight megabytes of nothing every time someone adds a
+ * layer. The first brush stroke replaces it with real pixels.
+ */
+export const TRANSPARENT_PIXEL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+/**
+ * An empty raster layer covering the whole canvas — somewhere for a brush to
+ * paint.
+ *
+ * Canvas-sized rather than growing to fit the strokes: a paint layer is the
+ * sheet you paint on, and one that resized itself as you worked would move its
+ * own OpenRaster `x`/`y` offsets under every stroke already made.
+ */
+export function createPaintLayer(
+  canvas: { width: number; height: number },
+  name = 'Paint',
+  overrides: Partial<RasterLayerNode> = {},
+): RasterLayerNode {
+  return createRasterLayer(
+    {
+      dataUrl: TRANSPARENT_PIXEL,
+      width: Math.max(1, Math.round(canvas.width)),
+      height: Math.max(1, Math.round(canvas.height)),
+      x: 0,
+      y: 0,
+    },
+    name,
+    overrides,
+  );
+}
+
 export function createTextLayer(
   box: Rect,
   text = '',
@@ -190,22 +233,54 @@ export function createLine(
   };
 }
 
-export function createPath(points: Point[], style?: Partial<VectorStyle>): PathObject {
-  const frame = pointsBounds(points);
-  return { ...baseObject('path', frame, style), kind: 'path', points, closed: false };
+export function createPath(
+  points: PathPoint[],
+  style?: Partial<VectorStyle>,
+  overrides: Partial<Omit<PathObject, 'kind' | 'points'>> = {},
+): PathObject {
+  const draft: PathObject = {
+    ...baseObject('path', { ...EMPTY_RECT }, style),
+    kind: 'path',
+    points,
+    closed: false,
+    ...overrides,
+  };
+  // The frame is derived rather than passed in, because a path's extent comes
+  // from its curve — `pathBounds` flattens it — and a caller computing that by
+  // hand from the anchors would clip every curve that bulges past them.
+  return { ...draft, frame: pathBounds(draft) };
 }
 
-/** The axis-aligned extent of a point list, never zero-sized. */
-export function pointsBounds(points: Point[]): Rect {
-  if (points.length === 0) return { ...EMPTY_RECT };
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of points) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { x: minX, y: minY, width: Math.max(maxX - minX, 1), height: Math.max(maxY - minY, 1) };
+// ---------------------------------------------------------------------------
+// Symbols and instances
+// ---------------------------------------------------------------------------
+
+/**
+ * A reusable definition made from an existing node.
+ *
+ * The content's own transform is reset: an instance's transform is what places
+ * it, and a symbol that kept the position of the node it was made from would
+ * offset every instance by that amount on top of its own.
+ */
+export function createSymbol(content: DrawingNode, name?: string): SymbolDefinition {
+  return {
+    id: newId(),
+    name: name ?? content.name ?? 'Symbol',
+    content: { ...content, parentId: null, transform: { ...IDENTITY } },
+    createdAt: now(),
+  };
+}
+
+export function createInstance(
+  symbol: SymbolDefinition,
+  overrides: Partial<InstanceNode> = {},
+): InstanceNode {
+  return {
+    ...baseNode(symbol.name),
+    type: 'instance',
+    symbolId: symbol.id,
+    ...overrides,
+  };
 }
 
 // ---------------------------------------------------------------------------

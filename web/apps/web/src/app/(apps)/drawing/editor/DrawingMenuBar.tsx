@@ -37,6 +37,19 @@ export interface DrawingMenuBarProps {
   showGrid: boolean;
   onToggleGrid: () => void;
   titleInputRef: React.RefObject<HTMLInputElement | null>;
+  /** Opens a `.ora` written by Krita, GIMP or this app (redesign phase 3). */
+  onImportOra: () => void;
+  /** Opens an `.svg` as editable shapes, text and paths (redesign phase 5). */
+  onImportSvg: () => void;
+  onSelectAllPixels: () => void;
+  onDeselectPixels: () => void;
+  onInvertSelection: () => void;
+  hasPixelSelection: boolean;
+}
+
+/** A tool's menu label, ticked when it is the armed one. */
+function check(current: ToolType, tool: ToolType, label: string): string {
+  return current === tool ? `${label} ✓` : label;
 }
 
 export function DrawingMenuBar({
@@ -71,6 +84,12 @@ export function DrawingMenuBar({
   showGrid,
   onToggleGrid,
   titleInputRef,
+  onImportOra,
+  onImportSvg,
+  onSelectAllPixels,
+  onDeselectPixels,
+  onInvertSelection,
+  hasPixelSelection,
 }: DrawingMenuBarProps) {
   const router = useRouter();
 
@@ -86,6 +105,9 @@ export function DrawingMenuBar({
         { kind: 'separator' },
         { kind: 'action', label: 'Insert image…', action: onAddImage },
         { kind: 'separator' },
+        { kind: 'action', label: 'Import OpenRaster…', action: onImportOra },
+        { kind: 'action', label: 'Import SVG…', action: onImportSvg },
+        { kind: 'separator' },
         { kind: 'action', label: 'Export…', action: onExport },
         { kind: 'separator' },
         { kind: 'action', label: 'Version history', action: onVersionHistory },
@@ -99,6 +121,15 @@ export function DrawingMenuBar({
         { kind: 'action', label: 'Redo', shortcut: '⌘⇧Z', disabled: !canRedo, action: onRedo },
         { kind: 'separator' },
         { kind: 'action', label: 'Select all', shortcut: '⌘A', action: onSelectAll },
+        { kind: 'separator' },
+        // A pixel selection and an object selection are different things —
+        // one confines a brush, the other names what a drag moves — so they get
+        // their own entries rather than one "select all" that means both.
+        { kind: 'action', label: 'Select all pixels', action: onSelectAllPixels },
+        // ⌘⇧D, because ⌘D is Duplicate below and has been for as long as the
+        // editor has existed.
+        { kind: 'action', label: 'Deselect pixels', shortcut: '⌘⇧D', disabled: !hasPixelSelection, action: onDeselectPixels },
+        { kind: 'action', label: 'Invert selection', shortcut: '⌘⇧I', disabled: !hasPixelSelection, action: onInvertSelection },
         { kind: 'separator' },
         { kind: 'action', label: 'Cut', shortcut: '⌘X', disabled: selectedCount === 0, action: onCut },
         { kind: 'action', label: 'Copy', shortcut: '⌘C', disabled: selectedCount === 0, action: onCopy },
@@ -138,15 +169,28 @@ export function DrawingMenuBar({
       kind: 'submenu',
       label: 'Tools',
       items: [
-        { kind: 'action', label: tool === 'select' ? 'Select ✓' : 'Select', shortcut: 'S', action: () => onToolChange('select') },
-        { kind: 'action', label: tool === 'pen' ? 'Pen ✓' : 'Pen', shortcut: 'P', action: () => onToolChange('pen') },
-        { kind: 'action', label: tool === 'line' ? 'Line ✓' : 'Line', shortcut: 'L', action: () => onToolChange('line') },
-        { kind: 'action', label: tool === 'rectangle' ? 'Rectangle ✓' : 'Rectangle', shortcut: 'R', action: () => onToolChange('rectangle') },
-        { kind: 'action', label: tool === 'ellipse' ? 'Ellipse ✓' : 'Ellipse', shortcut: 'E', action: () => onToolChange('ellipse') },
-        { kind: 'action', label: tool === 'arrow' ? 'Arrow ✓' : 'Arrow', action: () => onToolChange('arrow') },
-        { kind: 'action', label: tool === 'text' ? 'Text ✓' : 'Text', shortcut: 'T', action: () => onToolChange('text') },
+        { kind: 'action', label: check(tool, 'select', 'Select'), shortcut: 'S', action: () => onToolChange('select') },
+        { kind: 'action', label: check(tool, 'node', 'Edit path points'), shortcut: 'A', action: () => onToolChange('node') },
+        { kind: 'action', label: check(tool, 'transform', 'Transform layer'), shortcut: 'V', action: () => onToolChange('transform') },
         { kind: 'separator' },
-        { kind: 'action', label: tool === 'eraser' ? 'Eraser ✓' : 'Eraser', action: () => onToolChange('eraser') },
+        { kind: 'action', label: check(tool, 'pen', 'Pen'), shortcut: 'P', action: () => onToolChange('pen') },
+        { kind: 'action', label: check(tool, 'line', 'Line'), shortcut: 'L', action: () => onToolChange('line') },
+        { kind: 'action', label: check(tool, 'rectangle', 'Rectangle'), shortcut: 'R', action: () => onToolChange('rectangle') },
+        { kind: 'action', label: check(tool, 'ellipse', 'Ellipse'), shortcut: 'E', action: () => onToolChange('ellipse') },
+        { kind: 'action', label: check(tool, 'arrow', 'Arrow'), action: () => onToolChange('arrow') },
+        { kind: 'action', label: check(tool, 'text', 'Text'), shortcut: 'T', action: () => onToolChange('text') },
+        { kind: 'separator' },
+        { kind: 'action', label: check(tool, 'brush', 'Brush'), shortcut: 'B', action: () => onToolChange('brush') },
+        { kind: 'action', label: check(tool, 'pencil', 'Pencil'), shortcut: 'N', action: () => onToolChange('pencil') },
+        { kind: 'action', label: check(tool, 'marker', 'Marker'), action: () => onToolChange('marker') },
+        { kind: 'action', label: check(tool, 'airbrush', 'Airbrush'), action: () => onToolChange('airbrush') },
+        { kind: 'action', label: check(tool, 'paint-eraser', 'Erase pixels'), shortcut: 'X', action: () => onToolChange('paint-eraser') },
+        { kind: 'separator' },
+        { kind: 'action', label: check(tool, 'select-rect', 'Rectangular selection'), shortcut: 'M', action: () => onToolChange('select-rect') },
+        { kind: 'action', label: check(tool, 'select-ellipse', 'Elliptical selection'), action: () => onToolChange('select-ellipse') },
+        { kind: 'action', label: check(tool, 'lasso', 'Lasso selection'), shortcut: 'Q', action: () => onToolChange('lasso') },
+        { kind: 'separator' },
+        { kind: 'action', label: check(tool, 'eraser', 'Delete objects'), action: () => onToolChange('eraser') },
       ],
     },
   ];

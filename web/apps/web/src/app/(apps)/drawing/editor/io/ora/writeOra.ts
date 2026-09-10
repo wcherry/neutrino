@@ -24,8 +24,10 @@
 
 import { assetSafeId } from '../../document/ids';
 import { outsetToPixels } from '../../document/geometry';
-import { contentBounds } from '../../document/tree';
+import { selectionToMaskSurface } from '../../document/selection';
+import { contentBounds, symbolTable } from '../../document/tree';
 import {
+  documentRenderOptions,
   domSurfaceFactory,
   renderDocumentToSurface,
   renderNodeToSurface,
@@ -33,7 +35,7 @@ import {
   type Surface,
 } from '../../render/renderDocument';
 import { buildStackXml, type LayerAsset } from './stackXml';
-import { MANIFEST_PATH, buildManifest } from './manifest';
+import { MANIFEST_PATH, SELECTION_PATH, buildManifest } from './manifest';
 import type { DrawingDocument, DrawingNode, Rect } from '../../document/types';
 
 export const ORA_MIME_TYPE = 'image/openraster';
@@ -62,6 +64,20 @@ export interface OraRenderer {
   renderMerged(): Promise<Blob>;
   /** The same picture, fitted inside `THUMBNAIL_MAX`. Also required. */
   renderThumbnail(): Promise<Blob>;
+  /**
+   * The active selection as a canvas-sized grayscale channel, white where
+   * selected — redesign §3's "active selections as grayscale PNG masks". Null
+   * when nothing is selected.
+   */
+  renderSelection?(): Promise<Blob | null>;
+}
+
+export interface WriteOraOptions {
+  /**
+   * The layer to mark with the OpenRaster layer-selection extension, so
+   * reopening the package lands on the layer it was saved from.
+   */
+  selectedNodeId?: string | null;
 }
 
 /** Depth-first over everything under the root, root excluded. */
@@ -80,7 +96,11 @@ function eachNode(doc: DrawingDocument, visit: (node: DrawingNode) => void): voi
  * pixels — so only leaf layers are rendered. A leaf that renders to nothing is
  * left out of `stack.xml` entirely rather than pointing at a missing entry.
  */
-export async function writeOra(doc: DrawingDocument, renderer: OraRenderer): Promise<Blob> {
+export async function writeOra(
+  doc: DrawingDocument,
+  renderer: OraRenderer,
+  options: WriteOraOptions = {},
+): Promise<Blob> {
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
 
@@ -117,10 +137,19 @@ export async function writeOra(doc: DrawingDocument, renderer: OraRenderer): Pro
     maskSources.set(node.mask.id, src);
   }
 
-  zip.file('stack.xml', buildStackXml(doc, { assets }));
+  // The active selection is a channel of its own, exactly as a mask is: a
+  // region is not something `stack.xml` can express, and baking it into the
+  // pixels would be a destructive answer to a non-destructive question.
+  const selectionPng = doc.selection ? await renderer.renderSelection?.() : null;
+  if (selectionPng) zip.file(SELECTION_PATH, selectionPng);
+
+  zip.file('stack.xml', buildStackXml(doc, { assets, selectedNodeId: options.selectedNodeId }));
   zip.file('mergedimage.png', await renderer.renderMerged());
   zip.file('Thumbnails/thumbnail.png', await renderer.renderThumbnail());
-  zip.file(MANIFEST_PATH, JSON.stringify(buildManifest(doc, assets, maskSources), null, 2));
+  zip.file(
+    MANIFEST_PATH,
+    JSON.stringify(buildManifest(doc, assets, maskSources, { selection: selectionPng ? SELECTION_PATH : null }), null, 2),
+  );
 
   return zip.generateAsync({ type: 'blob', mimeType: ORA_MIME_TYPE, compression: 'DEFLATE' });
 }
@@ -148,7 +177,7 @@ function surfaceToPng(surface: Surface): Promise<Blob> {
 
 /** A node's pixel extent, clipped to the canvas. Null when it falls outside entirely. */
 function layerRect(doc: DrawingDocument, node: DrawingNode): Rect | null {
-  const bounds = contentBounds(node);
+  const bounds = contentBounds(node, symbolTable(doc));
   if (!bounds || bounds.width <= 0 || bounds.height <= 0) return null;
 
   const snapped = outsetToPixels(bounds);
@@ -182,11 +211,15 @@ export function createCanvasRenderer(
   options: CanvasRendererOptions = {},
 ): OraRenderer {
   const createSurface = options.createSurface ?? domSurfaceFactory;
-  const shared: RenderOptions = {
+  // Through `documentRenderOptions` so a symbol instance and a caption bound to
+  // a path rasterise here exactly as they draw on screen. Without it an
+  // instance would silently export as an empty layer — the one failure mode
+  // that looks fine until somebody opens the file somewhere else.
+  const shared: RenderOptions = documentRenderOptions(doc, {
     bitmaps: options.bitmaps,
     images: options.images,
     createSurface,
-  };
+  });
 
   return {
     async renderLayer(node) {
@@ -241,6 +274,15 @@ export function createCanvasRenderer(
       if (!ctx) throw new Error('cannot render the thumbnail');
       ctx.drawImage(full as CanvasImageSource, 0, 0, width, height);
       return surfaceToPng(thumb);
+    },
+
+    async renderSelection() {
+      if (!doc.selection) return null;
+      const surface = selectionToMaskSurface(doc.selection, doc.canvas, {
+        createSurface,
+        bitmaps: options.bitmaps,
+      });
+      return surface ? surfaceToPng(surface as Surface) : null;
     },
   };
 }

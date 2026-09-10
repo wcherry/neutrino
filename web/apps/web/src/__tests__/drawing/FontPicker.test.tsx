@@ -47,6 +47,7 @@ import { createDocument, createRect, createTextLayer } from '../../app/(apps)/dr
 import { addNode, addObjects } from '../../app/(apps)/drawing/editor/document/edits';
 import { flattenTree } from '../../app/(apps)/drawing/editor/document/tree';
 import { DEFAULT_VECTOR_STYLE } from '../../app/(apps)/drawing/editor/document/factory';
+import { createBrush } from '../../app/(apps)/drawing/editor/paint';
 import type { DrawingDocument, Selection } from '../../app/(apps)/drawing/editor/types';
 
 // Drawing's own bespoke built-in list (mirrors the private FONT_FAMILIES const
@@ -92,6 +93,15 @@ function renderPanel({ doc, selection }: { doc: DrawingDocument; selection: Sele
       selection={selection}
       newObjectStyle={DEFAULT_VECTOR_STYLE}
       onNewObjectStyleChange={vi.fn()}
+      // The panel shows the brush settings instead whenever a paint tool is
+      // armed, so the tool has to be a non-paint one for the font picker to be
+      // on screen at all — which is itself part of what these tests assert.
+      tool="select"
+      brush={createBrush('brush')}
+      onBrushChange={vi.fn()}
+      maskEditing={false}
+      onMaskEditingChange={vi.fn()}
+      activeLayerId=""
     />,
   );
 }

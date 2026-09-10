@@ -26,8 +26,24 @@ import {
   type DrawingNode,
   type Rect,
   type StackNode,
+  type SymbolDefinition,
   type Transform2D,
 } from './types';
+
+/**
+ * Symbols by id.
+ *
+ * An instance carries only a reference, so anything that has to know how large
+ * an instance is — bounds, hit testing, the OpenRaster writer sizing its PNG —
+ * needs the definitions in hand. Passing them explicitly rather than reaching
+ * for the document keeps `tree.ts` operating on a `StackNode` alone, which is
+ * what lets a subtree be measured before it is attached to anything.
+ */
+export type SymbolTable = ReadonlyMap<string, SymbolDefinition>;
+
+export function symbolTable(doc: DrawingDocument): SymbolTable {
+  return new Map((doc.symbols ?? []).map((symbol) => [symbol.id, symbol]));
+}
 
 // ---------------------------------------------------------------------------
 // Reading
@@ -396,8 +412,16 @@ export function normalizeTree(root: StackNode): StackNode {
   return rewrite(root, null);
 }
 
-/** A node's own content extent, ignoring its transform. */
-export function contentBounds(node: DrawingNode): Rect | null {
+/**
+ * A node's own content extent, ignoring its transform.
+ *
+ * `symbols` is needed only for an instance, whose content lives elsewhere.
+ * Called without it an instance falls back to its cached `bounds` — the value
+ * `refreshBounds` last computed *with* the table — which is right for a reader
+ * that has just parsed a document and wrong only for an instance whose symbol
+ * changed since, which is why every caller that has a document passes the table.
+ */
+export function contentBounds(node: DrawingNode, symbols?: SymbolTable): Rect | null {
   switch (node.type) {
     case 'raster':
       return { x: node.source.x, y: node.source.y, width: node.source.width, height: node.source.height };
@@ -406,7 +430,17 @@ export function contentBounds(node: DrawingNode): Rect | null {
     case 'vector':
       return unionRects(node.objects.filter((o) => o.visible).map(vectorObjectBounds));
     case 'stack':
-      return unionRects(node.children.map(contentBounds));
+      return unionRects(node.children.map((child) => contentBounds(child, symbols)));
+    case 'instance': {
+      const symbol = symbols?.get(node.symbolId);
+      if (!symbol) return node.bounds.width > 0 && node.bounds.height > 0 ? { ...node.bounds } : null;
+      const inner = contentBounds(symbol.content, symbols);
+      if (!inner) return null;
+      // The symbol's own content sits in the symbol's coordinates; the
+      // instance's transform is applied by whoever composes it, so only the
+      // *content's* transform belongs here.
+      return transformedRectBounds(inner, symbol.content.transform);
+    }
   }
 }
 
@@ -419,12 +453,12 @@ export function contentBounds(node: DrawingNode): Rect | null {
  * save and on load, which is where a wrong answer would actually be observed:
  * the OpenRaster writer sizes each layer's PNG from it.
  */
-export function refreshBounds(root: StackNode): StackNode {
+export function refreshBounds(root: StackNode, symbols?: SymbolTable): StackNode {
   function rewrite(node: DrawingNode): DrawingNode {
     const withChildren: DrawingNode = isStack(node)
       ? { ...node, children: node.children.map(rewrite) }
       : node;
-    const bounds = contentBounds(withChildren) ?? { x: 0, y: 0, width: 0, height: 0 };
+    const bounds = contentBounds(withChildren, symbols) ?? { x: 0, y: 0, width: 0, height: 0 };
     return { ...withChildren, bounds };
   }
   return rewrite(root) as StackNode;
@@ -453,8 +487,8 @@ export function inheritedTransform(root: StackNode, id: string): Transform2D {
  * moved group — which is the case often enough to look correct in testing and
  * wrong the moment anyone drags a group.
  */
-export function nodeCanvasBounds(root: StackNode, node: DrawingNode): Rect | null {
-  const local = contentBounds(node);
+export function nodeCanvasBounds(root: StackNode, node: DrawingNode, symbols?: SymbolTable): Rect | null {
+  const local = contentBounds(node, symbols);
   if (!local) return null;
   const combined = multiplyTransform(inheritedTransform(root, node.id), node.transform);
   return transformedRectBounds(local, combined);
@@ -462,11 +496,12 @@ export function nodeCanvasBounds(root: StackNode, node: DrawingNode): Rect | nul
 
 /** The whole document's drawn extent, or null when nothing is drawn. */
 export function documentContentBounds(doc: DrawingDocument): Rect | null {
+  const symbols = symbolTable(doc);
   const rects: (Rect | null)[] = [];
   visitNodes(doc.root, (node) => {
     if (node.type === 'stack') return;
     if (!isEffectivelyVisible(doc.root, node.id)) return;
-    rects.push(nodeCanvasBounds(doc.root, node));
+    rects.push(nodeCanvasBounds(doc.root, node, symbols));
   });
   return unionRects(rects);
 }
@@ -475,8 +510,38 @@ export function documentContentBounds(doc: DrawingDocument): Rect | null {
 export function isDocumentEmpty(doc: DrawingDocument): boolean {
   let empty = true;
   visitNodes(doc.root, (node) => {
-    if (node.type === 'raster' || node.type === 'text') empty = false;
+    if (node.type === 'raster' || node.type === 'text' || node.type === 'instance') empty = false;
     if (node.type === 'vector' && node.objects.length > 0) empty = false;
   });
   return empty;
+}
+
+/** The raster layers a brush can paint into, topmost first. */
+export function rasterLayers(root: StackNode): DrawingNode[] {
+  return flattenTree(root).filter((f) => f.node.type === 'raster').map((f) => f.node);
+}
+
+/**
+ * Every `PathObject` in the document, with the layer holding it.
+ *
+ * Text on a path names a path by id and the path can be in any vector layer, so
+ * binding one means listing them all — there is no "paths" collection to look
+ * in, deliberately: a path bound to a caption is an ordinary path that stays
+ * selectable and editable like any other.
+ */
+export function findPathObject(
+  root: StackNode,
+  pathId: string,
+): { layerId: string; object: import('./types').PathObject } | null {
+  let found: { layerId: string; object: import('./types').PathObject } | null = null;
+  visitNodes(root, (node) => {
+    if (found || node.type !== 'vector') return;
+    for (const object of node.objects) {
+      if (object.id === pathId && object.kind === 'path') {
+        found = { layerId: node.id, object };
+        return;
+      }
+    }
+  });
+  return found;
 }

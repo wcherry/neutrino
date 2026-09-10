@@ -7,6 +7,7 @@
  * where `getContext('2d')` returns nothing.
  */
 
+import { pathBounds } from './path';
 import { IDENTITY, type Point, type Rect, type Transform2D, type VectorObject } from './types';
 
 export const EMPTY_RECT: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -142,6 +143,74 @@ export function translation(dx: number, dy: number): Transform2D {
   return { ...IDENTITY, e: dx, f: dy };
 }
 
+/**
+ * The inverse of a transform, or the identity when it has none.
+ *
+ * A singular matrix — a node scaled to zero on an axis — has no inverse, and
+ * returning the identity there means a click maps to the wrong place rather
+ * than to `NaN`, which would propagate silently through every comparison that
+ * follows and select nothing anywhere.
+ */
+export function invertTransform(t: Transform2D): Transform2D {
+  const det = t.a * t.d - t.b * t.c;
+  if (det === 0 || !Number.isFinite(det)) return { ...IDENTITY };
+  return {
+    a: t.d / det,
+    b: -t.b / det,
+    c: -t.c / det,
+    d: t.a / det,
+    e: (t.c * t.f - t.d * t.e) / det,
+    f: (t.b * t.e - t.a * t.f) / det,
+  };
+}
+
+/** A scale about a fixed point, as one matrix. */
+export function scaleAbout(sx: number, sy: number, origin: Point): Transform2D {
+  return { a: sx, b: 0, c: 0, d: sy, e: origin.x * (1 - sx), f: origin.y * (1 - sy) };
+}
+
+/** A rotation about a fixed point, as one matrix. `degrees` is clockwise. */
+export function rotateAbout(degrees: number, origin: Point): Transform2D {
+  const rad = (degrees * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    a: cos,
+    b: sin,
+    c: -sin,
+    d: cos,
+    e: origin.x - origin.x * cos + origin.y * sin,
+    f: origin.y - origin.x * sin - origin.y * cos,
+  };
+}
+
+/**
+ * A transform's rotation, scale and translation, for a properties panel.
+ *
+ * A general affine matrix can also shear, and shear has no field in the panel.
+ * It is reported through `scaleY` rather than dropped — a sheared node still
+ * shows a plausible size — because the panel is a read-out of a matrix the
+ * handles produced, and the handles produce no shear.
+ */
+export function decomposeTransform(t: Transform2D): {
+  translateX: number;
+  translateY: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+} {
+  const scaleX = Math.hypot(t.a, t.b);
+  const determinant = t.a * t.d - t.b * t.c;
+  const scaleY = scaleX === 0 ? Math.hypot(t.c, t.d) : determinant / scaleX;
+  return {
+    translateX: t.e,
+    translateY: t.f,
+    rotation: (Math.atan2(t.b, t.a) * 180) / Math.PI,
+    scaleX,
+    scaleY,
+  };
+}
+
 /** The extent of a rect under an arbitrary affine transform. */
 export function transformedRectBounds(rect: Rect, t: Transform2D): Rect {
   if (isIdentity(t)) return normalizeRect(rect);
@@ -172,8 +241,11 @@ export function transformedRectBounds(rect: Rect, t: Transform2D): Rect {
  */
 export function vectorObjectBounds(object: VectorObject): Rect {
   const stroke = object.style.strokeWidth || 0;
+  // A path is measured from its flattened curve rather than from its anchors:
+  // a cubic bulges past the points that shape it, and a box drawn around the
+  // anchors alone clips the stroke on export by however far it bulged.
   const base = object.kind === 'path'
-    ? pathExtent(object.points)
+    ? pathBounds(object)
     : normalizeRect(object.frame);
   const padded = inflateRect(base, stroke / 2 + (object.kind === 'line' && object.arrowEnd ? ARROW_HEAD_LENGTH / 2 : 0));
   return rotatedRectBounds(padded, object.rotation);
@@ -181,15 +253,3 @@ export function vectorObjectBounds(object: VectorObject): Rect {
 
 /** How far an arrowhead reaches past the end of its line. */
 export const ARROW_HEAD_LENGTH = 14;
-
-function pathExtent(points: Point[]): Rect {
-  if (points.length === 0) return { ...EMPTY_RECT };
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of points) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { x: minX, y: minY, width: Math.max(maxX - minX, 0), height: Math.max(maxY - minY, 0) };
-}

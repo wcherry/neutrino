@@ -4,22 +4,29 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlignCenter, AlignLeft, AlignRight, ChevronDown, Lock, Unlock } from 'lucide-react';
 import { ColorPickerPopover, FillPicker, type Background, type DriveImageItem } from '@neutrino/ui';
 
-import { findNode } from './document/tree';
+import { findNode, flattenTree } from './document/tree';
 import {
   mapObjects,
   patchObjects,
   patchObjectStyle,
   patchTextLayer,
+  patchTextPath,
   setCanvas,
   setGrid,
+  setTextPath,
 } from './document/edits';
 import { dashPattern } from './render/vectorObject';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
+import { BrushPanel } from './BrushPanel';
+import { isPaintTool, type ToolType } from './types';
+import type { BrushSettings } from './paint';
 import type {
   DrawingDocument,
   DrawingNode,
+  PathObject,
   Selection,
   StrokeStyle,
+  TextLayerNode,
   VectorObject,
   VectorStyle,
 } from './types';
@@ -33,6 +40,14 @@ interface StylePanelProps {
   newObjectStyle: VectorStyle;
   onNewObjectStyleChange: (style: VectorStyle) => void;
   onFetchDriveImages?: () => Promise<DriveImageItem[]>;
+  /** The armed tool — a paint tool replaces the panel with the brush settings. */
+  tool: ToolType;
+  brush: BrushSettings;
+  onBrushChange: (brush: BrushSettings) => void;
+  maskEditing: boolean;
+  onMaskEditingChange: (value: boolean) => void;
+  /** The layer a brush stroke would land in. */
+  activeLayerId: string;
 }
 
 const STROKE_STYLES: { value: StrokeStyle; label: string }[] = [
@@ -132,8 +147,32 @@ export function StylePanel({
   newObjectStyle,
   onNewObjectStyleChange,
   onFetchDriveImages,
+  tool,
+  brush,
+  onBrushChange,
+  maskEditing,
+  onMaskEditingChange,
+  activeLayerId,
 }: StylePanelProps) {
   const { customFontFamilies } = useAvailableFonts();
+
+  // A paint tool takes the whole panel. What is *selected* has no bearing on
+  // what a brush does — it paints into the active layer either way — so showing
+  // the selected object's fill beside the brush would offer two colours and no
+  // way to tell which one the next stroke uses.
+  if (isPaintTool(tool)) {
+    const target = findNode(doc.root, activeLayerId);
+    return (
+      <BrushPanel
+        brush={brush}
+        onBrushChange={onBrushChange}
+        maskEditing={maskEditing}
+        onMaskEditingChange={onMaskEditingChange}
+        canEditMask={Boolean(target?.mask?.source)}
+        targetLabel={target?.type === 'raster' ? target.name : null}
+      />
+    );
+  }
 
   if (selection?.kind === 'objects') {
     const layer = findNode(doc.root, selection.layerId);
@@ -164,6 +203,7 @@ export function StylePanel({
         />
       );
     }
+    if (node?.type === 'instance') return <InstanceInfo doc={doc} node={node} />;
     if (node) return <LayerInfo node={node} />;
   }
 
@@ -485,6 +525,167 @@ function TextStyle({
             <span className={styles.colorSwatch} style={{ background: node.color }} />
           </ColorPickerPopover>
         </div>
+      </div>
+
+      <TextPathStyle doc={doc} onDocumentChange={onDocumentChange} node={node} />
+    </div>
+  );
+}
+
+/**
+ * Binding a caption to a path.
+ *
+ * The path is picked from the paths that already exist in the drawing, because
+ * that is what the feature *is*: a reference to an ordinary path object, which
+ * stays editable and re-flows the text when it is reshaped
+ * (`agent_docs/drawing_app_redesign.md` §4). There is deliberately no "draw a
+ * curve for this text" button — that would create geometry only the text could
+ * reach, which is exactly the design the redesign rejected.
+ */
+function TextPathStyle({
+  doc,
+  onDocumentChange,
+  node,
+}: {
+  doc: DrawingDocument;
+  onDocumentChange: (doc: DrawingDocument) => void;
+  node: TextLayerNode;
+}) {
+  const paths: { id: string; label: string }[] = [];
+  for (const { node: layer } of flattenTree(doc.root)) {
+    if (layer.type !== 'vector') continue;
+    for (const object of layer.objects) {
+      if (object.kind === 'path') paths.push({ id: object.id, label: `${object.name} — ${layer.name}` });
+    }
+  }
+
+  const binding = node.textPath;
+
+  if (paths.length === 0) {
+    return (
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>Text on a path</div>
+        <p className={styles.hint}>Draw a path with the pen tool to run this text along it.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Text on a path</div>
+
+      <div className={styles.row}>
+        <span className={styles.label}>Path</span>
+        <select
+          className={styles.select}
+          aria-label="Path to follow"
+          value={binding?.pathId ?? ''}
+          onChange={(e) => onDocumentChange(
+            e.target.value
+              ? setTextPath(doc, node.id, {
+                  pathId: e.target.value,
+                  startOffset: binding?.startOffset ?? 0,
+                  align: binding?.align ?? 'start',
+                  baselineOffset: binding?.baselineOffset ?? 0,
+                  side: binding?.side ?? 'left',
+                })
+              : setTextPath(doc, node.id, undefined),
+          )}
+        >
+          <option value="">None — lay out in a box</option>
+          {paths.map((path) => (
+            <option key={path.id} value={path.id}>{path.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {binding && (
+        <>
+          <div className={styles.row}>
+            <span className={styles.label}>Start</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              aria-label="Start offset along the path"
+              className={styles.rangeInput}
+              value={Math.round(binding.startOffset)}
+              onChange={(e) => onDocumentChange(patchTextPath(doc, node.id, { startOffset: Number(e.target.value) }))}
+            />
+          </div>
+          <div className={styles.row}>
+            <span className={styles.label}>Align</span>
+            <select
+              className={styles.select}
+              aria-label="Alignment along the path"
+              value={binding.align}
+              onChange={(e) => onDocumentChange(patchTextPath(doc, node.id, {
+                align: e.target.value as 'start' | 'middle' | 'end',
+              }))}
+            >
+              <option value="start">Start</option>
+              <option value="middle">Middle</option>
+              <option value="end">End</option>
+            </select>
+          </div>
+          <div className={styles.row}>
+            <span className={styles.label}>Baseline</span>
+            <input
+              type="number"
+              min={-400}
+              max={400}
+              aria-label="Baseline offset from the path"
+              className={styles.numberInput}
+              value={Math.round(binding.baselineOffset)}
+              onChange={(e) => onDocumentChange(patchTextPath(doc, node.id, {
+                baselineOffset: Number(e.target.value) || 0,
+              }))}
+            />
+          </div>
+          <div className={styles.row}>
+            <span className={styles.label}>Side</span>
+            <select
+              className={styles.select}
+              aria-label="Side of the path"
+              value={binding.side}
+              onChange={(e) => onDocumentChange(patchTextPath(doc, node.id, {
+                side: e.target.value as 'left' | 'right',
+              }))}
+            >
+              <option value="left">Along the path</option>
+              <option value="right">Reversed</option>
+            </select>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** What an instance is, and how many copies share its definition. */
+function InstanceInfo({ doc, node }: { doc: DrawingDocument; node: Extract<DrawingNode, { type: 'instance' }> }) {
+  const symbol = (doc.symbols ?? []).find((s) => s.id === node.symbolId);
+  let count = 0;
+  for (const { node: candidate } of flattenTree(doc.root)) {
+    if (candidate.type === 'instance' && candidate.symbolId === node.symbolId) count++;
+  }
+
+  return (
+    <div className={styles.panel}>
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>Symbol instance</div>
+        <div className={styles.row}>
+          <span className={styles.label}>Symbol</span>
+          <span className={styles.readonlyValue}>{symbol?.name ?? 'Missing'}</span>
+        </div>
+        <div className={styles.row}>
+          <span className={styles.label}>Instances</span>
+          <span className={styles.readonlyValue}>{count}</span>
+        </div>
+        <p className={styles.hint}>
+          Editing the symbol changes every instance. Detach one from the Layers panel to
+          edit it on its own.
+        </p>
       </div>
     </div>
   );

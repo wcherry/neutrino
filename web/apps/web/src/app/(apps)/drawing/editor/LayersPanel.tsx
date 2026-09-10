@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  Component,
   Eye,
   EyeOff,
   Folder,
@@ -12,6 +13,8 @@ import {
   Image as ImageIcon,
   Lock,
   Minus,
+  MoreHorizontal,
+  Paintbrush,
   Pencil,
   Plus,
   Square,
@@ -24,11 +27,22 @@ import {
 import { findNode, findParent, flattenTree } from './document/tree';
 import {
   addNode,
+  addSymbol,
   deleteNode,
+  detachInstance,
+  patchNodeMask,
   patchObjects,
+  setNodeMask,
   setNodeProps,
 } from './document/edits';
-import { createStack, createVectorLayer } from './document/factory';
+import {
+  createInstance,
+  createMask,
+  createPaintLayer,
+  createStack,
+  createSymbol,
+  createVectorLayer,
+} from './document/factory';
 import { moveNode } from './document/tree';
 import {
   BLEND_MODES,
@@ -58,6 +72,7 @@ function nodeIcon(node: DrawingNode) {
     case 'raster': return <ImageIcon size={11} />;
     case 'text': return <Type size={11} />;
     case 'vector': return <LayersIcon size={11} />;
+    case 'instance': return <Component size={11} />;
   }
 }
 
@@ -69,6 +84,17 @@ function objectIcon(object: VectorObject) {
     case 'path': return <Pencil size={11} />;
   }
 }
+
+/**
+ * A 1×1 opaque white PNG — a fresh layer mask, revealing everything.
+ *
+ * One pixel rather than a canvas-sized image for the same reason a new paint
+ * layer is a single transparent pixel: the channel declares its own size and
+ * the renderer stretches the bitmap to it, so a mask that hides nothing costs
+ * seventy bytes until somebody paints on it.
+ */
+const WHITE_PIXEL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
 
 /** What a node is called in the panel when it has no name of its own. */
 function nodeLabel(node: DrawingNode): string {
@@ -90,10 +116,12 @@ export function LayersPanel({
   const [renameValue, setRenameValue] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [menuNodeId, setMenuNodeId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const rowMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!addOpen) return;
@@ -103,6 +131,15 @@ export function LayersPanel({
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [addOpen]);
+
+  useEffect(() => {
+    if (!menuNodeId) return;
+    const close = (e: MouseEvent) => {
+      if (!rowMenuRef.current?.contains(e.target as Node)) setMenuNodeId(null);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuNodeId]);
 
   const rows = flattenTree(doc.root).filter(({ node }) => {
     // A node is shown only when every group above it is open.
@@ -165,6 +202,69 @@ export function LayersPanel({
     setAddOpen(false);
   }
 
+  /**
+   * An empty raster layer covering the canvas — somewhere for a brush to paint.
+   *
+   * Made active immediately, because the only reason to add one is to paint on
+   * it and leaving the previous layer active would send the next stroke
+   * somewhere else.
+   */
+  function addPaintLayer() {
+    const count = flattenTree(doc.root).filter((f) => f.node.type === 'raster').length;
+    const layer = createPaintLayer(doc.canvas, `Paint ${count + 1}`);
+    onDocumentChange(addNode(doc, layer));
+    onActiveLayerChange(layer.id);
+    onSelectionChange({ kind: 'nodes', ids: [layer.id] });
+    setAddOpen(false);
+  }
+
+  // ── Masks and symbols ────────────────────────────────────────────
+
+  /**
+   * A mask over a layer.
+   *
+   * A **layer** mask starts as a full white channel — fully revealed — so
+   * adding one changes nothing until it is painted on. Starting it black would
+   * make the layer vanish the moment the mask was added, which reads as having
+   * deleted something. A **clipping** mask has no channel at all: its shape is
+   * the layer below it.
+   */
+  function addMask(node: DrawingNode, kind: 'layer' | 'clipping') {
+    const source = kind === 'clipping'
+      ? null
+      : { dataUrl: WHITE_PIXEL, width: doc.canvas.width, height: doc.canvas.height, x: 0, y: 0 };
+    onDocumentChange(setNodeMask(doc, node.id, createMask(kind, source)));
+    setMenuNodeId(null);
+  }
+
+  /**
+   * Turns a layer into a reusable symbol, replacing it with an instance.
+   *
+   * Replacing rather than adding: leaving the original beside the new instance
+   * would draw the content twice, in the same place, and the second copy would
+   * be invisible until somebody moved one of them.
+   */
+  function makeSymbol(node: DrawingNode) {
+    const symbol = createSymbol(node, node.name);
+    const parent = findParent(doc.root, node.id);
+    const index = parent?.children.findIndex((c) => c.id === node.id) ?? 0;
+    const withSymbol = addSymbol(deleteNode(doc, node.id), symbol);
+    // The instance keeps the original's id, so anything already pointing at
+    // this layer — the selection, the active-layer id — still resolves.
+    const instance = createInstance(symbol, {
+      id: node.id,
+      name: node.name,
+      transform: node.transform,
+      opacity: node.opacity,
+      blendMode: node.blendMode,
+      visible: node.visible,
+      locked: node.locked,
+    });
+    onDocumentChange(addNode(withSymbol, instance, { parentId: parent?.id, index }));
+    onSelectionChange({ kind: 'nodes', ids: [node.id] });
+    setMenuNodeId(null);
+  }
+
   function removeNodeAt(id: string) {
     const next = deleteNode(doc, id);
     // The document must always keep somewhere to draw. Deleting the last vector
@@ -220,6 +320,9 @@ export function LayersPanel({
             <div className={styles.addMenu} role="menu">
               <button className={styles.addMenuItem} role="menuitem" onClick={addLayer}>
                 <LayersIcon size={12} /> New layer
+              </button>
+              <button className={styles.addMenuItem} role="menuitem" onClick={addPaintLayer}>
+                <Paintbrush size={12} /> New paint layer
               </button>
               <button className={styles.addMenuItem} role="menuitem" onClick={addGroup}>
                 <Folder size={12} /> New group
@@ -334,6 +437,86 @@ export function LayersPanel({
                 >
                   {node.visible ? <Eye size={11} /> : <EyeOff size={11} />}
                 </button>
+                <div className={styles.addWrap} ref={menuNodeId === node.id ? rowMenuRef : undefined}>
+                  <button
+                    className={styles.iconBtn}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuNodeId((current) => (current === node.id ? null : node.id));
+                    }}
+                    title="Layer options"
+                    aria-label={`Options for ${nodeLabel(node)}`}
+                  >
+                    <MoreHorizontal size={11} />
+                  </button>
+                  {menuNodeId === node.id && (
+                    <div className={styles.addMenu} role="menu">
+                      {!node.mask && (
+                        <>
+                          <button className={styles.addMenuItem} role="menuitem" onClick={() => addMask(node, 'layer')}>
+                            Add layer mask
+                          </button>
+                          <button className={styles.addMenuItem} role="menuitem" onClick={() => addMask(node, 'clipping')}>
+                            Clip to layer below
+                          </button>
+                        </>
+                      )}
+                      {node.mask && (
+                        <>
+                          <button
+                            className={styles.addMenuItem}
+                            role="menuitem"
+                            onClick={() => {
+                              onDocumentChange(patchNodeMask(doc, node.id, { enabled: !node.mask!.enabled }));
+                              setMenuNodeId(null);
+                            }}
+                          >
+                            {node.mask.enabled ? 'Disable mask' : 'Enable mask'}
+                          </button>
+                          {node.mask.source && (
+                            <button
+                              className={styles.addMenuItem}
+                              role="menuitem"
+                              onClick={() => {
+                                onDocumentChange(patchNodeMask(doc, node.id, { inverted: !node.mask!.inverted }));
+                                setMenuNodeId(null);
+                              }}
+                            >
+                              {node.mask.inverted ? 'Un-invert mask' : 'Invert mask'}
+                            </button>
+                          )}
+                          <button
+                            className={styles.addMenuItem}
+                            role="menuitem"
+                            onClick={() => {
+                              onDocumentChange(setNodeMask(doc, node.id, undefined));
+                              setMenuNodeId(null);
+                            }}
+                          >
+                            Remove mask
+                          </button>
+                        </>
+                      )}
+                      {node.type !== 'instance' ? (
+                        <button className={styles.addMenuItem} role="menuitem" onClick={() => makeSymbol(node)}>
+                          <Component size={12} /> Make a symbol
+                        </button>
+                      ) : (
+                        <button
+                          className={styles.addMenuItem}
+                          role="menuitem"
+                          onClick={() => {
+                            onDocumentChange(detachInstance(doc, node.id));
+                            setMenuNodeId(null);
+                          }}
+                        >
+                          Detach from symbol
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {confirmDeleteId !== node.id && (
                   <button
                     className={`${styles.iconBtn} ${styles.deleteBtn}`}
@@ -345,6 +528,15 @@ export function LayersPanel({
                   </button>
                 )}
               </div>
+
+              {node.mask && (
+                <div className={styles.propsRow} style={{ paddingLeft: 16 + depth * 12 }}>
+                  <span className={styles.propLabel}>
+                    {node.mask.kind === 'clipping' ? 'Clipped to the layer below' : 'Layer mask'}
+                    {!node.mask.enabled ? ' (off)' : node.mask.inverted ? ' (inverted)' : ''}
+                  </span>
+                </div>
+              )}
 
               {confirmDeleteId === node.id && (
                 <div className={styles.confirmRow}>

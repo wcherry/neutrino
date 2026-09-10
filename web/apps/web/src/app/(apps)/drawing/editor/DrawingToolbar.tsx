@@ -3,13 +3,22 @@
 import React from 'react';
 import {
   ArrowRight,
+  Brush,
   Circle,
   Eraser,
   Image as ImageIcon,
+  Lasso,
   Minus,
   MousePointer2,
+  Move3d,
   Pen,
+  Pencil,
+  Spline,
   Square,
+  SquareDashedMousePointer,
+  CircleDashed,
+  Highlighter,
+  SprayCan,
   Type,
   type LucideIcon,
 } from 'lucide-react';
@@ -22,14 +31,47 @@ interface DrawingToolbarProps {
   onAddImage: () => void;
 }
 
-const TOOLS: { id: ToolType; icon: LucideIcon; label: string }[] = [
-  { id: 'select', icon: MousePointer2, label: 'Select' },
-  { id: 'pen', icon: Pen, label: 'Pen' },
-  { id: 'line', icon: Minus, label: 'Line' },
-  { id: 'rectangle', icon: Square, label: 'Rectangle' },
-  { id: 'ellipse', icon: Circle, label: 'Ellipse' },
-  { id: 'arrow', icon: ArrowRight, label: 'Arrow' },
-  { id: 'text', icon: Type, label: 'Text' },
+interface ToolEntry {
+  id: ToolType;
+  icon: LucideIcon;
+  label: string;
+}
+
+/**
+ * The toolbar, in four groups separated by rules.
+ *
+ * The grouping is the tool taxonomy in `types.ts` made visible: what you select
+ * with, what you draw as objects, what you paint as pixels, and what you select
+ * *pixels* with. Those are genuinely different kinds of action — a brush stroke
+ * and a rectangle end up in different sorts of layer — and a flat list of
+ * seventeen buttons would hide that distinction behind an alphabet of icons.
+ */
+const GROUPS: ToolEntry[][] = [
+  [
+    { id: 'select', icon: MousePointer2, label: 'Select' },
+    { id: 'node', icon: Spline, label: 'Edit path points' },
+    { id: 'transform', icon: Move3d, label: 'Transform layer' },
+  ],
+  [
+    { id: 'pen', icon: Pen, label: 'Pen' },
+    { id: 'line', icon: Minus, label: 'Line' },
+    { id: 'rectangle', icon: Square, label: 'Rectangle' },
+    { id: 'ellipse', icon: Circle, label: 'Ellipse' },
+    { id: 'arrow', icon: ArrowRight, label: 'Arrow' },
+    { id: 'text', icon: Type, label: 'Text' },
+  ],
+  [
+    { id: 'brush', icon: Brush, label: 'Brush' },
+    { id: 'pencil', icon: Pencil, label: 'Pencil' },
+    { id: 'marker', icon: Highlighter, label: 'Marker' },
+    { id: 'airbrush', icon: SprayCan, label: 'Airbrush' },
+    { id: 'paint-eraser', icon: Eraser, label: 'Erase pixels' },
+  ],
+  [
+    { id: 'select-rect', icon: SquareDashedMousePointer, label: 'Rectangular selection' },
+    { id: 'select-ellipse', icon: CircleDashed, label: 'Elliptical selection' },
+    { id: 'lasso', icon: Lasso, label: 'Lasso selection' },
+  ],
 ];
 
 export function DrawingToolbar({ tool, onToolChange, onAddImage }: DrawingToolbarProps) {
@@ -69,17 +111,22 @@ export function DrawingToolbar({ tool, onToolChange, onAddImage }: DrawingToolba
 
   return (
     <div style={sidebarStyle}>
-      {TOOLS.map(({ id, icon: Icon, label }) => (
-        <button
-          key={id}
-          title={label}
-          style={btnStyle(tool === id)}
-          onClick={() => onToolChange(id)}
-          aria-label={label}
-          aria-pressed={tool === id}
-        >
-          <Icon size={16} />
-        </button>
+      {GROUPS.map((group, index) => (
+        <React.Fragment key={index}>
+          {index > 0 && <div style={dividerStyle} />}
+          {group.map(({ id, icon: Icon, label }) => (
+            <button
+              key={id}
+              title={label}
+              style={btnStyle(tool === id)}
+              onClick={() => onToolChange(id)}
+              aria-label={label}
+              aria-pressed={tool === id}
+            >
+              <Icon size={16} />
+            </button>
+          ))}
+        </React.Fragment>
       ))}
 
       <div style={dividerStyle} />
@@ -94,13 +141,13 @@ export function DrawingToolbar({ tool, onToolChange, onAddImage }: DrawingToolba
       </button>
 
       <button
-        title="Eraser"
+        title="Delete objects"
         style={btnStyle(tool === 'eraser')}
         onClick={() => onToolChange('eraser')}
-        aria-label="Eraser"
+        aria-label="Delete objects"
         aria-pressed={tool === 'eraser'}
       >
-        <Eraser size={16} />
+        <Eraser size={16} strokeWidth={1.4} />
       </button>
     </div>
   );

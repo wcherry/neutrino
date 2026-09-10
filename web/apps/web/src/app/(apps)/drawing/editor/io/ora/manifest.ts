@@ -52,20 +52,40 @@ export interface MaskEntry {
 
 export interface NeutrinoManifest {
   application: { name: string; version: string };
-  /** Bumped when the *manifest's* shape changes, independently of the document's. */
+  /**
+   * Bumped when the *manifest's* shape changes, independently of the
+   * document's.
+   *
+   * Still 1 after phases 3–5. What they added — a `selection` entry, and
+   * `renderedFrom: 'instance'` appearing among the asset entries — is additive,
+   * and the reader ignores fields it does not know, so a manifest written
+   * before them and one written after are both readable by both. The number
+   * exists for a change that would *break* that, and this was not one.
+   */
   manifestVersion: 1;
-  /** The document model, verbatim — guides, grid, viewport and all. */
+  /** The document model, verbatim — guides, grid, symbols, viewport and all. */
   document: DrawingDocument;
   assets: AssetEntry[];
   masks: MaskEntry[];
+  /**
+   * Where the active selection's grayscale channel landed, or null when
+   * nothing was selected. The shape itself is in `document.selection`; this is
+   * the rendered fallback beside it, so an application that knows nothing about
+   * Neutrino can still see what was selected.
+   */
+  selection: string | null;
 }
 
 export const MANIFEST_PATH = 'META-INF/neutrino/document.json';
+
+/** Where the active selection's channel is written inside the archive. */
+export const SELECTION_PATH = 'data/selection.png';
 
 export function buildManifest(
   doc: DrawingDocument,
   assets: ReadonlyMap<string, LayerAsset>,
   maskSources: ReadonlyMap<string, string>,
+  extras: { selection?: string | null } = {},
 ): NeutrinoManifest {
   const assetEntries: AssetEntry[] = [];
   const maskEntries: MaskEntry[] = [];
@@ -100,5 +120,6 @@ export function buildManifest(
     document: doc,
     assets: assetEntries,
     masks: maskEntries,
+    selection: extras.selection ?? null,
   };
 }
