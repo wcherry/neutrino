@@ -293,6 +293,29 @@ describe('saving a drawing', () => {
     expect(JSON.parse(content as string)).toMatchObject({ version: 2 });
   });
 
+  /**
+   * The autosave endpoint applies a rename carried in its `metadata` part, so a
+   * save that sends a title renames the file. A body-only save must send none.
+   *
+   * Without this the first save of a newly created drawing — which is written
+   * as soon as it opens, since the server writes no seed — carries the name the
+   * file had at load and undoes any rename made in between. That is what
+   * reverted a freshly renamed drawing to "Untitled drawing" a second later,
+   * with the PATCH that renamed it already returned 200.
+   */
+  it('does not send a title with a save that only writes the body', async () => {
+    await renderLoadedEditor();
+
+    await act(async () => {
+      onDocumentChange(setTitle(STORED_DOC, 'Edited'));
+      await new Promise((r) => setTimeout(r, 1200));
+    });
+
+    await waitFor(() => expect(autosaveEncryptedContent).toHaveBeenCalled(), { timeout: 5_000 });
+    const [, , , , metadata] = autosaveEncryptedContent.mock.calls[0];
+    expect(metadata).toBeUndefined();
+  });
+
   it('writes nothing when the vault is locked', async () => {
     await renderLoadedEditor();
     dekNow = null;

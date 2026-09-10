@@ -81,6 +81,8 @@ const InsertImageDialog = dynamic(
 );
 
 const AUTOSAVE_DELAY = 1000;
+/** How long to wait before trying again when a save is already on the wire. */
+const SAVE_RETRY_DELAY = 300;
 const HISTORY_DELAY = 500;
 const HISTORY_LIMIT = 100;
 
@@ -225,6 +227,17 @@ export function DrawingEditor() {
   const selectionRef = useRef(selection);
   const activeLayerRef = useRef(activeLayerId);
   const clipboardRef = useRef(clipboard);
+  /**
+   * The file name the server last told us it holds.
+   *
+   * The autosave endpoint applies a rename carried in its `metadata` part, so a
+   * save that sends a title *renames the file*. A body-only save must therefore
+   * send none: the first save of a newly created drawing would otherwise carry
+   * the name the file had when it was opened and undo a rename made in between
+   * — which is what reverted "My New Drawing" back to "Untitled drawing" a
+   * second after the PATCH that set it.
+   */
+  const serverTitleRef = useRef('');
   docRef.current = doc;
   selectionRef.current = selection;
   activeLayerRef.current = activeLayerId;
@@ -309,6 +322,7 @@ export function DrawingEditor() {
         const drawing = await drawingApi.getDrawing(drawingId!);
         if (cancelled) return;
         setTitleState(drawing.title);
+        serverTitleRef.current = drawing.title;
         versionGuard.observe(drawing.contentVersion);
 
         const { raw, wasPlaintext, unreadable } = dekRef.current
@@ -407,13 +421,27 @@ export function DrawingEditor() {
   useEffect(() => {
     if (loading || !drawingId || !isDirtyRef.current) return;
 
-    const timer = setTimeout(() => {
-      if (saveInProgress.current || !isDirtyRef.current) return;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const attempt = () => {
+      // A save is already in flight, so this one holds newer state than the one
+      // on the wire. Retry rather than return: `isDirtyRef` staying true does
+      // not bring us back here, because nothing re-runs this effect until the
+      // document changes again — so dropping it strands the edit until the next
+      // keystroke, or forever if there is none.
+      if (saveInProgress.current) {
+        timer = setTimeout(attempt, SAVE_RETRY_DELAY);
+        return;
+      }
+      if (!isDirtyRef.current) return;
+
       isDirtyRef.current = false;
       saveInProgress.current = true;
 
       const { awaitDek: resolveDek, versionGuard: guard, toast: notify, userId } = saveDepsRef.current;
       const body = serializeDocument(setTitle(docRef.current, title));
+      // Only when it actually changed here — see `serverTitleRef`.
+      const metadata = title === serverTitleRef.current ? undefined : { title };
 
       // `awaitDek`, not `dekRef.current`: the first autosave after a reload
       // routinely lands while the key is still resolving, and reading the ref
@@ -422,11 +450,12 @@ export function DrawingEditor() {
         .then((dek) => {
           if (!dek) throw new Error('no-dek');
           return drawingApi.autosaveEncryptedContent(
-            drawingId, body, 'drawing.json', dek, { title }, guard.check(),
+            drawingId, body, 'drawing.json', dek, metadata, guard.check(),
           );
         })
         .then((meta) => {
           guard.observe(meta.contentVersion);
+          serverTitleRef.current = meta.title;
           indexOnSave(userId, {
             id: drawingId,
             type: 'drawing',
@@ -447,8 +476,9 @@ export function DrawingEditor() {
           }
         })
         .finally(() => { saveInProgress.current = false; });
-    }, AUTOSAVE_DELAY);
+    };
 
+    timer = setTimeout(attempt, AUTOSAVE_DELAY);
     return () => clearTimeout(timer);
   }, [doc, title, drawingId, loading]);
 
@@ -755,7 +785,10 @@ export function DrawingEditor() {
 
   const handleTitleBlur = useCallback(() => {
     if (!drawingId || !title.trim()) return;
-    drawingApi.saveDrawing(drawingId, { title }).catch(() => {});
+    drawingApi
+      .saveDrawing(drawingId, { title })
+      .then((meta) => { serverTitleRef.current = meta.title; })
+      .catch(() => {});
     applyDocument(setTitle(docRef.current, title.trim()));
   }, [applyDocument, drawingId, title]);
 
