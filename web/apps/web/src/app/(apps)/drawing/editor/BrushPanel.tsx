@@ -10,9 +10,16 @@ import {
 } from './types';
 import {
   MAX_BRUSH_SIZE,
+  MEDIUM_LABELS,
+  MEDIUM_PROFILES,
   MIN_BRUSH_SIZE,
+  PAINT_MEDIUMS,
+  PAPER_LABELS,
+  PAPER_TYPES,
   clampBrush,
   type BrushSettings,
+  type PaintMedium,
+  type PaperType,
 } from './paint';
 import styles from './StylePanel.module.css';
 
@@ -36,6 +43,13 @@ interface BrushPanelProps {
  * this panel that *is* about the document is the target read-out, and it earns
  * its place — a brush with nowhere to paint is otherwise a tool that silently
  * does nothing, which is the single most confusing state a paint program has.
+ *
+ * Three of the controls appear only for the tool they describe. The engine
+ * gives every brush a splatter, a paper and a medium, but a pencil's paint type
+ * and a marker's spray pattern are questions nobody asks — and a panel that
+ * offers every dimension to every tool is how an inspector becomes a wall of
+ * sliders with no shape to it. Which tool each belongs to is a judgement about
+ * the tool, so it lives here rather than in the engine.
  */
 export function BrushPanel({
   brush,
@@ -47,6 +61,12 @@ export function BrushPanel({
 }: BrushPanelProps) {
   const patch = (fields: Partial<BrushSettings>) =>
     onBrushChange(clampBrush({ ...brush, ...fields }));
+
+  // A medium with an opinion about blending wins over the Blend control — a
+  // watercolour glaze is a multiply or it is not a glaze. The control is
+  // disabled rather than hidden, because a setting that quietly stops applying
+  // is worse than one that says why it cannot.
+  const mediumBlend = MEDIUM_PROFILES[brush.medium]?.blend ?? null;
 
   return (
     <div className={styles.panel}>
@@ -133,21 +153,96 @@ export function BrushPanel({
         </div>
 
         {!brush.erase && (
+          <>
+            <div className={styles.row}>
+              <span className={styles.label}>Blend</span>
+              <select
+                className={styles.select}
+                aria-label="Brush blend mode"
+                value={mediumBlend ?? brush.blendMode}
+                disabled={mediumBlend !== null}
+                onChange={(e) => patch({ blendMode: e.target.value as BlendMode })}
+              >
+                {BLEND_MODES.map((mode) => (
+                  <option key={mode} value={mode}>{BLEND_MODE_LABELS[mode]}</option>
+                ))}
+              </select>
+            </div>
+            {mediumBlend !== null && (
+              <p className={styles.hint}>
+                {MEDIUM_LABELS[brush.medium]} always blends as{' '}
+                {BLEND_MODE_LABELS[mediumBlend].toLowerCase()}.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
+      {brush.type === 'airbrush' && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Spray</div>
+          <p className={styles.hint}>
+            How far the spray breaks into droplets. At zero it is an even airbrush cloud.
+          </p>
           <div className={styles.row}>
-            <span className={styles.label}>Blend</span>
+            <span className={styles.label}>Splatter</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              aria-label="Spray splatter"
+              className={styles.rangeInput}
+              value={Math.round(brush.splatter * 100)}
+              onChange={(e) => patch({ splatter: Number(e.target.value) / 100 })}
+            />
+          </div>
+        </div>
+      )}
+
+      {brush.type === 'pencil' && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Paper</div>
+          <p className={styles.hint}>
+            The tooth the graphite catches on. The grain is fixed to the canvas, so a second
+            pass finds the same peaks.
+          </p>
+          <div className={styles.row}>
+            <span className={styles.label}>Surface</span>
             <select
               className={styles.select}
-              aria-label="Brush blend mode"
-              value={brush.blendMode}
-              onChange={(e) => patch({ blendMode: e.target.value as BlendMode })}
+              aria-label="Paper texture"
+              value={brush.paper}
+              onChange={(e) => patch({ paper: e.target.value as PaperType })}
             >
-              {BLEND_MODES.map((mode) => (
-                <option key={mode} value={mode}>{BLEND_MODE_LABELS[mode]}</option>
+              {PAPER_TYPES.map((paper) => (
+                <option key={paper} value={paper}>{PAPER_LABELS[paper]}</option>
               ))}
             </select>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {brush.type === 'brush' && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Paint</div>
+          <p className={styles.hint}>
+            What the paint is, and so how much of the colour under it comes along.
+          </p>
+          <div className={styles.row}>
+            <span className={styles.label}>Medium</span>
+            <select
+              className={styles.select}
+              aria-label="Paint type"
+              value={brush.medium}
+              onChange={(e) => patch({ medium: e.target.value as PaintMedium })}
+            >
+              {PAINT_MEDIUMS.map((medium) => (
+                <option key={medium} value={medium}>{MEDIUM_LABELS[medium]}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Pressure</div>

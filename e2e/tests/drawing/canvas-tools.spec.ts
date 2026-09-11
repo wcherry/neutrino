@@ -90,6 +90,34 @@ test.describe('Canvas tools', () => {
     await expect(page.getByLabel('Rectangle', { exact: true })).toHaveAttribute('aria-pressed', 'false');
   });
 
+  test('each paint tool brings its own material control', async ({ page, request }) => {
+    await registerAndLogin(request, page);
+    await openEditor(request, page);
+
+    // The engine gives every brush a splatter, a paper and a medium. The panel
+    // shows each one only where it means something — a pencil's paint type and
+    // a marker's spray pattern are questions nobody asks — so arming a tool has
+    // to bring its own control and take the others away.
+    await page.getByLabel('Airbrush', { exact: true }).click();
+    await expect(page.getByLabel('Spray splatter')).toBeVisible();
+    await expect(page.getByLabel('Paper texture')).toBeHidden();
+    await expect(page.getByLabel('Paint type')).toBeHidden();
+
+    await page.getByLabel('Pencil', { exact: true }).click();
+    await expect(page.getByLabel('Paper texture')).toBeVisible();
+    await expect(page.getByLabel('Spray splatter')).toBeHidden();
+
+    await page.getByLabel('Brush', { exact: true }).click();
+    await expect(page.getByLabel('Paint type')).toBeVisible();
+    await expect(page.getByLabel('Paper texture')).toBeHidden();
+
+    // A medium with an opinion about blending wins over the Blend control, so
+    // the control says so rather than silently stopping applying.
+    await expect(page.getByLabel('Brush blend mode')).toBeEnabled();
+    await page.getByLabel('Paint type').selectOption('watercolor');
+    await expect(page.getByLabel('Brush blend mode')).toBeDisabled();
+  });
+
   test('drawing a rectangle on the canvas triggers autosave', async ({ page, request }) => {
     await registerAndLogin(request, page);
     await openEditor(request, page);

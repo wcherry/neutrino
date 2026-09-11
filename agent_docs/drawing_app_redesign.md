@@ -108,6 +108,13 @@ Brushes are editing tools, not document content. Store:
 - Color
 - Blend mode
 - Optional brush preset reference
+- Splatter — how far a dab breaks into droplets
+- Paper — the tooth the stroke is laid onto
+- Medium — what the paint is, and so how it mixes with what is under it
+
+The last three are materials rather than marks, and they are what stops a
+stroke reading as a shape filled with a colour. They are still brush settings
+and still not document content: a drawing keeps the pixels they produced.
 
 The rendered stroke should become raster pixels in the layer. Store stroke history only as an optional Neutrino extension.
 
@@ -446,6 +453,44 @@ Every Neutrino-specific feature should also have a rendered fallback.
    pointer events**: a pointer at 60Hz reports points tens of pixels apart, and
    restarting the spacing per event bunches stamps at the reported positions,
    which is a dotted line with extra steps.
+
+   **Materials** are three further dimensions of the same parameter space, added
+   because size, flow and hardness describe a mark's *shape* and none of them
+   can say what the mark is made of: `splatter` (`spray.ts`), `paper`
+   (`paper.ts`) and `medium` (`medium.ts`), each a pure module beside `brush.ts`
+   on the same terms as the rest of the split. Every brush has all three, so the
+   engine never branches on the brush type — the inspector decides which control
+   is worth showing for which tool, and that is a judgement about tools rather
+   than about paint.
+
+   Each lands in a different place, and the place is the point. **Splatter**
+   breaks one dab into droplets, per stamp, so a spray can is a nozzle rather
+   than an even cloud; droplet size is chosen first and the count derived from
+   it, or turning the slider up part-way gives a handful of fat blobs instead of
+   a finer spray. **The medium** decides a dab's colour, alpha and edge and then
+   how the finished stroke meets the layer, and mixes through a **loaded
+   bristle** — one readback of the layer per stroke, then a running colour that
+   turns over at the medium's own rate — because sampling per dab gives a stroke
+   that switches colour at every boundary it crosses, which is not what oil
+   does. **Paper** masks the whole stroke once and is anchored to the *canvas*,
+   not to the stroke: grain that travels with the mark is noise, grain that
+   stays put is tooth, because a second pass then finds the same peaks. Both
+   masks multiply alpha and the composite runs every preview frame, so it works
+   from a copy of the stroke buffer — in place, a partial mask multiplies itself
+   once per frame and the stroke dissolves over a long drag.
+
+   Paper took two corrections after it first shipped, and both are the kind that
+   only a rendered stroke shows. **Contrast is what reads as a surface, not
+   depth**: the first version pushed the noise through a weight-preserving curve
+   so that a rough sheet would not double as a brightness control, and what came
+   out was a gradient — a pencil that varies in darkness rather than one that
+   skips. `bite` narrows the curve towards a threshold so the graphite reaches a
+   peak or misses it, and the broken edge that follows is most of the effect.
+   **And the tooth is a fixed size in canvas pixels**, so a stroke narrower than
+   a hollow falls into it whole — the pencil preset at its own default size drew
+   almost nothing on rough paper. `grainForSize` scales the depth by the brush's
+   width against the cell, which is both the fix and the real behaviour: a broad
+   soft pencil rides the peaks, a fine point gets into them.
 
    **Masks** gained the missing kind: a `clipping` mask has no channel and takes
    its shape from the nearest layer below that is not itself clipped, resolved
