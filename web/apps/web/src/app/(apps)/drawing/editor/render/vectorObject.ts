@@ -14,7 +14,8 @@ import {
   unrotatePoint,
   vectorObjectBounds,
 } from '../document/geometry';
-import type { Point, Rect, StrokeStyle, VectorObject, VectorStyle } from '../document/types';
+import { distanceToPath, distanceToSegment, pathToPathData, pointInContour } from '../document/path';
+import { pathContours, type Point, type Rect, type StrokeStyle, type SubPath, type VectorObject, type VectorStyle } from '../document/types';
 
 // ---------------------------------------------------------------------------
 // Stroke dashes
@@ -205,15 +206,41 @@ function traceObject(ctx: CanvasRenderingContext2D, object: VectorObject): void 
       break;
     }
     case 'path': {
-      if (object.points.length === 0) break;
-      ctx.moveTo(object.points[0].x, object.points[0].y);
-      for (let i = 1; i < object.points.length; i++) {
-        ctx.lineTo(object.points[i].x, object.points[i].y);
+      for (const contour of pathContours(object)) {
+        traceContour(ctx, contour);
       }
-      if (object.closed) ctx.closePath();
       break;
     }
   }
+}
+
+/**
+ * One contour into the current path.
+ *
+ * Curved and straight spans are emitted as `bezierCurveTo` and `lineTo`
+ * respectively rather than every span as a cubic. The picture is identical
+ * either way; what differs is that a freehand stroke of two thousand points
+ * stays two thousand line commands instead of becoming two thousand curves the
+ * rasteriser has to subdivide.
+ */
+function traceContour(ctx: CanvasRenderingContext2D, contour: SubPath): void {
+  const { points, closed } = contour;
+  if (points.length === 0) return;
+
+  ctx.moveTo(points[0].x, points[0].y);
+  const last = closed ? points.length : points.length - 1;
+  for (let i = 0; i < last; i++) {
+    const from = points[i];
+    const to = points[(i + 1) % points.length];
+    if (from.out || to.in) {
+      const c1 = from.out ?? from;
+      const c2 = to.in ?? to;
+      ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, to.x, to.y);
+    } else {
+      ctx.lineTo(to.x, to.y);
+    }
+  }
+  if (closed) ctx.closePath();
 }
 
 function drawArrowHead(ctx: CanvasRenderingContext2D, tip: Point, angle: number, color: string): void {
@@ -253,7 +280,10 @@ export function drawVectorObject(
   const fillable = object.kind !== 'line' && (object.kind !== 'path' || object.closed);
   if (fill && fillable) {
     ctx.fillStyle = fill;
-    ctx.fill();
+    // Even-odd is what turns a second contour into a hole. It arrives on
+    // imported SVG and never on anything drawn here, so the default stays
+    // non-zero and matches what `vectorObjectToSvg` omits.
+    ctx.fill(object.kind === 'path' && object.fillRule === 'evenodd' ? 'evenodd' : 'nonzero');
   }
 
   if (object.style.strokeWidth > 0 && isPaintedFill(object.style.stroke)) {
@@ -388,12 +418,11 @@ export function vectorObjectToSvg(object: VectorObject, index: number): { markup
     }
     case 'path': {
       if (object.points.length < 2) return { markup: '', defs: '' };
-      const d = object.points
-        .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
-        .join(' ') + (object.closed ? ' Z' : '');
+      const d = pathToPathData(object);
       // An open path never takes its fill, matching the canvas emitter above.
       const pathAttrs = object.closed ? attrs : attrs.replace(/fill="[^"]*"/, 'fill="none"');
-      return { markup: `<path${id} d="${d}" ${pathAttrs}${rotate}/>`, defs };
+      const rule = object.fillRule === 'evenodd' ? ' fill-rule="evenodd"' : '';
+      return { markup: `<path${id} d="${d}"${rule} ${pathAttrs}${rotate}/>`, defs };
     }
   }
 }
@@ -417,9 +446,11 @@ function arrowHeadSvg(tip: Point, angle: number, color: string): string {
 /**
  * Whether a canvas-space point lands on an object.
  *
- * A path is tested against its points rather than its box, so clicking inside
- * the loop of a freehand scribble does not select it — the box of a long stroke
- * covers most of the canvas and would otherwise swallow every click.
+ * A path is tested against its own curve rather than against its box, so
+ * clicking inside the loop of a freehand scribble does not select it — the box
+ * of a long stroke covers most of the canvas and would otherwise swallow every
+ * click. A *filled* closed path is the exception: its interior is painted, so
+ * its interior is clickable.
  */
 export function hitTestObject(object: VectorObject, point: Point, tolerance = 4): boolean {
   if (!object.visible) return false;
@@ -430,8 +461,13 @@ export function hitTestObject(object: VectorObject, point: Point, tolerance = 4)
     : point;
 
   if (object.kind === 'path') {
-    const reach = tolerance + object.style.strokeWidth;
-    return object.points.some((p) => Math.hypot(p.x - local.x, p.y - local.y) <= reach);
+    const reach = tolerance + object.style.strokeWidth / 2;
+    // Measured against the flattened curve, not the anchors: testing anchors
+    // alone left the middle of every long bézier span unclickable, which the
+    // freehand pen's dense point spacing had been hiding.
+    if (distanceToPath(object, local) <= reach) return true;
+    if (!object.closed || !isPaintedFill(object.style.fill)) return false;
+    return pathContours(object).some((contour) => contour.closed && pointInContour(contour, local));
   }
 
   if (object.kind === 'line') {
@@ -445,15 +481,6 @@ export function hitTestObject(object: VectorObject, point: Point, tolerance = 4)
     local.x >= box.x - pad && local.x <= box.x + box.width + pad &&
     local.y >= box.y - pad && local.y <= box.y + box.height + pad
   );
-}
-
-function distanceToSegment(p: Point, a: Point, b: Point): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const lengthSq = dx * dx + dy * dy;
-  if (lengthSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSq));
-  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
 /** Re-exported so callers do not reach past this module for an object's extent. */

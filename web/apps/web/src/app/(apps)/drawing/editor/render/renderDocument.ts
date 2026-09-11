@@ -21,18 +21,26 @@
  * whose bitmap is missing draws nothing rather than blocking the frame.
  */
 
-import { isEffectivelyVisible, paintOrder } from '../document/tree';
-import { isIdentity, normalizeRect } from '../document/geometry';
+import { findPathObject, isEffectivelyVisible, paintOrder, symbolTable, type SymbolTable } from '../document/tree';
+import { isIdentity } from '../document/geometry';
 import { drawVectorObject, type ImageResolver } from './vectorObject';
+import { layoutText, layoutTextOnPath, textFont, type TextLine } from './textLayout';
 import type {
   DrawingDocument,
   DrawingNode,
   LayerMask,
+  PathObject,
   Point,
   RasterSource,
   StackNode,
   TextLayerNode,
 } from '../document/types';
+
+// Re-exported from their own module so the many callers that reach for text
+// layout keep one import path while the layout itself lives with the
+// path-following variant it shares its measuring with.
+export { layoutText, textFont };
+export type { TextLine };
 
 /** A canvas to draw into. `HTMLCanvasElement` and `OffscreenCanvas` both satisfy it. */
 export interface Surface {
@@ -70,6 +78,20 @@ export interface RenderOptions {
    * package and a 4 MB one for a drawing with twelve small layers.
    */
   origin?: Point;
+  /**
+   * Symbol definitions, so an `instance` node can draw the content it refers
+   * to. Absent means instances draw nothing, which is what a caller rendering a
+   * detached subtree gets and is honest — an instance with no definition has no
+   * pixels of its own to fall back on.
+   */
+  symbols?: SymbolTable;
+  /**
+   * Resolves a `textPath` binding's target. A function rather than a map
+   * because the paths live scattered through the layer tree and looking one up
+   * costs a walk — a document with no text on a path should not pay for a
+   * lookup table nothing reads.
+   */
+  paths?: (pathId: string) => PathObject | null;
 }
 
 interface ResolvedOptions extends RenderOptions {
@@ -78,6 +100,25 @@ interface ResolvedOptions extends RenderOptions {
 
 function resolve(options: RenderOptions): ResolvedOptions {
   return { ...options, createSurface: options.createSurface ?? domSurfaceFactory };
+}
+
+/**
+ * Render options filled in from a document: its symbols, and a resolver for
+ * text bound to a path.
+ *
+ * Every entry point that has a whole document in hand goes through this, so a
+ * symbol or a curved caption cannot render on screen and vanish from an export
+ * because one call site forgot to pass a table.
+ */
+export function documentRenderOptions(
+  doc: DrawingDocument,
+  options: RenderOptions = {},
+): RenderOptions {
+  return {
+    ...options,
+    symbols: options.symbols ?? symbolTable(doc),
+    paths: options.paths ?? ((pathId) => findPathObject(doc.root, pathId)?.object ?? null),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -94,69 +135,55 @@ function drawRaster(
   ctx.drawImage(bitmap, source.x, source.y, source.width, source.height);
 }
 
-export interface TextLine {
-  text: string;
-  /** Baseline position in canvas coordinates. */
-  x: number;
-  y: number;
-}
+function drawText(
+  ctx: CanvasRenderingContext2D,
+  node: TextLayerNode,
+  options: ResolvedOptions,
+): void {
+  if (!node.text) return;
 
-/**
- * A text layer broken into positioned lines.
- *
- * Wrapping is greedy on whitespace and honours explicit newlines. A single word
- * wider than the box is left to overflow rather than broken mid-word, which is
- * what every text tool does and what makes a narrow box recoverable by widening
- * it.
- */
-export function layoutText(ctx: CanvasRenderingContext2D, node: TextLayerNode): TextLine[] {
-  ctx.font = textFont(node);
-  const box = normalizeRect(node.box);
-  const lineHeight = node.fontSize * node.lineHeight;
-  const lines: string[] = [];
-
-  for (const paragraph of node.text.split('\n')) {
-    if (paragraph === '') {
-      lines.push('');
-      continue;
-    }
-    let current = '';
-    for (const word of paragraph.split(/(\s+)/)) {
-      const candidate = current + word;
-      if (current && box.width > 0 && ctx.measureText(candidate).width > box.width) {
-        lines.push(current.trimEnd());
-        current = word.trimStart();
-      } else {
-        current = candidate;
-      }
-    }
-    lines.push(current.trimEnd());
+  const path = node.textPath ? options.paths?.(node.textPath.pathId) : null;
+  if (path) {
+    drawTextOnPath(ctx, node, path);
+    return;
   }
 
-  return lines.map((text, i) => {
-    const width = ctx.measureText(text).width;
-    const x =
-      node.align === 'center' ? box.x + (box.width - width) / 2 :
-      node.align === 'right' ? box.x + box.width - width :
-      box.x;
-    // The first baseline sits one font size below the box's top, so the box
-    // describes the text's top edge rather than its first baseline.
-    return { text, x, y: box.y + node.fontSize + i * lineHeight };
-  });
-}
-
-export function textFont(node: TextLayerNode): string {
-  const style = node.italic ? 'italic ' : '';
-  return `${style}${node.fontWeight} ${node.fontSize}px ${node.fontFamily}`;
-}
-
-function drawText(ctx: CanvasRenderingContext2D, node: TextLayerNode): void {
-  if (!node.text) return;
   const lines = layoutText(ctx, node);
   ctx.font = textFont(node);
   ctx.fillStyle = node.color;
   ctx.textBaseline = 'alphabetic';
   for (const line of lines) ctx.fillText(line.text, line.x, line.y);
+}
+
+/**
+ * Text laid along a path, glyph by glyph.
+ *
+ * Each glyph is drawn in its own rotated frame, which is why this cannot go
+ * through `fillText` once with a transform: the rotation differs per character
+ * and a single transform would tilt the whole run by whatever the first
+ * character's tangent happened to be.
+ *
+ * A binding whose path is missing falls through to the box layout above rather
+ * than drawing nothing. Losing the curve is recoverable — the text is still on
+ * screen and still says what it says — while an invisible layer is a caption
+ * that has silently disappeared from the drawing.
+ */
+function drawTextOnPath(ctx: CanvasRenderingContext2D, node: TextLayerNode, path: PathObject): void {
+  const glyphs = layoutTextOnPath(ctx, node, path);
+  if (glyphs.length === 0) return;
+
+  ctx.save();
+  ctx.font = textFont(node);
+  ctx.fillStyle = node.color;
+  ctx.textBaseline = 'alphabetic';
+  for (const glyph of glyphs) {
+    ctx.save();
+    ctx.translate(glyph.x, glyph.y);
+    ctx.rotate(glyph.angle);
+    ctx.fillText(glyph.char, 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 /** A node's own content, with its transform applied but no opacity, blend or mask. */
@@ -176,7 +203,7 @@ function drawNodeContent(
       drawRaster(ctx, node.source, options);
       break;
     case 'text':
-      drawText(ctx, node);
+      drawText(ctx, node, options);
       break;
     case 'vector':
       // `objects[0]` is topmost, as `children[0]` is, so painting runs backwards.
@@ -187,6 +214,15 @@ function drawNodeContent(
     case 'stack':
       drawStackChildren(ctx, node, options);
       break;
+    case 'instance': {
+      const symbol = options.symbols?.get(node.symbolId);
+      // The definition's *content* is composited, not merely drawn, so a
+      // symbol built from a group keeps its children's blend modes and
+      // opacities — an instance is a second placement of the content, not a
+      // flattened picture of it.
+      if (symbol) compositeNode(ctx, symbol.content, options);
+      break;
+    }
   }
 
   ctx.restore();
@@ -204,9 +240,8 @@ function drawNodeContent(
  * keeps only what the mask covers.
  *
  * A `clipping` mask has no channel of its own — it takes its shape from the
- * layer below, which this compositor does not have a handle on at this point —
- * so it is skipped here and the layer renders unclipped. That is the honest
- * fallback until phase 4 wires clipping through the stack walk.
+ * layer below — so it is skipped here and handled by `drawStackChildren`, which
+ * is the only place with both layers in hand.
  */
 function applyMask(
   surface: Surface,
@@ -259,22 +294,89 @@ function applyMask(
 // ---------------------------------------------------------------------------
 
 function needsOwnSurface(node: DrawingNode): boolean {
-  if (node.mask?.enabled) return true;
+  // A clipping mask carries no channel, so `applyMask` does nothing for one and
+  // a buffer allocated on its account would be pure cost. Clipping is applied
+  // by `drawStackChildren`, which has the layer below in hand.
+  if (node.mask?.enabled && node.mask.source) return true;
   if (node.blendMode !== 'normal') return true;
   if (node.type === 'stack') return node.opacity < 1 || node.isolation === 'isolate';
   return false;
 }
 
+function isClipped(node: DrawingNode): boolean {
+  return node.mask?.kind === 'clipping' && node.mask.enabled;
+}
+
+/**
+ * A stack's children, bottom to top, with clipping groups resolved.
+ *
+ * A clipping mask takes its shape from **the nearest layer below that is not
+ * itself clipped** — the base of the clipping group — which is the rule every
+ * other editor uses and the reason a run of clipped layers all clip to the same
+ * thing rather than each to the one under it. Tracking the base is why this
+ * loop is indexed rather than a `for…of`: the compositor needs two nodes at
+ * once, and that pairing exists nowhere else in the renderer.
+ *
+ * A hidden base hides its whole clipping group. That follows from what a
+ * clipping mask means: the clipped layer is painted *into* the base's pixels,
+ * and a base with no pixels on screen has none to paint into.
+ */
 function drawStackChildren(
   ctx: CanvasRenderingContext2D,
   stack: StackNode,
   options: ResolvedOptions,
 ): void {
-  for (const child of paintOrder(stack)) {
+  const children = paintOrder(stack);
+  let base: DrawingNode | null = null;
+
+  for (const child of children) {
+    if (!isClipped(child)) {
+      // The base is tracked before visibility is considered, so hiding a
+      // clipped layer does not silently re-point the layers above it at a
+      // different base.
+      base = child;
+      if (!child.visible || child.opacity <= 0) continue;
+      if (options.skipNodeIds?.has(child.id)) continue;
+      compositeNode(ctx, child, options);
+      continue;
+    }
+
     if (!child.visible || child.opacity <= 0) continue;
     if (options.skipNodeIds?.has(child.id)) continue;
-    compositeNode(ctx, child, options);
+    compositeClipped(ctx, child, base, options);
   }
+}
+
+/** One layer confined to the alpha of the layer it is clipped to. */
+function compositeClipped(
+  ctx: CanvasRenderingContext2D,
+  node: DrawingNode,
+  base: DrawingNode | null,
+  options: ResolvedOptions,
+): void {
+  if (!base || !base.visible || base.opacity <= 0) return;
+
+  const width = ctx.canvas.width;
+  const height = ctx.canvas.height;
+  const surface = renderNodeToSurface(node, width, height, options);
+  if (!surface) return;
+
+  const baseSurface = renderNodeToSurface(base, width, height, options);
+  const surfaceCtx = surface.getContext('2d');
+  if (baseSurface && surfaceCtx) {
+    surfaceCtx.save();
+    // `destination-in` keeps the base's *alpha*, not its colour, which is
+    // exactly what a clipping mask is: the shape of what is underneath.
+    surfaceCtx.globalCompositeOperation = 'destination-in';
+    surfaceCtx.drawImage(baseSurface as CanvasImageSource, 0, 0);
+    surfaceCtx.restore();
+  }
+
+  ctx.save();
+  ctx.globalAlpha = node.opacity;
+  ctx.globalCompositeOperation = node.blendMode === 'normal' ? 'source-over' : node.blendMode;
+  ctx.drawImage(surface as CanvasImageSource, 0, 0);
+  ctx.restore();
 }
 
 function compositeNode(
@@ -343,7 +445,7 @@ export function renderDocument(
   doc: DrawingDocument,
   options: RenderOptions = {},
 ): void {
-  const resolved = resolve(options);
+  const resolved = resolve(documentRenderOptions(doc, options));
 
   if (options.drawBackground !== false && doc.canvas.background) {
     ctx.save();
@@ -360,7 +462,7 @@ export function renderDocumentToSurface(
   doc: DrawingDocument,
   options: RenderOptions = {},
 ): Surface | null {
-  const resolved = resolve(options);
+  const resolved = resolve(documentRenderOptions(doc, options));
   const surface = resolved.createSurface(doc.canvas.width, doc.canvas.height);
   const ctx = surface.getContext('2d');
   if (!ctx) return null;
@@ -380,6 +482,11 @@ function collectDataUrls(doc: DrawingDocument): string[] {
     if (node.type === 'stack') node.children.forEach(walk);
   };
   walk(doc.root);
+  // A symbol's content is off the tree, so walking the root alone misses the
+  // pixels of every raster layer inside one — which renders as an instance that
+  // silently draws nothing.
+  for (const symbol of doc.symbols ?? []) walk(symbol.content);
+  if (doc.selection?.kind === 'mask') urls.add(doc.selection.source.dataUrl);
   return [...urls];
 }
 
@@ -398,17 +505,32 @@ function decode(url: string): Promise<CanvasImageSource | null> {
  * One entry per distinct data URL, so two layers sharing pixels decode once. A
  * URL that fails to decode is simply absent from the map, and the renderer
  * draws nothing for it — a corrupt layer costs its own pixels and not the frame.
+ *
+ * `previous` carries decoded bitmaps forward. A data URL is immutable — a layer
+ * whose pixels changed has a *different* URL — so an entry that is still
+ * referenced is still correct, and reusing it is what stops a brush stroke
+ * re-decoding every other layer in the drawing. Anything no longer referenced
+ * simply falls out of the new map.
  */
 export async function loadDocumentBitmaps(
   doc: DrawingDocument,
+  previous?: ReadonlyMap<string, CanvasImageSource>,
 ): Promise<Map<string, CanvasImageSource>> {
-  const entries = await Promise.all(
-    collectDataUrls(doc).map(async (url) => [url, await decode(url)] as const),
-  );
+  const urls = collectDataUrls(doc);
   const map = new Map<string, CanvasImageSource>();
-  for (const [url, bitmap] of entries) {
-    if (bitmap) map.set(url, bitmap);
+
+  const pending: Promise<void>[] = [];
+  for (const url of urls) {
+    const cached = previous?.get(url);
+    if (cached) {
+      map.set(url, cached);
+      continue;
+    }
+    pending.push(decode(url).then((bitmap) => {
+      if (bitmap) map.set(url, bitmap);
+    }));
   }
+  await Promise.all(pending);
   return map;
 }
 
@@ -423,6 +545,7 @@ export function hasVisibleContent(doc: DrawingDocument): boolean {
     }
     const hasContent =
       node.type === 'raster' ||
+      node.type === 'instance' ||
       (node.type === 'text' && node.text.trim() !== '') ||
       (node.type === 'vector' && node.objects.some((o) => o.visible));
     if (hasContent && isEffectivelyVisible(doc.root, node.id)) visible = true;

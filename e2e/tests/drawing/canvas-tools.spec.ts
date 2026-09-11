@@ -54,8 +54,20 @@ test.describe('Canvas tools', () => {
     await registerAndLogin(request, page);
     await openEditor(request, page);
 
-    for (const label of ['Select', 'Pen', 'Line', 'Rectangle', 'Ellipse', 'Arrow', 'Text', 'Eraser']) {
-      // exact: true avoids substring collisions, e.g. "Pen" matching the "Open menu" button's aria-label.
+    // The toolbar's four groups, in order: what you select with, what you draw
+    // as objects, what you paint as pixels, and what you select *pixels* with.
+    const labels = [
+      'Select', 'Edit path points', 'Transform layer',
+      'Pen', 'Line', 'Rectangle', 'Ellipse', 'Arrow', 'Text',
+      'Brush', 'Pencil', 'Marker', 'Airbrush', 'Erase pixels',
+      'Rectangular selection', 'Elliptical selection', 'Lasso selection',
+      'Insert image', 'Delete objects',
+    ];
+
+    for (const label of labels) {
+      // exact: true avoids substring collisions, of which there are now
+      // several — "Pen" inside "Open menu" and "Pencil", "Brush" inside
+      // "Airbrush", "Select" inside all three selection tools.
       await expect(page.getByLabel(label, { exact: true })).toBeVisible({ timeout: 5_000 });
     }
   });

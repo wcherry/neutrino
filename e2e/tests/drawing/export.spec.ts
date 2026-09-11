@@ -39,7 +39,7 @@ async function openEditorWithShape(request: APIRequestContext, page: Page): Prom
   await expect(page.getByLabel('Drawing title')).toBeVisible({ timeout: 15_000 });
 
   // Draw a rectangle so the export button is enabled (requires at least 1 shape)
-  await page.getByLabel('Rectangle').click();
+  await page.getByLabel('Rectangle', { exact: true }).click();
   const canvas = page.locator('canvas').first();
   const box = await canvas.boundingBox();
   if (!box) throw new Error('canvas not found');
@@ -47,8 +47,10 @@ async function openEditorWithShape(request: APIRequestContext, page: Page): Prom
   await page.mouse.down();
   await page.mouse.move(box.x + 200, box.y + 160, { steps: 10 });
   await page.mouse.up();
-  // Switch back to select tool
-  await page.getByLabel('Select').click();
+  // Switch back to select tool. `exact` matters: the toolbar also carries
+  // "Rectangular selection", "Elliptical selection" and "Lasso selection", and
+  // a substring match on "Select" catches all three.
+  await page.getByLabel('Select', { exact: true }).click();
 }
 
 async function openExportDialog(page: Page): Promise<void> {

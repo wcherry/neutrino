@@ -398,17 +398,112 @@ Every Neutrino-specific feature should also have a rendered fallback.
    native type. Until phase 3 reads one back, a stored `.ora` would be a file
    this app writes and cannot open.
 
-3. **OpenRaster reader**
+3. **OpenRaster reader** — *done*
    - Load baseline files from Krita, GIMP, and other OpenRaster applications.
    - Gracefully ignore unknown extensions.
 
-4. **Core editing**
+   Landed as `drawing/editor/io/ora/readOra.ts` and `parseStackXml.ts`, reached
+   from **File → Import OpenRaster…**. Two paths meet at one `DrawingDocument`:
+   a package this app wrote is rebuilt from `META-INF/neutrino/document.json`,
+   so vectors come back as vectors, while anything else is rebuilt from
+   `stack.xml` and is necessarily all raster — the baseline has no other kind of
+   layer. The manifest is validated through `parseDocument` rather than trusted,
+   because a `.ora` is a file from outside and that filename is one anybody can
+   write; a damaged manifest falls through to `stack.xml` rather than failing.
+
+   **Unknown extensions are ignored, not preserved.** OpenRaster's extension
+   mechanism is bare attributes with no namespace, so there is no way to tell an
+   extension from a typo, and round-tripping them would mean re-emitting foreign
+   strings that may since have become wrong. A Neutrino file loses nothing to
+   this because its own state is in the manifest.
+
+   Layer sizes are read from each PNG's IHDR rather than by decoding the image —
+   a forty-layer package would otherwise cost seconds and a great deal of memory
+   before anything appeared, and `Image` does not exist in jsdom, so a reader
+   that depended on it could not be tested.
+
+   `image/openraster` is still **not** a native storage type. The reader makes
+   `.ora` an import format, not the format a drawing is *saved* in; making it
+   native is a separate decision about what a Drive file holds, and nothing in
+   this phase required it.
+
+4. **Core editing** — *done*
    - Brushes, masks, selections, transformations, blend modes, and layer locking.
 
-5. **Vector and text**
+   The brush engine is `drawing/editor/paint/`, in three layers so that the part
+   with the interesting bugs needs no canvas to test: `brush.ts` is the
+   parameters, `stroke.ts` turns pointer events into stamps and is pure
+   arithmetic, `session.ts` is the only piece that touches pixels. Six presets —
+   pen, pencil, brush, airbrush, marker, eraser — are six points in one
+   parameter space, and `erase` is the single behavioural switch between them,
+   because removing pixels is a different compositing operation rather than a
+   different-looking mark.
+
+   Two decisions there are load-bearing. **A stroke's opacity applies to the
+   stroke, not to each dab**, so a session owns a stroke buffer and composites
+   it once — paint the stamps straight onto the layer at 40% and every
+   self-crossing comes out darker than 40%. And **stamp spacing carries across
+   pointer events**: a pointer at 60Hz reports points tens of pixels apart, and
+   restarting the spacing per event bunches stamps at the reported positions,
+   which is a dotted line with extra steps.
+
+   **Masks** gained the missing kind: a `clipping` mask has no channel and takes
+   its shape from the nearest layer below that is not itself clipped, resolved
+   in `drawStackChildren` — the only place with both layers in hand — and
+   exported as an SVG `<mask style="mask-type:alpha">`. Painting on a mask is a
+   *mode* on the same brushes rather than five more tools.
+
+   **Selections** are `document/selection.ts`. Redesign §3 asks for a grayscale
+   PNG and `mask` is that, but a rectangular marquee is stored as a rectangle:
+   rasterising one on every drag would cost a full-canvas encode per mouse move
+   to say, less precisely, what four numbers already say. Everything consuming a
+   selection goes through the same helpers, so the cheap kinds and the general
+   one behave identically, and all four become a channel in `data/selection.png`
+   on the way into a package.
+
+   **Transformations** finally do something: dragging a handle on a raster,
+   text, group or instance node composes a scale about the opposite corner into
+   `node.transform`, and the rotate handle composes a rotation. Before this the
+   handles could only *move* a node.
+
+5. **Vector and text** — *done*
    - SVG import/export.
    - Editable shapes, text, paths, and reusable objects.
    - Text on a path, stored as SVG `<textPath>`.
+
+   `PathObject` gained cubic handles, and the shape of that change is the reason
+   there is no migration: `PathPoint extends Point`, so every polyline already
+   stored parses and draws unchanged, and a point with no handles *is* a corner.
+   Handles are stored **absolute**, so translating, scaling and rotating a path
+   maps them with exactly the same arithmetic as the anchors. Multi-contour
+   paths arrive from SVG as `subpaths` beside the first contour rather than as a
+   uniform list, because almost every path has exactly one and a uniform field
+   would have meant migrating all of them to say so.
+
+   Import is `io/svg/`. Everything is converted to cubics on the way in — lines,
+   quadratics and arcs all have exact cubic equivalents — so one segment kind is
+   rendered, hit-tested, transformed, measured and written back out instead of
+   ten. A shape's own `transform` is folded into its geometry when it is a
+   translate or an axis-aligned scale, and worn by a one-object layer when it
+   rotates or shears, so a rotated rectangle stays an editable rectangle rather
+   than becoming a four-point path.
+
+   **Reusable objects** are `SymbolDefinition` plus `InstanceNode`: stored once,
+   referenced by UUID, exported as `<symbol>`/`<use>` and rasterised per instance
+   in the `.ora`. `<use>` imports as instances of one symbol rather than as
+   copies, so a file with two hundred repeats of an icon carries the icon once.
+
+   **Text on a path** is a *reference* to an ordinary `PathObject`, which stays
+   selectable and reshapes the text when it is edited — exactly what
+   `<textPath href="#id">` expresses, so the vector export needs no extension.
+   Where the target is hidden and would not otherwise be in the file, the curve
+   is written into `<defs>` under the same id, because a `<textPath>` pointing at
+   nothing renders as nothing.
+
+   The document version stays **2**. Everything these phases added is a new
+   optional field or a widening of one that already existed, so a body written
+   before them opens here and a body written here opens in the earlier build
+   with the new features dropped rather than the file refused.
 
 6. **Advanced non-destructive features**
    - Adjustment layers.

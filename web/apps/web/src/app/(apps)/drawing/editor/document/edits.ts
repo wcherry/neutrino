@@ -17,11 +17,13 @@ import {
   findParent,
   insertNode,
   removeNode,
+  symbolTable,
   updateNode,
   updateNodes,
 } from './tree';
 import { newId } from './ids';
-import { normalizeRect } from './geometry';
+import { multiplyTransform, normalizeRect } from './geometry';
+import { mapPathObject } from './path';
 import { createStack } from './factory';
 import type {
   CanvasSettings,
@@ -30,9 +32,14 @@ import type {
   Guide,
   LayerMask,
   NodeBase,
+  RasterSource,
   Rect,
+  SelectionShape,
   StackNode,
+  SymbolDefinition,
   TextLayerNode,
+  TextPathBinding,
+  Transform2D,
   VectorLayerNode,
   VectorObject,
 } from './types';
@@ -129,6 +136,12 @@ export function translateNode(doc: DrawingDocument, id: string, dx: number, dy: 
       case 'vector':
         return { ...node, objects: node.objects.map((o) => translateObject(o, dx, dy)) };
       case 'stack':
+      case 'instance':
+        // Neither has geometry of its own — a group's is its children's and an
+        // instance's belongs to the symbol — so the delta goes into the
+        // transform. Pushing it down into a group's children would flatten the
+        // group's own transform into them permanently, and into a symbol's
+        // content would move every other instance of it.
         return { ...node, transform: { ...node.transform, e: node.transform.e + dx, f: node.transform.f + dy } };
     }
   }));
@@ -136,6 +149,191 @@ export function translateNode(doc: DrawingDocument, id: string, dx: number, dy: 
 
 export function setNodeMask(doc: DrawingDocument, id: string, mask: LayerMask | undefined): DrawingDocument {
   return withRoot(doc, updateNode(doc.root, id, (node) => ({ ...node, mask }) as DrawingNode));
+}
+
+/** Rewrites a mask's own flags, leaving its channel alone. */
+export function patchNodeMask(
+  doc: DrawingDocument,
+  id: string,
+  patch: Partial<Omit<LayerMask, 'id'>>,
+): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) =>
+    node.mask ? ({ ...node, mask: { ...node.mask, ...patch } }) as DrawingNode : node));
+}
+
+// ---------------------------------------------------------------------------
+// Transforms
+// ---------------------------------------------------------------------------
+
+/** Replaces a node's own transform outright. */
+export function setNodeTransform(doc: DrawingDocument, id: string, transform: Transform2D): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) => ({ ...node, transform }) as DrawingNode));
+}
+
+/**
+ * Composes a transform onto a node, in **canvas space**.
+ *
+ * `outer × node.transform`, in that order, so the argument describes what
+ * happens on screen — drag a handle 40px right and the node moves 40px right,
+ * whatever it was already rotated or scaled by. Multiplying the other way round
+ * applies the gesture in the node's own coordinates, which sends a rotated node
+ * sideways when you drag it down.
+ */
+export function transformNode(doc: DrawingDocument, id: string, outer: Transform2D): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) => ({
+    ...node,
+    transform: multiplyTransform(outer, node.transform),
+  }) as DrawingNode));
+}
+
+// ---------------------------------------------------------------------------
+// Pixels
+// ---------------------------------------------------------------------------
+
+/**
+ * Replaces a raster layer's pixels — how a finished brush stroke lands.
+ *
+ * The whole `RasterSource` is replaced rather than patched, because a stroke
+ * that ran past the layer's old edge changes its size and offset as well as its
+ * bytes, and a patch that updated only `dataUrl` would leave the new pixels
+ * scaled into the old rectangle.
+ */
+export function setRasterSource(doc: DrawingDocument, id: string, source: RasterSource): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) =>
+    node.type === 'raster'
+      ? { ...node, source, bounds: { x: source.x, y: source.y, width: source.width, height: source.height } }
+      : node));
+}
+
+/** Replaces the channel behind a node's mask — how a stroke painted onto a mask lands. */
+export function setMaskSource(doc: DrawingDocument, id: string, source: RasterSource): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) =>
+    node.mask ? ({ ...node, mask: { ...node.mask, source } }) as DrawingNode : node));
+}
+
+// ---------------------------------------------------------------------------
+// Selection
+// ---------------------------------------------------------------------------
+
+export function setSelection(doc: DrawingDocument, selection: SelectionShape | undefined): DrawingDocument {
+  if (!selection) {
+    if (!doc.selection) return doc;
+    const { selection: _dropped, ...rest } = doc;
+    return rest;
+  }
+  return { ...doc, selection };
+}
+
+// ---------------------------------------------------------------------------
+// Symbols
+// ---------------------------------------------------------------------------
+
+export function addSymbol(doc: DrawingDocument, symbol: SymbolDefinition): DrawingDocument {
+  return { ...doc, symbols: [...(doc.symbols ?? []), symbol] };
+}
+
+export function updateSymbol(
+  doc: DrawingDocument,
+  symbolId: string,
+  update: (symbol: SymbolDefinition) => SymbolDefinition,
+): DrawingDocument {
+  const symbols = doc.symbols ?? [];
+  if (!symbols.some((s) => s.id === symbolId)) return doc;
+  return { ...doc, symbols: symbols.map((s) => (s.id === symbolId ? update(s) : s)) };
+}
+
+/**
+ * Removes a symbol, replacing every instance of it with its own content.
+ *
+ * Deleting the definition and leaving the instances would empty them —
+ * `contentBounds` and the renderer both answer "nothing" for an instance with
+ * no symbol — so the layers panel would keep rows that draw nothing and cannot
+ * be repaired. Materialising them instead is the only outcome that loses no
+ * pixels.
+ */
+export function removeSymbol(doc: DrawingDocument, symbolId: string): DrawingDocument {
+  const symbol = (doc.symbols ?? []).find((s) => s.id === symbolId);
+  if (!symbol) return doc;
+
+  let root = doc.root;
+  for (const node of instancesOf(doc, symbolId)) {
+    root = updateNode(root, node.id, (instance) => ({
+      ...cloneNode(symbol.content),
+      id: instance.id,
+      name: instance.name,
+      parentId: instance.parentId,
+      visible: instance.visible,
+      opacity: instance.opacity,
+      blendMode: instance.blendMode,
+      locked: instance.locked,
+      transform: instance.transform,
+      mask: instance.mask,
+    }));
+  }
+
+  const symbols = (doc.symbols ?? []).filter((s) => s.id !== symbolId);
+  return { ...withRoot(doc, root), ...(symbols.length ? { symbols } : { symbols: [] }) };
+}
+
+/** Turns one instance into an ordinary copy of its symbol's content. */
+export function detachInstance(doc: DrawingDocument, id: string): DrawingDocument {
+  const node = findNode(doc.root, id);
+  if (!node || node.type !== 'instance') return doc;
+  const symbol = (doc.symbols ?? []).find((s) => s.id === node.symbolId);
+  if (!symbol) return doc;
+
+  return withRoot(doc, updateNode(doc.root, id, (instance) => ({
+    ...cloneNode(symbol.content),
+    id: instance.id,
+    name: instance.name,
+    parentId: instance.parentId,
+    visible: instance.visible,
+    opacity: instance.opacity,
+    blendMode: instance.blendMode,
+    locked: instance.locked,
+    transform: instance.transform,
+    mask: instance.mask,
+  })));
+}
+
+export function instancesOf(doc: DrawingDocument, symbolId: string): DrawingNode[] {
+  const out: DrawingNode[] = [];
+  const walk = (node: DrawingNode): void => {
+    if (node.type === 'instance' && node.symbolId === symbolId) out.push(node);
+    if (node.type === 'stack') node.children.forEach(walk);
+  };
+  doc.root.children.forEach(walk);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Text on a path
+// ---------------------------------------------------------------------------
+
+export function setTextPath(
+  doc: DrawingDocument,
+  id: string,
+  binding: TextPathBinding | undefined,
+): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) => {
+    if (node.type !== 'text') return node;
+    if (!binding) {
+      const { textPath: _dropped, ...rest } = node;
+      return rest;
+    }
+    return { ...node, textPath: binding };
+  }));
+}
+
+export function patchTextPath(
+  doc: DrawingDocument,
+  id: string,
+  patch: Partial<TextPathBinding>,
+): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) =>
+    node.type === 'text' && node.textPath
+      ? { ...node, textPath: { ...node.textPath, ...patch } }
+      : node));
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +457,10 @@ export function removeObjects(
 export function translateObject(object: VectorObject, dx: number, dy: number): VectorObject {
   const frame = { ...object.frame, x: object.frame.x + dx, y: object.frame.y + dy };
   if (object.kind === 'path') {
-    return { ...object, frame, points: object.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+    // Through `mapPathObject` so control handles move with their anchors and
+    // every contour is covered — moving anchors alone leaves the handles behind
+    // and turns a smooth curve inside out.
+    return { ...mapPathObject(object, (p) => ({ x: p.x + dx, y: p.y + dy })), frame };
   }
   return { ...object, frame };
 }
@@ -282,11 +483,10 @@ export function resizeObject(object: VectorObject, frame: Rect): VectorObject {
 
   if (object.kind === 'path') {
     return {
-      ...object,
+      // Scaled with the frame, handles included; leaving them put would grow
+      // the box around a stroke that stayed where it was.
+      ...mapPathObject(object, (p) => ({ x: mapX(p.x), y: mapY(p.y) })),
       frame,
-      // Scaled with the frame; leaving them put would grow the box around a
-      // stroke that stayed where it was.
-      points: object.points.map((p) => ({ x: mapX(p.x), y: mapY(p.y) })),
     };
   }
 
@@ -354,7 +554,10 @@ export function setViewport(doc: DrawingDocument, viewport: DrawingDocument['vie
  * every saved `.ora` a different size from the last one.
  */
 export function contentFittedCanvas(doc: DrawingDocument, padding = 32): Rect | null {
-  const rects = doc.root.children.map(contentBounds).filter((r): r is Rect => r !== null);
+  const symbols = symbolTable(doc);
+  const rects = doc.root.children
+    .map((child) => contentBounds(child, symbols))
+    .filter((r): r is Rect => r !== null);
   if (rects.length === 0) return null;
   const x = Math.min(...rects.map((r) => r.x)) - padding;
   const y = Math.min(...rects.map((r) => r.y)) - padding;

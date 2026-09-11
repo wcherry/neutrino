@@ -16,7 +16,12 @@ import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { ImagePickerResult } from '@/components/InsertImageDialog';
 
-import { createDocument, createRasterLayer, DEFAULT_VECTOR_STYLE } from './document/factory';
+import {
+  createDocument,
+  createPaintLayer,
+  createRasterLayer,
+  DEFAULT_VECTOR_STYLE,
+} from './document/factory';
 import { parseDocument, serializeDocument } from './document/serialize';
 import {
   findNode,
@@ -39,10 +44,17 @@ import {
   setGrid,
   setLayerObjects,
   setNodesProps,
+  // Aliased: `setSelection` is also this component's React state setter for the
+  // *object* selection, and the two mean different things — one names what a
+  // drag moves, the other the region a brush is confined to.
+  setSelection as setPixelSelection,
   setTitle,
 } from './document/edits';
-import { loadDocumentBitmaps } from './render/renderDocument';
-import { createCanvasRenderer, writeOra } from './io/ora';
+import { maskSelection, selectionToMaskSurface } from './document/selection';
+import { domSurfaceFactory, loadDocumentBitmaps } from './render/renderDocument';
+import { createCanvasRenderer, OraReadError, readOra, writeOra } from './io/ora';
+import { readSvg, SvgReadError } from './io/svg';
+import { applyPreset, clampBrush, createBrush, type BrushSettings } from './paint';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
 import { DrawingToolbar } from './DrawingToolbar';
 import { DrawingMenuBar } from './DrawingMenuBar';
@@ -51,6 +63,8 @@ import { StylePanel } from './StylePanel';
 import { LayersPanel } from './LayersPanel';
 import { ExportDialog, type OraExportOptions, type PngExportOptions, type SvgExportOptions } from './ExportDialog';
 import {
+  isPaintTool,
+  PAINT_TOOL_BRUSH,
   selectionCount,
   type DrawingDocument,
   type DrawingNode,
@@ -85,6 +99,32 @@ const AUTOSAVE_DELAY = 1000;
 const SAVE_RETRY_DELAY = 300;
 const HISTORY_DELAY = 500;
 const HISTORY_LIMIT = 100;
+
+/**
+ * Where the brush is remembered between sessions.
+ *
+ * `localStorage` and not the document: a brush is a tool, not content
+ * (`agent_docs/drawing_app_redesign.md` §3), so it belongs to the person rather
+ * than to the drawing — the same rule the theme and the calendar's week start
+ * follow. Storing it in the file would make opening somebody else's drawing
+ * silently change your brush.
+ */
+const BRUSH_STORAGE_KEY = 'neutrino:drawing:brush';
+
+function loadBrush(): BrushSettings {
+  const fallback = createBrush('brush');
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(BRUSH_STORAGE_KEY);
+    if (!raw) return fallback;
+    // Merged over a real preset rather than trusted outright: the stored shape
+    // is from whichever build last wrote it, and a missing `pressure` object
+    // would be read on the first stroke.
+    return clampBrush({ ...fallback, ...(JSON.parse(raw) as Partial<BrushSettings>) });
+  } catch {
+    return fallback;
+  }
+}
 
 function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -220,9 +260,14 @@ export function DrawingEditor() {
   const [clipboard, setClipboard] = useState<Clipboard>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [brush, setBrush] = useState<BrushSettings>(loadBrush);
+  const [maskEditing, setMaskEditing] = useState(false);
 
   const canvasRef = useRef<DrawingCanvasHandle>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  /** One hidden input, reused for both importers — see `handleImportFile`. */
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const importKindRef = useRef<'ora' | 'svg'>('ora');
   const docRef = useRef(doc);
   const selectionRef = useRef(selection);
   const activeLayerRef = useRef(activeLayerId);
@@ -391,9 +436,16 @@ export function DrawingEditor() {
 
   // Raster layers and masks hold PNG data URLs; decoding is asynchronous while
   // painting a frame is not, so they are decoded here and handed to the canvas.
+  //
+  // The previous map is passed back in so already-decoded layers are carried
+  // forward rather than re-decoded. That matters most while painting: every
+  // brush stroke produces a new document, and without the carry-forward each
+  // one would re-decode every *other* raster layer in the drawing.
+  const bitmapsRef = useRef(bitmaps);
+  bitmapsRef.current = bitmaps;
   useEffect(() => {
     let cancelled = false;
-    loadDocumentBitmaps(doc).then((next) => {
+    loadDocumentBitmaps(doc, bitmapsRef.current).then((next) => {
       if (!cancelled) setBitmaps(next);
     });
     return () => { cancelled = true; };
@@ -481,6 +533,163 @@ export function DrawingEditor() {
     timer = setTimeout(attempt, AUTOSAVE_DELAY);
     return () => clearTimeout(timer);
   }, [doc, title, drawingId, loading]);
+
+  // ── Brushes ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(BRUSH_STORAGE_KEY, JSON.stringify(brush));
+    } catch {
+      // A private window, or storage that is full. The brush still works for
+      // this session; only remembering it fails.
+    }
+  }, [brush]);
+
+  /**
+   * Arming a paint tool loads its preset and makes sure there is somewhere to
+   * paint.
+   *
+   * The layer is created here rather than on the first stroke because a stroke
+   * that has to create its own target cannot also *be* that stroke — React
+   * state is not available until the next render, so the gesture that made the
+   * layer would be the one gesture that drew nothing.
+   */
+  useEffect(() => {
+    if (!isPaintTool(tool)) return;
+    setBrush((current) => (
+      current.type === PAINT_TOOL_BRUSH[tool] ? current : applyPreset(current, PAINT_TOOL_BRUSH[tool])
+    ));
+
+    const document_ = docRef.current;
+    const active = findNode(document_.root, activeLayerRef.current);
+    if (active?.type === 'raster') return;
+
+    const existing = flattenTree(document_.root).find((f) => f.node.type === 'raster');
+    if (existing) {
+      setActiveLayerId(existing.node.id);
+      return;
+    }
+    const layer = createPaintLayer(document_.canvas, 'Paint 1');
+    applyDocument(addNode(document_, layer));
+    setActiveLayerId(layer.id);
+  }, [tool, applyDocument]);
+
+  // Painting on a mask is only meaningful while the active layer has one, so
+  // the mode drops itself rather than silently sending strokes to the layer.
+  const activeMaskSource = findNode(doc.root, activeLayerId)?.mask?.source;
+  useEffect(() => {
+    if (!activeMaskSource) setMaskEditing(false);
+  }, [activeMaskSource]);
+
+  // ── Pixel selection ───────────────────────────────────────────────
+
+  const handleSelectAllPixels = useCallback(() => {
+    const document_ = docRef.current;
+    applyDocument(setPixelSelection(document_, {
+      kind: 'rect',
+      rect: { x: 0, y: 0, width: document_.canvas.width, height: document_.canvas.height },
+    }));
+  }, [applyDocument]);
+
+  const handleDeselectPixels = useCallback(() => {
+    applyDocument(setPixelSelection(docRef.current, undefined));
+  }, [applyDocument]);
+
+  /**
+   * The selection turned inside out.
+   *
+   * Inverting is the one selection operation with no closed form in the shape
+   * model — the complement of an ellipse is not an ellipse — so it rasterises
+   * to a channel, which is exactly the `mask` kind's reason for existing. The
+   * result is a full-canvas grayscale PNG, which is also what redesign §3 says
+   * a selection is.
+   */
+  const handleInvertSelection = useCallback(() => {
+    const document_ = docRef.current;
+    if (!document_.selection) return;
+
+    const surface = selectionToMaskSurface(document_.selection, document_.canvas, {
+      createSurface: domSurfaceFactory,
+      bitmaps,
+    });
+    const ctx = surface?.getContext('2d');
+    if (!surface || !ctx) {
+      toast.error('That selection could not be inverted.');
+      return;
+    }
+
+    const data = ctx.getImageData(0, 0, surface.width, surface.height);
+    const pixels = data.data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      pixels[i] = 255 - pixels[i];
+      pixels[i + 1] = 255 - pixels[i + 1];
+      pixels[i + 2] = 255 - pixels[i + 2];
+      pixels[i + 3] = 255;
+    }
+    ctx.putImageData(data, 0, 0);
+
+    const dataUrl = (surface as HTMLCanvasElement).toDataURL('image/png');
+    applyDocument(setPixelSelection(document_, maskSelection(dataUrl, document_.canvas)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyDocument, bitmaps]);
+
+  // ── Import ────────────────────────────────────────────────────────
+
+  const openImport = useCallback((kind: 'ora' | 'svg') => {
+    importKindRef.current = kind;
+    const input = importInputRef.current;
+    if (!input) return;
+    input.accept = kind === 'ora' ? '.ora,image/openraster' : '.svg,image/svg+xml';
+    // Cleared first so choosing the same file twice still fires `change`.
+    input.value = '';
+    input.click();
+  }, []);
+
+  /**
+   * Opens an imported file **as this drawing**.
+   *
+   * A whole document replaces a whole document: an `.ora` and an `.svg` both
+   * describe a canvas, a layer stack and a background, and merging one into an
+   * existing drawing would have to discard whichever canvas size lost. It is a
+   * single undo step, so the way back is ⌘Z rather than a confirmation dialog
+   * nobody reads.
+   */
+  const handleImportFile = useCallback(async (file: File) => {
+    try {
+      if (importKindRef.current === 'ora') {
+        const result = await readOra(file);
+        applyDocument(setTitle(result.document, title));
+        const first = flattenTree(result.document.root)
+          .find((f) => f.node.id === result.selectedNodeId)
+          ?? flattenTree(result.document.root).find((f) => f.node.type !== 'stack');
+        setActiveLayerId(first?.node.id ?? '');
+        setSelection(null);
+        toast.success(result.fromManifest
+          ? 'Opened with every layer editable.'
+          : 'Opened as flat layers — OpenRaster stores no vector or text data.');
+        return;
+      }
+
+      const markup = await file.text();
+      const result = readSvg(markup, { title });
+      applyDocument(setTitle(result.document, title));
+      const first = flattenTree(result.document.root).find((f) => f.node.type !== 'stack');
+      setActiveLayerId(first?.node.id ?? '');
+      setSelection(null);
+      if (result.skipped.length > 0) {
+        toast.warning(`Imported. Not supported: ${result.skipped.join(', ')}.`);
+      } else {
+        toast.success('Imported as editable shapes.');
+      }
+    } catch (err) {
+      if (err instanceof OraReadError || err instanceof SvgReadError) {
+        toast.error(err.message);
+        return;
+      }
+      toast.error('That file could not be imported.');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyDocument, title]);
 
   // ── Selection-derived actions ─────────────────────────────────────
 
@@ -676,7 +885,10 @@ export function DrawingEditor() {
       }
       if (!mod) {
         const shortcuts: Record<string, ToolType> = {
-          s: 'select', p: 'pen', l: 'line', r: 'rectangle', e: 'ellipse', t: 'text',
+          s: 'select', a: 'node', v: 'transform',
+          p: 'pen', l: 'line', r: 'rectangle', e: 'ellipse', t: 'text',
+          b: 'brush', n: 'pencil', x: 'paint-eraser',
+          m: 'select-rect', q: 'lasso',
         };
         const next = shortcuts[e.key.toLowerCase()];
         if (next) {
@@ -700,7 +912,16 @@ export function DrawingEditor() {
         case 'c': e.preventDefault(); handleCopy(); break;
         case 'x': e.preventDefault(); handleCut(); break;
         case 'v': e.preventDefault(); handlePaste(); break;
-        case 'd': e.preventDefault(); handleDuplicate(); break;
+        case 'i':
+          if (!e.shiftKey) break;
+          e.preventDefault();
+          handleInvertSelection();
+          break;
+        case 'd':
+          e.preventDefault();
+          if (e.shiftKey) handleDeselectPixels();
+          else handleDuplicate();
+          break;
         case 'g':
           e.preventDefault();
           if (e.shiftKey) handleUngroup();
@@ -718,8 +939,9 @@ export function DrawingEditor() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
-    applyDocument, handleCopy, handleCut, handleDelete, handleDuplicate, handleGroup,
-    handlePaste, handleRedo, handleSelectAll, handleUndo, handleUngroup, reorder,
+    applyDocument, handleCopy, handleCut, handleDelete, handleDeselectPixels, handleDuplicate,
+    handleGroup, handleInvertSelection, handlePaste, handleRedo, handleSelectAll, handleUndo,
+    handleUngroup, reorder,
   ]);
 
   // ── Viewport ──────────────────────────────────────────────────────
@@ -773,7 +995,10 @@ export function DrawingEditor() {
         bitmaps,
         background: options.background,
       });
-      const blob = await writeOra(docRef.current, renderer);
+      // The active layer travels as OpenRaster's `selected` extension, so
+      // reopening the package — here or in Krita — lands on the layer it was
+      // saved from rather than on whichever one happens to be first.
+      const blob = await writeOra(docRef.current, renderer, { selectedNodeId: activeLayerRef.current });
       triggerDownload(blob, `${options.filename || 'drawing'}.ora`);
     } catch {
       toast.error('That drawing could not be exported as OpenRaster.');
@@ -851,6 +1076,12 @@ export function DrawingEditor() {
           showGrid={doc.grid.visible}
           onToggleGrid={() => applyDocument(setGrid(doc, { visible: !doc.grid.visible }))}
           titleInputRef={titleInputRef}
+          onImportOra={() => openImport('ora')}
+          onImportSvg={() => openImport('svg')}
+          onSelectAllPixels={handleSelectAllPixels}
+          onDeselectPixels={handleDeselectPixels}
+          onInvertSelection={handleInvertSelection}
+          hasPixelSelection={Boolean(doc.selection)}
         />
         <input
           ref={titleInputRef}
@@ -887,6 +1118,8 @@ export function DrawingEditor() {
             newObjectStyle={newObjectStyle}
             onTransformChange={handleTransformChange}
             bitmaps={bitmaps}
+            brush={brush}
+            maskEditing={maskEditing}
           />
         </div>
         <StylePanel
@@ -895,6 +1128,12 @@ export function DrawingEditor() {
           selection={selection}
           newObjectStyle={newObjectStyle}
           onNewObjectStyleChange={setNewObjectStyle}
+          tool={tool}
+          brush={brush}
+          onBrushChange={setBrush}
+          maskEditing={maskEditing}
+          onMaskEditingChange={setMaskEditing}
+          activeLayerId={activeLayerId}
         />
         {showVersionHistory && drawingId && (
           <div className={styles.versionHistoryPanel}>
@@ -936,6 +1175,20 @@ export function DrawingEditor() {
           confirmLabel="Add layer"
         />
       )}
+
+      {/* One input for both importers. A file picker is the browser's own
+          dialog, so there is nothing to render per format — only the `accept`
+          filter differs, and `openImport` sets it before opening. */}
+      <input
+        ref={importInputRef}
+        type="file"
+        hidden
+        aria-hidden="true"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportFile(file);
+        }}
+      />
     </div>
   );
 }

@@ -19,19 +19,25 @@ export type {
   EllipseObject,
   Guide,
   GridSettings,
+  InstanceNode,
   LayerMask,
   LineObject,
   NodeBase,
   NodeType,
   PathObject,
+  PathPoint,
   Point,
   RasterLayerNode,
   RasterSource,
   Rect,
   RectObject,
+  SelectionShape,
   StackNode,
   StrokeStyle,
+  SubPath,
+  SymbolDefinition,
   TextLayerNode,
+  TextPathBinding,
   Transform2D,
   VectorLayerNode,
   VectorObject,
@@ -40,25 +46,76 @@ export type {
   ViewportState,
 } from './document/types';
 
-export { BLEND_MODES, BLEND_MODE_LABELS, isStack } from './document/types';
+export { BLEND_MODES, BLEND_MODE_LABELS, isRaster, isStack, pathContours } from './document/types';
 
 /**
  * The armed tool.
  *
- * `pen` draws a freehand vector path, not pixels: there is no brush engine yet,
- * and painting into a raster layer is redesign phase 4. Adding an image is not
- * a tool at all — it is a one-shot action that opens the picker and inserts a
- * raster layer, so it has nothing to stay armed for.
+ * Four families, and the distinction between the first two is the one that
+ * matters: **vector tools produce objects** inside a vector layer, while
+ * **paint tools produce pixels** in a raster layer. They are not two styles of
+ * the same thing — `pen` draws an editable path you can reshape a week later,
+ * `brush` lays down pixels that are pixels. Which is armed decides what kind of
+ * layer a stroke needs, and a paint tool with no raster layer to paint into
+ * creates one rather than failing silently.
+ *
+ * `node` is direct selection: it edits a path's own anchors and handles rather
+ * than moving the object as a whole, which is what makes an imported SVG
+ * genuinely editable instead of merely visible.
+ *
+ * Adding an image is not a tool at all — it is a one-shot action that opens the
+ * picker and inserts a raster layer, so it has nothing to stay armed for.
  */
 export type ToolType =
+  // Selection and manipulation
   | 'select'
+  | 'node'
+  | 'transform'
+  // Vector
   | 'pen'
   | 'line'
   | 'arrow'
   | 'rectangle'
   | 'ellipse'
   | 'text'
-  | 'eraser';
+  | 'eraser'
+  // Paint
+  | 'brush'
+  | 'pencil'
+  | 'marker'
+  | 'airbrush'
+  | 'paint-eraser'
+  // Pixel selection
+  | 'select-rect'
+  | 'select-ellipse'
+  | 'lasso';
+
+/** Tools that lay down pixels rather than creating objects. */
+export const PAINT_TOOLS = ['brush', 'pencil', 'marker', 'airbrush', 'paint-eraser'] as const;
+
+export type PaintTool = (typeof PAINT_TOOLS)[number];
+
+export function isPaintTool(tool: ToolType): tool is PaintTool {
+  return (PAINT_TOOLS as readonly string[]).includes(tool);
+}
+
+/** Tools that define a pixel selection rather than editing content. */
+export const SELECTION_TOOLS = ['select-rect', 'select-ellipse', 'lasso'] as const;
+
+export type SelectionTool = (typeof SELECTION_TOOLS)[number];
+
+export function isSelectionTool(tool: ToolType): tool is SelectionTool {
+  return (SELECTION_TOOLS as readonly string[]).includes(tool);
+}
+
+/** The brush preset a paint tool arms. `paint-eraser` is the one that removes. */
+export const PAINT_TOOL_BRUSH: Record<PaintTool, import('./paint').BrushType> = {
+  brush: 'brush',
+  pencil: 'pencil',
+  marker: 'marker',
+  airbrush: 'airbrush',
+  'paint-eraser': 'eraser',
+};
 
 /** The viewport: where the canvas sits on screen and how far it is zoomed. */
 export interface Transform {

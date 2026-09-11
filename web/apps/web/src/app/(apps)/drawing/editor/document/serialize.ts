@@ -25,7 +25,7 @@ import {
   DEFAULT_VECTOR_STYLE,
   createDocument,
 } from './factory';
-import { normalizeTree, refreshBounds } from './tree';
+import { normalizeTree, refreshBounds, symbolTable } from './tree';
 import {
   BLEND_MODES,
   DOCUMENT_VERSION,
@@ -37,11 +37,16 @@ import {
   type Guide,
   type LayerMask,
   type NodeBase,
+  type PathPoint,
   type Point,
   type RasterSource,
   type Rect,
+  type SelectionShape,
   type StackNode,
   type StrokeStyle,
+  type SubPath,
+  type SymbolDefinition,
+  type TextPathBinding,
   type Transform2D,
   type VectorObject,
   type VectorStyle,
@@ -177,14 +182,70 @@ function vectorObject(v: unknown): VectorObject | null {
         arrowEnd: bool(v.arrowEnd, false),
       };
     case 'path': {
-      const points = Array.isArray(v.points)
-        ? v.points.map((p) => point(p, { x: 0, y: 0 }))
+      const subpaths = Array.isArray(v.subpaths)
+        ? v.subpaths.map(subPath).filter((s): s is SubPath => s !== null)
         : [];
-      return { ...common, kind: 'path', points, closed: bool(v.closed, false) };
+      return {
+        ...common,
+        kind: 'path',
+        points: pathPoints(v.points),
+        closed: bool(v.closed, false),
+        // Absent rather than `[]` when there are none: the field is optional
+        // precisely so an ordinary single-contour path serialises without it,
+        // and writing an empty array puts it back into every path in the file.
+        ...(subpaths.length ? { subpaths } : {}),
+        ...(v.fillRule === 'evenodd' ? { fillRule: 'evenodd' as const } : {}),
+      };
     }
     default:
       return null;
   }
+}
+
+/**
+ * A stored path point.
+ *
+ * A handle is kept only when it parses as a point, so `in: null` — which is
+ * what a hand edit or another tool's JSON is most likely to produce for "no
+ * handle" — reads as a corner rather than as a control point at the origin,
+ * which would fling the curve to the top-left of the canvas.
+ */
+function pathPoint(v: unknown): PathPoint {
+  if (!isRecord(v)) return { x: 0, y: 0 };
+  const anchor: PathPoint = { x: num(v.x, 0), y: num(v.y, 0) };
+  if (isRecord(v.in)) anchor.in = point(v.in, anchor);
+  if (isRecord(v.out)) anchor.out = point(v.out, anchor);
+  return anchor;
+}
+
+function pathPoints(v: unknown): PathPoint[] {
+  return Array.isArray(v) ? v.map(pathPoint) : [];
+}
+
+function subPath(v: unknown): SubPath | null {
+  if (!isRecord(v)) return null;
+  const points = pathPoints(v.points);
+  // A contour of fewer than two points draws nothing and would only ever be a
+  // stray entry; dropping it keeps `pathContours` free of empty cases.
+  if (points.length < 2) return null;
+  return { points, closed: bool(v.closed, false) };
+}
+
+function textPath(v: unknown): TextPathBinding | undefined {
+  if (!isRecord(v)) return undefined;
+  const pathId = str(v.pathId, '');
+  // A binding with no target is not a binding. Dropping it lays the text out in
+  // its box instead, which is visible and editable, rather than leaving a
+  // dangling reference the renderer has to guard on every frame.
+  if (!pathId) return undefined;
+  const align = v.align === 'middle' || v.align === 'end' ? v.align : 'start';
+  return {
+    pathId,
+    startOffset: clamped(v.startOffset, 0, 0, 100),
+    align,
+    baselineOffset: clamped(v.baselineOffset, 0, -4096, 4096),
+    side: v.side === 'right' ? 'right' : 'left',
+  };
 }
 
 function nodeBase(v: Raw, fallbackName: string): NodeBase {
@@ -235,7 +296,8 @@ function node(v: unknown): DrawingNode | null {
           ? v.objects.map(vectorObject).filter((o): o is VectorObject => o !== null)
           : [],
       };
-    case 'text':
+    case 'text': {
+      const binding = textPath(v.textPath);
       return {
         ...base,
         name: str(v.name, 'Text'),
@@ -249,9 +311,55 @@ function node(v: unknown): DrawingNode | null {
         lineHeight: clamped(v.lineHeight, 1.2, 0.5, 10),
         color: str(v.color, '#000000'),
         box: rect(v.box, { x: 0, y: 0, width: 200, height: 40 }),
+        ...(binding ? { textPath: binding } : {}),
       };
+    }
+    case 'instance': {
+      const symbolId = str(v.symbolId, '');
+      // An instance of nothing draws nothing and cannot be given a symbol from
+      // the UI, so it is dropped rather than kept as an empty row in the layers
+      // panel that no action can repair.
+      if (!symbolId) return null;
+      return { ...base, name: str(v.name, 'Instance'), type: 'instance', symbolId };
+    }
     default:
       return null;
+  }
+}
+
+function symbolDefinition(v: unknown): SymbolDefinition | null {
+  if (!isRecord(v)) return null;
+  const id = str(v.id, '');
+  const content = node(v.content);
+  if (!id || !content) return null;
+  return { id, name: str(v.name, 'Symbol'), content, createdAt: isoDate(v.createdAt, new Date().toISOString()) };
+}
+
+/**
+ * A stored selection.
+ *
+ * Undefined for anything unrecognised, which reads as "nothing selected" —
+ * the state every operation already handles, and the only safe guess: a
+ * selection restored wrongly silently confines the next brush stroke to the
+ * wrong part of the canvas.
+ */
+function selectionShape(v: unknown): SelectionShape | undefined {
+  if (!isRecord(v)) return undefined;
+  switch (str(v.kind, '')) {
+    case 'rect':
+      return { kind: 'rect', rect: rect(v.rect, { x: 0, y: 0, width: 0, height: 0 }) };
+    case 'ellipse':
+      return { kind: 'ellipse', rect: rect(v.rect, { x: 0, y: 0, width: 0, height: 0 }) };
+    case 'lasso': {
+      const points = Array.isArray(v.points) ? v.points.map((p) => point(p, { x: 0, y: 0 })) : [];
+      return points.length >= 3 ? { kind: 'lasso', points } : undefined;
+    }
+    case 'mask': {
+      const source = rasterSource(v.source);
+      return source ? { kind: 'mask', source } : undefined;
+    }
+    default:
+      return undefined;
   }
 }
 
@@ -307,11 +415,23 @@ export function parseDocument(raw: string): DrawingDocument | null {
   const profileRaw = isRecord(parsed.colorProfile) ? parsed.colorProfile : {};
   const viewportRaw = isRecord(parsed.viewport) ? parsed.viewport : null;
 
+  const symbols = Array.isArray(parsed.symbols)
+    ? parsed.symbols.map(symbolDefinition).filter((s): s is SymbolDefinition => s !== null)
+    : [];
+  // Bounds are refreshed *after* the symbols are known, because an instance's
+  // extent is its symbol's. Doing it in the other order gives every instance in
+  // a freshly loaded document a zero-sized bounding box, which is an
+  // unselectable layer with no selection frame.
+  const symbols_ = new Map(symbols.map((s) => [s.id, s]));
+  const selection = selectionShape(parsed.selection);
+
   return {
     version: DOCUMENT_VERSION,
     canvas: canvasSettings(parsed.canvas),
-    root: refreshBounds(normalizeTree(root)),
+    root: refreshBounds(normalizeTree(root), symbols_),
     guides: guides(parsed.guides),
+    ...(symbols.length ? { symbols } : {}),
+    ...(selection ? { selection } : {}),
     grid: {
       visible: bool(gridRaw.visible, DEFAULT_GRID.visible),
       size: clamped(gridRaw.size, DEFAULT_GRID.size, 1, 1000),
@@ -350,7 +470,7 @@ export function parseDocument(raw: string): DrawingDocument | null {
 export function serializeDocument(doc: DrawingDocument): string {
   const stamped: DrawingDocument = {
     ...doc,
-    root: refreshBounds(normalizeTree(doc.root)),
+    root: refreshBounds(normalizeTree(doc.root), symbolTable(doc)),
     metadata: {
       ...doc.metadata,
       modifiedAt: new Date().toISOString(),

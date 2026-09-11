@@ -213,16 +213,62 @@ export interface LineObject extends VectorObjectBase {
   arrowEnd: boolean;
 }
 
-/** A freehand or plotted path. `points` are canvas coordinates. */
+/**
+ * A point on a path, with optional cubic handles.
+ *
+ * `in` and `out` are **absolute** canvas coordinates, not offsets from the
+ * anchor. That is what makes every existing transform correct by construction:
+ * translating, scaling and rotating a path maps handles with exactly the same
+ * arithmetic as anchors, and a handle stored as an offset would need its own
+ * (easily forgotten) case in each of them.
+ *
+ * A point with neither handle is a corner, and a path of nothing but corners is
+ * the polyline the freehand pen has always drawn — which is why `PathPoint`
+ * extends `Point` rather than replacing it. Every `{x, y}` already stored parses
+ * and renders unchanged.
+ */
+export interface PathPoint extends Point {
+  /** Control point governing the curve *arriving* at this anchor. */
+  in?: Point;
+  /** Control point governing the curve *leaving* this anchor. */
+  out?: Point;
+}
+
+/** One contour of a path. */
+export interface SubPath {
+  points: PathPoint[];
+  closed: boolean;
+}
+
+/**
+ * A freehand, plotted or imported path. `points` are canvas coordinates.
+ *
+ * `points`/`closed` are the first contour and `subpaths` holds any further
+ * ones. The split is deliberately lopsided rather than a uniform
+ * `contours: SubPath[]`: almost every path in a drawing has exactly one
+ * contour, every path written before this had exactly one, and a single field
+ * would have meant migrating all of them to say so. A second contour appears
+ * only where something produced one — an imported SVG `<path>` with a hole, or
+ * a glyph outline — and `fillRule` is what makes that hole a hole.
+ */
 export interface PathObject extends VectorObjectBase {
   kind: 'path';
-  points: Point[];
+  points: PathPoint[];
   closed: boolean;
+  /** Contours beyond the first. Absent for the ordinary single-contour path. */
+  subpaths?: SubPath[];
+  /** How overlapping contours combine. SVG's own two rules, and its default. */
+  fillRule?: 'nonzero' | 'evenodd';
 }
 
 export type VectorObject = RectObject | EllipseObject | LineObject | PathObject;
 
 export type VectorObjectKind = VectorObject['kind'];
+
+/** Every contour of a path, first one included. */
+export function pathContours(object: PathObject): SubPath[] {
+  return [{ points: object.points, closed: object.closed }, ...(object.subpaths ?? [])];
+}
 
 // ---------------------------------------------------------------------------
 // Nodes
@@ -280,6 +326,35 @@ export interface VectorLayerNode extends NodeBase {
   objects: VectorObject[];
 }
 
+/**
+ * Text laid out along a path instead of along a box.
+ *
+ * The path is **referenced, not owned**: `pathId` names a `PathObject` that
+ * already exists in some vector layer, and that object stays independently
+ * selectable, editable, visible or hidden on its own terms — reshape it and the
+ * text re-flows. This is exactly what SVG's `<textPath href="#id">` expresses,
+ * so the vector half of an export needs no extension for it
+ * (`agent_docs/drawing_app_redesign.md` §4, "Text on a path").
+ *
+ * It is deliberately *not* a private geometry field on the text layer. An
+ * earlier version of this app had that — a text shape carrying one or two
+ * hand-placed cubics and a mode that stretched glyphs between them — and the
+ * curve was unreachable by every other tool and had no SVG equivalent to export
+ * to.
+ */
+export interface TextPathBinding {
+  /** The `PathObject` to lay the text along. */
+  pathId: string;
+  /** Where the text starts, as a percentage of the path's length. */
+  startOffset: number;
+  /** How the text sits against `startOffset`. */
+  align: 'start' | 'middle' | 'end';
+  /** Baseline shift away from the path, in pixels. Positive is outward. */
+  baselineOffset: number;
+  /** SVG's `side`: which flank of the path the text runs along. */
+  side: 'left' | 'right';
+}
+
 export interface TextLayerNode extends NodeBase {
   type: 'text';
   text: string;
@@ -293,9 +368,46 @@ export interface TextLayerNode extends NodeBase {
   color: string;
   /** Where the text is laid out. Its width drives wrapping and alignment. */
   box: Rect;
+  /** Set to lay the text along a path rather than inside `box`. */
+  textPath?: TextPathBinding;
 }
 
-export type DrawingNode = StackNode | RasterLayerNode | VectorLayerNode | TextLayerNode;
+/**
+ * A placed copy of a symbol.
+ *
+ * The content lives once in `DrawingDocument.symbols` and every instance is a
+ * reference plus a transform, which is the "stored once and referenced by UUID"
+ * redesign §4 asks for. Editing the symbol updates every instance; nothing is
+ * copied until the user explicitly detaches one.
+ *
+ * Both exports carry a rendered fallback, as every Neutrino-only feature must:
+ * SVG writes `<use href="#…">` against a real `<symbol>`, and OpenRaster — which
+ * has no notion of reuse — gets the instance rasterised like any other layer.
+ */
+export interface InstanceNode extends NodeBase {
+  type: 'instance';
+  symbolId: string;
+}
+
+/** Reusable content, stored once and referenced by `InstanceNode.symbolId`. */
+export interface SymbolDefinition {
+  id: string;
+  name: string;
+  /**
+   * The content, as a detached subtree. Its own transform is neutral — an
+   * instance's transform is the only one that positions it, so a symbol
+   * carrying a translation would offset every instance by it twice.
+   */
+  content: DrawingNode;
+  createdAt: string;
+}
+
+export type DrawingNode =
+  | StackNode
+  | RasterLayerNode
+  | VectorLayerNode
+  | TextLayerNode
+  | InstanceNode;
 
 export type NodeType = DrawingNode['type'];
 
@@ -303,6 +415,34 @@ export type NodeType = DrawingNode['type'];
 export function isStack(node: DrawingNode): node is StackNode {
   return node.type === 'stack';
 }
+
+/** A node that carries pixels a brush can paint into. */
+export function isRaster(node: DrawingNode): node is RasterLayerNode {
+  return node.type === 'raster';
+}
+
+// ---------------------------------------------------------------------------
+// Pixel selection
+// ---------------------------------------------------------------------------
+
+/**
+ * The active selection — the region editing is confined to.
+ *
+ * Redesign §3 asks for selections to be stored as grayscale PNG masks, and
+ * `mask` is that. The other three kinds are not a shortcut around it but the
+ * honest description of what the user actually made: a rectangular marquee is a
+ * rectangle, and rasterising one into a PNG on every drag would cost a
+ * full-canvas encode per mouse move to store, less precisely, what four numbers
+ * already say. Anything that consumes a selection goes through
+ * `selectionToMask`, so the general case and the cheap ones behave identically;
+ * `mask` is what a flood-fill, a feather or an imported `.ora` produces, and
+ * what all four become on the way into a package.
+ */
+export type SelectionShape =
+  | { kind: 'rect'; rect: Rect }
+  | { kind: 'ellipse'; rect: Rect }
+  | { kind: 'lasso'; points: Point[] }
+  | { kind: 'mask'; source: RasterSource };
 
 // ---------------------------------------------------------------------------
 // Document
@@ -367,6 +507,14 @@ export interface DrawingDocument {
    * 2 is this model. 1 was the flat `{ shapes, layers }` body that predated it
    * and that nothing ever stored a file in, so there is no migration and no
    * reader for it — a body that is not version 2 opens as a new document.
+   *
+   * It stays 2 across phases 3–5. Everything those added — cubic path handles,
+   * text on a path, symbols, the active selection — is a new optional field or
+   * a widening of one that already existed, so a version 2 body written before
+   * them parses under this reader with no migration and a body written by this
+   * build opens in the earlier one with the new features dropped rather than
+   * the file refused. Bumping the number would have bought nothing and cost
+   * every drawing already saved.
    */
   version: 2;
   canvas: CanvasSettings;
@@ -377,6 +525,10 @@ export interface DrawingDocument {
   colorProfile: ColorProfile;
   metadata: DocumentMetadata;
   viewport?: ViewportState;
+  /** Reusable content, referenced by `InstanceNode.symbolId`. */
+  symbols?: SymbolDefinition[];
+  /** The active pixel selection, or absent for "everything". */
+  selection?: SelectionShape;
 }
 
 export const DOCUMENT_VERSION = 2 as const;
