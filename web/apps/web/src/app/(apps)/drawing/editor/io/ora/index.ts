@@ -14,8 +14,15 @@ export { ORA_EXTENSION, ORA_MIME_TYPE, createCanvasRenderer, writeOra } from './
 export type { CanvasRendererOptions, OraRenderer, RenderedLayer, WriteOraOptions } from './writeOra';
 export { ORA_VERSION, buildStackXml } from './stackXml';
 export type { LayerAsset, StackXmlOptions } from './stackXml';
-export { MANIFEST_PATH, SELECTION_PATH, buildManifest } from './manifest';
-export type { AssetEntry, MaskEntry, NeutrinoManifest } from './manifest';
+export { ICC_PATH, MANIFEST_PATH, MERGED_PATH, SELECTION_PATH, buildManifest } from './manifest';
+export type {
+  AdjustmentEntry,
+  AssetEntry,
+  ColorEntry,
+  FilterEntry,
+  MaskEntry,
+  NeutrinoManifest,
+} from './manifest';
 export { fromCompositeOp, toCompositeOp } from './compositeOp';
 export { OraReadError, pngSize, readOra } from './readOra';
 export type { OraReadResult } from './readOra';

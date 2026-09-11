@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Circle,
   Component,
+  Contrast,
   Eye,
   EyeOff,
   Folder,
@@ -36,6 +37,7 @@ import {
   setNodeProps,
 } from './document/edits';
 import {
+  createAdjustmentLayer,
   createInstance,
   createMask,
   createPaintLayer,
@@ -43,6 +45,12 @@ import {
   createSymbol,
   createVectorLayer,
 } from './document/factory';
+import {
+  ADJUSTMENT_KINDS,
+  ADJUSTMENT_LABELS,
+  describeAdjustment,
+  type AdjustmentKind,
+} from './document/adjustments';
 import { moveNode } from './document/tree';
 import {
   BLEND_MODES,
@@ -73,6 +81,7 @@ function nodeIcon(node: DrawingNode) {
     case 'text': return <Type size={11} />;
     case 'vector': return <LayersIcon size={11} />;
     case 'instance': return <Component size={11} />;
+    case 'adjustment': return <Contrast size={11} />;
   }
 }
 
@@ -116,6 +125,7 @@ export function LayersPanel({
   const [renameValue, setRenameValue] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
   const [menuNodeId, setMenuNodeId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -126,7 +136,9 @@ export function LayersPanel({
   useEffect(() => {
     if (!addOpen) return;
     const close = (e: MouseEvent) => {
-      if (!addMenuRef.current?.contains(e.target as Node)) setAddOpen(false);
+      if (addMenuRef.current?.contains(e.target as Node)) return;
+      setAddOpen(false);
+      setAdjustmentsOpen(false);
     };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
@@ -216,6 +228,28 @@ export function LayersPanel({
     onActiveLayerChange(layer.id);
     onSelectionChange({ kind: 'nodes', ids: [layer.id] });
     setAddOpen(false);
+  }
+
+  /**
+   * A correction over the layers below it.
+   *
+   * Added **above the selected layer** rather than at the top of the document,
+   * because what an adjustment applies to is everything under it: dropping one
+   * on top would correct the whole drawing when what was wanted, nine times out
+   * of ten, was to correct the layer that is selected. It is selected in turn,
+   * so the inspector opens on its sliders.
+   */
+  function addAdjustment(kind: AdjustmentKind) {
+    const layer = createAdjustmentLayer(kind);
+    const anchor = selection?.kind === 'nodes' ? selection.ids[0] : activeLayerId;
+    const parent = findParent(doc.root, anchor);
+    const index = parent?.children.findIndex((c) => c.id === anchor) ?? 0;
+    onDocumentChange(parent
+      ? addNode(doc, layer, { parentId: parent.id, index: Math.max(0, index) })
+      : addNode(doc, layer));
+    onSelectionChange({ kind: 'nodes', ids: [layer.id] });
+    setAddOpen(false);
+    setAdjustmentsOpen(false);
   }
 
   // ── Masks and symbols ────────────────────────────────────────────
@@ -334,6 +368,27 @@ export function LayersPanel({
               >
                 <ImageIcon size={12} /> Image layer…
               </button>
+              <button
+                className={styles.addMenuItem}
+                role="menuitem"
+                aria-expanded={adjustmentsOpen}
+                onClick={() => setAdjustmentsOpen((v) => !v)}
+              >
+                <Contrast size={12} /> Adjustment layer
+                <span className={styles.submenuChevron}>
+                  {adjustmentsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                </span>
+              </button>
+              {adjustmentsOpen && ADJUSTMENT_KINDS.map((kind) => (
+                <button
+                  key={kind}
+                  className={`${styles.addMenuItem} ${styles.addMenuSubItem}`}
+                  role="menuitem"
+                  onClick={() => addAdjustment(kind)}
+                >
+                  {ADJUSTMENT_LABELS[kind]}
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -497,11 +552,15 @@ export function LayersPanel({
                           </button>
                         </>
                       )}
-                      {node.type !== 'instance' ? (
+                      {/* An adjustment has no content to reuse — an instance of
+                          one would draw nothing and correct nothing — so the
+                          symbol action is withheld rather than offered and then
+                          quietly producing an empty layer. */}
+                      {node.type !== 'instance' && node.type !== 'adjustment' ? (
                         <button className={styles.addMenuItem} role="menuitem" onClick={() => makeSymbol(node)}>
                           <Component size={12} /> Make a symbol
                         </button>
-                      ) : (
+                      ) : node.type === 'instance' ? (
                         <button
                           className={styles.addMenuItem}
                           role="menuitem"
@@ -512,7 +571,7 @@ export function LayersPanel({
                         >
                           Detach from symbol
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -529,14 +588,33 @@ export function LayersPanel({
                 )}
               </div>
 
+              {/* An adjustment layer has no thumbnail and nothing to expand, so
+                  its settings are summarised on the row itself — otherwise four
+                  "Levels" layers are indistinguishable until you click each. */}
+              {node.type === 'adjustment' && (
+                <div className={styles.propsRow} style={{ paddingLeft: 16 + depth * 12 }}>
+                  <span className={styles.propLabel}>{describeAdjustment(node.adjustment)}</span>
+                </div>
+              )}
+
               {node.mask && (
                 <div className={styles.propsRow} style={{ paddingLeft: 16 + depth * 12 }}>
                   <span className={styles.propLabel}>
-                    {node.mask.kind === 'clipping' ? 'Clipped to the layer below' : 'Layer mask'}
+                    {node.mask.kind === 'clipping'
+                      ? node.type === 'adjustment' ? 'Applied to the layer below only' : 'Clipped to the layer below'
+                      : 'Layer mask'}
                     {!node.mask.enabled ? ' (off)' : node.mask.inverted ? ' (inverted)' : ''}
                   </span>
                 </div>
               )}
+
+              {node.filters?.length ? (
+                <div className={styles.propsRow} style={{ paddingLeft: 16 + depth * 12 }}>
+                  <span className={styles.propLabel}>
+                    {node.filters.length === 1 ? '1 filter' : `${node.filters.length} filters`}
+                  </span>
+                </div>
+              ) : null}
 
               {confirmDeleteId === node.id && (
                 <div className={styles.confirmRow}>
@@ -551,21 +629,27 @@ export function LayersPanel({
                   wall of controls. */}
               {isSelected && (
                 <div className={styles.propsRow} style={{ paddingLeft: 16 + depth * 12 }}>
+                  {/* A layer that produces no pixels has nothing to blend, so
+                      an adjustment gets no blend control rather than one that
+                      is read and ignored. Its opacity is not inert, though —
+                      it is the strength of the correction. */}
+                  {node.type !== 'adjustment' && (
+                    <label className={styles.propLabel}>
+                      Blend
+                      <select
+                        className={styles.blendSelect}
+                        value={node.blendMode}
+                        aria-label="Blend mode"
+                        onChange={(e) => onDocumentChange(setNodeProps(doc, node.id, { blendMode: e.target.value as BlendMode }))}
+                      >
+                        {BLEND_MODES.map((mode) => (
+                          <option key={mode} value={mode}>{BLEND_MODE_LABELS[mode]}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label className={styles.propLabel}>
-                    Blend
-                    <select
-                      className={styles.blendSelect}
-                      value={node.blendMode}
-                      aria-label="Blend mode"
-                      onChange={(e) => onDocumentChange(setNodeProps(doc, node.id, { blendMode: e.target.value as BlendMode }))}
-                    >
-                      {BLEND_MODES.map((mode) => (
-                        <option key={mode} value={mode}>{BLEND_MODE_LABELS[mode]}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className={styles.propLabel}>
-                    Opacity
+                    {node.type === 'adjustment' ? 'Strength' : 'Opacity'}
                     <input
                       className={styles.opacityInput}
                       type="range"

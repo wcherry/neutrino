@@ -550,19 +550,149 @@ Every Neutrino-specific feature should also have a rendered fallback.
    before them opens here and a body written here opens in the earlier build
    with the new features dropped rather than the file refused.
 
-6. **Advanced non-destructive features**
+6. **Advanced non-destructive features** — *done*
    - Adjustment layers.
    - Filters and effects.
    - Rendered fallback generation.
 
-7. **Color and asset management**
+   **Every adjustment reduces to a LUT or a 4×5 colour matrix**, and that
+   reduction is the whole design. `document/adjustments.ts` turns each of the
+   eight the plan lists into one or two `ColorOp`s; `render/colorOps.ts` then
+   has exactly two things to implement per emitter — the canvas applies them to
+   an `ImageData`, and the SVG exporter writes `feComponentTransfer` or
+   `feColorMatrix` — instead of eight things that can drift apart one at a time.
+   The mapping is exact rather than approximate, which is what the reduction
+   buys. `color-interpolation-filters="sRGB"` is on every filter the exporter
+   writes, because SVG filters are linearRGB by default and a tone curve applied
+   in the wrong space is visibly different while looking like rounding.
+
+   **An adjustment layer applies to the layers below it inside its own stack**,
+   and stops at the group boundary. Photoshop's "pass through" reaches out of
+   the group; this does not, deliberately, because a group is then the thing
+   that bounds a correction and there is nowhere else to put that control. Three
+   fields it shares with every other node are load-bearing rather than inert:
+   `opacity` is the strength, `mask` confines it (a `clipping` mask to the alpha
+   of the layer below, which is how you correct one layer and not its
+   neighbours), and `visible` turns it off. `blendMode` has no meaning for a
+   layer that produces no pixels and the layers panel does not offer one.
+
+   Two consequences are worth knowing. **A partial correction is a mix, not a
+   fade**: half a hue rotation is a different colour, so `blendAdjusted` blends
+   the corrected pixels back towards the originals per pixel, and the SVG export
+   says the same thing by drawing the original and laying a filtered copy over
+   it at the layer's opacity. And **the stack has to be composited into a buffer
+   it owns** — read the target instead and a correction at the root would grab
+   the editor's page shadow and the grey around it.
+
+   **Filters are a property of a layer**, ordered, applied before its mask — a
+   masked blur is a blur inside a shape, while masking first would smear the
+   mask's own edge. The rendered fallback costs nothing, because the OpenRaster
+   writer rasterises every layer through the same compositor, so `data/layer-*.png`
+   *is* the filtered result. Two of the six have no SVG equivalent — SVG has no
+   block average, and `feTurbulence` is Perlin noise rather than per-pixel grain
+   — so pixelate and noise are dropped from an `.svg` and reported rather than
+   approximated into a different picture under the same name.
+
+   The blur is the piece with the real arithmetic in it, and it shipped wrong
+   once: one ideal box width floored to the nearest odd integer is **1** for
+   anything below about σ = 1.5, and a box of width 1 is the identity — so every
+   small blur silently did nothing, which looks exactly like a filter that has
+   not been switched on. `boxSizes` mixes `wl` and `wl + 2` across the three
+   passes instead. `radius` is the standard deviation, the same quantity CSS's
+   `blur()` and SVG's `stdDeviation` take, so the number means the same thing in
+   all three places.
+
+7. **Color and asset management** — *done*
    - ICC profiles.
    - 16-bit support.
    - HDR extension.
    - Embedded and linked assets.
 
-8. **Workspace metadata**
+   The theme here is being honest about what an 8-bit canvas pipeline can do,
+   because the alternative is a document that *claims* sixteen bits and holds
+   eight.
+
+   **Wide gamut is real**: `surfaceFactoryFor` asks for a `display-p3` context
+   and every buffer the compositor allocates is then wide-gamut, with the probe
+   answered once per page rather than per frame. A browser without it falls back
+   to sRGB and the panel says so.
+
+   **An embedded ICC profile goes into the package twice** — as
+   `META-INF/neutrino/color.icc`, findable by anything reading the manifest, and
+   as an `iCCP` chunk inside `mergedimage.png`, findable by everything else,
+   because an image viewer looks in the file and not in a directory beside it.
+   `io/png/chunks.ts` is the framing, the CRC and the splice, all pure; the one
+   step that needs the platform is the zlib compression, and where
+   `CompressionStream` is missing the chunk is skipped rather than the export
+   failing. A profile is validated through `io/icc.ts` before it is stored,
+   because bytes that are not a profile produce an `iCCP` chunk strict decoders
+   refuse — the picture lost to a metadata error.
+
+   **16-bit is read, not written.** A canvas is eight bits per channel, so
+   encoding a 16-bit PNG out of one writes eight bits padded to sixteen: a file
+   twice the size and not one bit more accurate. What the model does instead is
+   record the depth an imported asset arrived with (`pngBitDepth`, off the
+   IHDR — the last moment it exists, since the browser decodes it away), and the
+   inspector shows it, so the loss is visible rather than silent.
+
+   **HDR is a description plus an SDR preview**, which is exactly what §5 asks
+   for. The document carries the transfer function and the headroom it was
+   authored for, and the manifest names `mergedimage.png` as the SDR preview.
+   Nothing tone-maps an SDR render into a dimmer SDR render to look busy.
+
+   **A linked asset is provenance, not a second copy of the image.** §5 asks for
+   an embedded fallback copy and the layer's own pixels *are* that copy — they
+   are already in the document and already written to `data/layer-*.png`, so
+   storing them again on the asset would put the same megabytes in the file
+   three times to say something the file can already demonstrate. So an asset is
+   the URI, a content hash, the size it had on import and when — with
+   `RasterLayerNode.assetId` pointing back, a Reload action for a source that
+   can be fetched again, and pruning on save for assets whose layer is gone. A
+   `data:` URI is never stored as the source: it *is* the image, and keeping it
+   would be the duplication the whole design avoids.
+
+8. **Workspace metadata** — *done*
    - Guides, grids, snapping, rulers, active selection, and viewport state.
+
+   `document/workspace.ts` plus `DrawingDocument.workspace`. All of it rides in
+   `META-INF/neutrino/document.json`, so a reader that ignores the file loses
+   nothing about the picture — which is the test that says whether something
+   belongs here: `documentToSvg` of a rotated, ruled, guided document is
+   byte-identical to the plain one.
+
+   **The grid stayed where it was.** Spacing, origin and its own snap flag are
+   geometry a drawing is built against and predate this; moving them into the
+   workspace block would have meant migrating every drawing already saved to say
+   the same thing somewhere else. `SnapSettings` covers guides, objects and the
+   canvas edges, and the grid keeps its own switch — one rule per thing that can
+   be snapped to, wherever that rule already lived. Snapping tries the grid
+   first and the rest only where the grid did not move the value, or a guide two
+   pixels off a grid line fights the grid and which one wins depends on the
+   order of two `if`s.
+
+   **Canvas rotation is what forced the viewport to become a matrix.** A rotated
+   view means a screen point no longer maps back by subtracting and dividing, so
+   the pointer, the text overlay and the ruler ticks all go through
+   `viewportMatrix` and its inverse or they disagree the moment the canvas is
+   turned. The rotation is about the canvas's own centre, so it feels like
+   turning a sheet of paper. It is a *view* setting: nothing in the document
+   moves and exports are unaffected.
+
+   **The rulers overlay the canvas rather than insetting it**, so turning them
+   on does not move the drawing and a guide dragged out of one lands where the
+   pointer is with no offset to get wrong. `rulerTicks` picks the step from the
+   1-2-5 series so that a labelled tick is never closer than 64 screen pixels,
+   which is what keeps a ruler readable at 8% and at 1600% with no special case
+   for either. A guide dragged off the page is deleted, which also settles what
+   happens to one released before it reaches the page: it is never created, and
+   there is no undo step for the gesture.
+
+   **Viewport, tool and selection are folded in at save time, not at edit time.**
+   Panning or picking up a different tool would otherwise be a document change,
+   and a document change is an undo step — fifty of them between two brush
+   strokes would make ⌘Z scroll the page instead of undoing the stroke. Each is
+   restored only if it still resolves: a deleted layer or a tool this build no
+   longer has falls back rather than leaving the editor pointed at nothing.
 
 9. **Compatibility testing**
    - Open Neutrino files in Krita and GIMP.

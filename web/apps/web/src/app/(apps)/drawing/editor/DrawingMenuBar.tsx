@@ -36,6 +36,17 @@ export interface DrawingMenuBarProps {
   onSendBackward: () => void;
   showGrid: boolean;
   onToggleGrid: () => void;
+  /** Workspace state — redesign §5, stored with the document but not part of the image. */
+  showRulers: boolean;
+  onToggleRulers: () => void;
+  showGuides: boolean;
+  onToggleGuides: () => void;
+  lockGuides: boolean;
+  onToggleLockGuides: () => void;
+  snapToGuides: boolean;
+  onToggleSnapGuides: () => void;
+  onClearGuides: () => void;
+  guideCount: number;
   titleInputRef: React.RefObject<HTMLInputElement | null>;
   /** Opens a `.ora` written by Krita, GIMP or this app (redesign phase 3). */
   onImportOra: () => void;
@@ -83,6 +94,16 @@ export function DrawingMenuBar({
   onSendBackward,
   showGrid,
   onToggleGrid,
+  showRulers,
+  onToggleRulers,
+  showGuides,
+  onToggleGuides,
+  lockGuides,
+  onToggleLockGuides,
+  snapToGuides,
+  onToggleSnapGuides,
+  onClearGuides,
+  guideCount,
   titleInputRef,
   onImportOra,
   onImportSvg,
@@ -157,6 +178,16 @@ export function DrawingMenuBar({
       label: 'View',
       items: [
         { kind: 'action', label: showGrid ? 'Hide gridlines' : 'Show gridlines', shortcut: '⌘\'', action: onToggleGrid },
+        { kind: 'action', label: showRulers ? 'Hide rulers' : 'Show rulers', shortcut: '⌘R', action: onToggleRulers },
+        { kind: 'separator' },
+        // Guides are their own group: three switches and a destructive action
+        // that belong together, and that none of the zoom entries below relate
+        // to. Drag one out of a ruler to make it; drag it off the page to
+        // remove it.
+        { kind: 'action', label: showGuides ? 'Hide guides' : 'Show guides', shortcut: '⌘;', action: onToggleGuides },
+        { kind: 'action', label: lockGuides ? 'Unlock guides' : 'Lock guides', action: onToggleLockGuides },
+        { kind: 'action', label: snapToGuides ? 'Snap to guides ✓' : 'Snap to guides', action: onToggleSnapGuides },
+        { kind: 'action', label: 'Clear guides', disabled: guideCount === 0, action: onClearGuides },
         { kind: 'separator' },
         { kind: 'action', label: 'Zoom in', shortcut: '⌘+', action: onZoomIn },
         { kind: 'action', label: 'Zoom out', shortcut: '⌘−', action: onZoomOut },

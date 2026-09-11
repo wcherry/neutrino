@@ -26,6 +26,18 @@
  * Photoshop, rather than the unbounded plane the first version drew on.
  */
 
+import type { AdjustmentSpec } from './adjustments';
+import type { LinkedAsset } from './assets';
+import type { ColorProfile } from './color';
+import type { FilterSpec } from './filters';
+import type { WorkspaceState } from './workspace';
+
+// The four modules above own a slice of the model each, because each is a body
+// of arithmetic (colour operations, pixel effects, unit conversion, hashing)
+// that has to be testable on its own. They are re-exported here so the document
+// model still has one import path.
+export type { AdjustmentSpec, LinkedAsset, ColorProfile, FilterSpec, WorkspaceState };
+
 // ---------------------------------------------------------------------------
 // Geometry
 // ---------------------------------------------------------------------------
@@ -138,6 +150,15 @@ export interface RasterSource {
   /** Offset of the top-left pixel within the canvas. */
   x: number;
   y: number;
+  /**
+   * Bits per channel the asset arrived with, where it is known.
+   *
+   * Recorded rather than honoured: a canvas is eight bits per channel, so these
+   * pixels are eight-bit whatever the source was. Keeping the number means a
+   * 16-bit import is *known* to have lost depth instead of losing it silently —
+   * see `document/color.ts`.
+   */
+  bitDepth?: 8 | 16;
 }
 
 /**
@@ -302,6 +323,15 @@ export interface NodeBase {
   createdAt: string;
   modifiedAt: string;
   mask?: LayerMask;
+  /**
+   * Non-destructive effects over this node's own pixels, applied first to last
+   * (redesign §4, "Filters and effects").
+   *
+   * On `NodeBase` rather than on the layer types, so a *group* can carry one:
+   * blurring twelve layers as a unit is a different picture from blurring each
+   * of them, and the group is the only place that difference can be expressed.
+   */
+  filters?: FilterSpec[];
 }
 
 /** A group. Serialises to a nested `<stack>`. */
@@ -319,6 +349,13 @@ export interface StackNode extends NodeBase {
 export interface RasterLayerNode extends NodeBase {
   type: 'raster';
   source: RasterSource;
+  /**
+   * The `LinkedAsset` these pixels were imported from, where they were imported
+   * at all — a layer painted from scratch has none. The asset is provenance
+   * only; `source` is always the pixels, so a missing or stale asset costs the
+   * layer nothing (`document/assets.ts`).
+   */
+  assetId?: string;
 }
 
 export interface VectorLayerNode extends NodeBase {
@@ -402,12 +439,40 @@ export interface SymbolDefinition {
   createdAt: string;
 }
 
+/**
+ * A colour change applied to everything below it, without touching any of it.
+ *
+ * The layer carries parameters and no pixels — that is what makes it
+ * non-destructive — and it acts on **the layers below it within its own
+ * stack**, stopping at the group boundary. Photoshop's "pass through" reaches
+ * out of the group as well; this does not, deliberately, because a group is
+ * then the thing that bounds an adjustment and there is nowhere else to put
+ * that control. A group with an adjustment in it is a correction to those
+ * layers, and moving one out of the group is how you widen its reach.
+ *
+ * Three fields it shares with every other node earn their keep here rather than
+ * being inert: **`opacity`** is the strength of the correction, **`mask`**
+ * confines it to part of the canvas (a `clipping` mask confines it to the alpha
+ * of the layer below, which is the usual way to correct one layer without
+ * correcting its neighbours), and **`visible`** turns it off without deleting
+ * it. `blendMode` has no meaning for a layer that produces no pixels and is
+ * ignored.
+ *
+ * The canvas background is not layer content and is not adjusted; a correction
+ * applies to what has been *drawn*.
+ */
+export interface AdjustmentLayerNode extends NodeBase {
+  type: 'adjustment';
+  adjustment: AdjustmentSpec;
+}
+
 export type DrawingNode =
   | StackNode
   | RasterLayerNode
   | VectorLayerNode
   | TextLayerNode
-  | InstanceNode;
+  | InstanceNode
+  | AdjustmentLayerNode;
 
 export type NodeType = DrawingNode['type'];
 
@@ -419,6 +484,11 @@ export function isStack(node: DrawingNode): node is StackNode {
 /** A node that carries pixels a brush can paint into. */
 export function isRaster(node: DrawingNode): node is RasterLayerNode {
   return node.type === 'raster';
+}
+
+/** A node that corrects what is under it rather than drawing anything itself. */
+export function isAdjustment(node: DrawingNode): node is AdjustmentLayerNode {
+  return node.type === 'adjustment';
 }
 
 // ---------------------------------------------------------------------------
@@ -476,16 +546,6 @@ export interface GridSettings {
   subdivisions: number;
 }
 
-/**
- * sRGB is the baseline and the only profile this phase writes. `iccUri` is
- * where an embedded profile lands in phase 7; until then a document that names
- * anything else is still readable, it just renders as sRGB.
- */
-export interface ColorProfile {
-  name: string;
-  iccUri?: string;
-}
-
 export interface DocumentMetadata {
   title: string;
   author?: string;
@@ -508,13 +568,19 @@ export interface DrawingDocument {
    * and that nothing ever stored a file in, so there is no migration and no
    * reader for it — a body that is not version 2 opens as a new document.
    *
-   * It stays 2 across phases 3–5. Everything those added — cubic path handles,
-   * text on a path, symbols, the active selection — is a new optional field or
-   * a widening of one that already existed, so a version 2 body written before
-   * them parses under this reader with no migration and a body written by this
-   * build opens in the earlier one with the new features dropped rather than
-   * the file refused. Bumping the number would have bought nothing and cost
-   * every drawing already saved.
+   * It stays 2 across phases 3–8. Everything those added — cubic path handles,
+   * text on a path, symbols, the active selection, filters, linked assets, the
+   * workspace block — is a new optional field or a widening of one that already
+   * existed, so a version 2 body written before them parses under this reader
+   * with no migration and a body written by this build opens in the earlier one
+   * with the new features dropped rather than the file refused. Bumping the
+   * number would have bought nothing and cost every drawing already saved.
+   *
+   * The **adjustment layer** is the one addition that is a new node *type* and
+   * is worth being explicit about: an older build's `parseDocument` drops a node
+   * it does not recognise, so an adjustment opens there as a missing layer
+   * rather than as a broken file — the picture loses a correction and keeps
+   * everything else, which is the same trade every optional field makes.
    */
   version: 2;
   canvas: CanvasSettings;
@@ -529,6 +595,14 @@ export interface DrawingDocument {
   symbols?: SymbolDefinition[];
   /** The active pixel selection, or absent for "everything". */
   selection?: SelectionShape;
+  /** Provenance for imported pixels, referenced by `RasterLayerNode.assetId`. */
+  assets?: LinkedAsset[];
+  /**
+   * Rulers, units, snapping, canvas rotation and what was open — editor state
+   * rather than image content, which is why a reader that ignores it loses
+   * nothing about the picture (redesign §5).
+   */
+  workspace?: WorkspaceState;
 }
 
 export const DOCUMENT_VERSION = 2 as const;

@@ -24,18 +24,22 @@
 
 import { assetSafeId } from '../../document/ids';
 import { outsetToPixels } from '../../document/geometry';
+import { workingSpace } from '../../document/color';
 import { selectionToMaskSurface } from '../../document/selection';
 import { contentBounds, symbolTable } from '../../document/tree';
 import {
   documentRenderOptions,
-  domSurfaceFactory,
   renderDocumentToSurface,
   renderNodeToSurface,
+  surfaceFactoryFor,
   type RenderOptions,
   type Surface,
 } from '../../render/renderDocument';
+import { iccBytesFromDataUrl, parseIccProfile } from '../icc';
+import { embedIccProfile } from '../png/chunks';
+import { deflateBytes } from '../png/deflate';
 import { buildStackXml, type LayerAsset } from './stackXml';
-import { MANIFEST_PATH, SELECTION_PATH, buildManifest } from './manifest';
+import { ICC_PATH, MANIFEST_PATH, SELECTION_PATH, buildManifest } from './manifest';
 import type { DrawingDocument, DrawingNode, Rect } from '../../document/types';
 
 export const ORA_MIME_TYPE = 'image/openraster';
@@ -110,9 +114,14 @@ export async function writeOra(
   const assets = new Map<string, LayerAsset>();
   const maskSources = new Map<string, string>();
 
+  // Groups carry no pixels — their children do — and an **adjustment layer**
+  // carries none either: it is a correction to the layers below, already
+  // visible in `mergedimage.png`, and writing it as a `<layer>` would either
+  // point at an empty PNG or bake the correction into the source layers the
+  // redesign says to leave unchanged (§4, "Adjustment layers").
   const leaves: DrawingNode[] = [];
   eachNode(doc, (node) => {
-    if (node.type !== 'stack') leaves.push(node);
+    if (node.type !== 'stack' && node.type !== 'adjustment') leaves.push(node);
   });
 
   for (const node of leaves) {
@@ -143,15 +152,76 @@ export async function writeOra(
   const selectionPng = doc.selection ? await renderer.renderSelection?.() : null;
   if (selectionPng) zip.file(SELECTION_PATH, selectionPng);
 
+  // The ICC profile goes in twice on purpose. As its own archive entry it is
+  // findable by anything that reads the manifest; inside `mergedimage.png` it
+  // is findable by everything else, because an image viewer looks in the file
+  // and not in a directory beside it.
+  const icc = await writeColorProfile(zip, doc);
+
   zip.file('stack.xml', buildStackXml(doc, { assets, selectedNodeId: options.selectedNodeId }));
-  zip.file('mergedimage.png', await renderer.renderMerged());
+  zip.file('mergedimage.png', await withIccProfile(await renderer.renderMerged(), icc));
   zip.file('Thumbnails/thumbnail.png', await renderer.renderThumbnail());
   zip.file(
     MANIFEST_PATH,
-    JSON.stringify(buildManifest(doc, assets, maskSources, { selection: selectionPng ? SELECTION_PATH : null }), null, 2),
+    JSON.stringify(
+      buildManifest(doc, assets, maskSources, {
+        selection: selectionPng ? SELECTION_PATH : null,
+        icc: icc ? ICC_PATH : null,
+      }),
+      null,
+      2,
+    ),
   );
 
   return zip.generateAsync({ type: 'blob', mimeType: ORA_MIME_TYPE, compression: 'DEFLATE' });
+}
+
+/** What an embedded profile needs to reach both of its destinations. */
+interface EmbeddedProfile {
+  name: string;
+  bytes: Uint8Array;
+}
+
+/**
+ * Writes the document's ICC profile into the archive, if it has one.
+ *
+ * Validated through `parseIccProfile` rather than copied on trust: the profile
+ * arrives as a data URL out of a stored document, and writing bytes that are
+ * not a profile into an `iCCP` chunk produces a PNG that strict decoders refuse
+ * entirely — the picture lost to a metadata error.
+ */
+async function writeColorProfile(
+  zip: { file(path: string, data: Uint8Array): unknown },
+  doc: DrawingDocument,
+): Promise<EmbeddedProfile | null> {
+  const uri = doc.colorProfile.iccUri;
+  if (!uri) return null;
+  const bytes = iccBytesFromDataUrl(uri);
+  if (!bytes) return null;
+  const profile = parseIccProfile(bytes);
+  if (!profile) return null;
+
+  zip.file(ICC_PATH, bytes);
+  return { name: doc.colorProfile.name || profile.name, bytes };
+}
+
+/**
+ * The merged image with an `iCCP` chunk spliced in.
+ *
+ * Falls back to the untouched PNG whenever anything is unavailable — no
+ * profile, no `CompressionStream`, bytes that turn out not to be a PNG. The
+ * package is still valid and the profile is still in the archive; what is lost
+ * is the copy a standalone viewer would have read, which is worth less than a
+ * failed export.
+ */
+async function withIccProfile(png: Blob, profile: EmbeddedProfile | null): Promise<Blob> {
+  if (!profile) return png;
+  const compressed = await deflateBytes(profile.bytes);
+  if (!compressed) return png;
+
+  const bytes = new Uint8Array(await png.arrayBuffer());
+  const embedded = embedIccProfile(bytes, profile.name, compressed);
+  return embedded ? new Blob([embedded as BlobPart], { type: 'image/png' }) : png;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,7 +280,11 @@ export function createCanvasRenderer(
   doc: DrawingDocument,
   options: CanvasRendererOptions = {},
 ): OraRenderer {
-  const createSurface = options.createSurface ?? domSurfaceFactory;
+  // The document's own colour space, so a wide-gamut drawing is rasterised
+  // wide-gamut rather than being clamped to sRGB on the way into the package —
+  // the one place where "the export goes through the same renderer as the
+  // screen" would otherwise stop being true.
+  const createSurface = options.createSurface ?? surfaceFactoryFor(workingSpace(doc.colorProfile));
   // Through `documentRenderOptions` so a symbol instance and a caption bound to
   // a path rasterise here exactly as they draw on screen. Without it an
   // instance would silently export as an empty layer — the one failure mode

@@ -341,6 +341,21 @@
   background: #f3f4f6;
 }
 
+/* The adjustment list expands in place rather than flying out sideways: the
+   panel is 200px wide and a second menu beside it would land off-screen. */
+.addMenuSubItem {
+  padding-left: 26px;
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.submenuChevron {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  color: #9ca3af;
+}
+
 /* ── Selected node ───────────────────────────────────────── */
 
 .layerRowSelected {

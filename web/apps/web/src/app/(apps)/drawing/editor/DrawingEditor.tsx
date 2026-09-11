@@ -34,22 +34,31 @@ import {
 import {
   addNode,
   addObjects,
+  attachAsset,
+  clearGuides,
   cloneNode,
   deleteNode,
   duplicateNode,
   newGroup,
   offsetCopies,
+  patchAsset,
   patchObjects,
   removeObjects,
   setGrid,
   setLayerObjects,
   setNodesProps,
+  setRasterSource,
   // Aliased: `setSelection` is also this component's React state setter for the
   // *object* selection, and the two mean different things — one names what a
   // drag moves, the other the region a brush is confined to.
   setSelection as setPixelSelection,
+  setSnap,
   setTitle,
+  setViewport,
+  setWorkspace,
 } from './document/edits';
+import { createAsset, findAsset, hashDataUrl } from './document/assets';
+import { formatMeasure, workspaceOf } from './document/workspace';
 import { maskSelection, selectionToMaskSurface } from './document/selection';
 import { domSurfaceFactory, loadDocumentBitmaps } from './render/renderDocument';
 import { createCanvasRenderer, OraReadError, readOra, writeOra } from './io/ora';
@@ -66,6 +75,7 @@ import {
   isPaintTool,
   PAINT_TOOL_BRUSH,
   selectionCount,
+  TOOL_NAMES,
   type DrawingDocument,
   type DrawingNode,
   type Selection,
@@ -283,10 +293,13 @@ export function DrawingEditor() {
    * second after the PATCH that set it.
    */
   const serverTitleRef = useRef('');
+  /** Read only by the save, which records the armed tool in the workspace. */
+  const toolRef = useRef(tool);
   docRef.current = doc;
   selectionRef.current = selection;
   activeLayerRef.current = activeLayerId;
   clipboardRef.current = clipboard;
+  toolRef.current = tool;
 
   // ── History ───────────────────────────────────────────────────────
   //
@@ -420,8 +433,23 @@ export function DrawingEditor() {
         setCanRedo(false);
         setDoc(loaded);
 
+        // Where the last session left off: the layer, the tool and what was
+        // selected (redesign §5). Each is restored only if it still resolves —
+        // a layer that has since been deleted, or a tool this build no longer
+        // has, falls back rather than leaving the editor pointed at nothing.
+        const workspace = workspaceOf(loaded.workspace);
+        const storedLayer = workspace.activeLayerId
+          ? flattenTree(loaded.root).find((f) => f.node.id === workspace.activeLayerId)
+          : undefined;
         const firstVectorLayer = flattenTree(loaded.root).find((f) => f.node.type === 'vector');
-        setActiveLayerId(firstVectorLayer?.node.id ?? '');
+        setActiveLayerId((storedLayer ?? firstVectorLayer)?.node.id ?? '');
+
+        if (workspace.activeTool && (TOOL_NAMES as readonly string[]).includes(workspace.activeTool)) {
+          setTool(workspace.activeTool as ToolType);
+        }
+        const restored = (workspace.selectedIds ?? [])
+          .filter((id) => findNode(loaded.root, id) !== null);
+        if (restored.length) setSelection({ kind: 'nodes', ids: restored });
       } catch {
         if (!cancelled) setError('Failed to load drawing');
       } finally {
@@ -454,6 +482,25 @@ export function DrawingEditor() {
   // ── Autosave ──────────────────────────────────────────────────────
 
   const saveInProgress = useRef(false);
+
+  /**
+   * The document plus where the session had got to — redesign §5's viewport,
+   * active tool and selected objects.
+   *
+   * Folded in **at save time rather than at edit time**, and that is the whole
+   * reason this exists as a function: panning the canvas or picking up a
+   * different tool would otherwise be a document change, and a document change
+   * is an undo step. Fifty of them between two brush strokes would make ⌘Z
+   * scroll the page instead of undoing the stroke.
+   */
+  const withSessionState = useCallback((document_: DrawingDocument): DrawingDocument => {
+    const selection_ = selectionRef.current;
+    return setWorkspace(setViewport(document_, { ...transformRef.current }), {
+      activeTool: toolRef.current,
+      activeLayerId: activeLayerRef.current,
+      ...(selection_ ? { selectedIds: selection_.ids } : { selectedIds: [] }),
+    });
+  }, []);
 
   /**
    * Everything the save needs that is not part of *what* is being saved.
@@ -491,7 +538,7 @@ export function DrawingEditor() {
       saveInProgress.current = true;
 
       const { awaitDek: resolveDek, versionGuard: guard, toast: notify, userId } = saveDepsRef.current;
-      const body = serializeDocument(setTitle(docRef.current, title));
+      const body = serializeDocument(withSessionState(setTitle(docRef.current, title)));
       // Only when it actually changed here — see `serverTitleRef`.
       const metadata = title === serverTitleRef.current ? undefined : { title };
 
@@ -532,7 +579,10 @@ export function DrawingEditor() {
 
     timer = setTimeout(attempt, AUTOSAVE_DELAY);
     return () => clearTimeout(timer);
-  }, [doc, title, drawingId, loading]);
+    // `withSessionState` is stable — it reads everything through refs — so
+    // listing it here costs nothing. Anything that is *not* stable belongs in
+    // `saveDepsRef`; see the note above it.
+  }, [doc, title, drawingId, loading, withSessionState]);
 
   // ── Brushes ───────────────────────────────────────────────────────
 
@@ -933,6 +983,18 @@ export function DrawingEditor() {
           e.preventDefault();
           applyDocument(setGrid(docRef.current, { visible: !docRef.current.grid.visible }));
           break;
+        case 'r': {
+          e.preventDefault();
+          const current = workspaceOf(docRef.current.workspace);
+          applyDocument(setWorkspace(docRef.current, { rulers: !current.rulers }));
+          break;
+        }
+        case ';': {
+          e.preventDefault();
+          const current = workspaceOf(docRef.current.workspace);
+          applyDocument(setWorkspace(docRef.current, { showGuides: !current.showGuides }));
+          break;
+        }
       }
     };
 
@@ -971,9 +1033,59 @@ export function DrawingEditor() {
       toast.error('That image could not be read.');
       return;
     }
-    const layer = createRasterLayer(source, result.name ?? 'Image');
-    applyDocument(addNode(docRef.current, layer));
+    const name = result.name ?? 'Image';
+    const layer = createRasterLayer(source, name);
+    // The asset records *where* these pixels came from; the pixels themselves
+    // are the layer's, which is what keeps the drawing viewable when the source
+    // is not (`document/assets.ts`).
+    const asset = createAsset({
+      uri: result.src,
+      name,
+      dataUrl: source.dataUrl,
+      width: source.width,
+      height: source.height,
+    });
+    applyDocument(attachAsset(addNode(docRef.current, layer), layer.id, asset));
     setSelection({ kind: 'nodes', ids: [layer.id] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyDocument]);
+
+  /**
+   * Re-fetches a linked asset and replaces the pixels of every layer using it.
+   *
+   * Every layer, not just the selected one: an asset is one source and two
+   * layers pointing at it are two placements of the same image, so reloading
+   * one and leaving the other showing last week's version would be the bug this
+   * feature exists to prevent.
+   *
+   * The hash is rewritten on the way through, which is how "has the source
+   * changed since?" stays answerable after a reload.
+   */
+  const handleReloadAsset = useCallback(async (assetId: string) => {
+    const document_ = docRef.current;
+    const asset = findAsset(document_.assets, assetId);
+    if (!asset?.linked) return;
+
+    const source = await rasterSourceFromImage(asset.uri, document_.canvas);
+    if (!source) {
+      toast.error('That image could not be reloaded from its source.');
+      return;
+    }
+
+    let next = patchAsset(docRef.current, assetId, {
+      hash: hashDataUrl(source.dataUrl),
+      width: source.width,
+      height: source.height,
+    });
+    for (const { node } of flattenTree(next.root)) {
+      if (node.type !== 'raster' || node.assetId !== assetId) continue;
+      // The layer's own offset is kept: a reloaded image belongs where it was
+      // placed, and re-centring it would move somebody's composition because
+      // the source gained a pixel.
+      next = setRasterSource(next, node.id, { ...source, x: node.source.x, y: node.source.y });
+    }
+    applyDocument(next);
+    toast.success('Reloaded from the source.');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applyDocument]);
 
@@ -1018,6 +1130,8 @@ export function DrawingEditor() {
   }, [applyDocument, drawingId, title]);
 
   // ── Render ────────────────────────────────────────────────────────
+
+  const workspace = workspaceOf(doc.workspace);
 
   if (loading) {
     return (
@@ -1075,6 +1189,16 @@ export function DrawingEditor() {
           onSendBackward={() => reorder(1)}
           showGrid={doc.grid.visible}
           onToggleGrid={() => applyDocument(setGrid(doc, { visible: !doc.grid.visible }))}
+          showRulers={workspace.rulers}
+          onToggleRulers={() => applyDocument(setWorkspace(doc, { rulers: !workspace.rulers }))}
+          showGuides={workspace.showGuides}
+          onToggleGuides={() => applyDocument(setWorkspace(doc, { showGuides: !workspace.showGuides }))}
+          lockGuides={workspace.lockGuides}
+          onToggleLockGuides={() => applyDocument(setWorkspace(doc, { lockGuides: !workspace.lockGuides }))}
+          snapToGuides={workspace.snap.guides}
+          onToggleSnapGuides={() => applyDocument(setSnap(doc, { guides: !workspace.snap.guides }))}
+          onClearGuides={() => applyDocument(clearGuides(doc))}
+          guideCount={doc.guides.length}
           titleInputRef={titleInputRef}
           onImportOra={() => openImport('ora')}
           onImportSvg={() => openImport('svg')}
@@ -1120,6 +1244,7 @@ export function DrawingEditor() {
             bitmaps={bitmaps}
             brush={brush}
             maskEditing={maskEditing}
+            initialTransform={doc.viewport}
           />
         </div>
         <StylePanel
@@ -1134,6 +1259,7 @@ export function DrawingEditor() {
           maskEditing={maskEditing}
           onMaskEditingChange={setMaskEditing}
           activeLayerId={activeLayerId}
+          onReloadAsset={handleReloadAsset}
         />
         {showVersionHistory && drawingId && (
           <div className={styles.versionHistoryPanel}>
@@ -1153,7 +1279,13 @@ export function DrawingEditor() {
         zoom={zoom}
         onZoomChange={handleZoomChange}
         onFitToScreen={handleFitToScreen}
-        canvasSize={`${doc.canvas.width} × ${doc.canvas.height}`}
+        // Reported in the workspace's own units, which is the point of having
+        // them: a poster is 42 × 59.4 cm and nobody checks that by dividing
+        // 4961 pixels by the DPI.
+        canvasSize={workspace.units === 'px'
+          ? `${doc.canvas.width} × ${doc.canvas.height} px`
+          : `${formatMeasure(doc.canvas.width, workspace.units, doc.canvas.dpi)} × ` +
+            `${formatMeasure(doc.canvas.height, workspace.units, doc.canvas.dpi)}`}
         empty={isDocumentEmpty(doc)}
       />
 

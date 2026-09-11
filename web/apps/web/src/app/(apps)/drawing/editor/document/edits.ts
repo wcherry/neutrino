@@ -25,6 +25,11 @@ import { newId } from './ids';
 import { multiplyTransform, normalizeRect } from './geometry';
 import { mapPathObject } from './path';
 import { createStack } from './factory';
+import { DEFAULT_HDR, type ColorProfile, type HdrSettings } from './color';
+import { clampFilter, type FilterSpec } from './filters';
+import { workspaceOf, type SnapSettings, type WorkspaceState } from './workspace';
+import type { AdjustmentSpec } from './adjustments';
+import type { LinkedAsset } from './assets';
 import type {
   CanvasSettings,
   DrawingDocument,
@@ -135,6 +140,12 @@ export function translateNode(doc: DrawingDocument, id: string, dx: number, dy: 
         return { ...node, source: { ...node.source, x: node.source.x + dx, y: node.source.y + dy } };
       case 'vector':
         return { ...node, objects: node.objects.map((o) => translateObject(o, dx, dy)) };
+      case 'adjustment':
+        // A correction has no position: it applies to the layers below it
+        // wherever they are, and a mask is what confines it to part of the
+        // canvas. Moving one is a gesture with no meaning, so it is a no-op
+        // rather than a transform nothing reads.
+        return node;
       case 'stack':
       case 'instance':
         // Neither has geometry of its own — a group's is its children's and an
@@ -159,6 +170,165 @@ export function patchNodeMask(
 ): DrawingDocument {
   return withRoot(doc, updateNode(doc.root, id, (node) =>
     node.mask ? ({ ...node, mask: { ...node.mask, ...patch } }) as DrawingNode : node));
+}
+
+// ---------------------------------------------------------------------------
+// Adjustments and filters
+// ---------------------------------------------------------------------------
+
+/**
+ * Rewrites an adjustment layer's parameters.
+ *
+ * `Partial<AdjustmentSpec>` and not `Partial<Omit<AdjustmentSpec, 'kind'>>`:
+ * `Partial` distributes over a union and `Omit` does not, so the second spells
+ * out an intent the compiler then throws away — it reduces to the keys every
+ * kind shares, which is `kind` alone, which is to say nothing at all. As
+ * written, a field that belongs to no adjustment is refused; a field that
+ * belongs to *some other* adjustment is not, and `parseDocument` is what
+ * repairs that on the way back in.
+ */
+export function patchAdjustment(
+  doc: DrawingDocument,
+  id: string,
+  patch: Partial<AdjustmentSpec>,
+): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) =>
+    node.type === 'adjustment' ? { ...node, adjustment: { ...node.adjustment, ...patch } as AdjustmentSpec } : node));
+}
+
+/** Replaces an adjustment outright — how the kind is changed. */
+export function setAdjustment(doc: DrawingDocument, id: string, spec: AdjustmentSpec): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) =>
+    node.type === 'adjustment' ? { ...node, adjustment: spec } : node));
+}
+
+/** Adds a filter to the end of a node's chain, where it applies last. */
+export function addFilter(doc: DrawingDocument, id: string, filter: FilterSpec): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) => ({
+    ...node,
+    filters: [...(node.filters ?? []), filter],
+  }) as DrawingNode));
+}
+
+export function removeFilter(doc: DrawingDocument, id: string, filterId: string): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) => {
+    const filters = (node.filters ?? []).filter((f) => f.id !== filterId);
+    // Dropped entirely when the last one goes, so a node that has never had a
+    // filter and one that no longer has any serialise the same way.
+    if (!filters.length) {
+      const { filters: _dropped, ...rest } = node;
+      return rest as DrawingNode;
+    }
+    return { ...node, filters } as DrawingNode;
+  }));
+}
+
+/** Merges a patch into one filter, clamped, leaving the rest of the chain alone. */
+export function patchFilter(
+  doc: DrawingDocument,
+  id: string,
+  filterId: string,
+  patch: Partial<FilterSpec>,
+): DrawingDocument {
+  return withRoot(doc, updateNode(doc.root, id, (node) => {
+    if (!node.filters?.some((f) => f.id === filterId)) return node;
+    return {
+      ...node,
+      filters: node.filters.map((f) =>
+        (f.id === filterId ? clampFilter({ ...f, ...patch } as FilterSpec) : f)),
+    } as DrawingNode;
+  }));
+}
+
+/**
+ * Moves a filter within its chain. `delta` is negative for "earlier".
+ *
+ * The move is decided *before* the tree is rewritten, because `updateNode`
+ * rebuilds the path to a node it was asked to change whether or not the change
+ * came to anything — so returning the node untouched from inside it would still
+ * produce a new document, and the editor would record an undo step for clicking
+ * "move up" on the filter that is already first.
+ */
+export function reorderFilter(
+  doc: DrawingDocument,
+  id: string,
+  filterId: string,
+  delta: number,
+): DrawingDocument {
+  const node = findNode(doc.root, id);
+  const filters = node?.filters;
+  if (!filters) return doc;
+  const from = filters.findIndex((f) => f.id === filterId);
+  if (from < 0) return doc;
+  const to = Math.max(0, Math.min(filters.length - 1, from + delta));
+  if (to === from) return doc;
+
+  const reordered = [...filters];
+  const [moved] = reordered.splice(from, 1);
+  reordered.splice(to, 0, moved);
+  return withRoot(doc, updateNode(doc.root, id, (target) =>
+    ({ ...target, filters: reordered }) as DrawingNode));
+}
+
+// ---------------------------------------------------------------------------
+// Assets, colour and workspace
+// ---------------------------------------------------------------------------
+
+export function addAsset(doc: DrawingDocument, asset: LinkedAsset): DrawingDocument {
+  return { ...doc, assets: [...(doc.assets ?? []), asset] };
+}
+
+export function patchAsset(
+  doc: DrawingDocument,
+  assetId: string,
+  patch: Partial<Omit<LinkedAsset, 'id'>>,
+): DrawingDocument {
+  const assets = doc.assets ?? [];
+  if (!assets.some((a) => a.id === assetId)) return doc;
+  return { ...doc, assets: assets.map((a) => (a.id === assetId ? { ...a, ...patch } : a)) };
+}
+
+/**
+ * Points a raster layer at an asset, adding the asset if it is new.
+ *
+ * One call rather than two because the two are never useful apart: an asset
+ * nothing references is pruned on the next save, and a layer pointing at an
+ * asset that was never added describes nothing.
+ */
+export function attachAsset(doc: DrawingDocument, nodeId: string, asset: LinkedAsset): DrawingDocument {
+  const withAsset = doc.assets?.some((a) => a.id === asset.id) ? doc : addAsset(doc, asset);
+  return withRoot(withAsset, updateNode(withAsset.root, nodeId, (node) =>
+    (node.type === 'raster' ? { ...node, assetId: asset.id } : node)));
+}
+
+export function setColorProfile(doc: DrawingDocument, patch: Partial<ColorProfile>): DrawingDocument {
+  return { ...doc, colorProfile: { ...doc.colorProfile, ...patch } };
+}
+
+export function setHdr(doc: DrawingDocument, patch: Partial<HdrSettings>): DrawingDocument {
+  const current = doc.colorProfile.hdr ?? DEFAULT_HDR;
+  return setColorProfile(doc, { hdr: { ...current, ...patch } });
+}
+
+export function setWorkspace(doc: DrawingDocument, patch: Partial<WorkspaceState>): DrawingDocument {
+  return { ...doc, workspace: { ...workspaceOf(doc.workspace), ...patch } };
+}
+
+export function setSnap(doc: DrawingDocument, patch: Partial<SnapSettings>): DrawingDocument {
+  const workspace = workspaceOf(doc.workspace);
+  return { ...doc, workspace: { ...workspace, snap: { ...workspace.snap, ...patch } } };
+}
+
+/** Moves a guide. Off the canvas is not an error — `removeGuide` is how one goes. */
+export function moveGuide(doc: DrawingDocument, id: string, position: number): DrawingDocument {
+  return {
+    ...doc,
+    guides: doc.guides.map((g) => (g.id === id ? { ...g, position } : g)),
+  };
+}
+
+export function clearGuides(doc: DrawingDocument): DrawingDocument {
+  return doc.guides.length ? { ...doc, guides: [] } : doc;
 }
 
 // ---------------------------------------------------------------------------

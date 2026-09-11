@@ -26,6 +26,22 @@ import {
   createDocument,
 } from './factory';
 import { normalizeTree, refreshBounds, symbolTable } from './tree';
+import { ADJUSTMENT_KINDS, createAdjustment, type AdjustmentKind, type AdjustmentSpec } from './adjustments';
+import { isReloadableUri, type LinkedAsset } from './assets';
+import {
+  DEFAULT_HDR,
+  isColorSpaceName,
+  type ColorProfile,
+  type HdrSettings,
+} from './color';
+import { FILTER_KINDS, clampFilter, createFilter, type FilterKind, type FilterSpec } from './filters';
+import {
+  DEFAULT_SNAP,
+  DEFAULT_WORKSPACE,
+  isRulerUnit,
+  type SnapSettings,
+  type WorkspaceState,
+} from './workspace';
 import {
   BLEND_MODES,
   DOCUMENT_VERSION,
@@ -127,6 +143,7 @@ function rasterSource(v: unknown): RasterSource | null {
     height: Math.max(1, Math.round(num(v.height, 1))),
     x: num(v.x, 0),
     y: num(v.y, 0),
+    ...(v.bitDepth === 16 ? { bitDepth: 16 as const } : {}),
   };
 }
 
@@ -141,6 +158,132 @@ function mask(v: unknown): LayerMask | undefined {
     enabled: bool(v.enabled, true),
     inverted: bool(v.inverted, false),
   };
+}
+
+/**
+ * A stored adjustment.
+ *
+ * Every field is read *over* the identity default for its kind, so a spec
+ * written by a build that had one more slider parses here with that slider
+ * neutral rather than at zero — which for a gamma or a white point is the
+ * difference between "unchanged" and "the picture is black".
+ */
+function adjustment(v: unknown): AdjustmentSpec {
+  const kind = isRecord(v) ? str(v.kind, '') : '';
+  const known = (ADJUSTMENT_KINDS as readonly string[]).includes(kind)
+    ? (kind as AdjustmentKind)
+    : 'brightness-contrast';
+  const base = createAdjustment(known);
+  if (!isRecord(v)) return base;
+
+  switch (base.kind) {
+    case 'brightness-contrast':
+      return {
+        ...base,
+        brightness: clamped(v.brightness, base.brightness, -100, 100),
+        contrast: clamped(v.contrast, base.contrast, -100, 100),
+      };
+    case 'levels':
+      return {
+        ...base,
+        inputBlack: clamped(v.inputBlack, base.inputBlack, 0, 255),
+        inputWhite: clamped(v.inputWhite, base.inputWhite, 0, 255),
+        gamma: clamped(v.gamma, base.gamma, 0.01, 10),
+        outputBlack: clamped(v.outputBlack, base.outputBlack, 0, 255),
+        outputWhite: clamped(v.outputWhite, base.outputWhite, 0, 255),
+      };
+    case 'curves': {
+      const points = Array.isArray(v.points)
+        ? v.points.filter(isRecord).map((p) => ({
+            x: clamped(p.x, 0, 0, 255),
+            y: clamped(p.y, 0, 0, 255),
+          }))
+        : [];
+      const channel = v.channel === 'r' || v.channel === 'g' || v.channel === 'b' ? v.channel : 'rgb';
+      // Fewer than two handles is not a curve; falling back to the identity
+      // pair keeps the editor's drag handles somewhere to start from.
+      return { ...base, channel, points: points.length >= 2 ? points : base.points };
+    }
+    case 'hue-saturation':
+      return {
+        ...base,
+        hue: clamped(v.hue, base.hue, -180, 180),
+        saturation: clamped(v.saturation, base.saturation, -100, 100),
+        lightness: clamped(v.lightness, base.lightness, -100, 100),
+      };
+    case 'color-balance':
+      return {
+        ...base,
+        red: clamped(v.red, base.red, -100, 100),
+        green: clamped(v.green, base.green, -100, 100),
+        blue: clamped(v.blue, base.blue, -100, 100),
+      };
+    case 'exposure':
+      return {
+        ...base,
+        exposure: clamped(v.exposure, base.exposure, -10, 10),
+        offset: clamped(v.offset, base.offset, -1, 1),
+        gamma: clamped(v.gamma, base.gamma, 0.01, 10),
+      };
+    case 'grayscale':
+      return { ...base, amount: clamped(v.amount, base.amount, 0, 100) };
+    case 'posterize':
+      return { ...base, levels: Math.round(clamped(v.levels, base.levels, 2, 255)) };
+  }
+}
+
+/**
+ * A stored filter.
+ *
+ * Built from the kind's own defaults and then clamped, on the same terms as a
+ * brush restored from `localStorage`: a filter is a number that reaches a loop
+ * over every pixel, and a hand-edited radius of 10,000 is a hung tab rather
+ * than a strange-looking blur.
+ */
+function filterSpec(v: unknown): FilterSpec | null {
+  if (!isRecord(v)) return null;
+  const kind = str(v.kind, '');
+  if (!(FILTER_KINDS as readonly string[]).includes(kind)) return null;
+
+  const base = { ...createFilter(kind as FilterKind), id: str(v.id, newId()), enabled: bool(v.enabled, true) };
+  switch (base.kind) {
+    case 'blur':
+      return clampFilter({ ...base, radius: num(v.radius, base.radius) });
+    case 'sharpen':
+      return clampFilter({ ...base, amount: num(v.amount, base.amount) });
+    case 'pixelate':
+      return clampFilter({ ...base, size: num(v.size, base.size) });
+    case 'drop-shadow':
+      return clampFilter({
+        ...base,
+        dx: num(v.dx, base.dx),
+        dy: num(v.dy, base.dy),
+        blur: num(v.blur, base.blur),
+        color: str(v.color, base.color),
+        opacity: num(v.opacity, base.opacity),
+      });
+    case 'glow':
+      return clampFilter({
+        ...base,
+        radius: num(v.radius, base.radius),
+        color: str(v.color, base.color),
+        strength: num(v.strength, base.strength),
+      });
+    case 'noise':
+      return clampFilter({
+        ...base,
+        amount: num(v.amount, base.amount),
+        monochrome: bool(v.monochrome, base.monochrome),
+      });
+  }
+}
+
+function filters(v: unknown): FilterSpec[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const parsed = v.map(filterSpec).filter((f): f is FilterSpec => f !== null);
+  // Absent rather than `[]`, so a layer with no filters serialises without the
+  // field — the same rule `subpaths` follows.
+  return parsed.length ? parsed : undefined;
 }
 
 function vectorStyle(v: unknown): VectorStyle {
@@ -250,6 +393,7 @@ function textPath(v: unknown): TextPathBinding | undefined {
 
 function nodeBase(v: Raw, fallbackName: string): NodeBase {
   const created = isoDate(v.createdAt, new Date().toISOString());
+  const chain = filters(v.filters);
   return {
     id: str(v.id, newId()),
     name: str(v.name, fallbackName),
@@ -265,6 +409,7 @@ function nodeBase(v: Raw, fallbackName: string): NodeBase {
     createdAt: created,
     modifiedAt: isoDate(v.modifiedAt, created),
     mask: mask(v.mask),
+    ...(chain ? { filters: chain } : {}),
   };
 }
 
@@ -286,8 +431,22 @@ function node(v: unknown): DrawingNode | null {
     case 'raster': {
       const source = rasterSource(v.source);
       if (!source) return null;
-      return { ...base, name: str(v.name, 'Image'), type: 'raster', source };
+      const assetId = str(v.assetId, '');
+      return {
+        ...base,
+        name: str(v.name, 'Image'),
+        type: 'raster',
+        source,
+        ...(assetId ? { assetId } : {}),
+      };
     }
+    case 'adjustment':
+      return {
+        ...base,
+        name: str(v.name, 'Adjustment'),
+        type: 'adjustment',
+        adjustment: adjustment(v.adjustment),
+      };
     case 'vector':
       return {
         ...base,
@@ -376,6 +535,90 @@ function canvasSettings(v: unknown): CanvasSettings {
   };
 }
 
+/**
+ * A stored colour profile.
+ *
+ * `iccUri` is dropped unless it is an ICC data URL, for the same reason a
+ * raster source is dropped unless it is an image one: a document is not a place
+ * from which to fetch things, and an `iccUri` pointing at somebody's server
+ * would be a request made on opening a file.
+ */
+function colorProfile(v: unknown): ColorProfile {
+  if (!isRecord(v)) return { name: 'sRGB', space: 'srgb', bitDepth: 8 };
+  const iccUri = str(v.iccUri, '');
+  return {
+    name: str(v.name, 'sRGB'),
+    ...(/^data:application\/(vnd\.iccprofile|octet-stream);base64,/i.test(iccUri) ? { iccUri } : {}),
+    space: isColorSpaceName(v.space) ? v.space : 'srgb',
+    bitDepth: v.bitDepth === 16 ? 16 : 8,
+    ...(isRecord(v.hdr) ? { hdr: hdrSettings(v.hdr) } : {}),
+  };
+}
+
+function hdrSettings(v: Raw): HdrSettings {
+  return {
+    enabled: bool(v.enabled, DEFAULT_HDR.enabled),
+    transfer: v.transfer === 'hlg' ? 'hlg' : 'pq',
+    headroom: clamped(v.headroom, DEFAULT_HDR.headroom, 1, 8),
+  };
+}
+
+/**
+ * Stored asset provenance.
+ *
+ * An entry with no `uri` is dropped: provenance that cannot say where anything
+ * came from is a row in a panel with nothing in it, and the layer it described
+ * still has its own pixels either way.
+ */
+function linkedAsset(v: unknown): LinkedAsset | null {
+  if (!isRecord(v)) return null;
+  const uri = str(v.uri, '');
+  if (!uri) return null;
+  return {
+    id: str(v.id, newId()),
+    uri,
+    name: str(v.name, 'Asset'),
+    hash: str(v.hash, ''),
+    width: Math.max(1, Math.round(num(v.width, 1))),
+    height: Math.max(1, Math.round(num(v.height, 1))),
+    importedAt: isoDate(v.importedAt, new Date().toISOString()),
+    // Re-derived rather than trusted: whether a URI can be fetched again is a
+    // property of the URI, and a stored `true` beside a local filename would
+    // offer a Reload button that can only fail.
+    linked: bool(v.linked, true) && isReloadableUri(uri),
+  };
+}
+
+function snapSettings(v: unknown): SnapSettings {
+  if (!isRecord(v)) return { ...DEFAULT_SNAP };
+  return {
+    guides: bool(v.guides, DEFAULT_SNAP.guides),
+    objects: bool(v.objects, DEFAULT_SNAP.objects),
+    canvas: bool(v.canvas, DEFAULT_SNAP.canvas),
+    tolerance: clamped(v.tolerance, DEFAULT_SNAP.tolerance, 0, 200),
+  };
+}
+
+function workspace(v: unknown): WorkspaceState | undefined {
+  if (!isRecord(v)) return undefined;
+  const selectedIds = Array.isArray(v.selectedIds)
+    ? v.selectedIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  return {
+    rulers: bool(v.rulers, DEFAULT_WORKSPACE.rulers),
+    units: isRulerUnit(v.units) ? v.units : DEFAULT_WORKSPACE.units,
+    showGuides: bool(v.showGuides, DEFAULT_WORKSPACE.showGuides),
+    lockGuides: bool(v.lockGuides, DEFAULT_WORKSPACE.lockGuides),
+    snap: snapSettings(v.snap),
+    // Wrapped to 0–360 rather than clamped: a rotation is an angle, and −90 and
+    // 270 are the same view.
+    canvasRotation: ((num(v.canvasRotation, 0) % 360) + 360) % 360,
+    ...(typeof v.activeTool === 'string' ? { activeTool: v.activeTool } : {}),
+    ...(typeof v.activeLayerId === 'string' ? { activeLayerId: v.activeLayerId } : {}),
+    ...(selectedIds.length ? { selectedIds } : {}),
+  };
+}
+
 function guides(v: unknown): Guide[] {
   if (!Array.isArray(v)) return [];
   return v.filter(isRecord).map((g) => ({
@@ -412,12 +655,15 @@ export function parseDocument(raw: string): DrawingDocument | null {
   const meta = isRecord(parsed.metadata) ? parsed.metadata : {};
   const created = isoDate(meta.createdAt, new Date().toISOString());
   const gridRaw = isRecord(parsed.grid) ? parsed.grid : {};
-  const profileRaw = isRecord(parsed.colorProfile) ? parsed.colorProfile : {};
   const viewportRaw = isRecord(parsed.viewport) ? parsed.viewport : null;
 
   const symbols = Array.isArray(parsed.symbols)
     ? parsed.symbols.map(symbolDefinition).filter((s): s is SymbolDefinition => s !== null)
     : [];
+  const assets = Array.isArray(parsed.assets)
+    ? parsed.assets.map(linkedAsset).filter((a): a is LinkedAsset => a !== null)
+    : [];
+  const workspaceState = workspace(parsed.workspace);
   // Bounds are refreshed *after* the symbols are known, because an instance's
   // extent is its symbol's. Doing it in the other order gives every instance in
   // a freshly loaded document a zero-sized bounding box, which is an
@@ -432,6 +678,8 @@ export function parseDocument(raw: string): DrawingDocument | null {
     guides: guides(parsed.guides),
     ...(symbols.length ? { symbols } : {}),
     ...(selection ? { selection } : {}),
+    ...(assets.length ? { assets } : {}),
+    ...(workspaceState ? { workspace: workspaceState } : {}),
     grid: {
       visible: bool(gridRaw.visible, DEFAULT_GRID.visible),
       size: clamped(gridRaw.size, DEFAULT_GRID.size, 1, 1000),
@@ -439,10 +687,7 @@ export function parseDocument(raw: string): DrawingDocument | null {
       snap: bool(gridRaw.snap, DEFAULT_GRID.snap),
       subdivisions: Math.round(clamped(gridRaw.subdivisions, DEFAULT_GRID.subdivisions, 1, 100)),
     },
-    colorProfile: {
-      name: str(profileRaw.name, 'sRGB'),
-      ...(typeof profileRaw.iccUri === 'string' ? { iccUri: profileRaw.iccUri } : {}),
-    },
+    colorProfile: colorProfile(parsed.colorProfile),
     metadata: {
       title: str(meta.title, 'Untitled drawing'),
       ...(typeof meta.author === 'string' ? { author: meta.author } : {}),
@@ -466,11 +711,38 @@ export function parseDocument(raw: string): DrawingDocument | null {
   };
 }
 
+/**
+ * Assets no layer refers to any more.
+ *
+ * Provenance outlives nothing: delete the layer an image came from and the row
+ * describing where it came from is a fact about a picture that is no longer in
+ * the drawing. Pruned on save rather than on delete, so an undone deletion gets
+ * its asset back — the same reason `bounds` is recomputed here rather than
+ * maintained at every edit site.
+ */
+function pruneAssets(doc: DrawingDocument): LinkedAsset[] | undefined {
+  const assets = doc.assets;
+  if (!assets?.length) return undefined;
+
+  const referenced = new Set<string>();
+  const walk = (node: DrawingNode): void => {
+    if (node.type === 'raster' && node.assetId) referenced.add(node.assetId);
+    if (node.type === 'stack') node.children.forEach(walk);
+  };
+  walk(doc.root);
+  for (const symbol of doc.symbols ?? []) walk(symbol.content);
+
+  const kept = assets.filter((asset) => referenced.has(asset.id));
+  return kept.length ? kept : undefined;
+}
+
 /** A body, ready to encrypt. Stamps `modifiedAt` and the writing application. */
 export function serializeDocument(doc: DrawingDocument): string {
+  const assets = pruneAssets(doc);
   const stamped: DrawingDocument = {
     ...doc,
     root: refreshBounds(normalizeTree(doc.root), symbolTable(doc)),
+    ...(assets ? { assets } : { assets: undefined }),
     metadata: {
       ...doc.metadata,
       modifiedAt: new Date().toISOString(),
