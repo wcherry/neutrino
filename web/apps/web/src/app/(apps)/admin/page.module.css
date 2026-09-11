@@ -876,3 +876,50 @@
   font-size: 12px;
 }
 
+
+/* ── Fonts ───────────────────────────────────────────────────────────────── */
+
+/*
+ * The review list a dropped archive turns into (#207). A family zip is
+ * routinely fifteen or twenty rows, so the two columns that decide what gets
+ * installed — the tick and the name — get the room, and the provenance of each
+ * file is a secondary line that wraps rather than a column that pushes them
+ * out of the window.
+ */
+.fontPickCell {
+  width: 1%;
+  white-space: nowrap;
+}
+
+/* Wide enough for a family name and its style, but not so wide the file column
+   is squeezed off the table. */
+.fontNameCell .formInput {
+  min-width: 220px;
+}
+
+/*
+ * A path inside an archive, which can be long and is worth reading in full —
+ * so it wraps at any character rather than truncating like `.serviceMeta`.
+ */
+.fontPathCell {
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+  overflow-wrap: anywhere;
+  max-width: 36ch;
+}
+
+/* A note under a row's name field: why it cannot be installed, or that a font
+   of that name already is. */
+.fontRowNote {
+  display: block;
+  margin-top: 4px;
+}
+
+/* What was found but cannot be installed — reported rather than dropped in
+   silence, since an admin who expected eighteen fonts should see why they got
+   seventeen. */
+.fontSkipped {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

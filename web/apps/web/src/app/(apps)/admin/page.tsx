@@ -15,16 +15,17 @@ import {
   TimerReset,
   Trash2,
 } from 'lucide-react';
-import { Spinner, Toggle, ProgressBar, useToast, DropZone } from '@neutrino/ui';
+import { Spinner, Toggle, ProgressBar, useToast } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
-import { adminApi, fontsApi } from '@neutrino/api-admin';
+import { adminApi } from '@neutrino/api-admin';
 import { ApiClientError } from '@neutrino/api-core';
-import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, FeatureFlag, JobResponse, CustomFont, VersionRetentionSettings } from '@neutrino/api-admin';
+import type { ProcessInfo, DiskUsageInfo, ServiceInfo, AdminUser, UserQuota, FeatureFlag, JobResponse, VersionRetentionSettings } from '@neutrino/api-admin';
 import { CreateUserDialog, ResetPasswordDialog, UserQuotaDialog } from './UserDialogs';
 import { MENU_SEPARATOR, RowActionsMenu } from './RowActionsMenu';
 import type { RowActionEntry } from './RowActionsMenu';
 import { PasswordPolicySection } from './PasswordPolicySection';
 import { WorkQueueTab } from './WorkQueueTab';
+import { FontsTab } from './FontsTab';
 import { formatBytes, formatLimit, usagePercent } from './bytes';
 import { TeamsTab } from './TeamsTab';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
@@ -880,116 +881,6 @@ function FeatureFlagsTab() {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function FontsTab() {
-  const qc = useQueryClient();
-  const { error: toastError, success: toastSuccess } = useToast();
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [displayName, setDisplayName] = useState('');
-
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['admin-fonts'],
-    queryFn: () => fontsApi.list(),
-  });
-
-  const uploadFont = useMutation({
-    mutationFn: () => adminApi.uploadFont(pendingFile!, displayName.trim()),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-fonts'] });
-      toastSuccess('Font uploaded.');
-      setPendingFile(null);
-      setDisplayName('');
-    },
-    onError: () => {
-      toastError('Failed to upload font. Check the format (woff2/woff/ttf/otf) and size (max 50 MB).');
-    },
-  });
-
-  const deleteFont = useMutation({
-    mutationFn: (id: string) => adminApi.deleteFont(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin-fonts'] });
-      toastSuccess('Font deleted.');
-    },
-    onError: () => {
-      toastError('Failed to delete font. Please try again.');
-    },
-  });
-
-  if (isLoading) {
-    return (
-      <div className={styles.loading}>
-        <Spinner size="md" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={styles.error}>
-        Failed to load custom fonts.
-      </div>
-    );
-  }
-
-  const fonts: CustomFont[] = data ?? [];
-
-  return (
-    <div className={styles.section}>
-      <h2 className={styles.sectionTitle}>Upload a font</h2>
-      <DropZone
-        onFiles={(files) => setPendingFile(files[0] ?? null)}
-        multiple={false}
-        accept=".woff2,.woff,.ttf,.otf"
-        label={pendingFile ? pendingFile.name : 'Drag & drop a font file here'}
-        hint="woff2, woff, ttf, or otf — max 50 MB"
-      />
-      <div className={styles.serviceRow}>
-        <input
-          type="text"
-          className={styles.roleSelect}
-          placeholder="Display name"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-        />
-        <button
-          className={styles.pageBtn}
-          type="button"
-          disabled={!pendingFile || !displayName.trim() || uploadFont.isPending}
-          onClick={() => uploadFont.mutate()}
-        >
-          Upload
-        </button>
-      </div>
-
-      <h2 className={styles.sectionTitle}>Custom Fonts</h2>
-      {fonts.length === 0 ? (
-        <div className={styles.empty}>No custom fonts uploaded yet.</div>
-      ) : (
-        <div className={styles.serviceList}>
-          {fonts.map((font) => (
-            <div key={font.id} className={styles.serviceRow}>
-              <div className={styles.serviceInfo}>
-                <span className={styles.serviceName}>{font.displayName}</span>
-                <span className={styles.serviceMeta}>
-                  {font.format} &middot; uploaded {new Date(font.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-              <button
-                className={styles.deleteBtn}
-                type="button"
-                disabled={deleteFont.isPending}
-                onClick={() => deleteFont.mutate(font.id)}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
