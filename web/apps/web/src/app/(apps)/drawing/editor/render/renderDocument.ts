@@ -23,9 +23,15 @@
 
 import { findPathObject, isEffectivelyVisible, paintOrder, symbolTable, type SymbolTable } from '../document/tree';
 import { isIdentity } from '../document/geometry';
+import { adjustmentOps, isNeutralAdjustment } from '../document/adjustments';
+import { canvasSupportsColorSpace, workingSpace, type ColorSpaceName } from '../document/color';
+import { hasActiveFilters } from '../document/filters';
+import { applyColorOps, blendAdjusted, type ImageLike } from './colorOps';
+import { applyFilterChain } from './imageFilters';
 import { drawVectorObject, type ImageResolver } from './vectorObject';
 import { layoutText, layoutTextOnPath, textFont, type TextLine } from './textLayout';
 import type {
+  AdjustmentLayerNode,
   DrawingDocument,
   DrawingNode,
   LayerMask,
@@ -58,6 +64,30 @@ export const domSurfaceFactory: SurfaceFactory = (width, height) => {
   canvas.height = Math.max(1, Math.round(height));
   return canvas;
 };
+
+/**
+ * A factory that allocates its surfaces in a given colour space.
+ *
+ * Wide gamut has to be asked for at `getContext` time, so it cannot be a render
+ * option applied later — every buffer the compositor makes has to be created in
+ * the space, or the first one that is not silently clamps the document back to
+ * sRGB. Support is probed once here rather than per surface, and a browser
+ * without it gets the ordinary factory back: a document authored in P3 still
+ * opens, in sRGB, rather than failing.
+ */
+export function surfaceFactoryFor(space: ColorSpaceName): SurfaceFactory {
+  if (space === 'srgb' || !canvasSupportsColorSpace(space)) return domSurfaceFactory;
+  return (width, height) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width));
+    canvas.height = Math.max(1, Math.round(height));
+    // `getContext` binds the space to the canvas, so calling it here is what
+    // makes the later `getContext('2d')` through the `Surface` interface return
+    // the wide-gamut context rather than a fresh sRGB one.
+    canvas.getContext('2d', { colorSpace: space } as CanvasRenderingContext2DSettings);
+    return canvas;
+  };
+}
 
 export interface RenderOptions {
   /** Decoded raster and mask bitmaps, keyed by their `dataUrl`. */
@@ -92,6 +122,19 @@ export interface RenderOptions {
    * lookup table nothing reads.
    */
   paths?: (pathId: string) => PathObject | null;
+  /**
+   * The size of the intermediate buffers a blend, a mask, a filter or an
+   * adjustment needs, in **canvas coordinates**.
+   *
+   * The document's own canvas size, filled in by `documentRenderOptions`. It
+   * has to be stated rather than taken from the target surface, because the
+   * target is not always in canvas coordinates: the editor's canvas is the
+   * viewport in screen pixels with a zoom transform on it, so sizing a buffer
+   * from it would crop every blended layer to the window at whatever number of
+   * document pixels happened to fit — visible as a layer that loses its bottom
+   * half when you zoom in.
+   */
+  bufferSize?: { width: number; height: number };
 }
 
 interface ResolvedOptions extends RenderOptions {
@@ -118,7 +161,17 @@ export function documentRenderOptions(
     ...options,
     symbols: options.symbols ?? symbolTable(doc),
     paths: options.paths ?? ((pathId) => findPathObject(doc.root, pathId)?.object ?? null),
+    bufferSize: options.bufferSize ?? { width: doc.canvas.width, height: doc.canvas.height },
+    // The document's colour space reaches every buffer through here, for the
+    // same reason the symbol table does: one place that knows the document,
+    // rather than each call site remembering to ask.
+    createSurface: options.createSurface ?? surfaceFactoryFor(workingSpace(doc.colorProfile)),
   };
+}
+
+/** Where an intermediate buffer's size comes from, with the old behaviour as a fallback. */
+function bufferExtent(ctx: CanvasRenderingContext2D, options: ResolvedOptions): { width: number; height: number } {
+  return options.bufferSize ?? { width: ctx.canvas.width, height: ctx.canvas.height };
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +276,13 @@ function drawNodeContent(
       if (symbol) compositeNode(ctx, symbol.content, options);
       break;
     }
+    case 'adjustment':
+      // An adjustment has no content of its own: it acts on what is already on
+      // the surface, which is `drawStackChildren`'s business because only it
+      // knows what "already" means. Reaching one here is a node composited on
+      // its own — a symbol's content, say — where there is nothing below to
+      // correct.
+      break;
   }
 
   ctx.restore();
@@ -243,18 +303,19 @@ function drawNodeContent(
  * layer below — so it is skipped here and handled by `drawStackChildren`, which
  * is the only place with both layers in hand.
  */
-function applyMask(
-  surface: Surface,
+function maskAlphaSurface(
   mask: LayerMask,
+  width: number,
+  height: number,
   options: ResolvedOptions,
-): void {
-  if (!mask.enabled || !mask.source) return;
+): Surface | null {
+  if (!mask.source) return null;
   const bitmap = options.bitmaps?.get(mask.source.dataUrl);
-  if (!bitmap) return;
+  if (!bitmap) return null;
 
-  const maskSurface = options.createSurface(surface.width, surface.height);
+  const maskSurface = options.createSurface(width, height);
   const maskCtx = maskSurface.getContext('2d');
-  if (!maskCtx) return;
+  if (!maskCtx) return null;
 
   const origin = options.origin ?? { x: 0, y: 0 };
   maskCtx.drawImage(
@@ -280,6 +341,17 @@ function applyMask(
     pixels[i + 2] = 0;
   }
   maskCtx.putImageData(data, 0, 0);
+  return maskSurface;
+}
+
+function applyMask(
+  surface: Surface,
+  mask: LayerMask,
+  options: ResolvedOptions,
+): void {
+  if (!mask.enabled) return;
+  const maskSurface = maskAlphaSurface(mask, surface.width, surface.height, options);
+  if (!maskSurface) return;
 
   const ctx = surface.getContext('2d');
   if (!ctx) return;
@@ -299,8 +371,22 @@ function needsOwnSurface(node: DrawingNode): boolean {
   // by `drawStackChildren`, which has the layer below in hand.
   if (node.mask?.enabled && node.mask.source) return true;
   if (node.blendMode !== 'normal') return true;
+  // A filter reads neighbouring pixels, so it needs the layer alone on a
+  // surface: run over the target it would blur whatever else is already there.
+  if (hasActiveFilters(node.filters)) return true;
   if (node.type === 'stack') return node.opacity < 1 || node.isolation === 'isolate';
   return false;
+}
+
+/** Whether an adjustment layer would actually correct anything. */
+function isActiveAdjustment(node: DrawingNode, options: ResolvedOptions): node is AdjustmentLayerNode {
+  return (
+    node.type === 'adjustment' &&
+    node.visible &&
+    node.opacity > 0 &&
+    !options.skipNodeIds?.has(node.id) &&
+    !isNeutralAdjustment(node.adjustment)
+  );
 }
 
 function isClipped(node: DrawingNode): boolean {
@@ -327,9 +413,53 @@ function drawStackChildren(
   options: ResolvedOptions,
 ): void {
   const children = paintOrder(stack);
+
+  // An adjustment reads the pixels below it, so the stack has to be composited
+  // somewhere it *owns* — read them off the target and a correction at the root
+  // would also grab the editor's page shadow and the grey around it. The buffer
+  // is in canvas coordinates, which is also what makes the correction identical
+  // on screen and in an export rather than varying with the zoom.
+  if (children.some((child) => isActiveAdjustment(child, options))) {
+    const { width, height } = bufferExtent(ctx, options);
+    const surface = options.createSurface(width, height);
+    const bufferCtx = surface.getContext('2d');
+    if (bufferCtx) {
+      compositeChildren(bufferCtx, children, options);
+      ctx.save();
+      ctx.drawImage(surface as CanvasImageSource, 0, 0);
+      ctx.restore();
+      return;
+    }
+    // No context to buffer into — a stub surface, or a browser out of memory.
+    // Compositing straight through loses the correction and keeps the drawing.
+  }
+
+  compositeChildren(ctx, children, options);
+}
+
+/**
+ * The children themselves, bottom to top.
+ *
+ * Split from `drawStackChildren` so the buffered and unbuffered paths run the
+ * same loop: an adjustment layer must not be the one case where clipping groups
+ * or skipped nodes behave differently.
+ */
+function compositeChildren(
+  ctx: CanvasRenderingContext2D,
+  children: readonly DrawingNode[],
+  options: ResolvedOptions,
+): void {
   let base: DrawingNode | null = null;
 
   for (const child of children) {
+    if (child.type === 'adjustment') {
+      if (isActiveAdjustment(child, options)) applyAdjustmentLayer(ctx, child, base, options);
+      // An adjustment is not a base: it has no alpha for a clipping mask above
+      // it to take its shape from, and treating it as one would break the
+      // group of clipped layers it sits in the middle of.
+      continue;
+    }
+
     if (!isClipped(child)) {
       // The base is tracked before visibility is considered, so hiding a
       // clipped layer does not silently re-point the layers above it at a
@@ -347,6 +477,79 @@ function drawStackChildren(
   }
 }
 
+/**
+ * One adjustment layer, applied to everything already on the surface.
+ *
+ * The correction is computed over the whole surface and then *mixed back*
+ * towards the original by the layer's opacity and its mask, because a partial
+ * adjustment is a partial mix and not the adjustment applied to some of the
+ * pixels — half a hue rotation is a different colour, not a smaller region.
+ *
+ * A `clipping` mask takes its weights from the alpha of the layer below, which
+ * is the ordinary way to correct one layer without correcting its neighbours,
+ * and is why this is given the running `base` rather than looking one up.
+ */
+function applyAdjustmentLayer(
+  ctx: CanvasRenderingContext2D,
+  node: AdjustmentLayerNode,
+  base: DrawingNode | null,
+  options: ResolvedOptions,
+): void {
+  const width = ctx.canvas.width;
+  const height = ctx.canvas.height;
+  if (width <= 0 || height <= 0) return;
+
+  let source: ImageData;
+  try {
+    source = ctx.getImageData(0, 0, width, height);
+  } catch {
+    // A tainted canvas. Nothing here can recover, and the layers below are
+    // already drawn, so the correction is dropped rather than the picture.
+    return;
+  }
+
+  const adjusted: ImageLike = {
+    data: new Uint8ClampedArray(source.data),
+    width: source.width,
+    height: source.height,
+  };
+  applyColorOps(adjusted, adjustmentOps(node.adjustment));
+
+  const weights = adjustmentWeights(node, base, width, height, options);
+  blendAdjusted(source, adjusted, node.opacity, weights);
+  ctx.putImageData(source, 0, 0);
+}
+
+/**
+ * The per-pixel strength of an adjustment: its mask, as an alpha channel in the
+ * surface's own pixel grid, or null for "everywhere".
+ */
+function adjustmentWeights(
+  node: AdjustmentLayerNode,
+  base: DrawingNode | null,
+  width: number,
+  height: number,
+  options: ResolvedOptions,
+): Uint8ClampedArray | null {
+  const mask = node.mask;
+  if (!mask?.enabled) return null;
+
+  if (mask.kind === 'clipping') {
+    if (!base || !base.visible || base.opacity <= 0) return null;
+    const surface = renderNodeToSurface(base, width, height, { ...options, origin: undefined });
+    const ctx = surface?.getContext('2d');
+    if (!ctx) return null;
+    return ctx.getImageData(0, 0, width, height).data;
+  }
+
+  // The same surface `applyMask` multiplies by — one description of "a
+  // grayscale channel is an alpha channel" rather than two that can disagree.
+  const surface = maskAlphaSurface(mask, width, height, { ...options, origin: undefined });
+  const ctx = surface?.getContext('2d');
+  if (!ctx) return null;
+  return ctx.getImageData(0, 0, width, height).data;
+}
+
 /** One layer confined to the alpha of the layer it is clipped to. */
 function compositeClipped(
   ctx: CanvasRenderingContext2D,
@@ -356,12 +559,15 @@ function compositeClipped(
 ): void {
   if (!base || !base.visible || base.opacity <= 0) return;
 
-  const width = ctx.canvas.width;
-  const height = ctx.canvas.height;
-  const surface = renderNodeToSurface(node, width, height, options);
+  const { width, height } = bufferExtent(ctx, options);
+  // `origin` is dropped for every intermediate buffer: a buffer is in canvas
+  // coordinates, and the target's own transform is what places it. Carrying the
+  // origin into both would shift the content by it twice.
+  const inner: ResolvedOptions = { ...options, origin: undefined };
+  const surface = renderNodeToSurface(node, width, height, inner);
   if (!surface) return;
 
-  const baseSurface = renderNodeToSurface(base, width, height, options);
+  const baseSurface = renderNodeToSurface(base, width, height, inner);
   const surfaceCtx = surface.getContext('2d');
   if (baseSurface && surfaceCtx) {
     surfaceCtx.save();
@@ -392,7 +598,8 @@ function compositeNode(
     return;
   }
 
-  const surface = renderNodeToSurface(node, ctx.canvas.width, ctx.canvas.height, options);
+  const { width, height } = bufferExtent(ctx, options);
+  const surface = renderNodeToSurface(node, width, height, { ...options, origin: undefined });
   if (!surface) return;
 
   ctx.save();
@@ -413,6 +620,10 @@ function compositeNode(
  * why the mask is applied and the blend is not: `composite-op` and `opacity`
  * are attributes on the `<layer>` element, and the mask is the part OpenRaster
  * cannot express and so has to arrive already in the pixels.
+ *
+ * **Filters run before the mask.** A blurred layer confined to a mask is a blur
+ * inside a shape; masking first and blurring after would smear the mask's own
+ * edge, which is the one thing a mask exists to keep sharp.
  */
 export function renderNodeToSurface(
   node: DrawingNode,
@@ -430,8 +641,31 @@ export function renderNodeToSurface(
   drawNodeContent(ctx, node, resolved);
   if (origin) ctx.setTransform(1, 0, 0, 1, 0, 0);
 
+  if (node.filters) applyNodeFilters(surface, node.filters);
   if (node.mask) applyMask(surface, node.mask, resolved);
   return surface;
+}
+
+/**
+ * A layer's filter chain, over its own surface.
+ *
+ * Read back, rewritten and put back once for the whole chain rather than per
+ * filter — a `getImageData`/`putImageData` pair is by far the most expensive
+ * thing in here, and the chain is arithmetic on an array in between.
+ */
+function applyNodeFilters(surface: Surface, filters: readonly import('../document/filters').FilterSpec[]): void {
+  if (!hasActiveFilters(filters)) return;
+  const ctx = surface.getContext('2d');
+  if (!ctx || surface.width <= 0 || surface.height <= 0) return;
+
+  let image: ImageData;
+  try {
+    image = ctx.getImageData(0, 0, surface.width, surface.height);
+  } catch {
+    return;
+  }
+  applyFilterChain(image, filters);
+  ctx.putImageData(image, 0, 0);
 }
 
 /**

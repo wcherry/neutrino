@@ -10,10 +10,15 @@
  */
 
 export type {
+  AdjustmentLayerNode,
+  AdjustmentSpec,
   BlendMode,
   CanvasSettings,
   ColorProfile,
   DocumentMetadata,
+  FilterSpec,
+  LinkedAsset,
+  WorkspaceState,
   DrawingDocument,
   DrawingNode,
   EllipseObject,
@@ -46,7 +51,7 @@ export type {
   ViewportState,
 } from './document/types';
 
-export { BLEND_MODES, BLEND_MODE_LABELS, isRaster, isStack, pathContours } from './document/types';
+export { BLEND_MODES, BLEND_MODE_LABELS, isAdjustment, isRaster, isStack, pathContours } from './document/types';
 
 /**
  * The armed tool.
@@ -89,6 +94,21 @@ export type ToolType =
   | 'select-rect'
   | 'select-ellipse'
   | 'lasso';
+
+/**
+ * Every tool, as data.
+ *
+ * Exists so a stored workspace can be checked against what this build actually
+ * has: a drawing saved by a later version naming a tool that does not exist
+ * here would otherwise arm nothing and leave the toolbar showing a selection
+ * that does not match what the canvas does.
+ */
+export const TOOL_NAMES: readonly ToolType[] = [
+  'select', 'node', 'transform',
+  'pen', 'line', 'arrow', 'rectangle', 'ellipse', 'text', 'eraser',
+  'brush', 'pencil', 'marker', 'airbrush', 'paint-eraser',
+  'select-rect', 'select-ellipse', 'lasso',
+];
 
 /** Tools that lay down pixels rather than creating objects. */
 export const PAINT_TOOLS = ['brush', 'pencil', 'marker', 'airbrush', 'paint-eraser'] as const;

@@ -19,6 +19,7 @@ import { describe, it, expect, vi } from 'vitest';
 import JSZip from 'jszip';
 
 import {
+  createAdjustmentLayer,
   createDocument,
   createMask,
   createRasterLayer,
@@ -27,7 +28,15 @@ import {
   createTextLayer,
   createVectorLayer,
 } from '../../app/(apps)/drawing/editor/document/factory';
-import { addNode, addObjects, setNodeProps } from '../../app/(apps)/drawing/editor/document/edits';
+import { createFilter } from '../../app/(apps)/drawing/editor/document/filters';
+import {
+  addFilter,
+  addNode,
+  addObjects,
+  setColorProfile,
+  setNodeProps,
+} from '../../app/(apps)/drawing/editor/document/edits';
+import { iccDataUrl } from '../../app/(apps)/drawing/editor/io/icc';
 import { findNode, flattenTree, insertNode, normalizeTree } from '../../app/(apps)/drawing/editor/document/tree';
 import {
   buildStackXml,
@@ -338,6 +347,108 @@ describe('META-INF/neutrino/document.json', () => {
     const zip = await open(await writeOra(sampleDocument(), stubRenderer()));
     const manifest = JSON.parse(await zip.file('META-INF/neutrino/document.json')!.async('string'));
     expect(manifest.masks).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adjustments, filters and colour — redesign phases 6 and 7
+// ---------------------------------------------------------------------------
+
+/** A minimal but structurally valid ICC profile, enough to be accepted. */
+function iccBytes(): Uint8Array {
+  const bytes = new Uint8Array(160);
+  new DataView(bytes.buffer).setUint32(0, 160, false);
+  bytes[8] = 2;
+  bytes.set([...'RGB '].map((c) => c.charCodeAt(0)), 16);
+  bytes.set([...'acsp'].map((c) => c.charCodeAt(0)), 36);
+  return bytes;
+}
+
+describe('an adjustment layer in a package', () => {
+  it('writes no layer element and no PNG for it', async () => {
+    // §4's rule: the parameters are the Neutrino description, the merged image
+    // is the rendered fallback, and **the source layers stay unchanged**. A
+    // `<layer>` here would either point at an empty PNG or mean the correction
+    // had been baked into the layers below.
+    const base = sampleDocument();
+    const adjustment = createAdjustmentLayer('levels');
+    const doc = addNode(base, adjustment);
+
+    const zip = await open(await writeOra(doc, stubRenderer()));
+    const xml = await zip.file('stack.xml')!.async('string');
+    expect(xml).not.toContain(adjustment.id);
+    expect(Object.keys(zip.files).some((n) => n.includes(adjustment.id))).toBe(false);
+  });
+
+  it('lists it in the manifest, pointing at the merged image', async () => {
+    const adjustment = createAdjustmentLayer('curves');
+    const zip = await open(await writeOra(addNode(sampleDocument(), adjustment), stubRenderer()));
+    const manifest = JSON.parse(await zip.file('META-INF/neutrino/document.json')!.async('string'));
+
+    expect(manifest.adjustments).toEqual([
+      { nodeId: adjustment.id, kind: 'curves', renderedFallback: 'mergedimage.png' },
+    ]);
+    // And the parameters themselves ride along in the document copy.
+    expect(manifest.document.root.children.some((c: { id: string }) => c.id === adjustment.id)).toBe(true);
+  });
+});
+
+describe('filters in a package', () => {
+  it('records which PNG the result was baked into', async () => {
+    // A filter's fallback is per-layer rather than the merged image, because
+    // the layer PNG is rendered *through* the chain — so a reader that knows
+    // nothing about filters opens a blurred layer already blurred.
+    const base = createDocument();
+    const layer = createRasterLayer(rasterSource(), 'Photo');
+    const doc = addFilter(addNode(base, layer), layer.id, createFilter('blur'));
+
+    const zip = await open(await writeOra(doc, stubRenderer()));
+    const manifest = JSON.parse(await zip.file('META-INF/neutrino/document.json')!.async('string'));
+
+    expect(manifest.filters).toHaveLength(1);
+    expect(manifest.filters[0]).toMatchObject({ nodeId: layer.id, kinds: ['blur'] });
+    expect(zip.file(manifest.filters[0].renderedInto)).not.toBeNull();
+  });
+
+  it('leaves a disabled filter out of the list', async () => {
+    const base = createDocument();
+    const layer = createRasterLayer(rasterSource(), 'Photo');
+    const doc = addFilter(addNode(base, layer), layer.id, { ...createFilter('blur'), enabled: false });
+
+    const zip = await open(await writeOra(doc, stubRenderer()));
+    const manifest = JSON.parse(await zip.file('META-INF/neutrino/document.json')!.async('string'));
+    expect(manifest.filters).toEqual([]);
+  });
+});
+
+describe('the colour profile in a package', () => {
+  it('writes an embedded profile as its own archive entry', async () => {
+    const doc = setColorProfile(sampleDocument(), { name: 'Test RGB', iccUri: iccDataUrl(iccBytes()) });
+    const zip = await open(await writeOra(doc, stubRenderer()));
+
+    expect(zip.file('META-INF/neutrino/color.icc')).not.toBeNull();
+    const manifest = JSON.parse(await zip.file('META-INF/neutrino/document.json')!.async('string'));
+    expect(manifest.color.icc).toBe('META-INF/neutrino/color.icc');
+  });
+
+  it('writes no profile entry when the bytes are not a profile', async () => {
+    // Bytes that are not a profile would produce an `iCCP` chunk strict
+    // decoders refuse — the picture lost to a metadata error.
+    const doc = setColorProfile(sampleDocument(), {
+      name: 'Bogus',
+      iccUri: 'data:application/vnd.iccprofile;base64,AAAA',
+    });
+    const zip = await open(await writeOra(doc, stubRenderer()));
+
+    expect(zip.file('META-INF/neutrino/color.icc')).toBeNull();
+    const manifest = JSON.parse(await zip.file('META-INF/neutrino/document.json')!.async('string'));
+    expect(manifest.color.icc).toBeNull();
+  });
+
+  it('always records the space and depth, profile or not', async () => {
+    const zip = await open(await writeOra(sampleDocument(), stubRenderer()));
+    const manifest = JSON.parse(await zip.file('META-INF/neutrino/document.json')!.async('string'));
+    expect(manifest.color).toMatchObject({ space: 'srgb', bitDepth: 8, icc: null, hdr: null });
   });
 });
 

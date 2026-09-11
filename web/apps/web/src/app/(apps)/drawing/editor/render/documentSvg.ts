@@ -15,8 +15,13 @@
 import { isIdentity, normalizeRect } from '../document/geometry';
 import { pathToPathData } from '../document/path';
 import { findPathObject, paintOrder, symbolTable, type SymbolTable } from '../document/tree';
+import { adjustmentOps, isNeutralAdjustment } from '../document/adjustments';
+import { hasActiveFilters } from '../document/filters';
+import { colorOpsFilter } from './colorOps';
+import { filterChainToSvg } from './imageFilters';
 import { escapeXml, vectorObjectToSvg } from './vectorObject';
 import type {
+  AdjustmentLayerNode,
   DrawingDocument,
   DrawingNode,
   LayerMask,
@@ -162,6 +167,10 @@ function nodeToSvg(node: DrawingNode, emitter: Emitter): string {
     case 'instance':
       inner = instanceToSvg(node, emitter);
       break;
+    case 'adjustment':
+      // Handled by `stackToSvg`, which is the only place that knows what "below
+      // this layer" means — the same division the canvas compositor makes.
+      return '';
   }
 
   if (!inner) return '';
@@ -171,10 +180,31 @@ function nodeToSvg(node: DrawingNode, emitter: Emitter): string {
   if (node.blendMode !== 'normal') attrs.push(`style="mix-blend-mode:${node.blendMode}"`);
   if (node.type === 'stack' && node.isolation === 'isolate') attrs.push('isolation="isolate"');
 
+  const filterId = filterDef(node, emitter);
+  if (filterId) attrs.push(`filter="url(#${filterId})"`);
+
   const maskId = node.mask ? maskDef(node.mask, emitter) : null;
   if (maskId) attrs.push(`mask="url(#${maskId})"`);
 
   return `<g ${attrs.join(' ')}${transformAttr(node.transform)}>${inner}</g>`;
+}
+
+/**
+ * A node's filter chain as a `<filter>` in `<defs>`, or null when nothing in it
+ * has an SVG equivalent.
+ *
+ * Pixelate and noise are the two that do not, and they are dropped rather than
+ * approximated — see `filterChainToSvg`. They are *not* lost from a `.ora`,
+ * where every layer is rasterised through the real chain, which is the division
+ * the redesign's "rendered fallback" rule draws.
+ */
+function filterDef(node: DrawingNode, emitter: Emitter): string | null {
+  if (!hasActiveFilters(node.filters)) return null;
+  const id = `fx-${emitter.nextIndex()}`;
+  const markup = filterChainToSvg(id, node.filters!);
+  if (!markup) return null;
+  emitter.defs.push(markup);
+  return id;
 }
 
 /**
@@ -232,6 +262,18 @@ function stackToSvg(stack: StackNode, emitter: Emitter): string {
   let base: DrawingNode | null = null;
 
   for (const child of paintOrder(stack)) {
+    if (child.type === 'adjustment') {
+      if (child.visible && child.opacity > 0 && !isNeutralAdjustment(child.adjustment)) {
+        const corrected = adjustmentToSvg(child, out.join(''), base, emitter);
+        // Replaced rather than appended: the adjustment's output *is* everything
+        // below it, corrected, and leaving the originals in place would draw
+        // them twice — visibly, wherever the correction is partly transparent.
+        out.length = 0;
+        out.push(corrected);
+      }
+      continue;
+    }
+
     if (child.mask?.kind !== 'clipping' || !child.mask.enabled) {
       base = child;
       out.push(nodeToSvg(child, emitter));
@@ -255,6 +297,58 @@ function stackToSvg(stack: StackNode, emitter: Emitter): string {
   }
 
   return out.join('');
+}
+
+/**
+ * An adjustment layer, applied to the markup emitted below it.
+ *
+ * SVG has no "correct what is behind me" construct — `BackgroundImage` was
+ * specified and never implemented anywhere — but it does not need one here,
+ * because the exporter is holding the markup for everything below this layer in
+ * its hand. Wrapping *that* in a `<filter>` is exactly what the canvas
+ * compositor does to the buffer, and `colorOpsFilter` emits the same operations.
+ *
+ * **A partial correction is written as two layers, not as a faded one.** At full
+ * strength and with no mask a single filtered group is the whole answer; with an
+ * opacity or a mask, fading the filtered group would fade the picture towards
+ * nothing rather than towards its uncorrected self. So the original is drawn,
+ * and a corrected copy is laid over it at the layer's opacity and through its
+ * mask — which is the mix `blendAdjusted` computes per pixel, said in markup.
+ *
+ * The copy has its ids stripped for the same reason a clipping base does: two
+ * elements answering to one id is a document that renders unpredictably.
+ */
+function adjustmentToSvg(
+  node: AdjustmentLayerNode,
+  below: string,
+  base: DrawingNode | null,
+  emitter: Emitter,
+): string {
+  if (!below) return below;
+
+  const id = `adj-${emitter.nextIndex()}`;
+  emitter.defs.push(colorOpsFilter(id, adjustmentOps(node.adjustment)));
+
+  const mask = node.mask?.enabled ? adjustmentMaskId(node.mask, base, emitter) : null;
+  if (node.opacity >= 1 && !mask) return `<g filter="url(#${id})">${below}</g>`;
+
+  const attrs = [`filter="url(#${id})"`];
+  if (node.opacity < 1) attrs.push(`opacity="${node.opacity}"`);
+  if (mask) attrs.push(`mask="url(#${mask})"`);
+  return `<g>${below}<g ${attrs.join(' ')}>${stripIds(below)}</g></g>`;
+}
+
+/** An adjustment's mask: its own channel, or the alpha of the layer below it. */
+function adjustmentMaskId(mask: LayerMask, base: DrawingNode | null, emitter: Emitter): string | null {
+  if (mask.kind !== 'clipping') return maskDef(mask, emitter);
+  if (!base || !base.visible) return null;
+  const baseMarkup = nodeToSvg(base, emitter);
+  if (!baseMarkup) return null;
+  const id = `clip-${emitter.nextIndex()}`;
+  emitter.defs.push(
+    `<mask id="${id}" maskUnits="userSpaceOnUse" style="mask-type:alpha">${stripIds(baseMarkup)}</mask>`,
+  );
+  return id;
 }
 
 /**

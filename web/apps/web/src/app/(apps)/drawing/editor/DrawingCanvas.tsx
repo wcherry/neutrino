@@ -11,6 +11,7 @@ import React, {
 
 import {
   findNode,
+  flattenTree,
   isEffectivelyLocked,
   isEffectivelyVisible,
   nodeCanvasBounds,
@@ -40,6 +41,12 @@ import {
   createTextLayer,
 } from './document/factory';
 import {
+  // Aliased: the component has its own `applyTransform`, which sets the
+  // viewport rather than mapping a point through a matrix, and the two would
+  // shadow each other inside it.
+  applyTransform as mapPoint,
+  invertTransform,
+  multiplyTransform,
   normalizeRect,
   rectCenter,
   rectsIntersect,
@@ -50,6 +57,15 @@ import {
 } from './document/geometry';
 import { pathContours } from './document/types';
 import { traceSelection } from './document/selection';
+import { addGuide, moveGuide, removeGuide } from './document/edits';
+import {
+  rulerTicks,
+  snapCandidates,
+  snapValue,
+  toUnits,
+  workspaceOf,
+  type WorkspaceState,
+} from './document/workspace';
 import { drawVectorObject, hitTestObject, objectSelectionBox } from './render/vectorObject';
 import { documentToSvg } from './render/documentSvg';
 import { domSurfaceFactory, renderDocument, type Surface } from './render/renderDocument';
@@ -100,6 +116,15 @@ interface DrawingCanvasProps {
    * duplicating the five of them would double the toolbar to say so.
    */
   maskEditing?: boolean;
+  /**
+   * Where the viewport was when the drawing was last saved.
+   *
+   * Applied on first mount instead of fitting to the screen, so reopening a
+   * drawing lands where it was left rather than zoomed out to the whole page —
+   * which for a detail on a large canvas means finding it again every time.
+   * Absent for a drawing that predates the workspace block, which still fits.
+   */
+  initialTransform?: Transform;
 }
 
 const HANDLE_SIZE = 8;
@@ -111,21 +136,92 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 16;
 /** How close, in screen pixels, the pointer must be to grab a path anchor. */
 const NODE_GRAB_RADIUS = 7;
+/** Width of the ruler strips, in screen pixels. */
+const RULER_SIZE = 20;
+/** How close, in screen pixels, the pointer must be to grab a guide. */
+const GUIDE_GRAB_RADIUS = 5;
+const GUIDE_COLOR = '#22d3ee';
 
 // ---------------------------------------------------------------------------
 // Coordinates
 // ---------------------------------------------------------------------------
 
-function screenToCanvas(sx: number, sy: number, t: Transform): Point {
-  return { x: (sx - t.x) / t.scale, y: (sy - t.y) / t.scale };
+/**
+ * The whole viewport as one matrix: pan, zoom and canvas rotation.
+ *
+ * Rotation is what forces this to be a matrix rather than the three-line
+ * arithmetic it used to be. A rotated view means a screen point no longer maps
+ * back to a canvas point by subtracting and dividing, so **every** mapping —
+ * the pointer, the text overlay's position, the ruler ticks — has to go through
+ * this and its inverse, or they disagree the moment the canvas is turned.
+ *
+ * The rotation is about the canvas's own centre, which is what makes turning
+ * the view feel like turning a sheet of paper rather than swinging it around
+ * the corner of the screen.
+ */
+function viewportMatrix(t: Transform, rotation: number, canvas: { width: number; height: number }) {
+  const pan = { a: t.scale, b: 0, c: 0, d: t.scale, e: t.x, f: t.y };
+  if (!rotation) return pan;
+  return multiplyTransform(pan, rotateAbout(rotation, { x: canvas.width / 2, y: canvas.height / 2 }));
+}
+
+function screenToCanvas(sx: number, sy: number, t: Transform, rotation: number, canvas: { width: number; height: number }): Point {
+  return mapPoint(invertTransform(viewportMatrix(t, rotation, canvas)), { x: sx, y: sy });
 }
 
 /** Snaps a coordinate to the grid on one axis. The origin differs per axis. */
-function snapTo(value: number, doc: DrawingDocument, axis: 'x' | 'y'): number {
+function snapToGrid(value: number, doc: DrawingDocument, axis: 'x' | 'y'): number {
   if (!doc.grid.snap) return value;
   const size = doc.grid.size || 1;
   const origin = doc.grid.origin[axis];
   return Math.round((value - origin) / size) * size + origin;
+}
+
+/**
+ * A coordinate snapped to everything the workspace says it should snap to.
+ *
+ * The grid is tried first and the other candidates only where it did not move
+ * the value: with both on, a guide two pixels from a grid line would otherwise
+ * fight the grid every time the pointer crossed it, and which one won would
+ * depend on the order of two `if`s rather than on anything the user could see.
+ */
+function snapTo(
+  value: number,
+  doc: DrawingDocument,
+  axis: 'x' | 'y',
+  rects?: readonly Rect[],
+): number {
+  const snapped = snapToGrid(value, doc, axis);
+  if (snapped !== value) return snapped;
+
+  const workspace = workspaceOf(doc.workspace);
+  const candidates = snapCandidates(axis, {
+    canvas: doc.canvas,
+    guides: workspace.showGuides ? doc.guides : [],
+    rects,
+    settings: workspace.snap,
+  });
+  return snapValue(value, candidates, workspace.snap.tolerance);
+}
+
+/**
+ * The bounding boxes a drag can catch on.
+ *
+ * Empty unless object snapping is on, so the tree walk costs nothing in the
+ * default configuration — and it is a walk per pointer event, beside the hit
+ * test that already does one.
+ */
+function snapTargets(doc: DrawingDocument, exclude?: ReadonlySet<string>): Rect[] {
+  if (!workspaceOf(doc.workspace).snap.objects) return [];
+  const symbols = symbolTable(doc);
+  const out: Rect[] = [];
+  for (const { node } of flattenTree(doc.root)) {
+    if (node.type === 'stack' || exclude?.has(node.id)) continue;
+    if (!isEffectivelyVisible(doc.root, node.id)) continue;
+    const bounds = nodeCanvasBounds(doc.root, node, symbols);
+    if (bounds) out.push(bounds);
+  }
+  return out;
 }
 
 function handlePositions(rect: Rect): Record<ResizeHandle, Point> {
@@ -343,7 +439,8 @@ type DragMode =
   | 'erasing'
   | 'painting'
   | 'selecting'
-  | 'node';
+  | 'node'
+  | 'guide';
 
 interface DragState {
   mode: DragMode;
@@ -359,6 +456,22 @@ interface DragState {
   /** The pixel selection being dragged out, before it is committed. */
   selectionDraft?: SelectionShape;
   nodeTarget?: NodeTarget;
+  /** The guide being dragged, or created. */
+  guide?: GuideDrag;
+}
+
+/**
+ * A guide being pulled out of a ruler, or moved.
+ *
+ * `id` is absent while one is being created, which is the whole difference
+ * between the two gestures: a new guide exists only in this state until the
+ * pointer comes up inside the canvas, so dragging off a ruler and letting go
+ * outside leaves no guide and no undo step.
+ */
+interface GuideDrag {
+  orientation: 'horizontal' | 'vertical';
+  id?: string;
+  position: number;
 }
 
 const IDLE: DragState = { mode: 'none', startX: 0, startY: 0, lastX: 0, lastY: 0 };
@@ -402,10 +515,13 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       images,
       brush,
       maskEditing,
+      initialTransform,
     } = props;
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const topRulerRef = useRef<HTMLCanvasElement>(null);
+    const leftRulerRef = useRef<HTMLCanvasElement>(null);
     const transformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 });
     const dragRef = useRef<DragState>(IDLE);
     const spaceRef = useRef(false);
@@ -455,6 +571,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
 
       const document_ = docRef.current;
       const t = transformRef.current;
+      const workspace = workspaceOf(document_.workspace);
       const { width, height } = canvas;
 
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -463,8 +580,8 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       ctx.fillRect(0, 0, width, height);
 
       ctx.save();
-      ctx.translate(t.x, t.y);
-      ctx.scale(t.scale, t.scale);
+      const view = viewportMatrix(t, workspace.canvasRotation, document_.canvas);
+      ctx.transform(view.a, view.b, view.c, view.d, view.e, view.f);
 
       // The page: a bordered rectangle with a drop shadow, so the fixed canvas
       // reads as a sheet of paper rather than as an arbitrary crop.
@@ -507,7 +624,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       ctx.restore();
 
       drawPageBorder(ctx, document_, t.scale);
-      drawGuides(ctx, document_, t.scale);
+      if (workspace.showGuides) drawGuides(ctx, document_, t.scale, dragRef.current.guide);
 
       const pixelSelection = dragRef.current.selectionDraft ?? document_.selection;
       if (pixelSelection) drawMarchingAnts(ctx, pixelSelection, t.scale, antsRef.current);
@@ -529,6 +646,11 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       }
 
       ctx.restore();
+
+      // Drawn last and outside the viewport transform: a ruler is chrome in
+      // screen space that happens to be labelled in canvas units, and putting
+      // it under the transform would zoom the numbers along with the drawing.
+      if (workspace.rulers) drawRulers(topRulerRef.current, leftRulerRef.current, document_, workspace, t);
     }, []);
 
     useEffect(() => { render(); }, [doc, selection, bitmaps, images, textEdit, tool, render]);
@@ -559,7 +681,9 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       if (!container) return;
       const { clientWidth, clientHeight } = container;
       const document_ = docRef.current;
-      const margin = 48;
+      // The rulers sit over the top-left corner of the same canvas, so fitting
+      // has to leave room for them or the page's first inch is under a ruler.
+      const margin = 48 + (workspaceOf(document_.workspace).rulers ? RULER_SIZE * 2 : 0);
       const scale = Math.max(
         MIN_SCALE,
         Math.min(
@@ -578,12 +702,15 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
     }, [applyTransform]);
 
     // Centre the page on first mount, so a new drawing does not open with its
-    // canvas half off-screen.
+    // canvas half off-screen — unless the document remembers where it was left,
+    // which takes precedence.
     const centredRef = useRef(false);
     useEffect(() => {
       if (centredRef.current) return;
       centredRef.current = true;
-      fitToScreen();
+      if (initialTransform) applyTransform({ ...initialTransform });
+      else fitToScreen();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fitToScreen]);
 
     useImperativeHandle(ref, () => ({
@@ -675,7 +802,47 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
 
     const canvasPoint = useCallback((e: PointerEvent | MouseEvent): Point => {
       const rect = canvasRef.current!.getBoundingClientRect();
-      return screenToCanvas(e.clientX - rect.left, e.clientY - rect.top, transformRef.current);
+      const document_ = docRef.current;
+      return screenToCanvas(
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+        transformRef.current,
+        workspaceOf(document_.workspace).canvasRotation,
+        document_.canvas,
+      );
+    }, []);
+
+    /** Where a canvas point lands on screen — the inverse of `canvasPoint`. */
+    const screenPoint = useCallback((point: Point): Point => {
+      const document_ = docRef.current;
+      const view = viewportMatrix(
+        transformRef.current,
+        workspaceOf(document_.workspace).canvasRotation,
+        document_.canvas,
+      );
+      return mapPoint(view, point);
+    }, []);
+
+    /**
+     * The guide under the pointer, if one is grabbable.
+     *
+     * Tested in **canvas** units scaled from a screen tolerance, so a guide is
+     * as easy to grab at 10% zoom as at 400% — a fixed canvas-space tolerance
+     * would make one unhittable zoomed out and sticky zoomed in.
+     */
+    const guideAt = useCallback((point: Point): { id: string; orientation: 'horizontal' | 'vertical'; position: number } | null => {
+      const document_ = docRef.current;
+      const workspace = workspaceOf(document_.workspace);
+      if (!workspace.showGuides || workspace.lockGuides) return null;
+
+      const reach = GUIDE_GRAB_RADIUS / transformRef.current.scale;
+      for (const guide of document_.guides) {
+        const distance = guide.orientation === 'vertical'
+          ? Math.abs(guide.position - point.x)
+          : Math.abs(guide.position - point.y);
+        if (distance <= reach) return guide;
+      }
+      return null;
     }, []);
 
     const findHandle = useCallback((point: Point): ResizeHandle | null => {
@@ -838,6 +1005,21 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       }
 
       if (currentTool === 'select' || currentTool === 'node' || currentTool === 'transform') {
+        // A guide is tested before the resize handles and before hit testing:
+        // it sits over the drawing and a guide laid across a shape would
+        // otherwise be ungrabbable exactly where it is most likely to be.
+        const guide = guideAt(point);
+        if (guide) {
+          dragRef.current = {
+            ...IDLE,
+            mode: 'guide',
+            startX: point.x, startY: point.y, lastX: point.x, lastY: point.y,
+            guide: { orientation: guide.orientation, id: guide.id, position: guide.position },
+          };
+          render();
+          return;
+        }
+
         const handle = findHandle(point);
         if (handle) {
           dragRef.current = {
@@ -873,8 +1055,9 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
 
       // A vector drawing tool. The draft lives outside the document until the
       // mouse is released, so a drag that produces nothing leaves no undo step.
-      const x = snapTo(point.x, document_, 'x');
-      const y = snapTo(point.y, document_, 'y');
+      const targets = snapTargets(document_);
+      const x = snapTo(point.x, document_, 'x', targets);
+      const y = snapTo(point.y, document_, 'y', targets);
       const style = styleRef.current;
 
       draftRef.current =
@@ -886,7 +1069,36 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       dragRef.current = { ...IDLE, mode: 'drawing', startX: x, startY: y, lastX: x, lastY: y };
       render();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [beginPaint, beginTextEdit, canvasPoint, commitText, eraseAt, findHandle, onSelectionChange, render]);
+    }, [beginPaint, beginTextEdit, canvasPoint, commitText, eraseAt, findHandle, guideAt, onSelectionChange, render]);
+
+    /**
+     * Starts pulling a guide out of a ruler.
+     *
+     * The guide does not exist in the document until the pointer comes up, so a
+     * drag that ends back over the ruler — or anywhere off the page — leaves
+     * nothing behind and no undo step to step over.
+     */
+    const onRulerPointerDown = useCallback((orientation: 'horizontal' | 'vertical') => (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      const document_ = docRef.current;
+      const workspace = workspaceOf(document_.workspace);
+      if (!workspace.showGuides || workspace.lockGuides) return;
+
+      e.preventDefault();
+      const point = canvasPoint(e.nativeEvent);
+      dragRef.current = {
+        ...IDLE,
+        mode: 'guide',
+        startX: point.x, startY: point.y, lastX: point.x, lastY: point.y,
+        guide: {
+          orientation,
+          position: orientation === 'horizontal'
+            ? snapTo(point.y, document_, 'y', snapTargets(document_))
+            : snapTo(point.x, document_, 'x', snapTargets(document_)),
+        },
+      };
+      render();
+    }, [canvasPoint, render]);
 
     const onPointerMove = useCallback((e: PointerEvent) => {
       const drag = dragRef.current;
@@ -906,6 +1118,20 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       switch (drag.mode) {
         case 'painting': {
           paintRef.current?.session.extend(strokePoint(point.x, point.y, e.pressure));
+          render();
+          return;
+        }
+
+        case 'guide': {
+          const guide = drag.guide;
+          if (!guide) return;
+          // Tracked in the drag rather than written to the document per frame:
+          // a guide dragged across a page would otherwise be one undo step per
+          // pointer event, and the history would be nothing else.
+          const targets = snapTargets(document_);
+          guide.position = guide.orientation === 'horizontal'
+            ? snapTo(point.y, document_, 'y', targets)
+            : snapTo(point.x, document_, 'x', targets);
           render();
           return;
         }
@@ -951,8 +1177,9 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
           if (draft.kind === 'path') {
             draft.points.push({ x: point.x, y: point.y });
           } else {
-            const x = snapTo(point.x, document_, 'x');
-            const y = snapTo(point.y, document_, 'y');
+            const targets = snapTargets(document_);
+            const x = snapTo(point.x, document_, 'x', targets);
+            const y = snapTo(point.y, document_, 'y', targets);
             if (draft.kind === 'line') {
               // Signed width and height: a line's frame records direction.
               draft.frame = { x: drag.startX, y: drag.startY, width: x - drag.startX, height: y - drag.startY };
@@ -1034,13 +1261,26 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       const drag = dragRef.current;
       if (drag.mode === 'none') return;
       const document_ = docRef.current;
-      canvasRef.current?.releasePointerCapture?.(e.pointerId);
+      // Only where it was actually taken: a guide dragged out of a ruler never
+      // captured the canvas, and releasing a pointer that was not captured
+      // throws rather than being ignored.
+      if (canvasRef.current?.hasPointerCapture?.(e.pointerId)) {
+        canvasRef.current.releasePointerCapture(e.pointerId);
+      }
 
       if (drag.mode === 'painting') {
         const point = canvasPoint(e);
         paintRef.current?.session.end(strokePoint(point.x, point.y, e.pressure));
         dragRef.current = IDLE;
         finishPaint();
+        return;
+      }
+
+      if (drag.mode === 'guide') {
+        const guide = drag.guide;
+        dragRef.current = IDLE;
+        if (guide) commitGuide(document_, guide, onDocumentChange);
+        render();
         return;
       }
 
@@ -1143,6 +1383,17 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       const resize = () => {
         canvas.width = container.clientWidth;
         canvas.height = container.clientHeight;
+        // The rulers overlay the same area rather than insetting the canvas, so
+        // they share its width and height — which is also what keeps a canvas
+        // point mapping to the same screen pixel whether they are shown or not.
+        if (topRulerRef.current) {
+          topRulerRef.current.width = container.clientWidth;
+          topRulerRef.current.height = RULER_SIZE;
+        }
+        if (leftRulerRef.current) {
+          leftRulerRef.current.width = RULER_SIZE;
+          leftRulerRef.current.height = container.clientHeight;
+        }
         render();
       };
       resize();
@@ -1189,12 +1440,18 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
       : tool === 'text' ? 'text'
       : 'crosshair';
 
+    const workspace = workspaceOf(doc.workspace);
     const t = transformRef.current;
-    const editorStyle: React.CSSProperties | null = textEdit
+    // Through the viewport matrix, so the overlay lands on the text it is
+    // editing when the canvas is rotated. The textarea itself is not rotated —
+    // a rotated input is unusable — so at an angle it sits over its layer
+    // rather than exactly on it, which is the honest compromise.
+    const editorOrigin = textEdit ? screenPoint({ x: textEdit.box.x, y: textEdit.box.y }) : null;
+    const editorStyle: React.CSSProperties | null = textEdit && editorOrigin
       ? {
           position: 'absolute',
-          left: textEdit.box.x * t.scale + t.x,
-          top: textEdit.box.y * t.scale + t.y,
+          left: editorOrigin.x,
+          top: editorOrigin.y,
           width: Math.max(80, textEdit.box.width * t.scale),
           fontSize: 24 * t.scale,
           lineHeight: 1.2,
@@ -1216,6 +1473,49 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, DrawingCanvasProps>
         {/* `touch-action: none` so a stylus or finger paints instead of scrolling
             the page out from under the stroke. */}
         <canvas ref={canvasRef} style={{ display: 'block', cursor, touchAction: 'none' }} />
+
+        {/* The rulers overlay the canvas rather than insetting it, so turning
+            them on does not move the drawing — and so a guide dragged out of
+            one lands where the pointer is, with no coordinate offset to get
+            wrong. Both are `hidden` rather than unmounted, because unmounting
+            them would drop the refs `render` draws through. */}
+        <canvas
+          ref={topRulerRef}
+          hidden={!workspace.rulers}
+          aria-hidden="true"
+          onPointerDown={onRulerPointerDown('vertical')}
+          style={{ position: 'absolute', left: 0, top: 0, cursor: 'ew-resize', touchAction: 'none' }}
+        />
+        <canvas
+          ref={leftRulerRef}
+          hidden={!workspace.rulers}
+          aria-hidden="true"
+          onPointerDown={onRulerPointerDown('horizontal')}
+          style={{ position: 'absolute', left: 0, top: 0, cursor: 'ns-resize', touchAction: 'none' }}
+        />
+        {workspace.rulers && (
+          <div
+            title="Ruler units"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: RULER_SIZE,
+              height: RULER_SIZE,
+              background: '#ffffff',
+              borderRight: '1px solid #e5e7eb',
+              borderBottom: '1px solid #e5e7eb',
+              fontSize: 8,
+              color: '#9ca3af',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none',
+            }}
+          >
+            {workspace.units}
+          </div>
+        )}
         {textEdit && editorStyle && (
           <textarea
             ref={textareaRef}
@@ -1280,23 +1580,198 @@ function drawPageBorder(ctx: CanvasRenderingContext2D, doc: DrawingDocument, sca
   ctx.restore();
 }
 
-function drawGuides(ctx: CanvasRenderingContext2D, doc: DrawingDocument, scale: number): void {
-  if (doc.guides.length === 0) return;
+/**
+ * The guides, plus the one being dragged.
+ *
+ * The dragged one is drawn from the drag state rather than from the document,
+ * which is what lets a *new* guide be visible before it exists — and lets one
+ * being moved be drawn at the pointer while the document still holds where it
+ * started.
+ */
+function drawGuides(
+  ctx: CanvasRenderingContext2D,
+  doc: DrawingDocument,
+  scale: number,
+  dragging?: GuideDrag,
+): void {
+  const lines = doc.guides
+    .filter((guide) => guide.id !== dragging?.id)
+    .map((guide) => ({ orientation: guide.orientation, position: guide.position }));
+  if (dragging) lines.push({ orientation: dragging.orientation, position: dragging.position });
+  if (lines.length === 0) return;
+
   ctx.save();
-  ctx.strokeStyle = '#22d3ee';
+  ctx.strokeStyle = GUIDE_COLOR;
   ctx.lineWidth = 1 / scale;
   ctx.beginPath();
-  for (const guide of doc.guides) {
-    if (guide.orientation === 'vertical') {
-      ctx.moveTo(guide.position, 0);
-      ctx.lineTo(guide.position, doc.canvas.height);
+  for (const line of lines) {
+    if (line.orientation === 'vertical') {
+      ctx.moveTo(line.position, 0);
+      ctx.lineTo(line.position, doc.canvas.height);
     } else {
-      ctx.moveTo(0, guide.position);
-      ctx.lineTo(doc.canvas.width, guide.position);
+      ctx.moveTo(0, line.position);
+      ctx.lineTo(doc.canvas.width, line.position);
     }
   }
   ctx.stroke();
   ctx.restore();
+}
+
+/**
+ * Where a finished guide drag lands.
+ *
+ * **Dragging a guide off the page deletes it**, which is how every editor
+ * disposes of one and the only gesture that does not need a second control.
+ * That also settles what happens when a guide is pulled out of a ruler and let
+ * go before it reaches the page: it is never created.
+ */
+function commitGuide(
+  doc: DrawingDocument,
+  guide: GuideDrag,
+  onDocumentChange: (doc: DrawingDocument) => void,
+): void {
+  const limit = guide.orientation === 'horizontal' ? doc.canvas.height : doc.canvas.width;
+  const onPage = guide.position >= 0 && guide.position <= limit;
+
+  if (!guide.id) {
+    if (onPage) onDocumentChange(addGuide(doc, { orientation: guide.orientation, position: guide.position }));
+    return;
+  }
+  onDocumentChange(onPage
+    ? moveGuide(doc, guide.id, guide.position)
+    : removeGuide(doc, guide.id));
+}
+
+// ---------------------------------------------------------------------------
+// Rulers
+// ---------------------------------------------------------------------------
+
+/**
+ * The two ruler strips.
+ *
+ * Drawn in screen space and labelled in canvas units, so the numbers stay the
+ * same size at every zoom while the marks they point at move. `rulerTicks`
+ * chooses the spacing from the zoom, which is what keeps a ruler readable at 8%
+ * and at 1600% without a special case for either.
+ *
+ * Ticks are laid out along the *axis*, so a rotated canvas is the one case this
+ * cannot describe honestly — a ruler across the top of a canvas turned 30° is
+ * measuring a direction the page no longer runs in. It is drawn anyway, against
+ * the unrotated axis, because the alternative is a ruler that disappears when
+ * the view is turned; the marks still say where the guides will land, which is
+ * what they are used for.
+ */
+function drawRulers(
+  top: HTMLCanvasElement | null,
+  left: HTMLCanvasElement | null,
+  doc: DrawingDocument,
+  workspace: WorkspaceState,
+  t: Transform,
+): void {
+  const ticks = rulerTicks(workspace.units, doc.canvas.dpi, t.scale);
+  drawRuler(top, 'horizontal', doc, workspace, t, ticks);
+  drawRuler(left, 'vertical', doc, workspace, t, ticks);
+}
+
+function drawRuler(
+  canvas: HTMLCanvasElement | null,
+  orientation: 'horizontal' | 'vertical',
+  doc: DrawingDocument,
+  workspace: WorkspaceState,
+  t: Transform,
+  ticks: { step: number; subdivisions: number },
+): void {
+  const ctx = canvas?.getContext('2d');
+  if (!canvas || !ctx) return;
+
+  const length = orientation === 'horizontal' ? canvas.width : canvas.height;
+  const offset = orientation === 'horizontal' ? t.x : t.y;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#e5e7eb';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  if (orientation === 'horizontal') {
+    ctx.moveTo(0, RULER_SIZE - 0.5);
+    ctx.lineTo(canvas.width, RULER_SIZE - 0.5);
+  } else {
+    ctx.moveTo(RULER_SIZE - 0.5, 0);
+    ctx.lineTo(RULER_SIZE - 0.5, canvas.height);
+  }
+  ctx.stroke();
+
+  // The page itself, so the ruler shows where the canvas starts and ends.
+  const extent = orientation === 'horizontal' ? doc.canvas.width : doc.canvas.height;
+  ctx.fillStyle = '#f3f4f6';
+  const pageStart = offset;
+  const pageLength = extent * t.scale;
+  if (orientation === 'horizontal') ctx.fillRect(pageStart, 0, pageLength, RULER_SIZE - 1);
+  else ctx.fillRect(0, pageStart, RULER_SIZE - 1, pageLength);
+
+  const minor = ticks.step / ticks.subdivisions;
+  const firstCanvas = Math.floor((-offset / t.scale) / minor) * minor;
+  const lastCanvas = (length - offset) / t.scale;
+
+  ctx.strokeStyle = '#9ca3af';
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '9px system-ui, sans-serif';
+  ctx.textBaseline = 'top';
+
+  for (let value = firstCanvas; value <= lastCanvas; value += minor) {
+    const screen = Math.round(value * t.scale + offset) + 0.5;
+    if (screen < 0 || screen > length) continue;
+    // A major tick is one that lands on the labelled step. Compared with a
+    // tolerance because the accumulating `+= minor` drifts by a float ulp or
+    // two over a long ruler, and an exact modulo would drop labels at random.
+    const major = Math.abs(value / ticks.step - Math.round(value / ticks.step)) < 1e-6;
+    const size = major ? RULER_SIZE - 6 : RULER_SIZE / 3;
+
+    ctx.beginPath();
+    if (orientation === 'horizontal') {
+      ctx.moveTo(screen, RULER_SIZE - 1);
+      ctx.lineTo(screen, RULER_SIZE - 1 - size);
+    } else {
+      ctx.moveTo(RULER_SIZE - 1, screen);
+      ctx.lineTo(RULER_SIZE - 1 - size, screen);
+    }
+    ctx.stroke();
+
+    if (!major) continue;
+    const label = formatTick(value, workspace, doc.canvas.dpi);
+    if (orientation === 'horizontal') {
+      ctx.fillText(label, screen + 2, 2);
+    } else {
+      // Rotated so a vertical ruler's numbers read along the ruler rather than
+      // one digit per line down it.
+      ctx.save();
+      ctx.translate(3, screen + 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.fillText(label, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  // Guides marked on the ruler, so one hidden behind a layer is still findable.
+  if (workspace.showGuides) {
+    ctx.fillStyle = GUIDE_COLOR;
+    const wanted = orientation === 'horizontal' ? 'vertical' : 'horizontal';
+    for (const guide of doc.guides) {
+      if (guide.orientation !== wanted) continue;
+      const screen = Math.round(guide.position * t.scale + offset);
+      if (screen < 0 || screen > length) continue;
+      if (orientation === 'horizontal') ctx.fillRect(screen - 1, RULER_SIZE - 4, 2, 3);
+      else ctx.fillRect(RULER_SIZE - 4, screen - 1, 3, 2);
+    }
+  }
+}
+
+/** A tick's number, without the unit — the unit is on the corner box. */
+function formatTick(value: number, workspace: WorkspaceState, dpi: number): string {
+  const measure = toUnits(value, workspace.units, dpi);
+  return workspace.units === 'px' ? String(Math.round(measure)) : String(Math.round(measure * 100) / 100);
 }
 
 /**

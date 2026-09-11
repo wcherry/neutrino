@@ -23,6 +23,10 @@
  */
 
 import { APPLICATION_NAME, APPLICATION_VERSION } from '../../document/factory';
+import { isActiveFilter } from '../../document/filters';
+import type { AdjustmentKind } from '../../document/adjustments';
+import type { FilterKind } from '../../document/filters';
+import type { HdrTransfer } from '../../document/color';
 import type { DrawingDocument, DrawingNode, LayerMask } from '../../document/types';
 import type { LayerAsset } from './stackXml';
 
@@ -50,17 +54,67 @@ export interface MaskEntry {
   enabled: boolean;
 }
 
+/**
+ * An adjustment layer and where its rendered fallback is.
+ *
+ * Redesign §4 asks for three things and this entry is the first of them: the
+ * parameters are in `document`, the **rendered fallback is
+ * `mergedimage.png`** — the merged result, which is composited through the
+ * adjustment like everything else — and **the source layers are unchanged**,
+ * because an adjustment layer writes no pixels into the layers below it and the
+ * `data/layer-*.png` beside it are the originals. A reader that ignores this
+ * file sees the corrected picture in the merged image and the uncorrected
+ * layers under it, which is the only honest answer a format with no adjustment
+ * layer can give.
+ */
+export interface AdjustmentEntry {
+  nodeId: string;
+  kind: AdjustmentKind;
+  /** The archive entry showing the result. Always the merged image. */
+  renderedFallback: string;
+}
+
+/**
+ * A layer's filter chain, and the PNG its result was baked into.
+ *
+ * The fallback here is per-layer rather than the merged image, because a filter
+ * belongs to one layer and `data/layer-*.png` is rendered *through* it — so a
+ * reader that knows nothing about filters opens a blurred layer already
+ * blurred, in the right place, with the right alpha.
+ */
+export interface FilterEntry {
+  nodeId: string;
+  kinds: FilterKind[];
+  renderedInto: string | null;
+}
+
+/** The document's colour, and where the profile went. */
+export interface ColorEntry {
+  space: string;
+  bitDepth: number;
+  /** The archive entry holding the ICC profile, or null when none is embedded. */
+  icc: string | null;
+  /**
+   * `mergedimage.png` is PNG-based and therefore SDR, so an HDR document names
+   * it as the preview a reader without HDR should show — redesign §5's "include
+   * an SDR preview and merged image". The compositor is 8-bit, so this
+   * describes the document's intent rather than carrying HDR samples.
+   */
+  hdr: { transfer: HdrTransfer; headroom: number; sdrPreview: string } | null;
+}
+
 export interface NeutrinoManifest {
   application: { name: string; version: string };
   /**
    * Bumped when the *manifest's* shape changes, independently of the
    * document's.
    *
-   * Still 1 after phases 3–5. What they added — a `selection` entry, and
-   * `renderedFrom: 'instance'` appearing among the asset entries — is additive,
-   * and the reader ignores fields it does not know, so a manifest written
-   * before them and one written after are both readable by both. The number
-   * exists for a change that would *break* that, and this was not one.
+   * Still 1 after phases 3–8. What they added — a `selection` entry,
+   * `renderedFrom: 'instance'` among the asset entries, and the `adjustments`,
+   * `filters` and `color` blocks below — is additive, and the reader ignores
+   * fields it does not know, so a manifest written before them and one written
+   * after are both readable by both. The number exists for a change that would
+   * *break* that, and none of these was one.
    */
   manifestVersion: 1;
   /** The document model, verbatim — guides, grid, symbols, viewport and all. */
@@ -74,6 +128,9 @@ export interface NeutrinoManifest {
    * Neutrino can still see what was selected.
    */
   selection: string | null;
+  adjustments: AdjustmentEntry[];
+  filters: FilterEntry[];
+  color: ColorEntry;
 }
 
 export const MANIFEST_PATH = 'META-INF/neutrino/document.json';
@@ -81,14 +138,22 @@ export const MANIFEST_PATH = 'META-INF/neutrino/document.json';
 /** Where the active selection's channel is written inside the archive. */
 export const SELECTION_PATH = 'data/selection.png';
 
+/** Where an embedded ICC profile is written inside the archive. */
+export const ICC_PATH = 'META-INF/neutrino/color.icc';
+
+/** The archive entry every rendered fallback that is not per-layer points at. */
+export const MERGED_PATH = 'mergedimage.png';
+
 export function buildManifest(
   doc: DrawingDocument,
   assets: ReadonlyMap<string, LayerAsset>,
   maskSources: ReadonlyMap<string, string>,
-  extras: { selection?: string | null } = {},
+  extras: { selection?: string | null; icc?: string | null } = {},
 ): NeutrinoManifest {
   const assetEntries: AssetEntry[] = [];
   const maskEntries: MaskEntry[] = [];
+  const adjustmentEntries: AdjustmentEntry[] = [];
+  const filterEntries: FilterEntry[] = [];
 
   const walk = (node: DrawingNode): void => {
     const asset = assets.get(node.id);
@@ -110,9 +175,27 @@ export function buildManifest(
         enabled: node.mask.enabled,
       });
     }
+    if (node.type === 'adjustment') {
+      adjustmentEntries.push({
+        nodeId: node.id,
+        kind: node.adjustment.kind,
+        renderedFallback: MERGED_PATH,
+      });
+    }
+    const active = node.filters?.filter(isActiveFilter) ?? [];
+    if (active.length > 0) {
+      filterEntries.push({
+        nodeId: node.id,
+        kinds: active.map((filter) => filter.kind),
+        renderedInto: asset?.src ?? null,
+      });
+    }
     if (node.type === 'stack') node.children.forEach(walk);
   };
   doc.root.children.forEach(walk);
+
+  const profile = doc.colorProfile;
+  const hdr = profile.hdr?.enabled ? profile.hdr : null;
 
   return {
     application: { name: APPLICATION_NAME, version: APPLICATION_VERSION },
@@ -121,5 +204,13 @@ export function buildManifest(
     assets: assetEntries,
     masks: maskEntries,
     selection: extras.selection ?? null,
+    adjustments: adjustmentEntries,
+    filters: filterEntries,
+    color: {
+      space: profile.space ?? 'srgb',
+      bitDepth: profile.bitDepth ?? 8,
+      icc: extras.icc ?? null,
+      hdr: hdr ? { transfer: hdr.transfer, headroom: hdr.headroom, sdrPreview: MERGED_PATH } : null,
+    },
   };
 }

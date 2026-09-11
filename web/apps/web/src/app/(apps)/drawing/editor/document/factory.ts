@@ -10,9 +10,13 @@
 
 import { newId } from './ids';
 import { pathBounds } from './path';
+import { ADJUSTMENT_LABELS, createAdjustment, type AdjustmentKind, type AdjustmentSpec } from './adjustments';
+import { DEFAULT_COLOR_PROFILE } from './color';
+import { DEFAULT_SNAP, DEFAULT_WORKSPACE } from './workspace';
 import {
   DOCUMENT_VERSION,
   IDENTITY,
+  type AdjustmentLayerNode,
   type CanvasSettings,
   type DrawingDocument,
   type DrawingNode,
@@ -179,6 +183,25 @@ export function createTextLayer(
 }
 
 /**
+ * A correction over everything below it in its stack.
+ *
+ * Named for the adjustment rather than "Adjustment 1", because the name is the
+ * only thing the layers panel can show for a layer with no thumbnail — a row
+ * reading "Levels" is legible where a row reading "Adjustment 3" is not.
+ */
+export function createAdjustmentLayer(
+  kind: AdjustmentKind,
+  overrides: Partial<AdjustmentLayerNode> = {},
+): AdjustmentLayerNode {
+  return {
+    ...baseNode(ADJUSTMENT_LABELS[kind]),
+    type: 'adjustment',
+    adjustment: createAdjustment(kind) as AdjustmentSpec,
+    ...overrides,
+  };
+}
+
+/**
  * A mask over a node.
  *
  * `source` is null for a clipping mask, whose shape comes from the layer below
@@ -306,7 +329,8 @@ export function createDocument(opts: { title?: string; canvas?: Partial<CanvasSe
     root,
     guides: [],
     grid: { ...DEFAULT_GRID, origin: { ...DEFAULT_GRID.origin } },
-    colorProfile: { name: 'sRGB' },
+    colorProfile: { ...DEFAULT_COLOR_PROFILE },
+    workspace: { ...DEFAULT_WORKSPACE, snap: { ...DEFAULT_SNAP } },
     metadata: {
       title: opts.title ?? 'Untitled drawing',
       createdAt: timestamp,

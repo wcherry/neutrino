@@ -26,7 +26,9 @@
 import { parseDocument } from '../../document/serialize';
 import { createDocument, createRasterLayer, createStack } from '../../document/factory';
 import { normalizeTree, refreshBounds, symbolTable } from '../../document/tree';
-import { MANIFEST_PATH } from './manifest';
+import { iccDataUrl, parseIccProfile } from '../icc';
+import { pngBitDepth } from '../png/chunks';
+import { ICC_PATH, MANIFEST_PATH } from './manifest';
 import { ORA_MIME_TYPE } from './writeOra';
 import { parseStackXml, type ParsedNode, type ParsedStack } from './parseStackXml';
 import type { DrawingDocument, DrawingNode, RasterSource, StackNode } from '../../document/types';
@@ -245,9 +247,31 @@ export async function readOra(input: Blob | ArrayBuffer | Uint8Array): Promise<O
   const document: DrawingDocument = {
     ...base,
     root: refreshBounds(normalizeTree(root)),
+    colorProfile: (await readEmbeddedProfile(zip)) ?? base.colorProfile,
   };
 
   return { document, selectedNodeId, fromManifest: false };
+}
+
+/**
+ * The ICC profile a package carries, as a colour profile for the document.
+ *
+ * Read from the archive entry rather than from `mergedimage.png`'s `iCCP`
+ * chunk, because the entry is the copy that is certain to be the whole profile
+ * — the chunk's is zlib-compressed, and inflating it would mean bundling a
+ * decompressor to read a file we also wrote uncompressed beside it.
+ *
+ * Only the profile's presence and name are taken. Nothing here converts pixels
+ * between spaces; a document that arrives with a profile keeps it so that
+ * exporting again does not lose it, which is the part that would otherwise be
+ * silently destructive.
+ */
+async function readEmbeddedProfile(zip: ZipArchive): Promise<DrawingDocument['colorProfile'] | null> {
+  const bytes = await zip.file(ICC_PATH)?.async('uint8array');
+  if (!bytes) return null;
+  const profile = parseIccProfile(bytes);
+  if (!profile) return null;
+  return { name: profile.name, iccUri: iccDataUrl(bytes), space: 'srgb', bitDepth: 8 };
 }
 
 /**
@@ -346,11 +370,17 @@ function rasterSourceFor(
   if (!entry) return null;
   const size = imageSize(entry.bytes, src);
   if (!size) return null;
+  // The depth is read from the IHDR here because this is the last moment it
+  // exists: the browser decodes a 16-bit PNG to eight bits per channel and
+  // there is no way to ask afterwards what it was. Recording it is what makes
+  // the loss visible in the inspector rather than silent.
+  const depth = pngBitDepth(entry.bytes);
   return {
     dataUrl: `data:${mimeForPath(src)};base64,${entry.base64}`,
     width: size.width,
     height: size.height,
     x,
     y,
+    ...(depth === 16 ? { bitDepth: 16 as const } : {}),
   };
 }

@@ -9,7 +9,12 @@ interface StatusBarProps {
   zoom: number;
   onZoomChange: (zoom: number) => void;
   onFitToScreen: () => void;
-  /** The canvas dimensions, e.g. `1920 × 1080`. */
+  /**
+   * The canvas dimensions, unit included — `1920 × 1080 px`, `21 cm × 29.7 cm`.
+   *
+   * Formatted by the caller rather than here, because which unit to show is the
+   * workspace's business and the bar has no reason to know about DPI.
+   */
   canvasSize: string;
   empty: boolean;
 }
@@ -18,7 +23,7 @@ export function StatusBar({ zoom, onZoomChange, onFitToScreen, canvasSize, empty
   return (
     <div className={styles.bar}>
       <span className={styles.info}>
-        {canvasSize} px{empty ? ' · empty' : ''}
+        {canvasSize}{empty ? ' · empty' : ''}
       </span>
       <div className={styles.spacer} />
       <div className={styles.zoomArea}>

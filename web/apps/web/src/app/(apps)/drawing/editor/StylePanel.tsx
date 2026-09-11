@@ -1,28 +1,66 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { AlignCenter, AlignLeft, AlignRight, ChevronDown, Lock, Unlock } from 'lucide-react';
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  ChevronDown,
+  ChevronUp,
+  Lock,
+  RefreshCw,
+  Trash2,
+  Unlock,
+} from 'lucide-react';
 import { ColorPickerPopover, FillPicker, type Background, type DriveImageItem } from '@neutrino/ui';
 
 import { findNode, flattenTree } from './document/tree';
 import {
+  addFilter,
   mapObjects,
+  patchAdjustment,
+  patchFilter,
   patchObjects,
   patchObjectStyle,
   patchTextLayer,
   patchTextPath,
+  removeFilter,
+  reorderFilter,
   setCanvas,
+  setColorProfile,
   setGrid,
+  setHdr,
+  setSnap,
   setTextPath,
+  setWorkspace,
 } from './document/edits';
+import { ADJUSTMENT_LABELS } from './document/adjustments';
+import { describeAssetSource, findAsset } from './document/assets';
+import {
+  COLOR_SPACE_LABELS,
+  DEFAULT_HDR,
+  canvasSupportsColorSpace,
+  type ColorSpaceName,
+} from './document/color';
+import { FILTER_KINDS, FILTER_LABELS, createFilter, type FilterKind } from './document/filters';
+import {
+  RULER_UNITS,
+  RULER_UNIT_LABELS,
+  workspaceOf,
+  type RulerUnit,
+} from './document/workspace';
+import { iccDataUrl, parseIccProfile } from './io/icc';
 import { dashPattern } from './render/vectorObject';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { BrushPanel } from './BrushPanel';
 import { isPaintTool, type ToolType } from './types';
 import type { BrushSettings } from './paint';
 import type {
+  AdjustmentLayerNode,
+  AdjustmentSpec,
   DrawingDocument,
   DrawingNode,
+  FilterSpec,
   PathObject,
   Selection,
   StrokeStyle,
@@ -48,6 +86,14 @@ interface StylePanelProps {
   onMaskEditingChange: (value: boolean) => void;
   /** The layer a brush stroke would land in. */
   activeLayerId: string;
+  /**
+   * Re-fetches a linked asset and replaces the layer's pixels with it.
+   *
+   * A callback rather than something this panel does, because reloading means
+   * fetching, decoding and re-encoding — which is the editor's business, and
+   * which `@neutrino/ui`-style presentation components here do not do.
+   */
+  onReloadAsset?: (assetId: string) => void;
 }
 
 const STROKE_STYLES: { value: StrokeStyle; label: string }[] = [
@@ -153,6 +199,7 @@ export function StylePanel({
   maskEditing,
   onMaskEditingChange,
   activeLayerId,
+  onReloadAsset,
 }: StylePanelProps) {
   const { customFontFamilies } = useAvailableFonts();
 
@@ -191,20 +238,38 @@ export function StylePanel({
     );
   }
 
+  // A single node — a layer rather than a shape inside one. Every kind gets its
+  // own sections *plus* the filter stack, because a filter is a property of a
+  // node and applies to all of them: a blurred group and a blurred image layer
+  // are the same feature.
   if (selection?.kind === 'nodes' && selection.ids.length === 1) {
     const node = findNode(doc.root, selection.ids[0]);
-    if (node?.type === 'text') {
+    if (node) {
       return (
-        <TextStyle
-          doc={doc}
-          onDocumentChange={onDocumentChange}
-          node={node}
-          fontFamilies={[...FONT_FAMILIES, ...customFontFamilies]}
-        />
+        <div className={styles.panel}>
+          {node.type === 'text' && (
+            <TextStyle
+              doc={doc}
+              onDocumentChange={onDocumentChange}
+              node={node}
+              fontFamilies={[...FONT_FAMILIES, ...customFontFamilies]}
+            />
+          )}
+          {node.type === 'adjustment' && (
+            <AdjustmentStyle doc={doc} onDocumentChange={onDocumentChange} node={node} />
+          )}
+          {node.type === 'instance' && <InstanceInfo doc={doc} node={node} />}
+          {(node.type === 'raster' || node.type === 'vector' || node.type === 'stack') && (
+            <LayerInfo doc={doc} node={node} onReloadAsset={onReloadAsset} />
+          )}
+          {/* Filters over an adjustment layer would have nothing to filter — it
+              draws no pixels of its own — so that one kind is left out. */}
+          {node.type !== 'adjustment' && (
+            <FilterStack doc={doc} onDocumentChange={onDocumentChange} node={node} />
+          )}
+        </div>
       );
     }
-    if (node?.type === 'instance') return <InstanceInfo doc={doc} node={node} />;
-    if (node) return <LayerInfo node={node} />;
   }
 
   return (
@@ -423,7 +488,7 @@ function TextStyle({
   }
 
   return (
-    <div className={styles.panel}>
+    <>
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Text</div>
 
@@ -528,7 +593,7 @@ function TextStyle({
       </div>
 
       <TextPathStyle doc={doc} onDocumentChange={onDocumentChange} node={node} />
-    </div>
+    </>
   );
 }
 
@@ -671,40 +736,440 @@ function InstanceInfo({ doc, node }: { doc: DrawingDocument; node: Extract<Drawi
   }
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Symbol instance</div>
-        <div className={styles.row}>
-          <span className={styles.label}>Symbol</span>
-          <span className={styles.readonlyValue}>{symbol?.name ?? 'Missing'}</span>
-        </div>
-        <div className={styles.row}>
-          <span className={styles.label}>Instances</span>
-          <span className={styles.readonlyValue}>{count}</span>
-        </div>
-        <p className={styles.hint}>
-          Editing the symbol changes every instance. Detach one from the Layers panel to
-          edit it on its own.
-        </p>
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Symbol instance</div>
+      <div className={styles.row}>
+        <span className={styles.label}>Symbol</span>
+        <span className={styles.readonlyValue}>{symbol?.name ?? 'Missing'}</span>
       </div>
+      <div className={styles.row}>
+        <span className={styles.label}>Instances</span>
+        <span className={styles.readonlyValue}>{count}</span>
+      </div>
+      <p className={styles.hint}>
+        Editing the symbol changes every instance. Detach one from the Layers panel to
+        edit it on its own.
+      </p>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Adjustments
+// ---------------------------------------------------------------------------
+
+/** A labelled slider. Most of an adjustment panel is these. */
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  onChange,
+  format,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange: (value: number) => void;
+  format?: (value: number) => string;
+}) {
+  return (
+    <div className={styles.row}>
+      <span className={styles.label}>{label}</span>
+      <input
+        type="range"
+        className={styles.rangeInput}
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className={styles.propValue}>{format ? format(value) : Math.round(value)}</span>
+    </div>
+  );
+}
+
+/**
+ * The sliders for one adjustment.
+ *
+ * Every kind gets the controls its own parameters need rather than a generic
+ * key/value list, because the *ranges* are what make an adjustment usable — an
+ * exposure runs in stops from −5 to 5, a levels input point in bytes from 0 to
+ * 255, and a single "number" field for both makes neither of them draggable.
+ *
+ * The curves editor here is the one deliberate simplification: it exposes the
+ * black, midpoint and white handles as three sliders rather than a draggable
+ * graph. The model stores arbitrary control points and reads them back, so a
+ * curve authored elsewhere round-trips through the file untouched; what is not
+ * yet built is the canvas to drag a fourth point onto.
+ */
+function AdjustmentStyle({
+  doc,
+  onDocumentChange,
+  node,
+}: {
+  doc: DrawingDocument;
+  onDocumentChange: (doc: DrawingDocument) => void;
+  node: AdjustmentLayerNode;
+}) {
+  const spec = node.adjustment;
+  const patch = (fields: Partial<AdjustmentSpec>) =>
+    onDocumentChange(patchAdjustment(doc, node.id, fields));
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>{ADJUSTMENT_LABELS[spec.kind]}</div>
+
+      {spec.kind === 'brightness-contrast' && (
+        <>
+          <Slider label="Bright" value={spec.brightness} min={-100} max={100}
+            onChange={(brightness) => patch({ brightness })} />
+          <Slider label="Contrast" value={spec.contrast} min={-100} max={100}
+            onChange={(contrast) => patch({ contrast })} />
+        </>
+      )}
+
+      {spec.kind === 'levels' && (
+        <>
+          <Slider label="Black" value={spec.inputBlack} min={0} max={255}
+            onChange={(inputBlack) => patch({ inputBlack })} />
+          <Slider label="Gamma" value={spec.gamma} min={0.1} max={4} step={0.01}
+            onChange={(gamma) => patch({ gamma })} format={(v) => v.toFixed(2)} />
+          <Slider label="White" value={spec.inputWhite} min={0} max={255}
+            onChange={(inputWhite) => patch({ inputWhite })} />
+          <Slider label="Out min" value={spec.outputBlack} min={0} max={255}
+            onChange={(outputBlack) => patch({ outputBlack })} />
+          <Slider label="Out max" value={spec.outputWhite} min={0} max={255}
+            onChange={(outputWhite) => patch({ outputWhite })} />
+        </>
+      )}
+
+      {spec.kind === 'curves' && (
+        <CurvesControls spec={spec} onPatch={patch} />
+      )}
+
+      {spec.kind === 'hue-saturation' && (
+        <>
+          <Slider label="Hue" value={spec.hue} min={-180} max={180}
+            onChange={(hue) => patch({ hue })} format={(v) => `${Math.round(v)}°`} />
+          <Slider label="Sat" value={spec.saturation} min={-100} max={100}
+            onChange={(saturation) => patch({ saturation })} />
+          <Slider label="Light" value={spec.lightness} min={-100} max={100}
+            onChange={(lightness) => patch({ lightness })} />
+        </>
+      )}
+
+      {spec.kind === 'color-balance' && (
+        <>
+          <Slider label="Red" value={spec.red} min={-100} max={100} onChange={(red) => patch({ red })} />
+          <Slider label="Green" value={spec.green} min={-100} max={100} onChange={(green) => patch({ green })} />
+          <Slider label="Blue" value={spec.blue} min={-100} max={100} onChange={(blue) => patch({ blue })} />
+          <p className={styles.hint}>Shifts the midtones; highlights and shadows are left alone.</p>
+        </>
+      )}
+
+      {spec.kind === 'exposure' && (
+        <>
+          <Slider label="Stops" value={spec.exposure} min={-5} max={5} step={0.05}
+            onChange={(exposure) => patch({ exposure })} format={(v) => v.toFixed(2)} />
+          <Slider label="Offset" value={spec.offset} min={-0.5} max={0.5} step={0.01}
+            onChange={(offset) => patch({ offset })} format={(v) => v.toFixed(2)} />
+          <Slider label="Gamma" value={spec.gamma} min={0.1} max={4} step={0.01}
+            onChange={(gamma) => patch({ gamma })} format={(v) => v.toFixed(2)} />
+        </>
+      )}
+
+      {spec.kind === 'grayscale' && (
+        <Slider label="Amount" value={spec.amount} min={0} max={100}
+          onChange={(amount) => patch({ amount })} format={(v) => `${Math.round(v)}%`} />
+      )}
+
+      {spec.kind === 'posterize' && (
+        <Slider label="Levels" value={spec.levels} min={2} max={64}
+          onChange={(levels) => patch({ levels })} />
+      )}
+
+      <p className={styles.hint}>
+        Applies to every layer below this one, inside its group. Strength and a mask are in
+        the Layers panel.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * The three handles of a tone curve, as sliders.
+ *
+ * Black and white move the ends; the midpoint moves a control point halfway
+ * along, which is what "brighten the midtones without clipping" means. The
+ * three are written back as a three-point curve, so what is stored is the same
+ * shape a graph editor would store and nothing about the format assumes there
+ * are only three.
+ */
+function CurvesControls({
+  spec,
+  onPatch,
+}: {
+  spec: Extract<AdjustmentSpec, { kind: 'curves' }>;
+  onPatch: (fields: Partial<AdjustmentSpec>) => void;
+}) {
+  const sorted = [...spec.points].sort((a, b) => a.x - b.x);
+  const black = sorted[0] ?? { x: 0, y: 0 };
+  const white = sorted[sorted.length - 1] ?? { x: 255, y: 255 };
+  const mid = sorted.length > 2 ? sorted[Math.floor(sorted.length / 2)] : { x: 128, y: 128 };
+
+  const write = (next: { black?: number; mid?: number; white?: number }) => {
+    onPatch({
+      points: [
+        { x: 0, y: next.black ?? black.y },
+        { x: 128, y: next.mid ?? mid.y },
+        { x: 255, y: next.white ?? white.y },
+      ],
+    });
+  };
+
+  return (
+    <>
+      <div className={styles.row}>
+        <span className={styles.label}>Channel</span>
+        <select
+          className={styles.select}
+          aria-label="Curve channel"
+          value={spec.channel}
+          onChange={(e) => onPatch({ channel: e.target.value as 'rgb' | 'r' | 'g' | 'b' })}
+        >
+          <option value="rgb">All channels</option>
+          <option value="r">Red</option>
+          <option value="g">Green</option>
+          <option value="b">Blue</option>
+        </select>
+      </div>
+      <Slider label="Shadows" value={black.y} min={0} max={255} onChange={(v) => write({ black: v })} />
+      <Slider label="Mid" value={mid.y} min={0} max={255} onChange={(v) => write({ mid: v })} />
+      <Slider label="Highs" value={white.y} min={0} max={255} onChange={(v) => write({ white: v })} />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Filters
+// ---------------------------------------------------------------------------
+
+/**
+ * A layer's filter chain.
+ *
+ * Ordered, because order is a parameter: sharpening a blur and blurring a
+ * sharpen are different pictures. Each row can be disabled rather than only
+ * deleted, so a filter can be compared against its own absence without losing
+ * the settings that took a minute to find.
+ */
+function FilterStack({
+  doc,
+  onDocumentChange,
+  node,
+}: {
+  doc: DrawingDocument;
+  onDocumentChange: (doc: DrawingDocument) => void;
+  node: DrawingNode;
+}) {
+  const [adding, setAdding] = useState(false);
+  const filters = node.filters ?? [];
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Filters</div>
+
+      {filters.length === 0 && (
+        <p className={styles.hint}>None. A filter applies to this layer’s own pixels.</p>
+      )}
+
+      {filters.map((filter, index) => (
+        <div key={filter.id} className={styles.filterCard}>
+          <div className={styles.filterHead}>
+            <input
+              type="checkbox"
+              className={styles.shadowToggle}
+              aria-label={`${FILTER_LABELS[filter.kind]} enabled`}
+              checked={filter.enabled}
+              onChange={(e) => onDocumentChange(patchFilter(doc, node.id, filter.id, { enabled: e.target.checked }))}
+            />
+            <span className={styles.filterName}>{FILTER_LABELS[filter.kind]}</span>
+            <button
+              className={styles.filterIconBtn}
+              aria-label={`Move ${FILTER_LABELS[filter.kind]} earlier`}
+              disabled={index === 0}
+              onClick={() => onDocumentChange(reorderFilter(doc, node.id, filter.id, -1))}
+            >
+              <ChevronUp size={12} />
+            </button>
+            <button
+              className={styles.filterIconBtn}
+              aria-label={`Move ${FILTER_LABELS[filter.kind]} later`}
+              disabled={index === filters.length - 1}
+              onClick={() => onDocumentChange(reorderFilter(doc, node.id, filter.id, 1))}
+            >
+              <ChevronDown size={12} />
+            </button>
+            <button
+              className={`${styles.filterIconBtn} ${styles.filterDelete}`}
+              aria-label={`Remove ${FILTER_LABELS[filter.kind]}`}
+              onClick={() => onDocumentChange(removeFilter(doc, node.id, filter.id))}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+          <FilterControls
+            filter={filter}
+            onPatch={(fields) => onDocumentChange(patchFilter(doc, node.id, filter.id, fields))}
+          />
+        </div>
+      ))}
+
+      {adding ? (
+        <div className={styles.row}>
+          <select
+            className={styles.select}
+            aria-label="Filter to add"
+            defaultValue=""
+            onChange={(e) => {
+              if (!e.target.value) return;
+              onDocumentChange(addFilter(doc, node.id, createFilter(e.target.value as FilterKind)));
+              setAdding(false);
+            }}
+          >
+            <option value="">Choose a filter…</option>
+            {FILTER_KINDS.map((kind) => (
+              <option key={kind} value={kind}>{FILTER_LABELS[kind]}</option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div className={styles.iconRow}>
+          <button className={styles.iconBtn} onClick={() => setAdding(true)}>Add filter</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterControls({
+  filter,
+  onPatch,
+}: {
+  filter: FilterSpec;
+  onPatch: (fields: Partial<FilterSpec>) => void;
+}) {
+  switch (filter.kind) {
+    case 'blur':
+      return <Slider label="Radius" value={filter.radius} min={0} max={200}
+        onChange={(radius) => onPatch({ radius })} />;
+    case 'sharpen':
+      return <Slider label="Amount" value={filter.amount} min={0} max={300}
+        onChange={(amount) => onPatch({ amount })} format={(v) => `${Math.round(v)}%`} />;
+    case 'pixelate':
+      return <Slider label="Blocks" value={filter.size} min={2} max={200}
+        onChange={(size) => onPatch({ size })} />;
+    case 'drop-shadow':
+      return (
+        <>
+          <Slider label="X" value={filter.dx} min={-100} max={100}
+            onChange={(dx) => onPatch({ dx })} />
+          <Slider label="Y" value={filter.dy} min={-100} max={100}
+            onChange={(dy) => onPatch({ dy })} />
+          <Slider label="Blur" value={filter.blur} min={0} max={200}
+            onChange={(blur) => onPatch({ blur })} />
+          <Slider label="Alpha" value={filter.opacity} min={0} max={1} step={0.01}
+            onChange={(opacity) => onPatch({ opacity })} format={(v) => v.toFixed(2)} />
+          <div className={styles.row}>
+            <span className={styles.label}>Colour</span>
+            <ColorPickerPopover
+              color={filter.color}
+              onChange={(hex) => onPatch({ color: hex })}
+              title="Shadow colour"
+            >
+              <span className={styles.colorSwatch} style={{ background: filter.color }} />
+            </ColorPickerPopover>
+          </div>
+        </>
+      );
+    case 'glow':
+      return (
+        <>
+          <Slider label="Radius" value={filter.radius} min={0} max={200}
+            onChange={(radius) => onPatch({ radius })} />
+          <Slider label="Strength" value={filter.strength} min={0} max={4} step={0.05}
+            onChange={(strength) => onPatch({ strength })} format={(v) => v.toFixed(2)} />
+          <div className={styles.row}>
+            <span className={styles.label}>Colour</span>
+            <ColorPickerPopover
+              color={filter.color}
+              onChange={(hex) => onPatch({ color: hex })}
+              title="Glow colour"
+            >
+              <span className={styles.colorSwatch} style={{ background: filter.color }} />
+            </ColorPickerPopover>
+          </div>
+        </>
+      );
+    case 'noise':
+      return (
+        <>
+          <Slider label="Amount" value={filter.amount} min={0} max={100}
+            onChange={(amount) => onPatch({ amount })} format={(v) => `${Math.round(v)}%`} />
+          <div className={styles.row}>
+            <span className={styles.label}>Mono</span>
+            <input
+              type="checkbox"
+              className={styles.shadowToggle}
+              aria-label="Monochrome noise"
+              checked={filter.monochrome}
+              onChange={(e) => onPatch({ monochrome: e.target.checked })}
+            />
+          </div>
+        </>
+      );
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Other layer types
 // ---------------------------------------------------------------------------
 
-function LayerInfo({ node }: { node: DrawingNode }) {
+/**
+ * What a layer is, plus where its pixels came from.
+ *
+ * The provenance half is the visible end of redesign §5's linked assets: the
+ * source URI, the size it had when it arrived, and — for a source that can be
+ * fetched again — a Reload button. The **bit depth is shown only when it is
+ * 16**, because that is the only case where it says something: everything this
+ * editor paints is eight bits, and a row reading "8-bit" on every layer would
+ * be noise rather than information.
+ */
+function LayerInfo({
+  doc,
+  node,
+  onReloadAsset,
+}: {
+  doc: DrawingDocument;
+  node: DrawingNode;
+  onReloadAsset?: (assetId: string) => void;
+}) {
   const kind = node.type === 'raster' ? 'Image layer'
     : node.type === 'stack' ? 'Group'
     : 'Layer';
   const size = node.type === 'raster'
     ? `${Math.round(node.source.width)} × ${Math.round(node.source.height)} px`
     : null;
+  const asset = node.type === 'raster' ? findAsset(doc.assets, node.assetId) : null;
+  const deepSource = node.type === 'raster' && node.source.bitDepth === 16;
 
   return (
-    <div className={styles.panel}>
+    <>
       <div className={styles.section}>
         <div className={styles.sectionTitle}>{kind}</div>
         <div className={styles.row}>
@@ -717,11 +1182,49 @@ function LayerInfo({ node }: { node: DrawingNode }) {
             <span className={styles.readonlyValue}>{size}</span>
           </div>
         )}
+        {deepSource && (
+          <div className={styles.row}>
+            <span className={styles.label}>Source</span>
+            <span className={styles.readonlyValue}>16-bit</span>
+          </div>
+        )}
+        {deepSource && (
+          <p className={styles.hint}>
+            The original carried 16 bits per channel. Editing here is 8-bit.
+          </p>
+        )}
         <p className={styles.hint}>
           Opacity, blend mode, visibility and lock are in the Layers panel.
         </p>
       </div>
-    </div>
+
+      {asset && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Imported from</div>
+          <div className={styles.row}>
+            <span className={styles.label}>Source</span>
+            <span className={styles.readonlyValue} title={asset.uri}>{describeAssetSource(asset)}</span>
+          </div>
+          <div className={styles.row}>
+            <span className={styles.label}>Was</span>
+            <span className={styles.readonlyValue}>{asset.width} × {asset.height} px</span>
+          </div>
+          {asset.linked && onReloadAsset && (
+            <div className={styles.iconRow}>
+              <button className={styles.iconBtn} onClick={() => onReloadAsset(asset.id)}>
+                <RefreshCw size={13} />
+                <span>Reload from source</span>
+              </button>
+            </div>
+          )}
+          <p className={styles.hint}>
+            {asset.linked
+              ? 'The drawing holds its own copy of these pixels, so it stays viewable if the source goes away.'
+              : 'Embedded. There is no source to reload from.'}
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -831,6 +1334,9 @@ function CanvasStyle({
         </div>
       </div>
 
+      <ColorStyle doc={doc} onDocumentChange={onDocumentChange} />
+      <WorkspaceStyle doc={doc} onDocumentChange={onDocumentChange} />
+
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Default style</div>
         <p className={styles.hint}>Applied to the next shape you draw.</p>
@@ -861,6 +1367,271 @@ function CanvasStyle({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Colour management
+// ---------------------------------------------------------------------------
+
+/**
+ * The document's colour, per redesign §5.
+ *
+ * Three things that are often confused and are kept apart here. **The working
+ * space** is what buffers are allocated in and what the compositor mixes in.
+ * **The embedded profile** is what travels with the file so another application
+ * knows what the numbers meant — it is written as its own archive entry *and*
+ * into `mergedimage.png`, and it does not change how anything is rendered here.
+ * **HDR** is a declaration plus an SDR preview, because OpenRaster's merged
+ * image is PNG and this pipeline is 8-bit; the panel says so rather than
+ * implying that switching it on makes the highlights brighter.
+ */
+function ColorStyle({
+  doc,
+  onDocumentChange,
+}: {
+  doc: DrawingDocument;
+  onDocumentChange: (doc: DrawingDocument) => void;
+}) {
+  const iccInputRef = useRef<HTMLInputElement>(null);
+  const [iccError, setIccError] = useState<string | null>(null);
+  const profile = doc.colorProfile;
+  const hdr = profile.hdr ?? DEFAULT_HDR;
+  const wideGamutAvailable = canvasSupportsColorSpace('display-p3');
+
+  async function embedProfile(file: File) {
+    setIccError(null);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const parsed = parseIccProfile(bytes);
+    // Validated before it is stored, not before it is exported: a profile that
+    // is not a profile has to be refused at the moment somebody can still pick
+    // a different file, rather than silently dropped out of the package later.
+    if (!parsed) {
+      setIccError('That file is not an ICC colour profile.');
+      return;
+    }
+    onDocumentChange(setColorProfile(doc, { name: parsed.name, iccUri: iccDataUrl(bytes) }));
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Colour</div>
+
+      <div className={styles.row}>
+        <span className={styles.label}>Space</span>
+        <select
+          className={styles.select}
+          aria-label="Colour space"
+          value={profile.space ?? 'srgb'}
+          onChange={(e) => onDocumentChange(setColorProfile(doc, { space: e.target.value as ColorSpaceName }))}
+        >
+          {(Object.keys(COLOR_SPACE_LABELS) as ColorSpaceName[]).map((space) => (
+            <option key={space} value={space}>{COLOR_SPACE_LABELS[space]}</option>
+          ))}
+        </select>
+      </div>
+
+      {profile.space === 'display-p3' && !wideGamutAvailable && (
+        <p className={styles.hint}>This browser has no wide-gamut canvas, so it renders as sRGB.</p>
+      )}
+
+      <div className={styles.row}>
+        <span className={styles.label}>Profile</span>
+        <span className={styles.readonlyValue} title={profile.name}>
+          {profile.iccUri ? profile.name : 'None embedded'}
+        </span>
+      </div>
+
+      <div className={styles.iconRow}>
+        <button className={styles.iconBtn} onClick={() => iccInputRef.current?.click()}>
+          Embed ICC…
+        </button>
+        {profile.iccUri && (
+          <button
+            className={styles.iconBtn}
+            onClick={() => onDocumentChange(setColorProfile(doc, { iccUri: undefined, name: 'sRGB' }))}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      {iccError && <p className={styles.hint}>{iccError}</p>}
+
+      <input
+        ref={iccInputRef}
+        type="file"
+        hidden
+        aria-hidden="true"
+        accept=".icc,.icm,application/vnd.iccprofile"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) embedProfile(file);
+        }}
+      />
+
+      <div className={styles.row}>
+        <span className={styles.label}>HDR</span>
+        <input
+          type="checkbox"
+          className={styles.shadowToggle}
+          aria-label="HDR document"
+          checked={hdr.enabled}
+          onChange={(e) => onDocumentChange(setHdr(doc, { enabled: e.target.checked }))}
+        />
+      </div>
+
+      {hdr.enabled && (
+        <>
+          <div className={styles.row}>
+            <span className={styles.label}>Transfer</span>
+            <select
+              className={styles.select}
+              aria-label="HDR transfer function"
+              value={hdr.transfer}
+              onChange={(e) => onDocumentChange(setHdr(doc, { transfer: e.target.value as 'pq' | 'hlg' }))}
+            >
+              <option value="pq">PQ (ST 2084)</option>
+              <option value="hlg">HLG</option>
+            </select>
+          </div>
+          <Slider
+            label="Headroom"
+            value={hdr.headroom}
+            min={1}
+            max={8}
+            step={0.5}
+            onChange={(headroom) => onDocumentChange(setHdr(doc, { headroom }))}
+            format={(v) => `${v} stops`}
+          />
+          <p className={styles.hint}>
+            Recorded for readers that can show it. Editing and the merged image stay SDR, and
+            an export names that merged image as the SDR preview.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Workspace
+// ---------------------------------------------------------------------------
+
+/**
+ * Rulers, units, guides and snapping — redesign §5's workspace state.
+ *
+ * Grouped here rather than beside the grid because they are the same *kind* of
+ * setting: things that change how the canvas is worked on and nothing about
+ * what it contains. The grid keeps its own section above, since spacing and
+ * origin are geometry a drawing is built against.
+ */
+function WorkspaceStyle({
+  doc,
+  onDocumentChange,
+}: {
+  doc: DrawingDocument;
+  onDocumentChange: (doc: DrawingDocument) => void;
+}) {
+  const workspace = workspaceOf(doc.workspace);
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Workspace</div>
+
+      <div className={styles.row}>
+        <span className={styles.label}>Rulers</span>
+        <input
+          type="checkbox"
+          className={styles.shadowToggle}
+          aria-label="Show rulers"
+          checked={workspace.rulers}
+          onChange={(e) => onDocumentChange(setWorkspace(doc, { rulers: e.target.checked }))}
+        />
+      </div>
+
+      <div className={styles.row}>
+        <span className={styles.label}>Units</span>
+        <select
+          className={styles.select}
+          aria-label="Ruler units"
+          value={workspace.units}
+          onChange={(e) => onDocumentChange(setWorkspace(doc, { units: e.target.value as RulerUnit }))}
+        >
+          {RULER_UNITS.map((unit) => (
+            <option key={unit} value={unit}>{RULER_UNIT_LABELS[unit]}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className={styles.row}>
+        <span className={styles.label}>Guides</span>
+        <input
+          type="checkbox"
+          className={styles.shadowToggle}
+          aria-label="Show guides"
+          checked={workspace.showGuides}
+          onChange={(e) => onDocumentChange(setWorkspace(doc, { showGuides: e.target.checked }))}
+        />
+        <span className={styles.propValue}>{doc.guides.length}</span>
+      </div>
+
+      <div className={styles.row}>
+        <span className={styles.label}>Lock</span>
+        <input
+          type="checkbox"
+          className={styles.shadowToggle}
+          aria-label="Lock guides"
+          checked={workspace.lockGuides}
+          onChange={(e) => onDocumentChange(setWorkspace(doc, { lockGuides: e.target.checked }))}
+        />
+      </div>
+
+      <div className={styles.row}>
+        <span className={styles.label}>Snap to</span>
+        <div className={styles.snapChecks}>
+          <label className={styles.snapCheck}>
+            <input
+              type="checkbox"
+              aria-label="Snap to guides"
+              checked={workspace.snap.guides}
+              onChange={(e) => onDocumentChange(setSnap(doc, { guides: e.target.checked }))}
+            />
+            Guides
+          </label>
+          <label className={styles.snapCheck}>
+            <input
+              type="checkbox"
+              aria-label="Snap to objects"
+              checked={workspace.snap.objects}
+              onChange={(e) => onDocumentChange(setSnap(doc, { objects: e.target.checked }))}
+            />
+            Objects
+          </label>
+          <label className={styles.snapCheck}>
+            <input
+              type="checkbox"
+              aria-label="Snap to the canvas"
+              checked={workspace.snap.canvas}
+              onChange={(e) => onDocumentChange(setSnap(doc, { canvas: e.target.checked }))}
+            />
+            Canvas
+          </label>
+        </div>
+      </div>
+
+      <Slider
+        label="Rotate"
+        value={workspace.canvasRotation}
+        min={0}
+        max={359}
+        onChange={(canvasRotation) => onDocumentChange(setWorkspace(doc, { canvasRotation }))}
+        format={(v) => `${Math.round(v)}°`}
+      />
+      <p className={styles.hint}>
+        Rotating turns the view only. Nothing in the drawing moves and exports are unaffected.
+      </p>
     </div>
   );
 }

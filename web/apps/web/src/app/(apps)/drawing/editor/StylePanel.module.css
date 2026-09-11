@@ -302,3 +302,91 @@
   line-height: 1.4;
   color: #9ca3af;
 }
+
+/* ── Filter stack ────────────────────────────────────────── */
+
+.filterCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 5px;
+  padding: 6px;
+  margin-bottom: 8px;
+  background: #f9fafb;
+}
+
+.filterHead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.filterName {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.filterIconBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  padding: 1px;
+  border-radius: 3px;
+}
+
+.filterIconBtn:hover:not(:disabled) {
+  color: #374151;
+  background: #e5e7eb;
+}
+
+.filterIconBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.filterDelete:hover:not(:disabled) {
+  color: #dc2626;
+  background: #fee2e2;
+}
+
+/* ── Snapping ────────────────────────────────────────────── */
+
+.snapChecks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.snapCheck {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #374151;
+  cursor: pointer;
+}
+
+.snapCheck input {
+  width: 13px;
+  height: 13px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+/* ── Value read-out beside a slider ──────────────────────── */
+
+.propValue {
+  font-size: 10px;
+  color: #6b7280;
+  width: 42px;
+  text-align: right;
+  flex-shrink: 0;
+}

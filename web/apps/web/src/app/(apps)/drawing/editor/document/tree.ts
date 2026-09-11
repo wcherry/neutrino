@@ -431,6 +431,14 @@ export function contentBounds(node: DrawingNode, symbols?: SymbolTable): Rect | 
       return unionRects(node.objects.filter((o) => o.visible).map(vectorObjectBounds));
     case 'stack':
       return unionRects(node.children.map((child) => contentBounds(child, symbols)));
+    case 'adjustment':
+      // No extent of its own, deliberately. An adjustment covers whatever is
+      // below it, which is not a rectangle it *owns*: giving it the canvas here
+      // would make it hittable across the whole page, so that clicking anywhere
+      // with the select tool picked the correction instead of the picture, and
+      // would inflate `documentContentBounds` for a layer that draws nothing.
+      // The layers panel is where an adjustment is selected.
+      return null;
     case 'instance': {
       const symbol = symbols?.get(node.symbolId);
       if (!symbol) return node.bounds.width > 0 && node.bounds.height > 0 ? { ...node.bounds } : null;
