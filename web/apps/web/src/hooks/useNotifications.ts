@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { notificationsApi, getNotificationsWsUrl } from '@neutrino/api-drive';
 import type { NotificationItem } from '@neutrino/api-drive';
-import { refreshTokensOnce } from '@neutrino/api-core';
+import { getClientId, refreshTokensOnce } from '@neutrino/api-core';
+import { DRIVE_CHANGED_EVENT, parseDriveChangedSignal } from '@/lib/driveLiveUpdates';
 
 const RECONNECT_BASE_MS = 3000;
 const RECONNECT_MAX_MS = 60000;
@@ -27,6 +28,9 @@ function isTokenExpired(token: string): boolean {
 export function useNotifications() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  // Exposed so callers that depend on this socket for live updates can fall back to polling while
+  // it is down, rather than silently going stale. See `useDriveLiveUpdates`.
+  const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
@@ -65,11 +69,26 @@ export function useNotifications() {
 
     ws.onopen = () => {
       attemptRef.current = 0;
+      if (mountedRef.current) setConnected(true);
     };
 
     ws.onmessage = (event) => {
       try {
-        const notification = JSON.parse(event.data as string) as NotificationItem;
+        const message: unknown = JSON.parse(event.data as string);
+
+        // This socket carries two kinds of message. A drive-change signal is transient — it is not
+        // an inbox record and must never be added to the list or counted as unread — so it is
+        // recognised and handed off before anything below treats the payload as a notification.
+        const driveChanged = parseDriveChangedSignal(message);
+        if (driveChanged) {
+          // Our own writes already invalidated what they changed; refetching again on the echo
+          // would double every listing read during a bulk upload from this very tab.
+          if (driveChanged.originClientId === getClientId()) return;
+          window.dispatchEvent(new CustomEvent(DRIVE_CHANGED_EVENT));
+          return;
+        }
+
+        const notification = message as NotificationItem;
         setNotifications((prev) => [notification, ...prev]);
         if (!notification.isRead) {
           setUnreadCount((c) => c + 1);
@@ -96,6 +115,7 @@ export function useNotifications() {
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
+      setConnected(false);
       const delay = Math.min(RECONNECT_BASE_MS * 2 ** attemptRef.current, RECONNECT_MAX_MS);
       attemptRef.current += 1;
       reconnectTimerRef.current = setTimeout(() => {
@@ -117,6 +137,7 @@ export function useNotifications() {
       mountedRef.current = false;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       wsRef.current?.close();
+      setConnected(false);
     };
   }, [fetchInitial, connect]);
 
@@ -134,5 +155,5 @@ export function useNotifications() {
     setUnreadCount(0);
   }, []);
 
-  return { notifications, unreadCount, markRead, markAllRead };
+  return { notifications, unreadCount, connected, markRead, markAllRead };
 }

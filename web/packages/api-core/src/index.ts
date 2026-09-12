@@ -2,6 +2,7 @@ export {
   BASE_URL,
   ApiClientError,
   getAuthHeader,
+  getClientId,
   getCurrentUserId,
   shouldSkipRefresh,
   clearAuthAndRedirect,

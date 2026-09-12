@@ -6,6 +6,12 @@ use actix_ws::AggregatedMessage;
 use futures_util::StreamExt;
 use std::sync::Arc;
 
+/// How often the server pings an idle notification socket.
+///
+/// Comfortably inside the 60 s idle timeout a proxy or load balancer typically applies, and far
+/// enough apart to be free: one frame per client per half minute.
+const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(25);
+
 pub struct NotificationsApiState {
     pub notification_service: Arc<NotificationService>,
     pub hub: Arc<NotificationHub>,
@@ -134,8 +140,22 @@ pub async fn notifications_ws(
             .aggregate_continuations()
             .max_continuation_size(128 * 1024);
 
+        // This socket can go hours with nothing to say, and a silent one is indistinguishable from
+        // a dead one: an idle connection is routinely dropped by a proxy or a NAT without either
+        // end being told, and a push into that is lost with no error anywhere. It cost nothing
+        // when this carried only inbox records — they are re-read on load — but it now also
+        // carries the live drive-change signal, where a lost message is a listing that stays stale
+        // until the tab is refocused. The ping is what turns a dead peer into a failed write, and
+        // a failed write into the client's `onclose` and its reconnect.
+        let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
+
         loop {
             tokio::select! {
+                _ = heartbeat.tick() => {
+                    if session.ping(b"").await.is_err() {
+                        break;
+                    }
+                }
                 notification = rx.recv() => {
                     match notification {
                         Some(json) => {
