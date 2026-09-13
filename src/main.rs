@@ -562,6 +562,12 @@ async fn main() -> std::io::Result<()> {
 
     let notification_hub = Arc::new(NotificationHub::new());
 
+    // Live "your drive changed" signals ride the same per-user socket as the notification inbox;
+    // see `shared::drive_events`. The middleware that feeds it is wrapped around `/api/v1` below.
+    let drive_event_broadcaster = Arc::new(shared::drive_events::DriveEventBroadcaster::new(
+        notification_hub.clone(),
+    ));
+
     let smtp_config = if let (Ok(host), Ok(port_str), Ok(user_s), Ok(pass), Ok(from)) = (
         std::env::var("SMTP_HOST"),
         std::env::var("SMTP_PORT"),
@@ -1112,6 +1118,7 @@ async fn main() -> std::io::Result<()> {
     // ── HTTP server ───────────────────────────────────────────────────────────
 
     let token_service_data = web::Data::new(token_service.clone());
+    let drive_event_broadcaster_data = web::Data::new(drive_event_broadcaster.clone());
 
     // Use the primary (drive) pool for the health check endpoint
     let primary_pool_data = web::Data::new(pool.clone());
@@ -1226,6 +1233,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(web::PayloadConfig::new(max_upload_bytes))
             .app_data(primary_pool_data.clone())
             .app_data(token_service_data.clone())
+            .app_data(drive_event_broadcaster_data.clone())
             // Auth
             .app_data(auth_state.clone())
             .app_data(key_vault_state.clone())
@@ -1316,6 +1324,12 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             // prefix cause actix-web to route only to the first-registered one.
             .service(
                 web::scope("/api/v1")
+                    // Signals the caller's *other* clients after any request that changed their
+                    // drive, so an open Drive listing refreshes itself instead of waiting for a
+                    // refocus or a reload. One place rather than ~30 handlers; it filters by path
+                    // and method itself, and is inert for reads and for failed writes.
+                    // See `shared::drive_events`.
+                    .wrap(from_fn(shared::drive_events::broadcast_drive_changes))
                     .configure(auth::api::configure)
                     .configure(oauth::api::configure)
                     .configure(drive::fonts::api::configure_public)

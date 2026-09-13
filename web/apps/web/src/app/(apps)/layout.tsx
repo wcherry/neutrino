@@ -33,6 +33,7 @@ import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
 import { RequestStorageDialog } from '@/components/RequestStorageDialog';
 import { ImportRunProvider } from '@/components/ImportRun';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useDriveLiveUpdates } from '@/hooks/useDriveLiveUpdates';
 import { useClientSearch, type SearchHit } from '@/hooks/useClientSearch';
 import { useSearchIndexSync } from '@/hooks/useSearchIndexSync';
 import { useSearchIndexUpdates } from '@/hooks/useSearchIndexUpdates';
@@ -132,7 +133,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     enabled: auth.status === 'ready',
   });
 
-  const { notifications, unreadCount, markRead, markAllRead } = useNotifications();
+  const { notifications, unreadCount, connected, markRead, markAllRead } = useNotifications();
+
+  // Re-reads whatever listing is on screen when another client changes this user's drive. Mounted
+  // here, above every route, because no listing page owns its own refresh — see
+  // `lib/driveLiveUpdates.ts`.
+  useDriveLiveUpdates({ connected });
 
   async function handleUpload(files: FileList) {
     const fileArr = Array.from(files);

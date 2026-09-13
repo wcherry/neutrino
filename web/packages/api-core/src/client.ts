@@ -72,6 +72,33 @@ type Tokens = { accessToken: string; refreshToken: string; tokenType: string; ex
 
 let refreshInFlight: Promise<Tokens | null> | null = null;
 
+/**
+ * Header naming the client that made a request, so the live "your drive changed" signal the write
+ * provokes can be recognised as our own echo and skipped. Read by `shared::drive_events` on the
+ * server and reflected back on the signal as `originClientId`.
+ */
+const CLIENT_ID_HEADER = 'X-Neutrino-Client-Id';
+
+let clientId: string | null = null;
+
+/**
+ * This tab's identity, for the life of the page.
+ *
+ * Deliberately *not* persisted: two tabs must not share an id, or each would discard the other's
+ * change signals and both would sit on a stale listing — the exact bug the signal exists to fix.
+ * A reload gets a fresh id, which costs nothing, since the fresh page re-reads everything anyway.
+ */
+export function getClientId(): string {
+  if (clientId) return clientId;
+  clientId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return clientId;
+}
+
+function getClientIdHeader(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  return { [CLIENT_ID_HEADER]: getClientId() };
+}
+
 export function getAuthHeader(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const token = localStorage.getItem('access_token');
@@ -257,6 +284,9 @@ function requestWithXhr<T>(path: string, options: RequestInit, config: RequestCo
       const authHeaders = getAuthHeader();
       Object.entries(authHeaders).forEach(([k, v]) => xhr.setRequestHeader(k, v));
     }
+    // Uploads come through this path, and an upload is the change most likely to race with its own
+    // signal — so the echo header matters here at least as much as on `fetch`.
+    Object.entries(getClientIdHeader()).forEach(([k, v]) => xhr.setRequestHeader(k, v));
     if (!(options.body instanceof FormData)) {
       xhr.setRequestHeader('Content-Type', 'application/json');
     }
@@ -282,6 +312,7 @@ export async function request<T>(
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers as Record<string, string> | undefined),
     ...(includeAuth ? getAuthHeader() : {}),
+    ...getClientIdHeader(),
   };
 
   const res = await fetch(url, { ...options, headers });

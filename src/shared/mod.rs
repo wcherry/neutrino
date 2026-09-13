@@ -5,6 +5,7 @@ pub mod auth;
 pub mod collab_protocol;
 pub mod content_version;
 pub mod drive_client;
+pub mod drive_events;
 pub mod errors;
 pub mod file_events;
 pub mod helper;
