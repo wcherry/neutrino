@@ -8,7 +8,7 @@ use crate::photos::photos::{
     model::{
         NewLockedFolderSettings, NewPhotoEdit, NewPhotoRecord, PhotoRecord, UpdatePhotoRecord,
     },
-    repository::PhotosRepository,
+    repository::{PhotoPage, PhotosRepository},
 };
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::drive_client::{DriveClient, DriveFileRecord};
@@ -155,14 +155,14 @@ impl PhotosService {
         exclude_person_ids: &[String],
     ) -> Result<ListPhotosResponse, ApiError> {
         if person_ids.is_empty() && exclude_person_ids.is_empty() {
-            return self.list_photos(user, false, false).await;
+            return self.list_photos(user, false, false, None).await;
         }
 
         // Compute the inclusion intersection: photos containing faces from ALL included persons.
         let included: std::collections::HashSet<String> = if person_ids.is_empty() {
             // No inclusion filter — start with all photos for this user.
             self.repo
-                .list_photos(&user.user_id, false, false)?
+                .list_photos(&user.user_id, false, false, None)?
                 .into_iter()
                 .map(|p| p.id)
                 .collect()
@@ -200,15 +200,23 @@ impl PhotosService {
         self.list_photos_by_ids(user, &result_ids).await
     }
 
+    /// The caller's library, optionally one page of it.
+    ///
+    /// `page` is `None` for every caller that existed before paging did, and that answers the
+    /// whole library exactly as it always has. What changes for everyone is `total`: it is now the
+    /// number of photos the filters match rather than the number in this response. Those are the
+    /// same figure for an unpaged listing, which is why this is safe to change under the existing
+    /// clients, and different for a paged one, which is the only way a client knows to ask again.
     pub async fn list_photos(
         &self,
         user: &AuthenticatedUser,
         include_archived: bool,
         starred_only: bool,
+        page: Option<PhotoPage>,
     ) -> Result<ListPhotosResponse, ApiError> {
         let records = self
             .repo
-            .list_photos(&user.user_id, include_archived, starred_only)?;
+            .list_photos(&user.user_id, include_archived, starred_only, page)?;
         let mut responses = Vec::with_capacity(records.len());
         for r in &records {
             let file = self
@@ -218,7 +226,13 @@ impl PhotosService {
                 .ok();
             responses.push(self.to_response(r.clone(), file.as_ref()));
         }
-        let total = responses.len();
+        let total = match page {
+            Some(_) => self
+                .repo
+                .count_photos(&user.user_id, include_archived, starred_only)?
+                as usize,
+            None => responses.len(),
+        };
         Ok(ListPhotosResponse {
             photos: responses,
             total,

@@ -5,6 +5,7 @@ use crate::photos::photos::{
         ShareSettingsRequest, UnlockFolderRequest, UnlockTokenResponse, UpdatePhotoRequest,
         YearInReviewResponse,
     },
+    repository::PhotoPage,
     service::PhotosService,
 };
 use crate::shared::auth::AuthenticatedUser;
@@ -30,6 +31,8 @@ pub struct PhotosApiState {
         ("starredOnly" = Option<bool>, Query, description = "Show only starred photos"),
         ("personIds" = Option<String>, Query, description = "Comma-separated person IDs to filter by (AND logic)"),
         ("excludePersonIds" = Option<String>, Query, description = "Comma-separated person IDs to exclude"),
+        ("limit" = Option<i64>, Query, description = "Page size, 1..=1000. Omit for the whole library."),
+        ("offset" = Option<i64>, Query, description = "How many photos to skip. Requires `limit`."),
     ),
     responses(
         (status = 200, description = "List of photos", body = ListPhotosResponse),
@@ -74,10 +77,38 @@ pub async fn list_photos(
             .unwrap_or(false);
         state
             .photos_service
-            .list_photos(&user, include_archived, starred_only)
+            .list_photos(&user, include_archived, starred_only, page(&query))
             .await?
     };
     Ok(web::Json(result))
+}
+
+/// The page the caller asked for, or `None` for the whole library.
+///
+/// `limit` is what makes a page; an `offset` on its own is meaningless and ignored. The ceiling is
+/// not decoration: this listing carries every photo's metadata inline, so an unbounded one is
+/// tens of megabytes in a single response for a library the size of a camera roll — which is a
+/// request no phone finishes and the reason paging was added.
+///
+/// A `limit` that does not parse, or is below 1, is treated as absent rather than rejected. A
+/// client that gets paging wrong should see a slow listing it can fix, not a 400 it cannot.
+fn page(query: &std::collections::HashMap<String, String>) -> Option<PhotoPage> {
+    const MAX_LIMIT: i64 = 1000;
+
+    let limit = query.get("limit")?.parse::<i64>().ok()?;
+    if limit < 1 {
+        return None;
+    }
+    let offset = query
+        .get("offset")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(0)
+        .max(0);
+
+    Some(PhotoPage {
+        limit: limit.min(MAX_LIMIT),
+        offset,
+    })
 }
 
 /// Register an already-uploaded Drive file as a photo.
@@ -735,3 +766,64 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
     security(("bearer_auth" = []))
 )]
 pub struct PhotosApiDoc;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn query(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// The shape the iOS client actually sends — see `fetchEveryPage()` in `PhotoLibraryService`.
+    #[test]
+    fn the_clients_page_is_parsed_as_sent() {
+        let page = page(&query(&[
+            ("archivedOnly", "true"),
+            ("limit", "200"),
+            ("offset", "1000"),
+        ]))
+        .expect("a page");
+        assert_eq!(page.limit, 200);
+        assert_eq!(page.offset, 1000);
+    }
+
+    #[test]
+    fn no_limit_means_the_whole_library() {
+        assert!(page(&query(&[("archivedOnly", "true")])).is_none());
+        // An offset with nothing to bound it says nothing about how much to return.
+        assert!(page(&query(&[("offset", "100")])).is_none());
+    }
+
+    #[test]
+    fn a_missing_offset_starts_at_the_beginning() {
+        assert_eq!(page(&query(&[("limit", "200")])).expect("a page").offset, 0);
+    }
+
+    /// The ceiling is the point of the parameter: this listing is ~800 bytes a photo, so an
+    /// unbounded page is the megabytes-in-one-response problem paging was added to end.
+    #[test]
+    fn an_oversized_limit_is_clamped_rather_than_honoured() {
+        let page = page(&query(&[("limit", "100000")])).expect("a page");
+        assert_eq!(page.limit, 1000);
+    }
+
+    /// Nonsense is treated as "no page" rather than rejected — a client that gets paging wrong
+    /// should see a slow listing it can fix, not a 400 it cannot.
+    #[test]
+    fn nonsense_falls_back_to_the_whole_library() {
+        assert!(page(&query(&[("limit", "banana")])).is_none());
+        assert!(page(&query(&[("limit", "0")])).is_none());
+        assert!(page(&query(&[("limit", "-5")])).is_none());
+    }
+
+    #[test]
+    fn a_negative_offset_is_floored_at_zero() {
+        let page = page(&query(&[("limit", "10"), ("offset", "-3")])).expect("a page");
+        assert_eq!(page.offset, 0);
+    }
+}

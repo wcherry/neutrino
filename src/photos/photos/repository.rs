@@ -10,6 +10,16 @@ use diesel::r2d2::{ConnectionManager, Pool};
 
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
 
+/// One page of a photo listing.
+///
+/// Both halves are already clamped by the time they arrive — see `list_photos` in `api.rs`, which
+/// is the only place that builds one from user input.
+#[derive(Debug, Clone, Copy)]
+pub struct PhotoPage {
+    pub limit: i64,
+    pub offset: i64,
+}
+
 pub struct PhotosRepository {
     pool: DbPool,
 }
@@ -83,11 +93,13 @@ impl PhotosRepository {
         user_id: &str,
         include_archived: bool,
         starred_only: bool,
+        page: Option<PhotoPage>,
     ) -> Result<Vec<PhotoRecord>, ApiError> {
         let mut conn = self.get_conn()?;
         let mut query = photos::table
             .filter(photos::user_id.eq(user_id))
             .filter(photos::deleted_at.is_null())
+            .select(PhotoRecord::as_select())
             .into_boxed();
 
         if !include_archived {
@@ -97,14 +109,54 @@ impl PhotosRepository {
             query = query.filter(photos::is_starred.eq(true));
         }
 
-        query
-            .order(photos::created_at.desc())
-            .select(PhotoRecord::as_select())
-            .load(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB list photos error: {:?}", e);
-                ApiError::internal("Database error")
-            })
+        // `created_at` alone is not a total order: a bulk import stamps thousands of rows inside
+        // the same second, and where rows tie SQLite may return them in any order it likes. It
+        // happens to be stable today — 25,000 rows sharing a timestamp page cleanly without this —
+        // but that is a property of the current plan (a full scan in rowid order), not a promise,
+        // and it is one an index on `created_at` or a different filter could take away. Two pages
+        // ordered differently would hand a client one photo twice and never show it another, so
+        // `id` breaks the tie with something unique and stable rather than leaving offset paging
+        // resting on an implementation detail.
+        query = query.order((photos::created_at.desc(), photos::id.desc()));
+
+        if let Some(page) = page {
+            query = query.limit(page.limit).offset(page.offset);
+        }
+
+        query.load(&mut conn).map_err(|e| {
+            tracing::error!("DB list photos error: {:?}", e);
+            ApiError::internal("Database error")
+        })
+    }
+
+    /// How many photos the same filters match, ignoring any page.
+    ///
+    /// What makes a page meaningful: the client needs to know how far it has to keep asking, and
+    /// `photos.len()` on the last page cannot tell it that.
+    pub fn count_photos(
+        &self,
+        user_id: &str,
+        include_archived: bool,
+        starred_only: bool,
+    ) -> Result<i64, ApiError> {
+        let mut conn = self.get_conn()?;
+        let mut query = photos::table
+            .filter(photos::user_id.eq(user_id))
+            .filter(photos::deleted_at.is_null())
+            .select(diesel::dsl::count_star())
+            .into_boxed();
+
+        if !include_archived {
+            query = query.filter(photos::is_archived.eq(false));
+        }
+        if starred_only {
+            query = query.filter(photos::is_starred.eq(true));
+        }
+
+        query.get_result(&mut conn).map_err(|e| {
+            tracing::error!("DB count photos error: {:?}", e);
+            ApiError::internal("Database error")
+        })
     }
 
     pub fn list_trash(&self, user_id: &str) -> Result<Vec<PhotoRecord>, ApiError> {
@@ -639,5 +691,112 @@ mod tests {
         assert!(repo.get_photo_including_deleted("theirs").is_ok());
         assert!(repo.get_photo_including_deleted("mine").is_err());
         assert_eq!(membership_count(&pool), 1);
+    }
+
+    // MARK: - Paging
+
+    /// Every one of these lands in the same second, which is the shape a bulk import actually
+    /// writes: `created_at` alone cannot order them, so this is what the `id` tie-break is for.
+    fn insert_photos_in_one_second(pool: &DbPool, user_id: &str, n: usize) {
+        for i in 0..n {
+            insert_photo(pool, &format!("photo-{i:04}"), user_id, false);
+        }
+    }
+
+    #[test]
+    fn paging_walks_the_library_once_without_repeating_or_dropping_a_photo() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photos_in_one_second(&pool, "u1", 25);
+
+        let mut seen: Vec<String> = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = repo
+                .list_photos("u1", true, false, Some(PhotoPage { limit: 10, offset }))
+                .expect("page");
+            if page.is_empty() {
+                break;
+            }
+            seen.extend(page.iter().map(|p| p.id.clone()));
+            offset += 10;
+        }
+
+        let unique: std::collections::HashSet<&String> = seen.iter().collect();
+        assert_eq!(
+            seen.len(),
+            25,
+            "paging saw {} rows, expected 25",
+            seen.len()
+        );
+        assert_eq!(unique.len(), 25, "paging repeated a photo");
+
+        let whole = repo.list_photos("u1", true, false, None).expect("whole");
+        assert_eq!(
+            seen,
+            whole.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
+            "paged order must match the unpaged order"
+        );
+    }
+
+    #[test]
+    fn a_page_is_bounded_and_starts_where_it_was_asked_to() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photos_in_one_second(&pool, "u1", 10);
+
+        let whole = repo.list_photos("u1", true, false, None).expect("whole");
+        let page = repo
+            .list_photos(
+                "u1",
+                true,
+                false,
+                Some(PhotoPage {
+                    limit: 3,
+                    offset: 4,
+                }),
+            )
+            .expect("page");
+
+        assert_eq!(page.len(), 3);
+        assert_eq!(
+            page.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
+            whole[4..7].iter().map(|p| p.id.clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn an_offset_past_the_end_is_an_empty_page_rather_than_an_error() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photos_in_one_second(&pool, "u1", 3);
+
+        let page = repo
+            .list_photos(
+                "u1",
+                true,
+                false,
+                Some(PhotoPage {
+                    limit: 10,
+                    offset: 99,
+                }),
+            )
+            .expect("page");
+
+        assert!(page.is_empty());
+    }
+
+    /// The count is what tells a paging client how far it has to keep going, so it has to answer
+    /// for the whole library and honour the same filters the listing does.
+    #[test]
+    fn the_count_ignores_the_page_but_not_the_filters() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photos_in_one_second(&pool, "u1", 7);
+        insert_photo(&pool, "trashed", "u1", true);
+        insert_photo(&pool, "someone-else", "u2", false);
+
+        assert_eq!(repo.count_photos("u1", true, false).expect("count"), 7);
+        assert_eq!(repo.count_photos("u2", true, false).expect("count"), 1);
     }
 }
