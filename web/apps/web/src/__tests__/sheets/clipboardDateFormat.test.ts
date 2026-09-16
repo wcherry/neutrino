@@ -662,3 +662,86 @@ describe('parseGoogleSpreadsheetCompactTableJson — merge anchor handling', () 
         }
     });
 });
+
+// ── parseGoogleSheetsHtml — formatted numbers stay numbers ───────────────────
+
+/**
+ * A pasted currency column could not be summed: every cell arrived as the
+ * display string "$100.00" rather than the number 100, so parseFloat returned
+ * NaN and SUM answered 0 while the unformatted column beside it totalled fine.
+ *
+ * The cause was the value type code. Google writes a number as type 3 with the
+ * value in slot "3"; the parser only recognised type 1, so a number fell
+ * through to `td.textContent`. For an unformatted cell that text *is* the
+ * number, which is exactly why this hid for so long — a currency symbol, a
+ * percent sign or a thousands separator is what turns it into an unusable
+ * string.
+ */
+const CURRENCY_FMT = '"$"#,##0.00';
+
+/** One <td> as Google Sheets writes a currency cell: type 3, value in slot "3". */
+function currencyTd(amount: number): string {
+    const value = JSON.stringify({ '1': 3, '3': amount }).replace(/"/g, '&quot;');
+    const fmt = JSON.stringify({ '1': 4, '2': CURRENCY_FMT, '3': 1 }).replace(/"/g, '&quot;');
+    const display = `$${amount.toFixed(2)}`;
+    return `<td data-sheets-value="${value}" data-sheets-numberformat="${fmt}">${display}</td>`;
+}
+
+describe('parseGoogleSheetsHtml — currency and other formatted numbers', () => {
+    it('stores the number, not the "$100.00" display text', () => {
+        const html = `<google-sheets-html-origin><table><tr>${currencyTd(100)}</tr></table>`;
+        const [cell] = parseGoogleSheetsHtml(html);
+
+        expect(cell.raw).toBe('100');
+        expect(parseFloat(cell.raw)).toBe(100);           // summable
+        expect(cell.cellStyle?.numberFormat).toBe('currency');
+        expect(cell.cellStyle?.customFormat).toBe(CURRENCY_FMT);
+        // …and it still *displays* as currency.
+        expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('$100.00');
+    });
+
+    it('a pasted currency column totals like the unformatted one beside it', () => {
+        const amounts = [100, 800, 450, 500, 600, 250, 824, 450, 200, 250, 250, 200, 150, 200];
+        const rows = amounts.map(a => `<tr>${currencyTd(a)}</tr>`).join('');
+        const cells = parseGoogleSheetsHtml(`<google-sheets-html-origin><table>${rows}</table>`);
+
+        const total = cells
+            .map(c => parseFloat(c.raw))
+            .filter(n => !isNaN(n))
+            .reduce((a, b) => a + b, 0);
+        expect(total).toBe(5224);
+    });
+
+    it('keeps the underlying fraction for a percent cell', () => {
+        const value = JSON.stringify({ '1': 3, '3': 0.5 }).replace(/"/g, '&quot;');
+        const fmt = JSON.stringify({ '1': 3, '2': '0.00%', '3': 1 }).replace(/"/g, '&quot;');
+        const html = '<google-sheets-html-origin><table><tr>'
+            + `<td data-sheets-value="${value}" data-sheets-numberformat="${fmt}">50.00%</td>`
+            + '</tr></table>';
+
+        const [cell] = parseGoogleSheetsHtml(html);
+        expect(cell.raw).toBe('0.5');
+        expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('50.00%');
+    });
+
+    it('keeps the date serial for a type-3 date cell', () => {
+        const value = JSON.stringify({ '1': 3, '3': 45782 }).replace(/"/g, '&quot;');
+        const fmt = JSON.stringify({ '1': 5, '2': 'dddd', '3': 1 }).replace(/"/g, '&quot;');
+        const html = '<google-sheets-html-origin><table><tr>'
+            + `<td data-sheets-value="${value}" data-sheets-numberformat="${fmt}">Monday</td>`
+            + '</tr></table>';
+
+        const [cell] = parseGoogleSheetsHtml(html);
+        expect(cell.raw).toBe('45782');
+        expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('Monday');
+    });
+
+    it('leaves a declared string value alone even when it looks numeric', () => {
+        const value = JSON.stringify({ '1': 2, '2': '007' }).replace(/"/g, '&quot;');
+        const html = '<google-sheets-html-origin><table><tr>'
+            + `<td data-sheets-value="${value}">007</td>`
+            + '</tr></table>';
+
+        expect(parseGoogleSheetsHtml(html)[0].raw).toBe('007');
+    });
+});

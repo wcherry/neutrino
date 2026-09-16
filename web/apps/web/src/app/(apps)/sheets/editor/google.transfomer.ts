@@ -420,16 +420,27 @@ export function parseGoogleSheetsHtml(html: string): ClipData[] {
             let raw: string = td.textContent?.trim() ?? '';
 
             // Prefer the structured value when available.
-            // data-sheets-value: {"1": type, "2": string-value, "3": numeric-value}
-            //   type 1 = number (value in "3")
-            //   type 2 = string (value in "2")
+            // data-sheets-value: {"1": type, "2": string slot, "3": numeric slot}
+            //   type 2 = string (value in "2"); a number arrives as type 3, not 1.
+            //
+            // Read the *slot* rather than branching on every type code. Google has
+            // more codes than the two we knew about (a plain number is 3), and a
+            // cell we fail to recognise falls through to `td.textContent` — which is
+            // the DISPLAY text. For an unformatted number that is harmless ("100"
+            // parses back to 100), which is why this went unnoticed; for a currency
+            // or percent cell it stores "$100.00", and parseFloat("$100.00") is NaN,
+            // so SUM over the pasted range answers 0. The string type still wins
+            // where it is declared, so text that looks numeric stays text.
             if (valueAttr) {
                 try {
                     const v = JSON.parse(valueAttr);
-                    if (v['1'] === 1 && v['3'] != null) {
-                        // Number — preserve the raw serial so date formats can be applied.
+                    if (v['1'] === STRING_TYPE && v['2'] != null) {
+                        raw = String(v['2']);
+                    } else if (v['3'] != null) {
+                        // Number — preserve the underlying value so currency, percent
+                        // and date formats apply to something that can be summed.
                         raw = String(v['3']);
-                    } else if (v['1'] === 2 && v['2'] != null) {
+                    } else if (v['2'] != null) {
                         raw = String(v['2']);
                     }
                 } catch { /* ignore */ }
