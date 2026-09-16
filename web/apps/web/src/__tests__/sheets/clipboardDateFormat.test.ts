@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, mergeCellStyles, numberFromFormattedText } from '../../app/(apps)/sheets/editor/google.transfomer';
+import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, mergeCellStyles, numberFromFormattedText, preferUnderlyingValue } from '../../app/(apps)/sheets/editor/google.transfomer';
 import { formatCellValue } from '../../app/(apps)/sheets/editor/utils';
 
 // ── Compact-table JSON builders ───────────────────────────────────────────────
@@ -827,5 +827,57 @@ describe('numberFromFormattedText', () => {
     it('does not turn a mangled string into a number', () => {
         expect(numberFromFormattedText('100-200', plain)).toBeNull();
         expect(numberFromFormattedText('1.2.3', plain)).toBeNull();
+    });
+});
+
+// ── preferUnderlyingValue — compact-table value vs HTML display text ──────────
+
+/**
+ * The reported bug in its final form. Both Google formats were on the clipboard
+ * and each had half the answer: the compact table held the numbers (logged as
+ * `CELL: {raw: '100'}` … `{raw: '200'}`) and the HTML held the formatting and
+ * the structure. The merge kept the compact value only for formulas, so the
+ * display text won and the column could not be summed.
+ */
+describe('preferUnderlyingValue', () => {
+    const currency = { numberFormat: 'currency', customFormat: '"$"#,##0.00' } as never;
+
+    it('takes the compact number over the HTML display text', () => {
+        expect(preferUnderlyingValue('100', '$100.00', currency)).toBe('100');
+        expect(preferUnderlyingValue('824', '$824.00', currency)).toBe('824');
+    });
+
+    it('takes a date serial over its rendered day name', () => {
+        const dateStyle = { numberFormat: 'date', customFormat: 'dddd' } as never;
+        expect(preferUnderlyingValue('45782', 'Monday', dateStyle)).toBe('45782');
+    });
+
+    it('still prefers a formula, whose result is all the HTML has', () => {
+        expect(preferUnderlyingValue('=SUM(A1:A3)', '5224', currency)).toBe('=SUM(A1:A3)');
+    });
+
+    it('keeps the HTML text when the compact value cannot explain it', () => {
+        // What a desynced RLE reader looks like: a neighbour's value, which would
+        // silently write the wrong number into the cell.
+        expect(preferUnderlyingValue('800', '$100.00', currency)).toBe('$100.00');
+    });
+
+    it('keeps the HTML text when the compact table has nothing for the cell', () => {
+        expect(preferUnderlyingValue(undefined, '$100.00', currency)).toBe('$100.00');
+        expect(preferUnderlyingValue('', '$100.00', currency)).toBe('$100.00');
+    });
+
+    it('passes an unformatted value through unchanged', () => {
+        expect(preferUnderlyingValue('hello', 'hello', undefined)).toBe('hello');
+        expect(preferUnderlyingValue('100', '100', undefined)).toBe('100');
+    });
+
+    it('totals the reported column once the compact values win', () => {
+        const amounts = [100, 800, 450, 500, 600, 250, 824, 450, 200, 250, 250, 200, 150, 200];
+        const total = amounts
+            .map(a => preferUnderlyingValue(String(a), `$${a.toFixed(2)}`, currency))
+            .map(parseFloat)
+            .reduce((a, b) => a + b, 0);
+        expect(total).toBe(5224);
     });
 });

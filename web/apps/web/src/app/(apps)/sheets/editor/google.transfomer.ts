@@ -1,5 +1,5 @@
 import type { CellStyle } from './types';
-import { alphaToNum, numToAlpha, isDateOrTimeFormatStr } from './utils';
+import { alphaToNum, numToAlpha, isDateOrTimeFormatStr, formatCellValue } from './utils';
 
 /* # Google Sheets Clipboard Internal Format
 ## application/x-vnd.google-spreadsheet-compact-table+json
@@ -557,6 +557,37 @@ export function parseGoogleSheetsHtml(html: string): ClipData[] {
     });
 
     return cells;
+}
+
+/**
+ * Chooses what a pasted cell stores, given both Google clipboard formats.
+ *
+ * The two carry different things: the compact-table JSON has the cell's
+ * *underlying* value (100, or a date serial, or an "=..." source), while the
+ * HTML has its *display* text ("$100.00", "Monday"). Only the first is a value
+ * the grid can compute with, so the compact table wins wherever it can be
+ * trusted — storing the display text is what left a pasted currency column
+ * unsummable.
+ *
+ * It cannot simply always win: the compact-table RLE reader progressively
+ * desyncs across merged regions and starts handing back a neighbouring cell's
+ * value, which is why the HTML was made the authority for everything in the
+ * first place. So the underlying value is taken only when it *explains* the text
+ * the HTML says is on screen — formatting it must reproduce the display. A
+ * desynced reader fails that check and the HTML text stands, which keeps the
+ * merge protection without paying for it in every unmerged paste.
+ */
+export function preferUnderlyingValue(
+    compactRaw: string | undefined,
+    htmlRaw: string,
+    style: CellStyle | undefined,
+): string {
+    if (compactRaw == null || compactRaw === '') return htmlRaw;
+    // A formula exists only in the compact table — HTML carries its result.
+    if (compactRaw.startsWith('=')) return compactRaw;
+    if (compactRaw === htmlRaw) return compactRaw;
+    if (formatCellValue(compactRaw, style) === htmlRaw) return compactRaw;
+    return htmlRaw;
 }
 
 export function fixRealtiveFormulas(raw: string, currentRow: number, currentCol: number) {

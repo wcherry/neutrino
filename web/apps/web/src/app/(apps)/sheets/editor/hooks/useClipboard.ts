@@ -5,7 +5,7 @@ import type { CellProps, CellStyle, ClipboardCell, ClipboardCFRule, ClipboardDat
 import { getRangeCells, encodeFormula, decodeFormula } from '../utils';
 import { alphaToNum, numToAlpha } from '../utils';
 import { computeCell, propagateDeps, type SheetRef } from '../formula';
-import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, fixRealtiveFormulas, mergeCellStyles } from '../google.transfomer';
+import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, fixRealtiveFormulas, mergeCellStyles, preferUnderlyingValue } from '../google.transfomer';
 import { NEUTRINO_SHEET_SELECTION_MIME, buildSheetSelectionPayload } from '@neutrino/sheet-embed';
 
 export function useClipboard({
@@ -209,21 +209,26 @@ export function useClipboard({
                             // The compact-table RLE reader can progressively desync across
                             // merged regions, corrupting the coordinates, values and merge
                             // spans of cells to the right of a merge. The HTML clipboard is
-                            // DOM-parsed, so its structure (coordinates, spans, values,
-                            // styles) is reliable — make it the authority. We only borrow
-                            // FORMULAS from the compact-table, since HTML carries a cell's
-                            // computed value rather than its "=..." source, plus any number/
-                            // date format string HTML may have omitted (filled via merge).
+                            // DOM-parsed, so its STRUCTURE (coordinates, spans, styles) is
+                            // reliable — it stays the authority for all of that.
+                            //
+                            // Values are the other way round. HTML carries only what is on
+                            // screen, so a currency cell reads "$100.00" and a date reads
+                            // "Monday"; the compact table carries the number, the serial and
+                            // the "=..." source. preferUnderlyingValue takes the compact
+                            // value where it can be shown to explain the HTML's display text,
+                            // which keeps the desync protection without storing display text
+                            // as if it were a value.
                             const compactByPos = new Map(gsCells.map(c => [`${c.row},${c.col}`, c]));
                             const before = gsCells.length;
                             gsCells = htmlCells.map(hc => {
                                 const cc = compactByPos.get(`${hc.row},${hc.col}`);
-                                const raw = cc?.raw && cc.raw.startsWith('=') ? cc.raw : hc.raw;
                                 const merged = mergeCellStyles(cc?.cellStyle, hc.cellStyle);
+                                const cellStyle = Object.keys(merged).length > 0 ? (merged as CellStyle) : undefined;
                                 return {
                                     ...hc,
-                                    raw,
-                                    cellStyle: Object.keys(merged).length > 0 ? (merged as CellStyle) : undefined,
+                                    raw: preferUnderlyingValue(cc?.raw, hc.raw, cellStyle),
+                                    cellStyle,
                                 };
                             });
                             console.log('[paste] gsCells from HTML base:', gsCells.length, '(compact was', before + ')');
