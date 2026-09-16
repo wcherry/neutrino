@@ -1,37 +1,32 @@
 /**
- * Activating a cell must not revert its value.
+ * A pasted value must survive the next keypress.
  *
- * Reported as "sometimes when pasting, pressing the arrow key causes the result
- * under the cursor to disappear".
+ * Reported first as "sometimes when pasting, pressing the arrow key causes the
+ * result under the cursor to disappear", then as "working for arrow, but not
+ * Enter". Two separate defects in `activateCell`, one per cell involved:
  *
- * `activateCell` reads `existing` from `dataRef.current` at the top, then does
- * the real work inside a `startTransition`. A transition is low priority and
- * interruptible, so a paste — a discrete event — can land in between. The
- * transition's updater runs against `prevData`, which by then contains the
- * pasted values, but it was writing `raw: existing.raw` from the snapshot taken
- * *before* the paste. The pasted value was therefore reverted, and because the
- * pending transition is flushed by the next interaction, the content vanished
- * exactly when the user pressed an arrow key.
+ *   - the cell being ACTIVATED was reverted, because the transition wrote back
+ *     `raw` from an `existing` snapshot read before the paste landed;
+ *   - the cell being LEFT was overwritten, because navigating away committed the
+ *     formula bar's value — itself a snapshot taken at activation, which an
+ *     external write never refreshes.
  *
- * The race is reproduced here by leaving `dataRef` on the pre-paste map while
- * `data` state carries the pasted values — which is precisely the window the
- * useLayoutEffect in SheetEditor has not yet closed.
+ * Arrow and Enter both route through `activateCell`, so neither key was ever
+ * really the variable; which of the two cells was hit depended on where the
+ * cursor was when the paste landed.
  */
 
 import { describe, it, expect } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useRef, useState } from 'react';
+import { useRef, useState, useLayoutEffect } from 'react';
 import { useCellEditing } from '../../app/(apps)/sheets/editor/hooks/useCellEditing';
 import type { CellProps } from '../../app/(apps)/sheets/editor/types';
 
-function cell(id: string, raw: string): CellProps {
-    return { id, raw, value: raw, edit: false } as CellProps;
+function cell(id: string, raw: string, edit = false): CellProps {
+    return { id, raw, value: raw, edit } as CellProps;
 }
 
-/**
- * Drives the hook the way SheetEditor does, but *without* the layout effect that
- * syncs dataRef — the test controls that by hand so the stale window is explicit.
- */
+/** Drives the hook the way SheetEditor does, dataRef sync included. */
 function useHarness(initial: Map<string, CellProps>) {
     const [data, setData] = useState(initial);
     const [currentCell, setCurrentCell] = useState<CellProps | undefined>();
@@ -40,6 +35,9 @@ function useHarness(initial: Map<string, CellProps>) {
     const dataRef = useRef(initial);
     const dirtyRef = useRef(false);
     const snapshotBeforeEditRef = useRef<Map<string, CellProps> | null>(null);
+
+    // SheetEditor.tsx:267 — dataRef follows committed state synchronously.
+    useLayoutEffect(() => { dataRef.current = data; }, [data]);
 
     const editing = useCellEditing({
         data,
@@ -59,28 +57,22 @@ function useHarness(initial: Map<string, CellProps>) {
     return { data, setData, dataRef, currentCell, editing };
 }
 
-describe('activateCell — a pasted value survives activation', () => {
+describe('activateCell — the cell being activated', () => {
     it('does not revert a value written after activateCell read dataRef', async () => {
-        const initial = new Map<string, CellProps>([
-            ['A1', cell('A1', '')],
-            ['A2', cell('A2', '')],
-        ]);
-
+        const initial = new Map([['A1', cell('A1', '')], ['A2', cell('A2', '')]]);
         const { result } = renderHook(() => useHarness(initial));
 
-        // A paste lands in React state. dataRef is deliberately left on the old
-        // map: that is the window between the paste committing and SheetEditor's
-        // useLayoutEffect running, and the window a pending transition can fall in.
         await act(async () => {
-            result.current.setData(new Map<string, CellProps>([
+            result.current.setData(new Map([
                 ['A1', cell('A1', '100')],
                 ['A2', cell('A2', '800')],
             ]));
         });
 
-        expect(result.current.data.get('A1')?.raw).toBe('100');
+        // The stale window: a pending low-priority transition still holds the
+        // pre-paste snapshot while committed state already has the pasted values.
+        result.current.dataRef.current = initial;
 
-        // Arrow onto A1 — the activation whose transition used to carry the stale raw.
         await act(async () => {
             result.current.editing.activateCellRef.current('A1');
         });
@@ -90,7 +82,7 @@ describe('activateCell — a pasted value survives activation', () => {
     });
 
     it('still marks the activated cell as being edited', async () => {
-        const initial = new Map<string, CellProps>([['A1', cell('A1', '42')]]);
+        const initial = new Map([['A1', cell('A1', '42')]]);
         const { result } = renderHook(() => useHarness(initial));
 
         await act(async () => {
@@ -102,8 +94,7 @@ describe('activateCell — a pasted value survives activation', () => {
     });
 
     it('activates a cell that is not in the map at all', async () => {
-        const initial = new Map<string, CellProps>();
-        const { result } = renderHook(() => useHarness(initial));
+        const { result } = renderHook(() => useHarness(new Map()));
 
         await act(async () => {
             result.current.editing.activateCellRef.current('C3');
@@ -111,5 +102,74 @@ describe('activateCell — a pasted value survives activation', () => {
 
         expect(result.current.data.get('C3')?.edit).toBe(true);
         expect(result.current.data.get('C3')?.raw).toBe('');
+    });
+});
+
+describe('activateCell — the cell being left', () => {
+    it('does not write a stale formula-bar value over a cell the paste rewrote', async () => {
+        const initial = new Map([['A1', cell('A1', '')]]);
+        const { result } = renderHook(() => useHarness(initial));
+
+        // Select A1. Activation snapshots its raw ('') into currentCell, which is
+        // what the formula bar renders, and marks the cell as being edited.
+        await act(async () => {
+            result.current.editing.activateCellRef.current('A1');
+        });
+        expect(result.current.currentCell?.raw).toBe('');
+
+        // A paste rewrites A1 under the cursor. currentCell is never refreshed,
+        // and the activation leaves edit: true on the cell.
+        await act(async () => {
+            const pasted = new Map(result.current.data);
+            pasted.set('A1', cell('A1', '100', true));
+            result.current.setData(pasted);
+        });
+
+        // Enter (or an arrow) — navigate to A2, committing A1 on the way out.
+        await act(async () => {
+            result.current.editing.activateCellRef.current('A2');
+        });
+
+        expect(result.current.data.get('A1')?.raw).toBe('100');
+        expect(result.current.data.get('A1')?.value).toBe('100');
+    });
+
+    it('still commits what the user actually typed', async () => {
+        const initial = new Map([['A1', cell('A1', '')]]);
+        const { result } = renderHook(() => useHarness(initial));
+
+        await act(async () => {
+            result.current.editing.activateCellRef.current('A1');
+        });
+
+        await act(async () => {
+            result.current.editing.beginTypingInFormulaBar('42');
+        });
+
+        await act(async () => {
+            result.current.editing.activateCellRef.current('A2');
+        });
+
+        expect(result.current.data.get('A1')?.raw).toBe('42');
+    });
+
+    it('commits a typed formula and its computed value', async () => {
+        const initial = new Map([['A1', cell('A1', '2')], ['A2', cell('A2', '3')]]);
+        const { result } = renderHook(() => useHarness(initial));
+
+        await act(async () => {
+            result.current.editing.activateCellRef.current('A3');
+        });
+
+        await act(async () => {
+            result.current.editing.beginTypingInFormulaBar('=SUM(A1:A2)');
+        });
+
+        await act(async () => {
+            result.current.editing.activateCellRef.current('A4');
+        });
+
+        expect(result.current.data.get('A3')?.raw).toBe('=SUM(A1:A2)');
+        expect(result.current.data.get('A3')?.value).toBe('5');
     });
 });
