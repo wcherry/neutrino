@@ -297,8 +297,17 @@ export function useCellEditing({
                     }
                 }
 
+                // Activation marks the cell as being edited and changes nothing else.
+                // `existing` was read from dataRef.current at the top of activateCell,
+                // so it is by construction older than `result` (which is built from
+                // prevData, the freshest state). Forcing `raw: existing.raw` here could
+                // therefore only ever revert a value — and did: this transition is low
+                // priority, so a paste that landed after activateCell was called but
+                // before the transition ran was undone the moment the user pressed an
+                // arrow key and flushed it, wiping the cell under the cursor.
+                // `?? existing` already covers a cell that is not in the map at all.
                 const latestForId = result.get(id) ?? existing;
-                result.set(id, { ...latestForId, raw: existing.raw, edit: true });
+                result.set(id, { ...latestForId, edit: true });
                 return result;
             });
         });
