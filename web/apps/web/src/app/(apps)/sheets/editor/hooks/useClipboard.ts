@@ -7,6 +7,7 @@ import { alphaToNum, numToAlpha } from '../utils';
 import { computeCell, propagateDeps, type SheetRef } from '../formula';
 import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, fixRealtiveFormulas, mergeCellStyles, preferUnderlyingValue } from '../google.transfomer';
 import { NEUTRINO_SHEET_SELECTION_MIME, buildSheetSelectionPayload } from '@neutrino/sheet-embed';
+import { clipboardSource, NEUTRINO_SHEET_MIME } from './clipboardSource';
 
 export function useClipboard({
     dataRef,
@@ -117,7 +118,7 @@ export function useClipboard({
         }
         transfer.setData('text/plain', grid.map(row => row.join('\t')).join('\n'));
         // Custom format carries the full rich payload (relative formula encoding + styles).
-        transfer.setData('application/x-neutrino-sheet', JSON.stringify({ isCut, cells: entries, cfRules }));
+        transfer.setData(NEUTRINO_SHEET_MIME, JSON.stringify({ isCut, cells: entries, cfRules }));
 
         // When the live-embed feature is enabled, also write the selection payload
         // so that pasting into Docs or Slides offers a "Paste as live view" option.
@@ -167,10 +168,27 @@ export function useClipboard({
         const allSheets = getAllSheets?.();
 
         // Prefer the rich custom format; fall back to in-memory ref, then plain text.
+        // The clipboard event is the only thing that knows what is on the system
+        // clipboard *now*. The in-memory clipboard survives until a cut, so
+        // consulting it first made every external paste replay the last thing
+        // copied inside this sheet — the Google payload was never even read.
         if (transfer) {
-            const rich = transfer.getData('application/x-neutrino-sheet');
-            if (rich) {
-                try { clipboardRef.current = JSON.parse(rich) as ClipboardData; } catch { /* ignore */ }
+            switch (clipboardSource(transfer.types)) {
+                case 'internal': {
+                    const rich = transfer.getData(NEUTRINO_SHEET_MIME);
+                    try { clipboardRef.current = JSON.parse(rich) as ClipboardData; }
+                    catch { clipboardRef.current = null; }
+                    break;
+                }
+                case 'external':
+                    // Somebody else's content is on the clipboard; ours is stale.
+                    clipboardRef.current = null;
+                    cutSourceRef.current = new Set();
+                    setCutCells(new Set());
+                    break;
+                case 'empty':
+                    // Nothing readable on the event — keep what is in memory.
+                    break;
             }
         }
 
@@ -494,10 +512,14 @@ export function useClipboard({
                 handleCopy(false, createMemoryTransfer());
             } else if (key === 'x') {
                 handleCopy(true, createMemoryTransfer());
-            } else if (key === 'v' && clipboardRef.current) {
-                e.preventDefault();
-                handlePaste();
             }
+            // Cmd/Ctrl+V is deliberately not handled here. Calling preventDefault on
+            // the keydown cancels the native `paste` event, and that event is the
+            // only place the system clipboard can be read — so intercepting the key
+            // meant an external paste never saw the clipboard at all and fell back
+            // to the in-memory copy. `onPaste` below handles every paste, internal
+            // ones included: a copy writes the rich payload to the real clipboard,
+            // so it comes back on the event like any other format.
         };
 
         const onCopy = (e: ClipboardEvent) => {
