@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, mergeCellStyles } from '../../app/(apps)/sheets/editor/google.transfomer';
+import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, mergeCellStyles, numberFromFormattedText } from '../../app/(apps)/sheets/editor/google.transfomer';
 import { formatCellValue } from '../../app/(apps)/sheets/editor/utils';
 
 // ── Compact-table JSON builders ───────────────────────────────────────────────
@@ -736,6 +736,34 @@ describe('parseGoogleSheetsHtml — currency and other formatted numbers', () =>
         expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('Monday');
     });
 
+    it('recovers the number when the td carries a format but no data-sheets-value', () => {
+        // The shape a real Google currency column arrives in: number format and an
+        // inline background, no value attribute at all. Reported from the console as
+        //   [paste] writing S3 ← raw: $100.00 … bg: #d9d9d9 fmt: "$"#,##0.00
+        const fmt = JSON.stringify({ '1': 4, '2': CURRENCY_FMT, '3': 1 }).replace(/"/g, '&quot;');
+        const html = '<google-sheets-html-origin><table><tr>'
+            + `<td data-sheets-numberformat="${fmt}" style="background-color:#d9d9d9;">$100.00</td>`
+            + '</tr></table>';
+
+        const [cell] = parseGoogleSheetsHtml(html);
+        expect(cell.raw).toBe('100');
+        expect(cell.cellStyle?.backgroundColor).toBe('#d9d9d9');
+        expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('$100.00');
+    });
+
+    it('totals the reported column when no cell has a data-sheets-value', () => {
+        const amounts = [100, 800, 450, 500, 600, 250, 824, 450, 200, 250, 250, 200, 150, 200];
+        const fmt = JSON.stringify({ '1': 4, '2': CURRENCY_FMT, '3': 1 }).replace(/"/g, '&quot;');
+        const rows = amounts.map(a =>
+            `<tr><td data-sheets-numberformat="${fmt}" style="background-color:#d9d9d9;">$${a.toFixed(2)}</td></tr>`
+        ).join('');
+
+        const cells = parseGoogleSheetsHtml(`<google-sheets-html-origin><table>${rows}</table>`);
+        expect(cells).toHaveLength(14);
+        const total = cells.map(c => parseFloat(c.raw)).filter(n => !isNaN(n)).reduce((a, b) => a + b, 0);
+        expect(total).toBe(5224);
+    });
+
     it('leaves a declared string value alone even when it looks numeric', () => {
         const value = JSON.stringify({ '1': 2, '2': '007' }).replace(/"/g, '&quot;');
         const html = '<google-sheets-html-origin><table><tr>'
@@ -743,5 +771,61 @@ describe('parseGoogleSheetsHtml — currency and other formatted numbers', () =>
             + '</tr></table>';
 
         expect(parseGoogleSheetsHtml(html)[0].raw).toBe('007');
+    });
+});
+
+// ── numberFromFormattedText — recovering a value from display text ────────────
+
+describe('numberFromFormattedText', () => {
+    const currency = { numberFormat: 'currency' as const, customFormat: '"$"#,##0.00' };
+    const percent  = { numberFormat: 'percent'  as const, customFormat: '0.00%' };
+    const plain    = { numberFormat: 'number'   as const, customFormat: '#,##0.00' };
+
+    it('strips the currency symbol', () => {
+        expect(numberFromFormattedText('$100.00', currency)).toBe('100');
+        expect(numberFromFormattedText('$824.00', currency)).toBe('824');
+    });
+
+    it('strips thousands separators', () => {
+        expect(numberFromFormattedText('$1,234.56', currency)).toBe('1234.56');
+        expect(numberFromFormattedText('1,000,000.00', plain)).toBe('1000000');
+    });
+
+    it('reads a leading-minus negative', () => {
+        expect(numberFromFormattedText('-$50.00', currency)).toBe('-50');
+    });
+
+    it('reads accounting parentheses as negative, either side of the symbol', () => {
+        expect(numberFromFormattedText('($50.00)', currency)).toBe('-50');
+        expect(numberFromFormattedText('$(50.00)', currency)).toBe('-50');
+    });
+
+    it('converts a percent display back to its underlying fraction', () => {
+        expect(numberFromFormattedText('50.00%', percent)).toBe('0.5');
+        expect(numberFromFormattedText('7.50%', percent)).toBe('0.075');
+    });
+
+    it('leaves a non-numeric string alone', () => {
+        expect(numberFromFormattedText('Total', currency)).toBeNull();
+        expect(numberFromFormattedText('N/A', currency)).toBeNull();
+        expect(numberFromFormattedText('—', currency)).toBeNull();
+        expect(numberFromFormattedText('', currency)).toBeNull();
+    });
+
+    it('refuses a date, whose display text carries no recoverable serial', () => {
+        expect(numberFromFormattedText('Monday', { customFormat: 'dddd' })).toBeNull();
+        expect(numberFromFormattedText('Nov 2025', { customFormat: 'mmm" "yyyy' })).toBeNull();
+    });
+
+    it('refuses a cell that makes no claim to be a number', () => {
+        // No number format: a string cell's text is its value, and an unformatted
+        // number already parses on its own.
+        expect(numberFromFormattedText('$100.00', undefined)).toBeNull();
+        expect(numberFromFormattedText('$100.00', { backgroundColor: '#d9d9d9' })).toBeNull();
+    });
+
+    it('does not turn a mangled string into a number', () => {
+        expect(numberFromFormattedText('100-200', plain)).toBeNull();
+        expect(numberFromFormattedText('1.2.3', plain)).toBeNull();
     });
 });
