@@ -41,6 +41,9 @@ export function useClipboard({
 }) {
     const clipboardRef = useRef<ClipboardData | null>(null);
     const cutSourceRef = useRef<Set<string>>(new Set<string>());
+    // Set by the native paste handler so the Cmd/Ctrl+V keydown fallback knows a
+    // real clipboard event arrived and it must not paste from memory over it.
+    const pasteEventSeenRef = useRef(false);
     const [cutCells, setCutCells] = useState<Set<string>>(new Set<string>());
 
     const handleCopy = useCallback((isCut: boolean, transfer: DataTransfer) => {
@@ -512,14 +515,24 @@ export function useClipboard({
                 handleCopy(false, createMemoryTransfer());
             } else if (key === 'x') {
                 handleCopy(true, createMemoryTransfer());
+            } else if (key === 'v') {
+                // Never preventDefault here: that cancels the native `paste` event,
+                // which is the only place the system clipboard can be read, and is
+                // what made every external paste replay the last in-app copy.
+                //
+                // But the keypress cannot simply be ignored either — a synthetic
+                // Meta+V carries no clipboard and fires no paste event at all
+                // (Playwright's keyboard does exactly this), and dropping the
+                // fallback took internal copy/paste with it. So give the event a
+                // turn of the loop to arrive, and only paste from memory if it
+                // never does. A real paste sets the flag first and wins.
+                pasteEventSeenRef.current = false;
+                setTimeout(() => {
+                    if (pasteEventSeenRef.current) return;
+                    if (!clipboardRef.current) return;
+                    handlePaste();
+                }, 0);
             }
-            // Cmd/Ctrl+V is deliberately not handled here. Calling preventDefault on
-            // the keydown cancels the native `paste` event, and that event is the
-            // only place the system clipboard can be read — so intercepting the key
-            // meant an external paste never saw the clipboard at all and fell back
-            // to the in-memory copy. `onPaste` below handles every paste, internal
-            // ones included: a copy writes the rich payload to the real clipboard,
-            // so it comes back on the event like any other format.
         };
 
         const onCopy = (e: ClipboardEvent) => {
@@ -536,6 +549,10 @@ export function useClipboard({
             handleCopy(true, e.clipboardData);
         };
         const onPaste = (e: ClipboardEvent) => {
+            // Recorded before any early return: the keydown fallback must stand down
+            // whenever a real paste event arrived, including one this handler declines
+            // to act on (the formula bar handles its own).
+            pasteEventSeenRef.current = true;
             if (shouldLetFormulaInputHandleShortcut()) return;
             if (!selectionAnchorRef.current) return;
             e.preventDefault();
