@@ -5,7 +5,15 @@ import { ChevronsLeftRight } from 'lucide-react';
 import type { Tool, Adjustments, CropRect, MarkupStroke, PhotoFilter, CloneShape, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection } from './types';
 import type { DeblurKernel } from './types';
 import { FILTER_PRESET_CSS, DEFAULT_CLONE_SETTINGS, DEFAULT_TEXT_SETTINGS, DEFAULT_STROKE_SETTINGS } from './types';
-import { directionalBlur, unsharpFrom, deblurAmountFromSlider, motionTaps } from './deblur';
+import {
+  directionalBlur,
+  isotropicBlur,
+  unsharpFrom,
+  deblurAmountFromSlider,
+  sharpnessAmountFromSlider,
+  motionTaps,
+  SHARPNESS_BLUR_SIZE_PX,
+} from './sharpening';
 import styles from './page.module.css';
 
 export interface PhotoCanvasHandle {
@@ -159,60 +167,114 @@ function renderBase(
     drawSide(ctx, true, 0, cw);
   }
 
-  applyDeblurPass(ctx, cw, ch, adjustments, deblurKernel, deblurCache, filterStr, comparisonPos);
+  applySharpeningPasses(ctx, cw, ch, adjustments, deblurKernel, deblurCache, filterStr, comparisonPos);
 }
 
 /**
- * The directional blur the Deblur slider subtracts, kept against the inputs that produced it.
+ * One stage's blur, kept against the inputs that produced it.
  *
- * Building it is O(pixels x taps) and would otherwise re-run on every frame of a slider drag. It
- * depends only on the base image and the kernel — never on the slider — so caching it against
- * everything that changes the base image makes dragging cost one cheap pass instead.
+ * Building a blur is O(pixels x taps) and would otherwise re-run on every frame of a slider drag.
+ * Neither blur depends on its own slider — only on the image beneath it — so caching against
+ * everything *else* that changes those pixels makes a drag cost one cheap {@link unsharpFrom}.
  */
-export interface DeblurCache {
+export interface BlurStageCache {
   key: string;
   original: Uint8ClampedArray;
   blurred: Uint8ClampedArray;
 }
 
+/** The cache for both sharpening stages. */
+export interface DeblurCache {
+  motion: BlurStageCache | null;
+  soft: BlurStageCache | null;
+}
+
+/** Reuse the cached blur when its inputs are unchanged, otherwise build and store a new one. */
+function stageBlur(
+  slot: 'motion' | 'soft',
+  cache: { current: DeblurCache | null } | undefined,
+  key: string,
+  image: PixelBufferLike,
+  build: () => Uint8ClampedArray,
+): BlurStageCache {
+  const held = cache?.current?.[slot];
+  if (held && held.key === key && held.original.length === image.data.length) return held;
+
+  const entry: BlurStageCache = {
+    key,
+    original: new Uint8ClampedArray(image.data),
+    blurred: build(),
+  };
+  if (cache) {
+    cache.current = { motion: null, soft: null, ...(cache.current ?? {}), [slot]: entry };
+  }
+  return entry;
+}
+
+interface PixelBufferLike {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
+
 /**
- * Sharpen the rendered base along the estimated motion axis.
+ * Apply both sharpening controls to the rendered base, in order.
  *
- * CSS filters cannot express a directional sharpen, so this is a real convolution over the pixels
- * after the filtered draw. It is skipped entirely at zero strength or without a kernel, which is
- * the normal case for a photo nobody has run the blur analysis on.
+ * CSS filters have no sharpen primitive — which is why `sharpness` sat in the type and on screen
+ * for so long without being applied to anything — so both are real convolutions over the pixels
+ * after the filtered draw.
  *
- * Skipped during a before/after comparison too: half the canvas is deliberately unfiltered there,
- * and one cached blur cannot describe two different images.
+ * Deblur runs first and Sharpness second, because Deblur is a correction of what the camera did
+ * and Sharpness is a taste applied to the corrected picture. Running them the other way round
+ * would have the motion correction amplify halos that Sharpness had just introduced.
+ *
+ * Skipped during a before/after comparison: half the canvas is deliberately unfiltered there, and
+ * one cached blur cannot describe two different images.
  */
-function applyDeblurPass(
+function applySharpeningPasses(
   ctx: CanvasRenderingContext2D,
   cw: number,
   ch: number,
   adjustments: Adjustments,
   deblurKernel: DeblurKernel | null,
-  deblurCache: { current: DeblurCache | null } | undefined,
+  cache: { current: DeblurCache | null } | undefined,
   filterStr: string,
   comparisonPos?: number,
 ) {
   if (comparisonPos !== undefined) return;
-  if (!deblurKernel || cw === 0 || ch === 0) return;
-  const amount = deblurAmountFromSlider(adjustments.deblur);
-  if (amount <= 0) return;
-  if (motionTaps(deblurKernel.angleDegrees, deblurKernel.lengthPx).length < 2) return;
+  if (cw === 0 || ch === 0) return;
+
+  const deblurAmount = deblurAmountFromSlider(adjustments.deblur);
+  const hasKernel =
+    deblurKernel !== null &&
+    motionTaps(deblurKernel.angleDegrees, deblurKernel.lengthPx).length >= 2;
+  const wantsDeblur = hasKernel && deblurAmount > 0;
+
+  const sharpnessAmount = sharpnessAmountFromSlider(adjustments.sharpness);
+  const wantsSharpness = sharpnessAmount !== 0;
+
+  if (!wantsDeblur && !wantsSharpness) return;
 
   const image = ctx.getImageData(0, 0, cw, ch);
-  // Everything that changes the pixels this pass reads, except the strength itself.
-  const key = [cw, ch, filterStr, deblurKernel.angleDegrees, deblurKernel.lengthPx].join('|');
+  // Everything that changes the pixels these passes read, except the strengths themselves.
+  const baseKey = [cw, ch, filterStr].join('|');
 
-  let cache = deblurCache?.current;
-  if (!cache || cache.key !== key || cache.original.length !== image.data.length) {
-    const original = new Uint8ClampedArray(image.data);
-    cache = { key, original, blurred: directionalBlur(image, deblurKernel) };
-    if (deblurCache) deblurCache.current = cache;
+  if (wantsDeblur && deblurKernel) {
+    const key = `${baseKey}|motion|${deblurKernel.angleDegrees}|${deblurKernel.lengthPx}`;
+    const stage = stageBlur('motion', cache, key, image, () => directionalBlur(image, deblurKernel));
+    unsharpFrom(image.data, stage.original, stage.blurred, deblurAmount);
   }
 
-  unsharpFrom(image.data, cache.original, cache.blurred, amount);
+  if (wantsSharpness) {
+    // The deblur strength is part of this key: Sharpness works on whatever Deblur left behind, so
+    // moving the Deblur slider invalidates the blur this stage cached.
+    const key = `${baseKey}|soft|${wantsDeblur ? adjustments.deblur : 0}|${wantsDeblur ? deblurKernel?.angleDegrees : 0}|${wantsDeblur ? deblurKernel?.lengthPx : 0}`;
+    const stage = stageBlur('soft', cache, key, image, () =>
+      isotropicBlur(image, SHARPNESS_BLUR_SIZE_PX),
+    );
+    unsharpFrom(image.data, stage.original, stage.blurred, sharpnessAmount);
+  }
+
   ctx.putImageData(image, 0, 0);
 }
 

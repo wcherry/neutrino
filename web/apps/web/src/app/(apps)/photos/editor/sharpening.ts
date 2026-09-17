@@ -1,5 +1,9 @@
 /**
- * Directional sharpening for motion blur.
+ * Sharpening, by subtracting a blur from the image.
+ *
+ * Both sharpening controls in the editor are the same operation — an unsharp mask — and differ
+ * only in the blur they subtract. Sharpness subtracts an isotropic blur and crisps everything;
+ * Deblur subtracts the estimated *motion* kernel and crisps along one axis only.
  *
  * An ordinary sharpen raises local contrast in every direction at once, including the direction
  * the image was already smeared in, so on camera shake it amplifies the smear along with the
@@ -102,8 +106,12 @@ export function directionalBlur(image: PixelBuffer, kernel: DeblurKernel): Uint8
  * Write `original + amount × (original − blurred)` into `dest`.
  *
  * Cheap enough to re-run on every frame of a slider drag, which is the point of keeping it apart
- * from {@link directionalBlur}. `Uint8ClampedArray` does the clamping, so an overshoot on a strong
- * correction saturates rather than wrapping around into the opposite tone.
+ * from the blur. `Uint8ClampedArray` does the clamping, so an overshoot on a strong correction
+ * saturates rather than wrapping around into the opposite tone.
+ *
+ * A **negative** amount blends towards the blur instead of away from it, which is what makes one
+ * primitive serve both halves of a −100…+100 Sharpness slider: at −1 the result is the blurred
+ * image exactly.
  */
 export function unsharpFrom(
   dest: Uint8ClampedArray,
@@ -111,7 +119,7 @@ export function unsharpFrom(
   blurred: Uint8ClampedArray,
   amount: number,
 ): void {
-  if (!Number.isFinite(amount) || amount <= 0) {
+  if (!Number.isFinite(amount) || amount === 0) {
     if (dest !== original) dest.set(original);
     return;
   }
@@ -168,4 +176,53 @@ export function scaleKernel(kernel: DeblurKernel, analysedWidth: number, targetW
     angleDegrees: kernel.angleDegrees,
     lengthPx: kernel.lengthPx * (Number.isFinite(ratio) && ratio > 0 ? ratio : 1),
   };
+}
+
+// ── Isotropic sharpening (the Sharpness slider) ──────────────────────────────
+
+/**
+ * Box-blur `image` in both axes. Returns a new buffer; the input is untouched.
+ *
+ * A box blur is separable, and a directional blur along 0° followed by one along 90° *is* that
+ * separation — so this reuses {@link directionalBlur} twice rather than carrying a second
+ * convolution that could disagree with it about edges or rounding.
+ */
+export function isotropicBlur(image: PixelBuffer, sizePx: number): Uint8ClampedArray {
+  const horizontal = directionalBlur(image, { angleDegrees: 0, lengthPx: sizePx });
+  return directionalBlur({ ...image, data: horizontal }, { angleDegrees: 90, lengthPx: sizePx });
+}
+
+/**
+ * The neighbourhood Sharpness works against, in pixels.
+ *
+ * Deliberately small: a wide radius produces the halo that reads as "oversharpened" long before it
+ * produces more apparent detail. Three pixels is one step out in each direction.
+ */
+export const SHARPNESS_BLUR_SIZE_PX = 3;
+
+/**
+ * Convert the Sharpness slider's −100…+100 into the unsharp multiplier.
+ *
+ * The two halves are not symmetric because they cannot be: softening is bounded — at −1 the
+ * result is exactly the blurred image and there is nowhere further to go — while sharpening past
+ * 1 keeps adding contrast. +1.5 is about where the halo starts to cost more than the detail
+ * gained.
+ */
+export function sharpnessAmountFromSlider(slider: number): number {
+  if (!Number.isFinite(slider)) return 0;
+  const v = Math.min(100, Math.max(-100, slider));
+  return v >= 0 ? (v / 100) * 1.5 : v / 100;
+}
+
+/**
+ * Sharpen (or, for a negative amount, soften) `image` in place.
+ *
+ * The one-shot path. An interactive slider should cache {@link isotropicBlur} and call
+ * {@link unsharpFrom} per frame instead, since only `amount` changes while dragging.
+ */
+export function applySharpness(image: PixelBuffer, amount: number): void {
+  if (!Number.isFinite(amount) || amount === 0) return;
+  const original = new Uint8ClampedArray(image.data);
+  const blurred = isotropicBlur(image, SHARPNESS_BLUR_SIZE_PX);
+  unsharpFrom(image.data, original, blurred, amount);
 }

@@ -18,7 +18,7 @@ import { AdjustmentsPanel } from './AdjustmentsPanel';
 import { PhotoCanvas, type PhotoCanvasHandle } from './PhotoCanvas';
 import type { Tool, Adjustments, CropRect, MarkupStroke, PhotoFilter, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection, DeblurKernel } from './types';
 import { DEFAULT_ADJUSTMENTS, DEFAULT_CLONE_SETTINGS, DEFAULT_TEXT_SETTINGS, DEFAULT_STROKE_SETTINGS } from './types';
-import { scaleKernel } from './deblur';
+import { scaleKernel } from './sharpening';
 import styles from './page.module.css';
 
 // ── AI image prep ────────────────────────────────────────────────────────────
