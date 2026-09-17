@@ -135,12 +135,18 @@ impl PhotosAIService {
         output_type: &str,
     ) -> Result<String, ApiError> {
         let prompt = match output_type {
-            "table" => "Convert the content of this screenshot into a Markdown table. \
-                Output only the Markdown table, nothing else.",
-            "document" => "Convert the content of this screenshot into a clean Markdown document. \
-                Preserve headings, lists, and paragraphs. Output only the Markdown, nothing else.",
-            "diagram" => "Describe the structure or diagram in this screenshot as a Mermaid diagram. \
-                Output only the Mermaid code block (```mermaid ... ```), nothing else.",
+            "table" => {
+                "Convert the content of this screenshot into a Markdown table. \
+                Output only the Markdown table, nothing else."
+            }
+            "document" => {
+                "Convert the content of this screenshot into a clean Markdown document. \
+                Preserve headings, lists, and paragraphs. Output only the Markdown, nothing else."
+            }
+            "diagram" => {
+                "Describe the structure or diagram in this screenshot as a Mermaid diagram. \
+                Output only the Mermaid code block (```mermaid ... ```), nothing else."
+            }
             _ => return Err(ApiError::bad_request("Invalid output_type")),
         };
         self.ask(credentials, image_base64, media_type, prompt, 4096)
@@ -256,8 +262,14 @@ mod tests {
 
     #[test]
     fn a_severity_outside_the_scale_is_brought_back_onto_it() {
-        assert_eq!(sanitize_blur_analysis(analysis("motion", 5.0, 0.0, 8.0)).severity, 1.0);
-        assert_eq!(sanitize_blur_analysis(analysis("motion", -2.0, 0.0, 8.0)).severity, 0.0);
+        assert_eq!(
+            sanitize_blur_analysis(analysis("motion", 5.0, 0.0, 8.0)).severity,
+            1.0
+        );
+        assert_eq!(
+            sanitize_blur_analysis(analysis("motion", -2.0, 0.0, 8.0)).severity,
+            0.0
+        );
     }
 
     /// A kernel as long as the image is not a correction, it is a smear of its own.
@@ -281,14 +293,26 @@ mod tests {
     #[test]
     fn an_angle_folds_into_a_half_turn() {
         // 200° and 20° describe the same smear; so do -10° and 170°.
-        assert_eq!(sanitize_blur_analysis(analysis("motion", 0.5, 200.0, 8.0)).angle_degrees, 20.0);
-        assert_eq!(sanitize_blur_analysis(analysis("motion", 0.5, -10.0, 8.0)).angle_degrees, 170.0);
-        assert_eq!(sanitize_blur_analysis(analysis("motion", 0.5, 540.0, 8.0)).angle_degrees, 0.0);
+        assert_eq!(
+            sanitize_blur_analysis(analysis("motion", 0.5, 200.0, 8.0)).angle_degrees,
+            20.0
+        );
+        assert_eq!(
+            sanitize_blur_analysis(analysis("motion", 0.5, -10.0, 8.0)).angle_degrees,
+            170.0
+        );
+        assert_eq!(
+            sanitize_blur_analysis(analysis("motion", 0.5, 540.0, 8.0)).angle_degrees,
+            0.0
+        );
     }
 
     #[test]
     fn an_angle_already_in_range_is_left_alone() {
-        assert_eq!(sanitize_blur_analysis(analysis("motion", 0.5, 17.0, 8.0)).angle_degrees, 17.0);
+        assert_eq!(
+            sanitize_blur_analysis(analysis("motion", 0.5, 17.0, 8.0)).angle_degrees,
+            17.0
+        );
     }
 
     // MARK: - What is worth offering a correction for
@@ -321,7 +345,10 @@ mod tests {
 
     #[test]
     fn an_unrecognised_kind_reads_as_none() {
-        assert_eq!(sanitize_blur_analysis(analysis("wobbly", 0.5, 0.0, 4.0)).kind, "none");
+        assert_eq!(
+            sanitize_blur_analysis(analysis("wobbly", 0.5, 0.0, 4.0)).kind,
+            "none"
+        );
     }
 
     // MARK: - Parsing

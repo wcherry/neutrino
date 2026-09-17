@@ -136,7 +136,13 @@ pub struct DetectedObjectDto {
 
 impl From<DetectedObject> for DetectedObjectDto {
     fn from(o: DetectedObject) -> Self {
-        Self { x: o.x, y: o.y, w: o.w, h: o.h, label: o.label }
+        Self {
+            x: o.x,
+            y: o.y,
+            w: o.w,
+            h: o.h,
+            label: o.label,
+        }
     }
 }
 
