@@ -871,3 +871,48 @@
   color: rgba(0, 180, 255, 0.9);
   border: 1px solid rgba(0, 180, 255, 0.3);
 }
+
+/* ── Motion blur analysis ──────────────────────────────────────────────────── */
+
+/* A small action sitting on a slider's label row, where a full-width button would
+   push the control it belongs to away from the other sliders. */
+.miniButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.miniButton:hover:not(:disabled) {
+  border-color: #4b5563;
+  color: #e5e7eb;
+}
+
+.miniButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* The verdict. Wraps to as many lines as the advice needs rather than truncating —
+   the sentence is the point of asking. */
+.hintText {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #9ca3af;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

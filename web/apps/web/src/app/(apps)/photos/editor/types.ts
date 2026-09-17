@@ -26,6 +26,18 @@ export interface Adjustments {
   hue: number;           // -180 to 180
   vibrance: number;      // -100 to 100
   colorBalance: number;  // -100 (green tint) to 100 (magenta tint)
+  // Phase 3
+  deblur: number;        // 0 to 100 — strength of the directional sharpen along `deblurKernel`
+}
+
+/**
+ * The motion-blur kernel the Deblur slider sharpens against, in pixels of the image being
+ * corrected. Supplied by the AI blur analysis; `null` means nothing has estimated one, and the
+ * slider stays inert because there is no axis to sharpen along.
+ */
+export interface DeblurKernel {
+  angleDegrees: number;
+  lengthPx: number;
 }
 
 export interface CropRect {
@@ -100,6 +112,7 @@ export const DEFAULT_ADJUSTMENTS: Adjustments = {
   exposure: 0,
   temperature: 0,
   sharpness: 0,
+  deblur: 0,
   hue: 0,
   vibrance: 0,
   colorBalance: 0,

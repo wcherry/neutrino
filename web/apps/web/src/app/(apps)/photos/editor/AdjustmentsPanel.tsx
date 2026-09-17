@@ -5,8 +5,8 @@ import { RotateCcw, RotateCw, FlipHorizontal, FlipVertical, RefreshCcw, Check, S
 import { Circle, Square } from 'lucide-react';
 import { FillPicker, PanelContainer, ColorPickerPopover } from '@neutrino/ui';
 import type { Background, PanelTab } from '@neutrino/ui';
-import type { Adjustments, PhotoFilter, Tool, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection } from './types';
-import type { DetectedObject, SmartEraseTarget } from '@neutrino/api-photos';
+import type { Adjustments, PhotoFilter, Tool, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection, DeblurKernel } from './types';
+import type { DetectedObject, SmartEraseTarget, BlurAnalysis } from '@neutrino/api-photos';
 import { DEFAULT_ADJUSTMENTS, FILTER_LABELS, FILTER_PREVIEW_CSS } from './types';
 import styles from './page.module.css';
 
@@ -14,6 +14,12 @@ const ALL_FILTERS: PhotoFilter[] = ['none', 'grayscale', 'sepia', 'vintage', 'hd
 
 interface AdjustmentsPanelProps {
   adjustments: Adjustments;
+  /** The blur verdict, once the photo has been analysed. */
+  blurAnalysis: BlurAnalysis | null;
+  /** The kernel the Deblur slider acts on. Null means there is nothing to correct along. */
+  deblurKernel: DeblurKernel | null;
+  analyzingBlur: boolean;
+  onAnalyzeBlur: () => void;
   rotation: number;
   flipH: boolean;
   flipV: boolean;
@@ -81,8 +87,84 @@ function SliderRow({ label, value, adjKey, min = -100, max = 100, onChange }: Sl
   );
 }
 
+/**
+ * Motion-blur analysis, and the correction it arms.
+ *
+ * The slider is deliberately inert until something has estimated a kernel: a directional sharpen
+ * needs an axis, and without one there is nothing to sharpen *along* — an enabled slider would
+ * either do nothing or quietly fall back to an ordinary sharpen, which is the control directly
+ * above it.
+ *
+ * The verdict is shown even when the blur cannot be corrected, because "your shutter was too slow
+ * for a walking subject" is the useful half of the answer for a photo nothing can rescue.
+ */
+function MotionBlurRow({
+  adjustments,
+  blurAnalysis,
+  deblurKernel,
+  analyzing,
+  onAnalyze,
+  onAdjustmentChange,
+}: {
+  adjustments: Adjustments;
+  blurAnalysis: BlurAnalysis | null;
+  deblurKernel: DeblurKernel | null;
+  analyzing: boolean;
+  onAnalyze: () => void;
+  onAdjustmentChange: (key: keyof Adjustments, value: number) => void;
+}) {
+  const armed = deblurKernel !== null;
+  return (
+    <div className={styles.sliderRow}>
+      <div className={styles.sliderLabel}>
+        <span>Motion Blur</span>
+        <button
+          type="button"
+          className={styles.miniButton}
+          onClick={onAnalyze}
+          disabled={analyzing}
+          title="Analyse this photo for motion blur"
+        >
+          {analyzing ? <Loader2 size={12} className={styles.spin} /> : <Wand2 size={12} />}
+          {analyzing ? 'Analysing…' : 'Analyse'}
+        </button>
+      </div>
+
+      {blurAnalysis && (
+        <p className={styles.hintText}>
+          {blurAnalysis.blurred
+            ? `${blurAnalysis.kind === 'motion' ? 'Motion blur' : 'Out of focus'} — ${Math.round(blurAnalysis.severity * 100)}% severity. ${blurAnalysis.advice}`
+            : `Looks sharp. ${blurAnalysis.advice}`}
+        </p>
+      )}
+
+      {armed && (
+        <>
+          <div className={styles.sliderLabel}>
+            <span>Deblur</span>
+            <span className={styles.sliderValue}>{adjustments.deblur}</span>
+          </div>
+          <input
+            type="range"
+            className={styles.slider}
+            min={0}
+            max={100}
+            step={1}
+            value={adjustments.deblur}
+            onChange={(e) => onAdjustmentChange('deblur', Number(e.target.value))}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
 export function AdjustmentsPanel({
   adjustments,
+  blurAnalysis,
+  deblurKernel,
+  analyzingBlur,
+  onAnalyzeBlur,
   rotation,
   flipH,
   flipV,
@@ -205,6 +287,14 @@ export function AdjustmentsPanel({
           <div className={styles.section}>
             <p className={styles.sectionTitle}>Details</p>
             <SliderRow label="Sharpness" value={adjustments.sharpness} adjKey="sharpness" onChange={onAdjustmentChange} />
+            <MotionBlurRow
+              adjustments={adjustments}
+              blurAnalysis={blurAnalysis}
+              deblurKernel={deblurKernel}
+              analyzing={analyzingBlur}
+              onAnalyze={onAnalyzeBlur}
+              onAdjustmentChange={onAdjustmentChange}
+            />
           </div>
         </>
       ),

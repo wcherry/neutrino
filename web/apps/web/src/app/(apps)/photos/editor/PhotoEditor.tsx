@@ -7,7 +7,7 @@ import type { Background } from '@neutrino/ui';
 import { useToast } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
 import { storageApi, filesystemApi, encryptionApi, uploadDriveFile, isMissingEncryptionKey } from '@neutrino/api-drive';
-import { photosAiApi, type DetectedObject } from '@neutrino/api-photos';
+import { photosAiApi, type DetectedObject, type BlurAnalysis } from '@neutrino/api-photos';
 import type { SmartEraseTarget } from '@neutrino/api-photos';
 import { initSodium, openSealedFileKey, decryptFile } from '@neutrino/e2e-crypto';
 import { useSessionKeyPair } from '@/hooks/useSessionKeyPair';
@@ -16,13 +16,14 @@ import { PhotoTopBar } from './PhotoTopBar';
 import { PhotoToolbar } from './PhotoToolbar';
 import { AdjustmentsPanel } from './AdjustmentsPanel';
 import { PhotoCanvas, type PhotoCanvasHandle } from './PhotoCanvas';
-import type { Tool, Adjustments, CropRect, MarkupStroke, PhotoFilter, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection } from './types';
+import type { Tool, Adjustments, CropRect, MarkupStroke, PhotoFilter, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection, DeblurKernel } from './types';
 import { DEFAULT_ADJUSTMENTS, DEFAULT_CLONE_SETTINGS, DEFAULT_TEXT_SETTINGS, DEFAULT_STROKE_SETTINGS } from './types';
+import { scaleKernel } from './deblur';
 import styles from './page.module.css';
 
 // ── AI image prep ────────────────────────────────────────────────────────────
 
-async function resizeForAi(blob: Blob, maxPx = 1536): Promise<{ base64: string; mediaType: string }> {
+async function resizeForAi(blob: Blob, maxPx = 1536): Promise<{ base64: string; mediaType: string; width: number }> {
   const url = URL.createObjectURL(blob);
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const i = new Image();
@@ -38,7 +39,9 @@ async function resizeForAi(blob: Blob, maxPx = 1536): Promise<{ base64: string; 
   canvas.height = h;
   canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-  return { base64: dataUrl.split(',')[1] ?? '', mediaType: 'image/jpeg' };
+  // `width` travels with the payload because the blur analysis reports its smear length in pixels
+  // of the image it was given — scaling that back up needs the width it was measured at.
+  return { base64: dataUrl.split(',')[1] ?? '', mediaType: 'image/jpeg', width: w };
 }
 
 // ── Canvas fill helpers ───────────────────────────────────────────────────────
@@ -200,6 +203,12 @@ export function PhotoEditor() {
   }, [activeTool]);
 
   const [adjustments, setAdjustments] = useState<Adjustments>(DEFAULT_ADJUSTMENTS);
+  // The blur verdict and the kernel it produced. Held apart from `adjustments` because they are
+  // measurements of the photo rather than edits to it: they are not undone by resetting the
+  // sliders, and only `deblur` — the strength — belongs in the edit history.
+  const [blurAnalysis, setBlurAnalysis] = useState<BlurAnalysis | null>(null);
+  const [deblurKernel, setDeblurKernel] = useState<DeblurKernel | null>(null);
+  const [analyzingBlur, setAnalyzingBlur] = useState(false);
   const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const [flipH, setFlipH] = useState(false);
   const [flipV, setFlipV] = useState(false);
@@ -539,6 +548,46 @@ export function PhotoEditor() {
     },
     [],
   );
+
+  /**
+   * Ask the model how the photo is blurred, and arm the Deblur slider with the answer.
+   *
+   * The analysis runs on a downsampled copy, so the smear length comes back in that copy's pixels
+   * and is scaled up to the canvas before it is used as a kernel — otherwise a 9-pixel estimate
+   * would be applied to an image where the smear is four times that wide.
+   *
+   * A verdict of "not recoverable" still sets the analysis (the advice is worth reading either
+   * way) but leaves the kernel null, so the slider cannot promise a correction the server has
+   * already said would not help.
+   */
+  const handleAnalyzeBlur = useCallback(async (): Promise<void> => {
+    if (!canvasRef.current) return;
+    setAnalyzingBlur(true);
+    try {
+      const blob = await canvasRef.current.getExportBlob();
+      const { base64, mediaType, width } = await resizeForAi(blob);
+      const analysis = await photosAiApi.analyzeBlur(base64, mediaType);
+      setBlurAnalysis(analysis);
+
+      if (analysis.recoverable && width > 0) {
+        const canvasWidth = canvasRef.current.getCanvasWidth?.() ?? width;
+        setDeblurKernel(scaleKernel(
+          { angleDegrees: analysis.angleDegrees, lengthPx: analysis.lengthPx },
+          width,
+          canvasWidth,
+        ));
+        // Start at a visible but conservative correction rather than at zero, so the result of
+        // asking is something on screen instead of a slider the user has to discover.
+        setAdjustments((prev) => ({ ...prev, deblur: 50 }));
+        setIsDirty(true);
+      } else {
+        setDeblurKernel(null);
+        setAdjustments((prev) => ({ ...prev, deblur: 0 }));
+      }
+    } finally {
+      setAnalyzingBlur(false);
+    }
+  }, []);
 
   const handleStrokeAdd = useCallback((stroke: MarkupStroke) => {
     setMarkupStrokes((prev) => [...prev, stroke]);
@@ -917,6 +966,7 @@ export function PhotoEditor() {
           <PhotoCanvas
             ref={canvasRef}
             imageDataUrl={imageDataUrl}
+            deblurKernel={deblurKernel}
             adjustments={adjustments}
             rotation={rotation}
             flipH={flipH}
@@ -945,6 +995,10 @@ export function PhotoEditor() {
         </div>
         <AdjustmentsPanel
           adjustments={adjustments}
+          blurAnalysis={blurAnalysis}
+          deblurKernel={deblurKernel}
+          analyzingBlur={analyzingBlur}
+          onAnalyzeBlur={handleAnalyzeBlur}
           rotation={rotation}
           flipH={flipH}
           flipV={flipV}

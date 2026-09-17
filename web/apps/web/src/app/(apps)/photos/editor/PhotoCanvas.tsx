@@ -3,7 +3,9 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronsLeftRight } from 'lucide-react';
 import type { Tool, Adjustments, CropRect, MarkupStroke, PhotoFilter, CloneShape, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection } from './types';
+import type { DeblurKernel } from './types';
 import { FILTER_PRESET_CSS, DEFAULT_CLONE_SETTINGS, DEFAULT_TEXT_SETTINGS, DEFAULT_STROKE_SETTINGS } from './types';
+import { directionalBlur, unsharpFrom, deblurAmountFromSlider, motionTaps } from './deblur';
 import styles from './page.module.css';
 
 export interface PhotoCanvasHandle {
@@ -14,6 +16,8 @@ export interface PhotoCanvasHandle {
   applyEdgeMaskAsOverlay(mask: ImageData): string;
   getEdgeRegionBlob(mask: ImageData): Promise<Blob>;
   eraseObjects(normalizedRects: Array<{ x: number; y: number; w: number; h: number }>): string;
+  /** Width in pixels of the base canvas — what an AI-estimated blur kernel is scaled up to. */
+  getCanvasWidth(): number;
 }
 
 interface PhotoCanvasProps {
@@ -39,6 +43,8 @@ interface PhotoCanvasProps {
   onCropChange: (rect: CropRect | null) => void;
   onSelectionChange?: (ids: string[]) => void;
   onAreaSelect?: (rect: AreaSelection | null) => void;
+  /** Motion-blur kernel from the AI analysis. Null means the Deblur slider has nothing to act on. */
+  deblurKernel?: DeblurKernel | null;
 }
 
 const MAX_CANVAS_WIDTH = 1600;
@@ -70,6 +76,8 @@ function renderBase(
   cropRect: CropRect | null,
   photoFilter: PhotoFilter,
   comparisonPos?: number,
+  deblurKernel: DeblurKernel | null = null,
+  deblurCache?: { current: DeblurCache | null },
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -150,6 +158,62 @@ function renderBase(
   } else {
     drawSide(ctx, true, 0, cw);
   }
+
+  applyDeblurPass(ctx, cw, ch, adjustments, deblurKernel, deblurCache, filterStr, comparisonPos);
+}
+
+/**
+ * The directional blur the Deblur slider subtracts, kept against the inputs that produced it.
+ *
+ * Building it is O(pixels x taps) and would otherwise re-run on every frame of a slider drag. It
+ * depends only on the base image and the kernel — never on the slider — so caching it against
+ * everything that changes the base image makes dragging cost one cheap pass instead.
+ */
+export interface DeblurCache {
+  key: string;
+  original: Uint8ClampedArray;
+  blurred: Uint8ClampedArray;
+}
+
+/**
+ * Sharpen the rendered base along the estimated motion axis.
+ *
+ * CSS filters cannot express a directional sharpen, so this is a real convolution over the pixels
+ * after the filtered draw. It is skipped entirely at zero strength or without a kernel, which is
+ * the normal case for a photo nobody has run the blur analysis on.
+ *
+ * Skipped during a before/after comparison too: half the canvas is deliberately unfiltered there,
+ * and one cached blur cannot describe two different images.
+ */
+function applyDeblurPass(
+  ctx: CanvasRenderingContext2D,
+  cw: number,
+  ch: number,
+  adjustments: Adjustments,
+  deblurKernel: DeblurKernel | null,
+  deblurCache: { current: DeblurCache | null } | undefined,
+  filterStr: string,
+  comparisonPos?: number,
+) {
+  if (comparisonPos !== undefined) return;
+  if (!deblurKernel || cw === 0 || ch === 0) return;
+  const amount = deblurAmountFromSlider(adjustments.deblur);
+  if (amount <= 0) return;
+  if (motionTaps(deblurKernel.angleDegrees, deblurKernel.lengthPx).length < 2) return;
+
+  const image = ctx.getImageData(0, 0, cw, ch);
+  // Everything that changes the pixels this pass reads, except the strength itself.
+  const key = [cw, ch, filterStr, deblurKernel.angleDegrees, deblurKernel.lengthPx].join('|');
+
+  let cache = deblurCache?.current;
+  if (!cache || cache.key !== key || cache.original.length !== image.data.length) {
+    const original = new Uint8ClampedArray(image.data);
+    cache = { key, original, blurred: directionalBlur(image, deblurKernel) };
+    if (deblurCache) deblurCache.current = cache;
+  }
+
+  unsharpFrom(image.data, cache.original, cache.blurred, amount);
+  ctx.putImageData(image, 0, 0);
 }
 
 function drawBlurBrushAt(
@@ -662,10 +726,14 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
     onCropChange,
     onSelectionChange,
     onAreaSelect,
+    deblurKernel,
   },
   ref,
 ) {
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Holds the directional blur between renders so dragging the Deblur slider does not rebuild it
+  // on every frame — see DeblurCache.
+  const deblurCacheRef = useRef<DeblurCache | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -747,12 +815,15 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
   }, [isPendingTextActive]);
 
   useImperativeHandle(ref, () => ({
+    getCanvasWidth(): number {
+      return baseCanvasRef.current?.width ?? 0;
+    },
     async getExportBlob(): Promise<Blob> {
       const base = baseCanvasRef.current;
       const overlay = overlayCanvasRef.current;
       if (!base || !overlay) throw new Error('Canvas not ready');
       const img = imgRef.current;
-      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter);
+      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, undefined, deblurKernel ?? null, deblurCacheRef);
       drawStrokes(overlay, markupStrokes, base);
       const merged = document.createElement('canvas');
       merged.width = base.width;
@@ -768,7 +839,7 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
       const base = baseCanvasRef.current;
       if (!base) throw new Error('Canvas not ready');
       const img = imgRef.current;
-      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter);
+      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, undefined, deblurKernel ?? null, deblurCacheRef);
       const ctx = base.getContext('2d')!;
       const bx = Math.max(0, Math.round(rect.x));
       const by = Math.max(0, Math.round(rect.y));
@@ -784,7 +855,7 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
       const base = baseCanvasRef.current;
       if (!base) throw new Error('Canvas not ready');
       const img = imgRef.current;
-      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter);
+      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, undefined, deblurKernel ?? null, deblurCacheRef);
       const ctx = base.getContext('2d')!;
       const imageData = ctx.getImageData(0, 0, base.width, base.height);
       return detectEdgesFromImageData(imageData, threshold);
@@ -793,7 +864,7 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
       const base = baseCanvasRef.current;
       if (!base) throw new Error('Canvas not ready');
       const img = imgRef.current;
-      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter);
+      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, undefined, deblurKernel ?? null, deblurCacheRef);
       const ctx = base.getContext('2d')!;
       const imageData = ctx.getImageData(0, 0, base.width, base.height);
       const d = imageData.data;
@@ -808,7 +879,7 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
       const base = baseCanvasRef.current;
       if (!base) throw new Error('Canvas not ready');
       const img = imgRef.current;
-      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter);
+      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, undefined, deblurKernel ?? null, deblurCacheRef);
       const ctx = base.getContext('2d')!;
       const imageData = ctx.getImageData(0, 0, base.width, base.height);
       const d = imageData.data;
@@ -825,7 +896,7 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
       const base = baseCanvasRef.current;
       if (!base) throw new Error('Canvas not ready');
       const img = imgRef.current;
-      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter);
+      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, undefined, deblurKernel ?? null, deblurCacheRef);
       const ctx = base.getContext('2d')!;
       const imageData = ctx.getImageData(0, 0, base.width, base.height);
       const d = imageData.data;
@@ -845,7 +916,7 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
       const base = baseCanvasRef.current;
       if (!base) throw new Error('Canvas not ready');
       const img = imgRef.current;
-      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter);
+      if (img) renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, undefined, deblurKernel ?? null, deblurCacheRef);
       const ctx = base.getContext('2d')!;
       for (const rect of normalizedRects) {
         const bx = Math.max(0, Math.round(rect.x * base.width));
@@ -882,7 +953,7 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
     const base = baseCanvasRef.current;
     const img = imgRef.current;
     if (!base || !img) return;
-    renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, comparisonPos);
+    renderBase(base, img, adjustments, rotation, flipH, flipV, cropRect, photoFilter, comparisonPos, deblurKernel ?? null, deblurCacheRef);
   }, [adjustments, rotation, flipH, flipV, cropRect, photoFilter, canvasSize, imgLoadCount, comparisonPos]);
 
   useEffect(() => {
