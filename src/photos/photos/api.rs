@@ -5,7 +5,7 @@ use crate::photos::photos::{
         ShareSettingsRequest, UnlockFolderRequest, UnlockTokenResponse, UpdatePhotoRequest,
         YearInReviewResponse,
     },
-    repository::PhotoPage,
+    repository::{PhotoOrder, PhotoPage},
     service::PhotosService,
 };
 use crate::shared::auth::AuthenticatedUser;
@@ -33,6 +33,7 @@ pub struct PhotosApiState {
         ("excludePersonIds" = Option<String>, Query, description = "Comma-separated person IDs to exclude"),
         ("limit" = Option<i64>, Query, description = "Page size, 1..=1000. Omit for the whole library."),
         ("offset" = Option<i64>, Query, description = "How many photos to skip. Requires `limit`."),
+        ("orderBy" = Option<String>, Query, description = "`createdAt` (default) or `captureDate` — sort by when the picture was taken, falling back to arrival for anything without an EXIF date."),
     ),
     responses(
         (status = 200, description = "List of photos", body = ListPhotosResponse),
@@ -77,7 +78,13 @@ pub async fn list_photos(
             .unwrap_or(false);
         state
             .photos_service
-            .list_photos(&user, include_archived, starred_only, page(&query))
+            .list_photos(
+                &user,
+                include_archived,
+                starred_only,
+                order(&query),
+                page(&query),
+            )
             .await?
     };
     Ok(web::Json(result))
@@ -109,6 +116,25 @@ fn page(query: &std::collections::HashMap<String, String>) -> Option<PhotoPage> 
         limit: limit.min(MAX_LIMIT),
         offset,
     })
+}
+
+/// What to sort the listing by. `createdAt` unless the caller asks otherwise, which is what keeps
+/// every client written before this parameter existed seeing exactly the listing it always saw.
+///
+/// `captureDate` is for a client whose timeline is ordered by when pictures were taken, because
+/// paging and ordering are the same decision: `LIMIT`/`OFFSET` cuts along whatever `ORDER BY`
+/// sorted, so a client paging one way and displaying another gets an arbitrary slice of its own
+/// timeline per request. Anything unrecognised falls back to the default for the same reason a bad
+/// `limit` does — a client that misspells a sort should see the usual listing, not a 400.
+///
+/// The names are the response's own field names, which is also how Drive's listing spells its
+/// `orderBy` (`createdAt`, and see `listFiles` in `web/packages/api-photos`). Two endpoints on one
+/// product should not disagree about what the sort keys are called.
+fn order(query: &std::collections::HashMap<String, String>) -> PhotoOrder {
+    match query.get("orderBy").map(String::as_str) {
+        Some("captureDate") => PhotoOrder::Capture,
+        _ => PhotoOrder::default(),
+    }
 }
 
 /// Register an already-uploaded Drive file as a photo.
@@ -825,5 +851,57 @@ mod tests {
     fn a_negative_offset_is_floored_at_zero() {
         let page = page(&query(&[("limit", "10"), ("offset", "-3")])).expect("a page");
         assert_eq!(page.offset, 0);
+    }
+
+    // MARK: - Ordering
+
+    #[test]
+    fn capture_order_is_asked_for_by_name() {
+        assert_eq!(
+            order(&query(&[("orderBy", "captureDate")])),
+            PhotoOrder::Capture
+        );
+    }
+
+    /// The listing every client written before this parameter existed asks for, and still gets.
+    #[test]
+    fn the_default_is_arrival_order() {
+        assert_eq!(order(&query(&[])), PhotoOrder::Created);
+        assert_eq!(
+            order(&query(&[("orderBy", "createdAt")])),
+            PhotoOrder::Created
+        );
+    }
+
+    /// A misspelled sort should show the usual listing, not a 400 — same reason a bad `limit` falls
+    /// back rather than failing.
+    #[test]
+    fn an_unrecognised_order_falls_back_rather_than_failing() {
+        assert_eq!(order(&query(&[("orderBy", "banana")])), PhotoOrder::Created);
+        // Matched exactly: a near miss is a client bug, and quietly honouring it would make the
+        // spelling that works a matter of luck.
+        assert_eq!(
+            order(&query(&[("orderBy", "capturedate")])),
+            PhotoOrder::Created
+        );
+        assert_eq!(
+            order(&query(&[("orderBy", "capture")])),
+            PhotoOrder::Created
+        );
+        assert_eq!(order(&query(&[("orderBy", "")])), PhotoOrder::Created);
+    }
+
+    /// Ordering and paging are read independently, which is the combination the iOS client sends.
+    #[test]
+    fn a_page_and_an_order_are_read_from_the_same_query() {
+        let q = query(&[
+            ("archivedOnly", "true"),
+            ("orderBy", "captureDate"),
+            ("limit", "200"),
+            ("offset", "400"),
+        ]);
+        assert_eq!(order(&q), PhotoOrder::Capture);
+        let page = page(&q).expect("a page");
+        assert_eq!((page.limit, page.offset), (200, 400));
     }
 }

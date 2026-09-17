@@ -20,6 +20,26 @@ pub struct PhotoPage {
     pub offset: i64,
 }
 
+/// What a photo listing is sorted by, newest first either way.
+///
+/// This exists because paging made the choice matter. An unpaged listing could be sorted by
+/// anything and the client would re-sort it; a *paged* one cannot, because `LIMIT`/`OFFSET` is
+/// applied after `ORDER BY`, so the order the server sorts in is the order the pages are cut
+/// along. A client that displays photos by one key while paging along another gets an arbitrary
+/// slice of its own timeline per request, and no amount of client-side sorting fixes it — sorting
+/// after the fact only sorts what has already arrived.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PhotoOrder {
+    /// When the record reached the account. The default, and what every existing caller gets.
+    #[default]
+    Created,
+    /// When the picture was taken, falling back to when it arrived for anything without an EXIF
+    /// date. This is the order the iOS timeline actually displays — see `MediaItem.timelineDate`
+    /// — and the two genuinely invert: a scanned print is registered today and belongs in 1998,
+    /// while a photo taken yesterday off an old upload belongs at the top.
+    Capture,
+}
+
 pub struct PhotosRepository {
     pool: DbPool,
 }
@@ -93,6 +113,7 @@ impl PhotosRepository {
         user_id: &str,
         include_archived: bool,
         starred_only: bool,
+        order: PhotoOrder,
         page: Option<PhotoPage>,
     ) -> Result<Vec<PhotoRecord>, ApiError> {
         let mut conn = self.get_conn()?;
@@ -109,15 +130,31 @@ impl PhotosRepository {
             query = query.filter(photos::is_starred.eq(true));
         }
 
-        // `created_at` alone is not a total order: a bulk import stamps thousands of rows inside
-        // the same second, and where rows tie SQLite may return them in any order it likes. It
-        // happens to be stable today — 25,000 rows sharing a timestamp page cleanly without this —
-        // but that is a property of the current plan (a full scan in rowid order), not a promise,
-        // and it is one an index on `created_at` or a different filter could take away. Two pages
-        // ordered differently would hand a client one photo twice and never show it another, so
-        // `id` breaks the tie with something unique and stable rather than leaving offset paging
-        // resting on an implementation detail.
-        query = query.order((photos::created_at.desc(), photos::id.desc()));
+        // Neither sort key is a total order on its own: a bulk import stamps thousands of rows
+        // inside the same second, and a scanned batch can share one capture date across the whole
+        // shoebox. Where rows tie SQLite may return them in any order it likes. It happens to be
+        // stable today — 25,000 rows sharing a timestamp page cleanly without this — but that is a
+        // property of the current plan (a full scan in rowid order), not a promise, and it is one
+        // an index or a different filter could take away. Two pages ordered differently would hand
+        // a client one photo twice and never show it another, so `id` breaks the tie with
+        // something unique and stable rather than leaving offset paging resting on an
+        // implementation detail.
+        query = match order {
+            PhotoOrder::Created => query.order((photos::created_at.desc(), photos::id.desc())),
+            // `COALESCE` rather than a plain column because `capture_date` is nullable and a photo
+            // without EXIF still has to land somewhere sensible. Sorting on the bare column would
+            // bunch every such photo at one end of the library regardless of when it arrived,
+            // which is the opposite of what the fallback in `timelineDate` means. Raw SQL because
+            // Diesel has no backend-agnostic `coalesce` helper; the query is unjoined, so the
+            // unqualified names can only resolve to `photos`.
+            PhotoOrder::Capture => query.order((
+                diesel::dsl::sql::<diesel::sql_types::Timestamp>(
+                    "COALESCE(capture_date, created_at)",
+                )
+                .desc(),
+                photos::id.desc(),
+            )),
+        };
 
         if let Some(page) = page {
             query = query.limit(page.limit).offset(page.offset);
@@ -546,7 +583,10 @@ mod tests {
         use diesel_migrations::MigrationHarness;
 
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
-        let pool = Pool::builder().max_size(1).build(manager).expect("test pool");
+        let pool = Pool::builder()
+            .max_size(1)
+            .build(manager)
+            .expect("test pool");
         pool.get()
             .expect("conn")
             .run_pending_migrations(MIGRATIONS)
@@ -713,7 +753,13 @@ mod tests {
         let mut offset = 0;
         loop {
             let page = repo
-                .list_photos("u1", true, false, Some(PhotoPage { limit: 10, offset }))
+                .list_photos(
+                    "u1",
+                    true,
+                    false,
+                    PhotoOrder::default(),
+                    Some(PhotoPage { limit: 10, offset }),
+                )
                 .expect("page");
             if page.is_empty() {
                 break;
@@ -731,7 +777,9 @@ mod tests {
         );
         assert_eq!(unique.len(), 25, "paging repeated a photo");
 
-        let whole = repo.list_photos("u1", true, false, None).expect("whole");
+        let whole = repo
+            .list_photos("u1", true, false, PhotoOrder::default(), None)
+            .expect("whole");
         assert_eq!(
             seen,
             whole.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
@@ -745,12 +793,15 @@ mod tests {
         let repo = PhotosRepository::new(pool.clone());
         insert_photos_in_one_second(&pool, "u1", 10);
 
-        let whole = repo.list_photos("u1", true, false, None).expect("whole");
+        let whole = repo
+            .list_photos("u1", true, false, PhotoOrder::default(), None)
+            .expect("whole");
         let page = repo
             .list_photos(
                 "u1",
                 true,
                 false,
+                PhotoOrder::default(),
                 Some(PhotoPage {
                     limit: 3,
                     offset: 4,
@@ -776,6 +827,7 @@ mod tests {
                 "u1",
                 true,
                 false,
+                PhotoOrder::default(),
                 Some(PhotoPage {
                     limit: 10,
                     offset: 99,
@@ -784,6 +836,191 @@ mod tests {
             .expect("page");
 
         assert!(page.is_empty());
+    }
+
+    // MARK: - Ordering
+
+    /// Inserts a photo that arrived at `created_at` carrying `capture_date`, so a test can build
+    /// the case the two orders disagree on. `capture_date` of `None` is a file with no EXIF date.
+    fn insert_photo_dated(
+        pool: &DbPool,
+        id: &str,
+        user_id: &str,
+        created_at: &str,
+        capture_date: Option<&str>,
+    ) {
+        let mut conn = pool.get().expect("conn");
+        diesel::sql_query(
+            "INSERT INTO photos (id, user_id, file_id, is_starred, is_archived, deleted_at, \
+             capture_date, created_at, updated_at) VALUES (?, ?, ?, 0, 0, NULL, ?, ?, ?)",
+        )
+        .bind::<diesel::sql_types::Text, _>(id)
+        .bind::<diesel::sql_types::Text, _>(user_id)
+        .bind::<diesel::sql_types::Text, _>(format!("file-{}", id))
+        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(capture_date)
+        .bind::<diesel::sql_types::Text, _>(created_at)
+        .bind::<diesel::sql_types::Text, _>(created_at)
+        .execute(&mut conn)
+        .expect("insert dated photo");
+    }
+
+    fn ids(records: &[PhotoRecord]) -> Vec<String> {
+        records.iter().map(|p| p.id.clone()).collect()
+    }
+
+    /// The case the whole parameter exists for. A scanned print is registered today and belongs in
+    /// 1998; a photo taken yesterday off a year-old upload belongs at the top. The two orders are
+    /// not a reshuffle of each other — they invert.
+    #[test]
+    fn capture_order_sorts_by_when_the_picture_was_taken_not_when_it_arrived() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo_dated(
+            &pool,
+            "scan-of-1998",
+            "u1",
+            "2026-09-16 10:00:00",
+            Some("1998-06-01 12:00:00"),
+        );
+        insert_photo_dated(
+            &pool,
+            "taken-yesterday",
+            "u1",
+            "2025-09-16 10:00:00",
+            Some("2026-09-15 12:00:00"),
+        );
+
+        let by_created = repo
+            .list_photos("u1", true, false, PhotoOrder::Created, None)
+            .expect("created");
+        assert_eq!(ids(&by_created), vec!["scan-of-1998", "taken-yesterday"]);
+
+        let by_capture = repo
+            .list_photos("u1", true, false, PhotoOrder::Capture, None)
+            .expect("capture");
+        assert_eq!(
+            ids(&by_capture),
+            vec!["taken-yesterday", "scan-of-1998"],
+            "capture order must invert the arrival order here, not echo it"
+        );
+    }
+
+    /// A photo with no EXIF date files under when it arrived, exactly as `timelineDate` does on the
+    /// client. Sorting on the bare nullable column would bunch every such photo at one end instead.
+    #[test]
+    fn a_photo_without_a_capture_date_falls_back_to_when_it_arrived() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo_dated(
+            &pool,
+            "has-exif",
+            "u1",
+            "2020-01-01 00:00:00",
+            Some("2026-01-01 00:00:00"),
+        );
+        insert_photo_dated(&pool, "no-exif", "u1", "2023-01-01 00:00:00", None);
+        insert_photo_dated(
+            &pool,
+            "older-exif",
+            "u1",
+            "2026-01-01 00:00:00",
+            Some("2021-01-01 00:00:00"),
+        );
+
+        let by_capture = repo
+            .list_photos("u1", true, false, PhotoOrder::Capture, None)
+            .expect("capture");
+
+        // 2026 capture, then the 2023 arrival standing in for a missing capture, then 2021 capture.
+        assert_eq!(ids(&by_capture), vec!["has-exif", "no-exif", "older-exif"]);
+    }
+
+    /// The property paging rests on: pages cut along capture order must reassemble into exactly the
+    /// unpaged capture order, with nothing repeated and nothing missed. A shared capture date is
+    /// the shape a scanned batch writes, and is what the `id` tie-break is there for.
+    #[test]
+    fn capture_order_pages_without_repeating_or_dropping_a_photo() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        for i in 0..25 {
+            // Half share one capture date, half have none at all — both tie cases at once.
+            let capture = if i % 2 == 0 {
+                Some("2024-05-05 09:00:00")
+            } else {
+                None
+            };
+            insert_photo_dated(
+                &pool,
+                &format!("photo-{i:04}"),
+                "u1",
+                "2026-02-02 08:00:00",
+                capture,
+            );
+        }
+
+        let whole = repo
+            .list_photos("u1", true, false, PhotoOrder::Capture, None)
+            .expect("whole");
+
+        let mut seen: Vec<String> = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = repo
+                .list_photos(
+                    "u1",
+                    true,
+                    false,
+                    PhotoOrder::Capture,
+                    Some(PhotoPage { limit: 10, offset }),
+                )
+                .expect("page");
+            if page.is_empty() {
+                break;
+            }
+            seen.extend(ids(&page));
+            offset += 10;
+        }
+
+        let unique: std::collections::HashSet<&String> = seen.iter().collect();
+        assert_eq!(seen.len(), 25);
+        assert_eq!(unique.len(), 25, "capture paging repeated a photo");
+        assert_eq!(
+            seen,
+            ids(&whole),
+            "paged capture order must match the unpaged capture order"
+        );
+    }
+
+    /// Ordering and filtering are independent: asking for capture order must not quietly widen the
+    /// listing to archived photos the caller did not ask for.
+    #[test]
+    fn capture_order_still_honours_the_filters() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo_dated(
+            &pool,
+            "live",
+            "u1",
+            "2026-01-01 00:00:00",
+            Some("2026-01-01 00:00:00"),
+        );
+        insert_photo(&pool, "archived", "u1", false);
+        {
+            let mut conn = pool.get().expect("conn");
+            diesel::sql_query("UPDATE photos SET is_archived = 1 WHERE id = 'archived'")
+                .execute(&mut conn)
+                .expect("archive");
+        }
+
+        let without = repo
+            .list_photos("u1", false, false, PhotoOrder::Capture, None)
+            .expect("without archived");
+        assert_eq!(ids(&without), vec!["live"]);
+
+        let with = repo
+            .list_photos("u1", true, false, PhotoOrder::Capture, None)
+            .expect("with archived");
+        assert_eq!(with.len(), 2);
     }
 
     /// The count is what tells a paging client how far it has to keep going, so it has to answer

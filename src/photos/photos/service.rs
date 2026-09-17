@@ -8,7 +8,7 @@ use crate::photos::photos::{
     model::{
         NewLockedFolderSettings, NewPhotoEdit, NewPhotoRecord, PhotoRecord, UpdatePhotoRecord,
     },
-    repository::{PhotoPage, PhotosRepository},
+    repository::{PhotoOrder, PhotoPage, PhotosRepository},
 };
 use crate::shared::auth::AuthenticatedUser;
 use crate::shared::drive_client::{DriveClient, DriveFileRecord};
@@ -155,14 +155,16 @@ impl PhotosService {
         exclude_person_ids: &[String],
     ) -> Result<ListPhotosResponse, ApiError> {
         if person_ids.is_empty() && exclude_person_ids.is_empty() {
-            return self.list_photos(user, false, false, None).await;
+            return self
+                .list_photos(user, false, false, PhotoOrder::default(), None)
+                .await;
         }
 
         // Compute the inclusion intersection: photos containing faces from ALL included persons.
         let included: std::collections::HashSet<String> = if person_ids.is_empty() {
             // No inclusion filter — start with all photos for this user.
             self.repo
-                .list_photos(&user.user_id, false, false, None)?
+                .list_photos(&user.user_id, false, false, PhotoOrder::default(), None)?
                 .into_iter()
                 .map(|p| p.id)
                 .collect()
@@ -212,11 +214,12 @@ impl PhotosService {
         user: &AuthenticatedUser,
         include_archived: bool,
         starred_only: bool,
+        order: PhotoOrder,
         page: Option<PhotoPage>,
     ) -> Result<ListPhotosResponse, ApiError> {
-        let records = self
-            .repo
-            .list_photos(&user.user_id, include_archived, starred_only, page)?;
+        let records =
+            self.repo
+                .list_photos(&user.user_id, include_archived, starred_only, order, page)?;
         let mut responses = Vec::with_capacity(records.len());
         for r in &records {
             let file = self
@@ -351,7 +354,11 @@ impl PhotosService {
         // on the user's quota forever, with nothing left pointing at them to find them by.
         for record in self.repo.list_trash(&user.user_id)? {
             if let Err(e) = self.drive.delete_file_permanently(&record.file_id) {
-                tracing::warn!("empty_trash: drive file {} not deleted: {:?}", record.file_id, e);
+                tracing::warn!(
+                    "empty_trash: drive file {} not deleted: {:?}",
+                    record.file_id,
+                    e
+                );
             }
         }
         self.repo.empty_trash(&user.user_id)?;
@@ -406,7 +413,11 @@ impl PhotosService {
             return Err(ApiError::bad_request("Photo must be in the trash first"));
         }
         if let Err(e) = self.drive.delete_file_permanently(&photo.file_id) {
-            tracing::warn!("permanent delete: drive file {} not deleted: {:?}", photo.file_id, e);
+            tracing::warn!(
+                "permanent delete: drive file {} not deleted: {:?}",
+                photo.file_id,
+                e
+            );
         }
         self.repo.delete_photo_record(photo_id)?;
         Ok(())
