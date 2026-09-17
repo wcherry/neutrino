@@ -1,5 +1,5 @@
 import type { CellStyle } from './types';
-import { alphaToNum, numToAlpha } from './utils';
+import { alphaToNum, numToAlpha, isDateOrTimeFormatStr, formatCellValue } from './utils';
 
 /* # Google Sheets Clipboard Internal Format
 ## application/x-vnd.google-spreadsheet-compact-table+json
@@ -369,6 +369,62 @@ function parseCssStyle(style: string): Partial<CellStyle> {
     return result;
 }
 
+/** Number formats whose display text still describes a number we can recover. */
+const NUMERIC_FORMATS: ReadonlySet<string> = new Set(['number', 'currency', 'percent']);
+
+/**
+ * Recovers a cell's underlying number from its *display* text.
+ *
+ * Google does not always put `data-sheets-value` on a `<td>` — a currency column
+ * copied out of a real sheet arrives carrying `data-sheets-numberformat` and an
+ * inline style but no value attribute at all. All that is left is the rendered
+ * string, and "$100.00" is not something parseFloat can read, so the cell lands
+ * as text and SUM skips it.
+ *
+ * The number format is the thing that makes this safe: it is the cell telling us
+ * it holds a number, so stripping the currency symbol and the thousands
+ * separators recovers the value rather than guessing at one. Returns null — and
+ * the text stands as text — whenever that claim isn't there or the remainder
+ * isn't a clean number, so "Total", "N/A" and an empty cell are left alone.
+ *
+ * A date is deliberately not recoverable: "Monday" carries no serial, and there
+ * is no arithmetic that gets one back.
+ */
+export function numberFromFormattedText(
+    text: string,
+    style: Partial<CellStyle> | undefined,
+): string | null {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+
+    const fmt = style?.customFormat;
+    if (fmt && isDateOrTimeFormatStr(fmt)) return null;
+    if (style?.numberFormat && !NUMERIC_FORMATS.has(style.numberFormat)) return null;
+    // No number format means no claim that this is a number; a string cell's text
+    // *is* its value, and an unformatted number already parses on its own.
+    if (!style?.numberFormat && !fmt) return null;
+
+    let body = trimmed;
+    // Accounting notation writes a negative as ($50.00) or $(50.00).
+    const negative = /\(.*\)/.test(body);
+    if (negative) body = body.replace(/[()]/g, '');
+
+    const percent = body.trimEnd().endsWith('%');
+    if (percent) body = body.trimEnd().slice(0, -1);
+
+    // Drop the currency symbol and the group separators; keep sign, digits, point.
+    body = body.replace(/[^\d.\-]/g, '');
+    if (!/^-?\d+(\.\d+)?$/.test(body)) return null;
+
+    let n = parseFloat(body);
+    if (isNaN(n)) return null;
+    if (negative) n = -Math.abs(n);
+    // A percent cell displays 50.00% over an underlying 0.5, which is the value
+    // every other reader of this cell — SUM included — expects to find.
+    if (percent) n = n / 100;
+    return String(n);
+}
+
 /**
  * Parses Google Sheets HTML clipboard data (text/html) to extract cell values,
  * number/date formats, and visual styles (colors, font).
@@ -418,19 +474,34 @@ export function parseGoogleSheetsHtml(html: string): ClipData[] {
 
             // Default to the visible text content of the cell.
             let raw: string = td.textContent?.trim() ?? '';
+            let rawFromValueAttr = false;
 
             // Prefer the structured value when available.
-            // data-sheets-value: {"1": type, "2": string-value, "3": numeric-value}
-            //   type 1 = number (value in "3")
-            //   type 2 = string (value in "2")
+            // data-sheets-value: {"1": type, "2": string slot, "3": numeric slot}
+            //   type 2 = string (value in "2"); a number arrives as type 3, not 1.
+            //
+            // Read the *slot* rather than branching on every type code. Google has
+            // more codes than the two we knew about (a plain number is 3), and a
+            // cell we fail to recognise falls through to `td.textContent` — which is
+            // the DISPLAY text. For an unformatted number that is harmless ("100"
+            // parses back to 100), which is why this went unnoticed; for a currency
+            // or percent cell it stores "$100.00", and parseFloat("$100.00") is NaN,
+            // so SUM over the pasted range answers 0. The string type still wins
+            // where it is declared, so text that looks numeric stays text.
             if (valueAttr) {
                 try {
                     const v = JSON.parse(valueAttr);
-                    if (v['1'] === 1 && v['3'] != null) {
-                        // Number — preserve the raw serial so date formats can be applied.
-                        raw = String(v['3']);
-                    } else if (v['1'] === 2 && v['2'] != null) {
+                    if (v['1'] === STRING_TYPE && v['2'] != null) {
                         raw = String(v['2']);
+                        rawFromValueAttr = true;
+                    } else if (v['3'] != null) {
+                        // Number — preserve the underlying value so currency, percent
+                        // and date formats apply to something that can be summed.
+                        raw = String(v['3']);
+                        rawFromValueAttr = true;
+                    } else if (v['2'] != null) {
+                        raw = String(v['2']);
+                        rawFromValueAttr = true;
                     }
                 } catch { /* ignore */ }
             }
@@ -451,6 +522,14 @@ export function parseGoogleSheetsHtml(html: string): ClipData[] {
                 // Number-format properties (numberFormat, customFormat, decimalPlaces) take
                 // precedence if already set, since they carry more precise information.
                 cellStyle = { ...css, ...cellStyle };
+            }
+
+            // No usable data-sheets-value, so `raw` is still the rendered string.
+            // Where the format says the cell is a number, recover it — otherwise a
+            // currency or percent column pastes as text and cannot be summed.
+            if (!rawFromValueAttr) {
+                const recovered = numberFromFormattedText(raw, cellStyle);
+                if (recovered !== null) raw = recovered;
             }
 
             const id = `R[${rowIdx}]C[${actualCol}]`;
@@ -478,6 +557,37 @@ export function parseGoogleSheetsHtml(html: string): ClipData[] {
     });
 
     return cells;
+}
+
+/**
+ * Chooses what a pasted cell stores, given both Google clipboard formats.
+ *
+ * The two carry different things: the compact-table JSON has the cell's
+ * *underlying* value (100, or a date serial, or an "=..." source), while the
+ * HTML has its *display* text ("$100.00", "Monday"). Only the first is a value
+ * the grid can compute with, so the compact table wins wherever it can be
+ * trusted — storing the display text is what left a pasted currency column
+ * unsummable.
+ *
+ * It cannot simply always win: the compact-table RLE reader progressively
+ * desyncs across merged regions and starts handing back a neighbouring cell's
+ * value, which is why the HTML was made the authority for everything in the
+ * first place. So the underlying value is taken only when it *explains* the text
+ * the HTML says is on screen — formatting it must reproduce the display. A
+ * desynced reader fails that check and the HTML text stands, which keeps the
+ * merge protection without paying for it in every unmerged paste.
+ */
+export function preferUnderlyingValue(
+    compactRaw: string | undefined,
+    htmlRaw: string,
+    style: CellStyle | undefined,
+): string {
+    if (compactRaw == null || compactRaw === '') return htmlRaw;
+    // A formula exists only in the compact table — HTML carries its result.
+    if (compactRaw.startsWith('=')) return compactRaw;
+    if (compactRaw === htmlRaw) return compactRaw;
+    if (formatCellValue(compactRaw, style) === htmlRaw) return compactRaw;
+    return htmlRaw;
 }
 
 export function fixRealtiveFormulas(raw: string, currentRow: number, currentCol: number) {

@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, mergeCellStyles } from '../../app/(apps)/sheets/editor/google.transfomer';
+import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, mergeCellStyles, numberFromFormattedText, preferUnderlyingValue } from '../../app/(apps)/sheets/editor/google.transfomer';
 import { formatCellValue } from '../../app/(apps)/sheets/editor/utils';
 
 // ── Compact-table JSON builders ───────────────────────────────────────────────
@@ -660,5 +660,224 @@ describe('parseGoogleSpreadsheetCompactTableJson — merge anchor handling', () 
         for (const c of covered) {
             expect(c.mergeAnchor).toBe('R[0]C[0]');
         }
+    });
+});
+
+// ── parseGoogleSheetsHtml — formatted numbers stay numbers ───────────────────
+
+/**
+ * A pasted currency column could not be summed: every cell arrived as the
+ * display string "$100.00" rather than the number 100, so parseFloat returned
+ * NaN and SUM answered 0 while the unformatted column beside it totalled fine.
+ *
+ * The cause was the value type code. Google writes a number as type 3 with the
+ * value in slot "3"; the parser only recognised type 1, so a number fell
+ * through to `td.textContent`. For an unformatted cell that text *is* the
+ * number, which is exactly why this hid for so long — a currency symbol, a
+ * percent sign or a thousands separator is what turns it into an unusable
+ * string.
+ */
+const CURRENCY_FMT = '"$"#,##0.00';
+
+/** One <td> as Google Sheets writes a currency cell: type 3, value in slot "3". */
+function currencyTd(amount: number): string {
+    const value = JSON.stringify({ '1': 3, '3': amount }).replace(/"/g, '&quot;');
+    const fmt = JSON.stringify({ '1': 4, '2': CURRENCY_FMT, '3': 1 }).replace(/"/g, '&quot;');
+    const display = `$${amount.toFixed(2)}`;
+    return `<td data-sheets-value="${value}" data-sheets-numberformat="${fmt}">${display}</td>`;
+}
+
+describe('parseGoogleSheetsHtml — currency and other formatted numbers', () => {
+    it('stores the number, not the "$100.00" display text', () => {
+        const html = `<google-sheets-html-origin><table><tr>${currencyTd(100)}</tr></table>`;
+        const [cell] = parseGoogleSheetsHtml(html);
+
+        expect(cell.raw).toBe('100');
+        expect(parseFloat(cell.raw)).toBe(100);           // summable
+        expect(cell.cellStyle?.numberFormat).toBe('currency');
+        expect(cell.cellStyle?.customFormat).toBe(CURRENCY_FMT);
+        // …and it still *displays* as currency.
+        expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('$100.00');
+    });
+
+    it('a pasted currency column totals like the unformatted one beside it', () => {
+        const amounts = [100, 800, 450, 500, 600, 250, 824, 450, 200, 250, 250, 200, 150, 200];
+        const rows = amounts.map(a => `<tr>${currencyTd(a)}</tr>`).join('');
+        const cells = parseGoogleSheetsHtml(`<google-sheets-html-origin><table>${rows}</table>`);
+
+        const total = cells
+            .map(c => parseFloat(c.raw))
+            .filter(n => !isNaN(n))
+            .reduce((a, b) => a + b, 0);
+        expect(total).toBe(5224);
+    });
+
+    it('keeps the underlying fraction for a percent cell', () => {
+        const value = JSON.stringify({ '1': 3, '3': 0.5 }).replace(/"/g, '&quot;');
+        const fmt = JSON.stringify({ '1': 3, '2': '0.00%', '3': 1 }).replace(/"/g, '&quot;');
+        const html = '<google-sheets-html-origin><table><tr>'
+            + `<td data-sheets-value="${value}" data-sheets-numberformat="${fmt}">50.00%</td>`
+            + '</tr></table>';
+
+        const [cell] = parseGoogleSheetsHtml(html);
+        expect(cell.raw).toBe('0.5');
+        expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('50.00%');
+    });
+
+    it('keeps the date serial for a type-3 date cell', () => {
+        const value = JSON.stringify({ '1': 3, '3': 45782 }).replace(/"/g, '&quot;');
+        const fmt = JSON.stringify({ '1': 5, '2': 'dddd', '3': 1 }).replace(/"/g, '&quot;');
+        const html = '<google-sheets-html-origin><table><tr>'
+            + `<td data-sheets-value="${value}" data-sheets-numberformat="${fmt}">Monday</td>`
+            + '</tr></table>';
+
+        const [cell] = parseGoogleSheetsHtml(html);
+        expect(cell.raw).toBe('45782');
+        expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('Monday');
+    });
+
+    it('recovers the number when the td carries a format but no data-sheets-value', () => {
+        // The shape a real Google currency column arrives in: number format and an
+        // inline background, no value attribute at all. Reported from the console as
+        //   [paste] writing S3 ← raw: $100.00 … bg: #d9d9d9 fmt: "$"#,##0.00
+        const fmt = JSON.stringify({ '1': 4, '2': CURRENCY_FMT, '3': 1 }).replace(/"/g, '&quot;');
+        const html = '<google-sheets-html-origin><table><tr>'
+            + `<td data-sheets-numberformat="${fmt}" style="background-color:#d9d9d9;">$100.00</td>`
+            + '</tr></table>';
+
+        const [cell] = parseGoogleSheetsHtml(html);
+        expect(cell.raw).toBe('100');
+        expect(cell.cellStyle?.backgroundColor).toBe('#d9d9d9');
+        expect(formatCellValue(cell.raw, cell.cellStyle)).toBe('$100.00');
+    });
+
+    it('totals the reported column when no cell has a data-sheets-value', () => {
+        const amounts = [100, 800, 450, 500, 600, 250, 824, 450, 200, 250, 250, 200, 150, 200];
+        const fmt = JSON.stringify({ '1': 4, '2': CURRENCY_FMT, '3': 1 }).replace(/"/g, '&quot;');
+        const rows = amounts.map(a =>
+            `<tr><td data-sheets-numberformat="${fmt}" style="background-color:#d9d9d9;">$${a.toFixed(2)}</td></tr>`
+        ).join('');
+
+        const cells = parseGoogleSheetsHtml(`<google-sheets-html-origin><table>${rows}</table>`);
+        expect(cells).toHaveLength(14);
+        const total = cells.map(c => parseFloat(c.raw)).filter(n => !isNaN(n)).reduce((a, b) => a + b, 0);
+        expect(total).toBe(5224);
+    });
+
+    it('leaves a declared string value alone even when it looks numeric', () => {
+        const value = JSON.stringify({ '1': 2, '2': '007' }).replace(/"/g, '&quot;');
+        const html = '<google-sheets-html-origin><table><tr>'
+            + `<td data-sheets-value="${value}">007</td>`
+            + '</tr></table>';
+
+        expect(parseGoogleSheetsHtml(html)[0].raw).toBe('007');
+    });
+});
+
+// ── numberFromFormattedText — recovering a value from display text ────────────
+
+describe('numberFromFormattedText', () => {
+    const currency = { numberFormat: 'currency' as const, customFormat: '"$"#,##0.00' };
+    const percent  = { numberFormat: 'percent'  as const, customFormat: '0.00%' };
+    const plain    = { numberFormat: 'number'   as const, customFormat: '#,##0.00' };
+
+    it('strips the currency symbol', () => {
+        expect(numberFromFormattedText('$100.00', currency)).toBe('100');
+        expect(numberFromFormattedText('$824.00', currency)).toBe('824');
+    });
+
+    it('strips thousands separators', () => {
+        expect(numberFromFormattedText('$1,234.56', currency)).toBe('1234.56');
+        expect(numberFromFormattedText('1,000,000.00', plain)).toBe('1000000');
+    });
+
+    it('reads a leading-minus negative', () => {
+        expect(numberFromFormattedText('-$50.00', currency)).toBe('-50');
+    });
+
+    it('reads accounting parentheses as negative, either side of the symbol', () => {
+        expect(numberFromFormattedText('($50.00)', currency)).toBe('-50');
+        expect(numberFromFormattedText('$(50.00)', currency)).toBe('-50');
+    });
+
+    it('converts a percent display back to its underlying fraction', () => {
+        expect(numberFromFormattedText('50.00%', percent)).toBe('0.5');
+        expect(numberFromFormattedText('7.50%', percent)).toBe('0.075');
+    });
+
+    it('leaves a non-numeric string alone', () => {
+        expect(numberFromFormattedText('Total', currency)).toBeNull();
+        expect(numberFromFormattedText('N/A', currency)).toBeNull();
+        expect(numberFromFormattedText('—', currency)).toBeNull();
+        expect(numberFromFormattedText('', currency)).toBeNull();
+    });
+
+    it('refuses a date, whose display text carries no recoverable serial', () => {
+        expect(numberFromFormattedText('Monday', { customFormat: 'dddd' })).toBeNull();
+        expect(numberFromFormattedText('Nov 2025', { customFormat: 'mmm" "yyyy' })).toBeNull();
+    });
+
+    it('refuses a cell that makes no claim to be a number', () => {
+        // No number format: a string cell's text is its value, and an unformatted
+        // number already parses on its own.
+        expect(numberFromFormattedText('$100.00', undefined)).toBeNull();
+        expect(numberFromFormattedText('$100.00', { backgroundColor: '#d9d9d9' })).toBeNull();
+    });
+
+    it('does not turn a mangled string into a number', () => {
+        expect(numberFromFormattedText('100-200', plain)).toBeNull();
+        expect(numberFromFormattedText('1.2.3', plain)).toBeNull();
+    });
+});
+
+// ── preferUnderlyingValue — compact-table value vs HTML display text ──────────
+
+/**
+ * The reported bug in its final form. Both Google formats were on the clipboard
+ * and each had half the answer: the compact table held the numbers (logged as
+ * `CELL: {raw: '100'}` … `{raw: '200'}`) and the HTML held the formatting and
+ * the structure. The merge kept the compact value only for formulas, so the
+ * display text won and the column could not be summed.
+ */
+describe('preferUnderlyingValue', () => {
+    const currency = { numberFormat: 'currency', customFormat: '"$"#,##0.00' } as never;
+
+    it('takes the compact number over the HTML display text', () => {
+        expect(preferUnderlyingValue('100', '$100.00', currency)).toBe('100');
+        expect(preferUnderlyingValue('824', '$824.00', currency)).toBe('824');
+    });
+
+    it('takes a date serial over its rendered day name', () => {
+        const dateStyle = { numberFormat: 'date', customFormat: 'dddd' } as never;
+        expect(preferUnderlyingValue('45782', 'Monday', dateStyle)).toBe('45782');
+    });
+
+    it('still prefers a formula, whose result is all the HTML has', () => {
+        expect(preferUnderlyingValue('=SUM(A1:A3)', '5224', currency)).toBe('=SUM(A1:A3)');
+    });
+
+    it('keeps the HTML text when the compact value cannot explain it', () => {
+        // What a desynced RLE reader looks like: a neighbour's value, which would
+        // silently write the wrong number into the cell.
+        expect(preferUnderlyingValue('800', '$100.00', currency)).toBe('$100.00');
+    });
+
+    it('keeps the HTML text when the compact table has nothing for the cell', () => {
+        expect(preferUnderlyingValue(undefined, '$100.00', currency)).toBe('$100.00');
+        expect(preferUnderlyingValue('', '$100.00', currency)).toBe('$100.00');
+    });
+
+    it('passes an unformatted value through unchanged', () => {
+        expect(preferUnderlyingValue('hello', 'hello', undefined)).toBe('hello');
+        expect(preferUnderlyingValue('100', '100', undefined)).toBe('100');
+    });
+
+    it('totals the reported column once the compact values win', () => {
+        const amounts = [100, 800, 450, 500, 600, 250, 824, 450, 200, 250, 250, 200, 150, 200];
+        const total = amounts
+            .map(a => preferUnderlyingValue(String(a), `$${a.toFixed(2)}`, currency))
+            .map(parseFloat)
+            .reduce((a, b) => a + b, 0);
+        expect(total).toBe(5224);
     });
 });

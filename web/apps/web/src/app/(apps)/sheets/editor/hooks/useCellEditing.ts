@@ -108,6 +108,14 @@ export function useCellEditing({
     // re-renders with the new selectionAnchor state (e.g. rapid keyboard shortcuts
     // pressed immediately after a cell click).
     const selectionAnchorLatestRef = useRef<string | undefined>(undefined);
+    // True once the user has typed into the currently-activated cell. Reset on
+    // every activation. This is what separates "the user entered something that
+    // must be committed when they navigate away" from "this cell was merely
+    // selected": the formula bar's DOM value and currentCell.raw are both
+    // snapshots taken at activation, and an external write (a paste) updates
+    // neither, so without this a paste into the selected cell was undone by the
+    // very next Enter or arrow key.
+    const typedSinceActivationRef = useRef(false);
 
     // ── Formula pick mode ────────────────────────────────────────────────────
     // True when the formula bar is focused and the current formula starts with =.
@@ -143,6 +151,11 @@ export function useCellEditing({
             return;
         }
 
+        // Whether the user typed into the cell being left. Read before the reset
+        // below, which arms the flag fresh for the cell now being activated.
+        const hadTypedInput = typedSinceActivationRef.current;
+        typedSinceActivationRef.current = false;
+
         const existing = dataRef.current.get(id) ?? { id, value: '', raw: '', edit: false } as CellProps;
         const activated = { ...existing, edit: true };
         setCurrentCell(activated);
@@ -158,14 +171,24 @@ export function useCellEditing({
         // unmount save reads dataRef.current directly, so this ensures the latest edit is
         // always captured even if the transition never commits to React state.
         if (currentCell) {
-            // Prefer the formula bar's DOM value over currentCell.raw (React state).
-            // React may not have committed the setCurrentCell update from handleTextChange
-            // yet when activateCell is called (e.g. Enter pressed immediately after fill
-            // in an E2E test), leaving currentCell.raw stale. The DOM input always holds
-            // the actual typed content regardless of React render timing.
-            const rawToCommit = formulaInputRef.current?.value ?? currentCell.raw ?? '';
             const eagerMap = new Map(dataRef.current);
             const prevCell = eagerMap.get(currentCell.id) ?? { id: currentCell.id, value: '', raw: '', edit: false };
+            // Only the user's own typing may be written back here.
+            //
+            // The formula bar's DOM value and currentCell.raw are both snapshots
+            // taken when this cell was activated, and an external write — a paste —
+            // updates neither. Committing them unconditionally therefore restored
+            // the pre-paste value over pasted content on the very next Enter or
+            // arrow key. When nothing has been typed the stored raw is the truth,
+            // and this commit is a deliberate no-op.
+            //
+            // Where the user *has* typed, the DOM value still wins over
+            // currentCell.raw: React may not have committed handleTextChange's
+            // update yet (Enter pressed immediately after a fill in an E2E test),
+            // and the input always holds what was actually typed.
+            const rawToCommit = hadTypedInput
+                ? (formulaInputRef.current?.value ?? currentCell.raw ?? '')
+                : (prevCell.raw ?? '');
             // Commit if the cell is actively edited in the data map, OR if the cell isn't
             // in the data map at all (isFallback). The fallback occurs when startTransition
             // updates haven't committed yet and useLayoutEffect already overwrote dataRef
@@ -184,6 +207,24 @@ export function useCellEditing({
             const hasPendingTypedInput =
                 document.activeElement === formulaInputRef.current &&
                 rawToCommit !== (prevCell.raw ?? '');
+            // TEMPORARY (remove before merge) — diagnosing a report that a pasted
+            // value still disappears on Enter. Logs every input the commit decision
+            // is made from, so the console says which one is stale rather than
+            // leaving it to be inferred.
+            console.log('[activate]', {
+                leaving: currentCell.id, to: id,
+                currentCellRaw: currentCell.raw,
+                formulaBarValue: formulaInputRef.current?.value,
+                formulaBarFocused: document.activeElement === formulaInputRef.current,
+                hadTypedInput,
+                prevCellRaw: prevCell.raw, prevCellEdit: prevCell.edit,
+                dataRefRaw: dataRef.current.get(currentCell.id)?.raw,
+                committedRaw: data.get(currentCell.id)?.raw,
+                dataRefIsStale: dataRef.current.get(currentCell.id)?.raw !== data.get(currentCell.id)?.raw,
+                isFallback, hasPendingTypedInput,
+                rawToCommit,
+                willCommit: prevCell.edit || isFallback || hasPendingTypedInput,
+            });
             if (prevCell.edit || isFallback || hasPendingTypedInput) {
                 // Also compute value so subsequent formula evaluations in the same
                 // turn (e.g. =SUM(B2:B6) entered after plain values) see the correct
@@ -216,7 +257,11 @@ export function useCellEditing({
                 // committed yet (e.g. Enter pressed immediately after fill in an E2E test).
                 // When edit is false an external write (e.g. paste) already stored the
                 // correct raw in the map — trust that instead.
-                const rawToCommit = latestCell.edit
+                // `edit` alone is not enough: a pending activation transition can set
+                // it back to true on a cell a paste has since rewritten, and then the
+                // formula bar's pre-paste snapshot would be committed over the pasted
+                // value. Typing is what makes the formula bar authoritative.
+                const rawToCommit = (latestCell.edit && hadTypedInput)
                     ? (formulaInputRef.current?.value ?? currentCell.raw ?? latestCell.raw ?? '')
                     : (latestCell.raw ?? '');
                 const { value, deps: newDeps } = computeCell(rawToCommit, next, allSheets);
@@ -297,8 +342,17 @@ export function useCellEditing({
                     }
                 }
 
+                // Activation marks the cell as being edited and changes nothing else.
+                // `existing` was read from dataRef.current at the top of activateCell,
+                // so it is by construction older than `result` (which is built from
+                // prevData, the freshest state). Forcing `raw: existing.raw` here could
+                // therefore only ever revert a value — and did: this transition is low
+                // priority, so a paste that landed after activateCell was called but
+                // before the transition ran was undone the moment the user pressed an
+                // arrow key and flushed it, wiping the cell under the cursor.
+                // `?? existing` already covers a cell that is not in the map at all.
                 const latestForId = result.get(id) ?? existing;
-                result.set(id, { ...latestForId, raw: existing.raw, edit: true });
+                result.set(id, { ...latestForId, edit: true });
                 return result;
             });
         });
@@ -317,6 +371,7 @@ export function useCellEditing({
         const nextCell = { ...existing, raw: text, edit: true };
 
         dirtyRef.current = true;
+        typedSinceActivationRef.current = true;
         setCurrentCell(nextCell);
         setSelectionAnchor(id);
         setSelectionActive(id);
@@ -345,6 +400,7 @@ export function useCellEditing({
     const handleTextChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         event.stopPropagation();
         dirtyRef.current = true;
+        typedSinceActivationRef.current = true;
         const newRaw = event.target.value;
         setCurrentCell(prev => ({ ...prev, raw: newRaw } as CellProps));
         const query = newRaw.startsWith('=') ? newRaw.slice(1).toUpperCase() : '';

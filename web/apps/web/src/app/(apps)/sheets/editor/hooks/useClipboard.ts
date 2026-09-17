@@ -5,8 +5,9 @@ import type { CellProps, CellStyle, ClipboardCell, ClipboardCFRule, ClipboardDat
 import { getRangeCells, encodeFormula, decodeFormula } from '../utils';
 import { alphaToNum, numToAlpha } from '../utils';
 import { computeCell, propagateDeps, type SheetRef } from '../formula';
-import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, fixRealtiveFormulas, mergeCellStyles } from '../google.transfomer';
+import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, fixRealtiveFormulas, mergeCellStyles, preferUnderlyingValue } from '../google.transfomer';
 import { NEUTRINO_SHEET_SELECTION_MIME, buildSheetSelectionPayload } from '@neutrino/sheet-embed';
+import { clipboardSource, NEUTRINO_SHEET_MIME } from './clipboardSource';
 
 export function useClipboard({
     dataRef,
@@ -40,6 +41,9 @@ export function useClipboard({
 }) {
     const clipboardRef = useRef<ClipboardData | null>(null);
     const cutSourceRef = useRef<Set<string>>(new Set<string>());
+    // Set by the native paste handler so the Cmd/Ctrl+V keydown fallback knows a
+    // real clipboard event arrived and it must not paste from memory over it.
+    const pasteEventSeenRef = useRef(false);
     const [cutCells, setCutCells] = useState<Set<string>>(new Set<string>());
 
     const handleCopy = useCallback((isCut: boolean, transfer: DataTransfer) => {
@@ -117,7 +121,7 @@ export function useClipboard({
         }
         transfer.setData('text/plain', grid.map(row => row.join('\t')).join('\n'));
         // Custom format carries the full rich payload (relative formula encoding + styles).
-        transfer.setData('application/x-neutrino-sheet', JSON.stringify({ isCut, cells: entries, cfRules }));
+        transfer.setData(NEUTRINO_SHEET_MIME, JSON.stringify({ isCut, cells: entries, cfRules }));
 
         // When the live-embed feature is enabled, also write the selection payload
         // so that pasting into Docs or Slides offers a "Paste as live view" option.
@@ -167,10 +171,27 @@ export function useClipboard({
         const allSheets = getAllSheets?.();
 
         // Prefer the rich custom format; fall back to in-memory ref, then plain text.
+        // The clipboard event is the only thing that knows what is on the system
+        // clipboard *now*. The in-memory clipboard survives until a cut, so
+        // consulting it first made every external paste replay the last thing
+        // copied inside this sheet — the Google payload was never even read.
         if (transfer) {
-            const rich = transfer.getData('application/x-neutrino-sheet');
-            if (rich) {
-                try { clipboardRef.current = JSON.parse(rich) as ClipboardData; } catch { /* ignore */ }
+            switch (clipboardSource(transfer.types)) {
+                case 'internal': {
+                    const rich = transfer.getData(NEUTRINO_SHEET_MIME);
+                    try { clipboardRef.current = JSON.parse(rich) as ClipboardData; }
+                    catch { clipboardRef.current = null; }
+                    break;
+                }
+                case 'external':
+                    // Somebody else's content is on the clipboard; ours is stale.
+                    clipboardRef.current = null;
+                    cutSourceRef.current = new Set();
+                    setCutCells(new Set());
+                    break;
+                case 'empty':
+                    // Nothing readable on the event — keep what is in memory.
+                    break;
             }
         }
 
@@ -209,21 +230,26 @@ export function useClipboard({
                             // The compact-table RLE reader can progressively desync across
                             // merged regions, corrupting the coordinates, values and merge
                             // spans of cells to the right of a merge. The HTML clipboard is
-                            // DOM-parsed, so its structure (coordinates, spans, values,
-                            // styles) is reliable — make it the authority. We only borrow
-                            // FORMULAS from the compact-table, since HTML carries a cell's
-                            // computed value rather than its "=..." source, plus any number/
-                            // date format string HTML may have omitted (filled via merge).
+                            // DOM-parsed, so its STRUCTURE (coordinates, spans, styles) is
+                            // reliable — it stays the authority for all of that.
+                            //
+                            // Values are the other way round. HTML carries only what is on
+                            // screen, so a currency cell reads "$100.00" and a date reads
+                            // "Monday"; the compact table carries the number, the serial and
+                            // the "=..." source. preferUnderlyingValue takes the compact
+                            // value where it can be shown to explain the HTML's display text,
+                            // which keeps the desync protection without storing display text
+                            // as if it were a value.
                             const compactByPos = new Map(gsCells.map(c => [`${c.row},${c.col}`, c]));
                             const before = gsCells.length;
                             gsCells = htmlCells.map(hc => {
                                 const cc = compactByPos.get(`${hc.row},${hc.col}`);
-                                const raw = cc?.raw && cc.raw.startsWith('=') ? cc.raw : hc.raw;
                                 const merged = mergeCellStyles(cc?.cellStyle, hc.cellStyle);
+                                const cellStyle = Object.keys(merged).length > 0 ? (merged as CellStyle) : undefined;
                                 return {
                                     ...hc,
-                                    raw,
-                                    cellStyle: Object.keys(merged).length > 0 ? (merged as CellStyle) : undefined,
+                                    raw: preferUnderlyingValue(cc?.raw, hc.raw, cellStyle),
+                                    cellStyle,
                                 };
                             });
                             console.log('[paste] gsCells from HTML base:', gsCells.length, '(compact was', before + ')');
@@ -489,9 +515,23 @@ export function useClipboard({
                 handleCopy(false, createMemoryTransfer());
             } else if (key === 'x') {
                 handleCopy(true, createMemoryTransfer());
-            } else if (key === 'v' && clipboardRef.current) {
-                e.preventDefault();
-                handlePaste();
+            } else if (key === 'v') {
+                // Never preventDefault here: that cancels the native `paste` event,
+                // which is the only place the system clipboard can be read, and is
+                // what made every external paste replay the last in-app copy.
+                //
+                // But the keypress cannot simply be ignored either — a synthetic
+                // Meta+V carries no clipboard and fires no paste event at all
+                // (Playwright's keyboard does exactly this), and dropping the
+                // fallback took internal copy/paste with it. So give the event a
+                // turn of the loop to arrive, and only paste from memory if it
+                // never does. A real paste sets the flag first and wins.
+                pasteEventSeenRef.current = false;
+                setTimeout(() => {
+                    if (pasteEventSeenRef.current) return;
+                    if (!clipboardRef.current) return;
+                    handlePaste();
+                }, 0);
             }
         };
 
@@ -509,6 +549,10 @@ export function useClipboard({
             handleCopy(true, e.clipboardData);
         };
         const onPaste = (e: ClipboardEvent) => {
+            // Recorded before any early return: the keydown fallback must stand down
+            // whenever a real paste event arrived, including one this handler declines
+            // to act on (the formula bar handles its own).
+            pasteEventSeenRef.current = true;
             if (shouldLetFormulaInputHandleShortcut()) return;
             if (!selectionAnchorRef.current) return;
             e.preventDefault();

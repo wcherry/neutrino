@@ -228,7 +228,7 @@ function formatDateWithPattern(d: Date, fmt: string): string {
     return result.replace(/\x00(\d+)\x00/g, (_, i) => literals[parseInt(i)]);
 }
 
-function isDateOrTimeFormatStr(fmt: string): boolean {
+export function isDateOrTimeFormatStr(fmt: string): boolean {
     const noLiterals = fmt.replace(/"[^"]*"/g, '');
     return /[dmyDMY]|\bh{1,2}\b|\bs{1,2}\b|am\/pm|a\/p/i.test(noLiterals);
 }
