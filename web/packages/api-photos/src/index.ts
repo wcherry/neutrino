@@ -663,6 +663,24 @@ export interface DetectedObject {
   label: string;
 }
 
+/** What kind of blur an image has. Only motion blur has an axis to correct along. */
+export type BlurKind = 'motion' | 'focus' | 'none';
+
+export interface BlurAnalysis {
+  blurred: boolean;
+  kind: BlurKind;
+  /** 0.0 (sharp) to 1.0 (unrecognisable). */
+  severity: number;
+  /** The axis of the smear, in [0, 180). */
+  angleDegrees: number;
+  /** How far the image smeared, in pixels *of the image that was sent* — scale it by the ratio
+   *  you downsampled by before using it as a kernel on the full-resolution photo. */
+  lengthPx: number;
+  /** Whether sharpening along that axis is worth offering. */
+  recoverable: boolean;
+  advice: string;
+}
+
 export const photosAiApi = {
   /** Extract all text from an image via Claude vision. */
   async ocr(imageBase64: string, mediaType = 'image/png'): Promise<string> {
@@ -697,5 +715,18 @@ export const photosAiApi = {
       body: JSON.stringify({ ...aiCredentials(), imageBase64, mediaType, target }),
     });
     return resp.objects;
+  },
+
+  /**
+   * Judge whether a photo is blurred and, for motion blur, which way it smeared.
+   *
+   * Send a downsampled image: a full-resolution photo is a large base64 payload, and `lengthPx`
+   * comes back in pixels of whatever was sent, so the caller scales it by its own downsample ratio.
+   */
+  async analyzeBlur(imageBase64: string, mediaType = 'image/png'): Promise<BlurAnalysis> {
+    return request<BlurAnalysis>('/api/v1/photos/ai/analyze-blur', {
+      method: 'POST',
+      body: JSON.stringify({ ...aiCredentials(), imageBase64, mediaType }),
+    });
   },
 };

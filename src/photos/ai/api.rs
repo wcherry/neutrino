@@ -1,4 +1,4 @@
-use super::service::{DetectedObject, PhotosAIService};
+use super::service::{BlurAnalysis, DetectedObject, PhotosAIService};
 use crate::shared::{AiCredentials, ApiError, AuthenticatedUser};
 use actix_web::{post, web};
 use serde::{Deserialize, Serialize};
@@ -136,7 +136,13 @@ pub struct DetectedObjectDto {
 
 impl From<DetectedObject> for DetectedObjectDto {
     fn from(o: DetectedObject) -> Self {
-        Self { x: o.x, y: o.y, w: o.w, h: o.h, label: o.label }
+        Self {
+            x: o.x,
+            y: o.y,
+            w: o.w,
+            h: o.h,
+            label: o.label,
+        }
     }
 }
 
@@ -181,13 +187,86 @@ async fn detect_objects(
     }))
 }
 
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyzeBlurRequest {
+    /// The provider and key from Settings → AI Assistant.
+    #[serde(flatten)]
+    pub credentials: AiCredentials,
+    /// The image as analysed. Downsample before sending: `lengthPx` in the response is measured in
+    /// pixels of *this* image, so the client scales it by whatever ratio it downsampled by.
+    pub image_base64: String,
+    #[serde(default = "default_media_type")]
+    pub media_type: String,
+}
+
+#[derive(Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyzeBlurResponse {
+    pub blurred: bool,
+    /// "motion", "focus" or "none".
+    pub kind: String,
+    pub severity: f32,
+    pub angle_degrees: f32,
+    pub length_px: f32,
+    pub recoverable: bool,
+    pub advice: String,
+}
+
+impl From<BlurAnalysis> for AnalyzeBlurResponse {
+    fn from(a: BlurAnalysis) -> Self {
+        Self {
+            blurred: a.blurred,
+            kind: a.kind,
+            severity: a.severity,
+            angle_degrees: a.angle_degrees,
+            length_px: a.length_px,
+            recoverable: a.recoverable,
+            advice: a.advice,
+        }
+    }
+}
+
+/// Judge how blurred a photo is, and which way it smeared.
+///
+/// `angleDegrees` and `lengthPx` describe a motion-blur kernel, which is what the editor's Deblur
+/// slider sharpens against — sharpening along the smear is what helps camera shake, where an
+/// ordinary sharpen amplifies the smear along with everything else. Ranges are enforced here, not
+/// assumed: the numbers come from a language model and are about to drive a convolution.
+#[utoipa::path(
+    post,
+    path = "/api/v1/photos/ai/analyze-blur",
+    request_body = AnalyzeBlurRequest,
+    responses(
+        (status = 200, description = "Blur verdict and the smear to correct along", body = AnalyzeBlurResponse),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "photos-ai"
+)]
+#[post("/photos/ai/analyze-blur")]
+async fn analyze_blur(
+    state: web::Data<PhotosAIState>,
+    _user: AuthenticatedUser,
+    body: web::Json<AnalyzeBlurRequest>,
+) -> Result<web::Json<AnalyzeBlurResponse>, ApiError> {
+    let body = body.into_inner();
+    let analysis = state
+        .ai_service
+        .analyze_blur(&body.credentials, &body.image_base64, &body.media_type)
+        .await?;
+    Ok(web::Json(analysis.into()))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(ocr).service(screenshot_intel).service(detect_objects);
+    cfg.service(ocr)
+        .service(screenshot_intel)
+        .service(detect_objects)
+        .service(analyze_blur);
 }
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(ocr, screenshot_intel, detect_objects),
+    paths(ocr, screenshot_intel, detect_objects, analyze_blur),
     components(schemas(
         OcrRequest,
         OcrResponse,
@@ -196,6 +275,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         DetectObjectsRequest,
         DetectedObjectDto,
         DetectObjectsResponse,
+        AnalyzeBlurRequest,
+        AnalyzeBlurResponse,
         AiCredentials,
     )),
     tags((
