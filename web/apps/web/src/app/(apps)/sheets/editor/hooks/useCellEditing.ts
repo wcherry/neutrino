@@ -207,24 +207,6 @@ export function useCellEditing({
             const hasPendingTypedInput =
                 document.activeElement === formulaInputRef.current &&
                 rawToCommit !== (prevCell.raw ?? '');
-            // TEMPORARY (remove before merge) — diagnosing a report that a pasted
-            // value still disappears on Enter. Logs every input the commit decision
-            // is made from, so the console says which one is stale rather than
-            // leaving it to be inferred.
-            console.log('[activate]', {
-                leaving: currentCell.id, to: id,
-                currentCellRaw: currentCell.raw,
-                formulaBarValue: formulaInputRef.current?.value,
-                formulaBarFocused: document.activeElement === formulaInputRef.current,
-                hadTypedInput,
-                prevCellRaw: prevCell.raw, prevCellEdit: prevCell.edit,
-                dataRefRaw: dataRef.current.get(currentCell.id)?.raw,
-                committedRaw: data.get(currentCell.id)?.raw,
-                dataRefIsStale: dataRef.current.get(currentCell.id)?.raw !== data.get(currentCell.id)?.raw,
-                isFallback, hasPendingTypedInput,
-                rawToCommit,
-                willCommit: prevCell.edit || isFallback || hasPendingTypedInput,
-            });
             if (prevCell.edit || isFallback || hasPendingTypedInput) {
                 // Also compute value so subsequent formula evaluations in the same
                 // turn (e.g. =SUM(B2:B6) entered after plain values) see the correct
