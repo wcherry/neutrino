@@ -24,12 +24,7 @@ const PNG_MAGIC = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
 describe('isHeic', () => {
   beforeEach(() => heicTo.mockClear());
 
-  it('accepts a declared HEIC mime type', async () => {
-    await expect(isHeic(new Blob([], { type: 'image/heic' }))).resolves.toBe(true);
-    await expect(isHeic(new Blob([], { type: 'image/HEIF' }))).resolves.toBe(true);
-  });
-
-  it('sniffs HEIC bytes when the mime type is missing or generic', async () => {
+  it('sniffs HEIC bytes whatever the mime type says', async () => {
     await expect(isHeic(ftypBlob(['heic', 'mif1']))).resolves.toBe(true);
     await expect(
       isHeic(ftypBlob(['mif1', 'heic'], 'application/octet-stream')),
@@ -38,6 +33,14 @@ describe('isHeic', () => {
 
   it('finds the brand in the compatible-brands list, not just the major brand', async () => {
     await expect(isHeic(ftypBlob(['mp41', 'isom', 'heix']))).resolves.toBe(true);
+  });
+
+  it('reads past a long compatible-brands list', async () => {
+    // Six brands puts the recognisable one at byte 28-32; cameras really do
+    // write lists this long.
+    await expect(
+      isHeic(ftypBlob(['mp41', 'isom', 'iso2', 'avc1', 'mp42', 'heic'])),
+    ).resolves.toBe(true);
   });
 
   it('rejects non-HEIF ISO-BMFF containers such as mp4', async () => {
@@ -58,6 +61,17 @@ describe('isHeic', () => {
     const savedEdit = new File([PNG_MAGIC], 'IMG_0042.heic', { type: 'image/png' });
     await expect(isHeic(savedEdit)).resolves.toBe(false);
   });
+
+  it('trusts the bytes over a declared image/heic type, which is only a label', async () => {
+    // Issue #32: an iOS-uploaded .HEIC that never got decrypted reached the
+    // editor as ciphertext wearing the file's own `image/heic` mime type, and
+    // was fed to libheif — which could only report that it found no HEIF image.
+    const ciphertext = new Uint8Array(64);
+    ciphertext.set([0x9f, 0x2b, 0x11, 0xe4, 0x7a, 0x30, 0xc8, 0x5d]);
+    await expect(isHeic(new Blob([ciphertext], { type: 'image/heic' }))).resolves.toBe(false);
+    // An empty blob is not a HEIC either, however it is labelled.
+    await expect(isHeic(new Blob([], { type: 'image/heic' }))).resolves.toBe(false);
+  });
 });
 
 describe('toRenderableImageBlob', () => {
@@ -74,5 +88,11 @@ describe('toRenderableImageBlob', () => {
     const out = await toRenderableImageBlob(heic);
     expect(heicTo).toHaveBeenCalledWith({ blob: heic, type: 'image/png' });
     expect(out.type).toBe('image/png');
+  });
+
+  it('does not send bytes to libheif on the strength of a mime type alone', async () => {
+    const mislabelled = new Blob([PNG_MAGIC], { type: 'image/heic' });
+    await expect(toRenderableImageBlob(mislabelled)).resolves.toBe(mislabelled);
+    expect(heicTo).not.toHaveBeenCalled();
   });
 });

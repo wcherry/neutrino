@@ -166,8 +166,25 @@ async function applyBackgroundFill(
  */
 function loadFailureMessage(err: unknown): string {
   const base = 'The file could not be downloaded, decrypted, or decoded by this browser.';
-  const detail = err instanceof Error ? err.message.trim() : '';
+  const detail = failureDetail(err);
   return detail ? `${base} (${detail})` : base;
+}
+
+/**
+ * The reason out of a rejection, whether or not it is an `Error`.
+ *
+ * `heic-to` decodes in a worker, and an `Error` does not survive the trip back:
+ * its worker posts `e.toString()` and the main thread rejects with that
+ * *string*. Requiring an `Error` therefore discarded the detail in precisely the
+ * case where it was the only account of the failure — "HEIF image not found" —
+ * and left the generic sentence standing alone (issue #32).
+ */
+function failureDetail(err: unknown): string {
+  const raw =
+    err instanceof Error ? err.message : typeof err === 'string' ? err : '';
+  // Such a string usually arrives already stringified as "Error: <message>";
+  // the prefix says nothing here, where the sentence before it is the subject.
+  return raw.trim().replace(/^Error:\s*/, '');
 }
 
 export function PhotoEditor() {
@@ -246,6 +263,10 @@ export function PhotoEditor() {
 
     async function load() {
       try {
+        // This effect re-runs when the vault is unlocked, and that pass is what
+        // clears the "unlock your keys" dialog the locked pass put up. Without
+        // this the dialog outlives the condition it reports.
+        setLoadError(null);
         await initSodium();
 
         const [blob, meta] = await Promise.all([
@@ -259,28 +280,41 @@ export function PhotoEditor() {
 
         const mimeType = meta.mimeType?.startsWith('image/') ? meta.mimeType : 'image/png';
 
+        // Whether these bytes are ciphertext is a property of the file, so it is
+        // read off the file — `encryptedMetadata` is what every other reader
+        // keys off (see `lib/driveImages.ts`). Inferring it instead from whether
+        // a keypair and a key ref happened to be in hand is what made a locked
+        // vault look like a corrupt photo.
+        //
+        // Nothing here is wrapped in a catch. A file that says it is encrypted
+        // and will not decrypt has failed, and the reason — a locked vault, a
+        // key version this device does not hold — is the only thing the user can
+        // act on. Falling through to the ciphertext instead produced a blob that
+        // no decoder could ever make sense of, and buried the reason (issue #32).
         let imageBlob: Blob;
-        if (keyPair) {
-          try {
-            const keyRef = await encryptionApi.getFileKey(fileId!);
-            if (cancelled) return;
-            if (keyRef) {
-              const dek = openSealedFileKey(
-                currentUser!.id,
-                keyRef.encryptedFileKey,
-                keyRef.keyVersion,
-              );
-              const cipherBytes = new Uint8Array(await blob.arrayBuffer());
-              const plainBytes = decryptFile(cipherBytes, dek);
-              imageBlob = new Blob([plainBytes.buffer as ArrayBuffer], { type: mimeType });
-            } else {
-              imageBlob = new Blob([blob], { type: mimeType });
-            }
-          } catch {
+        if (!meta.encryptedMetadata) {
+          imageBlob = new Blob([blob], { type: mimeType });
+        } else if (!keyPair) {
+          // The effect re-runs when the vault is unlocked, so this resolves
+          // itself the moment the user acts on it.
+          throw new Error('Unlock your encryption keys to open this photo.');
+        } else {
+          const keyRef = await encryptionApi.getFileKey(fileId!);
+          if (cancelled) return;
+          if (keyRef) {
+            const dek = openSealedFileKey(
+              currentUser!.id,
+              keyRef.encryptedFileKey,
+              keyRef.keyVersion,
+            );
+            const cipherBytes = new Uint8Array(await blob.arrayBuffer());
+            const plainBytes = decryptFile(cipherBytes, dek);
+            imageBlob = new Blob([plainBytes.buffer as ArrayBuffer], { type: mimeType });
+          } else {
+            // Flagged as encrypted but no key is stored for us — take the bytes
+            // as they are, as `fetchDriveImageBlob` does.
             imageBlob = new Blob([blob], { type: mimeType });
           }
-        } else {
-          imageBlob = new Blob([blob], { type: mimeType });
         }
 
         if (cancelled) return;

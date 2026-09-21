@@ -10,13 +10,6 @@
  * via dynamic import, and only for files that actually sniff as HEIC.
  */
 
-const HEIC_MIME_TYPES = new Set([
-  'image/heic',
-  'image/heif',
-  'image/heic-sequence',
-  'image/heif-sequence',
-]);
-
 // ISO-BMFF brands that indicate HEIF-family content. `mif1`/`msf1` are the
 // generic HEIF brands; the rest are the HEVC-coded variants Apple writes.
 const HEIC_FTYP_BRANDS = new Set([
@@ -28,13 +21,14 @@ const HEIC_FTYP_BRANDS = new Set([
 /**
  * Reads the ISO-BMFF `ftyp` box brands from the head of a blob.
  *
- * Browsers are unreliable about HEIC mime types — a file picker on Linux or an
- * older Android will hand back `''` or `application/octet-stream` — so the
- * bytes are the only trustworthy signal.
+ * 64 bytes rather than the box's own 12-byte minimum because the
+ * compatible-brands list is open-ended — a camera that writes six of them
+ * pushes the recognisable one past a tighter window, and this is now the only
+ * signal consulted.
  */
 async function sniffHeicBytes(blob: Blob): Promise<boolean> {
-  // 4 (box size) + 4 ("ftyp") + 4 (major brand) + up to 4 compatible brands
-  const header = new Uint8Array(await blob.slice(0, 32).arrayBuffer());
+  // 4 (box size) + 4 ("ftyp") + 4 (major brand) + the compatible-brands list.
+  const header = new Uint8Array(await blob.slice(0, 64).arrayBuffer());
   if (header.length < 12) return false;
 
   const ascii = (offset: number) =>
@@ -51,17 +45,27 @@ async function sniffHeicBytes(blob: Blob): Promise<boolean> {
 }
 
 /**
- * True when `blob` is a HEIC/HEIF image, judged by its declared mime type or
- * the container's own `ftyp` brands.
+ * True when `blob` is a HEIC/HEIF image, judged by the container's own `ftyp`
+ * brands and by nothing else.
  *
- * The file *name* is deliberately not consulted: an edited HEIC is saved back
- * as PNG bytes while keeping its original `.heic` name, and trusting the
- * extension there would send a PNG through the HEIC decoder.
+ * **The bytes are the only signal, and that is the point.** Neither the file
+ * name nor the declared mime type is consulted, for the same reason: both are
+ * labels somebody attached, and a label that is wrong sends non-HEIC bytes into
+ * libheif, which rejects them with an error about a missing HEIF image — the
+ * least useful possible account of what went wrong.
+ *
+ * The name was always untrusted here (an edited HEIC is saved back as PNG bytes
+ * under its original `.heic` name). The mime type turns out to be no better:
+ * a Drive file's type is a server column a client wrote, and callers routinely
+ * stamp it onto a blob whose contents they have not established — issue #32 was
+ * an iOS-uploaded `.HEIC` whose *ciphertext* arrived here wearing `image/heic`,
+ * so it was handed to the HEIC decoder and the real failure (the file never got
+ * decrypted) was reported as a decode problem.
+ *
+ * Every HEIF file begins with an `ftyp` box, so nothing legitimate is lost by
+ * refusing to guess.
  */
 export async function isHeic(blob: Blob): Promise<boolean> {
-  if (HEIC_MIME_TYPES.has(blob.type.toLowerCase())) return true;
-  // Always fall through to the bytes: callers routinely hand us a blob whose
-  // declared type was defaulted to something generic upstream.
   return sniffHeicBytes(blob);
 }
 
