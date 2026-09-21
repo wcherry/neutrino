@@ -60,26 +60,32 @@ vi.mock('@neutrino/auth', () => ({
 }));
 
 const downloadFile = vi.fn();
+const getFileMetadata = vi.fn();
+const getFileKey = vi.fn();
 
 vi.mock('@neutrino/api-drive', () => ({
   storageApi: {
     downloadFile: (...args: unknown[]) => downloadFile(...args),
-    getFileMetadata: vi.fn(async () => ({ name: 'IMG_0042.jpg', mimeType: 'image/jpeg', folderId: null })),
+    getFileMetadata: (...args: unknown[]) => getFileMetadata(...args),
     uploadFile: vi.fn(),
   },
   filesystemApi: { updateFile: vi.fn() },
-  encryptionApi: { getFileKey: vi.fn(async () => null) },
+  encryptionApi: { getFileKey: (...args: unknown[]) => getFileKey(...args) },
 }));
 
 vi.mock('@neutrino/api-photos', () => ({ photosAiApi: {} }));
+
+const openSealedFileKey = vi.fn();
 
 vi.mock('@neutrino/e2e-crypto', () => ({
   initSodium: vi.fn(async () => {}),
   decryptFileKey: vi.fn(),
   decryptFile: vi.fn(),
+  openSealedFileKey: (...args: unknown[]) => openSealedFileKey(...args),
 }));
 
-vi.mock('@/hooks/useSessionKeyPair', () => ({ useSessionKeyPair: () => null }));
+let sessionKeyPair: unknown = null;
+vi.mock('@/hooks/useSessionKeyPair', () => ({ useSessionKeyPair: () => sessionKeyPair }));
 
 const toRenderableImageBlob = vi.fn(async (b: Blob) => b);
 vi.mock('@/lib/heic', () => ({ toRenderableImageBlob: (b: Blob) => toRenderableImageBlob(b) }));
@@ -99,6 +105,16 @@ describe('PhotoEditor load failure', () => {
     back.mockClear();
     downloadFile.mockReset();
     downloadFile.mockResolvedValue(new Blob([new Uint8Array([1, 2, 3])]));
+    getFileMetadata.mockReset();
+    getFileMetadata.mockResolvedValue({
+      name: 'IMG_0042.jpg',
+      mimeType: 'image/jpeg',
+      folderId: null,
+    });
+    getFileKey.mockReset();
+    getFileKey.mockResolvedValue(null);
+    openSealedFileKey.mockReset();
+    sessionKeyPair = null;
     toRenderableImageBlob.mockReset();
     toRenderableImageBlob.mockImplementation(async (b: Blob) => b);
   });
@@ -128,6 +144,58 @@ describe('PhotoEditor load failure', () => {
     expect(
       screen.getByText('The file could not be downloaded, decrypted, or decoded by this browser.'),
     ).toBeInTheDocument();
+  });
+
+  it('keeps the reason when the rejection is a bare string, as heic-to’s is', async () => {
+    // `heic-to` decodes in a worker and rejects with `e.toString()`, not an
+    // Error. That string was the only account of the failure and was dropped.
+    toRenderableImageBlob.mockRejectedValue('Error: HEIF image not found');
+
+    render(<PhotoEditor />);
+
+    await screen.findByRole('alertdialog');
+    expect(screen.getByText(/HEIF image not found/)).toBeInTheDocument();
+    // The "Error: " prefix says nothing after the sentence that precedes it.
+    expect(screen.queryByText(/\(Error: /)).not.toBeInTheDocument();
+  });
+
+  it('reports a locked vault as a locked vault, not as an undecodable file', async () => {
+    // Issue #32. An encrypted photo with no key in hand used to fall through to
+    // the ciphertext, which then failed to decode — so the dialog blamed the
+    // browser for a file that was never decrypted.
+    getFileMetadata.mockResolvedValue({
+      name: 'IMG_2460.HEIC',
+      mimeType: 'image/heic',
+      folderId: null,
+      encryptedMetadata: 'c2VhbGVk',
+    });
+
+    render(<PhotoEditor />);
+
+    expect(await screen.findByText('Couldn’t open IMG_2460.HEIC')).toBeInTheDocument();
+    expect(screen.getByText(/Unlock your encryption keys/)).toBeInTheDocument();
+    // The bytes were never handed to a decoder: there was nothing to decode.
+    expect(toRenderableImageBlob).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the key version a rotated account is missing', async () => {
+    getFileMetadata.mockResolvedValue({
+      name: 'IMG_2460.HEIC',
+      mimeType: 'image/heic',
+      folderId: null,
+      encryptedMetadata: 'c2VhbGVk',
+    });
+    sessionKeyPair = { publicKey: new Uint8Array(32), secretKey: new Uint8Array(32) };
+    getFileKey.mockResolvedValue({ encryptedFileKey: 'sealed', keyVersion: 2 });
+    openSealedFileKey.mockImplementation(() => {
+      throw new Error('This file needs encryption key version 2, which this device does not have.');
+    });
+
+    render(<PhotoEditor />);
+
+    await screen.findByRole('alertdialog');
+    expect(screen.getByText(/encryption key version 2/)).toBeInTheDocument();
+    expect(toRenderableImageBlob).not.toHaveBeenCalled();
   });
 
   it('goes back when the dialog is dismissed, since there is nothing behind it', async () => {
