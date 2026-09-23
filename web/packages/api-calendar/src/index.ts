@@ -59,6 +59,7 @@ export interface ReminderResponse {
   completed: boolean;
   recurrenceRule: string | null;
   linkedEventId: string | null;
+  linkedTaskId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -68,6 +69,8 @@ export interface CreateReminderRequest {
   dueTime: string;
   recurrenceRule?: string | null;
   linkedEventId?: string | null;
+  /** The task this reminder belongs to. A reminder links to an event or a task, not both. */
+  linkedTaskId?: string | null;
 }
 
 export interface UpdateReminderRequest {
@@ -136,6 +139,8 @@ export interface TaskResponse {
   dueDate: string | null;
   position: number;
   listId?: string | null;
+  /** The calendar event this task is scheduled as, or null when it is not on the calendar. */
+  eventId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -165,9 +170,33 @@ export interface UpdateTaskRequest {
 }
 
 export interface ReorderTasksRequest {
-  listId: string;
+  /**
+   * The list whose tasks are being reordered. Omit it to reorder the caller's tasks as one
+   * flat sequence, which is what the calendar sidebar does now that it no longer groups by
+   * list.
+   */
+  listId?: string;
   /** Task IDs in the desired new order (index 0 = position 0). */
   taskIds: string[];
+}
+
+export interface ScheduleTaskRequest {
+  startTime: string;
+  endTime: string;
+  allDay?: boolean;
+  timezone?: string | null;
+}
+
+export interface TaskAttachmentResponse {
+  id: string;
+  taskId: string;
+  fileId: string | null;
+  name: string | null;
+  note: string | null;
+}
+
+export interface ListTaskAttachmentsResponse {
+  attachments: TaskAttachmentResponse[];
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +279,12 @@ export const calendarApi = {
     return request<ListRemindersResponse>(`/api/v1/calendar/reminders${qs}`);
   },
 
+  async listTaskReminders(taskId: string): Promise<ListRemindersResponse> {
+    return request<ListRemindersResponse>(
+      `/api/v1/calendar/reminders?taskId=${encodeURIComponent(taskId)}`
+    );
+  },
+
   async createReminder(body: CreateReminderRequest): Promise<ReminderResponse> {
     return request<ReminderResponse>('/api/v1/calendar/reminders', {
       method: 'POST',
@@ -330,6 +365,45 @@ export const calendarApi = {
     return request<void>('/api/v1/calendar/tasks/reorder', {
       method: 'POST',
       body: JSON.stringify(body),
+    });
+  },
+
+  // ── Task scheduling ─────────────────────────────────────────────────────
+
+  /** Put a task on the calendar, or move the event it is already scheduled as. */
+  async scheduleTask(taskId: string, body: ScheduleTaskRequest): Promise<EventResponse> {
+    return request<EventResponse>(`/api/v1/calendar/tasks/${taskId}/event`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** Take a task off the calendar, deleting the event it was scheduled as. */
+  async unscheduleTask(taskId: string): Promise<TaskResponse> {
+    return request<TaskResponse>(`/api/v1/calendar/tasks/${taskId}/event`, {
+      method: 'DELETE',
+    });
+  },
+
+  // ── Task attachments ────────────────────────────────────────────────────
+
+  async listTaskAttachments(taskId: string): Promise<ListTaskAttachmentsResponse> {
+    return request<ListTaskAttachmentsResponse>(`/api/v1/calendar/tasks/${taskId}/attachments`);
+  },
+
+  async createTaskAttachment(
+    taskId: string,
+    body: CreateAttachmentRequest
+  ): Promise<TaskAttachmentResponse> {
+    return request<TaskAttachmentResponse>(`/api/v1/calendar/tasks/${taskId}/attachments`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async deleteTaskAttachment(taskId: string, attachmentId: string): Promise<void> {
+    return request<void>(`/api/v1/calendar/tasks/${taskId}/attachments/${attachmentId}`, {
+      method: 'DELETE',
     });
   },
 

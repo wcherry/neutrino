@@ -25,10 +25,10 @@ impl RemindersService {
         user: &AuthenticatedUser,
         query: ListRemindersQuery,
     ) -> Result<ListRemindersResponse, ApiError> {
-        let records = if let Some(event_id) = query.event_id {
-            self.repo.find_by_event(&user.user_id, &event_id)?
-        } else {
-            self.repo.find_by_user(&user.user_id)?
+        let records = match (query.event_id, query.task_id) {
+            (Some(event_id), _) => self.repo.find_by_event(&user.user_id, &event_id)?,
+            (None, Some(task_id)) => self.repo.find_by_task(&user.user_id, &task_id)?,
+            (None, None) => self.repo.find_by_user(&user.user_id)?,
         };
         let reminders = records.into_iter().map(reminder_to_response).collect();
         Ok(ListRemindersResponse { reminders })
@@ -39,6 +39,14 @@ impl RemindersService {
         user: &AuthenticatedUser,
         req: CreateReminderRequest,
     ) -> Result<ReminderResponse, ApiError> {
+        // One owner at most: the sidebar's standalone Reminders section is
+        // everything with neither link, so a reminder claiming both would be
+        // listed under an event *and* inside a task and hidden from that list.
+        if req.linked_event_id.is_some() && req.linked_task_id.is_some() {
+            return Err(ApiError::bad_request(
+                "A reminder can link to an event or a task, not both",
+            ));
+        }
         let now = Utc::now().naive_utc();
         let record = NewReminderRecord {
             id: Uuid::new_v4().to_string(),
@@ -48,6 +56,7 @@ impl RemindersService {
             completed: false,
             recurrence_rule: req.recurrence_rule,
             linked_event_id: req.linked_event_id,
+            linked_task_id: req.linked_task_id,
             created_at: now,
             updated_at: now,
         };
@@ -106,6 +115,7 @@ fn reminder_to_response(r: crate::calendar::reminders::model::ReminderRecord) ->
         completed: r.completed,
         recurrence_rule: r.recurrence_rule,
         linked_event_id: r.linked_event_id,
+        linked_task_id: r.linked_task_id,
         created_at: r.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         updated_at: r.updated_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
     }

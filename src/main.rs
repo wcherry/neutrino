@@ -422,7 +422,7 @@ async fn main() -> std::io::Result<()> {
         cal_attendees_repo,
     ));
     let cal_events_state = web::Data::new(calendar::events::api::EventsApiState {
-        events_service: cal_events_service,
+        events_service: cal_events_service.clone(),
     });
 
     let cal_reminders_repo = Arc::new(RemindersRepository::new(pool.clone()));
@@ -448,7 +448,7 @@ async fn main() -> std::io::Result<()> {
     });
 
     let cal_tasks_repo = Arc::new(TasksRepository::new(pool.clone()));
-    let cal_tasks_service = Arc::new(TasksService::new(cal_tasks_repo));
+    let cal_tasks_service = Arc::new(TasksService::new(cal_tasks_repo, cal_events_service));
     let cal_tasks_state = web::Data::new(calendar::tasks::api::TasksApiState {
         tasks_service: cal_tasks_service,
     });

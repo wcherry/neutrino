@@ -18,7 +18,7 @@ import {
   type UpdateReminderRequest,
   type TaskResponse,
   type CreateTaskRequest,
-  type CreateTaskListRequest,
+  type UpdateTaskRequest,
 } from '@/lib/api';
 import {
   WEEK_START_KEY,
@@ -36,7 +36,8 @@ import AgendaView from './AgendaView';
 import NewEventModal from './NewEventModal';
 import ReminderModal from './ReminderModal';
 import { RemindersSidebar } from './RemindersSidebar';
-import { TaskListsSidebar } from './TaskListsSidebar';
+import { TasksSidebar } from './TasksSidebar';
+import TaskDetailModal from './TaskDetailModal';
 import { EventDetail, EventViewModal } from './EventDetail';
 import styles from './page.module.css';
 
@@ -111,19 +112,16 @@ export default function CalendarPage() {
     refetchInterval: 60_000,
   });
 
-  // ── Task lists ────────────────────────────────────────────────────────────
-  const { data: taskListsData } = useQuery({
-    queryKey: ['taskLists'],
-    queryFn: () => calendarApi.listTaskLists(),
-  });
-  const taskLists = taskListsData?.taskLists ?? [];
-
-  // Fetch all tasks in a single call (backend returns list_id on each task)
+  // ── Tasks ─────────────────────────────────────────────────────────────────
+  //
+  // One flat sequence, in `position` order. Task lists still exist server-side
+  // but nothing here reads them: they are being replaced by tags.
   const { data: allTasksData } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => calendarApi.listAllTasks(),
   });
   const allTasks: TaskResponse[] = allTasksData ?? [];
+  const [editingTask, setEditingTask] = useState<TaskResponse | null>(null);
 
   // Browser notifications for due reminders
   const notifiedIds = useRef<Set<string>>(new Set());
@@ -244,22 +242,19 @@ export default function CalendarPage() {
   });
 
   const createTask = useMutation({
-    mutationFn: async ({ req, listId }: { req: CreateTaskRequest; listId: string }) => {
-      const task = await calendarApi.createTask(req);
-      await calendarApi.addTaskToList(task.id, listId);
-      return { ...task, listId };
-    },
+    mutationFn: (req: CreateTaskRequest) => calendarApi.createTask(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
-  const createTaskList = useMutation({
-    mutationFn: (req: CreateTaskListRequest) => calendarApi.createTaskList(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['taskLists'] }),
+  const updateTask = useMutation({
+    mutationFn: ({ id, req }: { id: string; req: UpdateTaskRequest }) =>
+      calendarApi.updateTask(id, req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
   const reorderTasks = useCallback(
-    async (listId: string, orderedTaskIds: string[]) => {
-      await calendarApi.reorderTasks({ listId, taskIds: orderedTaskIds });
+    async (orderedTaskIds: string[]) => {
+      await calendarApi.reorderTasks({ taskIds: orderedTaskIds });
       qc.invalidateQueries({ queryKey: ['tasks'] });
     },
     [qc]
@@ -322,6 +317,30 @@ export default function CalendarPage() {
     };
     reader.readAsText(file);
   }
+
+  // The two sidebar arrangements (with and without an event open) show the same
+  // two panels, so they are built once rather than kept in step by hand.
+  const remindersPanel = (
+    <RemindersSidebar
+      reminders={reminders.filter((r) => !r.linkedEventId && !r.linkedTaskId)}
+      onToggle={(id, completed) => toggleReminder.mutate({ id, completed })}
+      onEdit={(r) => setReminderModal({ open: true, editing: r })}
+      onDelete={(id) => deleteReminder.mutate(id)}
+      onNew={() => setReminderModal({ open: true, editing: null })}
+    />
+  );
+
+  const tasksPanel = (
+    <TasksSidebar
+      tasks={allTasks}
+      onToggleTask={(id, done) => toggleTask.mutate({ id, done })}
+      onCreateTask={(req) => createTask.mutateAsync(req)}
+      isCreatingTask={createTask.isPending}
+      onOpenTask={setEditingTask}
+      onReorderTasks={reorderTasks}
+      dragReorderEnabled={true}
+    />
+  );
 
   return (
     <div className={styles.page}>
@@ -419,46 +438,14 @@ export default function CalendarPage() {
                 onEdit={(ev) => setEditingEvent(ev)}
               />
               <div style={{ padding: 16 }}>
-                <RemindersSidebar
-                  reminders={reminders.filter((r) => !r.linkedEventId)}
-                  onToggle={(id, completed) => toggleReminder.mutate({ id, completed })}
-                  onEdit={(r) => setReminderModal({ open: true, editing: r })}
-                  onDelete={(id) => deleteReminder.mutate(id)}
-                  onNew={() => setReminderModal({ open: true, editing: null })}
-                />
-                <TaskListsSidebar
-                    taskLists={taskLists}
-                    tasks={allTasks}
-                    onToggleTask={(id, done) => toggleTask.mutate({ id, done })}
-                    onCreateTask={(req, listId) => createTask.mutate({ req, listId })}
-                    isCreatingTask={createTask.isPending}
-                    onCreateTaskList={(req) => createTaskList.mutateAsync(req)}
-                    isCreatingTaskList={createTaskList.isPending}
-                    onReorderTasks={reorderTasks}
-                    dragReorderEnabled={true}
-                  />
+                {remindersPanel}
+                {tasksPanel}
               </div>
             </div>
           ) : (
             <div className={styles.sidebarSection}>
-              <RemindersSidebar
-                reminders={reminders.filter((r) => !r.linkedEventId)}
-                onToggle={(id, completed) => toggleReminder.mutate({ id, completed })}
-                onEdit={(r) => setReminderModal({ open: true, editing: r })}
-                onDelete={(id) => deleteReminder.mutate(id)}
-                onNew={() => setReminderModal({ open: true, editing: null })}
-              />
-              <TaskListsSidebar
-                  taskLists={taskLists}
-                  tasks={allTasks}
-                  onToggleTask={(id, done) => toggleTask.mutate({ id, done })}
-                  onCreateTask={(req, listId) => createTask.mutate({ req, listId })}
-                  isCreatingTask={createTask.isPending}
-                  onCreateTaskList={(req) => createTaskList.mutateAsync(req)}
-                  isCreatingTaskList={createTaskList.isPending}
-                  onReorderTasks={reorderTasks}
-                  dragReorderEnabled={true}
-                />
+              {remindersPanel}
+              {tasksPanel}
             </div>
           )}
         </div>
@@ -494,6 +481,16 @@ export default function CalendarPage() {
           onCreate={() => { /* unused in edit mode — onUpdate handles saves */ }}
           onUpdate={(req, id) => updateEvent.mutate({ id, req })}
           isPending={updateEvent.isPending}
+        />
+      )}
+
+      {/* Task editor — reminders, calendar scheduling and attachments */}
+      {editingTask && (
+        <TaskDetailModal
+          key={editingTask.id}
+          task={allTasks.find((t) => t.id === editingTask.id) ?? editingTask}
+          onClose={() => setEditingTask(null)}
+          onSave={(id, req) => updateTask.mutateAsync({ id, req })}
         />
       )}
 

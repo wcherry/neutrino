@@ -79,6 +79,27 @@ impl RemindersRepository {
             })
     }
 
+    pub fn find_by_task(
+        &self,
+        user_id: &str,
+        task_id: &str,
+    ) -> Result<Vec<ReminderRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        reminders::table
+            .filter(
+                reminders::user_id
+                    .eq(user_id)
+                    .and(reminders::linked_task_id.eq(task_id)),
+            )
+            .order(reminders::due_time.asc())
+            .select(ReminderRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list task reminders error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
     pub fn find_by_id(&self, id: &str, user_id: &str) -> Result<ReminderRecord, ApiError> {
         let mut conn = self.get_conn()?;
         reminders::table

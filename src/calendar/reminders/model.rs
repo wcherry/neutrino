@@ -16,6 +16,7 @@ pub struct ReminderRecord {
     pub notified_at: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub linked_task_id: Option<String>,
 }
 
 #[derive(Debug, Insertable)]
@@ -28,6 +29,7 @@ pub struct NewReminderRecord {
     pub completed: bool,
     pub recurrence_rule: Option<String>,
     pub linked_event_id: Option<String>,
+    pub linked_task_id: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }

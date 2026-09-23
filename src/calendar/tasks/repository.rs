@@ -1,8 +1,8 @@
 use crate::calendar::tasks::model::{
-    NewTaskListMembershipRecord, NewTaskListRecord, NewTaskRecord, TaskListMembershipRecord,
-    TaskListRecord, TaskRecord, UpdateTaskRecord,
+    NewTaskAttachmentRecord, NewTaskListMembershipRecord, NewTaskListRecord, NewTaskRecord,
+    TaskAttachmentRecord, TaskListMembershipRecord, TaskListRecord, TaskRecord, UpdateTaskRecord,
 };
-use crate::schema::{task_list_memberships, task_lists, tasks};
+use crate::schema::{task_attachments, task_list_memberships, task_lists, tasks};
 use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
 use diesel::r2d2::ConnectionManager;
@@ -221,6 +221,102 @@ impl TasksRepository {
             tracing::error!("DB bulk_update_positions error: {:?}", e);
             ApiError::internal("Database error")
         })
+    }
+
+    /// Point a task at the calendar event it is scheduled as, or clear the link with
+    /// `None`. Separate from `update_task` because `UpdateTaskRecord`'s fields are all
+    /// "absent means leave alone", which has no way to say "set this back to NULL".
+    pub fn set_task_event(
+        &self,
+        task_id: &str,
+        user_id: &str,
+        event_id: Option<&str>,
+        now: chrono::NaiveDateTime,
+    ) -> Result<TaskRecord, ApiError> {
+        let mut conn = self.get_conn()?;
+        let affected = diesel::update(
+            tasks::table.filter(tasks::id.eq(task_id).and(tasks::user_id.eq(user_id))),
+        )
+        .set((
+            tasks::event_id.eq(event_id.map(|s| s.to_string())),
+            tasks::updated_at.eq(now),
+        ))
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB set task event error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+        if affected == 0 {
+            return Err(ApiError::not_found("Task not found"));
+        }
+        tasks::table
+            .filter(tasks::id.eq(task_id))
+            .select(TaskRecord::as_select())
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB get task after set event error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    // ── Task Attachments ──────────────────────────────────────────────────────
+
+    pub fn find_attachments_by_task(
+        &self,
+        task_id: &str,
+    ) -> Result<Vec<TaskAttachmentRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        task_attachments::table
+            .filter(task_attachments::task_id.eq(task_id))
+            .select(TaskAttachmentRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list task attachments error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    pub fn insert_attachment(
+        &self,
+        record: NewTaskAttachmentRecord,
+    ) -> Result<TaskAttachmentRecord, ApiError> {
+        let id = record.id.clone();
+        let mut conn = self.get_conn()?;
+        diesel::insert_into(task_attachments::table)
+            .values(&record)
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB insert task attachment error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+        task_attachments::table
+            .filter(task_attachments::id.eq(&id))
+            .select(TaskAttachmentRecord::as_select())
+            .first(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB query after task attachment insert error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    pub fn delete_attachment(&self, attachment_id: &str, task_id: &str) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        let affected = diesel::delete(
+            task_attachments::table.filter(
+                task_attachments::id
+                    .eq(attachment_id)
+                    .and(task_attachments::task_id.eq(task_id)),
+            ),
+        )
+        .execute(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB delete task attachment error: {:?}", e);
+            ApiError::internal("Database error")
+        })?;
+        if affected == 0 {
+            return Err(ApiError::not_found("Attachment not found"));
+        }
+        Ok(())
     }
 
     // ── Task List Memberships ─────────────────────────────────────────────────
