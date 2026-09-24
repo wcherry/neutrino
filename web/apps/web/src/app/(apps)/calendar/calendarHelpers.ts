@@ -421,6 +421,60 @@ export function isOverdue(dueTime: string) {
   return new Date(dueTime) < new Date();
 }
 
+// ── Reminder date range filter ───────────────────────────────────────────────
+
+export type ReminderRange = 'today' | '3days' | '7days' | 'all';
+
+/**
+ * How many days each range covers, counting today as the first. So on a Monday
+ * "7 days" runs to the end of Sunday, not to the end of next Monday.
+ */
+const RANGE_DAYS: Record<Exclude<ReminderRange, 'all'>, number> = {
+  today: 1,
+  '3days': 3,
+  '7days': 7,
+};
+
+export const REMINDER_RANGES: { value: ReminderRange; label: string; title: string }[] = [
+  { value: 'today', label: 'Today', title: 'Due by the end of today' },
+  { value: '3days', label: '3 days', title: 'Due within the next 3 days' },
+  { value: '7days', label: '7 days', title: 'Due within the next 7 days' },
+  { value: 'all', label: 'All', title: 'Every reminder' },
+];
+
+/**
+ * The instant a range stops including reminders — the end of its last day in
+ * the viewer's own timezone, so the boundary sits where the calendar draws it
+ * rather than drifting through the day as a rolling 24×N hours would.
+ *
+ * `null` for `all`, which has no upper bound.
+ */
+export function reminderRangeEnd(range: ReminderRange, now: Date = new Date()): Date | null {
+  if (range === 'all') return null;
+  const end = new Date(now);
+  end.setDate(end.getDate() + RANGE_DAYS[range] - 1);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+/**
+ * A range is an upper bound only: a reminder that came due yesterday is still
+ * something to deal with today, so filtering to "Today" must not be the thing
+ * that hides it. Overdue reminders appear in every range.
+ */
+export function isWithinReminderRange(
+  dueTime: string,
+  range: ReminderRange,
+  now: Date = new Date()
+): boolean {
+  const end = reminderRangeEnd(range, now);
+  if (end === null) return true;
+  const due = new Date(dueTime);
+  // A due time we cannot read is shown rather than silently dropped.
+  if (Number.isNaN(due.getTime())) return true;
+  return due <= end;
+}
+
 export function icsDateToIso(val: string): string {
   if (val.length === 8) {
     return `${val.slice(0, 4)}-${val.slice(4, 6)}-${val.slice(6, 8)}T00:00:00Z`;
