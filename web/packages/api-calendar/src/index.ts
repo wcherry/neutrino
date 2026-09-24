@@ -76,8 +76,11 @@ export interface CreateReminderRequest {
 export interface UpdateReminderRequest {
   title?: string;
   dueTime?: string;
+  /** Completing a recurring reminder moves it to its next occurrence instead of marking it done. */
   completed?: boolean;
   recurrenceRule?: string | null;
+  /** IANA zone the server steps a recurrence in, so a 09:00 reminder stays at 09:00 across DST. */
+  timezone?: string;
 }
 
 export interface ListRemindersResponse {

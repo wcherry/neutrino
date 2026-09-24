@@ -29,8 +29,14 @@ pub struct CreateReminderRequest {
 pub struct UpdateReminderRequest {
     pub title: Option<String>,
     pub due_time: Option<String>,
+    /// Completing a reminder with a recurrence rule moves it to its next occurrence and leaves it
+    /// open, rather than marking it done; it is marked done once the rule runs out.
     pub completed: Option<bool>,
+    /// An RRULE body such as `FREQ=WEEKLY;BYDAY=MO`. An empty string removes the rule.
     pub recurrence_rule: Option<String>,
+    /// The IANA zone to step a recurrence in, e.g. `America/Los_Angeles`, so a 09:00 reminder
+    /// stays at 09:00 across DST. Only read when completing a recurring reminder; UTC if absent.
+    pub timezone: Option<String>,
 }
 
 // ── Response types ────────────────────────────────────────────────────────────

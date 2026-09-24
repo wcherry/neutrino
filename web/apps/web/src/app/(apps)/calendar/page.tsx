@@ -208,8 +208,13 @@ export default function CalendarPage() {
   });
 
   const toggleReminder = useMutation({
+    // The zone travels with the completion: a recurring reminder is moved to its next
+    // occurrence server-side, stepped in this zone.
     mutationFn: ({ id, completed }: { id: string; completed: boolean }) =>
-      calendarApi.updateReminder(id, { completed }),
+      calendarApi.updateReminder(id, {
+        completed,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['reminders'] }),
   });
 
