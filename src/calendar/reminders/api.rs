@@ -16,13 +16,14 @@ pub struct RemindersApiState {
 
 /// List the caller's reminders.
 ///
-/// Pass `eventId` to return only the reminders attached to one event; without it every
-/// reminder the user owns is returned.
+/// Pass `eventId` to return only the reminders attached to one event, or `taskId` for the
+/// reminders on one task; without either every reminder the user owns is returned.
 #[utoipa::path(
     get,
     path = "/api/v1/reminders",
     params(
         ("eventId" = Option<String>, Query, description = "Filter by linked event ID"),
+        ("taskId" = Option<String>, Query, description = "Filter by linked task ID"),
     ),
     responses(
         (status = 200, description = "List of reminders", body = ListRemindersResponse),

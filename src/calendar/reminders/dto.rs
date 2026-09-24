@@ -8,6 +8,8 @@ use utoipa::{IntoParams, ToSchema};
 pub struct ListRemindersQuery {
     /// Filter to reminders linked to a specific event ID
     pub event_id: Option<String>,
+    /// Filter to reminders linked to a specific task ID
+    pub task_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -17,6 +19,9 @@ pub struct CreateReminderRequest {
     pub due_time: String, // ISO 8601 UTC
     pub recurrence_rule: Option<String>,
     pub linked_event_id: Option<String>,
+    /// The task this reminder belongs to. A reminder has at most one owner; passing both
+    /// this and `linkedEventId` is rejected.
+    pub linked_task_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -39,6 +44,7 @@ pub struct ReminderResponse {
     pub completed: bool,
     pub recurrence_rule: Option<String>,
     pub linked_event_id: Option<String>,
+    pub linked_task_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

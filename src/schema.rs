@@ -129,6 +129,7 @@ diesel::table! {
         notified_at -> Nullable<Timestamp>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        linked_task_id -> Nullable<Text>,
     }
 }
 
@@ -188,6 +189,17 @@ diesel::table! {
         position -> Integer,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        event_id -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    task_attachments (id) {
+        id -> Text,
+        task_id -> Text,
+        file_id -> Nullable<Text>,
+        name -> Nullable<Text>,
+        note -> Nullable<Text>,
     }
 }
 
@@ -1141,6 +1153,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     calendar_connections,
     task_lists,
     tasks,
+    task_attachments,
     task_list_memberships,
     // Docs
     doc_yjs_state,

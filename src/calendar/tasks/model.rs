@@ -51,6 +51,9 @@ pub struct TaskRecord {
     pub position: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    /// The calendar event this task is scheduled as, or `None` when it is not on
+    /// the calendar. Written only by the schedule/unschedule endpoints.
+    pub event_id: Option<String>,
 }
 
 #[derive(Debug, Insertable)]
@@ -76,6 +79,30 @@ pub struct UpdateTaskRecord {
     pub due_date: Option<Option<NaiveDateTime>>,
     pub position: Option<i32>,
     pub updated_at: NaiveDateTime,
+}
+
+// ── Task Attachments ──────────────────────────────────────────────────────────
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = crate::schema::task_attachments)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct TaskAttachmentRecord {
+    pub id: String,
+    pub task_id: String,
+    pub file_id: Option<String>,
+    pub name: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = crate::schema::task_attachments)]
+pub struct NewTaskAttachmentRecord {
+    pub id: String,
+    pub task_id: String,
+    pub file_id: Option<String>,
+    pub name: Option<String>,
+    pub note: Option<String>,
 }
 
 // ── Task List Memberships ─────────────────────────────────────────────────────

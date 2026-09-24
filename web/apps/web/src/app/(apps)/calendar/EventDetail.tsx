@@ -42,7 +42,12 @@ import styles from './page.module.css';
 // ── AddAttachmentModal ────────────────────────────────────────────────────────
 
 export interface AddAttachmentModalProps {
-  eventId: string;
+  /**
+   * Unused by the dialog, which only produces a request for its caller to send.
+   * Kept optional so a task can raise the same dialog, since a task attachment
+   * differs from an event's only in which endpoint it is posted to.
+   */
+  eventId?: string;
   onClose: () => void;
   onCreate: (req: CreateAttachmentRequest) => void;
   isPending: boolean;
@@ -185,11 +190,14 @@ export function AddAttachmentModal({ onClose, onCreate, isPending }: AddAttachme
 
 // ── AttachmentItem ────────────────────────────────────────────────────────────
 
+/** Whichever thing the attachment hangs off, a row of one reads the same. */
+export type AttachmentSummary = Pick<AttachmentResponse, 'fileId' | 'name' | 'note'>;
+
 export function AttachmentItem({
   attachment: a,
   onDelete,
 }: {
-  attachment: AttachmentResponse;
+  attachment: AttachmentSummary;
   onDelete: () => void;
 }) {
   return (
