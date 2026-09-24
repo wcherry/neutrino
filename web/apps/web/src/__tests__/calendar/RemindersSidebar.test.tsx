@@ -141,3 +141,37 @@ describe('RemindersSidebar range filter', () => {
     expect(screen.getByText('No matches')).toBeDefined();
   });
 });
+
+describe('RemindersSidebar labels', () => {
+  it('lists reminders that belong to an event or a task, and says which', () => {
+    const forEvent = reminder({ id: 'e', title: 'Design review', dueTime: '2026-09-30T10:50:00', linkedEventId: 'ev1' });
+    const forTask = reminder({ id: 't', title: 'Buy duster', dueTime: '2026-09-25T13:00:00', linkedTaskId: 'task1' });
+    render(
+      <RemindersSidebar
+        reminders={[forEvent, forTask]}
+        taskTitles={{ task1: 'Clean ceiling fans' }}
+        onToggle={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onNew={vi.fn()}
+      />
+    );
+    expect(shown('Design review')).toBe(true);
+    expect(screen.getByText('Event')).toBeDefined();
+    expect(shown('Buy duster')).toBe(true);
+    expect(screen.getByText('Clean ceiling fans')).toBeDefined();
+  });
+
+  it('falls back to "Task" when the task is not loaded', () => {
+    renderSidebar([reminder({ id: 't', title: 'Orphan', dueTime: '2026-09-25T13:00:00', linkedTaskId: 'gone' })]);
+    expect(screen.getByText('Task')).toBeDefined();
+  });
+
+  it('marks a repeating reminder, and only that one', () => {
+    renderSidebar([
+      reminder({ id: 'd', title: 'Take vitamins', dueTime: '2026-09-24T09:00:00', recurrenceRule: 'FREQ=DAILY' }),
+      reminder({ id: 'o', title: 'Water plants', dueTime: '2026-09-26T10:00:00' }),
+    ]);
+    expect(screen.getAllByRole('img', { name: 'Repeats' })).toHaveLength(1);
+  });
+});

@@ -6,7 +6,7 @@ import { Plus, UserPlus, X, Paperclip } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui';
 import { calendarApi, type CreateAttachmentRequest } from '@/lib/api';
 import type { NewEventModalProps, ReminderEntry } from './calendarTypes';
-import { REMINDER_PRESETS } from './calendarConstants';
+import { REMINDER_PRESETS, REPEAT_OPTIONS } from './calendarConstants';
 import {
   shiftEndWithStart,
   timeOfFormValue,
@@ -216,12 +216,9 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
               value={recurrence}
               onChange={(e) => setRecurrence(e.target.value)}
             >
-              <option value="">Does not repeat</option>
-              <option value="FREQ=DAILY">Daily</option>
-              <option value="FREQ=WEEKLY">Weekly</option>
-              <option value="FREQ=MONTHLY">Monthly</option>
-              <option value="FREQ=YEARLY">Yearly</option>
-              <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">Every weekday (Mon–Fri)</option>
+              {REPEAT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
             </select>
           </div>
 
