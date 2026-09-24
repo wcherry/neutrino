@@ -1,3 +1,4 @@
+use crate::calendar::recurrence::{self, Completion};
 use crate::calendar::reminders::{
     dto::{
         CreateReminderRequest, ListRemindersQuery, ListRemindersResponse, ReminderResponse,
@@ -8,6 +9,7 @@ use crate::calendar::reminders::{
 };
 use crate::shared::{ApiError, AuthenticatedUser};
 use chrono::{NaiveDateTime, Utc};
+use chrono_tz::Tz;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -87,14 +89,51 @@ impl RemindersService {
         reminder_id: &str,
         req: UpdateReminderRequest,
     ) -> Result<ReminderResponse, ApiError> {
-        let changes = UpdateReminderRecord {
+        let timezone = match req.timezone.as_deref() {
+            Some(name) => Some(
+                name.parse::<Tz>()
+                    .map_err(|_| ApiError::bad_request(format!("Unknown time zone: {name}")))?,
+            ),
+            None => None,
+        };
+        let due_time = req.due_time.as_deref().map(parse_dt).transpose()?;
+        let mut changes = UpdateReminderRecord {
             title: req.title,
-            due_time: req.due_time.as_deref().map(parse_dt).transpose()?,
+            due_time,
             completed: req.completed,
-            recurrence_rule: req.recurrence_rule.map(Some),
-            notified_at: None,
+            // An empty rule removes it, stored as NULL like a reminder that never had one.
+            recurrence_rule: req
+                .recurrence_rule
+                .clone()
+                .map(|r| Some(r).filter(|r| !r.is_empty())),
+            // A new due time is a new reminder as far as delivery goes: without this, one that
+            // already fired would never fire again at the time it was moved to.
+            notified_at: due_time.map(|_| None),
             updated_at: Utc::now().naive_utc(),
         };
+
+        if req.completed == Some(true) {
+            let existing = self.repo.find_by_id(reminder_id, &user.user_id)?;
+            // Completing one already done is not a second completion; it must not skip ahead.
+            if !existing.completed {
+                let rule = req
+                    .recurrence_rule
+                    .or(existing.recurrence_rule)
+                    .unwrap_or_default();
+                let due = due_time.unwrap_or(existing.due_time).and_utc();
+                if let Some(Completion::Advance {
+                    due: next,
+                    rule: next_rule,
+                }) = recurrence::complete(due, &rule, timezone.unwrap_or(Tz::UTC))
+                {
+                    changes.due_time = Some(next.naive_utc());
+                    changes.completed = Some(false);
+                    changes.notified_at = Some(None);
+                    changes.recurrence_rule = Some(Some(next_rule));
+                }
+            }
+        }
+
         let updated = self.repo.update(reminder_id, &user.user_id, changes)?;
         Ok(reminder_to_response(updated))
     }

@@ -1,6 +1,7 @@
 pub mod attachments;
 pub mod connections;
 pub mod events;
+pub mod recurrence;
 pub mod reminder_engine;
 pub mod reminders;
 pub mod tasks;
