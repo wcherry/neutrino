@@ -327,7 +327,8 @@ export default function CalendarPage() {
   // two panels, so they are built once rather than kept in step by hand.
   const remindersPanel = (
     <RemindersSidebar
-      reminders={reminders.filter((r) => !r.linkedEventId && !r.linkedTaskId)}
+      reminders={reminders}
+      taskTitles={Object.fromEntries(allTasks.map((t) => [t.id, t.title]))}
       onToggle={(id, completed) => toggleReminder.mutate({ id, completed })}
       onEdit={(r) => setReminderModal({ open: true, editing: r })}
       onDelete={(id) => deleteReminder.mutate(id)}

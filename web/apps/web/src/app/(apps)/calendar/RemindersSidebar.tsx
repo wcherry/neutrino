@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Search, X, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, X, Pencil, Trash2, Repeat, CalendarDays, ListChecks } from 'lucide-react';
 import type { ReminderResponse } from '@/lib/api';
 import {
   REMINDER_RANGES,
@@ -12,7 +12,14 @@ import {
 import styles from './page.module.css';
 
 interface RemindersSidebarProps {
+  /**
+   * Every reminder, including those that belong to an event or a task: this is the one place
+   * that answers "what's due", so a reminder about a meeting belongs here too. Linked ones are
+   * labelled, and still appear in their event's or task's own panel as well.
+   */
   reminders: ReminderResponse[];
+  /** Task titles by id, for labelling reminders that belong to a task. */
+  taskTitles?: Record<string, string>;
   onToggle: (id: string, completed: boolean) => void;
   onEdit: (r: ReminderResponse) => void;
   onDelete: (id: string) => void;
@@ -21,6 +28,7 @@ interface RemindersSidebarProps {
 
 export function RemindersSidebar({
   reminders,
+  taskTitles = {},
   onToggle,
   onEdit,
   onDelete,
@@ -89,12 +97,12 @@ export function RemindersSidebar({
         </div>
       )}
       {pending.map((r) => (
-        <ReminderItem key={r.id} reminder={r} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} />
+        <ReminderItem key={r.id} reminder={r} taskTitles={taskTitles} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} />
       ))}
       {done.length > 0 && (
         <div style={{ marginTop: 8, opacity: 0.55 }}>
           {done.map((r) => (
-            <ReminderItem key={r.id} reminder={r} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} />
+            <ReminderItem key={r.id} reminder={r} taskTitles={taskTitles} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} />
           ))}
         </div>
       )}
@@ -104,11 +112,13 @@ export function RemindersSidebar({
 
 function ReminderItem({
   reminder: r,
+  taskTitles,
   onToggle,
   onEdit,
   onDelete,
 }: {
   reminder: ReminderResponse;
+  taskTitles: Record<string, string>;
   onToggle: (id: string, completed: boolean) => void;
   onEdit: (r: ReminderResponse) => void;
   onDelete: (id: string) => void;
@@ -124,11 +134,24 @@ function ReminderItem({
       <div className={styles.reminderContent}>
         <div className={styles.reminderTitle} style={r.completed ? { textDecoration: 'line-through' } : undefined}>
           {r.title}
+          {r.recurrenceRule && (
+            <Repeat size={10} className={styles.reminderRepeatIcon} aria-label="Repeats" role="img" />
+          )}
         </div>
         {!r.completed && (
           <div className={`${styles.reminderDue} ${isOverdue(r.dueTime) ? styles.reminderDueOverdue : ''}`}>
             {isOverdue(r.dueTime) ? 'Overdue · ' : ''}
             {new Date(r.dueTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </div>
+        )}
+        {r.linkedEventId && (
+          <div className={styles.reminderLink}>
+            <CalendarDays size={10} aria-hidden /> Event
+          </div>
+        )}
+        {r.linkedTaskId && (
+          <div className={styles.reminderLink}>
+            <ListChecks size={10} aria-hidden /> {taskTitles[r.linkedTaskId] ?? 'Task'}
           </div>
         )}
       </div>

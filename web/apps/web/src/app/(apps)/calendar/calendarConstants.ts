@@ -5,6 +5,20 @@ export const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+/**
+ * The repeat choices the event and reminder forms offer, as the RRULEs they store. The iOS app's
+ * `RepeatOption` writes the same strings, and the server steps them when a repeating reminder is
+ * completed, so these values are shared state: change one only alongside both.
+ */
+export const REPEAT_OPTIONS = [
+  { value: '', label: 'Does not repeat' },
+  { value: 'FREQ=DAILY', label: 'Daily' },
+  { value: 'FREQ=WEEKLY', label: 'Weekly' },
+  { value: 'FREQ=MONTHLY', label: 'Monthly' },
+  { value: 'FREQ=YEARLY', label: 'Yearly' },
+  { value: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: 'Every weekday (Mon–Fri)' },
+];
+
 export const REMINDER_PRESETS = [
   { label: 'At event time', minutes: 0 },
   { label: '5 minutes before', minutes: 5 },

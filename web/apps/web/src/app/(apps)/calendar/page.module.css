@@ -494,6 +494,9 @@
 }
 
 .reminderTitle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 13px;
   font-weight: 500;
   color: var(--color-text, #111827);
@@ -502,6 +505,24 @@
 .reminderDue {
   font-size: 11px;
   color: var(--color-text-secondary, #6b7280);
+}
+
+.reminderLink {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-tertiary, #9ca3af);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* A flex item beside the title: the global reset makes an svg a block, which would put it on a
+   line of its own. */
+.reminderRepeatIcon {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary, #9ca3af);
 }
 
 .reminderDueOverdue {
@@ -663,6 +684,11 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.formHint {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #9ca3af);
 }
 
 .formLabel {
