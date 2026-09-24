@@ -3,7 +3,12 @@
 import React, { useState } from 'react';
 import { Plus, Search, X, Pencil, Trash2 } from 'lucide-react';
 import type { ReminderResponse } from '@/lib/api';
-import { isOverdue } from './calendarHelpers';
+import {
+  REMINDER_RANGES,
+  isOverdue,
+  isWithinReminderRange,
+  type ReminderRange,
+} from './calendarHelpers';
 import styles from './page.module.css';
 
 interface RemindersSidebarProps {
@@ -22,12 +27,20 @@ export function RemindersSidebar({
   onNew,
 }: RemindersSidebarProps) {
   const [search, setSearch] = useState('');
+  // Defaults to every reminder: a filter added to a panel that had none should
+  // not start by hiding things the user last saw.
+  const [range, setRange] = useState<ReminderRange>('all');
 
-  const filtered = reminders.filter((r) =>
+  const inRange = reminders.filter((r) => isWithinReminderRange(r.dueTime, range));
+  const filtered = inRange.filter((r) =>
     r.title.toLowerCase().includes(search.toLowerCase())
   );
   const pending = filtered.filter((r) => !r.completed);
   const done = filtered.filter((r) => r.completed);
+
+  // How many the range is holding back, so an empty panel can say why rather
+  // than reading as "you have no reminders".
+  const hiddenByRange = reminders.length - inRange.length;
 
   return (
     <>
@@ -51,9 +64,28 @@ export function RemindersSidebar({
           </button>
         )}
       </div>
+      <div className={styles.reminderRangeToggle} role="group" aria-label="Filter reminders by when they are due">
+        {REMINDER_RANGES.map((r) => (
+          <button
+            key={r.value}
+            type="button"
+            className={`${styles.reminderRangeBtn} ${range === r.value ? styles.reminderRangeBtnActive : ''}`}
+            onClick={() => setRange(r.value)}
+            aria-pressed={range === r.value}
+            title={r.title}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
       {pending.length === 0 && done.length === 0 && (
         <div className={styles.noItems}>
-          {search ? 'No matches' : 'No reminders'}
+          {search
+            ? 'No matches'
+            : hiddenByRange > 0
+              ? `Nothing due — ${hiddenByRange} later ${hiddenByRange === 1 ? 'reminder' : 'reminders'}`
+              : 'No reminders'}
         </div>
       )}
       {pending.map((r) => (
