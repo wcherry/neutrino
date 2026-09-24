@@ -320,9 +320,16 @@ export default function CalendarPage() {
 
   // The two sidebar arrangements (with and without an event open) show the same
   // two panels, so they are built once rather than kept in step by hand.
+  // A task's reminders are listed here, an event's are not, and the difference
+  // is what each one *is*. An event reminder is an offset ("15 minutes before"),
+  // auto-titled after the event and one of several — a notification setting that
+  // belongs on the event and renders there. A task reminder is a date and time
+  // the user typed, which is a reminder in its own right; leaving it out meant
+  // setting one and watching it disappear.
   const remindersPanel = (
     <RemindersSidebar
-      reminders={reminders.filter((r) => !r.linkedEventId && !r.linkedTaskId)}
+      reminders={reminders.filter((r) => !r.linkedEventId)}
+      taskTitles={Object.fromEntries(allTasks.map((t) => [t.id, t.title]))}
       onToggle={(id, completed) => toggleReminder.mutate({ id, completed })}
       onEdit={(r) => setReminderModal({ open: true, editing: r })}
       onDelete={(id) => deleteReminder.mutate(id)}

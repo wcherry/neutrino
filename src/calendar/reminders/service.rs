@@ -120,3 +120,164 @@ fn reminder_to_response(r: crate::calendar::reminders::model::ReminderRecord) ->
         updated_at: r.updated_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::calendar::reminders::dto::ListRemindersQuery;
+    use crate::shared::DbPool;
+    use diesel::prelude::*;
+
+    fn test_pool() -> DbPool {
+        use crate::MIGRATIONS;
+        use diesel::r2d2::{ConnectionManager, Pool};
+        use diesel_migrations::MigrationHarness;
+        let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+        let pool = Pool::builder().max_size(1).build(manager).expect("pool");
+        pool.get()
+            .expect("conn")
+            .run_pending_migrations(MIGRATIONS)
+            .expect("migrations");
+        pool
+    }
+
+    fn test_user(id: &str) -> AuthenticatedUser {
+        AuthenticatedUser {
+            user_id: id.to_string(),
+            email: format!("{id}@example.com"),
+            token: "test-token".to_string(),
+            is_admin: false,
+        }
+    }
+
+    fn test_service() -> (RemindersService, AuthenticatedUser, AuthenticatedUser) {
+        let pool = test_pool();
+        // `reminders.linked_task_id` is a real foreign key and this binary
+        // enforces them, so a task reminder needs a task that exists.
+        insert_task(&pool, "task-1", "user-a");
+        insert_task(&pool, "task-2", "user-a");
+        let service = RemindersService::new(Arc::new(RemindersRepository::new(pool)));
+        (service, test_user("user-a"), test_user("user-b"))
+    }
+
+    fn insert_task(pool: &DbPool, id: &str, user_id: &str) {
+        let mut conn = pool.get().expect("conn");
+        diesel::sql_query(
+            "INSERT INTO tasks (id, user_id, title, done, position, created_at, updated_at) \
+             VALUES (?, ?, 'A task', 0, 0, datetime('now'), datetime('now'))",
+        )
+        .bind::<diesel::sql_types::Text, _>(id)
+        .bind::<diesel::sql_types::Text, _>(user_id)
+        .execute(&mut conn)
+        .expect("insert task");
+    }
+
+    fn create(
+        service: &RemindersService,
+        user: &AuthenticatedUser,
+        title: &str,
+        event: Option<&str>,
+        task: Option<&str>,
+    ) -> ReminderResponse {
+        service
+            .create_reminder(
+                user,
+                CreateReminderRequest {
+                    title: title.to_string(),
+                    due_time: "2026-09-24T18:00:00Z".to_string(),
+                    recurrence_rule: None,
+                    linked_event_id: event.map(str::to_string),
+                    linked_task_id: task.map(str::to_string),
+                },
+            )
+            .expect("create reminder")
+    }
+
+    fn unfiltered() -> ListRemindersQuery {
+        ListRemindersQuery { event_id: None, task_id: None }
+    }
+
+    /// The module had no tests at all, so nothing proved the read path still
+    /// worked after `linked_task_id` was added to the record — which is the
+    /// first thing to check when the sidebar shows nothing.
+    #[test]
+    fn a_created_reminder_comes_back_from_the_unfiltered_list() {
+        let (service, user, _) = test_service();
+        create(&service, &user, "Water the plants", None, None);
+
+        let listed = service.list_reminders(&user, unfiltered()).expect("list");
+
+        assert_eq!(listed.reminders.len(), 1);
+        assert_eq!(listed.reminders[0].title, "Water the plants");
+        assert_eq!(listed.reminders[0].linked_event_id, None);
+        assert_eq!(listed.reminders[0].linked_task_id, None);
+    }
+
+    #[test]
+    fn the_unfiltered_list_returns_standalone_event_and_task_reminders_alike() {
+        let (service, user, _) = test_service();
+        create(&service, &user, "Standalone", None, None);
+        create(&service, &user, "On an event", Some("evt-1"), None);
+        create(&service, &user, "On a task", None, Some("task-1"));
+
+        // The server does not decide what the sidebar shows — it returns
+        // everything and the client filters, which is why a reminder that
+        // belongs to something still has to come back here.
+        assert_eq!(service.list_reminders(&user, unfiltered()).expect("list").reminders.len(), 3);
+    }
+
+    #[test]
+    fn filtering_by_task_returns_only_that_tasks_reminders() {
+        let (service, user, _) = test_service();
+        create(&service, &user, "Standalone", None, None);
+        create(&service, &user, "On task 1", None, Some("task-1"));
+        create(&service, &user, "On task 2", None, Some("task-2"));
+
+        let listed = service
+            .list_reminders(&user, ListRemindersQuery { event_id: None, task_id: Some("task-1".into()) })
+            .expect("list");
+
+        assert_eq!(listed.reminders.len(), 1);
+        assert_eq!(listed.reminders[0].title, "On task 1");
+    }
+
+    #[test]
+    fn filtering_by_event_returns_only_that_events_reminders() {
+        let (service, user, _) = test_service();
+        create(&service, &user, "Standalone", None, None);
+        create(&service, &user, "On an event", Some("evt-1"), None);
+
+        let listed = service
+            .list_reminders(&user, ListRemindersQuery { event_id: Some("evt-1".into()), task_id: None })
+            .expect("list");
+
+        assert_eq!(listed.reminders.len(), 1);
+        assert_eq!(listed.reminders[0].title, "On an event");
+    }
+
+    #[test]
+    fn a_reminder_cannot_claim_both_an_event_and_a_task() {
+        let (service, user, _) = test_service();
+        assert!(service
+            .create_reminder(
+                &user,
+                CreateReminderRequest {
+                    title: "Confused".to_string(),
+                    due_time: "2026-09-24T18:00:00Z".to_string(),
+                    recurrence_rule: None,
+                    linked_event_id: Some("evt-1".to_string()),
+                    linked_task_id: Some("task-1".to_string()),
+                },
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn one_users_reminders_are_not_listed_for_another() {
+        let (service, user_a, user_b) = test_service();
+        create(&service, &user_a, "Mine", None, None);
+
+        assert_eq!(service.list_reminders(&user_b, unfiltered()).expect("list").reminders.len(), 0);
+        assert_eq!(service.list_reminders(&user_a, unfiltered()).expect("list").reminders.len(), 1);
+    }
+}

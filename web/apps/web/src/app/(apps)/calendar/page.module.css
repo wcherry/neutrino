@@ -582,6 +582,24 @@
   color: var(--color-text-secondary, #6b7280);
 }
 
+/* ── "This reminder is on a task" marker ─────────────────────────────────── */
+
+.reminderTaskTag {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--color-text-tertiary, #9ca3af);
+  min-width: 0;
+}
+
+.reminderTaskName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Reminder date-range filter ──────────────────────────────────────────────
    The toolbar's view toggle at sidebar scale: four segments sharing one border,
    each an equal share of the 280px column so the labels do not reflow. */

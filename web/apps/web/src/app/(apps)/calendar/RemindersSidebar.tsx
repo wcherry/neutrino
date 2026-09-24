@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Plus, Search, X, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Search, X, Pencil, Trash2, CheckSquare } from 'lucide-react';
 import type { ReminderResponse } from '@/lib/api';
 import {
   REMINDER_RANGES,
@@ -17,6 +17,8 @@ interface RemindersSidebarProps {
   onEdit: (r: ReminderResponse) => void;
   onDelete: (id: string) => void;
   onNew: () => void;
+  /** Task id → title, for labelling the reminders that belong to a task. */
+  taskTitles?: Record<string, string>;
 }
 
 export function RemindersSidebar({
@@ -25,6 +27,7 @@ export function RemindersSidebar({
   onEdit,
   onDelete,
   onNew,
+  taskTitles = {},
 }: RemindersSidebarProps) {
   const [search, setSearch] = useState('');
   // Defaults to every reminder: a filter added to a panel that had none should
@@ -89,12 +92,26 @@ export function RemindersSidebar({
         </div>
       )}
       {pending.map((r) => (
-        <ReminderItem key={r.id} reminder={r} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} />
+        <ReminderItem
+          key={r.id}
+          reminder={r}
+          taskTitle={r.linkedTaskId ? taskTitles[r.linkedTaskId] : undefined}
+          onToggle={onToggle}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       ))}
       {done.length > 0 && (
         <div style={{ marginTop: 8, opacity: 0.55 }}>
           {done.map((r) => (
-            <ReminderItem key={r.id} reminder={r} onToggle={onToggle} onEdit={onEdit} onDelete={onDelete} />
+            <ReminderItem
+              key={r.id}
+              reminder={r}
+              taskTitle={r.linkedTaskId ? taskTitles[r.linkedTaskId] : undefined}
+              onToggle={onToggle}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           ))}
         </div>
       )}
@@ -104,15 +121,23 @@ export function RemindersSidebar({
 
 function ReminderItem({
   reminder: r,
+  taskTitle,
   onToggle,
   onEdit,
   onDelete,
 }: {
   reminder: ReminderResponse;
+  taskTitle?: string;
   onToggle: (id: string, completed: boolean) => void;
   onEdit: (r: ReminderResponse) => void;
   onDelete: (id: string) => void;
 }) {
+  // The task editor titles a new reminder after its task, so naming the task
+  // again beside it would read as "Clean ceiling fans · Clean ceiling fans".
+  // The icon alone carries "this one is on a task" in that case; the tooltip
+  // always spells it out.
+  const onTask = Boolean(r.linkedTaskId);
+  const showTaskName = Boolean(taskTitle) && taskTitle !== r.title;
   return (
     <div className={styles.reminderItem}>
       <input
@@ -129,6 +154,15 @@ function ReminderItem({
           <div className={`${styles.reminderDue} ${isOverdue(r.dueTime) ? styles.reminderDueOverdue : ''}`}>
             {isOverdue(r.dueTime) ? 'Overdue · ' : ''}
             {new Date(r.dueTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+          </div>
+        )}
+        {onTask && (
+          <div
+            className={styles.reminderTaskTag}
+            title={taskTitle ? `On task: ${taskTitle}` : 'On a task'}
+          >
+            <CheckSquare size={10} aria-label="On a task" />
+            {showTaskName && <span className={styles.reminderTaskName}>{taskTitle}</span>}
           </div>
         )}
       </div>
