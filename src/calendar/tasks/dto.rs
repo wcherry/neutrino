@@ -43,16 +43,35 @@ pub struct ListTaskListsResponse {
 
 // ── Task Request types ────────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTaskRequest {
     pub title: String,
     pub notes: Option<String>,
     pub due_date: Option<String>, // ISO 8601 UTC
     pub position: Option<i32>,
+    /// `dueDate` is a real instant ("^fri 3pm") rather than a `<day>T00:00:00Z` date.
+    #[serde(default)]
+    pub due_has_time: bool,
+    /// ISO 8601 UTC, read the same way as `dueDate`.
+    pub start_date: Option<String>,
+    #[serde(default)]
+    pub start_has_time: bool,
+    /// 1 (high) to 3 (low); omit for no priority.
+    pub priority: Option<i32>,
+    pub estimate_minutes: Option<i32>,
+    pub location: Option<String>,
+    /// An RRULE body such as `FREQ=WEEKLY;BYDAY=MO`, the same strings reminders store.
+    pub recurrence_rule: Option<String>,
+    /// Count the next occurrence from the completion date ("*after 1 week").
+    #[serde(default)]
+    pub repeat_after_completion: bool,
+    /// Free-form tags. Stored lowercase with any leading `#` removed.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTaskRequest {
     pub title: Option<String>,
@@ -66,6 +85,32 @@ pub struct UpdateTaskRequest {
     #[schema(value_type = Option<String>)]
     pub due_date: Option<Option<String>>,
     pub position: Option<i32>,
+    pub due_has_time: Option<bool>,
+    /// Omit to leave the start date alone; send `null` to clear it.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    pub start_date: Option<Option<String>>,
+    pub start_has_time: Option<bool>,
+    /// Omit to leave the priority alone; send `null` to clear it.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<i32>)]
+    pub priority: Option<Option<i32>>,
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<i32>)]
+    pub estimate_minutes: Option<Option<i32>>,
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    pub location: Option<Option<String>>,
+    /// Omit to leave the repeat alone; send `null` to stop the task repeating.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    pub recurrence_rule: Option<Option<String>>,
+    pub repeat_after_completion: Option<bool>,
+    /// Replaces the task's tags when present.
+    pub tags: Option<Vec<String>>,
+    /// The IANA zone to step a repeat in, so a 09:00 task stays at 09:00 across DST. Only read
+    /// when completing a repeating task; UTC if absent.
+    pub timezone: Option<String>,
 }
 
 // ── Task Query types ──────────────────────────────────────────────────────────
@@ -151,4 +196,18 @@ pub struct TaskResponse {
     pub event_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub due_has_time: bool,
+    pub start_date: Option<String>,
+    pub start_has_time: bool,
+    pub priority: Option<i32>,
+    pub estimate_minutes: Option<i32>,
+    pub location: Option<String>,
+    pub recurrence_rule: Option<String>,
+    pub repeat_after_completion: bool,
+    pub tags: Vec<String>,
+    /// Only on the response to completing a repeating task: the new task created for its next
+    /// occurrence. The completed task itself stays done.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<Object>)]
+    pub next_task: Option<Box<TaskResponse>>,
 }

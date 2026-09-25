@@ -407,7 +407,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     )),
     tags((
         name = "tasks",
-        description = "To-do items and the lists that group them. A task carries a title, notes, a due date and a done flag, and can belong to several lists at once through membership rows; positions are rewritten in bulk by the reorder endpoint. A task can also be put on the calendar — which creates an ordinary event and links the task to it — and can carry Drive-file or note attachments and its own reminders (`GET /reminders?taskId=`)."
+        description = "To-do items and the lists that group them. A task carries a title, notes, a due date and a done flag, and can belong to several lists at once through membership rows; positions are rewritten in bulk by the reorder endpoint. A task can also be put on the calendar — which creates an ordinary event and links the task to it — and can carry Drive-file or note attachments and its own reminders (`GET /reminders?taskId=`). The RTM-style Smart Add fields — priority, tags, start date, time estimate, location and a repeat rule — are parsed from typed text by the clients and stored as plain fields; completing a repeating task marks it done and returns the task created for its next occurrence as `nextTask`."
     )),
     security(("bearer_auth" = []))
 )]

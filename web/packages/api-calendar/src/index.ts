@@ -146,6 +146,28 @@ export interface TaskResponse {
   eventId: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * `dueDate` is a real instant ("^fri 3pm"). When false it is a date, written as
+   * `<day>T00:00:00Z` and read back in UTC. Absent from servers older than Smart Add.
+   */
+  dueHasTime?: boolean;
+  startDate?: string | null;
+  startHasTime?: boolean;
+  /** 1 (high) to 3 (low), or null for no priority. */
+  priority?: number | null;
+  estimateMinutes?: number | null;
+  location?: string | null;
+  /** An RRULE body, the same strings reminders store. */
+  recurrenceRule?: string | null;
+  /** The next occurrence counts from the completion date ("*after 1 week"). */
+  repeatAfterCompletion?: boolean;
+  /** Lowercase, without the '#'. */
+  tags?: string[];
+  /**
+   * Only on the response to completing a repeating task: the task created for its next
+   * occurrence. The completed task stays done.
+   */
+  nextTask?: TaskResponse;
 }
 
 export interface ListTasksResponse {
@@ -162,6 +184,15 @@ export interface CreateTaskRequest {
   notes?: string | null;
   dueDate?: string | null;
   position?: number;
+  dueHasTime?: boolean;
+  startDate?: string | null;
+  startHasTime?: boolean;
+  priority?: number | null;
+  estimateMinutes?: number | null;
+  location?: string | null;
+  recurrenceRule?: string | null;
+  repeatAfterCompletion?: boolean;
+  tags?: string[];
 }
 
 export interface UpdateTaskRequest {
@@ -170,6 +201,17 @@ export interface UpdateTaskRequest {
   done?: boolean;
   dueDate?: string | null;
   position?: number;
+  dueHasTime?: boolean;
+  startDate?: string | null;
+  startHasTime?: boolean;
+  priority?: number | null;
+  estimateMinutes?: number | null;
+  location?: string | null;
+  recurrenceRule?: string | null;
+  repeatAfterCompletion?: boolean;
+  tags?: string[];
+  /** IANA zone to step a repeating task in when it is completed; UTC if absent. */
+  timezone?: string;
 }
 
 export interface ReorderTasksRequest {

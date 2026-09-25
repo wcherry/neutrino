@@ -190,6 +190,21 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         event_id -> Nullable<Text>,
+        due_has_time -> Bool,
+        start_date -> Nullable<Timestamp>,
+        start_has_time -> Bool,
+        priority -> Nullable<Integer>,
+        estimate_minutes -> Nullable<Integer>,
+        location -> Nullable<Text>,
+        recurrence_rule -> Nullable<Text>,
+        repeat_after_completion -> Bool,
+    }
+}
+
+diesel::table! {
+    task_tags (task_id, tag) {
+        task_id -> Text,
+        tag -> Text,
     }
 }
 
@@ -1111,6 +1126,7 @@ diesel::joinable!(user_profiles -> users (user_id));
 // Calendar
 diesel::joinable!(task_list_memberships -> tasks (task_id));
 diesel::joinable!(task_list_memberships -> task_lists (list_id));
+diesel::joinable!(task_tags -> tasks (task_id));
 
 // Sheets
 diesel::joinable!(named_ranges -> files (sheet_db_id));
@@ -1155,6 +1171,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     tasks,
     task_attachments,
     task_list_memberships,
+    task_tags,
     // Docs
     doc_yjs_state,
     // Notes

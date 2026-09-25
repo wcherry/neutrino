@@ -253,4 +253,67 @@ describe('TaskDetailModal', () => {
     expect(onSave).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('reads a friendly due date and sends it as the instant it names', async () => {
+    const { onSave } = renderModal();
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: 'oct 3 2026 5pm' } });
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        dueDate: new Date(2026, 9, 3, 17, 0).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        dueHasTime: true,
+      })
+    );
+  });
+
+  it('refuses to save a due date it cannot read', async () => {
+    const { onSave } = renderModal();
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: 'whenever' } });
+    expect(screen.getByText("Couldn't read that")).toBeDefined();
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(screen.getByText(/Couldn't read the due date/)).toBeDefined());
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('keeps a stored due date that was never edited, even though its display does not parse', async () => {
+    const { onSave } = renderModal(makeTask({ dueDate: '2026-10-01T00:00:00Z' }));
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({ dueDate: '2026-10-01T00:00:00Z', dueHasTime: false })
+    );
+  });
+
+  it('saves repeat, estimate, priority, tags and location from their own fields', async () => {
+    const { onSave } = renderModal();
+    fireEvent.change(screen.getByLabelText('Repeat'), { target: { value: 'after 2 weeks' } });
+    fireEvent.change(screen.getByLabelText('Estimate'), { target: { value: '1h30m' } });
+    fireEvent.change(screen.getByLabelText('Priority'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Tags'), { target: { value: '#Home, garden #home' } });
+    fireEvent.change(screen.getByLabelText('Location'), { target: { value: 'Shed' } });
+    fireEvent.click(saveButton());
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave).toHaveBeenCalledWith(
+      'task-1',
+      expect.objectContaining({
+        recurrenceRule: 'FREQ=WEEKLY;INTERVAL=2',
+        repeatAfterCompletion: true,
+        estimateMinutes: 90,
+        priority: 2,
+        tags: ['home', 'garden'],
+        location: 'Shed',
+      })
+    );
+  });
+
+  it('opens with the stored repeat described in words that read back', () => {
+    renderModal(makeTask({ recurrenceRule: 'FREQ=WEEKLY;BYDAY=MO,TH' }));
+    expect((screen.getByLabelText('Repeat') as HTMLInputElement).value).toBe('every Mon, Thu');
+  });
 });
