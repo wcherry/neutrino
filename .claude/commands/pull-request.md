@@ -40,7 +40,7 @@ If the tree is dirty, commit it. If it is already clean and there are commits ah
   `test(docs): …`. Reference the issue number when there is one.
 - The body says *why*, not just what — that is the house style in `git log`.
 - End the message with:
-  `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
+  `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`
 
 ### 3. Run the e2e suite
 
