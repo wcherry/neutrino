@@ -242,7 +242,12 @@ export default function CalendarPage() {
 
   const toggleTask = useMutation({
     mutationFn: ({ id, done }: { id: string; done: boolean }) =>
-      calendarApi.updateTask(id, { done }),
+      // The zone matters only when completing a repeating task: the server steps a timed one in
+      // it, so a 9am task comes round at 9am after a DST change.
+      calendarApi.updateTask(id, {
+        done,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
 

@@ -1223,6 +1223,42 @@
   color: var(--color-text-tertiary, #9ca3af);
 }
 
+/* What Smart Add read out of the line being typed, one chip per field, so a
+   date picked up from the title is visible before Enter commits it. */
+.smartAddPreview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.smartAddChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: 8px;
+  background: var(--color-surface-secondary, #f3f4f6);
+  color: var(--color-text-secondary, #4b5563);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* RTM's priority colours: red, blue, light blue. */
+.priority1 { color: #dc2626; }
+.priority2 { color: #2563eb; }
+.priority3 { color: #60a5fa; }
+
+.taskTag {
+  font-size: 10px;
+  color: var(--color-text-tertiary, #9ca3af);
+  white-space: nowrap;
+}
+
 /* ── Task row extras ─────────────────────────────────────────────────────── */
 
 /* The title is a button so a task can be opened, while the row around it stays

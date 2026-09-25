@@ -129,6 +129,57 @@ describe('TasksSidebar', () => {
     expect(onOpenTask).not.toHaveBeenCalled();
   });
 
+  // Smart Add: absolute dates, so the expectations don't depend on today.
+  it('turns Smart Add tokens into fields and leaves the rest as the title', async () => {
+    const { onCreateTask } = renderSidebar([]);
+    fireEvent.change(composer(), {
+      target: { value: 'Buy milk ^2026-10-03 !1 #Errands *weekly =15min @Safeway // semi-skimmed' },
+    });
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(onCreateTask).toHaveBeenCalledWith({
+        title: 'Buy milk',
+        notes: 'semi-skimmed',
+        dueDate: '2026-10-03T00:00:00Z',
+        priority: 1,
+        tags: ['errands'],
+        recurrenceRule: 'FREQ=WEEKLY',
+        estimateMinutes: 15,
+        location: 'Safeway',
+      })
+    );
+  });
+
+  it('previews what Smart Add read before Enter commits it', () => {
+    renderSidebar([]);
+    fireEvent.change(composer(), { target: { value: 'Report #work !2' } });
+    const preview = screen.getByRole('list', { name: 'Smart Add will set' });
+    expect(preview.textContent).toContain('work');
+    expect(preview.textContent).toContain('Priority 2');
+  });
+
+  it('shows no preview for a plain title', () => {
+    renderSidebar([]);
+    fireEvent.change(composer(), { target: { value: 'Clean ceiling fans' } });
+    expect(screen.queryByRole('list', { name: 'Smart Add will set' })).toBeNull();
+  });
+
+  it('refuses a line that is all tokens and no title, keeping what was typed', () => {
+    const { onCreateTask } = renderSidebar([]);
+    fireEvent.change(composer(), { target: { value: '^2026-10-03 #errands' } });
+    fireEvent.keyDown(composer(), { key: 'Enter' });
+    expect(onCreateTask).not.toHaveBeenCalled();
+    expect(screen.getByText(/Add a title/)).toBeDefined();
+    expect(composer().value).toBe('^2026-10-03 #errands');
+  });
+
+  it('shows a task’s tags and priority on its row', () => {
+    renderSidebar([task({ id: 'a', title: 'Tagged', tags: ['home'], priority: 1 })]);
+    expect(screen.getByText('#home')).toBeDefined();
+    expect(screen.getByLabelText('Priority 1')).toBeDefined();
+  });
+
   it('does nothing on Enter when the box holds only whitespace', () => {
     const { onCreateTask } = renderSidebar([]);
     fireEvent.change(composer(), { target: { value: '   ' } });

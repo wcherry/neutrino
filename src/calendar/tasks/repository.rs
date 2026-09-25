@@ -1,8 +1,9 @@
 use crate::calendar::tasks::model::{
     NewTaskAttachmentRecord, NewTaskListMembershipRecord, NewTaskListRecord, NewTaskRecord,
-    TaskAttachmentRecord, TaskListMembershipRecord, TaskListRecord, TaskRecord, UpdateTaskRecord,
+    TaskAttachmentRecord, TaskListMembershipRecord, TaskListRecord, TaskRecord, TaskTagRecord,
+    UpdateTaskRecord,
 };
-use crate::schema::{task_attachments, task_list_memberships, task_lists, tasks};
+use crate::schema::{task_attachments, task_list_memberships, task_lists, task_tags, tasks};
 use crate::shared::{ApiError, DbPool};
 use diesel::prelude::*;
 use diesel::r2d2::ConnectionManager;
@@ -257,6 +258,60 @@ impl TasksRepository {
                 tracing::error!("DB get task after set event error: {:?}", e);
                 ApiError::internal("Database error")
             })
+    }
+
+    // ── Task Tags ─────────────────────────────────────────────────────────────
+
+    /// Every tag on every task of `user_id`, for building a listing without a query per task.
+    pub fn find_tags_by_user(&self, user_id: &str) -> Result<Vec<TaskTagRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        task_tags::table
+            .inner_join(tasks::table)
+            .filter(tasks::user_id.eq(user_id))
+            .order((task_tags::task_id.asc(), task_tags::tag.asc()))
+            .select(TaskTagRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list task tags error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    pub fn find_tags_by_task(&self, task_id: &str) -> Result<Vec<String>, ApiError> {
+        let mut conn = self.get_conn()?;
+        task_tags::table
+            .filter(task_tags::task_id.eq(task_id))
+            .order(task_tags::tag.asc())
+            .select(task_tags::tag)
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list tags for task error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// Make `tags` the task's whole tag set. The caller normalises and de-duplicates them.
+    pub fn replace_tags(&self, task_id: &str, tags: &[String]) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        conn.transaction::<(), diesel::result::Error, _>(|conn| {
+            diesel::delete(task_tags::table.filter(task_tags::task_id.eq(task_id)))
+                .execute(conn)?;
+            let rows: Vec<TaskTagRecord> = tags
+                .iter()
+                .map(|tag| TaskTagRecord {
+                    task_id: task_id.to_string(),
+                    tag: tag.clone(),
+                })
+                .collect();
+            diesel::insert_into(task_tags::table)
+                .values(&rows)
+                .execute(conn)?;
+            Ok(())
+        })
+        .map_err(|e| {
+            tracing::error!("DB replace task tags error: {:?}", e);
+            ApiError::internal("Database error")
+        })
     }
 
     // ── Task Attachments ──────────────────────────────────────────────────────

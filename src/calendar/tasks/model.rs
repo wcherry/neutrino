@@ -54,6 +54,19 @@ pub struct TaskRecord {
     /// The calendar event this task is scheduled as, or `None` when it is not on
     /// the calendar. Written only by the schedule/unschedule endpoints.
     pub event_id: Option<String>,
+    /// `due_date` is an instant rather than a `<day>T00:00:00Z` date.
+    pub due_has_time: bool,
+    pub start_date: Option<NaiveDateTime>,
+    /// `start_date` is an instant rather than a `<day>T00:00:00Z` date.
+    pub start_has_time: bool,
+    /// 1 (high) to 3 (low), or `None` for no priority.
+    pub priority: Option<i32>,
+    pub estimate_minutes: Option<i32>,
+    pub location: Option<String>,
+    /// An RRULE body, stepped by `calendar::recurrence` when the task is completed.
+    pub recurrence_rule: Option<String>,
+    /// Step from the completion date ("*after 1 week") instead of the due date.
+    pub repeat_after_completion: bool,
 }
 
 #[derive(Debug, Insertable)]
@@ -68,6 +81,14 @@ pub struct NewTaskRecord {
     pub position: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub due_has_time: bool,
+    pub start_date: Option<NaiveDateTime>,
+    pub start_has_time: bool,
+    pub priority: Option<i32>,
+    pub estimate_minutes: Option<i32>,
+    pub location: Option<String>,
+    pub recurrence_rule: Option<String>,
+    pub repeat_after_completion: bool,
 }
 
 #[derive(Debug, AsChangeset)]
@@ -79,6 +100,36 @@ pub struct UpdateTaskRecord {
     pub due_date: Option<Option<NaiveDateTime>>,
     pub position: Option<i32>,
     pub updated_at: NaiveDateTime,
+    pub due_has_time: Option<bool>,
+    pub start_date: Option<Option<NaiveDateTime>>,
+    pub start_has_time: Option<bool>,
+    pub priority: Option<Option<i32>>,
+    pub estimate_minutes: Option<Option<i32>>,
+    pub location: Option<Option<String>>,
+    pub recurrence_rule: Option<Option<String>>,
+    pub repeat_after_completion: Option<bool>,
+}
+
+impl UpdateTaskRecord {
+    /// A changeset that only bumps `updated_at`, to spread a single field over.
+    pub fn empty(updated_at: NaiveDateTime) -> Self {
+        UpdateTaskRecord {
+            title: None,
+            notes: None,
+            done: None,
+            due_date: None,
+            position: None,
+            updated_at,
+            due_has_time: None,
+            start_date: None,
+            start_has_time: None,
+            priority: None,
+            estimate_minutes: None,
+            location: None,
+            recurrence_rule: None,
+            repeat_after_completion: None,
+        }
+    }
 }
 
 // ── Task Attachments ──────────────────────────────────────────────────────────
@@ -121,4 +172,14 @@ pub struct TaskListMembershipRecord {
 pub struct NewTaskListMembershipRecord {
     pub task_id: String,
     pub list_id: String,
+}
+
+// ── Task Tags ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Queryable, Selectable, Insertable)]
+#[diesel(table_name = crate::schema::task_tags)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct TaskTagRecord {
+    pub task_id: String,
+    pub tag: String,
 }

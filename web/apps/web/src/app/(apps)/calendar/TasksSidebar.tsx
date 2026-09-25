@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -18,8 +18,30 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { CalendarClock, Clock, FileText, Upload } from 'lucide-react';
+import {
+  CalendarClock,
+  CalendarDays,
+  Clock,
+  FileText,
+  Flag,
+  Hourglass,
+  MapPin,
+  PlayCircle,
+  Repeat,
+  StickyNote,
+  Tag,
+  Upload,
+} from 'lucide-react';
 import type { TaskResponse, CreateTaskRequest } from '@/lib/api';
+import {
+  describeRepeat,
+  formatEstimate,
+  formatSmartDate,
+  parseSmartAdd,
+  smartAddContext,
+  smartAddToCreateRequest,
+  type SmartAddResult,
+} from './smartAdd';
 import styles from './page.module.css';
 
 /**
@@ -63,12 +85,21 @@ export function TasksSidebar({
    * way into reminders, scheduling and attachments for a task being typed now.
    * Both clear the box so the next one can be typed straight away.
    */
+  // Parsed on every keystroke so the preview shows what Enter will create.
+  const parsed = useMemo(
+    () => (title.trim() ? parseSmartAdd(title.trim(), smartAddContext()) : null),
+    [title],
+  );
+
   async function submit(openAfter: boolean) {
-    const trimmed = title.trim();
-    if (!trimmed || isCreatingTask) return;
+    if (!parsed || isCreatingTask) return;
+    if (!parsed.title) {
+      setCreateError('Add a title as well as the details.');
+      return;
+    }
     setCreateError('');
     try {
-      const created = await onCreateTask({ title: trimmed });
+      const created = await onCreateTask(smartAddToCreateRequest(parsed));
       setTitle('');
       if (openAfter) onOpenTask(created);
     } catch {
@@ -104,7 +135,12 @@ export function TasksSidebar({
         return;
       }
       setUploadError('');
-      titles.forEach((t) => onCreateTask({ title: t }).catch(() => {}));
+      // Each line is Smart Add text too, so a list exported from somewhere else keeps its dates.
+      const ctx = smartAddContext();
+      titles
+        .map((t) => parseSmartAdd(t, ctx))
+        .filter((p) => p.title)
+        .forEach((p) => onCreateTask(smartAddToCreateRequest(p)).catch(() => {}));
     };
     reader.readAsText(file);
   }
@@ -152,8 +188,12 @@ export function TasksSidebar({
           maxLength={500}
           disabled={isCreatingTask}
         />
-        <div className={styles.taskComposerHint}>
-          Enter to add · {modifierLabel()}+Enter to add and edit
+        {parsed && <SmartAddPreview parsed={parsed} />}
+        <div
+          className={styles.taskComposerHint}
+          title={'^date  ~start  !1–!3 priority  #tag  *repeat  =estimate  @place  // note\n"Quote" a title to keep a date in it'}
+        >
+          Enter to add · {modifierLabel()}+Enter to add and edit · try ^fri 3pm #tag !1
         </div>
       </div>
 
@@ -407,14 +447,81 @@ function TaskBadges({ task }: { task: TaskResponse }) {
   const scheduled = Boolean(task.eventId);
   const hasNotes = Boolean(task.notes);
   const hasDue = Boolean(task.dueDate);
-  if (!scheduled && !hasNotes && !hasDue) return null;
+  const tags = task.tags ?? [];
+  const priority = task.priority ?? null;
+  const repeats = Boolean(task.recurrenceRule);
+  const located = Boolean(task.location);
+  if (!scheduled && !hasNotes && !hasDue && !tags.length && !priority && !repeats && !located) {
+    return null;
+  }
 
   return (
     <span className={styles.taskBadges}>
+      {tags.map((tag) => (
+        <span key={tag} className={styles.taskTag}>#{tag}</span>
+      ))}
+      {priority && (
+        <Flag
+          size={11}
+          className={styles[`priority${priority}`]}
+          aria-label={`Priority ${priority}`}
+        />
+      )}
       {hasDue && <Clock size={11} aria-label="Has a due date" />}
+      {repeats && <Repeat size={11} aria-label="Repeats" />}
+      {located && <MapPin size={11} aria-label={`At ${task.location}`} />}
       {scheduled && <CalendarClock size={11} aria-label="On the calendar" />}
       {hasNotes && <FileText size={11} aria-label="Has notes" />}
     </span>
+  );
+}
+
+/** One chip per field Smart Add found in the line being typed. Nothing when it found none. */
+function SmartAddPreview({ parsed }: { parsed: SmartAddResult }) {
+  const chips: { key: string; icon: React.ReactNode; text: string; className?: string }[] = [];
+  if (parsed.due) {
+    chips.push({ key: 'due', icon: <CalendarDays size={10} />, text: formatSmartDate(parsed.due) });
+  }
+  if (parsed.start) {
+    chips.push({ key: 'start', icon: <PlayCircle size={10} />, text: `starts ${formatSmartDate(parsed.start)}` });
+  }
+  if (parsed.priority) {
+    chips.push({
+      key: 'priority',
+      icon: <Flag size={10} className={styles[`priority${parsed.priority}`]} />,
+      text: `Priority ${parsed.priority}`,
+    });
+  }
+  for (const tag of parsed.tags) {
+    chips.push({ key: `tag-${tag}`, icon: <Tag size={10} />, text: tag });
+  }
+  if (parsed.recurrenceRule) {
+    chips.push({
+      key: 'repeat',
+      icon: <Repeat size={10} />,
+      text: describeRepeat(parsed.recurrenceRule, parsed.repeatAfterCompletion),
+    });
+  }
+  if (parsed.estimateMinutes !== null) {
+    chips.push({ key: 'estimate', icon: <Hourglass size={10} />, text: formatEstimate(parsed.estimateMinutes) });
+  }
+  if (parsed.location) {
+    chips.push({ key: 'location', icon: <MapPin size={10} />, text: parsed.location });
+  }
+  if (parsed.note) {
+    chips.push({ key: 'note', icon: <StickyNote size={10} />, text: parsed.note });
+  }
+  if (chips.length === 0) return null;
+
+  return (
+    <div className={styles.smartAddPreview} aria-label="Smart Add will set" role="list">
+      {chips.map((c) => (
+        <span key={c.key} className={styles.smartAddChip} role="listitem">
+          {c.icon}
+          {c.text}
+        </span>
+      ))}
+    </div>
   );
 }
 

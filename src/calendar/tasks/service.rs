@@ -1,5 +1,7 @@
 use crate::calendar::events::dto::{CreateEventRequest, EventResponse, UpdateEventRequest};
 use crate::calendar::events::service::EventsService;
+use crate::calendar::recurrence::{self, Completion};
+use crate::calendar::tasks::model::TaskRecord;
 use crate::calendar::tasks::{
     dto::{
         CreateTaskAttachmentRequest, CreateTaskListRequest, CreateTaskRequest,
@@ -14,7 +16,9 @@ use crate::calendar::tasks::{
     repository::TasksRepository,
 };
 use crate::shared::{ApiError, AuthenticatedUser};
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono_tz::Tz;
+use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -67,6 +71,11 @@ impl TasksService {
         user: &AuthenticatedUser,
         list_id: Option<&str>,
     ) -> Result<Vec<TaskResponse>, ApiError> {
+        let mut tags: HashMap<String, Vec<String>> = HashMap::new();
+        for row in self.repo.find_tags_by_user(&user.user_id)? {
+            tags.entry(row.task_id).or_default().push(row.tag);
+        }
+        let tags_of = |id: &str| tags.get(id).cloned().unwrap_or_default();
         match list_id {
             Some(lid) => {
                 self.repo.find_by_id(lid, &user.user_id)?;
@@ -74,7 +83,10 @@ impl TasksService {
                 let lid_owned = lid.to_string();
                 Ok(records
                     .into_iter()
-                    .map(|r| task_to_response(r, Some(lid_owned.clone())))
+                    .map(|r| {
+                        let t = tags_of(&r.id);
+                        task_to_response(r, Some(lid_owned.clone()), t)
+                    })
                     .collect())
             }
             None => {
@@ -83,7 +95,10 @@ impl TasksService {
                     .find_all_tasks_with_list_id_by_user(&user.user_id)?;
                 Ok(records
                     .into_iter()
-                    .map(|(r, lid)| task_to_response(r, lid))
+                    .map(|(r, lid)| {
+                        let t = tags_of(&r.id);
+                        task_to_response(r, lid, t)
+                    })
                     .collect())
             }
         }
@@ -94,6 +109,8 @@ impl TasksService {
         user: &AuthenticatedUser,
         req: CreateTaskRequest,
     ) -> Result<TaskResponse, ApiError> {
+        validate_priority(req.priority)?;
+        validate_estimate(req.estimate_minutes)?;
         let now = Utc::now().naive_utc();
         let record = NewTaskRecord {
             id: Uuid::new_v4().to_string(),
@@ -105,9 +122,21 @@ impl TasksService {
             position: req.position.unwrap_or(0),
             created_at: now,
             updated_at: now,
+            due_has_time: req.due_has_time,
+            start_date: req.start_date.as_deref().map(parse_dt).transpose()?,
+            start_has_time: req.start_has_time,
+            priority: req.priority,
+            estimate_minutes: req.estimate_minutes,
+            location: non_empty(req.location),
+            recurrence_rule: non_empty(req.recurrence_rule),
+            repeat_after_completion: req.repeat_after_completion,
         };
         let saved = self.repo.insert_task(record)?;
-        Ok(task_to_response(saved, None))
+        let tags = normalize_tags(req.tags);
+        if !tags.is_empty() {
+            self.repo.replace_tags(&saved.id, &tags)?;
+        }
+        Ok(task_to_response(saved, None, tags))
     }
 
     pub fn update_task(
@@ -117,11 +146,16 @@ impl TasksService {
         req: UpdateTaskRequest,
     ) -> Result<TaskResponse, ApiError> {
         let new_title = req.title.clone();
-        let due_date = match req.due_date {
-            None => None,
-            Some(None) => Some(None),
-            Some(Some(ref s)) => Some(Some(parse_dt(s)?)),
+        let timezone = match req.timezone.as_deref() {
+            Some(name) => name
+                .parse::<Tz>()
+                .map_err(|_| ApiError::bad_request(format!("Unknown time zone: {name}")))?,
+            None => Tz::UTC,
         };
+        validate_priority(req.priority.flatten())?;
+        validate_estimate(req.estimate_minutes.flatten())?;
+        let due_date = parse_patch_dt(req.due_date)?;
+        let start_date = parse_patch_dt(req.start_date)?;
         let changes = UpdateTaskRecord {
             title: req.title,
             notes: req.notes,
@@ -129,8 +163,30 @@ impl TasksService {
             due_date,
             position: req.position,
             updated_at: Utc::now().naive_utc(),
+            due_has_time: req.due_has_time,
+            start_date,
+            start_has_time: req.start_has_time,
+            priority: req.priority,
+            estimate_minutes: req.estimate_minutes,
+            location: req.location.map(non_empty),
+            recurrence_rule: req.recurrence_rule.map(non_empty),
+            repeat_after_completion: req.repeat_after_completion,
         };
+
+        // Completing a task that was open, not re-sending `done: true` for one already done:
+        // the second must not create a second next occurrence.
+        let completing =
+            req.done == Some(true) && !self.repo.find_task_by_id(task_id, &user.user_id)?.done;
+
         let updated = self.repo.update_task(task_id, &user.user_id, changes)?;
+        let tags = match req.tags {
+            Some(tags) => {
+                let tags = normalize_tags(tags);
+                self.repo.replace_tags(task_id, &tags)?;
+                tags
+            }
+            None => self.repo.find_tags_by_task(task_id)?,
+        };
 
         // A scheduled task and its event show the same words in two places, so a
         // rename has to reach both or the calendar keeps showing the old title
@@ -159,7 +215,70 @@ impl TasksService {
             }
         }
 
-        Ok(task_to_response(updated, None))
+        let next_task = match completing {
+            true => self.spawn_next_occurrence(user, &updated, &tags, timezone, Utc::now())?,
+            false => None,
+        };
+        // The completed task stops repeating once its next occurrence exists, so un-ticking and
+        // re-ticking it cannot spawn that occurrence twice.
+        let updated = match next_task {
+            Some(_) => self.repo.update_task(
+                task_id,
+                &user.user_id,
+                UpdateTaskRecord {
+                    recurrence_rule: Some(None),
+                    ..UpdateTaskRecord::empty(Utc::now().naive_utc())
+                },
+            )?,
+            None => updated,
+        };
+
+        let mut response = task_to_response(updated, None, tags);
+        response.next_task = next_task.map(Box::new);
+        Ok(response)
+    }
+
+    /// RTM's repeat: the completed task stays done and a new task is created for the next
+    /// occurrence, carrying everything but the completion, the calendar event, attachments and
+    /// reminders. `None` when the task doesn't repeat or its rule has run out.
+    fn spawn_next_occurrence(
+        &self,
+        user: &AuthenticatedUser,
+        done: &TaskRecord,
+        tags: &[String],
+        tz: Tz,
+        now: DateTime<Utc>,
+    ) -> Result<Option<TaskResponse>, ApiError> {
+        let Some(rule) = done.recurrence_rule.as_deref() else {
+            return Ok(None);
+        };
+        let Some(next) = next_occurrence(done, rule, tz, now) else {
+            return Ok(None);
+        };
+        let created = Utc::now().naive_utc();
+        let saved = self.repo.insert_task(NewTaskRecord {
+            id: Uuid::new_v4().to_string(),
+            user_id: user.user_id.clone(),
+            title: done.title.clone(),
+            notes: done.notes.clone(),
+            done: false,
+            due_date: Some(next.due),
+            position: done.position,
+            created_at: created,
+            updated_at: created,
+            due_has_time: done.due_has_time,
+            start_date: next.start,
+            start_has_time: done.start_has_time,
+            priority: done.priority,
+            estimate_minutes: done.estimate_minutes,
+            location: done.location.clone(),
+            recurrence_rule: Some(next.rule),
+            repeat_after_completion: done.repeat_after_completion,
+        })?;
+        if !tags.is_empty() {
+            self.repo.replace_tags(&saved.id, tags)?;
+        }
+        Ok(Some(task_to_response(saved, None, tags.to_vec())))
     }
 
     pub fn reorder_tasks(
@@ -326,7 +445,8 @@ impl TasksService {
         let updated = self
             .repo
             .set_task_event(task_id, &user.user_id, None, Utc::now().naive_utc())?;
-        Ok(task_to_response(updated, None))
+        let tags = self.repo.find_tags_by_task(task_id)?;
+        Ok(task_to_response(updated, None, tags))
     }
 
     // ── Attachments ───────────────────────────────────────────────────────────
@@ -394,9 +514,98 @@ fn task_list_to_response(r: crate::calendar::tasks::model::TaskListRecord) -> Ta
     }
 }
 
+fn parse_patch_dt(
+    patch: Option<Option<String>>,
+) -> Result<Option<Option<NaiveDateTime>>, ApiError> {
+    Ok(match patch {
+        None => None,
+        Some(None) => Some(None),
+        Some(Some(ref s)) => Some(Some(parse_dt(s)?)),
+    })
+}
+
+/// An empty string means "none", stored as NULL like a field that was never set.
+fn non_empty(value: Option<String>) -> Option<String> {
+    value.filter(|v| !v.trim().is_empty())
+}
+
+fn validate_priority(priority: Option<i32>) -> Result<(), ApiError> {
+    match priority {
+        Some(p) if !(1..=3).contains(&p) => {
+            Err(ApiError::bad_request("priority must be 1, 2 or 3"))
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_estimate(minutes: Option<i32>) -> Result<(), ApiError> {
+    match minutes {
+        Some(m) if m < 0 => Err(ApiError::bad_request(
+            "estimateMinutes must not be negative",
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Lowercase, without the `#` Smart Add types, without blanks or repeats, sorted — so the same
+/// set of tags always reads back the same way whichever client wrote it.
+fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut tags: Vec<String> = tags
+        .into_iter()
+        .map(|t| t.trim().trim_start_matches('#').trim().to_lowercase())
+        .filter(|t| !t.is_empty())
+        .collect();
+    tags.sort();
+    tags.dedup();
+    tags
+}
+
+struct NextOccurrence {
+    due: NaiveDateTime,
+    start: Option<NaiveDateTime>,
+    /// The rule for the new task: COUNT decremented, if it had one.
+    rule: String,
+}
+
+/// Where a repeating task completed at `now` comes round next.
+///
+/// A date-only due (`<day>T00:00:00Z`) is stepped in UTC, so it stays on its named day whatever
+/// zone the user is in; a timed one is stepped in `tz`, keeping its wall-clock time across DST.
+/// It steps from the due date, or — for "*after", or a task with no due date — from the day it
+/// was completed, at the due's time of day. The start date keeps its distance from the due.
+fn next_occurrence(
+    task: &TaskRecord,
+    rule: &str,
+    tz: Tz,
+    now: DateTime<Utc>,
+) -> Option<NextOccurrence> {
+    let step_tz = if task.due_has_time { tz } else { Tz::UTC };
+    let today = now.with_timezone(&tz).date_naive();
+    let anchor = match task.due_date {
+        Some(due) if !task.repeat_after_completion => due.and_utc(),
+        Some(due) if task.due_has_time => {
+            let time = due.and_utc().with_timezone(&tz).time();
+            tz.from_local_datetime(&today.and_time(time))
+                .earliest()
+                .map_or(now, |t| t.with_timezone(&Utc))
+        }
+        _ => today.and_hms_opt(0, 0, 0)?.and_utc(),
+    };
+    let Completion::Advance { due, rule } = recurrence::complete(anchor, rule, step_tz)? else {
+        return None;
+    };
+    let due = due.naive_utc();
+    let start = task.start_date.map(|start| match task.due_date {
+        Some(old_due) => due - (old_due - start),
+        None => start + (due - anchor.naive_utc()),
+    });
+    Some(NextOccurrence { due, start, rule })
+}
+
 fn task_to_response(
     r: crate::calendar::tasks::model::TaskRecord,
     list_id: Option<String>,
+    tags: Vec<String>,
 ) -> TaskResponse {
     TaskResponse {
         id: r.id,
@@ -411,6 +620,18 @@ fn task_to_response(
         event_id: r.event_id,
         created_at: r.created_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         updated_at: r.updated_at.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        due_has_time: r.due_has_time,
+        start_date: r
+            .start_date
+            .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
+        start_has_time: r.start_has_time,
+        priority: r.priority,
+        estimate_minutes: r.estimate_minutes,
+        location: r.location,
+        recurrence_rule: r.recurrence_rule,
+        repeat_after_completion: r.repeat_after_completion,
+        tags,
+        next_task: None,
     }
 }
 
@@ -494,6 +715,7 @@ mod tests {
                     notes: None,
                     due_date: None,
                     position: None,
+                    ..Default::default()
                 },
             )
             .expect("create task")
@@ -661,6 +883,7 @@ mod tests {
                     done: None,
                     due_date: None,
                     position: None,
+                    ..Default::default()
                 },
             )
             .expect("rename");
@@ -761,6 +984,7 @@ mod tests {
                     notes: Some("Use the long duster".to_string()),
                     due_date: Some("2026-10-01T00:00:00Z".to_string()),
                     position: None,
+                    ..Default::default()
                 },
             )
             .expect("create");
@@ -823,5 +1047,258 @@ mod tests {
                 },
             )
             .is_err());
+    }
+
+    // ── Smart Add fields ──────────────────────────────────────────────────────
+
+    fn complete(service: &TasksService, user: &AuthenticatedUser, id: &str) -> TaskResponse {
+        service
+            .update_task(
+                user,
+                id,
+                UpdateTaskRequest {
+                    done: Some(true),
+                    ..Default::default()
+                },
+            )
+            .expect("complete")
+    }
+
+    fn repeating_task(
+        service: &TasksService,
+        user: &AuthenticatedUser,
+        rule: &str,
+    ) -> TaskResponse {
+        service
+            .create_task(
+                user,
+                CreateTaskRequest {
+                    title: "Water the plants".to_string(),
+                    due_date: Some("2026-10-01T00:00:00Z".to_string()),
+                    start_date: Some("2026-09-30T00:00:00Z".to_string()),
+                    priority: Some(2),
+                    recurrence_rule: Some(rule.to_string()),
+                    tags: vec!["home".to_string()],
+                    ..Default::default()
+                },
+            )
+            .expect("create")
+    }
+
+    #[test]
+    fn every_smart_add_field_round_trips_and_tags_are_normalised() {
+        let (service, user, _) = test_service();
+        let created = service
+            .create_task(
+                &user,
+                CreateTaskRequest {
+                    title: "Buy milk".to_string(),
+                    due_date: Some("2026-10-02T17:00:00Z".to_string()),
+                    due_has_time: true,
+                    start_date: Some("2026-10-01T00:00:00Z".to_string()),
+                    priority: Some(1),
+                    estimate_minutes: Some(15),
+                    location: Some("Safeway".to_string()),
+                    recurrence_rule: Some("FREQ=WEEKLY".to_string()),
+                    repeat_after_completion: true,
+                    tags: vec![
+                        "#Errands".into(),
+                        "errands".into(),
+                        " ".into(),
+                        "Food".into(),
+                    ],
+                    ..Default::default()
+                },
+            )
+            .expect("create");
+
+        let listed = service.list_tasks(&user, None).expect("list").remove(0);
+        for task in [&created, &listed] {
+            assert_eq!(task.due_date.as_deref(), Some("2026-10-02T17:00:00Z"));
+            assert!(task.due_has_time);
+            assert_eq!(task.start_date.as_deref(), Some("2026-10-01T00:00:00Z"));
+            assert!(!task.start_has_time);
+            assert_eq!(task.priority, Some(1));
+            assert_eq!(task.estimate_minutes, Some(15));
+            assert_eq!(task.location.as_deref(), Some("Safeway"));
+            assert_eq!(task.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+            assert!(task.repeat_after_completion);
+            assert_eq!(task.tags, vec!["errands", "food"]);
+        }
+    }
+
+    #[test]
+    fn a_priority_outside_one_to_three_is_rejected() {
+        let (service, user, _) = test_service();
+        let req = CreateTaskRequest {
+            title: "x".to_string(),
+            priority: Some(4),
+            ..Default::default()
+        };
+        assert!(service.create_task(&user, req).is_err());
+    }
+
+    #[test]
+    fn tags_are_replaced_when_sent_and_kept_when_omitted() {
+        let (service, user, _) = test_service();
+        let task = repeating_task(&service, &user, "FREQ=DAILY");
+        let renamed = service
+            .update_task(
+                &user,
+                &task.id,
+                UpdateTaskRequest {
+                    title: Some("Water the ferns".to_string()),
+                    ..Default::default()
+                },
+            )
+            .expect("rename");
+        assert_eq!(renamed.tags, vec!["home"]);
+
+        let retagged = service
+            .update_task(
+                &user,
+                &task.id,
+                UpdateTaskRequest {
+                    tags: Some(vec!["garden".to_string()]),
+                    ..Default::default()
+                },
+            )
+            .expect("retag");
+        assert_eq!(retagged.tags, vec!["garden"]);
+    }
+
+    #[test]
+    fn null_clears_priority_location_and_repeat() {
+        let (service, user, _) = test_service();
+        let task = repeating_task(&service, &user, "FREQ=DAILY");
+        let patch: UpdateTaskRequest =
+            serde_json::from_str(r#"{"priority":null,"recurrenceRule":null,"location":null}"#)
+                .expect("parse patch");
+        let after = service.update_task(&user, &task.id, patch).expect("patch");
+        assert_eq!(after.priority, None);
+        assert_eq!(after.recurrence_rule, None);
+        assert_eq!(after.location, None);
+    }
+
+    #[test]
+    fn completing_a_repeating_task_keeps_it_done_and_creates_the_next_one() {
+        let (service, user, _) = test_service();
+        let task = repeating_task(&service, &user, "FREQ=WEEKLY");
+
+        let done = complete(&service, &user, &task.id);
+        assert!(done.done);
+        assert_eq!(
+            done.recurrence_rule, None,
+            "the completed one stops repeating"
+        );
+
+        let next = done.next_task.expect("a next occurrence");
+        assert_ne!(next.id, task.id);
+        assert!(!next.done);
+        assert_eq!(next.title, "Water the plants");
+        assert_eq!(next.due_date.as_deref(), Some("2026-10-08T00:00:00Z"));
+        assert_eq!(next.start_date.as_deref(), Some("2026-10-07T00:00:00Z"));
+        assert_eq!(next.priority, Some(2));
+        assert_eq!(next.tags, vec!["home"]);
+        assert_eq!(next.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+
+        assert_eq!(service.list_tasks(&user, None).expect("list").len(), 2);
+    }
+
+    #[test]
+    fn completing_a_task_already_done_does_not_create_another() {
+        let (service, user, _) = test_service();
+        let task = repeating_task(&service, &user, "FREQ=DAILY");
+        complete(&service, &user, &task.id);
+        let again = complete(&service, &user, &task.id);
+        assert!(again.next_task.is_none());
+        assert_eq!(service.list_tasks(&user, None).expect("list").len(), 2);
+    }
+
+    #[test]
+    fn a_used_up_count_completes_without_a_next_occurrence() {
+        let (service, user, _) = test_service();
+        let task = repeating_task(&service, &user, "FREQ=DAILY;COUNT=2");
+        let next = complete(&service, &user, &task.id)
+            .next_task
+            .expect("one more");
+        assert_eq!(next.recurrence_rule.as_deref(), Some("FREQ=DAILY;COUNT=1"));
+        assert!(complete(&service, &user, &next.id).next_task.is_none());
+    }
+
+    fn record(due: Option<&str>, due_has_time: bool, after: bool) -> TaskRecord {
+        let at = |s: &str| s.parse::<DateTime<Utc>>().expect("instant").naive_utc();
+        TaskRecord {
+            id: "t".into(),
+            user_id: "u".into(),
+            title: "t".into(),
+            notes: None,
+            done: true,
+            due_date: due.map(at),
+            position: 0,
+            created_at: at("2026-01-01T00:00:00Z"),
+            updated_at: at("2026-01-01T00:00:00Z"),
+            event_id: None,
+            due_has_time,
+            start_date: None,
+            start_has_time: false,
+            priority: None,
+            estimate_minutes: None,
+            location: None,
+            recurrence_rule: None,
+            repeat_after_completion: after,
+        }
+    }
+
+    fn next_due(task: &TaskRecord, rule: &str, tz: Tz, now: &str) -> Option<String> {
+        let now = now.parse::<DateTime<Utc>>().expect("now");
+        next_occurrence(task, rule, tz, now).map(|n| n.due.format("%Y-%m-%dT%H:%M:%SZ").to_string())
+    }
+
+    #[test]
+    fn repeat_after_counts_from_the_completion_day_not_the_due_date() {
+        let task = record(Some("2026-09-01T00:00:00Z"), false, true);
+        assert_eq!(
+            next_due(
+                &task,
+                "FREQ=WEEKLY;INTERVAL=2",
+                Tz::UTC,
+                "2026-09-25T15:00:00Z"
+            )
+            .as_deref(),
+            Some("2026-10-09T00:00:00Z")
+        );
+    }
+
+    #[test]
+    fn a_timed_repeat_keeps_its_wall_clock_time_across_dst() {
+        // 09:00 in New York on Oct 30 (EDT, UTC-4) → 09:00 on Nov 6 (EST, UTC-5).
+        let task = record(Some("2026-10-30T13:00:00Z"), true, false);
+        let tz: Tz = "America/New_York".parse().unwrap();
+        assert_eq!(
+            next_due(&task, "FREQ=WEEKLY", tz, "2026-10-30T14:00:00Z").as_deref(),
+            Some("2026-11-06T14:00:00Z")
+        );
+    }
+
+    #[test]
+    fn a_date_only_repeat_stays_on_its_day_whatever_the_zone() {
+        let task = record(Some("2026-10-01T00:00:00Z"), false, false);
+        let tz: Tz = "Pacific/Auckland".parse().unwrap();
+        assert_eq!(
+            next_due(&task, "FREQ=DAILY", tz, "2026-10-01T02:00:00Z").as_deref(),
+            Some("2026-10-02T00:00:00Z")
+        );
+    }
+
+    #[test]
+    fn a_repeating_task_with_no_due_date_steps_from_the_completion_day() {
+        let task = record(None, false, false);
+        let tz: Tz = "America/Los_Angeles".parse().unwrap();
+        // 03:00 UTC on the 26th is still the 25th in Los Angeles.
+        assert_eq!(
+            next_due(&task, "FREQ=DAILY", tz, "2026-09-26T03:00:00Z").as_deref(),
+            Some("2026-09-26T00:00:00Z")
+        );
     }
 }
