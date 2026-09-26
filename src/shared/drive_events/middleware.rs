@@ -6,7 +6,7 @@ use actix_web::http::header::AUTHORIZATION;
 use actix_web::middleware::Next;
 use actix_web::{web, Error};
 
-use crate::shared::drive_events::broadcaster::DriveEventBroadcaster;
+use crate::shared::drive_events::broadcaster::{DriveEventBroadcaster, SignalKind};
 use crate::shared::TokenService;
 
 /// Identifies the browser tab (or native client) that made a request, so the signal its own write
@@ -47,6 +47,25 @@ pub fn changes_drive_listing(path: &str) -> bool {
     matches_area(rest, "photos") || matches_area(rest, "albums")
 }
 
+/// Whether a successful write at `path` changed the user's calendar: any event, reminder, task,
+/// task list, connection or provider sync. Every route there is signalled — the calendar's writes
+/// are all user actions, none on a timer, so there is no autosave-style storm to exclude.
+pub fn changes_calendar(path: &str) -> bool {
+    path.strip_prefix("/api/v1/")
+        .is_some_and(|rest| matches_area(rest, "calendar"))
+}
+
+/// Which signal, if any, a successful write at `path` calls for.
+fn signal_for(path: &str) -> Option<SignalKind> {
+    if changes_drive_listing(path) {
+        Some(SignalKind::Drive)
+    } else if changes_calendar(path) {
+        Some(SignalKind::Calendar)
+    } else {
+        None
+    }
+}
+
 /// True when `rest` is exactly `area` or a path beneath it — so `photos` and `photos/{id}` match
 /// while a future `photosomething` does not.
 fn matches_area(rest: &str, area: &str) -> bool {
@@ -72,7 +91,8 @@ fn header(req: &ServiceRequest, name: &str) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-/// Signals a user's other clients after any request of theirs that changed their drive.
+/// Signals a user's other clients after any request of theirs that changed their drive or their
+/// calendar.
 ///
 /// Sits on the whole `/api/v1` scope rather than on each handler: there are around thirty routes
 /// that move a file or folder row across `drive::storage`, `drive::filesystem`, `drive::tags`,
@@ -88,11 +108,16 @@ pub async fn broadcast_drive_changes(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
-    let relevant = is_mutating(req.method()) && changes_drive_listing(req.path());
+    let kind = if is_mutating(req.method()) {
+        signal_for(req.path())
+    } else {
+        None
+    };
 
     // Everything needed after the call is taken before it: `next.call` consumes the request.
-    let context = relevant.then(|| {
+    let context = kind.map(|kind| {
         (
+            kind,
             req.app_data::<web::Data<Arc<DriveEventBroadcaster>>>()
                 .map(|d| Arc::clone(d.get_ref())),
             req.app_data::<web::Data<Arc<TokenService>>>()
@@ -104,11 +129,11 @@ pub async fn broadcast_drive_changes(
 
     let res = next.call(req).await?;
 
-    if let Some((Some(broadcaster), Some(tokens), Some(authorization), client_id)) = context {
+    if let Some((kind, Some(broadcaster), Some(tokens), Some(authorization), client_id)) = context {
         if res.status().is_success() {
             if let Some(token) = authorization.strip_prefix("Bearer ") {
                 if let Ok(claims) = tokens.validate_access_token(token.trim()) {
-                    broadcaster.notify(&claims.sub, client_id.as_deref());
+                    broadcaster.notify(&claims.sub, kind, client_id.as_deref());
                 }
             }
         }
@@ -184,6 +209,10 @@ mod tests {
                                 .route(
                                     "/calendar/events",
                                     web::post().to(|| async { HttpResponse::Created().finish() }),
+                                )
+                                .route(
+                                    "/ai/complete",
+                                    web::post().to(|| async { HttpResponse::Ok().finish() }),
                                 ),
                         ),
                 )
@@ -277,13 +306,33 @@ mod tests {
         }
 
         #[actix_web::test]
-        async fn a_write_outside_the_drive_and_photo_areas_signals_nothing() {
+        async fn a_calendar_write_signals_calendar_changed_not_drive_changed() {
             let h = harness();
             let (mut rx, _slot) = h.hub.subscribe(USER);
             let app = service!(h);
 
             let req = test::TestRequest::post()
                 .uri("/api/v1/calendar/events")
+                .insert_header(("Authorization", format!("Bearer {}", token(&h))))
+                .insert_header((CLIENT_ID_HEADER, "phone"))
+                .to_request();
+            test::call_service(&app, req).await;
+
+            let json: serde_json::Value =
+                serde_json::from_str(&received(&mut rx).expect("a signal")).unwrap();
+            assert_eq!(json["type"], "calendar.changed");
+            assert_eq!(json["originClientId"], "phone");
+            assert!(received(&mut rx).is_none());
+        }
+
+        #[actix_web::test]
+        async fn a_write_outside_the_signalled_areas_signals_nothing() {
+            let h = harness();
+            let (mut rx, _slot) = h.hub.subscribe(USER);
+            let app = service!(h);
+
+            let req = test::TestRequest::post()
+                .uri("/api/v1/ai/complete")
                 .insert_header(("Authorization", format!("Bearer {}", token(&h))))
                 .to_request();
             test::call_service(&app, req).await;
@@ -460,6 +509,25 @@ mod tests {
         ] {
             assert!(!changes_drive_listing(path), "{path} should not signal");
         }
+    }
+
+    #[test]
+    fn calendar_writes_signal_the_calendar_and_nothing_else_does() {
+        for path in [
+            "/api/v1/calendar/events",
+            "/api/v1/calendar/events/abc",
+            "/api/v1/calendar/reminders/abc",
+            "/api/v1/calendar/tasks/reorder",
+            "/api/v1/calendar/sync/trigger",
+        ] {
+            assert_eq!(signal_for(path), Some(SignalKind::Calendar), "{path}");
+        }
+        assert_eq!(
+            signal_for("/api/v1/drive/files/upload"),
+            Some(SignalKind::Drive)
+        );
+        assert_eq!(signal_for("/api/v1/calendarish"), None);
+        assert_eq!(signal_for("/api/v1/ai/complete"), None);
     }
 
     /// The area match is on a path segment, not a string prefix, so a future top-level route whose

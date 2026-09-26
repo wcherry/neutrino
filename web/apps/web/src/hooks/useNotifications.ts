@@ -4,7 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { notificationsApi, getNotificationsWsUrl } from '@neutrino/api-drive';
 import type { NotificationItem } from '@neutrino/api-drive';
 import { getClientId, refreshTokensOnce } from '@neutrino/api-core';
-import { DRIVE_CHANGED_EVENT, parseDriveChangedSignal } from '@/lib/driveLiveUpdates';
+import {
+  DRIVE_CHANGED_EVENT,
+  isSocketSignal,
+  parseDriveChangedSignal,
+} from '@/lib/driveLiveUpdates';
 
 const RECONNECT_BASE_MS = 3000;
 const RECONNECT_MAX_MS = 60000;
@@ -87,6 +91,9 @@ export function useNotifications() {
           window.dispatchEvent(new CustomEvent(DRIVE_CHANGED_EVENT));
           return;
         }
+        // Any other signal (the calendar's, for one) is for a client that watches it; it is never
+        // an inbox record.
+        if (isSocketSignal(message)) return;
 
         const notification = message as NotificationItem;
         setNotifications((prev) => [notification, ...prev]);

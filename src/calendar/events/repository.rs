@@ -54,6 +54,7 @@ impl EventsRepository {
         let mut conn = self.get_conn()?;
         let mut query = events::table
             .filter(events::user_id.eq(user_id))
+            .filter(events::deleted_at.is_null())
             .into_boxed();
         if let Some(f) = from {
             // Events that end at or after the range start, OR are recurring masters
@@ -82,6 +83,7 @@ impl EventsRepository {
         let mut conn = self.get_conn()?;
         events::table
             .filter(events::id.eq(id).and(events::user_id.eq(user_id)))
+            .filter(events::deleted_at.is_null())
             .select(EventRecord::as_select())
             .first(&mut conn)
             .map_err(|e| match e {
@@ -101,7 +103,9 @@ impl EventsRepository {
     ) -> Result<EventRecord, ApiError> {
         let mut conn = self.get_conn()?;
         let affected = diesel::update(
-            events::table.filter(events::id.eq(id).and(events::user_id.eq(user_id))),
+            events::table
+                .filter(events::id.eq(id).and(events::user_id.eq(user_id)))
+                .filter(events::deleted_at.is_null()),
         )
         .set(&changes)
         .execute(&mut conn)
@@ -122,11 +126,16 @@ impl EventsRepository {
             })
     }
 
-    pub fn delete(&self, id: &str, user_id: &str) -> Result<(), ApiError> {
+    /// Soft-deletes: the row stays, with `deleted_at` set and `updated_at` bumped, so the changes
+    /// feed reports the deletion. Deleting an event that is already deleted is a 404, as before.
+    pub fn delete(&self, id: &str, user_id: &str, now: NaiveDateTime) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
-        let affected = diesel::delete(
-            events::table.filter(events::id.eq(id).and(events::user_id.eq(user_id))),
+        let affected = diesel::update(
+            events::table
+                .filter(events::id.eq(id).and(events::user_id.eq(user_id)))
+                .filter(events::deleted_at.is_null()),
         )
+        .set((events::deleted_at.eq(Some(now)), events::updated_at.eq(now)))
         .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB delete event error: {:?}", e);
@@ -175,6 +184,9 @@ impl EventsRepository {
                 recurrence_rule: Some(record.recurrence_rule),
                 updated_at: record.updated_at,
                 timezone: Some(record.timezone),
+                // The provider says the event exists, so a soft-deleted copy comes back, as a
+                // hard-deleted one used to be inserted again.
+                deleted_at: Some(None),
             };
             diesel::update(events::table.filter(events::id.eq(&existing)))
                 .set(&changes)
@@ -196,7 +208,8 @@ impl EventsRepository {
         Ok(())
     }
 
-    /// Delete an externally-sourced event by its external ID (used when the provider reports deletion).
+    /// Soft-deletes an externally-sourced event by its external ID, when the provider reports it
+    /// gone, so the deletion reaches clients through the changes feed.
     pub fn delete_by_external(
         &self,
         user_id: &str,
@@ -204,19 +217,55 @@ impl EventsRepository {
         external_id: &str,
     ) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
-        diesel::delete(
-            events::table.filter(
-                events::user_id
-                    .eq(user_id)
-                    .and(events::source.eq(source))
-                    .and(events::external_id.eq(external_id)),
-            ),
+        let now = chrono::Utc::now().naive_utc();
+        diesel::update(
+            events::table
+                .filter(
+                    events::user_id
+                        .eq(user_id)
+                        .and(events::source.eq(source))
+                        .and(events::external_id.eq(external_id)),
+                )
+                .filter(events::deleted_at.is_null()),
         )
+        .set((events::deleted_at.eq(Some(now)), events::updated_at.eq(now)))
         .execute(&mut conn)
         .map_err(|e| {
             tracing::error!("DB delete_by_external error: {:?}", e);
             ApiError::internal("Database error")
         })?;
         Ok(())
+    }
+
+    /// Every row of `user_id`'s, live or deleted, changed at or after `since`, oldest first. At or
+    /// after rather than after: timestamps are to the second, and an edit in the same second as
+    /// the last read must not be missed. Clients apply changes idempotently.
+    pub fn find_changed_since(
+        &self,
+        user_id: &str,
+        since: NaiveDateTime,
+    ) -> Result<Vec<EventRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        events::table
+            .filter(events::user_id.eq(user_id))
+            .filter(events::updated_at.ge(since))
+            .order(events::updated_at.asc())
+            .select(EventRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB changed events error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// Removes rows deleted before `cutoff` for good. Returns how many went.
+    pub fn purge_deleted_before(&self, cutoff: NaiveDateTime) -> Result<usize, ApiError> {
+        let mut conn = self.get_conn()?;
+        diesel::delete(events::table.filter(events::deleted_at.lt(cutoff)))
+            .execute(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB purge deleted events error: {:?}", e);
+                ApiError::internal("Database error")
+            })
     }
 }

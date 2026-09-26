@@ -8,6 +8,28 @@ use crate::drive::notifications::hub::NotificationHub;
 /// the client tells the two kinds of message apart on one socket without a version bump.
 pub const DRIVE_CHANGED_TYPE: &str = "drive.changed";
 
+/// The `type` of the calendar's signal: an event, reminder or task changed.
+pub const CALENDAR_CHANGED_TYPE: &str = "calendar.changed";
+
+/// Which part of the user's data a signal is about. Each is rate-limited on its own, so a burst of
+/// calendar writes can never swallow the drive signal a folder listing is waiting for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SignalKind {
+    Drive,
+    Calendar,
+}
+
+impl SignalKind {
+    pub fn wire_type(self) -> &'static str {
+        match self {
+            SignalKind::Drive => DRIVE_CHANGED_TYPE,
+            SignalKind::Calendar => CALENDAR_CHANGED_TYPE,
+        }
+    }
+}
+
+type Key = (String, SignalKind);
+
 /// At most one signal per user per window.
 ///
 /// The first change in a quiet period goes out immediately — that is the case this exists for, a
@@ -84,7 +106,7 @@ pub(crate) enum Decision {
 /// Pushes "your drive changed" to a user's open clients, at most once per [`COALESCE_WINDOW`].
 pub struct DriveEventBroadcaster {
     hub: Arc<NotificationHub>,
-    state: Mutex<HashMap<String, UserState>>,
+    state: Mutex<HashMap<Key, UserState>>,
     window: Duration,
 }
 
@@ -101,32 +123,40 @@ impl DriveEventBroadcaster {
         }
     }
 
-    /// Record that `user_id`'s drive changed, and signal their other clients.
+    /// Record that `user_id`'s drive (or calendar, per `kind`) changed, and signal their other
+    /// clients.
     ///
     /// `client_id` is the caller's own `X-Neutrino-Client-Id`, when it sent one; it travels back
     /// out on the signal so the tab that made the change can skip the refetch it has already done.
-    pub fn notify(self: &Arc<Self>, user_id: &str, client_id: Option<&str>) {
-        match self.decide(user_id, client_id, Instant::now()) {
-            Decision::SendNow(origin) => self.push(user_id, &origin),
+    pub fn notify(self: &Arc<Self>, user_id: &str, kind: SignalKind, client_id: Option<&str>) {
+        match self.decide(user_id, kind, client_id, Instant::now()) {
+            Decision::SendNow(origin) => self.push(user_id, kind, &origin),
             Decision::Coalesced => {}
             Decision::Schedule(delay) => {
                 let this = Arc::clone(self);
                 let user_id = user_id.to_string();
                 actix_web::rt::spawn(async move {
                     tokio::time::sleep(delay).await;
-                    this.flush(&user_id);
+                    this.flush(&user_id, kind);
                 });
             }
         }
     }
 
-    fn decide(&self, user_id: &str, client_id: Option<&str>, now: Instant) -> Decision {
+    fn decide(
+        &self,
+        user_id: &str,
+        kind: SignalKind,
+        client_id: Option<&str>,
+        now: Instant,
+    ) -> Decision {
+        let key = (user_id.to_string(), kind);
         let mut state = self.state.lock().unwrap();
         state.retain(|_, entry| {
             entry.pending.is_some() || now.duration_since(entry.last_sent) < IDLE_ENTRY_TTL
         });
 
-        match state.get_mut(user_id) {
+        match state.get_mut(&key) {
             Some(entry) => {
                 if let Some(pending) = entry.pending.as_mut() {
                     pending.merge(client_id);
@@ -143,7 +173,7 @@ impl DriveEventBroadcaster {
             }
             None => {
                 state.insert(
-                    user_id.to_string(),
+                    key,
                     UserState {
                         last_sent: now,
                         pending: None,
@@ -155,10 +185,10 @@ impl DriveEventBroadcaster {
     }
 
     /// Put the batched signal on the wire once its window has elapsed.
-    fn flush(&self, user_id: &str) {
+    fn flush(&self, user_id: &str, kind: SignalKind) {
         let origin = {
             let mut state = self.state.lock().unwrap();
-            match state.get_mut(user_id) {
+            match state.get_mut(&(user_id.to_string(), kind)) {
                 Some(entry) => {
                     entry.last_sent = Instant::now();
                     entry.pending.take()
@@ -167,13 +197,13 @@ impl DriveEventBroadcaster {
             }
         };
         if let Some(origin) = origin {
-            self.push(user_id, &origin);
+            self.push(user_id, kind, &origin);
         }
     }
 
-    fn push(&self, user_id: &str, origin: &Origin) {
+    fn push(&self, user_id: &str, kind: SignalKind, origin: &Origin) {
         let json = serde_json::json!({
-            "type": DRIVE_CHANGED_TYPE,
+            "type": kind.wire_type(),
             "originClientId": origin.single(),
         })
         .to_string();
@@ -198,7 +228,7 @@ mod tests {
         let now = Instant::now();
 
         assert_eq!(
-            b.decide("user-1", Some("tab-a"), now),
+            b.decide("user-1", SignalKind::Drive, Some("tab-a"), now),
             Decision::SendNow(Origin::Single("tab-a".into()))
         );
     }
@@ -207,16 +237,26 @@ mod tests {
     fn a_second_change_inside_the_window_schedules_one_flush_and_the_rest_join_it() {
         let b = broadcaster(500);
         let now = Instant::now();
-        b.decide("user-1", Some("tab-a"), now);
+        b.decide("user-1", SignalKind::Drive, Some("tab-a"), now);
 
         // Scheduled for the remainder of the window, not a fresh full window.
         assert_eq!(
-            b.decide("user-1", Some("tab-a"), now + Duration::from_millis(100)),
+            b.decide(
+                "user-1",
+                SignalKind::Drive,
+                Some("tab-a"),
+                now + Duration::from_millis(100)
+            ),
             Decision::Schedule(Duration::from_millis(400))
         );
         for _ in 0..50 {
             assert_eq!(
-                b.decide("user-1", Some("tab-a"), now + Duration::from_millis(200)),
+                b.decide(
+                    "user-1",
+                    SignalKind::Drive,
+                    Some("tab-a"),
+                    now + Duration::from_millis(200)
+                ),
                 Decision::Coalesced
             );
         }
@@ -226,10 +266,15 @@ mod tests {
     fn a_change_after_the_window_goes_out_immediately_again() {
         let b = broadcaster(500);
         let now = Instant::now();
-        b.decide("user-1", Some("tab-a"), now);
+        b.decide("user-1", SignalKind::Drive, Some("tab-a"), now);
 
         assert_eq!(
-            b.decide("user-1", Some("tab-a"), now + Duration::from_millis(500)),
+            b.decide(
+                "user-1",
+                SignalKind::Drive,
+                Some("tab-a"),
+                now + Duration::from_millis(500)
+            ),
             Decision::SendNow(Origin::Single("tab-a".into()))
         );
     }
@@ -238,10 +283,10 @@ mod tests {
     fn users_are_rate_limited_independently() {
         let b = broadcaster(500);
         let now = Instant::now();
-        b.decide("user-1", Some("tab-a"), now);
+        b.decide("user-1", SignalKind::Drive, Some("tab-a"), now);
 
         assert_eq!(
-            b.decide("user-2", Some("tab-b"), now),
+            b.decide("user-2", SignalKind::Drive, Some("tab-b"), now),
             Decision::SendNow(Origin::Single("tab-b".into()))
         );
     }
@@ -254,9 +299,19 @@ mod tests {
     fn a_batch_mixing_two_clients_is_attributed_to_neither() {
         let b = broadcaster(500);
         let now = Instant::now();
-        b.decide("user-1", Some("tab-a"), now);
-        b.decide("user-1", Some("tab-a"), now + Duration::from_millis(100));
-        b.decide("user-1", Some("phone"), now + Duration::from_millis(200));
+        b.decide("user-1", SignalKind::Drive, Some("tab-a"), now);
+        b.decide(
+            "user-1",
+            SignalKind::Drive,
+            Some("tab-a"),
+            now + Duration::from_millis(100),
+        );
+        b.decide(
+            "user-1",
+            SignalKind::Drive,
+            Some("phone"),
+            now + Duration::from_millis(200),
+        );
 
         b.flush_for_test("user-1", |origin| assert_eq!(origin, Origin::Mixed));
     }
@@ -265,9 +320,19 @@ mod tests {
     fn a_batch_from_one_client_stays_attributed_to_it() {
         let b = broadcaster(500);
         let now = Instant::now();
-        b.decide("user-1", Some("tab-a"), now);
-        b.decide("user-1", Some("tab-a"), now + Duration::from_millis(100));
-        b.decide("user-1", Some("tab-a"), now + Duration::from_millis(200));
+        b.decide("user-1", SignalKind::Drive, Some("tab-a"), now);
+        b.decide(
+            "user-1",
+            SignalKind::Drive,
+            Some("tab-a"),
+            now + Duration::from_millis(100),
+        );
+        b.decide(
+            "user-1",
+            SignalKind::Drive,
+            Some("tab-a"),
+            now + Duration::from_millis(200),
+        );
 
         b.flush_for_test("user-1", |origin| {
             assert_eq!(origin, Origin::Single("tab-a".into()))
@@ -282,7 +347,7 @@ mod tests {
         let now = Instant::now();
 
         assert_eq!(
-            b.decide("user-1", None, now),
+            b.decide("user-1", SignalKind::Drive, None, now),
             Decision::SendNow(Origin::Mixed)
         );
     }
@@ -292,7 +357,10 @@ mod tests {
         let b = broadcaster(500);
         let now = Instant::now();
 
-        assert_eq!(b.decide("user-1", Some(""), now), Decision::SendNow(Origin::Mixed));
+        assert_eq!(
+            b.decide("user-1", SignalKind::Drive, Some(""), now),
+            Decision::SendNow(Origin::Mixed)
+        );
     }
 
     #[test]
@@ -300,11 +368,16 @@ mod tests {
         let b = broadcaster(500);
         let now = Instant::now();
         for i in 0..100 {
-            b.decide(&format!("user-{i}"), Some("tab-a"), now);
+            b.decide(&format!("user-{i}"), SignalKind::Drive, Some("tab-a"), now);
         }
         assert_eq!(b.state.lock().unwrap().len(), 100);
 
-        b.decide("user-new", Some("tab-a"), now + IDLE_ENTRY_TTL);
+        b.decide(
+            "user-new",
+            SignalKind::Drive,
+            Some("tab-a"),
+            now + IDLE_ENTRY_TTL,
+        );
         assert_eq!(b.state.lock().unwrap().len(), 1);
     }
 
@@ -323,6 +396,26 @@ mod tests {
         assert!(json.get("eventType").is_none());
     }
 
+    /// A calendar write must not be folded into, or rate-limited by, a drive batch: each kind
+    /// tells a different screen to refetch.
+    #[test]
+    fn kinds_are_rate_limited_independently() {
+        let b = broadcaster(500);
+        let now = Instant::now();
+        b.decide("user-1", SignalKind::Drive, Some("tab-a"), now);
+
+        assert_eq!(
+            b.decide("user-1", SignalKind::Calendar, Some("phone"), now),
+            Decision::SendNow(Origin::Single("phone".into()))
+        );
+    }
+
+    #[test]
+    fn each_kind_names_itself_on_the_wire() {
+        assert_eq!(SignalKind::Drive.wire_type(), "drive.changed");
+        assert_eq!(SignalKind::Calendar.wire_type(), "calendar.changed");
+    }
+
     impl DriveEventBroadcaster {
         /// Take whatever is batched for `user_id` and hand it to `check`, without a socket.
         fn flush_for_test(&self, user_id: &str, check: impl FnOnce(Origin)) {
@@ -330,7 +423,7 @@ mod tests {
                 .state
                 .lock()
                 .unwrap()
-                .get_mut(user_id)
+                .get_mut(&(user_id.to_string(), SignalKind::Drive))
                 .and_then(|entry| entry.pending.take());
             check(pending.expect("a batch should be pending"));
         }

@@ -19,7 +19,7 @@ pub struct CreateEventRequest {
     pub timezone: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Default, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateEventRequest {
     pub title: Option<String>,
@@ -66,4 +66,28 @@ pub struct EventResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ListEventsResponse {
     pub events: Vec<EventResponse>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EventChangesQuery {
+    /// The `cursor` of the previous response. Omitted, the response is only a cursor to start
+    /// from: take one before loading anything, so nothing changed during the load is missed.
+    pub since: Option<String>,
+}
+
+/// What changed since a cursor. Changes are reported at or after the cursor, so one may arrive
+/// twice; apply them idempotently.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EventChangesResponse {
+    /// Events created or changed since the cursor, as `GET /events` returns them.
+    pub events: Vec<EventResponse>,
+    /// Events deleted since the cursor.
+    pub deleted_ids: Vec<String>,
+    /// Pass as `since` next time.
+    pub cursor: String,
+    /// The cursor is older than deletions are kept for, so deletions may be missing: drop
+    /// everything held and load afresh. `events` and `deletedIds` are empty when this is set.
+    pub full_resync_required: bool,
 }
