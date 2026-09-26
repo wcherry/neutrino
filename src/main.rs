@@ -448,6 +448,7 @@ async fn main() -> std::io::Result<()> {
     });
 
     let cal_tasks_repo = Arc::new(TasksRepository::new(pool.clone()));
+    let purge_events_service = cal_events_service.clone();
     let cal_tasks_service = Arc::new(TasksService::new(cal_tasks_repo, cal_events_service));
     let cal_tasks_state = web::Data::new(calendar::tasks::api::TasksApiState {
         tasks_service: cal_tasks_service,
@@ -457,6 +458,19 @@ async fn main() -> std::io::Result<()> {
     let engine_repo = cal_reminders_repo.clone();
     tokio::spawn(async move {
         calendar::reminder_engine::run(engine_repo, 60).await;
+    });
+
+    // Deleted events are kept for the changes feed, then purged once a day.
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(24 * 60 * 60));
+        loop {
+            tick.tick().await;
+            match purge_events_service.purge_deleted() {
+                Ok(0) => {}
+                Ok(n) => tracing::info!("Purged {} deleted calendar event(s)", n),
+                Err(e) => tracing::error!("Purging deleted calendar events failed: {:?}", e),
+            }
+        }
     });
 
     // ── Drive service ─────────────────────────────────────────────────────────

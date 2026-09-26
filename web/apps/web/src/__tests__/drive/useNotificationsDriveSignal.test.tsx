@@ -139,6 +139,18 @@ describe('useNotifications — drive change signals', () => {
     expect(result.current.unreadCount).toBe(0);
   });
 
+  it('keeps a signal of another kind out of the inbox too', async () => {
+    const { result, socket } = await mountHook();
+
+    await act(async () => {
+      socket.receive({ type: 'calendar.changed', originClientId: 'a-phone' });
+    });
+
+    expect(result.current.notifications).toHaveLength(0);
+    expect(result.current.unreadCount).toBe(0);
+    expect(driveChanges).toBe(0);
+  });
+
   it('still delivers an ordinary notification to the inbox', async () => {
     const { result, socket } = await mountHook();
 
