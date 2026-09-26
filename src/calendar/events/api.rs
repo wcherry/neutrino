@@ -1,6 +1,7 @@
 use crate::calendar::events::{
     dto::{
-        CreateEventRequest, EventResponse, ListEventsQuery, ListEventsResponse, UpdateEventRequest,
+        CreateEventRequest, EventChangesQuery, EventChangesResponse, EventResponse,
+        ListEventsQuery, ListEventsResponse, UpdateEventRequest,
     },
     service::EventsService,
 };
@@ -150,8 +151,34 @@ pub async fn delete_event(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// What changed since a cursor: events created or edited, and the ids of events deleted.
+///
+/// Call without `since` for a cursor to start from, before the first load. A cursor older than
+/// deleted events are kept for (90 days) answers `fullResyncRequired` and nothing else.
+#[utoipa::path(
+    get,
+    path = "/api/v1/calendar/events/changes",
+    params(("since" = Option<String>, Query, description = "The previous response's cursor")),
+    responses((status = 200, description = "Changes since the cursor", body = EventChangesResponse)),
+    security(("bearer_auth" = [])),
+    tag = "events"
+)]
+#[get("/events/changes")]
+pub async fn event_changes(
+    state: web::Data<EventsApiState>,
+    user: AuthenticatedUser,
+    query: web::Query<EventChangesQuery>,
+) -> Result<web::Json<EventChangesResponse>, ApiError> {
+    Ok(web::Json(
+        state.events_service.changes(&user, query.into_inner())?,
+    ))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(list_events)
+    // Before `/events/{id}`: routes match in registration order, and "changes" would otherwise
+    // be read as an event id.
+    cfg.service(event_changes)
+        .service(list_events)
         .service(create_event)
         .service(get_event)
         .service(update_event)
@@ -160,8 +187,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_events, create_event, get_event, update_event, delete_event),
+    paths(list_events, create_event, get_event, update_event, delete_event, event_changes),
     components(schemas(
+        EventChangesResponse,
         CreateEventRequest,
         UpdateEventRequest,
         ListEventsQuery,

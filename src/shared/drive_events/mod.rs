@@ -13,6 +13,10 @@
 //! a note re-read itself on a peer's signal. A signal cannot be wrong about *what* changed, and a
 //! listing the server described would have to be described again for every view that renders one.
 //!
+//! The calendar rides the same socket with its own `calendar.changed` signal (see
+//! [`broadcaster::SignalKind`]): any successful write under `/api/v1/calendar` tells the user's
+//! other clients — the Calendar iOS app, another tab — to pull `GET /calendar/events/changes`.
+//!
 //! [`broadcast_drive_changes`] is the whole emit path, so a route added later is covered without
 //! anybody remembering to call anything.
 

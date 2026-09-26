@@ -108,3 +108,12 @@ export function parseDriveChangedSignal(data: unknown): DriveChangedSignal | nul
     originClientId: typeof message.originClientId === 'string' ? message.originClientId : null,
   };
 }
+
+/**
+ * Whether a socket message is a signal of any kind — `drive.changed`, `calendar.changed`, or one
+ * added later — rather than an inbox record. Signals carry a string `type`; inbox records never
+ * do. A signal this client has no use for is dropped, never shown as a notification.
+ */
+export function isSocketSignal(data: unknown): boolean {
+  return !!data && typeof data === 'object' && typeof (data as { type?: unknown }).type === 'string';
+}

@@ -114,6 +114,7 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         timezone -> Nullable<Text>,
+        deleted_at -> Nullable<Timestamp>,
     }
 }
 

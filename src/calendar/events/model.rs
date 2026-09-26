@@ -20,6 +20,9 @@ pub struct EventRecord {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub timezone: Option<String>,
+    /// Set when the event is deleted; the row stays so the changes feed can report it. Every
+    /// read of live events filters on this being NULL.
+    pub deleted_at: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Insertable)]
@@ -53,4 +56,6 @@ pub struct UpdateEventRecord {
     pub recurrence_rule: Option<Option<String>>,
     pub updated_at: NaiveDateTime,
     pub timezone: Option<Option<String>>,
+    /// `Some(None)` revives a deleted event; see `upsert_from_sync`.
+    pub deleted_at: Option<Option<NaiveDateTime>>,
 }
