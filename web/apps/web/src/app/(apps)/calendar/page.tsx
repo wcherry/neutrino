@@ -38,6 +38,7 @@ import ReminderModal from './ReminderModal';
 import { RemindersSidebar } from './RemindersSidebar';
 import { TasksSidebar } from './TasksSidebar';
 import TaskDetailModal from './TaskDetailModal';
+import { allTags } from './tags';
 import { EventDetail, EventViewModal } from './EventDetail';
 import styles from './page.module.css';
 
@@ -500,6 +501,7 @@ export default function CalendarPage() {
         <TaskDetailModal
           key={editingTask.id}
           task={allTasks.find((t) => t.id === editingTask.id) ?? editingTask}
+          knownTags={allTags(allTasks)}
           onClose={() => setEditingTask(null)}
           onSave={(id, req) => updateTask.mutateAsync({ id, req })}
         />

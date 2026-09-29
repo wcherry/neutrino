@@ -22,6 +22,8 @@ import {
   smartDateToWire,
   type SmartDate,
 } from './smartAdd';
+import { splitTags } from './tags';
+import TagInput from './TagInput';
 import styles from './page.module.css';
 
 /** An hour, the length a task gets when it is first put on the calendar. */
@@ -29,6 +31,8 @@ const DEFAULT_SLOT_MINUTES = 60;
 
 export interface TaskDetailModalProps {
   task: TaskResponse;
+  /** Every tag in use, most used first, offered as the user types a tag. */
+  knownTags?: string[];
   onClose: () => void;
   /** Applied to the task row itself; scheduling has its own endpoints. */
   onSave: (id: string, req: UpdateTaskRequest) => Promise<TaskResponse>;
@@ -44,7 +48,7 @@ export interface TaskDetailModalProps {
  * removed the moment the user asks, and Save applies only the fields on the
  * task row plus the schedule.
  */
-export default function TaskDetailModal({ task, onClose, onSave }: TaskDetailModalProps) {
+export default function TaskDetailModal({ task, knownTags = [], onClose, onSave }: TaskDetailModalProps) {
   const qc = useQueryClient();
 
   const [title, setTitle] = useState(task.title);
@@ -68,7 +72,8 @@ export default function TaskDetailModal({ task, onClose, onSave }: TaskDetailMod
   );
   const estimate = useParsedField<number>(task.estimateMinutes ?? null, formatEstimate, parseEstimate);
   const [priority, setPriority] = useState<number | null>(task.priority ?? null);
-  const [tagsText, setTagsText] = useState(() => (task.tags ?? []).map((t) => `#${t}`).join(' '));
+  const [tags, setTags] = useState<string[]>(task.tags ?? []);
+  const [tagDraft, setTagDraft] = useState('');
   const [location, setLocation] = useState(task.location ?? '');
   const [error, setError] = useState('');
 
@@ -178,7 +183,8 @@ export default function TaskDetailModal({ task, onClose, onSave }: TaskDetailMod
         location: location.trim() || null,
         recurrenceRule: repeat.value?.rule ?? null,
         repeatAfterCompletion: repeat.value?.after ?? false,
-        tags: parseTags(tagsText),
+        // A tag typed but not yet added is still meant.
+        tags: splitTags([...tags, tagDraft].join(' ')),
       });
 
       // Scheduling is deliberately after the task write: the event carries the
@@ -290,12 +296,13 @@ export default function TaskDetailModal({ task, onClose, onSave }: TaskDetailMod
             <div className={styles.formRow}>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel} htmlFor="task-tags">Tags</label>
-                <input
+                <TagInput
                   id="task-tags"
-                  className={styles.formInput}
-                  value={tagsText}
-                  onChange={(e) => setTagsText(e.target.value)}
-                  placeholder="#errands #home"
+                  tags={tags}
+                  onTagsChange={setTags}
+                  draft={tagDraft}
+                  onDraftChange={setTagDraft}
+                  known={knownTags}
                 />
               </div>
               <div className={styles.formGroup}>
@@ -637,13 +644,4 @@ function FriendlyDateField({
       />
     </ParsedTextField>
   );
-}
-
-/** "#errands home, #Work" → ["errands", "home", "work"]. */
-function parseTags(text: string): string[] {
-  const tags = text
-    .split(/[\s,]+/)
-    .map((t) => t.replace(/^#+/, '').toLowerCase())
-    .filter(Boolean);
-  return [...new Set(tags)];
 }
