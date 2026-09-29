@@ -242,16 +242,22 @@ export function expandRecurringEvents(events: EventResponse[], from: Date, to: D
 
     // For WEEKLY+BYDAY, generate occurrences per specified day-of-week within each weekly interval
     const current = new Date(dtStart);
-    let count = 0;
+    let steps = 0;
+    // COUNT counts occurrences, as RFC 5545 has it — those before `from` too — so "after 10
+    // times" on an every-weekday rule is ten days, not ten weeks.
+    let emitted = 0;
     const MAX_OCCURRENCES = 1000;
 
-    while (current <= to && count < MAX_OCCURRENCES) {
-      if (rule.count !== null && count >= rule.count) break;
+    while (current <= to && steps < MAX_OCCURRENCES) {
+      if (rule.count !== null && emitted >= rule.count) break;
       if (rule.until && current > rule.until) break;
 
+      // In the order they fall in the step, so COUNT stops at the right one.
       const daysToCheck =
         rule.freq === 'WEEKLY' && rule.byDay
-          ? rule.byDay
+          ? [...rule.byDay].sort(
+              (a, b) => ((a - current.getDay() + 7) % 7) - ((b - current.getDay() + 7) % 7),
+            )
           : [current.getDay()];
 
       for (const targetDay of daysToCheck) {
@@ -260,8 +266,10 @@ export function expandRecurringEvents(events: EventResponse[], from: Date, to: D
         occ.setDate(occ.getDate() + diff);
 
         if (occ < dtStart) continue;
-        if (occ > to) continue;
         if (rule.until && occ > rule.until) continue;
+        if (rule.count !== null && emitted >= rule.count) break;
+        emitted++;
+        if (occ > to) continue;
 
         if (occ >= from) {
           const occEnd = new Date(occ.getTime() + duration);
@@ -274,7 +282,7 @@ export function expandRecurringEvents(events: EventResponse[], from: Date, to: D
       }
 
       advanceDate(current, rule);
-      count++;
+      steps++;
     }
   }
 

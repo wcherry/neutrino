@@ -6,7 +6,9 @@ import { Plus, UserPlus, X, Paperclip } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui';
 import { calendarApi, type CreateAttachmentRequest } from '@/lib/api';
 import type { NewEventModalProps, ReminderEntry } from './calendarTypes';
-import { REMINDER_PRESETS, REPEAT_OPTIONS } from './calendarConstants';
+import { REMINDER_PRESETS } from './calendarConstants';
+import { buildRepeatRule, parseRepeatRule, type RepeatRule } from './repeatRule';
+import RepeatFields from './RepeatFields';
 import {
   shiftEndWithStart,
   timeOfFormValue,
@@ -49,7 +51,14 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
     return toLocal(d);
   });
   const [allDay, setAllDay] = useState(existingEvent?.allDay ?? prefill?.allDay ?? false);
-  const [recurrence, setRecurrence] = useState<string>(existingEvent?.recurrenceRule ?? '');
+  // The form's times are the browser's, so its zone is the one a repeat's end date is read in.
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const initialRule = existingEvent?.recurrenceRule ?? '';
+  const initialAllDay = existingEvent?.allDay ?? false;
+  const [repeat, setRepeat] = useState<RepeatRule | null>(() =>
+    initialRule ? parseRepeatRule(initialRule, { allDay: initialAllDay, timeZone }) : null);
+  // Until the repeat is changed, the stored rule is saved exactly as it was.
+  const [repeatTouched, setRepeatTouched] = useState(false);
   const [location, setLocation] = useState(existingEvent?.location ?? prefill?.location ?? '');
   const [attendees, setAttendees] = useState<string[]>(existingEvent?.attendees ?? prefill?.attendees ?? []);
   const [attendeeInput, setAttendeeInput] = useState('');
@@ -131,9 +140,19 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
     setReminders((prev) => prev.filter((r) => r.id !== id));
   }
 
+  /**
+   * The rule to save. Rebuilt when the repeat was changed, or when all-day was, since an end
+   * date is written differently for each; otherwise the stored rule, untouched.
+   */
+  function recurrenceRule(): string | null {
+    if (!repeatTouched && (!repeat || allDay === initialAllDay)) return initialRule || null;
+    return repeat ? buildRepeatRule(repeat, { allDay, timeZone }) : null;
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
+    if (repeat?.end.kind === 'on' && repeat.end.date < start.slice(0, 10)) return;
     const fields = {
       title: title.trim(),
       description: description.trim() || null,
@@ -142,7 +161,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
       allDay,
       location: location.trim() || null,
       attendees,
-      recurrenceRule: recurrence || null,
+      recurrenceRule: recurrenceRule(),
       timezone: allDay ? null : Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
     if (isEditMode && existingEvent) {
@@ -209,18 +228,15 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
           </div>
 
           {/* Recurrence */}
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel}>Repeats</label>
-            <select
-              className={styles.formInput}
-              value={recurrence}
-              onChange={(e) => setRecurrence(e.target.value)}
-            >
-              {REPEAT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
+          <RepeatFields
+            rule={repeat}
+            customRule={!repeatTouched && !repeat && initialRule ? initialRule : null}
+            start={start}
+            onChange={(rule) => {
+              setRepeat(rule);
+              setRepeatTouched(true);
+            }}
+          />
 
           {/* Location */}
           <div className={styles.formGroup}>

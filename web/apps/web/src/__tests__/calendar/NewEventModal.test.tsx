@@ -452,3 +452,67 @@ describe('NewEventModal – toggling All day', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Repeat: every N, and when it ends
+// ---------------------------------------------------------------------------
+
+describe('NewEventModal — repeat', () => {
+  it('writes an interval and an occurrence count', async () => {
+    const { onCreate } = renderCreateModal();
+    fireEvent.change(screen.getByPlaceholderText('Event title'), { target: { value: 'Water plants' } });
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'FREQ=DAILY' } });
+    fireEvent.change(screen.getByLabelText('Every'), { target: { value: '3' } });
+    expect(screen.getByText('days')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Ends'), { target: { value: 'after' } });
+    fireEvent.change(screen.getByLabelText('Number of occurrences'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: /create event/i }));
+
+    await waitFor(() => {
+      expect(onCreate.mock.calls[0][0].recurrenceRule).toBe('FREQ=DAILY;INTERVAL=3;COUNT=5');
+    });
+  });
+
+  it('writes an end date as a UTC date-time', async () => {
+    const { onCreate } = renderCreateModal({ prefill: { title: 'Offsite' } });
+    fireEvent.click(screen.getByLabelText('All day'));
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: 'FREQ=WEEKLY' } });
+    fireEvent.change(screen.getByLabelText('Every'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('Ends'), { target: { value: 'on' } });
+    fireEvent.change(screen.getByLabelText('Repeat end date'), { target: { value: '2026-12-31' } });
+    fireEvent.click(screen.getByRole('button', { name: /create event/i }));
+
+    await waitFor(() => {
+      const [req] = onCreate.mock.calls[0];
+      expect(req.allDay).toBe(true);
+      expect(req.recurrenceRule).toBe('FREQ=WEEKLY;INTERVAL=4;UNTIL=20261231T235959Z');
+    });
+  });
+
+  it('shows a stored rule\'s interval and end', () => {
+    renderEditModal({ existingEvent: { ...existingEvent, recurrenceRule: 'FREQ=WEEKLY;INTERVAL=2;COUNT=6' } });
+    expect(screen.getByLabelText('Repeats')).toHaveValue('FREQ=WEEKLY');
+    expect(screen.getByLabelText('Every')).toHaveValue(2);
+    expect(screen.getByLabelText('Ends')).toHaveValue('after');
+    expect(screen.getByLabelText('Number of occurrences')).toHaveValue(6);
+  });
+
+  it('keeps a rule it cannot show, until the repeat is changed', async () => {
+    const { onUpdate } = renderEditModal({ existingEvent: { ...existingEvent, recurrenceRule: 'FREQ=HOURLY;INTERVAL=2' } });
+    expect(screen.getByLabelText('Repeats')).toHaveDisplayValue('Custom (FREQ=HOURLY;INTERVAL=2)');
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await waitFor(() => {
+      expect(onUpdate.mock.calls[0][0].recurrenceRule).toBe('FREQ=HOURLY;INTERVAL=2');
+    });
+  });
+
+  it('stops repeating', async () => {
+    const { onUpdate } = renderEditModal({ existingEvent: { ...existingEvent, recurrenceRule: 'FREQ=DAILY;COUNT=3' } });
+    fireEvent.change(screen.getByLabelText('Repeats'), { target: { value: '' } });
+    expect(screen.queryByLabelText('Every')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await waitFor(() => {
+      expect(onUpdate.mock.calls[0][0].recurrenceRule).toBeNull();
+    });
+  });
+});
