@@ -47,6 +47,14 @@ async function getSheetId(page: Page): Promise<string> {
   return match[1];
 }
 
+/** Click a cell, type a value into the formula bar, commit with Enter. */
+async function setCell(page: Page, ref: string, value: string): Promise<void> {
+  await page.locator(`[data-type="cell"][id="${ref}"]`).click();
+  const formulaInput = page.getByTestId('formula-bar-input');
+  await formulaInput.fill(value);
+  await formulaInput.press('Enter');
+}
+
 test.describe('Spreadsheets lifecycle', () => {
   // ── Create via FAB ───────────────────────────────────────────────────────────
 
@@ -136,5 +144,51 @@ test.describe('Spreadsheets lifecycle', () => {
     // Both tabs must survive the round-trip
     await expect(page.getByText('Sheet 1', { exact: true })).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText('Sheet 2', { exact: true })).toBeVisible({ timeout: 5_000 });
+  });
+
+  // ── Create a second spreadsheet from inside the first ───────────────────────
+
+  test('the FAB opens a genuinely new spreadsheet while one is already open', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(60_000);
+
+    await registerAndLogin(request, page);
+    await createSheetViaFAB(page);
+    const firstId = await getSheetId(page);
+
+    // Content, so the first spreadsheet has autosaved and its `contentVersion`
+    // has moved past the 1 a brand-new file starts at — which is the shape that
+    // made issue #214 reproduce every time.
+    await setCell(page, 'A1', 'first sheet');
+    await expect(page.locator('[data-type="cell"][id="A1"] span')).toHaveText('first sheet', {
+      timeout: 10_000,
+    });
+    await page.waitForRequest(
+      (r) => r.url().includes(`/api/v1/drive/files/${firstId}/autosave`) && r.method() === 'PUT',
+      { timeout: 15_000 },
+    );
+
+    // The reported steps: New → Spreadsheet from inside an open spreadsheet.
+    // Same route, different `?id=`, so nothing here is a fresh page load.
+    await page.getByRole('button', { name: 'Create new item' }).click();
+    await page.getByRole('menuitem', { name: 'Spreadsheet' }).click();
+
+    await expect
+      .poll(async () => getSheetId(page), { timeout: 15_000 })
+      .not.toBe(firstId);
+
+    // What the user saw instead: a warning about the second spreadsheet having
+    // changed elsewhere, raised by the first one's version guard.
+    await expect(page.getByText(/changed elsewhere/i)).toHaveCount(0);
+
+    // And the second spreadsheet is empty, rather than still showing — and one
+    // save away from storing — the first one's content.
+    await expect(page.getByTestId('worksheet.name')).toContainText('Untitled spreadsheet', {
+      timeout: 15_000,
+    });
+    await expect(page.locator('[data-type="cell"][id="A1"]')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-type="cell"][id="A1"]')).not.toContainText('first sheet');
   });
 });
