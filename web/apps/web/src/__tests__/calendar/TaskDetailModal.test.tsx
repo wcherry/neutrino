@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import TaskDetailModal from '../../app/(apps)/calendar/TaskDetailModal';
@@ -87,13 +87,13 @@ function makeTask(overrides: Partial<TaskResponse> = {}): TaskResponse {
   };
 }
 
-function renderModal(task: TaskResponse = makeTask()) {
+function renderModal(task: TaskResponse = makeTask(), knownTags: string[] = []) {
   const onSave = vi.fn(async () => task);
   const onClose = vi.fn();
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <TaskDetailModal task={task} onClose={onClose} onSave={onSave} />
+      <TaskDetailModal task={task} knownTags={knownTags} onClose={onClose} onSave={onSave} />
     </QueryClientProvider>
   );
   return { onSave, onClose };
@@ -315,5 +315,82 @@ describe('TaskDetailModal', () => {
   it('opens with the stored repeat described in words that read back', () => {
     renderModal(makeTask({ recurrenceRule: 'FREQ=WEEKLY;BYDAY=MO,TH' }));
     expect((screen.getByLabelText('Repeat') as HTMLInputElement).value).toBe('every Mon, Thu');
+  });
+
+  describe('tags', () => {
+    const known = ['work', 'errands', 'homework', 'home'];
+    const tagsField = () => screen.getByLabelText('Tags');
+    const options = () =>
+      within(screen.getByRole('listbox', { name: 'Tags in use' }))
+        .getAllByRole('option')
+        .map((o) => o.textContent?.trim());
+
+    it('opens with the task\'s tags as removable chips', async () => {
+      const { onSave } = renderModal(makeTask({ tags: ['home', 'work'] }));
+      fireEvent.click(screen.getByLabelText('Remove home'));
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave).toHaveBeenCalledWith('task-1', expect.objectContaining({ tags: ['work'] }));
+    });
+
+    it('offers the tags in use on focus, leaving out the ones already chosen', () => {
+      renderModal(makeTask({ tags: ['work'] }), known);
+      fireEvent.focus(tagsField());
+      expect(options()).toEqual(['#errands', '#homework', '#home']);
+    });
+
+    it('filters the dropdown as the user types, prefix matches first', () => {
+      renderModal(makeTask(), known);
+      fireEvent.focus(tagsField());
+      fireEvent.change(tagsField(), { target: { value: 'wo' } });
+      expect(options()).toEqual(['#work', '#homework', 'Add “#wo”']);
+    });
+
+    it('adds a tag picked from the dropdown', async () => {
+      const { onSave } = renderModal(makeTask(), known);
+      fireEvent.focus(tagsField());
+      fireEvent.change(tagsField(), { target: { value: 'err' } });
+      fireEvent.click(screen.getByRole('option', { name: /#errands/ }));
+      expect((tagsField() as HTMLInputElement).value).toBe('');
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave).toHaveBeenCalledWith('task-1', expect.objectContaining({ tags: ['errands'] }));
+    });
+
+    it('keeps a brand-new tag on Enter even while existing ones match', async () => {
+      const { onSave } = renderModal(makeTask(), known);
+      fireEvent.focus(tagsField());
+      fireEvent.change(tagsField(), { target: { value: 'hom' } });
+      fireEvent.keyDown(tagsField(), { key: 'Enter' });
+      expect(screen.getByLabelText('Remove hom')).toBeTruthy();
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave).toHaveBeenCalledWith('task-1', expect.objectContaining({ tags: ['hom'] }));
+    });
+
+    it('picks the highlighted suggestion with the arrow keys and Enter', () => {
+      renderModal(makeTask(), known);
+      fireEvent.focus(tagsField());
+      fireEvent.change(tagsField(), { target: { value: 'hom' } });
+      fireEvent.keyDown(tagsField(), { key: 'ArrowDown' });
+      fireEvent.keyDown(tagsField(), { key: 'ArrowDown' });
+      fireEvent.keyDown(tagsField(), { key: 'Enter' });
+      expect(screen.getByLabelText('Remove home')).toBeTruthy();
+    });
+
+    it('removes the last chip on Backspace in an empty field', () => {
+      renderModal(makeTask({ tags: ['home', 'work'] }));
+      fireEvent.keyDown(tagsField(), { key: 'Backspace' });
+      expect(screen.queryByLabelText('Remove work')).toBeNull();
+      expect(screen.getByLabelText('Remove home')).toBeTruthy();
+    });
+
+    it('saves a tag still being typed', async () => {
+      const { onSave } = renderModal(makeTask({ tags: ['home'] }));
+      fireEvent.change(tagsField(), { target: { value: '#Garden' } });
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(onSave).toHaveBeenCalled());
+      expect(onSave).toHaveBeenCalledWith('task-1', expect.objectContaining({ tags: ['home', 'garden'] }));
+    });
   });
 });
