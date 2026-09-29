@@ -86,10 +86,18 @@ ${blocksToHtml(blocks)}
   pw.print();
 }
 
+/**
+ * One editor mount per note — see `(apps)/editorSession.tsx` for why opening a
+ * second note would otherwise re-render this component with the previous note's
+ * blocks, title and version guard still in hand (issue #214).
+ */
 export default function NoteEditorPage() {
-  const searchParams = useSearchParams();
+  const id = useSearchParams().get('id') ?? '';
+  return <NoteEditor key={id} noteId={id} />;
+}
+
+function NoteEditor({ noteId }: { noteId: string }) {
   const router = useRouter();
-  const noteId = searchParams.get('id') ?? '';
   const queryClient = useQueryClient();
   const currentUser = useUser();
   const toast = useToast();

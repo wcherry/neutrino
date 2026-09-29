@@ -27,8 +27,11 @@ import React from 'react';
 
 const NOTE_ID = 'note-1';
 
+/** The `?id=` the page reads — mutable, so a test can navigate to another note. */
+const openNoteId = { value: NOTE_ID };
+
 vi.mock('next/navigation', () => ({
-  useSearchParams: () => ({ get: (k: string) => (k === 'id' ? NOTE_ID : null) }),
+  useSearchParams: () => ({ get: (k: string) => (k === 'id' ? openNoteId.value : null) }),
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
 }));
 
@@ -106,6 +109,33 @@ vi.mock('@/hooks/useFileSync', () => ({
   useFileSync: () => ({ connected: true, broadcastFileUpdate: vi.fn() }),
 }));
 
+/**
+ * One entry per *mount of the page*, recorded here because the version guard is
+ * the piece issue #214 is about: it holds a revision belonging to one note, so
+ * a second note sharing the guard is the bug. A `useRef` initialiser runs once
+ * per component instance, which is what tells a re-render from a fresh mount —
+ * counting `BlockEditor` would not, since the page swaps it for a spinner
+ * whenever a query is in flight.
+ */
+const guardMounts: string[] = [];
+
+vi.mock('@/hooks/useContentVersionGuard', () => ({
+  useContentVersionGuard: () => {
+    const guard = React.useRef<Record<string, unknown> | null>(null);
+    if (!guard.current) {
+      guardMounts.push(openNoteId.value);
+      guard.current = {
+        check: () => undefined,
+        observe: vi.fn(),
+        handleError: () => false,
+        hasConflict: false,
+        dismiss: vi.fn(),
+      };
+    }
+    return guard.current;
+  },
+}));
+
 // BlockEditor is a large component — stub it and capture the `allNotes` prop
 // it receives so we can assert the adapter shape without exercising the
 // entire block-editing tree.
@@ -156,11 +186,16 @@ function makeQueryClient() {
 async function renderEditorPage() {
   const { default: NoteEditorPage } = await import('../../app/(apps)/notes/editor/page');
   const qc = makeQueryClient();
-  return render(
+  // A fresh element each time: React bails out of re-rendering an element that
+  // is referentially the one already mounted, so reusing it would never re-read
+  // the URL and the test below would pass against the bug.
+  const tree = () => (
     <QueryClientProvider client={qc}>
       <NoteEditorPage />
     </QueryClientProvider>
   );
+  const view = render(tree());
+  return { ...view, renderAgain: () => view.rerender(tree()) };
 }
 
 function latestBlockEditorProps() {
@@ -172,6 +207,8 @@ function latestBlockEditorProps() {
 beforeEach(() => {
   vi.clearAllMocks();
   blockEditorProps.length = 0;
+  guardMounts.length = 0;
+  openNoteId.value = NOTE_ID;
   listAllNotesMock.mockResolvedValue([]);
   extractNoteTextMock.mockImplementation((raw: string) => raw);
   getFileInfoMock.mockResolvedValue({
@@ -247,6 +284,35 @@ describe('NoteEditorPage — current-note operations', () => {
     await renderEditorPage();
 
     await waitFor(() => expect(getBacklinksMock).toHaveBeenCalledWith(NOTE_ID));
+  });
+});
+
+/**
+ * Issue #214: the New button pushes `/notes/editor?id=<new>` from a note that is
+ * already open, and the App Router reconciles a search-param change on the same
+ * route as the same element. Without a key this component re-rendered with the
+ * previous note's blocks, title, dirty flag and content-version guard in hand —
+ * and the guard, whose `observe` only moves forward, then refused every save
+ * against the new note as "changed elsewhere".
+ */
+describe('NoteEditorPage — opening a second note', () => {
+  it('starts a fresh editor when the URL moves to another note', async () => {
+    const { renderAgain } = await renderEditorPage();
+    await waitFor(() => expect(guardMounts).toEqual([NOTE_ID]));
+
+    openNoteId.value = 'note-9';
+    renderAgain();
+
+    await waitFor(() => expect(guardMounts).toEqual([NOTE_ID, 'note-9']));
+  });
+
+  it('keeps the one editor while the note id is unchanged', async () => {
+    const { renderAgain } = await renderEditorPage();
+    await waitFor(() => expect(guardMounts).toEqual([NOTE_ID]));
+
+    renderAgain();
+
+    expect(guardMounts).toEqual([NOTE_ID]);
   });
 });
 
