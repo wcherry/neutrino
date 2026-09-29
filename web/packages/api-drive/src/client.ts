@@ -203,6 +203,17 @@ export const storageApi = {
     return request<void>(`/api/v1/drive/files/${fileId}`, { method: 'DELETE' });
   },
 
+  /**
+   * Fetch file content as a Blob for in-browser preview.
+   *
+   * The bytes rather than an object URL, because some of them need looking at
+   * before the browser is handed them — a HEIC has to be transcoded first, and
+   * that decision is made from the file's own header (see `lib/heic.ts`).
+   */
+  async fetchPreviewBlob(fileId: string): Promise<Blob> {
+    return request<Blob>(`/api/v1/drive/files/${fileId}/preview`, {}, { responseType: 'blob' });
+  },
+
   /** Fetch file content as a Blob URL for in-browser preview. Caller must call URL.revokeObjectURL when done. */
   async fetchPreviewBlobUrl(fileId: string): Promise<string> {
     const blob = await request<Blob>(`/api/v1/drive/files/${fileId}/preview`, {}, { responseType: 'blob' });
