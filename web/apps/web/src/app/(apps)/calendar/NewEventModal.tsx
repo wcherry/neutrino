@@ -9,6 +9,7 @@ import type { NewEventModalProps, ReminderEntry } from './calendarTypes';
 import { REMINDER_PRESETS } from './calendarConstants';
 import { buildRepeatRule, parseRepeatRule, type RepeatRule } from './repeatRule';
 import RepeatFields from './RepeatFields';
+import { scopeLabel } from './RecurrenceScopeModal';
 import {
   shiftEndWithStart,
   timeOfFormValue,
@@ -22,8 +23,10 @@ const DEFAULT_END_TIME = '10:00';
 import { AddAttachmentModal, AttachmentItem } from './EventDetail';
 import styles from './page.module.css';
 
-export default function NewEventModal({ defaultDate, prefill, existingEvent, onClose, onCreate, onUpdate, isPending }: NewEventModalProps) {
+export default function NewEventModal({ defaultDate, prefill, existingEvent, scope, onClose, onCreate, onUpdate, isPending }: NewEventModalProps) {
   const isEditMode = existingEvent !== undefined;
+  // One occurrence on its own can't repeat.
+  const showsRepeat = scope !== 'this';
 
   const toLocal = (d: Date) =>
     new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -165,6 +168,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
       timezone: allDay ? null : Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
     if (isEditMode && existingEvent) {
+      if (!showsRepeat) delete (fields as { recurrenceRule?: string | null }).recurrenceRule;
       onUpdate?.(fields, existingEvent.id);
     } else {
       onCreate(fields, reminders.map((r) => r.minutes), pendingAttachments);
@@ -181,6 +185,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
       <ModalHeader title={isEditMode ? 'Edit Event' : 'New Event'} onClose={onClose} />
       <ModalBody>
         <form id="new-event-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {scope && <div className={styles.formHint} data-testid="edit-scope">Saving to: {scopeLabel(scope, 'event')}</div>}
           {/* Title */}
           <div className={styles.formGroup}>
             <label className={styles.formLabel}>Title</label>
@@ -228,15 +233,17 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, onC
           </div>
 
           {/* Recurrence */}
-          <RepeatFields
-            rule={repeat}
-            customRule={!repeatTouched && !repeat && initialRule ? initialRule : null}
-            start={start}
-            onChange={(rule) => {
-              setRepeat(rule);
-              setRepeatTouched(true);
-            }}
-          />
+          {showsRepeat && (
+            <RepeatFields
+              rule={repeat}
+              customRule={!repeatTouched && !repeat && initialRule ? initialRule : null}
+              start={start}
+              onChange={(rule) => {
+                setRepeat(rule);
+                setRepeatTouched(true);
+              }}
+            />
+          )}
 
           {/* Location */}
           <div className={styles.formGroup}>

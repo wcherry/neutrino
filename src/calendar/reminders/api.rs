@@ -1,7 +1,8 @@
 use crate::calendar::reminders::{
     dto::{
-        CreateReminderRequest, ListRemindersQuery, ListRemindersResponse, ReminderResponse,
-        UpdateReminderRequest,
+        CreateReminderRequest, ListRemindersQuery, ListRemindersResponse,
+        ReminderOccurrenceRequest, ReminderOccurrenceResponse, ReminderResponse,
+        SkipReminderRequest, SkipReminderResponse, UpdateReminderRequest,
     },
     service::RemindersService,
 };
@@ -153,19 +154,97 @@ pub async fn delete_reminder(
     Ok(HttpResponse::NoContent().finish())
 }
 
+/// Skip the current occurrence of a recurring reminder ("delete this reminder").
+///
+/// Moves the reminder on to its next occurrence, stepped in `timezone`, or deletes it when its
+/// rule is used up.
+#[utoipa::path(
+    post,
+    path = "/api/v1/reminders/{id}/skip",
+    params(("id" = String, Path, description = "Reminder ID")),
+    request_body = SkipReminderRequest,
+    responses(
+        (status = 200, description = "The reminder at its next occurrence, or null", body = SkipReminderResponse),
+        (status = 400, description = "Not a recurring reminder"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "reminders"
+)]
+#[post("/reminders/{id}/skip")]
+pub async fn skip_reminder(
+    state: web::Data<RemindersApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<SkipReminderRequest>,
+) -> Result<web::Json<SkipReminderResponse>, ApiError> {
+    Ok(web::Json(state.reminders_service.skip_reminder(
+        &user,
+        &path.into_inner(),
+        body.into_inner(),
+    )?))
+}
+
+/// Edit only the current occurrence of a recurring reminder ("edit this reminder").
+///
+/// In one transaction: makes a one-off reminder of the occurrence with the changes, then moves
+/// the recurring one on as `skip` does.
+#[utoipa::path(
+    post,
+    path = "/api/v1/reminders/{id}/occurrence",
+    params(("id" = String, Path, description = "Reminder ID")),
+    request_body = ReminderOccurrenceRequest,
+    responses(
+        (status = 200, description = "The one-off reminder, and the recurring one moved on", body = ReminderOccurrenceResponse),
+        (status = 400, description = "Not a recurring reminder"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "reminders"
+)]
+#[post("/reminders/{id}/occurrence")]
+pub async fn edit_reminder_occurrence(
+    state: web::Data<RemindersApiState>,
+    user: AuthenticatedUser,
+    path: web::Path<String>,
+    body: web::Json<ReminderOccurrenceRequest>,
+) -> Result<web::Json<ReminderOccurrenceResponse>, ApiError> {
+    Ok(web::Json(
+        state.reminders_service.edit_reminder_occurrence(
+            &user,
+            &path.into_inner(),
+            body.into_inner(),
+        )?,
+    ))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_reminders)
         .service(create_reminder)
         .service(get_reminder)
         .service(update_reminder)
-        .service(delete_reminder);
+        .service(delete_reminder)
+        .service(skip_reminder)
+        .service(edit_reminder_occurrence);
 }
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(list_reminders, create_reminder, get_reminder, update_reminder, delete_reminder),
+    paths(
+        list_reminders,
+        create_reminder,
+        get_reminder,
+        update_reminder,
+        delete_reminder,
+        skip_reminder,
+        edit_reminder_occurrence
+    ),
     components(schemas(
         CreateReminderRequest,
+        SkipReminderRequest,
+        SkipReminderResponse,
+        ReminderOccurrenceRequest,
+        ReminderOccurrenceResponse,
         UpdateReminderRequest,
         ReminderResponse,
         ListRemindersResponse,

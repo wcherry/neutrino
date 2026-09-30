@@ -781,6 +781,7 @@ mod tests {
                 crate::calendar::events::dto::ListEventsQuery {
                     from: Some("2026-09-01T00:00:00Z".to_string()),
                     to: Some("2026-11-01T00:00:00Z".to_string()),
+                    ..Default::default()
                 },
             )
             .expect("list events");
@@ -806,6 +807,7 @@ mod tests {
                 crate::calendar::events::dto::ListEventsQuery {
                     from: Some("2026-09-01T00:00:00Z".to_string()),
                     to: Some("2026-11-01T00:00:00Z".to_string()),
+                    ..Default::default()
                 },
             )
             .expect("list events");

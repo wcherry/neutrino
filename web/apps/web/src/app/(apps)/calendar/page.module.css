@@ -691,6 +691,13 @@
   color: var(--color-text-tertiary, #9ca3af);
 }
 
+/* The "this / this and following / all" choice for a repeating event or reminder. */
+.scopeChoices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .formLabel {
   font-size: 12px;
   font-weight: 500;

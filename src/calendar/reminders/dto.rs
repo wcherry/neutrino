@@ -39,6 +39,24 @@ pub struct UpdateReminderRequest {
     pub timezone: Option<String>,
 }
 
+/// Skips the current occurrence of a recurring reminder: "delete this reminder".
+#[derive(Debug, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkipReminderRequest {
+    /// The IANA zone to step the recurrence in; UTC if absent.
+    pub timezone: Option<String>,
+}
+
+/// Edits only the current occurrence of a recurring reminder: "edit this reminder".
+#[derive(Debug, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderOccurrenceRequest {
+    pub title: Option<String>,
+    pub due_time: Option<String>,
+    /// The IANA zone to step the recurrence in; UTC if absent.
+    pub timezone: Option<String>,
+}
+
 // ── Response types ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -59,4 +77,21 @@ pub struct ReminderResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ListRemindersResponse {
     pub reminders: Vec<ReminderResponse>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkipReminderResponse {
+    /// The reminder at its next occurrence, or null when its rule is used up and it was deleted.
+    pub series: Option<ReminderResponse>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ReminderOccurrenceResponse {
+    /// The one-off reminder the occurrence became.
+    pub reminder: ReminderResponse,
+    /// The recurring reminder at its next occurrence, or null when its rule is used up and it
+    /// was deleted.
+    pub series: Option<ReminderResponse>,
 }

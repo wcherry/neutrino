@@ -23,6 +23,24 @@ pub struct EventRecord {
     /// Set when the event is deleted; the row stays so the changes feed can report it. Every
     /// read of live events filters on this being NULL.
     pub deleted_at: Option<NaiveDateTime>,
+    /// The series this row is an exception of; see `agent_docs/recurrence-exceptions.md`.
+    pub recurring_event_id: Option<String>,
+    /// The start the occurrence had in its series: an exception's key.
+    pub original_start_time: Option<NaiveDateTime>,
+    /// An exception that deletes its occurrence.
+    pub cancelled: bool,
+}
+
+impl EventRecord {
+    pub fn is_exception(&self) -> bool {
+        self.recurring_event_id.is_some()
+    }
+
+    pub fn is_recurring(&self) -> bool {
+        self.recurrence_rule
+            .as_deref()
+            .is_some_and(|r| !r.is_empty())
+    }
 }
 
 #[derive(Debug, Insertable)]
@@ -42,9 +60,12 @@ pub struct NewEventRecord {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub timezone: Option<String>,
+    pub recurring_event_id: Option<String>,
+    pub original_start_time: Option<NaiveDateTime>,
+    pub cancelled: bool,
 }
 
-#[derive(Debug, AsChangeset)]
+#[derive(Debug, Default, AsChangeset)]
 #[diesel(table_name = crate::schema::events)]
 pub struct UpdateEventRecord {
     pub title: Option<String>,
@@ -58,4 +79,7 @@ pub struct UpdateEventRecord {
     pub timezone: Option<Option<String>>,
     /// `Some(None)` revives a deleted event; see `upsert_from_sync`.
     pub deleted_at: Option<Option<NaiveDateTime>>,
+    pub original_start_time: Option<Option<NaiveDateTime>>,
+    pub recurring_event_id: Option<Option<String>>,
+    pub cancelled: Option<bool>,
 }

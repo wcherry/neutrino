@@ -170,3 +170,57 @@ sqlite3 ./data/neutrino.db "DELETE FROM feature_flags WHERE key='teamSpaces';"
 ## Cleanup
 
 Delete this file in the PR that removes the `teamSpaces` flag.
+
+---
+
+# Manual Verification: Recurrence exceptions (this event / this and following / all events)
+
+Design: `agent_docs/recurrence-exceptions.md`. Companion PR: `neutrino_calendar_ios_mobile`
+`feature/recurrence-exceptions`.
+
+## Prerequisites
+- Stack running locally via docker-compose-dev.yml, with migration `00138` applied
+- The web calendar at http://localhost:3000/calendar, and the iOS app pointed at the same server
+
+## Steps
+
+### Happy path — events (web)
+1. Create "Standup", weekly on a Monday at 09:00, ending after 6 times.
+2. Open the third occurrence and click **Edit**. Expected: a dialog offering "This event",
+   "This and following events" and "All events".
+3. Choose **This event**, change the title to "Planning" and move it to 14:00. Expected: the
+   form has no Repeats field, and only that week shows "Planning" at 14:00.
+4. Open the fifth occurrence, **Delete**, **This event**. Expected: only that week is gone.
+5. Open the fourth occurrence, **Edit**, **This and following events**. Expected: Repeats
+   shows "after 3 times". Change the location and save. Expected: weeks 1–3 keep the old
+   location, weeks 4 and 6 have the new one (5 is still deleted), and there are 6 in all.
+6. Open the first occurrence, **Edit**, **All events**, and rename it. Expected: the form starts
+   on the first Monday, not the one clicked. Every occurrence that hadn't been renamed takes
+   the new name. "Planning" keeps its own.
+7. Reload the iOS app. Expected: the same occurrences, titles and times as the web.
+
+### Happy path — events (iOS)
+1. Open an occurrence of a repeating event and tap **Edit**. Expected: an action sheet with
+   This Event / This and Following Events / All Events.
+2. Repeat steps 3–6 above from the phone and check the web shows the same.
+3. In the editor tap **Delete Event**. Expected: the three delete choices.
+
+### Happy path — reminders (web and iOS)
+1. Create a reminder repeating daily. Edit it. Expected: the scope dialog.
+2. **This reminder**, then change the time. Expected: a one-off reminder at the new time, and
+   the repeating one moved on to tomorrow.
+3. Delete it with **This reminder**. Expected: the repeating one moves on a day and is not
+   marked completed.
+4. **All reminders** / **This and following reminders**: edits the repeating reminder itself.
+
+### Edge cases
+1. **This and following** on the first occurrence: the whole series is edited, not split.
+2. Changing the repeat rule under **All events**: every exception is dropped, and the series
+   shows plainly.
+3. An older client (no `exceptions=true`): `GET /api/v1/calendar/events` lists no exception
+   rows.
+4. `DELETE /api/v1/calendar/events/{exceptionId}` cancels that occurrence; it does not bring
+   back the original.
+
+## Cleanup
+Delete this section once recurrence exceptions are proven stable; the Team Spaces steps above have their own cleanup.
