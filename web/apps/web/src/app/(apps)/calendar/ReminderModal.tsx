@@ -5,9 +5,12 @@ import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui
 import type { CreateReminderRequest, UpdateReminderRequest } from '@/lib/api';
 import type { ReminderModalProps } from './calendarTypes';
 import { REPEAT_OPTIONS } from './calendarConstants';
+import { scopeLabel } from './RecurrenceScopeModal';
 import styles from './page.module.css';
 
-export default function ReminderModal({ initial, onClose, onSave, isPending }: ReminderModalProps) {
+export default function ReminderModal({ initial, scope, onClose, onSave, isPending }: ReminderModalProps) {
+  // One occurrence on its own doesn't repeat.
+  const showsRepeat = scope !== 'this';
   const toLocal = (iso: string) =>
     new Date(new Date(iso).getTime() - new Date().getTimezoneOffset() * 60000)
       .toISOString()
@@ -41,7 +44,7 @@ export default function ReminderModal({ initial, onClose, onSave, isPending }: R
     // Sent only when changed, and as '' to clear it: the server reads an absent field as
     // "leave alone", so there is no other way to say "stop repeating".
     const req: UpdateReminderRequest = { ...base };
-    if (recurrence !== initialRule) req.recurrenceRule = recurrence;
+    if (showsRepeat && recurrence !== initialRule) req.recurrenceRule = recurrence;
     onSave(req);
   }
 
@@ -50,6 +53,7 @@ export default function ReminderModal({ initial, onClose, onSave, isPending }: R
       <ModalHeader title={initial ? 'Edit Reminder' : 'New Reminder'} onClose={onClose} />
       <ModalBody>
         <form id="reminder-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {scope && <div className={styles.formHint} data-testid="edit-scope">Saving to: {scopeLabel(scope, 'reminder')}</div>}
           <div className={styles.formGroup}>
             <label className={styles.formLabel}>Title</label>
             <input
@@ -70,23 +74,25 @@ export default function ReminderModal({ initial, onClose, onSave, isPending }: R
               onChange={(e) => setDueTime(e.target.value)}
             />
           </div>
-          <div className={styles.formGroup}>
-            <label className={styles.formLabel} htmlFor="reminder-repeat">Repeats</label>
-            <select
-              id="reminder-repeat"
-              className={styles.formInput}
-              value={recurrence}
-              onChange={(e) => setRecurrence(e.target.value)}
-            >
-              {REPEAT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-              {isCustomRule && <option value={initialRule}>Custom ({initialRule})</option>}
-            </select>
-            {recurrence && (
-              <div className={styles.formHint}>Completing it moves it to the next time it&apos;s due.</div>
-            )}
-          </div>
+          {showsRepeat && (
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel} htmlFor="reminder-repeat">Repeats</label>
+              <select
+                id="reminder-repeat"
+                className={styles.formInput}
+                value={recurrence}
+                onChange={(e) => setRecurrence(e.target.value)}
+              >
+                {REPEAT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+                {isCustomRule && <option value={initialRule}>Custom ({initialRule})</option>}
+              </select>
+              {recurrence && (
+                <div className={styles.formHint}>Completing it moves it to the next time it&apos;s due.</div>
+              )}
+            </div>
+          )}
         </form>
       </ModalBody>
       <ModalFooter>

@@ -18,6 +18,15 @@ export interface EventResponse {
   createdAt: string;
   updatedAt: string;
   timezone: string | null;
+  /**
+   * Set on an exception: the repeating event whose occurrence this row stands in for. Only
+   * returned when the list asks for exceptions. See `agent_docs/recurrence-exceptions.md`.
+   */
+  recurringEventId?: string | null;
+  /** Set on an exception: the occurrence's start in its series, before any edit. */
+  originalStartTime?: string | null;
+  /** An exception that deletes its occurrence. */
+  cancelled?: boolean;
 }
 
 export interface CreateEventRequest {
@@ -42,6 +51,12 @@ export interface UpdateEventRequest {
   recurrenceRule?: string | null;
   attendees?: string[];
   timezone?: string | null;
+}
+
+/** "This and following": the new series' changes from the occurrence it starts at. */
+export interface SplitEventRequest extends UpdateEventRequest {
+  /** The occurrence's start in the series, before any edit. */
+  originalStartTime: string;
 }
 
 export interface ListEventsResponse {
@@ -81,6 +96,21 @@ export interface UpdateReminderRequest {
   recurrenceRule?: string | null;
   /** IANA zone the server steps a recurrence in, so a 09:00 reminder stays at 09:00 across DST. */
   timezone?: string;
+}
+
+/** Only the current occurrence of a repeating reminder: see `calendarApi.editReminderOccurrence`. */
+export interface ReminderOccurrenceRequest {
+  title?: string;
+  dueTime?: string;
+  /** The IANA zone the series is stepped on in. */
+  timezone?: string;
+}
+
+export interface ReminderOccurrenceResponse {
+  /** The one-off reminder the occurrence became. */
+  reminder: ReminderResponse;
+  /** The repeating reminder at its next occurrence, or null once its rule ran out and it went. */
+  series: ReminderResponse | null;
 }
 
 export interface ListRemindersResponse {
@@ -287,10 +317,16 @@ export interface TriggerSyncResponse {
 export const calendarApi = {
   // ── Events ──────────────────────────────────────────────────────────────
 
-  async listEvents(from?: string, to?: string): Promise<ListEventsResponse> {
+  /**
+   * Every event in the range. With `exceptions`, every exception of every repeating one among
+   * them too, for a caller that expands them (`expandRecurringEvents`); without, none, so a
+   * caller that lists events as they are never sees a cancelled occurrence as an event.
+   */
+  async listEvents(from?: string, to?: string, options: { exceptions?: boolean } = {}): Promise<ListEventsResponse> {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
+    if (options.exceptions) params.set('exceptions', 'true');
     const qs = params.toString();
     return request<ListEventsResponse>(`/api/v1/calendar/events${qs ? `?${qs}` : ''}`);
   },
@@ -317,6 +353,41 @@ export const calendarApi = {
     return request<void>(`/api/v1/calendar/events/${eventId}`, { method: 'DELETE' });
   },
 
+  // ── One occurrence of a repeating event ─────────────────────────────────
+  // `originalStart` is the occurrence's start in its series, before any edit.
+
+  /** "This event": saves the changes to one occurrence only. */
+  async editOccurrence(seriesId: string, originalStart: string, body: UpdateEventRequest): Promise<EventResponse> {
+    return request<EventResponse>(
+      `/api/v1/calendar/events/${seriesId}/occurrences/${encodeURIComponent(originalStart)}`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    );
+  },
+
+  /** "Delete this event". */
+  async cancelOccurrence(seriesId: string, originalStart: string): Promise<void> {
+    return request<void>(
+      `/api/v1/calendar/events/${seriesId}/occurrences/${encodeURIComponent(originalStart)}`,
+      { method: 'DELETE' },
+    );
+  },
+
+  /** "This and following": ends the series before the occurrence and starts a new one there. */
+  async splitEvent(seriesId: string, body: SplitEventRequest): Promise<EventResponse> {
+    return request<EventResponse>(`/api/v1/calendar/events/${seriesId}/split`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** "Delete this and following events". */
+  async deleteEventFrom(seriesId: string, originalStart: string): Promise<void> {
+    return request<void>(
+      `/api/v1/calendar/events/${seriesId}?fromOccurrence=${encodeURIComponent(originalStart)}`,
+      { method: 'DELETE' },
+    );
+  },
+
   // ── Reminders ───────────────────────────────────────────────────────────
 
   async listReminders(eventId?: string): Promise<ListRemindersResponse> {
@@ -340,6 +411,28 @@ export const calendarApi = {
   async updateReminder(reminderId: string, body: UpdateReminderRequest): Promise<ReminderResponse> {
     return request<ReminderResponse>(`/api/v1/calendar/reminders/${reminderId}`, {
       method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /**
+   * "Delete this reminder" for a repeating one: moves it on to its next occurrence, or deletes
+   * it once its rule has run out.
+   */
+  async skipReminder(reminderId: string, timezone: string): Promise<{ series: ReminderResponse | null }> {
+    return request<{ series: ReminderResponse | null }>(`/api/v1/calendar/reminders/${reminderId}/skip`, {
+      method: 'POST',
+      body: JSON.stringify({ timezone }),
+    });
+  },
+
+  /**
+   * "Edit this reminder" for a repeating one: the current occurrence becomes a one-off reminder
+   * with the changes, and the series moves on to its next occurrence.
+   */
+  async editReminderOccurrence(reminderId: string, body: ReminderOccurrenceRequest): Promise<ReminderOccurrenceResponse> {
+    return request<ReminderOccurrenceResponse>(`/api/v1/calendar/reminders/${reminderId}/occurrence`, {
+      method: 'POST',
       body: JSON.stringify(body),
     });
   },

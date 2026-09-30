@@ -19,6 +19,7 @@ import {
   type TaskResponse,
   type CreateTaskRequest,
   type UpdateTaskRequest,
+  type ReminderResponse,
 } from '@/lib/api';
 import {
   WEEK_START_KEY,
@@ -29,7 +30,16 @@ import {
 } from './constants';
 
 import type { View, ParsedIcsEvent } from './calendarTypes';
-import { monthRange, weekStartDate, fmtRangeLabel, parseIcs, expandRecurringEvents } from './calendarHelpers';
+import {
+  monthRange,
+  weekStartDate,
+  fmtRangeLabel,
+  parseIcs,
+  expandRecurringEvents,
+  ruleFromOccurrence,
+  type CalendarOccurrence,
+} from './calendarHelpers';
+import RecurrenceScopeModal, { type RecurrenceScope } from './RecurrenceScopeModal';
 import MonthView from './MonthView';
 import WeekView from './WeekView';
 import AgendaView from './AgendaView';
@@ -43,6 +53,28 @@ import { EventDetail, EventViewModal } from './EventDetail';
 import styles from './page.module.css';
 
 // ── Page ──────────────────────────────────────────────────────────────────────
+
+/** An edit or delete of a repeating event or reminder, waiting on which occurrences it is for. */
+type ScopePrompt =
+  | { action: 'edit' | 'delete'; kind: 'event'; occurrence: CalendarOccurrence }
+  | { action: 'edit' | 'delete'; kind: 'reminder'; reminder: ReminderResponse };
+
+/** The event form open for an edit: what it shows, and what saving it changes. */
+interface EventEdit {
+  /** The event the form is filled from. */
+  form: EventResponse;
+  /** The occurrence the edit was started from. */
+  occurrence: CalendarOccurrence;
+  /** Which of a repeating event's occurrences it is for. Absent for a one-off event. */
+  scope?: RecurrenceScope;
+}
+
+/** The zone a repeating reminder is stepped on in, as it is when completed. */
+const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** Where in its series an occurrence falls; a one-off event is its own start. */
+const occurrenceStartOf = (occurrence: CalendarOccurrence) =>
+  occurrence.occurrenceStart ?? occurrence.startTime;
 
 export default function CalendarPage() {
   const qc = useQueryClient();
@@ -81,13 +113,14 @@ export default function CalendarPage() {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  const [selectedEvent, setSelectedEvent] = useState<EventResponse | null>(null);
-  const [viewingEvent, setViewingEvent] = useState<EventResponse | null>(null);
-  const [editingEvent, setEditingEvent] = useState<EventResponse | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<CalendarOccurrence | null>(null);
+  const [viewingEvent, setViewingEvent] = useState<CalendarOccurrence | null>(null);
+  const [editingEvent, setEditingEvent] = useState<EventEdit | null>(null);
+  const [scopePrompt, setScopePrompt] = useState<ScopePrompt | null>(null);
   const [showNewEvent, setShowNewEvent] = useState(false);
   const [newEventDate, setNewEventDate] = useState<Date>(() => new Date());
   const [icsPrefill, setIcsPrefill] = useState<ParsedIcsEvent | undefined>();
-  const [reminderModal, setReminderModal] = useState<{ open: boolean; editing: import('@/lib/api').ReminderResponse | null }>({ open: false, editing: null });
+  const [reminderModal, setReminderModal] = useState<{ open: boolean; editing: ReminderResponse | null; scope?: RecurrenceScope }>({ open: false, editing: null });
 
   useEffect(() => {
     const newParam = searchParams.get('new');
@@ -104,7 +137,7 @@ export default function CalendarPage() {
 
   const { data: eventsData } = useQuery({
     queryKey: ['events', from, to],
-    queryFn: () => calendarApi.listEvents(from, to),
+    queryFn: () => calendarApi.listEvents(from, to, { exceptions: true }),
   });
 
   const { data: remindersData } = useQuery({
@@ -188,7 +221,16 @@ export default function CalendarPage() {
   });
 
   const deleteEvent = useMutation({
-    mutationFn: (id: string) => calendarApi.deleteEvent(id),
+    mutationFn: ({ occurrence, scope }: { occurrence: CalendarOccurrence; scope?: RecurrenceScope }) => {
+      const series = occurrence.series;
+      if (!series || !scope) return calendarApi.deleteEvent(occurrence.id);
+      const at = occurrenceStartOf(occurrence);
+      switch (scope) {
+        case 'this': return calendarApi.cancelOccurrence(series.id, at);
+        case 'following': return calendarApi.deleteEventFrom(series.id, at);
+        case 'all': return calendarApi.deleteEvent(series.id);
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['events'] });
       setSelectedEvent(null);
@@ -198,15 +240,58 @@ export default function CalendarPage() {
   });
 
   const updateEvent = useMutation({
-    mutationFn: ({ id, req }: { id: string; req: UpdateEventRequest }) =>
-      calendarApi.updateEvent(id, req),
-    onSuccess: (updated) => {
+    mutationFn: ({ edit, req }: { edit: EventEdit; req: UpdateEventRequest }) => {
+      const series = edit.occurrence.series;
+      if (!series || !edit.scope) return calendarApi.updateEvent(edit.form.id, req);
+      const at = occurrenceStartOf(edit.occurrence);
+      switch (edit.scope) {
+        case 'this': return calendarApi.editOccurrence(series.id, at, req);
+        case 'following': return calendarApi.splitEvent(series.id, { ...req, originalStartTime: at });
+        case 'all': return calendarApi.updateEvent(series.id, req);
+      }
+    },
+    onSuccess: (updated, { edit }) => {
       qc.invalidateQueries({ queryKey: ['events'] });
-      // Keep the detail panel open, showing the refreshed event data
-      setSelectedEvent(updated);
+      // Keep the detail panel open, showing the refreshed event data. An edit of a repeating
+      // event may have moved or split it, so which occurrence was open is no longer known.
+      setSelectedEvent(edit.scope ? null : updated);
       setEditingEvent(null);
     },
   });
+
+  /** Opens the form on an event, asking first which occurrences it is for if it repeats. */
+  function requestEdit(occurrence: CalendarOccurrence) {
+    if (occurrence.series) setScopePrompt({ action: 'edit', kind: 'event', occurrence });
+    else setEditingEvent({ form: occurrence, occurrence });
+  }
+
+  /**
+   * Opens the form on the occurrences `scope` names: the one occurrence as it is; the series as
+   * it runs from this occurrence, its COUNT less the occurrences before; or the whole series
+   * from its own start. From the first occurrence, "this and following" is the whole series.
+   */
+  function startEdit(occurrence: CalendarOccurrence, scope: RecurrenceScope) {
+    const series = occurrence.series!;
+    const at = occurrenceStartOf(occurrence);
+    const effective = scope === 'following' && Date.parse(at) <= Date.parse(series.startTime) ? 'all' : scope;
+    let form: EventResponse = series;
+    if (effective === 'this') form = occurrence;
+    if (effective === 'following') {
+      const length = Date.parse(series.endTime) - Date.parse(series.startTime);
+      form = {
+        ...series,
+        startTime: at,
+        endTime: new Date(Date.parse(at) + length).toISOString(),
+        recurrenceRule: ruleFromOccurrence(series, at),
+      };
+    }
+    setEditingEvent({ form, occurrence, scope: effective });
+  }
+
+  function requestDelete(occurrence: CalendarOccurrence) {
+    if (occurrence.series) setScopePrompt({ action: 'delete', kind: 'event', occurrence });
+    else deleteEvent.mutate({ occurrence });
+  }
 
   const toggleReminder = useMutation({
     // The zone travels with the completion: a recurring reminder is moved to its next
@@ -240,6 +325,50 @@ export default function CalendarPage() {
     mutationFn: (id: string) => calendarApi.deleteReminder(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['reminders'] }),
   });
+
+  // "This reminder" for a repeating one: the series moves on past the current occurrence.
+  const skipReminder = useMutation({
+    mutationFn: (id: string) => calendarApi.skipReminder(id, browserZone()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['reminders'] }),
+  });
+
+  const editReminderOccurrence = useMutation({
+    mutationFn: ({ id, req }: { id: string; req: UpdateReminderRequest }) =>
+      calendarApi.editReminderOccurrence(id, { title: req.title, dueTime: req.dueTime, timezone: browserZone() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['reminders'] });
+      setReminderModal({ open: false, editing: null });
+    },
+  });
+
+  /** A repeating reminder has just the one row, at its next occurrence, so "this and following"
+   * and "all" both change the series. */
+  function requestReminderEdit(reminder: ReminderResponse) {
+    if (reminder.recurrenceRule) setScopePrompt({ action: 'edit', kind: 'reminder', reminder });
+    else setReminderModal({ open: true, editing: reminder });
+  }
+
+  function requestReminderDelete(id: string) {
+    const reminder = reminders.find((r) => r.id === id);
+    if (reminder?.recurrenceRule) setScopePrompt({ action: 'delete', kind: 'reminder', reminder });
+    else deleteReminder.mutate(id);
+  }
+
+  function chooseScope(scope: RecurrenceScope) {
+    const prompt = scopePrompt;
+    setScopePrompt(null);
+    if (!prompt) return;
+    if (prompt.kind === 'event') {
+      if (prompt.action === 'edit') startEdit(prompt.occurrence, scope);
+      else deleteEvent.mutate({ occurrence: prompt.occurrence, scope });
+    } else if (prompt.action === 'edit') {
+      setReminderModal({ open: true, editing: prompt.reminder, scope });
+    } else if (scope === 'this') {
+      skipReminder.mutate(prompt.reminder.id);
+    } else {
+      deleteReminder.mutate(prompt.reminder.id);
+    }
+  }
 
   const toggleTask = useMutation({
     mutationFn: ({ id, done }: { id: string; done: boolean }) =>
@@ -295,8 +424,9 @@ export default function CalendarPage() {
     setSelectedEvent(null);
   }, []);
 
+  // The views hand back what they were given: occurrences, from `expandRecurringEvents`.
   const handleEventClick = useCallback((ev: EventResponse) => {
-    setViewingEvent(ev);
+    setViewingEvent(ev as CalendarOccurrence);
   }, []);
 
   // ICS drag-drop
@@ -336,8 +466,8 @@ export default function CalendarPage() {
       reminders={reminders}
       taskTitles={Object.fromEntries(allTasks.map((t) => [t.id, t.title]))}
       onToggle={(id, completed) => toggleReminder.mutate({ id, completed })}
-      onEdit={(r) => setReminderModal({ open: true, editing: r })}
-      onDelete={(id) => deleteReminder.mutate(id)}
+      onEdit={requestReminderEdit}
+      onDelete={requestReminderDelete}
       onNew={() => setReminderModal({ open: true, editing: null })}
     />
   );
@@ -446,8 +576,8 @@ export default function CalendarPage() {
               <EventDetail
                 event={selectedEvent}
                 onClose={() => setSelectedEvent(null)}
-                onDelete={(id) => deleteEvent.mutate(id)}
-                onEdit={(ev) => setEditingEvent(ev)}
+                onDelete={() => requestDelete(selectedEvent)}
+                onEdit={() => requestEdit(selectedEvent)}
               />
               <div style={{ padding: 16 }}>
                 {remindersPanel}
@@ -479,20 +609,32 @@ export default function CalendarPage() {
         <EventViewModal
           event={viewingEvent}
           onClose={() => setViewingEvent(null)}
-          onEdit={() => { setEditingEvent(viewingEvent); setViewingEvent(null); }}
-          onDelete={(id) => deleteEvent.mutate(id)}
+          onEdit={() => { requestEdit(viewingEvent); setViewingEvent(null); }}
+          onDelete={() => requestDelete(viewingEvent)}
         />
       )}
 
       {/* Edit event modal */}
       {editingEvent && (
         <NewEventModal
-          defaultDate={new Date(editingEvent.startTime)}
-          existingEvent={editingEvent}
+          key={`${editingEvent.form.id}-${editingEvent.scope ?? 'one-off'}`}
+          defaultDate={new Date(editingEvent.form.startTime)}
+          existingEvent={editingEvent.form}
+          scope={editingEvent.scope}
           onClose={() => setEditingEvent(null)}
           onCreate={() => { /* unused in edit mode — onUpdate handles saves */ }}
-          onUpdate={(req, id) => updateEvent.mutate({ id, req })}
+          onUpdate={(req) => updateEvent.mutate({ edit: editingEvent, req })}
           isPending={updateEvent.isPending}
+        />
+      )}
+
+      {/* Which occurrences of a repeating event or reminder an edit or delete is for */}
+      {scopePrompt && (
+        <RecurrenceScopeModal
+          action={scopePrompt.action}
+          kind={scopePrompt.kind}
+          onChoose={chooseScope}
+          onClose={() => setScopePrompt(null)}
         />
       )}
 
@@ -511,15 +653,18 @@ export default function CalendarPage() {
       {reminderModal.open && (
         <ReminderModal
           initial={reminderModal.editing ?? undefined}
+          scope={reminderModal.scope}
           onClose={() => setReminderModal({ open: false, editing: null })}
           onSave={(data) => {
-            if (reminderModal.editing) {
+            if (reminderModal.editing && reminderModal.scope === 'this') {
+              editReminderOccurrence.mutate({ id: reminderModal.editing.id, req: data as UpdateReminderRequest });
+            } else if (reminderModal.editing) {
               updateReminder.mutate({ id: reminderModal.editing.id, req: data as UpdateReminderRequest });
             } else {
               createReminder.mutate(data as CreateReminderRequest);
             }
           }}
-          isPending={createReminder.isPending || updateReminder.isPending}
+          isPending={createReminder.isPending || updateReminder.isPending || editReminderOccurrence.isPending}
         />
       )}
     </div>

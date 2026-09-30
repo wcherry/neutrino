@@ -300,6 +300,9 @@ impl ConnectionsService {
                 created_at: now,
                 updated_at: now,
                 timezone: None,
+                recurring_event_id: None,
+                original_start_time: None,
+                cancelled: false,
             };
 
             self.events_repo
@@ -374,6 +377,9 @@ impl ConnectionsService {
                 created_at: now,
                 updated_at: now,
                 timezone: None,
+                recurring_event_id: None,
+                original_start_time: None,
+                cancelled: false,
             };
 
             self.events_repo
@@ -427,6 +433,9 @@ impl ConnectionsService {
                 created_at: now,
                 updated_at: now,
                 timezone: None,
+                recurring_event_id: None,
+                original_start_time: None,
+                cancelled: false,
             };
 
             self.events_repo

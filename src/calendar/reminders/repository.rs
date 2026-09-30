@@ -25,6 +25,16 @@ impl RemindersRepository {
         })
     }
 
+    /// Runs `f` in one transaction: everything it writes lands together or not at all.
+    pub fn transaction<T>(
+        &self,
+        f: impl FnOnce(&mut SqliteConnection) -> Result<T, ApiError>,
+    ) -> Result<T, ApiError> {
+        let mut conn = self.get_conn()?;
+        let conn: &mut SqliteConnection = &mut conn;
+        conn.transaction(f)
+    }
+
     pub fn insert(&self, record: NewReminderRecord) -> Result<ReminderRecord, ApiError> {
         let id = record.id.clone();
         let mut conn = self.get_conn()?;

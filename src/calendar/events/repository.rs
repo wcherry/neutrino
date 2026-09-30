@@ -25,6 +25,16 @@ impl EventsRepository {
         })
     }
 
+    /// Runs `f` in one transaction: everything it writes lands together or not at all.
+    pub fn transaction<T>(
+        &self,
+        f: impl FnOnce(&mut SqliteConnection) -> Result<T, ApiError>,
+    ) -> Result<T, ApiError> {
+        let mut conn = self.get_conn()?;
+        let conn: &mut SqliteConnection = &mut conn;
+        conn.transaction(f)
+    }
+
     pub fn insert(&self, record: NewEventRecord) -> Result<EventRecord, ApiError> {
         let id = record.id.clone();
         let mut conn = self.get_conn()?;
@@ -55,6 +65,9 @@ impl EventsRepository {
         let mut query = events::table
             .filter(events::user_id.eq(user_id))
             .filter(events::deleted_at.is_null())
+            // Exceptions are read with their series (`find_exceptions_of`), never on their own
+            // dates: a client that can't apply one would show it as a separate event.
+            .filter(events::recurring_event_id.is_null())
             .into_boxed();
         if let Some(f) = from {
             // Events that end at or after the range start, OR are recurring masters
@@ -79,6 +92,24 @@ impl EventsRepository {
             })
     }
 
+    /// The live exceptions, cancelled ones included, of the series `series_ids`.
+    pub fn find_exceptions_of(&self, series_ids: &[String]) -> Result<Vec<EventRecord>, ApiError> {
+        if series_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut conn = self.get_conn()?;
+        events::table
+            .filter(events::recurring_event_id.eq_any(series_ids))
+            .filter(events::deleted_at.is_null())
+            .order(events::original_start_time.asc())
+            .select(EventRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB list exceptions error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
     pub fn find_by_id(&self, id: &str, user_id: &str) -> Result<EventRecord, ApiError> {
         let mut conn = self.get_conn()?;
         events::table
@@ -95,39 +126,11 @@ impl EventsRepository {
             })
     }
 
-    pub fn update(
-        &self,
-        id: &str,
-        user_id: &str,
-        changes: UpdateEventRecord,
-    ) -> Result<EventRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-        let affected = diesel::update(
-            events::table
-                .filter(events::id.eq(id).and(events::user_id.eq(user_id)))
-                .filter(events::deleted_at.is_null()),
-        )
-        .set(&changes)
-        .execute(&mut conn)
-        .map_err(|e| {
-            tracing::error!("DB update event error: {:?}", e);
-            ApiError::internal("Database error")
-        })?;
-        if affected == 0 {
-            return Err(ApiError::not_found("Event not found"));
-        }
-        events::table
-            .filter(events::id.eq(id))
-            .select(EventRecord::as_select())
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB get event after update error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
     /// Soft-deletes: the row stays, with `deleted_at` set and `updated_at` bumped, so the changes
     /// feed reports the deletion. Deleting an event that is already deleted is a 404, as before.
+    /// The service deletes through `series`, which takes a series' exceptions with it; this is
+    /// for tests that need a deletion at a given time.
+    #[cfg(test)]
     pub fn delete(&self, id: &str, user_id: &str, now: NaiveDateTime) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
         let affected = diesel::update(
@@ -187,6 +190,7 @@ impl EventsRepository {
                 // The provider says the event exists, so a soft-deleted copy comes back, as a
                 // hard-deleted one used to be inserted again.
                 deleted_at: Some(None),
+                ..Default::default()
             };
             diesel::update(events::table.filter(events::id.eq(&existing)))
                 .set(&changes)

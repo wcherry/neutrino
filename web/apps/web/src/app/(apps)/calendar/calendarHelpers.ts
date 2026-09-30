@@ -174,6 +174,19 @@ export function buildMonthGrid(cursor: Date, startDay: number): Date[][] {
 
 // ── RRULE expansion ──────────────────────────────────────────────────────────
 
+/**
+ * One appearance of an event on the calendar. A one-off event is its own; a repeating one has
+ * one per repetition, each carrying its series and where in it it falls, which is what an edit
+ * of "this event", "this and following" or "all events" needs. For an occurrence changed on its
+ * own, the fields are the exception's. See `agent_docs/recurrence-exceptions.md`.
+ */
+export interface CalendarOccurrence extends EventResponse {
+  /** The repeating event this is an occurrence of. Absent on a one-off event. */
+  series?: EventResponse;
+  /** The occurrence's start in its series, before any edit of it. */
+  occurrenceStart?: string;
+}
+
 interface ParsedRRule {
   freq: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
   interval: number;
@@ -221,10 +234,16 @@ function advanceDate(d: Date, rule: ParsedRRule): void {
   }
 }
 
-export function expandRecurringEvents(events: EventResponse[], from: Date, to: Date): EventResponse[] {
-  const result: EventResponse[] = [];
+export function expandRecurringEvents(events: EventResponse[], from: Date, to: Date): CalendarOccurrence[] {
+  const result: CalendarOccurrence[] = [];
+  const exceptionsBySeries = new Map<string, EventResponse[]>();
+  for (const ev of events) {
+    if (!ev.recurringEventId) continue;
+    exceptionsBySeries.set(ev.recurringEventId, [...(exceptionsBySeries.get(ev.recurringEventId) ?? []), ev]);
+  }
 
   for (const ev of events) {
+    if (ev.recurringEventId) continue;
     if (!ev.recurrenceRule) {
       result.push(ev);
       continue;
@@ -247,6 +266,7 @@ export function expandRecurringEvents(events: EventResponse[], from: Date, to: D
     // times" on an every-weekday rule is ten days, not ten weeks.
     let emitted = 0;
     const MAX_OCCURRENCES = 1000;
+    const generated: CalendarOccurrence[] = [];
 
     while (current <= to && steps < MAX_OCCURRENCES) {
       if (rule.count !== null && emitted >= rule.count) break;
@@ -273,10 +293,12 @@ export function expandRecurringEvents(events: EventResponse[], from: Date, to: D
 
         if (occ >= from) {
           const occEnd = new Date(occ.getTime() + duration);
-          result.push({
+          generated.push({
             ...ev,
             startTime: occ.toISOString(),
             endTime: occEnd.toISOString(),
+            series: ev,
+            occurrenceStart: occ.toISOString(),
           });
         }
       }
@@ -284,9 +306,94 @@ export function expandRecurringEvents(events: EventResponse[], from: Date, to: D
       advanceDate(current, rule);
       steps++;
     }
+
+    result.push(...applyExceptions(ev, generated, exceptionsBySeries.get(ev.id) ?? [], from, to));
   }
 
   return result;
+}
+
+/**
+ * How far an exception's original start and an occurrence may be apart and still be the same
+ * occurrence. Expansion steps in the viewer's zone, so viewers whose zones change for DST on
+ * different dates put one occurrence up to an hour apart; occurrences are a day or more apart,
+ * so this can't reach the wrong one. `RecurrenceExpander.matchWindow` on iOS, `MATCH_WINDOW` on
+ * the server.
+ */
+const EXCEPTION_MATCH_WINDOW_MS = 2 * 3_600_000;
+
+/**
+ * A series' occurrences in the range with its exceptions applied: each occurrence is replaced
+ * by the exception nearest its start (within the window), dropped when that one is cancelled,
+ * and shown at the exception's own time when that is in the range. An exception moved here from
+ * an occurrence outside the range is added. One whose occurrence was in the range but matched
+ * nothing stands in for an occurrence the series no longer has, and is not shown.
+ */
+function applyExceptions(
+  series: EventResponse,
+  generated: CalendarOccurrence[],
+  exceptions: EventResponse[],
+  from: Date,
+  to: Date,
+): CalendarOccurrence[] {
+  if (exceptions.length === 0) return generated;
+  const inRange = (iso: string) => {
+    const t = Date.parse(iso);
+    return t >= from.getTime() && t <= to.getTime();
+  };
+  const shown = (ex: EventResponse): CalendarOccurrence => ({
+    ...ex,
+    series,
+    occurrenceStart: ex.originalStartTime ?? ex.startTime,
+  });
+  const used = new Set<EventResponse>();
+  const result: CalendarOccurrence[] = [];
+
+  for (const occurrence of generated) {
+    const start = Date.parse(occurrence.startTime);
+    let match: EventResponse | null = null;
+    let nearest = Infinity;
+    for (const ex of exceptions) {
+      if (used.has(ex) || !ex.originalStartTime) continue;
+      const gap = Math.abs(Date.parse(ex.originalStartTime) - start);
+      if (gap <= EXCEPTION_MATCH_WINDOW_MS && gap < nearest) {
+        match = ex;
+        nearest = gap;
+      }
+    }
+    if (!match) {
+      result.push(occurrence);
+      continue;
+    }
+    used.add(match);
+    if (!match.cancelled && inRange(match.startTime)) result.push(shown(match));
+  }
+
+  for (const ex of exceptions) {
+    if (used.has(ex) || ex.cancelled || !ex.originalStartTime) continue;
+    if (inRange(ex.originalStartTime)) continue;
+    if (inRange(ex.startTime)) result.push(shown(ex));
+  }
+  return result;
+}
+
+/**
+ * The rule for a series that starts at the occurrence `occurrenceStart` of `series`: the same
+ * rule, with its COUNT, if it has one, less the occurrences before that one. Cancelled ones
+ * count, as they do when the series is expanded.
+ */
+export function ruleFromOccurrence(series: EventResponse, occurrenceStart: string): string | null {
+  const rule = series.recurrenceRule;
+  if (!rule) return null;
+  const count = /(^|;)COUNT=(\d+)/i.exec(rule);
+  if (!count) return rule;
+  const before = expandRecurringEvents(
+    [{ ...series, recurringEventId: null }],
+    new Date(series.startTime),
+    new Date(Date.parse(occurrenceStart) - 1),
+  ).length;
+  const left = Math.max(1, Number(count[2]) - before);
+  return rule.replace(/(^|;)COUNT=\d+/i, `$1COUNT=${left}`);
 }
 
 // ── Multi-day events ─────────────────────────────────────────────────────────

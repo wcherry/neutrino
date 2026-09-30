@@ -115,6 +115,9 @@ diesel::table! {
         updated_at -> Timestamp,
         timezone -> Nullable<Text>,
         deleted_at -> Nullable<Timestamp>,
+        recurring_event_id -> Nullable<Text>,
+        original_start_time -> Nullable<Timestamp>,
+        cancelled -> Bool,
     }
 }
 
