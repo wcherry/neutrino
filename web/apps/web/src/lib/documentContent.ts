@@ -22,11 +22,10 @@
 import {
   initSodium,
   loadKeyPair,
-  openSealedFileKey,
   decryptFile,
   fromBase64url,
 } from '@neutrino/e2e-crypto';
-import { encryptionApi, storageApi } from '@/lib/api';
+import { encryptionApi, openFileKey, storageApi } from '@/lib/api';
 import type { OoxmlApp } from '@neutrino/api-core';
 import { looksLikeOoxml, readNeutrinoModel } from '@/lib/ooxmlContainer';
 
@@ -37,7 +36,7 @@ async function resolveDek(userId: string, fileId: string): Promise<Uint8Array | 
   if (!kp) return null;
   const keyRef = await encryptionApi.getFileKey(fileId);
   if (!keyRef) return null;
-  return openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
+  return openFileKey(userId, fileId, keyRef);
 }
 
 /**

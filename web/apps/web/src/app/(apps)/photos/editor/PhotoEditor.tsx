@@ -6,10 +6,10 @@ import { Spinner, ZoomSlider, AlertDialog } from '@neutrino/ui';
 import type { Background } from '@neutrino/ui';
 import { useToast } from '@neutrino/ui';
 import { useAuth } from '@neutrino/auth';
-import { storageApi, filesystemApi, encryptionApi, uploadDriveFile, isMissingEncryptionKey } from '@neutrino/api-drive';
+import { storageApi, filesystemApi, encryptionApi, openFileKey, uploadDriveFile, isMissingEncryptionKey } from '@neutrino/api-drive';
 import { photosAiApi, type DetectedObject, type BlurAnalysis } from '@neutrino/api-photos';
 import type { SmartEraseTarget } from '@neutrino/api-photos';
-import { initSodium, openSealedFileKey, decryptFile } from '@neutrino/e2e-crypto';
+import { initSodium, decryptFile } from '@neutrino/e2e-crypto';
 import { useSessionKeyPair } from '@/hooks/useSessionKeyPair';
 import { toRenderableImageBlob } from '@/lib/heic';
 import { PhotoTopBar } from './PhotoTopBar';
@@ -302,11 +302,8 @@ export function PhotoEditor() {
           const keyRef = await encryptionApi.getFileKey(fileId!);
           if (cancelled) return;
           if (keyRef) {
-            const dek = openSealedFileKey(
-              currentUser!.id,
-              keyRef.encryptedFileKey,
-              keyRef.keyVersion,
-            );
+            const dek = await openFileKey(currentUser!.id, fileId!, keyRef);
+            if (cancelled) return;
             const cipherBytes = new Uint8Array(await blob.arrayBuffer());
             const plainBytes = decryptFile(cipherBytes, dek);
             imageBlob = new Blob([plainBytes.buffer as ArrayBuffer], { type: mimeType });

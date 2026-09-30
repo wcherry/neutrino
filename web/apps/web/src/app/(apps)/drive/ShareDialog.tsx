@@ -8,6 +8,7 @@ import {
   usersApi,
   authApi,
   encryptionApi,
+  openFileKey,
   teamsApi,
   type FileItem,
   type Folder as FolderItem,
@@ -17,7 +18,6 @@ import {
 import {
   initSodium,
   loadKeyPair,
-  openSealedFileKey,
   encryptFileKey,
   fromBase64url,
   checkKey,
@@ -289,7 +289,7 @@ export function ShareDialog({ resource, resourceType, onClose }: Props) {
     // in memory while a modal waits on a human. Opening uses *our* key version,
     // the one this file was sealed to; re-sealing uses the *recipient's* current
     // version, which is what they will resolve it against.
-    const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
+    const dek = await openFileKey(userId, fileId, keyRef);
     const encryptedFileKey = encryptFileKey(dek, fromBase64url(offered));
 
     await encryptionApi.shareFileKey(fileId, {

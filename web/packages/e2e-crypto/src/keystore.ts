@@ -19,6 +19,7 @@
 import {
   clearSession,
   getActiveKeyVersion,
+  getSessionKeyring,
   getSessionKeyPair,
   getSessionKeyPairForVersion,
   type SessionKeyPair,
@@ -94,21 +95,60 @@ export function clearKeyPair(_userId?: string): void {
  *
  * `keyVersion` is optional because rows written before rotation existed carry
  * no version; those are version 1 by definition.
+ *
+ * The version a ref names is not always the one its DEK was sealed to. The iOS
+ * apps that unlock from the key vault filed their key under the vault's
+ * *envelope* version — always 1 — so on a rotated account every upload from
+ * them was sealed to the active key and recorded as v1. Opening that with v1 is
+ * libsodium's "incorrect key pair". So when the named version does not open the
+ * seal, or this device lacks it, every other version held is tried, and
+ * `onMisfiled` is told which one did — the ref is wrong, the file is intact, and
+ * the caller is in a position to correct the ref.
  */
 export function openSealedFileKey(
   userId: string,
   encryptedFileKey: string,
   keyVersion = 1,
+  onMisfiled?: (actualVersion: number) => void,
 ): Uint8Array {
-  const kp = loadKeyPairForVersion(userId, keyVersion);
-  if (!kp) {
-    if (!hasKeyPair(userId)) {
-      throw new Error('Your encryption key is locked');
+  const keyring = getSessionKeyring(userId);
+  if (!keyring) {
+    throw new Error('Your encryption key is locked');
+  }
+
+  const named = loadKeyPairForVersion(userId, keyVersion);
+  let namedFailure: unknown = null;
+  if (named) {
+    try {
+      return decryptFileKey(encryptedFileKey, named.publicKey, named.secretKey);
+    } catch (e) {
+      namedFailure = e;
     }
+  }
+
+  // Newest first: a misfiled ref was sealed to whatever was active when it was
+  // written, and that is far more often the current key than an old one.
+  const others = keyring.entries
+    .filter((e) => e.version !== keyVersion)
+    .sort((a, b) => b.version - a.version);
+  for (const entry of others) {
+    let dek: Uint8Array;
+    try {
+      dek = decryptFileKey(encryptedFileKey, entry.publicKey, entry.secretKey);
+    } catch {
+      continue;
+    }
+    onMisfiled?.(entry.version);
+    return dek;
+  }
+
+  if (namedFailure) {
     throw new Error(
-      `This file needs encryption key version ${keyVersion}, which this device does not have. ` +
-        'Restore your recovery kit or pair with a device that has it.',
+      `This file's key does not open with any encryption key this device holds (it names version ${keyVersion}).`,
     );
   }
-  return decryptFileKey(encryptedFileKey, kp.publicKey, kp.secretKey);
+  throw new Error(
+    `This file needs encryption key version ${keyVersion}, which this device does not have. ` +
+      'Restore your recovery kit or pair with a device that has it.',
+  );
 }

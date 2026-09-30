@@ -25,13 +25,12 @@
 import {
   initSodium,
   loadKeyPair,
-  openSealedFileKey,
   encryptFileKey,
   fromBase64url,
   checkKey,
   pinKey,
 } from '@neutrino/e2e-crypto';
-import { authApi, encryptionApi, teamsApi, type TeamMember } from '@/lib/api';
+import { authApi, encryptionApi, openFileKey, teamsApi, type TeamMember } from '@/lib/api';
 
 export interface TeamKeyHandoverResult {
   /** Members who can now open the file. */
@@ -99,7 +98,7 @@ export async function handFileKeyToTeam(
   }
 
   // Opening with *our* key version — the one this file was sealed to — once, outside the loop.
-  const dek = openSealedFileKey(currentUserId, keyRef.encryptedFileKey, keyRef.keyVersion);
+  const dek = await openFileKey(currentUserId, fileId, keyRef);
 
   let members: TeamMember[] = [];
   try {

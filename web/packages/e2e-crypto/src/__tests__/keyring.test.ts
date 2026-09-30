@@ -265,6 +265,50 @@ describe('session key resolution', () => {
     expect(() => openSealedFileKey(USER, 'whatever', 1)).toThrow(/locked/);
   });
 
+  it('opens a DEK whose ref names the wrong version, and says which one opened it', () => {
+    // The iOS vault unlock filed the active key as v1 whatever it was, so on a
+    // rotated account every upload from it was sealed to v2 and recorded as v1.
+    // Opening with v1 is libsodium's "incorrect key pair for the given ciphertext".
+    const keyring = rotateKeyring(createKeyring(USER));
+    setSessionKeyring(keyring);
+    const dek = generateFileKey();
+    const sealed = encryptFileKey(dek, entryForVersion(keyring, 2)!.publicKey);
+    const misfiled: number[] = [];
+
+    expect(openSealedFileKey(USER, sealed, 1, (v) => misfiled.push(v))).toEqual(dek);
+    expect(misfiled).toEqual([2]);
+  });
+
+  it('opens a DEK whose ref names a version this device does not hold', () => {
+    // A misfiled ref can name a version that was never on this device at all.
+    setSessionKeyring(createKeyring(USER));
+    const dek = generateFileKey();
+    const sealed = encryptFileKey(dek, loadKeyPair(USER)!.publicKey);
+    const misfiled: number[] = [];
+
+    expect(openSealedFileKey(USER, sealed, 3, (v) => misfiled.push(v))).toEqual(dek);
+    expect(misfiled).toEqual([1]);
+  });
+
+  it('does not report a correctly filed ref as misfiled', () => {
+    const keyring = rotateKeyring(createKeyring(USER));
+    setSessionKeyring(keyring);
+    const sealed = encryptFileKey(generateFileKey(), entryForVersion(keyring, 1)!.publicKey);
+    const misfiled: number[] = [];
+
+    openSealedFileKey(USER, sealed, 1, (v) => misfiled.push(v));
+
+    expect(misfiled).toEqual([]);
+  });
+
+  it('says no key opens a seal made to someone else', () => {
+    setSessionKeyring(rotateKeyring(createKeyring(USER)));
+    const stranger = sodium.crypto_box_keypair();
+    const sealed = encryptFileKey(generateFileKey(), stranger.publicKey);
+
+    expect(() => openSealedFileKey(USER, sealed, 1)).toThrow(/any encryption key this device holds/);
+  });
+
   it('wipes the keyring on lock', () => {
     setSessionKeyring(createKeyring(USER));
     clearSession();

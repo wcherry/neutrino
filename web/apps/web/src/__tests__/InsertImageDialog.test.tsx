@@ -38,6 +38,9 @@ vi.mock('@/lib/api', () => ({
     getFolderContents: (...a: unknown[]) => getFolderContents(...a),
     createFolder: (...a: unknown[]) => createFolder(...a),
   },
+  // The real one wraps `openSealedFileKey`; delegate so that mock stays the thing asserted on.
+  openFileKey: async (userId: string, _fileId: string, ref: { encryptedFileKey: string; keyVersion?: number }) =>
+    (await import('@neutrino/e2e-crypto')).openSealedFileKey(userId, ref.encryptedFileKey, ref.keyVersion),
   encryptionApi: { getFileKey: (...a: unknown[]) => getFileKey(...a) },
   // Every upload goes through the encrypted uploader now; the plaintext
   // `storageApi.uploadFile` this used to stub no longer exists (issue #95).

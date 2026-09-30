@@ -26,8 +26,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
-import { storageApi, encryptionApi } from '@neutrino/api-drive';
-import { initSodium, openSealedFileKey, decryptFile } from '@neutrino/e2e-crypto';
+import { storageApi, encryptionApi, openFileKey } from '@neutrino/api-drive';
+import { initSodium, decryptFile } from '@neutrino/e2e-crypto';
 import { motionPhotoLabel, type LibraryItem, type PhotoResponse } from '@neutrino/api-photos';
 import { useUser } from '@neutrino/auth';
 import { useSessionKeyPair } from '@/hooks/useSessionKeyPair';
@@ -43,7 +43,7 @@ async function loadPlainBlob(fileId: string, userId: string, unlocked: boolean):
   // No key on the server means the file was stored in the clear.
   if (!keyRef) return downloaded;
 
-  const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
+  const dek = await openFileKey(userId, fileId, keyRef);
   const plain = decryptFile(new Uint8Array(await downloaded.arrayBuffer()), dek);
   return new Blob([plain.buffer as ArrayBuffer]);
 }
