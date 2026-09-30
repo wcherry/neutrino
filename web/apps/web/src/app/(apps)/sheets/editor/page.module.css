@@ -399,19 +399,26 @@
 }
 
 
-/* ── Bottom bar: the sheet tabs, with the zoom control pinned to its right ── */
+/* ── Bottom bar: the sheet tabs, with the zoom control pinned to its right ──
+   Unlike the grid, whose cells and headers are deliberately always light, this
+   bar is chrome and follows the theme — the same rule `.topBar` follows.
+   The two steps below are mixed *towards the text colour*, so each one darkens
+   a light theme and lightens a dark one on its own. That is the whole point:
+   `data-theme` is an open set (nine presets plus any `custom-<id>` the user
+   builds in Settings), so a rule keyed on the theme's name can never cover it,
+   and the four that used to be here covered only `dark` — leaving Midnight,
+   Glass and Forest drawing near-white text on this bar's hardcoded light grey,
+   which is issue #212. */
 .bottomBar {
+  --tab-bar-bg: color-mix(in srgb, var(--color-surface) 92%, var(--color-text));
+  --tab-hover-bg: color-mix(in srgb, var(--color-surface) 88%, var(--color-text));
+
   display: flex;
   align-items: stretch;
   height: 32px;
-  background: rgb(240, 240, 245);
+  background: var(--tab-bar-bg);
   border-top: 1px solid var(--color-border);
   flex-shrink: 0;
-}
-
-/* Dark mode: match the dark surface palette instead of the hardcoded light grey */
-:global([data-theme="dark"]) .bottomBar {
-  background: #263040;
 }
 
 .zoomArea {
@@ -453,14 +460,13 @@
   transition: background 0.08s ease, color 0.08s ease;
 }
 
-.sheetTab:hover {
-  background: rgb(230, 230, 238);
+/* Scoped off the active tab: `:hover` outranks `.sheetTabActive` on
+   specificity, so without this the current tab drops to the inactive hover
+   background the moment the pointer is over it — which is what the tab being
+   renamed in #212's screenshot is doing. */
+.sheetTab:not(.sheetTabActive):hover {
+  background: var(--tab-hover-bg);
   color: var(--color-text);
-}
-
-/* Dark mode: inactive tab hover — slightly lighter than the dark tab bar bg */
-:global([data-theme="dark"]) .sheetTab:hover {
-  background: #334155;
 }
 
 .sheetTabActive {
@@ -470,19 +476,17 @@
   border-top: 2px solid var(--color-accent, #0064ff);
 }
 
-/* Dark mode: active tab — use surface-raised so it stands out from the dark tab bar */
-:global([data-theme="dark"]) .sheetTabActive {
-  background: #1e293b;
-  color: #f1f5f9;
-}
-
+/* `inherit`, not `var(--color-text)`: a tab carrying a user-picked colour sets
+   its own foreground for that background (see `readableTextOn`), and the name
+   must stay legible while it is being edited, which is the second half of the
+   report. */
 .sheetTabInput {
   border: none;
   outline: none;
   background: transparent;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-text);
+  color: inherit;
   width: 80px;
   padding: 0;
 }
@@ -503,13 +507,8 @@
 }
 
 .sheetTabAdd:hover {
-  background: rgb(225, 225, 235);
+  background: var(--tab-hover-bg);
   color: var(--color-text);
-}
-
-/* Dark mode: add-tab button hover */
-:global([data-theme="dark"]) .sheetTabAdd:hover {
-  background: #334155;
 }
 
 .sheetTabColorDot {
@@ -558,11 +557,11 @@
 }
 
 .tabContextMenuDelete {
-  color: #dc2626;
+  color: var(--color-error, #dc2626);
 }
 
 .tabContextMenuDelete:hover:not(:disabled) {
-  background: #fef2f2;
+  background: var(--color-error-subtle, #fef2f2);
 }
 
 .tabContextMenuDivider {
@@ -590,8 +589,19 @@
   align-items: center;
   justify-content: center;
   font-size: 9px;
-  color: #888;
+  color: var(--color-text-muted);
   outline-offset: 2px;
+}
+
+/* The ring marking the tab's current colour. It was a literal `#000` inline,
+   invisible against this menu's own `--color-surface` under every dark theme. */
+.tabContextMenuColorSwatchSelected {
+  outline: 2px solid var(--color-text);
+}
+
+.tabContextMenuColorSwatchNone {
+  background: transparent;
+  border: 1px dashed var(--color-border-strong);
 }
 
 .tabContextMenuConfirm {

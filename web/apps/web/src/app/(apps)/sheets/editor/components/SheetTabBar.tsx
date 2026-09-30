@@ -5,6 +5,49 @@ import styles from '../page.module.css';
 
 const TAB_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899'];
 
+/**
+ * Black or white, whichever reads better on `hex`.
+ *
+ * A tab carrying a colour is the one place in the bar whose background does not
+ * come from the theme, so its foreground must not either. `var(--color-text)`
+ * is near-white under a dark theme, and every one of `TAB_COLORS` is light
+ * enough that white fails on all seven — 4.2:1 at best on the violet, 1.9:1 on
+ * the yellow. Deciding from the colour itself holds for all of them, and for a
+ * `tabColor` that came out of somebody's .xlsx, which can be any colour at all.
+ *
+ * Luminance and the contrast ratio are WCAG 2.x. Anything unparseable falls
+ * back to the theme's own text colour, which is right for a tab with no colour.
+ */
+export function readableTextOn(hex: string | null): string | undefined {
+    const rgb = parseHexColor(hex);
+    if (!rgb) return undefined;
+
+    // Relative luminance, sRGB gamma-expanded per channel.
+    const channel = (c: number) => {
+        const v = c / 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    const lum = 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+
+    // Contrast against white is (1.05 / (lum + 0.05)), against black
+    // ((lum + 0.05) / 0.05); they cross at lum ≈ 0.1791.
+    return (lum + 0.05) / 0.05 >= 1.05 / (lum + 0.05) ? '#000000' : '#ffffff';
+}
+
+/** `#rgb` / `#rrggbb` → `[r, g, b]`, or null for anything else. */
+function parseHexColor(hex: string | null): [number, number, number] | null {
+    if (!hex) return null;
+    const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const d = m[1];
+    const full = d.length === 3 ? d[0] + d[0] + d[1] + d[1] + d[2] + d[2] : d;
+    return [
+        parseInt(full.slice(0, 2), 16),
+        parseInt(full.slice(2, 4), 16),
+        parseInt(full.slice(4, 6), 16),
+    ];
+}
+
 type Props = {
     sheetNames: string[];
     sheetColors: (string | null)[];
@@ -66,7 +109,7 @@ export function SheetTabBar({
                         <div
                             key={i}
                             className={`${styles.sheetTab} ${i === activeSheetIndex ? styles.sheetTabActive : ''}`}
-                            style={tabColor ? { backgroundColor: tabColor } : undefined}
+                            style={tabColor ? { backgroundColor: tabColor, color: readableTextOn(tabColor) } : undefined}
                             onClick={() => { if (renamingIndex !== i) onSwitchSheet(i); }}
                             onDoubleClick={readOnly ? undefined : () => { setRenamingIndex(i); setRenameValue(name); }}
                             onContextMenu={readOnly ? undefined : e => {
@@ -148,8 +191,8 @@ export function SheetTabBar({
                                 {TAB_COLORS.map(color => (
                                     <button
                                         key={color}
-                                        className={styles.tabContextMenuColorSwatch}
-                                        style={{ background: color, outline: sheetColors[contextMenu.index] === color ? '2px solid #000' : undefined }}
+                                        className={`${styles.tabContextMenuColorSwatch} ${sheetColors[contextMenu.index] === color ? styles.tabContextMenuColorSwatchSelected : ''}`}
+                                        style={{ background: color }}
                                         title={color}
                                         onClick={() => {
                                             setSheetColors(prev => prev.map((c, i) => i === contextMenu.index ? color : c));
@@ -159,8 +202,7 @@ export function SheetTabBar({
                                     />
                                 ))}
                                 <button
-                                    className={styles.tabContextMenuColorSwatch}
-                                    style={{ background: 'transparent', border: '1px dashed #aaa', outline: !sheetColors[contextMenu.index] ? '2px solid #000' : undefined }}
+                                    className={`${styles.tabContextMenuColorSwatch} ${styles.tabContextMenuColorSwatchNone} ${!sheetColors[contextMenu.index] ? styles.tabContextMenuColorSwatchSelected : ''}`}
                                     title="No color"
                                     onClick={() => {
                                         setSheetColors(prev => prev.map((c, i) => i === contextMenu.index ? null : c));
