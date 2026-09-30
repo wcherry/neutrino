@@ -16,11 +16,10 @@
  * through untouched, so documents written before this keep rendering.
  */
 
-import { storageApi, filesystemApi, encryptionApi, uploadDriveFile } from '@/lib/api';
+import { storageApi, filesystemApi, encryptionApi, openFileKey, uploadDriveFile } from '@/lib/api';
 import {
   initSodium,
   loadKeyPair,
-  openSealedFileKey,
   decryptFile,
 } from '@neutrino/e2e-crypto';
 import type { FileItem } from '@neutrino/api-drive';
@@ -255,7 +254,7 @@ async function fetchDriveImageBlob(fileId: string): Promise<Blob> {
   if (!keyRef) return new Blob([blob], { type: mimeType });
 
   return measurePhase('image:decrypt', async () => {
-    const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
+    const dek = await openFileKey(userId, fileId, keyRef);
     const plain = decryptFile(new Uint8Array(await blob.arrayBuffer()), dek);
     return new Blob([plain.buffer as ArrayBuffer], { type: mimeType });
   });

@@ -38,7 +38,6 @@ import { useAuth } from '@neutrino/auth';
 import {
   initSodium,
   loadKeyPair,
-  openSealedFileKey,
   activeKeyVersion,
   generateFileKey,
   encryptFileKey,
@@ -47,6 +46,7 @@ import {
 } from '@neutrino/e2e-crypto';
 import {
   encryptionApi,
+  openFileKey,
   driveAutosaveEncryptedContent,
   driveCreateEncryptedVersion,
 } from '@/lib/api';
@@ -174,11 +174,7 @@ export function useEncryptedDocumentContent({
         if (kp) {
           const keyRef = await encryptionApi.getFileKey(id);
           if (!cancelled && keyRef) {
-            dekRef.current = openSealedFileKey(
-              currentUser!.id,
-              keyRef.encryptedFileKey,
-              keyRef.keyVersion,
-            );
+            dekRef.current = await openFileKey(currentUser!.id, id, keyRef);
             dekOwnerRef.current = owner;
           } else if (!cancelled && !keyRef) {
             // New file: generate a DEK, encrypt it with the user's public key, and store it.

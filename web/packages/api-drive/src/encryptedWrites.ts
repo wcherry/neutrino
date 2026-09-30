@@ -34,6 +34,7 @@
 import type { FileItem, FileVersionItem } from './types';
 import {
   encryptionApi,
+  openFileKey,
   uploadEncryptedFile,
   driveAutosaveEncryptedContent,
   driveCreateEncryptedVersion,
@@ -134,12 +135,7 @@ export async function requireFileKey(
   await requireKeyPair(userId);
   const keyRef = await encryptionApi.getFileKey(fileId);
   if (keyRef) {
-    const { initSodium, openSealedFileKey } = await import('@neutrino/e2e-crypto');
-    await initSodium();
-    return {
-      dek: openSealedFileKey(userId!, keyRef.encryptedFileKey, keyRef.keyVersion),
-      isNew: false,
-    };
+    return { dek: await openFileKey(userId!, fileId, keyRef), isNew: false };
   }
   return { dek: await mintFileKey(userId, fileId), isNew: true };
 }

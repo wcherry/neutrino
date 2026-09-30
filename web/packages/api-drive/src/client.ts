@@ -764,7 +764,7 @@ export async function downloadAndDecryptFile(
   fileId: string,
   userId: string,
 ): Promise<Uint8Array | null> {
-  const { initSodium, openSealedFileKey, decryptFile } = await import('@neutrino/e2e-crypto');
+  const { initSodium, decryptFile } = await import('@neutrino/e2e-crypto');
   await initSodium();
 
   // Fetch the encrypted DEK.
@@ -776,7 +776,7 @@ export async function downloadAndDecryptFile(
   );
   if (!keyRef) return null;
 
-  const dek = openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion);
+  const dek = await openFileKey(userId, fileId, keyRef);
 
   // Download the encrypted blob.
   const cipherBlob = await request<Blob>(
@@ -957,6 +957,43 @@ export const encryptionApi = {
     return request<void>(`/api/v1/drive/files/${fileId}/key`, { method: 'DELETE' });
   },
 };
+
+/** Files whose misfiled key ref this page has already sent a correction for. */
+const refiledKeys = new Set<string>();
+
+/**
+ * Open the caller's DEK for `fileId` from the key ref `getFileKey` returned.
+ *
+ * The one place a key ref is opened, because opening is also where a wrong
+ * `keyVersion` is discovered: the iOS apps that unlocked from the key vault
+ * recorded every upload as v1 whatever it was sealed to (see
+ * `openSealedFileKey`). When the ref's version turns out not to be the one that
+ * opens it, the ref is re-filed under the right one — same sealed bytes, new
+ * number — so the next reader, on any client, goes straight to the right key.
+ *
+ * The correction is sent in the background and at most once per file per page:
+ * the DEK is already in hand, and failing to tidy the ref must not fail the
+ * read that found it. It only ever rewrites the caller's own row, which is all
+ * `PUT /files/{id}/key` can touch.
+ */
+export async function openFileKey(
+  userId: string,
+  fileId: string,
+  keyRef: FileKeyResponse,
+): Promise<Uint8Array> {
+  const { initSodium, openSealedFileKey } = await import('@neutrino/e2e-crypto');
+  await initSodium();
+  return openSealedFileKey(userId, keyRef.encryptedFileKey, keyRef.keyVersion, (actual) => {
+    if (refiledKeys.has(fileId)) return;
+    refiledKeys.add(fileId);
+    encryptionApi
+      .setFileKey(fileId, { encryptedFileKey: keyRef.encryptedFileKey, keyVersion: actual })
+      .catch((e) => {
+        refiledKeys.delete(fileId);
+        console.warn(`Could not re-file the key for ${fileId} under version ${actual}`, e);
+      });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Key file API — the caller's retired identity keys

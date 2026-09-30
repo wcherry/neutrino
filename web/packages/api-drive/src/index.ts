@@ -18,6 +18,7 @@ export {
   driveWriteEncryptedContent,
   commentsApi,
   encryptionApi,
+  openFileKey,
   keyFileApi,
   uploadEncryptedFile,
   downloadAndDecryptFile,

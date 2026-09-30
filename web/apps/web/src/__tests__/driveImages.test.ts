@@ -34,6 +34,9 @@ vi.mock('@/lib/api', () => ({
     getFolderContents: (...a: unknown[]) => listFolderContents(...a),
     createFolder: (...a: unknown[]) => createFolder(...a),
   },
+  // The real one wraps `openSealedFileKey`; delegate so that mock stays the thing asserted on.
+  openFileKey: async (userId: string, _fileId: string, ref: { encryptedFileKey: string; keyVersion?: number }) =>
+    (await import('@neutrino/e2e-crypto')).openSealedFileKey(userId, ref.encryptedFileKey, ref.keyVersion),
   encryptionApi: { getFileKey: (...a: unknown[]) => getFileKey(...a) },
   // Stubbed at the boundary. What `uploadDriveFile` itself does — seal a DEK,
   // encrypt the metadata, generate a thumbnail, and throw rather than write

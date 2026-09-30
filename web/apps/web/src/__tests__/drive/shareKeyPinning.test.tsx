@@ -34,6 +34,9 @@ vi.mock('@/lib/api', () => ({
     searchUsers: vi.fn().mockResolvedValue([]),
   },
   authApi: { getUserPublicKey: (...a: unknown[]) => getUserPublicKey(...a) },
+  // The real one wraps `openSealedFileKey`; delegate so that mock stays the thing asserted on.
+  openFileKey: async (userId: string, _fileId: string, ref: { encryptedFileKey: string; keyVersion?: number }) =>
+    (await import('@neutrino/e2e-crypto')).openSealedFileKey(userId, ref.encryptedFileKey, ref.keyVersion),
   encryptionApi: {
     getFileKey: (...a: unknown[]) => getFileKey(...a),
     shareFileKey: (...a: unknown[]) => shareFileKey(...a),

@@ -48,6 +48,9 @@ const getFileKey = vi.fn(() => Promise.resolve({ encryptedFileKey: 'sealed' }));
 const setFileKey = vi.fn(() => Promise.resolve());
 
 vi.mock('@/lib/api', () => ({
+  // The real one wraps `openSealedFileKey`; delegate so that mock stays the thing asserted on.
+  openFileKey: async (userId: string, _fileId: string, ref: { encryptedFileKey: string; keyVersion?: number }) =>
+    (await import('@neutrino/e2e-crypto')).openSealedFileKey(userId, ref.encryptedFileKey, ref.keyVersion),
   encryptionApi: {
     getFileKey: (...args: unknown[]) => getFileKey(...(args as [])),
     setFileKey: (...args: unknown[]) => setFileKey(...(args as [])),
