@@ -105,9 +105,11 @@ export interface HamburgerMenuProps {
   titleInputRef: React.RefObject<HTMLInputElement>;
   onSave: () => void;
   onNewDoc: () => void;
+  /** Opens the template picker (issue #128). */
+  onNewFromTemplate?: () => void;
   onDuplicate: () => void;
   onImport: () => void;
-  onExport: (format: 'docx' | 'pdf' | 'html' | 'txt') => void;
+  onExport: (format: 'docx' | 'dotx' | 'pdf' | 'html' | 'txt') => void;
   onPageSetup: () => void;
   onPrint: () => void;
   // View panel toggles
@@ -162,6 +164,7 @@ export function HamburgerMenu({
   titleInputRef,
   onSave,
   onNewDoc,
+  onNewFromTemplate,
   onDuplicate,
   onImport,
   onExport,
@@ -221,6 +224,7 @@ export function HamburgerMenu({
       label: 'File',
       items: [
         { kind: 'action', label: 'New document',   shortcut: 'Ctrl+N', action: () => onNewDoc() },
+        { kind: 'action', label: 'New from template…',                 action: () => onNewFromTemplate?.() },
         { kind: 'action', label: 'Open docs list',                     action: () => router.push('/docs') },
         { kind: 'separator' },
         { kind: 'action', label: 'Rename',                             action: () => { titleInputRef.current?.focus(); titleInputRef.current?.select(); } },
@@ -232,6 +236,7 @@ export function HamburgerMenu({
         {
           kind: 'submenu', label: 'Export as…', items: [
             { kind: 'action', label: 'Microsoft Word (.docx)', action: () => onExport('docx') },
+            { kind: 'action', label: 'Word template (.dotx)',  action: () => onExport('dotx') },
             { kind: 'action', label: 'PDF (.pdf)',             action: () => onExport('pdf') },
             { kind: 'action', label: 'Web page (.html)',       action: () => onExport('html') },
             { kind: 'action', label: 'Plain text (.txt)',      action: () => onExport('txt') },

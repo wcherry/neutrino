@@ -71,6 +71,13 @@ pub const XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadshee
 pub const DOCX: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 pub const PPTX: &str = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
+/// A Word template (issue #128). The same package as a `.docx` with its main
+/// part declared as a template, opened by the same editor; the mime type is
+/// the whole marker, as it is for every type here. The server never builds
+/// one from a document — that copy needs the plaintext, which only the client
+/// holds — so like the documents it is unseeded.
+pub const DOTX: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.template";
+
 // Default bodies written when a file of each type is created, so a new
 // document opens in a valid state rather than as a zero-byte read every
 // editor would have to special-case. These are the same constants the
@@ -91,6 +98,10 @@ pub const NATIVE_TYPES: &[NativeType] = &[
     },
     NativeType {
         mime_type: PPTX,
+        default_content: "",
+    },
+    NativeType {
+        mime_type: DOTX,
         default_content: "",
     },
     // ── The canvas apps' own JSON, which is the only format they have ─────
@@ -129,7 +140,7 @@ mod tests {
     /// plaintext one the server had no way to make valid anyway.
     #[test]
     fn ooxml_types_are_seeded_by_the_client() {
-        for mime in [DOCX, XLSX, PPTX] {
+        for mime in [DOCX, XLSX, PPTX, DOTX] {
             assert_eq!(lookup(mime).unwrap().default_content, "");
         }
     }
@@ -158,6 +169,13 @@ mod tests {
         assert!(lookup(DOCX).is_some());
         assert!(lookup(XLSX).is_some());
         assert!(lookup(PPTX).is_some());
+    }
+
+    /// A template is a Neutrino document in its own right: it opens in Docs
+    /// and is edited and saved there as itself.
+    #[test]
+    fn word_templates_are_native() {
+        assert!(lookup(DOTX).is_some());
     }
 
     #[test]

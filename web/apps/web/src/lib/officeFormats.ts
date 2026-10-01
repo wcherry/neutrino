@@ -17,15 +17,19 @@ import {
   OOXML_MIME,
   OOXML_EXTENSION,
   ooxmlAppForMime,
+  isOoxmlTemplateMime as isOoxmlTemplateMimeImpl,
   type OoxmlApp,
 } from '@neutrino/api-core';
 
 export {
   OOXML_MIME,
   OOXML_EXTENSION,
+  OOXML_TEMPLATE_MIME,
   ooxmlMimeFor,
+  ooxmlTemplateMimeFor,
   ooxmlAppForMime,
   isOoxmlMime,
+  isOoxmlTemplateMime,
   withOoxmlExtension,
   stripOoxmlExtension,
 } from '@neutrino/api-core';
@@ -39,6 +43,8 @@ const EXTENSION_TO_APP: Record<string, OfficeApp> = {
   [OOXML_EXTENSION.docs]: 'docs',
   [OOXML_EXTENSION.sheets]: 'sheets',
   [OOXML_EXTENSION.slides]: 'slides',
+  // A Word template opens in Docs like the document it is a template for.
+  dotx: 'docs',
 };
 
 function extensionOf(name: string): string | null {
@@ -64,4 +70,16 @@ export function officeAppForFile(mimeType: string, name: string): OfficeApp | nu
   if (ext && EXTENSION_TO_APP[ext]) return EXTENSION_TO_APP[ext];
 
   return null;
+}
+
+/**
+ * Whether a file is a Word template (issue #128) — by mime type, or by its
+ * `.dotx` name when the upload arrived as `application/octet-stream`.
+ *
+ * The editor asks this rather than checking the mime type alone, because it
+ * decides what every save writes: a `.dotx` that `officeAppForFile` opened by
+ * its extension, saved as a document, would be a file Word refuses to open.
+ */
+export function isTemplateFile(mimeType: string, name: string): boolean {
+  return isOoxmlTemplateMimeImpl(mimeType) || extensionOf(name) === 'dotx';
 }

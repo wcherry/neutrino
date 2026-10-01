@@ -1215,3 +1215,14 @@
   background: rgba(255, 255, 255, 0.2);
   color: #ffffff;
 }
+
+/* Marks an open `.dotx` (issue #128), next to its title. */
+.templateBadge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 500;
+}

@@ -17,6 +17,8 @@ fn file_type_label(mime_type: Option<&str>) -> String {
         Some("text/markdown") => "note",
         // The office apps store OOXML — a document is a `.docx`.
         Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document") => "doc",
+        // A Word template opens in Docs like the document it is a template for.
+        Some("application/vnd.openxmlformats-officedocument.wordprocessingml.template") => "doc",
         Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") => "sheet",
         Some("application/vnd.openxmlformats-officedocument.presentationml.presentation") => "slide",
         Some("application/x-neutrino-diagram") => "diagram",
@@ -134,6 +136,24 @@ mod tests {
     use std::path::PathBuf;
 
     const NOTE_MIME: &str = "text/markdown";
+
+    /// A backlink from a Word template is grouped with the documents: it opens
+    /// in Docs, and "file" would send the reader looking in the wrong place.
+    #[test]
+    fn a_word_template_is_labelled_as_a_doc() {
+        assert_eq!(
+            file_type_label(Some(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
+            )),
+            "doc"
+        );
+        assert_eq!(
+            file_type_label(Some(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )),
+            "doc"
+        );
+    }
 
     fn test_pool() -> DbPool {
         let manager = ConnectionManager::<SqliteConnection>::new(":memory:");

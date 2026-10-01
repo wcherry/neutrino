@@ -37,9 +37,12 @@ export type { AiProvider, AiSettings, AiCompleteOptions } from './ai';
 export {
   OOXML_MIME,
   OOXML_EXTENSION,
+  OOXML_TEMPLATE_MIME,
   ooxmlMimeFor,
+  ooxmlTemplateMimeFor,
   ooxmlAppForMime,
   isOoxmlMime,
+  isOoxmlTemplateMime,
   withOoxmlExtension,
   stripOoxmlExtension,
 } from './ooxml';

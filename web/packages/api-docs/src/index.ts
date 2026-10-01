@@ -4,6 +4,8 @@ import {
   ooxmlMimeFor,
   withOoxmlExtension,
   stripOoxmlExtension,
+  isOoxmlTemplateMime,
+  OOXML_TEMPLATE_MIME,
 } from '@neutrino/api-core';
 
 /**
@@ -23,6 +25,14 @@ export const DOCX_MIME_TYPE = ooxmlMimeFor('docs');
  * Mirrors `src/drive/storage/native_types.rs` on the backend.
  */
 export const DOC_MIME_TYPES = [DOCX_MIME_TYPE] as const;
+
+/**
+ * What a document template is: a real Word template (issue #128). It is a
+ * Drive file like a document, opens in the same editor, and is kept out of
+ * `listDocs` — the library lists documents, and the templates are offered
+ * where a document is started instead.
+ */
+export const DOTX_MIME_TYPE = OOXML_TEMPLATE_MIME.dotx;
 
 /**
  * What a document with no stored page setup lays out to.
@@ -205,6 +215,13 @@ export const docsApi = {
     return { docs: (raw.files ?? []).map(toDocMeta) };
   },
 
+  /** The caller's document templates — every `.dotx` in their Drive. */
+  async listTemplates(): Promise<ListDocsResponse> {
+    const params = new URLSearchParams({ mimeType: DOTX_MIME_TYPE, limit: '200' });
+    const raw = await request<{ files: DriveFileDto[] }>(`/api/v1/drive/files?${params}`);
+    return { docs: (raw.files ?? []).map(toDocMeta) };
+  },
+
   async createDoc(body: CreateDocRequest): Promise<DocResponse> {
     const title = body.title.trim();
     if (!title) throw new ApiClientError(400, 'BAD_REQUEST', 'Document title cannot be empty');
@@ -234,15 +251,17 @@ export const docsApi = {
    *
    * The read happens either way, because the extension is not the caller's
    * business: it passes the title the user typed, and whether that has to land
-   * on disk as `Report` or `Report.docx` depends on the format the file is
-   * already in. Renaming a `.docx` to a bare name would leave a Word document
+   * on disk as `Report`, `Report.docx` or `Report.dotx` depends on the format
+   * the file is already in. Renaming a `.docx` to a bare name would leave a Word document
    * the operating system no longer recognises.
    */
   async saveDoc(docId: string, body: SaveDocRequest): Promise<DocMetaResponse> {
     const current = await request<DriveFileDto>(`/api/v1/drive/files/${docId}/info`);
     if (body.title === undefined) return toDocMeta(current);
 
-    const name = withOoxmlExtension(body.title, 'docs');
+    const name = withOoxmlExtension(body.title, 'docs', {
+      template: isOoxmlTemplateMime(current.mimeType ?? ''),
+    });
     if (name === current.name) return toDocMeta(current);
 
     const file = await request<DriveFileDto>(`/api/v1/drive/files/${docId}`, {
