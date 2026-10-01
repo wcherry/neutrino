@@ -100,16 +100,27 @@ vi.mock('@/hooks/useSlidePresence', () => ({
   useSlidePresence: () => ({ remoteUsers: [], broadcastPresentation: vi.fn() }),
 }));
 
+/**
+ * What the key hook reports. Mutable so a test can walk it through the
+ * sequence a page reload produces: resolved with no key while the keyring is
+ * still being restored, then unresolved, then resolved with the key.
+ */
+const encState = {
+  dekRef: { current: null as Uint8Array | null },
+  dekResolved: true,
+  isNewEncryption: false,
+  awaitDek: async () => encState.dekRef.current,
+};
+
 vi.mock('@/hooks/useEncryptedDocumentContent', () => ({
-  useEncryptedDocumentContent: () => ({
-    dekRef: { current: null },
-    dekResolved: true,
-    isNewEncryption: false,
-    awaitDek: async () => null,
-  }),
+  useEncryptedDocumentContent: () => encState,
 }));
 
-vi.mock('@neutrino/e2e-crypto', () => ({ decryptFile: vi.fn(), isUnlocked: () => true }));
+const mockDecryptFile = vi.fn();
+vi.mock('@neutrino/e2e-crypto', () => ({
+  decryptFile: (...args: unknown[]) => mockDecryptFile(...args),
+  isUnlocked: () => true,
+}));
 
 vi.mock('@/hooks/useSpellCheck', () => ({ useSpellCheck: () => ({ spellCheck: false }) }));
 
@@ -167,6 +178,8 @@ function renderSlideEditor() {
 describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    encState.dekRef = { current: null };
+    encState.dekResolved = true;
   });
 
   it('identifies the presentation through storageApi.getFileMetadata', async () => {
@@ -208,4 +221,66 @@ describe('SlideEditor — office-mode detection/fallback (issue #43)', () => {
     await waitFor(() => expect(mockGetFileMetadata).toHaveBeenCalled());
     expect(mockImportFromPptx).not.toHaveBeenCalled();
   });
+
+  /**
+   * After a full page load the keyring is restored asynchronously, and until it
+   * is the key hook reports "resolved" with no key, then resolves for real. The
+   * load used to read on that first signal, fail to parse the ciphertext, and —
+   * being one-shot — never read again: a reopened deck showed the default
+   * presentation, and the next edit saved that over the real one.
+   */
+  it('reads an encrypted deck again once its key resolves, rather than giving up on the first try', async () => {
+    mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'deck.pptx', mimeType: PPTX_MIME });
+    // Ciphertext: no zip magic, so it cannot be mistaken for a plaintext package.
+    mockReadBytes.mockResolvedValue(new Uint8Array([0x9a, 0x01, 0x02, 0x03, 0x04]));
+    mockDecryptFile.mockReturnValue(fakePptxBytes());
+
+    const view = renderSlideEditor();
+    await waitFor(() => expect(mockReadBytes).toHaveBeenCalledTimes(1));
+    expect(mockImportFromPptx).not.toHaveBeenCalled();
+
+    // The keyring arrives: the hook re-resolves, and this time holds the key.
+    encState.dekResolved = false;
+    view.rerender(React.createElement(QueryClientProvider, { client: makeQueryClient() }, React.createElement(SlideEditor)));
+    encState.dekRef = { current: new Uint8Array(32) };
+    encState.dekResolved = true;
+    view.rerender(React.createElement(QueryClientProvider, { client: makeQueryClient() }, React.createElement(SlideEditor)));
+
+    await waitFor(() => expect(mockImportFromPptx).toHaveBeenCalled(), { timeout: 3000 });
+    expect(mockReadBytes).toHaveBeenCalledTimes(2);
+    expect(mockDecryptFile).toHaveBeenCalled();
+  });
+
+  /**
+   * The same reload, caught mid-read: the key hook's re-resolution changes the
+   * load effect's dependencies while the first read is still in flight, and
+   * the cleanup cancels it. A cancelled load must be allowed to run again — it
+   * used to leave the one-shot flag set, and a plaintext `.pptx` opened as the
+   * default deck with nothing ever reading it.
+   */
+  it('reads the deck again when the first read is cancelled by the key resolving', async () => {
+    mockGetFileMetadata.mockResolvedValue({ id: 'test-slide-id', name: 'deck.pptx', mimeType: PPTX_MIME });
+    let releaseFirst: (bytes: Uint8Array) => void = () => {};
+    mockReadBytes
+      .mockImplementationOnce(() => new Promise<Uint8Array>((resolve) => { releaseFirst = resolve; }))
+      .mockResolvedValue(fakePptxBytes());
+
+    const view = renderSlideEditor();
+    await waitFor(() => expect(mockReadBytes).toHaveBeenCalledTimes(1));
+
+    const rerender = () =>
+      view.rerender(React.createElement(QueryClientProvider, { client: makeQueryClient() }, React.createElement(SlideEditor)));
+    encState.dekResolved = false;
+    rerender();
+    encState.dekRef = { current: new Uint8Array(32) };
+    encState.dekResolved = true;
+    rerender();
+
+    // The first read lands after it was cancelled, and must change nothing.
+    releaseFirst(fakePptxBytes());
+
+    await waitFor(() => expect(mockReadBytes).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockImportFromPptx).toHaveBeenCalledTimes(1), { timeout: 3000 });
+  });
 });
+
