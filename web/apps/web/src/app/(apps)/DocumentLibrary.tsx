@@ -36,6 +36,11 @@ export interface DocumentLibraryProps {
   createItem: () => Promise<{ id: string }>;
   renameItem: (id: string, title: string) => Promise<unknown>;
   deleteItem: (id: string) => Promise<unknown>;
+  /**
+   * Further controls beside the create button — Docs puts New from template
+   * here (issue #128). Rendered before it, so the primary action stays last.
+   */
+  headerActions?: React.ReactNode;
 }
 
 function capitalize(word: string): string {
@@ -155,6 +160,7 @@ export function DocumentLibrary({
   createItem,
   renameItem,
   deleteItem,
+  headerActions,
 }: DocumentLibraryProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -247,9 +253,12 @@ export function DocumentLibrary({
     <div className={styles.page}>
       <div className={styles.header}>
         <Heading level={1} size="xl">{title}</Heading>
-        <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending} icon={<FilePlus size={16} />}>
-          {newLabel}
-        </Button>
+        <div className={styles['header-actions']}>
+          {headerActions}
+          <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending} icon={<FilePlus size={16} />}>
+            {newLabel}
+          </Button>
+        </div>
       </div>
 
       <FileGrid

@@ -35,6 +35,7 @@ const NOTE_MIME = 'text/markdown';
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+const DOTX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.template';
 
 function makeRouter() {
   return { push: vi.fn() };
@@ -83,6 +84,26 @@ describe('routeForFile — OOXML formats', () => {
     const opts = makeOpts();
     routeForFile({ id: 'file-5', mimeType: PPTX_MIME, name: 'deck.pptx' }, router, opts);
     expect(router.push).toHaveBeenCalledWith('/slides/editor?id=file-5');
+  });
+
+  // Issue #128: a template is edited in Docs as itself, so opening one from
+  // Drive goes to the editor rather than to a download.
+  it('routes a .dotx template to the docs editor', () => {
+    const router = makeRouter();
+    const opts = makeOpts();
+    routeForFile({ id: 'file-t', mimeType: DOTX_MIME, name: 'Letterhead.dotx' }, router, opts);
+    expect(router.push).toHaveBeenCalledWith('/docs/editor?id=file-t');
+    expect(opts.onPreviewFallback).not.toHaveBeenCalled();
+  });
+
+  it('detects a template by its extension when the mimetype is octet-stream', () => {
+    const router = makeRouter();
+    routeForFile(
+      { id: 'file-u', mimeType: 'application/octet-stream', name: 'Letterhead.dotx' },
+      router,
+      makeOpts(),
+    );
+    expect(router.push).toHaveBeenCalledWith('/docs/editor?id=file-u');
   });
 
   it('detects office format via extension fallback when mimetype is octet-stream', () => {
@@ -179,6 +200,7 @@ describe('previewKindForMime', () => {
     ['doc', DOCX_MIME],
     ['sheet', XLSX_MIME],
     ['slide', PPTX_MIME],
+    ['doc', DOTX_MIME],
   ])('resolves OOXML mimetypes to the same %s preview kind', (expectedKind, mimeType) => {
     expect(previewKindForMime(mimeType)).toBe(expectedKind);
   });

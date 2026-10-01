@@ -29,8 +29,12 @@ import { encryptionApi, openFileKey, storageApi } from '@/lib/api';
 import type { OoxmlApp } from '@neutrino/api-core';
 import { looksLikeOoxml, readNeutrinoModel } from '@/lib/ooxmlContainer';
 
-/** Unwrapped DEK for `fileId`, or `null` when the file isn't encrypted. */
-async function resolveDek(userId: string, fileId: string): Promise<Uint8Array | null> {
+/**
+ * Unwrapped DEK for `fileId`, or `null` when the file isn't encrypted — or
+ * when this session holds no key pair to unwrap it with, which a caller that
+ * must not mistake ciphertext for a body checks for first (`canEncryptFor`).
+ */
+export async function resolveDek(userId: string, fileId: string): Promise<Uint8Array | null> {
   await initSodium();
   const kp = loadKeyPair(userId);
   if (!kp) return null;

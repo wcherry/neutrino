@@ -55,6 +55,8 @@ export interface SaveAsDialogProps {
 const FORMAT_LABELS: Record<string, string> = {
   pdf:  'PDF Document (.pdf)',
   docx: 'Word Document (.docx)',
+  // Saved to Drive, a template is listed by Docs' New from template.
+  dotx: 'Word Template (.dotx)',
   html: 'HTML File (.html)',
   txt:  'Plain Text (.txt)',
   // Both formats a diagram can be stored in. The SVG carries the diagram

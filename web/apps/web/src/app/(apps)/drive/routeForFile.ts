@@ -6,7 +6,7 @@
  * and FileContextMenu.onPreview).
  */
 
-import { officeAppForFile, OOXML_MIME } from '@/lib/officeFormats';
+import { officeAppForFile, OOXML_MIME, OOXML_TEMPLATE_MIME } from '@/lib/officeFormats';
 
 // Docs, Sheets and Slides are OOXML and are routed by `officeAppForFile`
 // below, so they have no entry of their own here. The bespoke JSON that
@@ -104,6 +104,8 @@ const NATIVE_PREVIEW_KIND: Record<string, PreviewKind> = {
   [DRAWING_MIME]: 'drawing',
   // `DocumentPreviewModal` reads the model out of the OOXML package (issue #127).
   [OOXML_MIME.docx]: 'doc',
+  // A Word template is the same package as a document (issue #128).
+  [OOXML_TEMPLATE_MIME.dotx]: 'doc',
   [OOXML_MIME.xlsx]: 'sheet',
   [OOXML_MIME.pptx]: 'slide',
 };

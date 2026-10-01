@@ -76,7 +76,13 @@ import { decryptFile } from '@neutrino/e2e-crypto';
 import { measurePhase } from '@neutrino/utils';
 import { aiApi } from '@neutrino/api-core';
 import { useUser } from '@neutrino/auth';
-import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension, OFFICE_MIME } from '@/lib/officeFormats';
+import {
+  officeAppForFile, withOoxmlExtension, stripOoxmlExtension, isTemplateFile,
+  OFFICE_MIME, OOXML_TEMPLATE_MIME,
+} from '@/lib/officeFormats';
+import { setDocxPackageKind, type DocxPackageKind } from '@/lib/ooxml/docx/packageKind';
+import { createDocFromTemplate, TemplateEncryptionUnavailableError } from '@/lib/docTemplates';
+import { DocTemplatePickerModal } from '../DocTemplatePickerModal';
 import { looksLikeOoxml, readNeutrinoModel } from '@/lib/ooxmlContainer';
 import type { DocModel } from '@/lib/ooxml/docx/mapping';
 import { Toolbar } from './Toolbar';
@@ -730,6 +736,14 @@ export function DocEditor() {
     ? officeAppForFile(officeFileMeta.mimeType ?? '', officeFileMeta.name)
     : null;
   const officeMode = officeApp === 'docs';
+  // A `.dotx` (issue #128) is edited exactly like a document; what differs is
+  // that every save has to keep it a template — its name, and the content type
+  // its package declares — or the first autosave quietly turns it into a
+  // document that Word then refuses to open under a `.dotx` name.
+  const isTemplate = !!officeFileMeta
+    && isTemplateFile(officeFileMeta.mimeType ?? '', officeFileMeta.name);
+  const isTemplateRef = useRef(false);
+  isTemplateRef.current = isTemplate;
 
   // Seed the stale-write guard from the revision this load saw.
   useEffect(() => {
@@ -780,14 +794,19 @@ export function DocEditor() {
   // (`downloadAndDecryptFile`), so what reaches the user's disk is the same
   // uncorrupted OOXML either way. What the plaintext write actually bought was
   // a .docx sitting readable in object storage, which is issue #95.
-  const buildDocxPackage = useCallback(async (): Promise<Uint8Array> => {
+  const buildDocxPackage = useCallback(async (kind?: DocxPackageKind): Promise<Uint8Array> => {
     const ed = editorRef.current;
     if (!ed) throw new Error('editor-not-ready');
     const model: DocModel = {
       doc: ed.getJSON() as DocModel['doc'],
       meta: layoutMetaRef.current,
     };
-    return buildDocxBytes(model, titleRef.current);
+    const bytes = await buildDocxBytes(model, titleRef.current);
+    // The writer always produces a document; a template is the same package
+    // with its main part declared differently. `kind` defaults to whatever
+    // the open file is, so the autosave keeps a template a template.
+    const target = kind ?? (isTemplateRef.current ? 'template' : 'document');
+    return target === 'template' ? setDocxPackageKind(bytes, 'template') : bytes;
   }, []);
 
   const officeAutosaveMutation = useMutation({
@@ -797,7 +816,8 @@ export function DocEditor() {
       const dek = await awaitDek();
       if (!dek) throw new Error('no-dek');
       const bytes = await buildDocxPackage();
-      const filename = officeFileMeta?.name ?? withOoxmlExtension(titleRef.current || 'document', 'docs');
+      const filename = officeFileMeta?.name
+        ?? withOoxmlExtension(titleRef.current || 'document', 'docs', { template: isTemplateRef.current });
       const saved = await driveAutosaveEncryptedBytes(
         docId, bytes, filename, dek, versionGuard.check(),
       );
@@ -841,7 +861,8 @@ export function DocEditor() {
       const dek = await awaitDek();
       if (!dek) throw new Error('no-dek');
       const bytes = await buildDocxPackage();
-      const filename = officeFileMeta?.name ?? withOoxmlExtension(titleRef.current || 'document', 'docs');
+      const filename = officeFileMeta?.name
+        ?? withOoxmlExtension(titleRef.current || 'document', 'docs', { template: isTemplateRef.current });
       return driveCreateEncryptedVersionBytes(docId, bytes, filename, dek, label);
     },
     onMutate: () => setSaveStatus('saving'),
@@ -1321,7 +1342,7 @@ export function DocEditor() {
     // generic Drive call (the same one FileContextMenu's rename action uses).
     // The extension goes back on: the title is what the user typed, and the
     // file still has to land on disk as a Word document.
-    const name = withOoxmlExtension(title, 'docs');
+    const name = withOoxmlExtension(title, 'docs', { template: isTemplate });
     if (name === officeFileMeta?.name) return;
     filesystemApi.updateFile(docId, { name }).catch(() => toast.error('Failed to rename file'));
   };
@@ -1412,6 +1433,43 @@ export function DocEditor() {
     router.push(`/docs/editor?id=${newDoc.id}`);
   }, [router]);
 
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [usingTemplate, setUsingTemplate] = useState(false);
+
+  /**
+   * "Use template", from a template that is open. The copy is made from the
+   * *stored* package, so anything still waiting on the autosave timer is
+   * written first — otherwise the new document would miss the last few seconds
+   * of edits the user can see on screen.
+   */
+  const handleUseThisTemplate = useCallback(async () => {
+    if (usingTemplate) return;
+    setUsingTemplate(true);
+    try {
+      if (autoSaveTimer.current) {
+        clearTimeout(autoSaveTimer.current);
+        autoSaveTimer.current = null;
+      }
+      if (pendingContent.current !== null && isLocalWriterRef.current) {
+        pendingContent.current = null;
+        await officeAutosaveMutation.mutateAsync();
+      }
+      const id = await createDocFromTemplate({
+        userId: currentUser?.id,
+        templateId: docId,
+        title: titleRef.current || 'Untitled document',
+        folderId: officeFileMeta?.folderId ?? null,
+      });
+      router.push(`/docs/editor?id=${id}`);
+    } catch (err) {
+      if (err instanceof TemplateEncryptionUnavailableError) toast.warning(ENCRYPTION_WARNING_MESSAGE);
+      else toast.error('Could not create a document from this template');
+      setUsingTemplate(false);
+    }
+  // toast is omitted for the reason given on the office read effect above.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usingTemplate, officeAutosaveMutation, currentUser?.id, docId, officeFileMeta?.folderId, router]);
+
   const handleDuplicate = useCallback(async () => {
     if (!editor) return;
     // The copy is a new Drive row with no key of its own, so it needs one
@@ -1428,7 +1486,10 @@ export function DocEditor() {
     const dek = await mintFileKey(currentUser?.id, newDoc.id);
     // The copy is a `.docx` like its original, so it is written as a package —
     // the same bytes an autosave would write, under the new file's own name.
-    const bytes = await buildDocxPackage();
+    // Always a document, even when the original is a template: the copy is
+    // created as a `.docx`, and a package declaring itself a template under
+    // that name is one Word refuses to open.
+    const bytes = await buildDocxPackage('document');
     await driveCreateEncryptedVersionBytes(
       newDoc.id, bytes, withOoxmlExtension(copyTitle, 'docs'), dek,
     );
@@ -1943,7 +2004,7 @@ export function DocEditor() {
     console.log('[handleSaveAs] called', { opts, saveAsFormat });
     const html = pendingExportHtmlRef.current;
     console.log('[handleSaveAs] html length:', html.length);
-    const ext: Record<string, string> = { pdf: '.pdf', docx: '.docx', html: '.html', txt: '.txt' };
+    const ext: Record<string, string> = { pdf: '.pdf', docx: '.docx', dotx: '.dotx', html: '.html', txt: '.txt' };
     const filename = opts.filename.includes('.') ? opts.filename : opts.filename + (ext[saveAsFormat] ?? '');
     let blob: Blob;
 
@@ -1965,18 +2026,27 @@ export function DocEditor() {
         config: headerFooter, title, properties: docProperties,
       });
       console.log('[handleSaveAs] PDF blob built, size:', blob.size);
-    } else if (saveAsFormat === 'docx') {
+    } else if (saveAsFormat === 'docx' || saveAsFormat === 'dotx') {
       // Built from the model rather than from `html`: this is the same writer
       // the autosave uses, so an exported copy is byte-for-byte the document
       // that is stored — headers, footnotes, page setup and all. It resolves
       // its own images, so the inlined export HTML is not what it wants.
+      //
+      // A template (issue #128) is the same package declared as one. Saved to
+      // Drive it goes up under the template mime type, and that is the whole
+      // of what makes it a template there — it is listed by New from template
+      // and opens back in this editor as itself.
       if (!editor) return;
       const model: DocModel = {
         doc: editor.getJSON() as DocModel['doc'],
         meta: layoutMetaRef.current,
       };
-      const bytes = await buildDocxBytes(model, title);
-      blob = new Blob([bytes as unknown as BlobPart], { type: OFFICE_MIME.docx });
+      const docx = await buildDocxBytes(model, title);
+      const asTemplate = saveAsFormat === 'dotx';
+      const bytes = asTemplate ? await setDocxPackageKind(docx, 'template') : docx;
+      blob = new Blob([bytes as unknown as BlobPart], {
+        type: asTemplate ? OOXML_TEMPLATE_MIME.dotx : OFFICE_MIME.docx,
+      });
     } else if (saveAsFormat === 'html') {
       blob = buildHtmlBlob(title, html);
     } else {
@@ -2001,6 +2071,10 @@ export function DocEditor() {
         throw err;
       }
       console.log('[handleSaveAs] Drive upload complete');
+      if (saveAsFormat === 'dotx') {
+        queryClient.invalidateQueries({ queryKey: ['doc-templates'] });
+        toast.success(`Saved “${filename}” as a template`);
+      }
     } else {
       console.log('[handleSaveAs] downloading locally');
       downloadBlob(blob, filename);
@@ -2227,6 +2301,7 @@ export function DocEditor() {
           titleInputRef={titleInputRef}
           onSave={handleManualSave}
           onNewDoc={handleNewDoc}
+          onNewFromTemplate={() => setShowTemplatePicker(true)}
           onDuplicate={handleDuplicate}
           onImport={() => importInputRef.current?.click()}
           onExport={handleExport}
@@ -2287,6 +2362,12 @@ export function DocEditor() {
           spellCheck={false}
         />
 
+        {isTemplate && (
+          <span className={styles.templateBadge} title="This file is a Word template (.dotx)">
+            Template
+          </span>
+        )}
+
         <div className={styles.topbarActions}>
           <span className={styles.saveStatus}>
             {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'unsaved' ? 'Unsaved changes' : 'All changes saved'}
@@ -2301,6 +2382,17 @@ export function DocEditor() {
           >
             Save
           </button>
+
+          {isTemplate && (
+            <button
+              className={styles.exportBtn}
+              onClick={() => void handleUseThisTemplate()}
+              disabled={usingTemplate}
+              title="Create a new document from this template"
+            >
+              {usingTemplate ? 'Creating…' : 'Use template'}
+            </button>
+          )}
 
           <ShareButton
             users={remoteUsers.map(u => ({
@@ -2694,6 +2786,16 @@ export function DocEditor() {
         <TableCellModal
           editor={editor}
           onClose={() => setShowTableCellModal(false)}
+        />
+      )}
+
+      {showTemplatePicker && (
+        <DocTemplatePickerModal
+          onClose={() => setShowTemplatePicker(false)}
+          onCreated={(id) => {
+            setShowTemplatePicker(false);
+            router.push(`/docs/editor?id=${id}`);
+          }}
         />
       )}
 

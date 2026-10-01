@@ -10,6 +10,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   OOXML_MIME,
+  OOXML_TEMPLATE_MIME,
+  isOoxmlTemplateMime,
+  ooxmlTemplateMimeFor,
   ooxmlMimeFor,
   ooxmlAppForMime,
   isOoxmlMime,
@@ -88,5 +91,55 @@ describe('stripOoxmlExtension', () => {
 
   it('survives a round trip with withOoxmlExtension', () => {
     expect(stripOoxmlExtension(withOoxmlExtension('Q1 plan', 'sheets'))).toBe('Q1 plan');
+  });
+});
+
+/**
+ * Word templates (issue #128). A template is the same package as a document
+ * and opens in the same editor; the name and the mime type are what keep it a
+ * template, so both directions are pinned here.
+ */
+describe('Word templates', () => {
+  it('opens in Docs', () => {
+    expect(ooxmlAppForMime(OOXML_TEMPLATE_MIME.dotx)).toBe('docs');
+    expect(isOoxmlMime(OOXML_TEMPLATE_MIME.dotx)).toBe(true);
+  });
+
+  it('is told apart from a document', () => {
+    expect(isOoxmlTemplateMime(OOXML_TEMPLATE_MIME.dotx)).toBe(true);
+    expect(isOoxmlTemplateMime(OOXML_MIME.docx)).toBe(false);
+    expect(ooxmlTemplateMimeFor('docs')).toBe(OOXML_TEMPLATE_MIME.dotx);
+  });
+
+  it('has no template type for the editors that cannot keep one yet', () => {
+    // An entry here before the editor preserves the template content type on
+    // save would turn every template into a document on its first autosave.
+    expect(ooxmlTemplateMimeFor('sheets')).toBeNull();
+    expect(ooxmlTemplateMimeFor('slides')).toBeNull();
+  });
+
+  it('is named with .dotx, and only when asked', () => {
+    expect(withOoxmlExtension('Letterhead', 'docs', { template: true })).toBe('Letterhead.dotx');
+    expect(withOoxmlExtension('Letterhead.dotx', 'docs', { template: true })).toBe('Letterhead.dotx');
+    expect(withOoxmlExtension('Letterhead', 'docs')).toBe('Letterhead.docx');
+  });
+
+  it('falls back to the document extension for an app with no template type', () => {
+    expect(withOoxmlExtension('Budget', 'sheets', { template: true })).toBe('Budget.xlsx');
+  });
+
+  it('has its extension taken off for the title', () => {
+    expect(stripOoxmlExtension('Letterhead.dotx')).toBe('Letterhead');
+    expect(stripOoxmlExtension(withOoxmlExtension('Memo', 'docs', { template: true }))).toBe('Memo');
+  });
+});
+
+describe('isTemplateFile', () => {
+  it('knows a template by its mime type or, failing that, its name', async () => {
+    const { isTemplateFile } = await import('@/lib/officeFormats');
+    expect(isTemplateFile(OOXML_TEMPLATE_MIME.dotx, 'Letterhead.dotx')).toBe(true);
+    // What a browser that does not know the extension reports for an upload.
+    expect(isTemplateFile('application/octet-stream', 'Letterhead.dotx')).toBe(true);
+    expect(isTemplateFile(OOXML_MIME.docx, 'Report.docx')).toBe(false);
   });
 });

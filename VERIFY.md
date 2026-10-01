@@ -224,3 +224,57 @@ Design: `agent_docs/recurrence-exceptions.md`. Companion PR: `neutrino_calendar_
 
 ## Cleanup
 Delete this section once recurrence exceptions are proven stable; the Team Spaces steps above have their own cleanup.
+
+---
+
+# Manual Verification: Templates for Docs (issue #128)
+
+## Prerequisites
+- Stack running locally via docker-compose-dev.yml
+- A signed-in account with encryption set up (Settings → Security)
+- Microsoft Word or LibreOffice on the machine, for the download check
+
+## Steps
+
+### Happy Path
+1. Open http://localhost:9880/docs and create a document. Type a heading and a
+   paragraph, add a footer (Format → Header & footer…) and set landscape in
+   File → Page setup….
+2. File → Export as… → **Word template (.dotx)**. Choose **Neutrino Drive**, keep
+   My Drive, click **Save to Drive**.
+   → A toast says the file was saved as a template. My Drive shows `<name>.dotx`.
+3. Go back to http://localhost:9880/docs and click **New from template**.
+   → The dialog lists the template, preselected, with its name in
+   "Document name".
+4. Change the name and click **Create**.
+   → The editor opens a new document with that title, holding the heading,
+   paragraph, footer and landscape page setup. No "Template" badge is shown.
+5. In the new document, File → **New from template…**.
+   → The same dialog opens from inside the editor.
+6. Open the `.dotx` from My Drive.
+   → It opens in the Docs editor with a **Template** badge by the title and a
+   **Use template** button. Edit it; the save status returns to
+   "All changes saved". Rename it from the title field.
+   → Drive shows the new name still ending in `.dotx`.
+7. Click **Use template**.
+   → A new document opens with the template's content, including the edit made
+   in step 6.
+
+### Edge Cases
+1. No templates: a fresh account → /docs → New from template → the dialog says
+   how to make one, and Create is disabled.
+2. Download: File → Export as… → Word template (.dotx) → **Download**. Open the
+   file in Word or LibreOffice.
+   → It opens as a template (Word: a new untitled document based on it), not
+   with a "file is corrupt" error.
+3. Upload a `.dotx` made in Word to Drive, then New from template.
+   → It is listed and a document created from it carries its content.
+4. Duplicate a template (File → Duplicate while it is open).
+   → The copy is a `.docx` document, and opens in Word without error after
+   download.
+5. Locked vault: sign in on a new browser without unlocking the key, then
+   New from template → Create.
+   → An encryption warning appears and no empty document is created.
+
+## Cleanup
+Delete this section once templates are proven stable; the Team Spaces section above has its own condition.
