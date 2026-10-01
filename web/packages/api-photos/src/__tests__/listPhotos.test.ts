@@ -20,7 +20,7 @@ vi.mock('@neutrino/api-core', () => ({
   ApiClientError: class ApiClientError extends Error {},
 }));
 
-import { photosApi } from '../index';
+import { photosApi, type PhotoResponse } from '../index';
 import { storageApi } from '@neutrino/api-drive';
 import { request } from '@neutrino/api-core';
 
@@ -46,9 +46,55 @@ function listing(items: FileItem[], total = items.length) {
   return { items, total, page: 1, pageSize: 200, totalPages: 1 };
 }
 
+function photoRecord(overrides: Partial<PhotoResponse> = {}): PhotoResponse {
+  return {
+    id: 'photo-1',
+    fileId: 'file-1',
+    fileName: 'sunset.jpg',
+    mimeType: 'image/jpeg',
+    sizeBytes: 2048,
+    contentUrl: '/api/v1/drive/files/file-1',
+    thumbnailUrl: null,
+    isStarred: false,
+    isArchived: false,
+    captureDate: '2019-06-27T13:02:16',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-02T00:00:00Z',
+    deletedAt: null,
+    metadata: null,
+    ...overrides,
+  };
+}
+
+describe('photosApi.ensureRegistered', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('passes a registered photo straight through', async () => {
+    const photo = photoRecord();
+    expect(await photosApi.ensureRegistered(photo)).toBe(photo);
+    expect(mockRequest).not.toHaveBeenCalled();
+  });
+
+  it('registers a Drive-only picture by its file id and answers with the record', async () => {
+    mockRequest.mockResolvedValue(photoRecord({ id: 'photo-new', fileId: 'file-7' }));
+
+    const registered = await photosApi.ensureRegistered(
+      { ...photoRecord({ id: 'file-7', fileId: 'file-7' }), isDriveOnly: true },
+    );
+
+    expect(mockRequest).toHaveBeenCalledWith('/api/v1/photos', {
+      method: 'POST',
+      body: JSON.stringify({ fileId: 'file-7' }),
+    });
+    expect(registered.id).toBe('photo-new');
+  });
+});
+
 describe('photosApi.listPhotos', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // No file has a photo record unless a test says otherwise.
+    mockRequest.mockResolvedValue({ photos: [], total: 0 });
   });
 
   /**
@@ -65,7 +111,7 @@ describe('photosApi.listPhotos', () => {
     expect(listFiles).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'photo' }),
     );
-    expect(mockRequest).not.toHaveBeenCalled();
+    expect(mockRequest).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/v1\/photos\?/));
   });
 
   /** A photo inside a folder is still the caller's photo. */
@@ -112,8 +158,55 @@ describe('photosApi.listPhotos', () => {
         // in the trash.
         deletedAt: null,
         metadata: null,
+        isDriveOnly: true,
       },
     ]);
+  });
+
+  /**
+   * A Drive file id is not a photo id. Every star, archive, trash and faces
+   * request on this tab used to send the file id and get "Photo not found".
+   */
+  it('swaps each file for its photo record, so the item carries the photo id', async () => {
+    listFiles.mockResolvedValue(listing([fileItem({ id: 'file-1' }), fileItem({ id: 'file-2' })]));
+    mockRequest.mockResolvedValue({
+      photos: [photoRecord({ id: 'photo-9', fileId: 'file-2' })],
+      total: 1,
+    });
+
+    const result = await photosApi.listPhotos();
+
+    expect(mockRequest).toHaveBeenCalledWith('/api/v1/photos/by-files', {
+      method: 'POST',
+      body: JSON.stringify({ fileIds: ['file-1', 'file-2'] }),
+    });
+    expect(result.photos.map((p) => [p.id, p.fileId, p.isDriveOnly ?? false])).toEqual([
+      ['file-1', 'file-1', true],
+      ['photo-9', 'file-2', false],
+    ]);
+  });
+
+  /** The Drive listing knows nothing of archiving; the record does. */
+  it('leaves archived photos out of the grid and out of the total', async () => {
+    listFiles.mockResolvedValue(listing([fileItem({ id: 'live' }), fileItem({ id: 'shelved' })], 50));
+    mockRequest.mockResolvedValue({
+      photos: [photoRecord({ id: 'p-shelved', fileId: 'shelved', isArchived: true })],
+      total: 1,
+    });
+
+    const result = await photosApi.listPhotos();
+
+    expect(result.photos.map((p) => p.fileId)).toEqual(['live']);
+    expect(result.total).toBe(49);
+  });
+
+  it('asks for records in chunks the server accepts', async () => {
+    const ids = Array.from({ length: 1200 }, (_, i) => `f${i}`);
+
+    await photosApi.listPhotosByFiles(ids);
+
+    const bodies = mockRequest.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).fileIds.length);
+    expect(bodies).toEqual([500, 500, 200]);
   });
 
   it('returns an empty list when the drive has no photos', async () => {

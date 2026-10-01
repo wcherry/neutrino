@@ -17,6 +17,8 @@ export function FacesPanel({ photo, onClose, onHoverFace }: Props) {
     queryKey: ['faces', photo.id],
     queryFn: () => facesApi.listFaces(photo.id),
     staleTime: 60_000,
+    // No photo record, so no faces — and a Drive file id the route does not know.
+    enabled: !photo.isDriveOnly,
   });
 
   const faces = data?.faces ?? [];

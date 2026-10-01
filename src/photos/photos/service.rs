@@ -56,6 +56,19 @@ impl PhotosService {
             return Err(ApiError::not_found("File is in trash"));
         }
 
+        // A file already registered answers with its record rather than gaining a second one. The
+        // web registers a picture lazily — the first time someone stars, archives or trashes one
+        // that reached Drive without a record — and two tabs, or a retry after a dropped response,
+        // must not leave the library holding the same picture twice.
+        if let Some(existing) = self
+            .repo
+            .find_live_photos_by_file_ids(&user.user_id, std::slice::from_ref(&req.file_id))?
+            .into_iter()
+            .next()
+        {
+            return Ok(self.to_response(existing, Some(&file)));
+        }
+
         let capture_date = req
             .capture_date
             .as_deref()
@@ -450,6 +463,33 @@ impl PhotosService {
                 .await
                 .ok();
             responses.push(self.to_response(photo, file.as_ref()));
+        }
+        let total = responses.len();
+        Ok(ListPhotosResponse {
+            photos: responses,
+            total,
+        })
+    }
+
+    /// The caller's photo records for these Drive files — see
+    /// `PhotosRepository::find_live_photos_by_file_ids`. Files with no record are left out, so the
+    /// caller can tell a registered picture from one that is only in Drive.
+    pub async fn list_photos_by_file_ids(
+        &self,
+        user: &AuthenticatedUser,
+        file_ids: &[String],
+    ) -> Result<ListPhotosResponse, ApiError> {
+        let records = self
+            .repo
+            .find_live_photos_by_file_ids(&user.user_id, file_ids)?;
+        let mut responses = Vec::with_capacity(records.len());
+        for record in records {
+            let file = self
+                .drive
+                .get_file(user, &record.file_id, "File not found")
+                .await
+                .ok();
+            responses.push(self.to_response(record, file.as_ref()));
         }
         let total = responses.len();
         Ok(ListPhotosResponse {

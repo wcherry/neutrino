@@ -108,6 +108,34 @@ impl PhotosRepository {
             })
     }
 
+    /// The caller's live photo records for these Drive files, in no particular order. A file with
+    /// no record (a picture uploaded through Drive and never registered) is simply absent.
+    ///
+    /// For clients that list the library from Drive — the web does, so that pictures nobody
+    /// registered still show — and need each file's photo id before they can star, archive or trash
+    /// it. Live and archived records both count; a trashed one does not, matching `get_photo`.
+    pub fn find_live_photos_by_file_ids(
+        &self,
+        user_id: &str,
+        file_ids: &[String],
+    ) -> Result<Vec<PhotoRecord>, ApiError> {
+        if file_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut conn = self.get_conn()?;
+        photos::table
+            .filter(photos::user_id.eq(user_id))
+            .filter(photos::file_id.eq_any(file_ids))
+            .filter(photos::deleted_at.is_null())
+            .order((photos::created_at.asc(), photos::id.asc()))
+            .select(PhotoRecord::as_select())
+            .load(&mut conn)
+            .map_err(|e| {
+                tracing::error!("DB find photos by file ids error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
     pub fn list_photos(
         &self,
         user_id: &str,
@@ -607,6 +635,31 @@ mod tests {
         .bind::<diesel::sql_types::Text, _>(format!("file-{}", id))
         .execute(&mut conn)
         .expect("insert photo");
+    }
+
+    #[test]
+    fn finds_live_photos_by_file_id_for_the_caller_only() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo(&pool, "mine", "u1", false);
+        insert_photo(&pool, "trashed", "u1", true);
+        insert_photo(&pool, "theirs", "u2", false);
+
+        let found = repo
+            .find_live_photos_by_file_ids(
+                "u1",
+                &[
+                    "file-mine".to_string(),
+                    "file-trashed".to_string(),
+                    "file-theirs".to_string(),
+                    "file-unregistered".to_string(),
+                ],
+            )
+            .expect("find");
+
+        let ids: Vec<&str> = found.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["mine"]);
+        assert!(repo.find_live_photos_by_file_ids("u1", &[]).expect("empty").is_empty());
     }
 
     fn add_to_album(pool: &DbPool, album_id: &str, photo_id: &str) {

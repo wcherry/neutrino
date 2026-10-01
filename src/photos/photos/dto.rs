@@ -2,6 +2,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
 
+/// Which Drive files to look up photo records for. See `POST /api/v1/photos/by-files`.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PhotosByFilesRequest {
+    pub file_ids: Vec<String>,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterPhotoRequest {
