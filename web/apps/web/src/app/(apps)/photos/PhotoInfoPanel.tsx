@@ -74,7 +74,9 @@ export function PhotoInfoPanel({
     queryKey: ['faces', photo.id],
     queryFn: () => facesApi.listFaces(photo.id),
     staleTime: 60_000,
-    enabled: photo.mimeType.startsWith('image/'),
+    // A picture with no photo record has no faces to list, and its id is a
+    // Drive file id the faces route does not know.
+    enabled: photo.mimeType.startsWith('image/') && !photo.isDriveOnly,
   });
   const faces = facesQuery.data?.faces ?? [];
 

@@ -1,7 +1,8 @@
 use crate::photos::photos::{
     dto::{
         BackedUpPhotosResponse, ListPhotosResponse, MemoriesResponse, PhotoEditParams,
-        PhotoEditResponse, PhotoResponse, RegisterPhotoRequest, SetupLockedFolderRequest,
+        PhotoEditResponse, PhotoResponse, PhotosByFilesRequest, RegisterPhotoRequest,
+        SetupLockedFolderRequest,
         ShareSettingsRequest, UnlockFolderRequest, UnlockTokenResponse, UpdatePhotoRequest,
         YearInReviewResponse,
     },
@@ -164,6 +165,46 @@ pub async fn register_photo(
         .register_photo(&user, body.into_inner())
         .await?;
     Ok(HttpResponse::Created().json(photo))
+}
+
+/// Most file ids one `POST /photos/by-files` may ask about — a library page, with room to spare.
+const MAX_FILE_IDS_PER_LOOKUP: usize = 500;
+
+/// Look up the photo records behind a set of Drive files.
+///
+/// The web lists the library from Drive, so that pictures which reached Drive without being
+/// registered (a phone's Drive backup) still show. A Drive file id is not a photo id, though, and
+/// every photo route wants the latter — asking `/photos/{fileId}` is a 404. This answers, for one
+/// page of files, which have a record and what its id is. Files with no record are left out.
+#[utoipa::path(
+    post,
+    path = "/api/v1/photos/by-files",
+    request_body = PhotosByFilesRequest,
+    responses(
+        (status = 200, description = "The caller's records for those files", body = ListPhotosResponse),
+        (status = 400, description = "Too many file ids"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "photos"
+)]
+#[post("/photos/by-files")]
+pub async fn list_photos_by_files(
+    state: web::Data<PhotosApiState>,
+    user: AuthenticatedUser,
+    body: web::Json<PhotosByFilesRequest>,
+) -> Result<web::Json<ListPhotosResponse>, ApiError> {
+    let file_ids = body.into_inner().file_ids;
+    if file_ids.len() > MAX_FILE_IDS_PER_LOOKUP {
+        return Err(ApiError::bad_request(format!(
+            "At most {} file ids per request",
+            MAX_FILE_IDS_PER_LOOKUP
+        )));
+    }
+    let photos = state
+        .photos_service
+        .list_photos_by_file_ids(&user, &file_ids)
+        .await?;
+    Ok(web::Json(photos))
 }
 
 /// Fetch one photo's library record.
@@ -724,6 +765,7 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
         .service(unlock_locked_folder)
         .service(list_photos)
         .service(register_photo)
+        .service(list_photos_by_files)
         .service(get_photo)
         .service(update_photo)
         .service(trash_photo)
@@ -743,6 +785,7 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
     paths(
         list_photos,
         register_photo,
+        list_photos_by_files,
         get_photo,
         update_photo,
         trash_photo,
@@ -766,6 +809,7 @@ pub fn configure_photos(cfg: &mut web::ServiceConfig) {
     ),
     components(schemas(
         RegisterPhotoRequest,
+        PhotosByFilesRequest,
         UpdatePhotoRequest,
         PhotoResponse,
         ListPhotosResponse,

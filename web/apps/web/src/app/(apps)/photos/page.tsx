@@ -367,20 +367,28 @@ export default function PhotosPage() {
     },
   });
 
+  // A picture that reached Drive without a photo record has no photo id yet —
+  // see `PhotoResponse.isDriveOnly`. Registering it first is what lets a star,
+  // an archive or a trash reach it at all.
   const starMutation = useMutation({
-    mutationFn: (photo: PhotoResponse) =>
-      photosApi.updatePhoto(photo.id, { isStarred: !photo.isStarred }),
+    mutationFn: async (photo: PhotoResponse) => {
+      const target = await photosApi.ensureRegistered(photo);
+      return photosApi.updatePhoto(target.id, { isStarred: !photo.isStarred });
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['photos'] }),
   });
 
   const archiveMutation = useMutation({
-    mutationFn: (photo: PhotoResponse) =>
-      photosApi.updatePhoto(photo.id, { isArchived: !photo.isArchived }),
+    mutationFn: async (photo: PhotoResponse) => {
+      const target = await photosApi.ensureRegistered(photo);
+      return photosApi.updatePhoto(target.id, { isArchived: !photo.isArchived });
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['photos'] }),
   });
 
   const trashMutation = useMutation({
-    mutationFn: (photo: PhotoResponse) => photosApi.trashPhoto(photo.id),
+    mutationFn: async (photo: PhotoResponse) =>
+      photosApi.trashPhoto((await photosApi.ensureRegistered(photo)).id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['photos'] }),
   });
 

@@ -58,6 +58,13 @@ export interface PhotoResponse {
   deletedAt: string | null;
   /** Extracted image metadata; null until the worker has processed the photo */
   metadata: PhotoMetadata | null;
+  /**
+   * Client-side only: this picture is in Drive but has no photo record, so
+   * `id` is its Drive file id and no `/api/v1/photos/{id}` route knows it.
+   * Pass it through `photosApi.ensureRegistered` before starring, archiving,
+   * trashing or asking for its faces. Never set by the server.
+   */
+  isDriveOnly?: boolean;
 }
 
 export interface ListPhotosResponse {
@@ -359,6 +366,9 @@ function fileToPhoto(file: FileItem): PhotoResponse {
  */
 const LIBRARY_PAGE_SIZE = 200;
 
+/** Most file ids one `POST /api/v1/photos/by-files` takes. */
+const BY_FILES_CHUNK = 500;
+
 export const photosApi = {
   async listPhotos(opts?: {
     archivedOnly?: boolean;
@@ -387,7 +397,29 @@ export const photosApi = {
         orderBy: 'createdAt',
         direction: 'desc',
       });
-      return { photos: items.map(fileToPhoto), total };
+      // A Drive file id is not a photo id. Listing from Drive is what keeps
+      // pictures nobody registered in the library, but every photo route
+      // wants the record's own id — starring, archiving, trashing or opening
+      // the faces of a file id was a 404 ("Photo not found") for every item on
+      // this tab. So each file is swapped for its record where it has one, and
+      // the rest are marked as Drive-only for `ensureRegistered`.
+      const records = await photosApi.listPhotosByFiles(items.map((f) => f.id));
+      const byFile = new Map(records.map((r) => [r.fileId, r]));
+      const photos: PhotoResponse[] = [];
+      let archived = 0;
+      for (const file of items) {
+        const record = byFile.get(file.id);
+        if (!record) {
+          photos.push({ ...fileToPhoto(file), isDriveOnly: true });
+        } else if (record.isArchived) {
+          // Archiving hides a photo from this grid — the Drive listing does
+          // not know about archiving, so it is applied here.
+          archived += 1;
+        } else {
+          photos.push(record);
+        }
+      }
+      return { photos, total: total - archived };
     }
 
     const qs = buildQuery({
@@ -426,6 +458,34 @@ export const photosApi = {
       method: 'POST',
       body: JSON.stringify(body),
     });
+  },
+
+  /**
+   * The photo records behind these Drive files. Files with no record are
+   * left out. Asked in chunks the server accepts (`POST /photos/by-files`
+   * takes at most 500 ids).
+   */
+  async listPhotosByFiles(fileIds: string[]): Promise<PhotoResponse[]> {
+    const found: PhotoResponse[] = [];
+    for (let i = 0; i < fileIds.length; i += BY_FILES_CHUNK) {
+      const { photos } = await request<ListPhotosResponse>('/api/v1/photos/by-files', {
+        method: 'POST',
+        body: JSON.stringify({ fileIds: fileIds.slice(i, i + BY_FILES_CHUNK) }),
+      });
+      found.push(...photos);
+    }
+    return found;
+  },
+
+  /**
+   * The photo record for `photo`, registering it first if it is only in
+   * Drive. Registering is idempotent on the server — a file that already has
+   * a record answers with it — so a retry or a second tab cannot add the same
+   * picture twice.
+   */
+  async ensureRegistered(photo: PhotoResponse): Promise<PhotoResponse> {
+    if (!photo.isDriveOnly) return photo;
+    return photosApi.registerPhoto({ fileId: photo.fileId });
   },
 
   async getPhoto(photoId: string): Promise<PhotoResponse> {

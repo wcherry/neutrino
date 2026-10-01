@@ -548,6 +548,18 @@ export function SlideEditor() {
         // here: it awaits the in-flight resolution, and when none has *started*
         // it returns the same empty ref immediately.)
         const dek = dekRef.current;
+        // Ciphertext, and no key to open it with — yet. After a full page load
+        // the keyring is restored from this device's store asynchronously, and
+        // until it is, `useEncryptedDocumentContent` reports "resolved" with no
+        // key; it flips back and resolves for real a moment later. Reading on
+        // that first signal parsed ciphertext as a deck, failed, and — the load
+        // being one-shot — never read again, so a reopened presentation showed
+        // the default deck and the first edit wrote that over the real one.
+        // Re-arming here lets the resolution that follows read it properly.
+        if (stored.byteLength > 0 && !dek && !looksLikeOoxml(stored)) {
+          officeContentLoadStartedRef.current = false;
+          return;
+        }
         // Whether the stored bytes are ciphertext is read off the bytes, the
         // same way `readStoredWorkbook` does it for sheets. Asking
         // `isNewEncryption` reads the *session* rather than the file, and is
@@ -604,7 +616,16 @@ export function SlideEditor() {
         if (!cancelled) toast.error('Failed to open this file for editing');
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // A load cancelled before it applied anything has to be allowed to run
+      // again. The key hook re-resolves after a full page load (the keyring is
+      // restored a moment after mount), and that flip of `dekResolved` lands
+      // here mid-read: the read quits at its next `cancelled` check, and with
+      // the one-shot flag still set nothing ever read the deck — it opened as
+      // the default presentation, plaintext and encrypted files alike.
+      if (!contentAppliedRef.current) officeContentLoadStartedRef.current = false;
+    };
   // toast is intentionally omitted — a fresh identity on every render would
   // otherwise cancel this one-shot load via the cleanup function above.
   // eslint-disable-next-line react-hooks/exhaustive-deps
