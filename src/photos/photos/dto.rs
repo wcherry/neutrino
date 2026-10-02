@@ -29,6 +29,12 @@ pub struct RegisterPhotoRequest {
 pub struct UpdatePhotoRequest {
     pub is_starred: Option<bool>,
     pub is_archived: Option<bool>,
+    /// A corrected capture date, as RFC 3339 (`2024-06-01T09:30:00Z`, any offset). Stored in UTC,
+    /// which is how every response already reports it. Omitted leaves the date alone.
+    ///
+    /// For the photograph whose camera clock was wrong, or a scan with no date of its own — the
+    /// timeline sorts on this, so it is the one piece of metadata whose edit moves the photo.
+    pub capture_date: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

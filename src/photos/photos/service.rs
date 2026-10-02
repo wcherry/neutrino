@@ -278,14 +278,17 @@ impl PhotosService {
         req: UpdatePhotoRequest,
     ) -> Result<PhotoResponse, ApiError> {
         let photo = self.repo.get_photo(photo_id)?;
-        if photo.user_id != user.user_id {
-            return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
-        }
+        ensure_owner(&photo, user)?;
 
         let changes = UpdatePhotoRecord {
             is_starred: req.is_starred,
             is_archived: req.is_archived,
             deleted_at: None,
+            capture_date: req
+                .capture_date
+                .as_deref()
+                .map(parse_edited_capture_date)
+                .transpose()?,
             updated_at: Utc::now().naive_utc(),
         };
         let updated = self.repo.update_photo(photo_id, changes)?;
@@ -309,6 +312,7 @@ impl PhotosService {
             is_starred: None,
             is_archived: None,
             deleted_at: Some(Some(Utc::now().naive_utc())),
+            capture_date: None,
             updated_at: Utc::now().naive_utc(),
         };
         self.repo.update_photo(photo_id, changes)?;
@@ -331,6 +335,7 @@ impl PhotosService {
             is_starred: None,
             is_archived: None,
             deleted_at: Some(None),
+            capture_date: None,
             updated_at: Utc::now().naive_utc(),
         };
         let updated = self.repo.update_photo(photo_id, changes)?;
@@ -436,10 +441,19 @@ impl PhotosService {
         Ok(())
     }
 
-    pub fn save_metadata(&self, photo_id: &str, metadata: String) -> Result<(), ApiError> {
+    /// Replaces a photo's metadata document. The caller's own photos only — the metadata index is
+    /// not encrypted, and before this checked, any signed-in account could overwrite any other
+    /// account's by id.
+    pub fn save_metadata(
+        &self,
+        user: &AuthenticatedUser,
+        photo_id: &str,
+        metadata: String,
+    ) -> Result<(), ApiError> {
         let _: serde_json::Value = serde_json::from_str(&metadata)
             .map_err(|_| ApiError::bad_request("Invalid JSON metadata"))?;
-        self.repo.get_photo_including_deleted(photo_id)?;
+        let photo = self.repo.get_photo_including_deleted(photo_id)?;
+        ensure_owner(&photo, user)?;
         self.repo.set_metadata(photo_id, metadata)
     }
 
@@ -816,5 +830,84 @@ impl PhotosService {
             });
         }
         Ok(BackedUpPhotosResponse { photos })
+    }
+}
+
+/// 403 unless the photo is the caller's. Photos are never shared through this API, so there is no
+/// second kind of access to consider.
+fn ensure_owner(photo: &PhotoRecord, user: &AuthenticatedUser) -> Result<(), ApiError> {
+    if photo.user_id != user.user_id {
+        return Err(ApiError::new(403, "FORBIDDEN", "Access denied"));
+    }
+    Ok(())
+}
+
+/// An edited capture date: RFC 3339 with any offset, stored as the UTC instant it names.
+///
+/// Stricter than registration, which tolerates an unparseable date by storing none. There the date
+/// came out of a file and a bad one is the file's problem; here a person typed it, and silently
+/// dropping it would leave them looking at the old date with no idea why.
+fn parse_edited_capture_date(value: &str) -> Result<chrono::NaiveDateTime, ApiError> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|date| date.naive_utc())
+        .map_err(|_| ApiError::bad_request("captureDate must be an RFC 3339 date-time"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user(id: &str) -> AuthenticatedUser {
+        AuthenticatedUser {
+            user_id: id.to_string(),
+            email: format!("{}@example.com", id),
+            token: String::new(),
+            is_admin: false,
+        }
+    }
+
+    fn photo_owned_by(user_id: &str) -> PhotoRecord {
+        let now = Utc::now().naive_utc();
+        PhotoRecord {
+            id: "photo-1".to_string(),
+            user_id: user_id.to_string(),
+            file_id: "file-1".to_string(),
+            is_starred: false,
+            is_archived: false,
+            deleted_at: None,
+            capture_date: None,
+            created_at: now,
+            updated_at: now,
+            metadata: None,
+            is_locked: 0,
+            strip_gps: 0,
+        }
+    }
+
+    #[test]
+    fn only_the_owner_passes() {
+        assert!(ensure_owner(&photo_owned_by("u1"), &user("u1")).is_ok());
+        let refused = ensure_owner(&photo_owned_by("u1"), &user("u2")).unwrap_err();
+        assert_eq!(refused.status, 403);
+    }
+
+    #[test]
+    fn an_edited_date_is_stored_as_its_utc_instant() {
+        let parsed = parse_edited_capture_date("2024-06-01T09:30:00-07:00").expect("parses");
+        assert_eq!(parsed.to_string(), "2024-06-01 16:30:00");
+        let utc = parse_edited_capture_date("2024-06-01T09:30:00Z").expect("parses");
+        assert_eq!(utc.to_string(), "2024-06-01 09:30:00");
+    }
+
+    #[test]
+    fn a_date_that_is_not_rfc_3339_is_refused_rather_than_dropped() {
+        assert_eq!(
+            parse_edited_capture_date("June 2024").unwrap_err().status,
+            400
+        );
+        assert_eq!(
+            parse_edited_capture_date("2024-06-01").unwrap_err().status,
+            400
+        );
     }
 }
