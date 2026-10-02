@@ -18,7 +18,8 @@ git -C /Users/williamcherry/Playground/getneutrino.app/<repo> checkout -b featur
   `/Users/williamcherry/Playground/getneutrino.app/`. Candidates: `neutrino` (Rust backend + `web/`
   monorepo + `e2e/` + `worker/`), `neutrino_shared_ios`, `neutrino_docs_ios_mobile`,
   `neutrino_drive_ios_mobile`, `neutrino_notes_ios_mobile`, `neutrino_photos_ios_mobile`,
-  `neutrino_sheets_ios_mobile`, `neutrino_slides_ios_mobile`, `neutrino_drive_mac_desktop`.
+  `neutrino_sheets_ios_mobile`, `neutrino_slides_ios_mobile`, `neutrino_calendar_ios_mobile`,
+  `neutrino_drive_mac_desktop`.
 - Do NOT create branches in repos that require no changes.
 - Confirm the branch was created in each repo before proceeding.
 
