@@ -1,3 +1,4 @@
+use crate::calendar::calendars::store as calendars;
 use crate::calendar::events::{
     attendees::AttendeesRepository,
     dto::{
@@ -67,26 +68,35 @@ impl EventsService {
     ) -> Result<EventResponse, ApiError> {
         let now = Utc::now().naive_utc();
         let id = Uuid::new_v4().to_string();
-        let record = NewEventRecord {
-            id: id.clone(),
-            user_id: user.user_id.clone(),
-            title: req.title,
-            description: req.description,
-            start_time: parse_dt(&req.start_time)?,
-            end_time: parse_dt(&req.end_time)?,
-            all_day: req.all_day,
-            location: req.location,
-            recurrence_rule: req.recurrence_rule,
-            external_id: None,
-            source: "local".to_string(),
-            created_at: now,
-            updated_at: now,
-            timezone: req.timezone,
-            recurring_event_id: None,
-            original_start_time: None,
-            cancelled: false,
-        };
-        let saved = self.repo.insert(record)?;
+        let start_time = parse_dt(&req.start_time)?;
+        let end_time = parse_dt(&req.end_time)?;
+        let saved = self.repo.transaction(|conn| {
+            let calendar_id =
+                calendars::for_new_event(conn, &user.user_id, req.calendar_id.as_deref(), now)?;
+            series::insert(
+                conn,
+                NewEventRecord {
+                    id: id.clone(),
+                    user_id: user.user_id.clone(),
+                    title: req.title.clone(),
+                    description: req.description.clone(),
+                    start_time,
+                    end_time,
+                    all_day: req.all_day,
+                    location: req.location.clone(),
+                    recurrence_rule: req.recurrence_rule.clone(),
+                    external_id: None,
+                    source: "local".to_string(),
+                    created_at: now,
+                    updated_at: now,
+                    timezone: req.timezone.clone(),
+                    recurring_event_id: None,
+                    original_start_time: None,
+                    cancelled: false,
+                    calendar_id: Some(calendar_id),
+                },
+            )
+        })?;
         self.attendees_repo.replace_for_event(&id, &req.attendees)?;
         let attendees = self.attendees_repo.find_by_event(&id).unwrap_or_default();
         Ok(event_to_response(saved, attendees))
@@ -104,6 +114,9 @@ impl EventsService {
     /// Edits an event. For a series that is "all events": its exceptions are brought along with
     /// the change (`series::reconcile`). An exception is edited as itself, and can't be given a
     /// rule of its own.
+    ///
+    /// A `calendarId` moves the event, and a series' exceptions with it; an exception can't move
+    /// apart from its series. Nothing in a read-only calendar can be edited, or moved into one.
     pub fn update_event(
         &self,
         user: &AuthenticatedUser,
@@ -111,16 +124,26 @@ impl EventsService {
         req: UpdateEventRequest,
     ) -> Result<EventResponse, ApiError> {
         let now = Utc::now().naive_utc();
-        let changes = changes_from(&req, now)?;
+        let mut changes = changes_from(&req, now)?;
         let updated = self.repo.transaction(|conn| {
             let before = series::find_live(conn, event_id, &user.user_id)?;
+            calendars::ensure_writable(conn, &user.user_id, before.calendar_id.as_deref())?;
             if before.is_exception() && sets_rule(&req) {
                 return Err(ApiError::bad_request(
                     "One occurrence of a repeating event can't repeat",
                 ));
             }
+            let moved_to = match moves_calendar(&before, &req) {
+                Some(_) if before.is_exception() => return Err(one_occurrence_cant_move()),
+                Some(target) => Some(calendars::writable_target(conn, &user.user_id, target)?),
+                None => None,
+            };
+            changes.calendar_id = moved_to.clone().map(Some);
             let old_attendees = series::attendees_of(conn, event_id)?;
             let after = series::update(conn, event_id, &changes)?;
+            if let Some(calendar_id) = &moved_to {
+                series::move_exceptions(conn, event_id, calendar_id, now)?;
+            }
             if let Some(emails) = &req.attendees {
                 series::replace_attendees(conn, event_id, emails)?;
             }
@@ -160,6 +183,7 @@ impl EventsService {
         let now = Utc::now().naive_utc();
         self.repo.transaction(|conn| {
             let record = series::find_live(conn, event_id, &user.user_id)?;
+            calendars::ensure_writable(conn, &user.user_id, record.calendar_id.as_deref())?;
             if record.is_exception() {
                 let cancel = UpdateEventRecord {
                     cancelled: Some(true),
@@ -221,6 +245,9 @@ impl EventsService {
         changes.cancelled = Some(false);
         let updated = self.repo.transaction(|conn| {
             let series = self.live_series(conn, series_id, &user.user_id)?;
+            if moves_calendar(&series, &req).is_some() {
+                return Err(one_occurrence_cant_move());
+            }
             let exception = series::exception_for(conn, &series, original, now)?;
             let updated = series::update(conn, &exception.id, &changes)?;
             if let Some(emails) = &req.attendees {
@@ -286,6 +313,10 @@ impl EventsService {
                 None => start + length,
             };
             let series_attendees = series::attendees_of(conn, series_id)?;
+            let calendar_id = match changes.calendar_id.as_deref().filter(|id| !id.is_empty()) {
+                Some(target) => Some(calendars::writable_target(conn, &user.user_id, target)?),
+                None => series.calendar_id.clone(),
+            };
 
             let new_id = Uuid::new_v4().to_string();
             let created = series::insert(
@@ -318,6 +349,7 @@ impl EventsService {
                     recurring_event_id: None,
                     original_start_time: None,
                     cancelled: false,
+                    calendar_id,
                 },
             )?;
             let attendees = changes
@@ -366,7 +398,8 @@ impl EventsService {
         Ok(self.response(created))
     }
 
-    /// A series an occurrence can be taken from: live, repeating, and not itself an exception.
+    /// A series an occurrence can be taken from: live, repeating, not itself an exception, and
+    /// not in a read-only calendar.
     fn live_series(
         &self,
         conn: &mut diesel::SqliteConnection,
@@ -377,6 +410,7 @@ impl EventsService {
         if series.is_exception() || !series.is_recurring() {
             return Err(ApiError::bad_request("Not a repeating event"));
         }
+        calendars::ensure_writable(conn, user_id, series.calendar_id.as_deref())?;
         Ok(series)
     }
 
@@ -446,6 +480,17 @@ fn changes_from(
     })
 }
 
+/// The calendar `req` moves `event` to, when it names one other than the event's own.
+fn moves_calendar<'a>(event: &EventRecord, req: &'a UpdateEventRequest) -> Option<&'a str> {
+    req.calendar_id
+        .as_deref()
+        .filter(|id| !id.is_empty() && Some(*id) != event.calendar_id.as_deref())
+}
+
+fn one_occurrence_cant_move() -> ApiError {
+    ApiError::bad_request("One occurrence of a repeating event can't move to another calendar")
+}
+
 fn sets_rule(req: &UpdateEventRequest) -> bool {
     req.recurrence_rule
         .as_deref()
@@ -479,6 +524,7 @@ fn event_to_response(r: EventRecord, attendees: Vec<String>) -> EventResponse {
             .original_start_time
             .map(|t| t.format("%Y-%m-%dT%H:%M:%SZ").to_string()),
         cancelled: r.cancelled,
+        calendar_id: r.calendar_id,
     }
 }
 
@@ -526,6 +572,7 @@ mod tests {
                 recurrence_rule: None,
                 attendees: vec!["ada@example.com".into()],
                 timezone: None,
+                calendar_id: None,
             },
         )
         .expect("create")
@@ -693,6 +740,7 @@ mod tests {
             recurring_event_id: None,
             original_start_time: None,
             cancelled: false,
+            calendar_id: None,
         };
         repo.upsert_from_sync("ada", "google", record("Synced"))
             .unwrap();
@@ -719,6 +767,7 @@ mod tests {
                 recurrence_rule: Some(rule.into()),
                 attendees: vec!["ada@example.com".into()],
                 timezone: None,
+                calendar_id: None,
             },
         )
         .expect("create")
@@ -1110,6 +1159,387 @@ mod tests {
         assert_eq!(
             originals,
             vec!["2026-10-19T09:00:00Z", "2026-10-26T09:00:00Z"]
+        );
+    }
+
+    // ── Calendars ────────────────────────────────────────────────────────────
+
+    /// A calendar of `who`'s, made directly: a read-only one can't be made with events in it any
+    /// other way.
+    fn calendar(repo: &EventsRepository, id: &str, who: &str, read_only: bool) -> String {
+        repo.transaction(|conn| {
+            diesel::sql_query(format!(
+                "INSERT INTO calendars (id, user_id, name, color, read_only, kind, country) \
+                 VALUES ('{id}', '{who}', '{id}', '#8b5cf6', {}, '{}', {})",
+                read_only as i32,
+                if read_only { "holidays" } else { "local" },
+                if read_only {
+                    format!("'{id}'")
+                } else {
+                    "NULL".into()
+                },
+            ))
+            .execute(conn)?;
+            Ok(id.to_string())
+        })
+        .unwrap()
+    }
+
+    /// Puts an event in a calendar behind the service's back.
+    fn put_in(repo: &EventsRepository, event_id: &str, calendar_id: &str) {
+        repo.transaction(|conn| {
+            diesel::update(events::table.filter(events::id.eq(event_id)))
+                .set(events::calendar_id.eq(calendar_id))
+                .execute(conn)?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    fn calendar_of(svc: &EventsService, who: &AuthenticatedUser, id: &str) -> Option<String> {
+        svc.get_event(who, id).unwrap().calendar_id
+    }
+
+    fn move_to(calendar_id: &str) -> UpdateEventRequest {
+        UpdateEventRequest {
+            calendar_id: Some(calendar_id.into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_new_event_lands_in_the_default_calendar_or_the_one_given() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let first = create(&svc, &ada, "One");
+        let second = create(&svc, &ada, "Two");
+        let default = calendar_of(&svc, &ada, &first).expect("in a calendar");
+        assert_eq!(
+            calendar_of(&svc, &ada, &second).as_deref(),
+            Some(default.as_str())
+        );
+
+        let work = calendar(&repo, "work", "ada", false);
+        let in_work = svc
+            .create_event(
+                &ada,
+                CreateEventRequest {
+                    title: "Review".into(),
+                    description: None,
+                    start_time: "2026-10-01T09:00:00Z".into(),
+                    end_time: "2026-10-01T10:00:00Z".into(),
+                    all_day: false,
+                    location: None,
+                    recurrence_rule: None,
+                    attendees: vec![],
+                    timezone: None,
+                    calendar_id: Some(work.clone()),
+                },
+            )
+            .unwrap();
+        assert_eq!(in_work.calendar_id, Some(work));
+    }
+
+    #[test]
+    fn a_new_event_cant_go_in_a_read_only_calendar_or_someone_elses() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let holidays = calendar(&repo, "holidays", "ada", true);
+        let bobs = calendar(&repo, "bobs", "bob", false);
+        let into = |calendar_id: &str| CreateEventRequest {
+            title: "Party".into(),
+            description: None,
+            start_time: "2026-10-01T09:00:00Z".into(),
+            end_time: "2026-10-01T10:00:00Z".into(),
+            all_day: false,
+            location: None,
+            recurrence_rule: None,
+            attendees: vec![],
+            timezone: None,
+            calendar_id: Some(calendar_id.into()),
+        };
+        assert_eq!(
+            svc.create_event(&ada, into(&holidays)).unwrap_err().status,
+            403
+        );
+        assert_eq!(svc.create_event(&ada, into(&bobs)).unwrap_err().status, 404);
+    }
+
+    #[test]
+    fn an_event_in_a_read_only_calendar_cant_be_edited_or_deleted() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let holidays = calendar(&repo, "holidays", "ada", true);
+        let one_off = create(&svc, &ada, "Holiday");
+        put_in(&repo, &one_off, &holidays);
+
+        let rename = UpdateEventRequest {
+            title: Some("Renamed".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            svc.update_event(&ada, &one_off, rename).unwrap_err().status,
+            403
+        );
+        assert_eq!(svc.delete_event(&ada, &one_off).unwrap_err().status, 403);
+        let work = calendar(&repo, "work", "ada", false);
+        assert_eq!(
+            svc.update_event(&ada, &one_off, move_to(&work))
+                .unwrap_err()
+                .status,
+            403,
+            "it can't be moved out either"
+        );
+        let unchanged = svc.get_event(&ada, &one_off).unwrap();
+        assert_eq!(unchanged.title, "Holiday");
+        assert_eq!(unchanged.calendar_id, Some(holidays));
+    }
+
+    #[test]
+    fn an_occurrence_in_a_read_only_calendar_cant_be_edited_split_or_deleted() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let holidays = calendar(&repo, "holidays", "ada", true);
+        let series = standup(&svc, &ada, "FREQ=WEEKLY");
+        put_in(&repo, &series, &holidays);
+        let at = "2026-10-12T09:00:00Z";
+        let rename = || UpdateEventRequest {
+            title: Some("Renamed".into()),
+            ..Default::default()
+        };
+
+        let refused = [
+            svc.edit_occurrence(&ada, &series, at, rename()).map(|_| ()),
+            svc.cancel_occurrence(&ada, &series, at),
+            svc.split_event(
+                &ada,
+                &series,
+                SplitEventRequest {
+                    original_start_time: at.into(),
+                    changes: rename(),
+                },
+            )
+            .map(|_| ()),
+            svc.delete_event_from(&ada, &series, Some(at)),
+        ];
+        for result in refused {
+            assert_eq!(result.unwrap_err().status, 403);
+        }
+        assert!(exceptions_of(&svc, &ada).is_empty());
+        assert_eq!(
+            svc.get_event(&ada, &series)
+                .unwrap()
+                .recurrence_rule
+                .as_deref(),
+            Some("FREQ=WEEKLY")
+        );
+    }
+
+    #[test]
+    fn nothing_moves_into_a_read_only_calendar() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let holidays = calendar(&repo, "holidays", "ada", true);
+        let one_off = create(&svc, &ada, "Mine");
+        assert_eq!(
+            svc.update_event(&ada, &one_off, move_to(&holidays))
+                .unwrap_err()
+                .status,
+            403
+        );
+    }
+
+    #[test]
+    fn moving_a_series_takes_its_exceptions_along() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let work = calendar(&repo, "work", "ada", false);
+        let series = standup(&svc, &ada, "FREQ=WEEKLY");
+        svc.cancel_occurrence(&ada, &series, "2026-10-12T09:00:00Z")
+            .unwrap();
+        svc.edit_occurrence(
+            &ada,
+            &series,
+            "2026-10-19T09:00:00Z",
+            UpdateEventRequest {
+                title: Some("Moved standup".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        svc.update_event(&ada, &series, move_to(&work)).unwrap();
+
+        assert_eq!(calendar_of(&svc, &ada, &series), Some(work.clone()));
+        let exceptions = exceptions_of(&svc, &ada);
+        assert_eq!(exceptions.len(), 2);
+        assert!(exceptions
+            .iter()
+            .all(|e| e.calendar_id.as_deref() == Some(work.as_str())));
+    }
+
+    #[test]
+    fn one_occurrence_cant_move_calendar_on_its_own() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let work = calendar(&repo, "work", "ada", false);
+        let series = standup(&svc, &ada, "FREQ=WEEKLY");
+        let at = "2026-10-12T09:00:00Z";
+        assert_eq!(
+            svc.edit_occurrence(&ada, &series, at, move_to(&work))
+                .unwrap_err()
+                .status,
+            400
+        );
+        let exception = svc
+            .edit_occurrence(
+                &ada,
+                &series,
+                at,
+                UpdateEventRequest {
+                    title: Some("x".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            exception.calendar_id,
+            calendar_of(&svc, &ada, &series),
+            "made in its series' calendar"
+        );
+        assert_eq!(
+            svc.update_event(&ada, &exception.id, move_to(&work))
+                .unwrap_err()
+                .status,
+            400
+        );
+    }
+
+    #[test]
+    fn this_and_following_stays_in_the_series_calendar_unless_moved() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let work = calendar(&repo, "work", "ada", false);
+        let series = standup(&svc, &ada, "FREQ=WEEKLY");
+        let own = calendar_of(&svc, &ada, &series);
+        let split = |at: &str, changes: UpdateEventRequest| {
+            svc.split_event(
+                &ada,
+                &series,
+                SplitEventRequest {
+                    original_start_time: at.into(),
+                    changes,
+                },
+            )
+            .unwrap()
+        };
+
+        let kept = split("2026-10-19T09:00:00Z", UpdateEventRequest::default());
+        assert_eq!(kept.calendar_id, own);
+        let moved = svc
+            .split_event(
+                &ada,
+                &kept.id,
+                SplitEventRequest {
+                    original_start_time: "2026-10-26T09:00:00Z".into(),
+                    changes: move_to(&work),
+                },
+            )
+            .unwrap();
+        assert_eq!(moved.calendar_id, Some(work));
+    }
+
+    #[test]
+    fn a_synced_event_lands_in_its_providers_calendar_and_stays_where_it_is_moved() {
+        let (svc, repo) = service();
+        let ada = user("ada");
+        let now = Utc::now().naive_utc();
+        let google = repo.provider_calendar_id("ada", "google").unwrap();
+        assert_eq!(
+            repo.provider_calendar_id("ada", "google").unwrap(),
+            google,
+            "made once"
+        );
+        let record = |title: &str| NewEventRecord {
+            id: "g1".into(),
+            user_id: "ada".into(),
+            title: title.into(),
+            description: None,
+            start_time: now,
+            end_time: now,
+            all_day: false,
+            location: None,
+            recurrence_rule: None,
+            external_id: Some("ext-1".into()),
+            source: "google".into(),
+            created_at: now,
+            updated_at: now,
+            timezone: None,
+            recurring_event_id: None,
+            original_start_time: None,
+            cancelled: false,
+            calendar_id: Some(google.clone()),
+        };
+        repo.upsert_from_sync("ada", "google", record("Synced"))
+            .unwrap();
+        assert_eq!(calendar_of(&svc, &ada, "g1"), Some(google.clone()));
+
+        let work = calendar(&repo, "work", "ada", false);
+        svc.update_event(&ada, "g1", move_to(&work)).unwrap();
+        repo.upsert_from_sync("ada", "google", record("Synced again"))
+            .unwrap();
+        let after = svc.get_event(&ada, "g1").unwrap();
+        assert_eq!(after.title, "Synced again");
+        assert_eq!(after.calendar_id, Some(work));
+    }
+
+    #[test]
+    fn the_migration_puts_existing_events_in_the_default_and_providers_calendars() {
+        let pool = Pool::builder()
+            .max_size(1)
+            .build(ConnectionManager::<SqliteConnection>::new(":memory:"))
+            .expect("pool");
+        let mut conn = pool.get().unwrap();
+        // Up to just before the calendars migration, then some events as they were.
+        loop {
+            let pending = conn.pending_migrations(crate::MIGRATIONS).unwrap();
+            let next = pending.first().expect("calendars migration pending");
+            if next.name().to_string().starts_with("00139_") {
+                break;
+            }
+            conn.run_migration(next.as_ref()).unwrap();
+        }
+        diesel::sql_query(
+            "INSERT INTO events (id, user_id, title, start_time, end_time, source) VALUES \
+             ('mine', 'ada', 'Mine', '2026-10-01 09:00:00', '2026-10-01 10:00:00', 'local'), \
+             ('synced', 'ada', 'Synced', '2026-10-01 09:00:00', '2026-10-01 10:00:00', 'google')",
+        )
+        .execute(&mut conn)
+        .unwrap();
+        conn.run_pending_migrations(crate::MIGRATIONS).unwrap();
+
+        let placed: Vec<(String, String, String, bool)> = events::table
+            .inner_join(crate::schema::calendars::table)
+            .order(events::id.asc())
+            .select((
+                events::id,
+                crate::schema::calendars::name,
+                crate::schema::calendars::kind,
+                crate::schema::calendars::is_default,
+            ))
+            .load(&mut conn)
+            .unwrap();
+        assert_eq!(
+            placed,
+            vec![
+                ("mine".into(), "Calendar".into(), "local".into(), true),
+                (
+                    "synced".into(),
+                    "Google Calendar".into(),
+                    "connection".into(),
+                    false
+                ),
+            ]
         );
     }
 }

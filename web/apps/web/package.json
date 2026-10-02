@@ -63,6 +63,7 @@
     "@tiptap/starter-kit": "^2.5.0",
     "@types/file-saver": "^2.0.7",
     "@zip.js/zip.js": "^2.8.34",
+    "date-holidays": "^3.37.0",
     "dictionary-en": "^4.0.0",
     "docx": "^8.5.0",
     "file-saver": "^2.0.5",

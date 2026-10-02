@@ -9,6 +9,7 @@ import type { NewEventModalProps, ReminderEntry } from './calendarTypes';
 import { REMINDER_PRESETS } from './calendarConstants';
 import { buildRepeatRule, parseRepeatRule, type RepeatRule } from './repeatRule';
 import RepeatFields from './RepeatFields';
+import { writableCalendars } from './calendars';
 import { scopeLabel } from './RecurrenceScopeModal';
 import {
   shiftEndWithStart,
@@ -23,10 +24,14 @@ const DEFAULT_END_TIME = '10:00';
 import { AddAttachmentModal, AttachmentItem } from './EventDetail';
 import styles from './page.module.css';
 
-export default function NewEventModal({ defaultDate, prefill, existingEvent, scope, onClose, onCreate, onUpdate, isPending }: NewEventModalProps) {
+export default function NewEventModal({ defaultDate, prefill, existingEvent, scope, calendars = [], onClose, onCreate, onUpdate, isPending }: NewEventModalProps) {
   const isEditMode = existingEvent !== undefined;
-  // One occurrence on its own can't repeat.
+  // One occurrence on its own can't repeat, or move to another calendar.
   const showsRepeat = scope !== 'this';
+  const choices = writableCalendars(calendars);
+  const showsCalendar = scope !== 'this' && choices.length > 1;
+  const initialCalendarId =
+    existingEvent?.calendarId ?? choices.find((c) => c.isDefault)?.id ?? choices[0]?.id ?? '';
 
   const toLocal = (d: Date) =>
     new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -62,6 +67,7 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, sco
     initialRule ? parseRepeatRule(initialRule, { allDay: initialAllDay, timeZone }) : null);
   // Until the repeat is changed, the stored rule is saved exactly as it was.
   const [repeatTouched, setRepeatTouched] = useState(false);
+  const [calendarId, setCalendarId] = useState(initialCalendarId);
   const [location, setLocation] = useState(existingEvent?.location ?? prefill?.location ?? '');
   const [attendees, setAttendees] = useState<string[]>(existingEvent?.attendees ?? prefill?.attendees ?? []);
   const [attendeeInput, setAttendeeInput] = useState('');
@@ -169,9 +175,11 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, sco
     };
     if (isEditMode && existingEvent) {
       if (!showsRepeat) delete (fields as { recurrenceRule?: string | null }).recurrenceRule;
-      onUpdate?.(fields, existingEvent.id);
+      // Sent only when changed: an unchanged one would still be checked as a move.
+      const moved = showsCalendar && calendarId && calendarId !== initialCalendarId;
+      onUpdate?.(moved ? { ...fields, calendarId } : fields, existingEvent.id);
     } else {
-      onCreate(fields, reminders.map((r) => r.minutes), pendingAttachments);
+      onCreate({ ...fields, calendarId: calendarId || null }, reminders.map((r) => r.minutes), pendingAttachments);
     }
   }
 
@@ -243,6 +251,23 @@ export default function NewEventModal({ defaultDate, prefill, existingEvent, sco
                 setRepeatTouched(true);
               }}
             />
+          )}
+
+          {/* Calendar */}
+          {showsCalendar && (
+            <div className={styles.formGroup}>
+              <label className={styles.formLabel} htmlFor="event-calendar">Calendar</label>
+              <select
+                id="event-calendar"
+                className={styles.formInput}
+                value={calendarId}
+                onChange={(e) => setCalendarId(e.target.value)}
+              >
+                {choices.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
           )}
 
           {/* Location */}

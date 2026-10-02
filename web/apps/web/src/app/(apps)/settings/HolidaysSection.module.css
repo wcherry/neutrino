@@ -1,0 +1,112 @@
+/* Settings → Calendar → Holidays. Rows reuse the connection rows of page.module.css. */
+
+.row {
+  flex-wrap: wrap;
+}
+
+.rowMain {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* A colour swatch over an invisible native colour input. */
+.swatch {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.swatch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.region {
+  margin-top: 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--color-text, #111827);
+  background: var(--color-surface, #fff);
+  max-width: 220px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.search {
+  position: relative;
+}
+
+.matches {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--color-surface, #fff);
+}
+
+.match {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text, #111827);
+  text-align: left;
+  cursor: pointer;
+}
+
+.match:hover,
+.match:focus-visible {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.matchCode {
+  color: var(--color-text-tertiary, #9ca3af);
+  font-size: 12px;
+}
+
+.error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-error, #dc2626);
+}
+
+.credit {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.credit a {
+  color: inherit;
+}
+
+@media (max-width: 640px) {
+  .rowMain {
+    flex: 1;
+  }
+}

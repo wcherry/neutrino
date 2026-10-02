@@ -29,6 +29,9 @@ pub struct EventRecord {
     pub original_start_time: Option<NaiveDateTime>,
     /// An exception that deletes its occurrence.
     pub cancelled: bool,
+    /// The calendar the event belongs to; an exception's is its series'. NULL only on a row
+    /// deleted with its calendar.
+    pub calendar_id: Option<String>,
 }
 
 impl EventRecord {
@@ -63,6 +66,7 @@ pub struct NewEventRecord {
     pub recurring_event_id: Option<String>,
     pub original_start_time: Option<NaiveDateTime>,
     pub cancelled: bool,
+    pub calendar_id: Option<String>,
 }
 
 #[derive(Debug, Default, AsChangeset)]
@@ -82,4 +86,5 @@ pub struct UpdateEventRecord {
     pub original_start_time: Option<Option<NaiveDateTime>>,
     pub recurring_event_id: Option<Option<String>>,
     pub cancelled: Option<bool>,
+    pub calendar_id: Option<Option<String>>,
 }

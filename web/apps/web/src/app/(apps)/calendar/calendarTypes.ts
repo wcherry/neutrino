@@ -1,3 +1,4 @@
+import type { CalendarResponse } from '@neutrino/api-calendar';
 import type { CreateEventRequest, UpdateEventRequest, EventResponse, ReminderResponse, CreateReminderRequest, UpdateReminderRequest, CreateAttachmentRequest } from '@/lib/api';
 
 export type View = 'month' | 'week' | 'agenda';
@@ -27,6 +28,11 @@ export interface NewEventModalProps {
    * occurrence, which can't repeat, so the repeat fields are hidden.
    */
   scope?: import('./RecurrenceScopeModal').RecurrenceScope;
+  /**
+   * The user's calendars, for the calendar picker; only writable ones are offered. A new event
+   * starts in the default one. Absent, or with one to choose from, there is no picker.
+   */
+  calendars?: CalendarResponse[];
   onClose: () => void;
   onCreate: (req: CreateEventRequest, reminders: number[], pendingAttachments: CreateAttachmentRequest[]) => void;
   onUpdate?: (req: UpdateEventRequest, eventId: string) => void;

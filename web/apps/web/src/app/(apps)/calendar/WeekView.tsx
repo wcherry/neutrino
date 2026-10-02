@@ -10,6 +10,7 @@ import {
   weekStartDate,
   getEventDayBounds,
 } from './calendarHelpers';
+import { eventColorStyle } from './calendars';
 import styles from './page.module.css';
 import gridStyles from './WeekView.module.css';
 
@@ -29,6 +30,8 @@ interface WeekViewProps {
   startDay: number;
   dayStartHour?: number;
   dayEndHour?: number;
+  /** The colour to draw an event in: its calendar's. Absent, the default colour. */
+  colorOf?: (e: EventResponse) => string | undefined;
 }
 
 // ── Legacy flat view (flag off) ───────────────────────────────────────────────
@@ -108,6 +111,7 @@ function WeekViewGrid({
   startDay,
   dayStartHour = 8,
   dayEndHour = 20,
+  colorOf,
 }: WeekViewProps) {
   const today = new Date();
   const weekFirst = useMemo(() => weekStartDate(cursor, startDay), [cursor, startDay]);
@@ -176,6 +180,7 @@ function WeekViewGrid({
               <button
                 key={ev.id}
                 className={gridStyles.eventChipInline}
+                style={eventColorStyle(colorOf?.(ev))}
                 onClick={() => onEventClick(ev)}
                 title={ev.title}
               >
@@ -267,7 +272,7 @@ function WeekViewGrid({
                       <button
                         key={`${ev.id}-${ev.startTime}`}
                         className={gridStyles.eventChip}
-                        style={{ top, height }}
+                        style={{ top, height, ...eventColorStyle(colorOf?.(ev)) }}
                         onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
                         title={ev.title}
                       >

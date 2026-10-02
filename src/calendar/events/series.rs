@@ -210,6 +210,25 @@ pub fn update(
         .first(conn)?)
 }
 
+/// Puts a series' exceptions, live and cancelled, in `calendar_id`, where the series just went:
+/// an exception is always in its series' calendar.
+pub fn move_exceptions(
+    conn: &mut SqliteConnection,
+    series_id: &str,
+    calendar_id: &str,
+    now: NaiveDateTime,
+) -> Result<(), ApiError> {
+    diesel::update(events::table)
+        .filter(events::recurring_event_id.eq(series_id))
+        .filter(events::deleted_at.is_null())
+        .set((
+            events::calendar_id.eq(Some(calendar_id)),
+            events::updated_at.eq(now),
+        ))
+        .execute(conn)?;
+    Ok(())
+}
+
 pub fn replace_attendees(
     conn: &mut SqliteConnection,
     event_id: &str,
@@ -294,6 +313,7 @@ pub fn exception_for(
             recurring_event_id: Some(series.id.clone()),
             original_start_time: Some(original),
             cancelled: false,
+            calendar_id: series.calendar_id.clone(),
         },
     )?;
     let attendees = attendees_of(conn, &series.id)?;

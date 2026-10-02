@@ -403,6 +403,7 @@ async fn main() -> std::io::Result<()> {
 
     use calendar::attachments::repository::AttachmentsRepository;
     use calendar::attachments::service::AttachmentsService;
+    use calendar::calendars::service::CalendarsService;
     use calendar::connections::repository::ConnectionsRepository;
     use calendar::connections::service::ConnectionsService;
     use calendar::events::attendees::AttendeesRepository;
@@ -421,6 +422,9 @@ async fn main() -> std::io::Result<()> {
         cal_events_repo.clone(),
         cal_attendees_repo,
     ));
+    let cal_calendars_state = web::Data::new(calendar::calendars::api::CalendarsApiState {
+        calendars_service: Arc::new(CalendarsService::new(pool.clone())),
+    });
     let cal_events_state = web::Data::new(calendar::events::api::EventsApiState {
         events_service: cal_events_service.clone(),
     });
@@ -1172,6 +1176,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         let mut doc = NeutrinoApiDoc::openapi();
         doc.merge(auth::api::AuthApiDoc::openapi());
         doc.merge(auth::keyvault::api::KeyVaultApiDoc::openapi());
+        doc.merge(calendar::calendars::api::CalendarsApiDoc::openapi());
         doc.merge(calendar::events::api::EventsApiDoc::openapi());
         doc.merge(calendar::reminders::api::RemindersApiDoc::openapi());
         doc.merge(calendar::attachments::api::AttachmentsApiDoc::openapi());
@@ -1254,6 +1259,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             // OAuth
             .app_data(oauth_state.clone())
             // Calendar
+            .app_data(cal_calendars_state.clone())
             .app_data(cal_events_state.clone())
             .app_data(cal_reminders_state.clone())
             .app_data(cal_attachments_state.clone())

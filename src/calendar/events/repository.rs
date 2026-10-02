@@ -35,26 +35,6 @@ impl EventsRepository {
         conn.transaction(f)
     }
 
-    pub fn insert(&self, record: NewEventRecord) -> Result<EventRecord, ApiError> {
-        let id = record.id.clone();
-        let mut conn = self.get_conn()?;
-        diesel::insert_into(events::table)
-            .values(&record)
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB insert event error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
-        events::table
-            .filter(events::id.eq(&id))
-            .select(EventRecord::as_select())
-            .first(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB query after event insert error: {:?}", e);
-                ApiError::internal("Database error")
-            })
-    }
-
     pub fn find_by_user(
         &self,
         user_id: &str,
@@ -150,6 +130,17 @@ impl EventsRepository {
         Ok(())
     }
 
+    /// The calendar `provider`'s synced events land in, made on the first sync.
+    pub fn provider_calendar_id(&self, user_id: &str, provider: &str) -> Result<String, ApiError> {
+        let now = chrono::Utc::now().naive_utc();
+        self.transaction(|conn| {
+            Ok(
+                crate::calendar::calendars::store::provider_calendar(conn, user_id, provider, now)?
+                    .id,
+            )
+        })
+    }
+
     /// Insert-or-update an event coming from an external sync source.
     /// Lookup key is (user_id, source, external_id). If found, updates mutable fields;
     /// otherwise inserts a new row.
@@ -161,22 +152,22 @@ impl EventsRepository {
     ) -> Result<(), ApiError> {
         let mut conn = self.get_conn()?;
 
-        let existing_id: Option<String> = events::table
+        let existing: Option<(String, Option<String>)> = events::table
             .filter(
                 events::user_id
                     .eq(user_id)
                     .and(events::source.eq(source))
                     .and(events::external_id.eq(&record.external_id)),
             )
-            .select(events::id)
-            .first::<String>(&mut conn)
+            .select((events::id, events::calendar_id))
+            .first::<(String, Option<String>)>(&mut conn)
             .optional()
             .map_err(|e| {
                 tracing::error!("DB upsert_from_sync lookup error: {:?}", e);
                 ApiError::internal("Database error")
             })?;
 
-        if let Some(existing) = existing_id {
+        if let Some((existing, calendar_id)) = existing {
             let changes = UpdateEventRecord {
                 title: Some(record.title),
                 description: Some(record.description),
@@ -190,6 +181,9 @@ impl EventsRepository {
                 // The provider says the event exists, so a soft-deleted copy comes back, as a
                 // hard-deleted one used to be inserted again.
                 deleted_at: Some(None),
+                // Into the provider's calendar only if it is in none; one the user moved it to
+                // stays.
+                calendar_id: calendar_id.is_none().then_some(record.calendar_id),
                 ..Default::default()
             };
             diesel::update(events::table.filter(events::id.eq(&existing)))

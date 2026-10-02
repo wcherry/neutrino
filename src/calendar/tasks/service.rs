@@ -206,6 +206,7 @@ impl TasksService {
                     recurrence_rule: None,
                     attendees: None,
                     timezone: None,
+                    calendar_id: None,
                 },
             ) {
                 // The task is already saved. An event that has been deleted out
@@ -387,6 +388,7 @@ impl TasksService {
                     recurrence_rule: None,
                     attendees: None,
                     timezone: req.timezone.clone(),
+                    calendar_id: None,
                 },
             );
             match moved {
@@ -412,6 +414,7 @@ impl TasksService {
                 recurrence_rule: None,
                 attendees: Vec::new(),
                 timezone: req.timezone,
+                calendar_id: None,
             },
         )?;
         self.repo.set_task_event(

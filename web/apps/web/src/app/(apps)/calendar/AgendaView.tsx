@@ -5,18 +5,22 @@ import { CalendarDays } from 'lucide-react';
 import type { EventResponse } from '@/lib/api';
 import { DAYS } from './calendarConstants';
 import { eventsForDay, fmtTime } from './calendarHelpers';
+import { eventColorStyle } from './calendars';
 import styles from './page.module.css';
 
 interface AgendaViewProps {
   cursor: Date;
   events: EventResponse[];
   onEventClick: (e: EventResponse) => void;
+  /** The colour to draw an event in: its calendar's. Absent, the default colour. */
+  colorOf?: (e: EventResponse) => string | undefined;
 }
 
 export default function AgendaView({
   cursor,
   events,
   onEventClick,
+  colorOf,
 }: AgendaViewProps) {
   const days = useMemo(() => {
     const start = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -50,7 +54,13 @@ export default function AgendaView({
           </div>
           <div className={styles.agendaEvents}>
             {dayEvents.map((ev) => (
-              <div key={ev.id} className={styles.agendaEvent} onClick={() => onEventClick(ev)}>
+              <div
+                key={ev.id}
+                className={styles.agendaEvent}
+                data-testid="agenda-event"
+                style={eventColorStyle(colorOf?.(ev))}
+                onClick={() => onEventClick(ev)}
+              >
                 <div className={styles.agendaEventTime}>
                   {ev.allDay ? 'All day' : `${fmtTime(ev.startTime)} – ${fmtTime(ev.endTime)}`}
                 </div>

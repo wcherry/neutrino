@@ -311,8 +311,9 @@
   font-size: 11px;
   font-weight: 500;
   font-family: inherit;
-  background: var(--color-primary-light, #dbeafe);
-  color: var(--color-primary, #2563eb);
+  /* --event-*: the event's calendar colour (`eventColorStyle`), else the primary colour. */
+  background: var(--event-bg, var(--color-primary-light, #dbeafe));
+  color: var(--event-fg, var(--color-primary, #2563eb));
   border: none;
   text-align: left;
   cursor: pointer;
@@ -327,7 +328,7 @@
 }
 
 .weekEventBar:hover {
-  background: var(--color-primary, #2563eb);
+  background: var(--event-solid, var(--color-primary, #2563eb));
   color: #fff;
 }
 
@@ -397,7 +398,7 @@
   gap: 8px;
   padding: 8px 10px;
   border-radius: 6px;
-  border-left: 3px solid var(--color-primary, #2563eb);
+  border-left: 3px solid var(--event-solid, var(--color-primary, #2563eb));
   background: var(--color-surface-secondary, #f9fafb);
   cursor: pointer;
   transition: background 0.1s;
@@ -679,6 +680,151 @@
   color: var(--color-error, #dc2626);
 }
 
+/* ── Calendars list ──────────────────────────────────────────────────────── */
+.calendarList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.calendarRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.calendarRow:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.calendarCheck {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.calendarName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text, #111827);
+}
+
+.calendarLock {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+/* A colour swatch over an invisible native colour input. */
+.calendarSwatch {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.calendarSwatch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.calendarDelete {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.calendarRow:hover .calendarSwatch,
+.calendarRow:hover .calendarDelete,
+.calendarRow:focus-within .calendarSwatch,
+.calendarRow:focus-within .calendarDelete {
+  opacity: 1;
+}
+
+.calendarAddForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.calendarColorChoices {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.calendarColorChoice {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.calendarColorChoiceActive {
+  box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 4px var(--color-text-secondary, #6b7280);
+}
+
+.calendarAddActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.calendarTextBtn {
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.calendarTextBtn:disabled {
+  color: var(--color-text-tertiary, #9ca3af);
+  cursor: default;
+}
+
+.calendarError {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-error, #dc2626);
+}
+
+.calendarSettingsLink {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+  text-decoration: none;
+}
+
+.calendarSettingsLink:hover {
+  color: var(--color-primary, #2563eb);
+  text-decoration: underline;
+}
+
 /* ── Event/Reminder modal form fields ────────────────────────────────────── */
 .formGroup {
   display: flex;
@@ -880,6 +1026,31 @@
   letter-spacing: 0.05em;
   color: var(--color-text-tertiary, #9ca3af);
   margin-bottom: 4px;
+}
+
+/* The calendar an event is in: swatch, name, and a read-only mark. */
+.detailCalendar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+  margin-bottom: 6px;
+}
+
+.detailCalendarSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.detailReadOnly {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  color: var(--color-text-tertiary, #9ca3af);
 }
 
 .detailAttendeeList {

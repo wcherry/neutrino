@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import type { EventResponse } from '@/lib/api';
 import { DAYS } from './calendarConstants';
 import { buildMonthGrid, isSameDay, buildWeekEventSegments, fmtTime } from './calendarHelpers';
+import { eventColorStyle } from './calendars';
 import styles from './page.module.css';
 
 /** Local `YYYY-MM-DD` — not `toISOString`, which would shift the day by the UTC offset. */
@@ -26,6 +27,8 @@ interface MonthViewProps {
   onDayClick: (day: Date) => void;
   onEventClick: (e: EventResponse) => void;
   startDay: number;
+  /** The colour to draw an event in: its calendar's. Absent, the default colour. */
+  colorOf?: (e: EventResponse) => string | undefined;
 }
 
 export default function MonthView({
@@ -34,6 +37,7 @@ export default function MonthView({
   onDayClick,
   onEventClick,
   startDay,
+  colorOf,
 }: MonthViewProps) {
   const today = new Date();
   const grid = useMemo(() => buildMonthGrid(cursor, startDay), [cursor, startDay]);
@@ -100,6 +104,11 @@ export default function MonthView({
                 // there it meets the row edge so the run reads as continuing.
                 const insetLeft = seg.continuesBefore ? 0 : BAR_INSET;
                 const insetRight = seg.continuesAfter ? 0 : BAR_INSET;
+                const position = {
+                  left: `calc(${(seg.startIndex / week.length) * 100}% + ${insetLeft}px)`,
+                  width: `calc(${(seg.span / week.length) * 100}% - ${insetLeft + insetRight}px)`,
+                  top: seg.lane * LANE_HEIGHT,
+                };
                 return (
                 <button
                   key={seg.key}
@@ -108,11 +117,7 @@ export default function MonthView({
                   data-testid="event-bar"
                   data-event-span={seg.span}
                   data-event-start-date={isoDate(week[seg.startIndex])}
-                  style={{
-                    left: `calc(${(seg.startIndex / week.length) * 100}% + ${insetLeft}px)`,
-                    width: `calc(${(seg.span / week.length) * 100}% - ${insetLeft + insetRight}px)`,
-                    top: seg.lane * LANE_HEIGHT,
-                  }}
+                  style={{ ...position, ...eventColorStyle(colorOf?.(seg.event)) }}
                   onClick={(e) => { e.stopPropagation(); onEventClick(seg.event); }}
                   title={seg.event.title}
                 >
