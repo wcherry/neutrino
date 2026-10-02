@@ -243,14 +243,19 @@ impl PhotosRepository {
         photo_id: &str,
         changes: UpdatePhotoRecord,
     ) -> Result<PhotoRecord, ApiError> {
-        let mut conn = self.get_conn()?;
-        diesel::update(photos::table.filter(photos::id.eq(photo_id)))
-            .set(&changes)
-            .execute(&mut conn)
-            .map_err(|e| {
-                tracing::error!("DB update photo error: {:?}", e);
-                ApiError::internal("Database error")
-            })?;
+        {
+            // Scoped so the connection goes back to the pool before the re-read below takes one:
+            // holding it across that call needs two connections at once, which a one-connection
+            // pool can never supply.
+            let mut conn = self.get_conn()?;
+            diesel::update(photos::table.filter(photos::id.eq(photo_id)))
+                .set(&changes)
+                .execute(&mut conn)
+                .map_err(|e| {
+                    tracing::error!("DB update photo error: {:?}", e);
+                    ApiError::internal("Database error")
+                })?;
+        }
         self.get_photo_including_deleted(photo_id)
     }
 
@@ -659,7 +664,10 @@ mod tests {
 
         let ids: Vec<&str> = found.iter().map(|p| p.id.as_str()).collect();
         assert_eq!(ids, vec!["mine"]);
-        assert!(repo.find_live_photos_by_file_ids("u1", &[]).expect("empty").is_empty());
+        assert!(repo
+            .find_live_photos_by_file_ids("u1", &[])
+            .expect("empty")
+            .is_empty());
     }
 
     fn add_to_album(pool: &DbPool, album_id: &str, photo_id: &str) {
@@ -986,6 +994,69 @@ mod tests {
 
         // 2026 capture, then the 2023 arrival standing in for a missing capture, then 2021 capture.
         assert_eq!(ids(&by_capture), vec!["has-exif", "no-exif", "older-exif"]);
+    }
+
+    /// An edited capture date is written, and the timeline's capture order follows it — the point
+    /// of correcting a camera's wrong clock. A change that omits the date leaves it alone.
+    #[test]
+    fn an_edited_capture_date_moves_the_photo_in_capture_order() {
+        let pool = test_pool();
+        let repo = PhotosRepository::new(pool.clone());
+        insert_photo_dated(
+            &pool,
+            "a",
+            "u1",
+            "2020-01-01 00:00:00",
+            Some("2024-01-01 00:00:00"),
+        );
+        insert_photo_dated(
+            &pool,
+            "b",
+            "u1",
+            "2020-01-01 00:00:00",
+            Some("2023-01-01 00:00:00"),
+        );
+
+        let edited =
+            chrono::NaiveDateTime::parse_from_str("2025-06-01 09:30:00", "%Y-%m-%d %H:%M:%S")
+                .expect("date");
+        let now = chrono::Utc::now().naive_utc();
+        let updated = repo
+            .update_photo(
+                "b",
+                UpdatePhotoRecord {
+                    is_starred: None,
+                    is_archived: None,
+                    deleted_at: None,
+                    capture_date: Some(edited),
+                    updated_at: now,
+                },
+            )
+            .expect("update");
+        assert_eq!(updated.capture_date, Some(edited));
+
+        let by_capture = repo
+            .list_photos("u1", true, false, PhotoOrder::Capture, None)
+            .expect("capture");
+        assert_eq!(ids(&by_capture), vec!["b", "a"]);
+
+        let starred = repo
+            .update_photo(
+                "b",
+                UpdatePhotoRecord {
+                    is_starred: Some(true),
+                    is_archived: None,
+                    deleted_at: None,
+                    capture_date: None,
+                    updated_at: now,
+                },
+            )
+            .expect("star");
+        assert_eq!(
+            starred.capture_date,
+            Some(edited),
+            "starring must not clear the date"
+        );
     }
 
     /// The property paging rests on: pages cut along capture order must reassemble into exactly the

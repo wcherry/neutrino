@@ -39,6 +39,7 @@ pub struct UpdatePhotoRecord {
     pub is_starred: Option<bool>,
     pub is_archived: Option<bool>,
     pub deleted_at: Option<Option<NaiveDateTime>>,
+    pub capture_date: Option<NaiveDateTime>,
     pub updated_at: NaiveDateTime,
 }
 

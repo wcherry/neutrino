@@ -2,9 +2,8 @@ use crate::photos::photos::{
     dto::{
         BackedUpPhotosResponse, ListPhotosResponse, MemoriesResponse, PhotoEditParams,
         PhotoEditResponse, PhotoResponse, PhotosByFilesRequest, RegisterPhotoRequest,
-        SetupLockedFolderRequest,
-        ShareSettingsRequest, UnlockFolderRequest, UnlockTokenResponse, UpdatePhotoRequest,
-        YearInReviewResponse,
+        SetupLockedFolderRequest, ShareSettingsRequest, UnlockFolderRequest, UnlockTokenResponse,
+        UpdatePhotoRequest, YearInReviewResponse,
     },
     repository::{PhotoOrder, PhotoPage},
     service::PhotosService,
@@ -234,9 +233,9 @@ pub async fn get_photo(
     Ok(web::Json(photo))
 }
 
-/// Star or archive a photo.
+/// Star or archive a photo, or correct its capture date.
 ///
-/// Patches only the flags supplied. Archiving hides a photo from the main grid without deleting
+/// Patches only the fields supplied. Archiving hides a photo from the main grid without deleting
 /// it.
 #[utoipa::path(
     patch,
@@ -391,10 +390,12 @@ pub async fn delete_photo_permanently(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// Store extracted image metadata for a photo. Worker endpoint.
+/// Replace a photo's metadata document — the EXIF, device and user fields the client read out of
+/// the plaintext before encrypting it, as a raw JSON body.
 ///
-/// Called service-to-service once the worker has read dimensions and EXIF out of the image, with
-/// the metadata as a raw JSON body. Carries no user auth.
+/// The caller's own photos only. This was documented as a worker endpoint carrying no user auth,
+/// but no worker calls it: the iOS Photos app does, with the user's token, and without an
+/// ownership check any signed-in account could overwrite another's by photo id.
 #[utoipa::path(
     put,
     path = "/api/v1/photos/{id}/metadata",
@@ -402,20 +403,25 @@ pub async fn delete_photo_permanently(
     responses(
         (status = 204, description = "Metadata saved"),
         (status = 400, description = "Invalid JSON"),
+        (status = 403, description = "Not the caller's photo"),
         (status = 404, description = "Photo not found"),
     ),
+    security(("bearer_auth" = [])),
     tag = "photos"
 )]
 #[put("/photos/{id}/metadata")]
 pub async fn put_metadata(
     state: web::Data<PhotosApiState>,
+    user: AuthenticatedUser,
     path: web::Path<String>,
     body: web::Bytes,
 ) -> Result<HttpResponse, ApiError> {
     let photo_id = path.into_inner();
     let metadata = String::from_utf8(body.to_vec())
         .map_err(|_| ApiError::bad_request("Invalid UTF-8 in metadata body"))?;
-    state.photos_service.save_metadata(&photo_id, metadata)?;
+    state
+        .photos_service
+        .save_metadata(&user, &photo_id, metadata)?;
     Ok(HttpResponse::NoContent().finish())
 }
 
