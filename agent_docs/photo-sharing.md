@@ -10,7 +10,7 @@ What shipped without this design, in `wcherry/neutrino_photos_ios_mobile` (`feat
 - **Share Sheet export** — one or many photos decrypted on the device and handed to iOS's Share
   Sheet. No server involvement.
 - **The iOS half of `/open/photo/<file id>`** — a router that opens the photo from the library.
-  Off behind `FeatureFlags.appLinks` until §6's web and AASA pieces exist.
+  Live, but iOS delivers these links to the app only once §6's web and AASA pieces exist.
 
 ---
 
@@ -180,7 +180,7 @@ One branch name across the repos touched, per `developer_workflow.md`.
 ## 6. `/open/photo/<file id>` Universal Links
 
 Separate from share links: these open a photo **in the owner's own app**, and carry only a Drive
-file id — no key and no access of their own. The iOS router exists and is flagged off. Three more
+file id — no key and no access of their own. The iOS router exists and is live. Three more
 pieces make iOS deliver the links to it:
 
 1. **Web**: add `photo` to `APP_LINK_KINDS` in `web/apps/web/src/app/(apps)/open/appLink.ts`, routing
