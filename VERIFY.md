@@ -33,7 +33,11 @@ Delete this section once calendars and holidays are proven stable. Design:
    Pick region "California". → California's own days appear too.
 10. Add a second country (e.g. Canada) with its own colour. → Both countries' holidays show,
     each in its colour; unticking one in the sidebar hides only its holidays.
-11. Open the same account in another browser. → The same calendars, colours, visibility and
+11. Add a task with a due date ("Pay rent ^tue") and one with a time ("Dentist ^thu 3pm").
+    → Both appear on their days in month, week and agenda views, amber, with an unticked box;
+    the timed one at 3:00 PM. Tick one → it's struck through, and ticked in the Tasks sidebar too.
+    Click its title → the task editor opens.
+12. Open the same account in another browser. → The same calendars, colours, visibility and
     holiday countries (they are stored on the server).
 
 ### Edge cases

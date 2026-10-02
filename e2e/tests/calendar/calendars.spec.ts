@@ -272,3 +272,39 @@ test.describe('Holiday calendars', () => {
     ).toHaveCount(1, { timeout: 15_000 });
   });
 });
+
+test.describe('Tasks on the calendar', () => {
+  test('a task due on a date shows unticked on that day, and ticking it completes it', async ({ page, request }) => {
+    const token = await registerAndLogin(request, page);
+    const title = uniqueName('Pay rent');
+    const created = await request.post(`${BASE_URL}/api/v1/calendar/tasks`, {
+      headers: headers(token),
+      data: { title, dueDate: `${day(12)}T00:00:00Z`, dueHasTime: false },
+    });
+    expect(created.ok(), `create task failed: ${created.status()} ${await created.text()}`).toBeTruthy();
+    const taskId = ((await created.json()) as { id: string }).id;
+    await openCalendar(page);
+
+    const bar = page.locator(`[data-testid="task-bar"][data-event-start-date="${day(12)}"]`, { hasText: title });
+    await expect(bar).toHaveCount(1, { timeout: 15_000 });
+    // Drawn as a task, not as an event.
+    await expect(bars(page, title)).toHaveCount(0);
+    const box = bar.getByRole('checkbox', { name: `Complete ${title}` });
+    await expect(box).not.toBeChecked();
+
+    await box.click();
+    await expect(bar.getByRole('checkbox', { name: `Reopen ${title}` })).toBeChecked({ timeout: 5_000 });
+    await expect
+      .poll(async () => {
+        const res = await request.get(`${BASE_URL}/api/v1/calendar/tasks`, { headers: headers(token) });
+        const tasks = (await res.json()) as { id: string; done: boolean }[];
+        return tasks.find((t) => t.id === taskId)?.done;
+      }, { timeout: 10_000 })
+      .toBe(true);
+
+    // Its title opens the task, not the event view.
+    await bar.getByRole('button', { name: title }).click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('dialog').getByTestId('event-calendar')).toHaveCount(0);
+  });
+});

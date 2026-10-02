@@ -49,6 +49,7 @@ import ReminderModal from './ReminderModal';
 import { RemindersSidebar } from './RemindersSidebar';
 import { CalendarsSidebar } from './CalendarsSidebar';
 import { calendarMap, calendarOf, holidayEvents, isReadOnlyEvent, visibleEvents } from './calendars';
+import { isTaskEvent, taskEvents, type TaskOccurrence } from './calendarTasks';
 import { TasksSidebar } from './TasksSidebar';
 import TaskDetailModal from './TaskDetailModal';
 import { allTags } from './tags';
@@ -215,7 +216,7 @@ export default function CalendarPage() {
     queryKey: ['tasks'],
     queryFn: () => calendarApi.listAllTasks(),
   });
-  const allTasks: TaskResponse[] = allTasksData ?? [];
+  const allTasks: TaskResponse[] = React.useMemo(() => allTasksData ?? [], [allTasksData]);
   const [editingTask, setEditingTask] = useState<TaskResponse | null>(null);
 
   // Browser notifications for due reminders
@@ -441,8 +442,26 @@ export default function CalendarPage() {
         done,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    // Ticked at once, in the sidebar and on the calendar alike, and unticked again on a failure.
+    // Not awaiting the cancel: the box must tick in the same frame it was clicked.
+    onMutate: ({ id, done }) => {
+      void qc.cancelQueries({ queryKey: ['tasks'] });
+      const previous = qc.getQueryData<TaskResponse[]>(['tasks']);
+      qc.setQueryData<TaskResponse[]>(['tasks'], (old) => old?.map((t) => (t.id === id ? { ...t, done } : t)));
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(['tasks'], context.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
+
+  /** Ticks or unticks a task drawn on the calendar. */
+  const { mutate: mutateTask } = toggleTask;
+  const toggleCalendarTask = useCallback(
+    (task: TaskOccurrence) => mutateTask({ id: task.taskId, done: !task.done }),
+    [mutateTask],
+  );
 
   const createTask = useMutation({
     mutationFn: (req: CreateTaskRequest) => calendarApi.createTask(req),
@@ -464,13 +483,15 @@ export default function CalendarPage() {
   );
 
   const rawEvents = eventsData?.events ?? [];
-  // What the views draw: the occurrences in calendars that are shown, and the holidays.
+  // What the views draw: the occurrences in calendars that are shown, the holidays, and the
+  // tasks due in the range.
   const events = React.useMemo(
     () => [
       ...visibleEvents(expandRecurringEvents(rawEvents, new Date(from), new Date(to)), calendarsById),
       ...((holidays ?? []) as CalendarOccurrence[]),
+      ...taskEvents(allTasks, from, to),
     ],
-    [rawEvents, from, to, calendarsById, holidays]
+    [rawEvents, from, to, calendarsById, holidays, allTasks]
   );
   const colorOf = useCallback(
     (ev: EventResponse) => calendarOf(ev, calendarsById)?.color,
@@ -496,9 +517,15 @@ export default function CalendarPage() {
   }, []);
 
   // The views hand back what they were given: occurrences, from `expandRecurringEvents`.
+  // A task drawn on the calendar opens the task, not the event view.
   const handleEventClick = useCallback((ev: EventResponse) => {
+    if (isTaskEvent(ev)) {
+      const task = allTasks.find((t) => t.id === ev.taskId);
+      if (task) setEditingTask(task);
+      return;
+    }
     setViewingEvent(ev as CalendarOccurrence);
-  }, []);
+  }, [allTasks]);
 
   // ICS drag-drop
   function handleDragOver(e: React.DragEvent) {
@@ -634,6 +661,7 @@ export default function CalendarPage() {
               onEventClick={handleEventClick}
               startDay={startDay}
               colorOf={colorOf}
+              onToggleTask={toggleCalendarTask}
             />
           )}
           {view === 'week' && (
@@ -646,10 +674,11 @@ export default function CalendarPage() {
               dayStartHour={dayStartHour}
               dayEndHour={dayEndHour}
               colorOf={colorOf}
+              onToggleTask={toggleCalendarTask}
             />
           )}
           {view === 'agenda' && (
-            <AgendaView cursor={cursor} events={events} onEventClick={handleEventClick} colorOf={colorOf} />
+            <AgendaView cursor={cursor} events={events} onEventClick={handleEventClick} colorOf={colorOf} onToggleTask={toggleCalendarTask} />
           )}
         </div>
 

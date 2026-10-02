@@ -5,6 +5,8 @@ import type { EventResponse } from '@/lib/api';
 import { DAYS } from './calendarConstants';
 import { buildMonthGrid, isSameDay, buildWeekEventSegments, fmtTime } from './calendarHelpers';
 import { eventColorStyle } from './calendars';
+import { isTaskEvent, type TaskOccurrence } from './calendarTasks';
+import { TaskCheckbox } from './TaskCheckbox';
 import styles from './page.module.css';
 
 /** Local `YYYY-MM-DD` — not `toISOString`, which would shift the day by the UTC offset. */
@@ -29,6 +31,8 @@ interface MonthViewProps {
   startDay: number;
   /** The colour to draw an event in: its calendar's. Absent, the default colour. */
   colorOf?: (e: EventResponse) => string | undefined;
+  /** Ticks or unticks a task drawn on the calendar (`calendarTasks.ts`). */
+  onToggleTask?: (task: TaskOccurrence) => void;
 }
 
 export default function MonthView({
@@ -38,6 +42,7 @@ export default function MonthView({
   onEventClick,
   startDay,
   colorOf,
+  onToggleTask,
 }: MonthViewProps) {
   const today = new Date();
   const grid = useMemo(() => buildMonthGrid(cursor, startDay), [cursor, startDay]);
@@ -109,6 +114,30 @@ export default function MonthView({
                   width: `calc(${(seg.span / week.length) * 100}% - ${insetLeft + insetRight}px)`,
                   top: seg.lane * LANE_HEIGHT,
                 };
+                const task = seg.event;
+                if (isTaskEvent(task)) {
+                  // A div, not a button: the checkbox can't sit inside one.
+                  return (
+                    <div
+                      key={seg.key}
+                      className={`${styles.weekEventBar} ${styles.calendarTask} ${task.done ? styles.calendarTaskDone : ''}`}
+                      data-testid="task-bar"
+                      data-event-start-date={isoDate(week[seg.startIndex])}
+                      style={position}
+                      title={task.title}
+                    >
+                      <TaskCheckbox task={task} onToggle={onToggleTask} />
+                      <button
+                        type="button"
+                        className={styles.calendarTaskTitle}
+                        onClick={(e) => { e.stopPropagation(); onEventClick(task); }}
+                      >
+                        {!task.allDay && <span className={styles.weekEventBarTime}>{fmtTime(task.startTime)}</span>}
+                        {task.title}
+                      </button>
+                    </div>
+                  );
+                }
                 return (
                 <button
                   key={seg.key}

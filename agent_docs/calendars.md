@@ -106,6 +106,15 @@ attachments.
 - **Settings → Calendar → Holidays** (`HolidaysSection`): a searchable country list; per country,
   a region (where the rules have any), observances, colour, show/hide and remove.
 
+## Tasks on the calendar
+
+Tasks with a `dueDate` are drawn beside events (`calendarTasks.ts`): all-day on their date, or at
+their time for their estimate (half an hour without one). Each has an unticked checkbox that
+completes it, optimistically, and an amber background of its own, not a calendar's colour: tasks
+aren't in a calendar, so hiding calendars doesn't hide them. Clicking the title opens the task. A
+completed task stays, ticked and struck through. A task already scheduled as an event (`eventId`)
+is left out, since its event is drawn. Nothing about this is stored: it is the task list, drawn.
+
 ## Known limits
 
 - iOS doesn't show calendars, colours or holidays yet; that is its own follow-up PR in

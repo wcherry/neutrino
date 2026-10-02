@@ -680,6 +680,72 @@
   color: var(--color-error, #dc2626);
 }
 
+/* ── Tasks on the calendar (calendarTasks.ts) ────────────────────────────── */
+/* A task's own background, whatever the views' event colours: amber, a checkbox, no calendar. */
+.calendarTask {
+  /* Through the views' own colour properties, so it wins whichever stylesheet loads last. */
+  --event-bg: var(--color-warning-subtle, #fef3c7);
+  --event-fg: var(--color-text, #111827);
+  --event-solid: var(--color-warning, #d97706);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-left: 3px solid var(--color-warning, #d97706);
+}
+
+/* An event's hover goes solid with white text, unreadable on a task's light tint; a task
+   darkens its tint instead. Doubled to outrank the views' own :hover rules in either sheet. */
+.calendarTask.calendarTask:hover {
+  background: color-mix(in srgb, var(--color-warning, #d97706) 28%, var(--color-surface, #fff));
+  color: var(--color-text, #111827);
+}
+
+/* An agenda row has a background of its own, which a task's replaces. */
+.agendaEvent.calendarTask {
+  background: var(--event-bg);
+}
+
+/* The week grid's chips stack their time above the title. */
+.calendarTask .calendarTaskTitle {
+  align-self: stretch;
+}
+
+.calendarTaskDone .calendarTaskTitle,
+.calendarTaskDone .agendaEventTitle {
+  text-decoration: line-through;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+/* In an event bar the bar's flex gap spaces the time from the title; in a task the title
+   button holds both, as inline text. */
+.calendarTaskTitle .weekEventBarTime {
+  margin-right: 4px;
+}
+
+.calendarTaskCheck {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--color-warning, #d97706);
+}
+
+.calendarTaskTitle {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 /* ── Calendars list ──────────────────────────────────────────────────────── */
 .calendarList {
   list-style: none;
