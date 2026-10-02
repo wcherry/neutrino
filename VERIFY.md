@@ -1,3 +1,67 @@
+# Manual Verification: Calendars and holiday calendars (#236, #237)
+
+Delete this section once calendars and holidays are proven stable. Design:
+`agent_docs/calendars.md`.
+
+## Prerequisites
+
+- The stack running locally: `cargo xtask dev` (backend, worker and frontend). The migration
+  `00139_calendar__…_calendars` runs on start.
+- An account that already has some events, to check they survive the migration.
+- No feature flag: the change is additive.
+
+## Steps
+
+### Happy path
+
+1. Before upgrading, note a few existing events. Start the new build and open `/calendar`.
+   → The same events show, unchanged, in the same colour as before. The sidebar has a
+   **Calendars** list with one calendar, "Calendar", checked.
+2. Click **+** beside Calendars, name it "Work", pick the red swatch, **Add**.
+   → "Work" appears, checked.
+3. **New Event** → the form has a **Calendar** picker → choose "Work" → create.
+   → The event is drawn in red in month, week and agenda views.
+4. Untick "Work". → Its events disappear from all three views; the default calendar's stay.
+   Reload. → Still hidden. Tick it again. → They come back (nothing was deleted).
+5. Hover "Work", click its swatch, pick another colour. → Its events change colour at once.
+6. **Settings → Calendar → Holidays**: type "United States", pick it.
+   → A row for United States appears, with a region list, **Observances** and **Show**.
+7. Back in the calendar, go to November. → **Thanksgiving Day** on the fourth Thursday, in purple.
+   September → **Labor Day** on the first Monday. Next year, the same.
+8. Click Thanksgiving. → The detail shows "United States · Read-only" and has no Edit or Delete.
+9. In settings, tick **Observances**. → Halloween (Oct 31) and Mother's Day (May) appear.
+   Pick region "California". → California's own days appear too.
+10. Add a second country (e.g. Canada) with its own colour. → Both countries' holidays show,
+    each in its colour; unticking one in the sidebar hides only its holidays.
+11. Add a task with a due date ("Pay rent ^tue") and one with a time ("Dentist ^thu 3pm").
+    → Both appear on their days in month, week and agenda views, amber, with an unticked box;
+    the timed one at 3:00 PM. Tick one → it's struck through, and ticked in the Tasks sidebar too.
+    Click its title → the task editor opens.
+12. Open the same account in another browser. → The same calendars, colours, visibility and
+    holiday countries (they are stored on the server).
+
+### Edge cases
+
+1. **Read-only via the API**: `POST /api/v1/calendar/events` with the holiday calendar's id as
+   `calendarId` → 403 "This calendar is read-only". `PUT` an event with that `calendarId` → 403.
+2. **Default calendar**: hover it in the sidebar → no delete button. `DELETE` it via the API → 400.
+3. **Delete a calendar**: delete "Work" → confirm dialog says its events go too → they disappear.
+4. **Connected provider**: with Google connected, sync → its events appear under "Google Calendar".
+   Deleting that calendar while connected → "Disconnect the account before deleting its calendar".
+5. **Repeating event**: move a repeating event with an edited occurrence to "Work" with
+   **All events** → every occurrence, the edited one too, is in "Work". Edit with **This event** →
+   no Calendar picker.
+6. **Offline**: with November shown and holidays loaded, go offline and switch Month/Agenda →
+   the holidays still show.
+7. **iOS app (shipped build)**: create and edit events → they land in the default calendar; the app
+   keeps working (it ignores `calendarId`).
+
+## Cleanup
+
+Delete this section once the feature is proven stable.
+
+---
+
 # Manual Verification: Team Spaces and the feature flag system (#185)
 
 Replaces the verification steps for issue #69, which has shipped (commit `c707518`).

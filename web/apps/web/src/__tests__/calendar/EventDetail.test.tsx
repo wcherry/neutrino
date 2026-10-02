@@ -13,8 +13,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { EventDetail } from '../../app/(apps)/calendar/EventDetail';
+import { EventDetail, EventViewModal } from '../../app/(apps)/calendar/EventDetail';
 import type { EventResponse } from '../../lib/api';
+import { calendarApi } from '../../lib/api';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -131,5 +132,52 @@ describe('EventDetail', () => {
     const { onDelete } = renderDetail();
     fireEvent.click(screen.getByRole('button', { name: /delete event/i }));
     expect(onDelete).toHaveBeenCalledWith('evt-1');
+  });
+});
+
+describe('a read-only event', () => {
+  const holidays = {
+    id: 'us', name: 'United States', color: '#8b5cf6', visible: true, readOnly: true,
+    kind: 'holidays' as const, isDefault: false, source: null, country: 'US', region: null,
+    includeObservances: false, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
+  };
+  const holiday: EventResponse = {
+    ...sampleEvent,
+    id: 'holiday:us:2026-11-26:Thanksgiving Day',
+    title: 'Thanksgiving Day',
+    allDay: true,
+    startTime: '2026-11-26T00:00:00Z',
+    endTime: '2026-11-26T23:59:59Z',
+    attendees: [],
+    source: 'holidays',
+    calendarId: 'us',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('has no edit or delete in the sidebar, and names its calendar', () => {
+    renderDetail({ event: holiday, calendar: holidays, readOnly: true });
+    expect(screen.queryByRole('button', { name: /edit/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /delete event/i })).toBeNull();
+    expect(screen.getByTestId('event-calendar')).toHaveTextContent('United States');
+    expect(screen.getByTestId('event-calendar')).toHaveTextContent('Read-only');
+  });
+
+  it('has no edit or delete in the modal', () => {
+    render(
+      <QueryClientProvider client={makeQueryClient()}>
+        <EventViewModal event={holiday} calendar={holidays} readOnly onClose={vi.fn()} onEdit={vi.fn()} onDelete={vi.fn()} />
+      </QueryClientProvider>
+    );
+    expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^delete$/i })).toBeNull();
+  });
+
+  it('asks the server for no reminders or attachments of a holiday, which has none stored', () => {
+    renderDetail({ event: holiday, calendar: holidays, readOnly: true });
+    expect(calendarApi.listReminders).not.toHaveBeenCalled();
+    expect(calendarApi.listAttachments).not.toHaveBeenCalled();
   });
 });

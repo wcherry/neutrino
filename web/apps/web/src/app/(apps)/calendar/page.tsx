@@ -21,6 +21,7 @@ import {
   type UpdateTaskRequest,
   type ReminderResponse,
 } from '@/lib/api';
+import type { CalendarResponse, UpdateCalendarRequest } from '@neutrino/api-calendar';
 import {
   WEEK_START_KEY,
   DAY_START_HOUR_KEY,
@@ -46,6 +47,9 @@ import AgendaView from './AgendaView';
 import NewEventModal from './NewEventModal';
 import ReminderModal from './ReminderModal';
 import { RemindersSidebar } from './RemindersSidebar';
+import { CalendarsSidebar } from './CalendarsSidebar';
+import { calendarMap, calendarOf, holidayEvents, isReadOnlyEvent, visibleEvents } from './calendars';
+import { isTaskEvent, taskEvents, type TaskOccurrence } from './calendarTasks';
 import { TasksSidebar } from './TasksSidebar';
 import TaskDetailModal from './TaskDetailModal';
 import { allTags } from './tags';
@@ -71,6 +75,11 @@ interface EventEdit {
 
 /** The zone a repeating reminder is stepped on in, as it is when completed. */
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+/** The server's message for a failed request, which says why (read-only, still connected). */
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
 
 /** Where in its series an occurrence falls; a one-off event is its own start. */
 const occurrenceStartOf = (occurrence: CalendarOccurrence) =>
@@ -140,6 +149,59 @@ export default function CalendarPage() {
     queryFn: () => calendarApi.listEvents(from, to, { exceptions: true }),
   });
 
+  // ── Calendars ─────────────────────────────────────────────────────────────
+  const { data: calendarsData } = useQuery({
+    queryKey: ['calendars'],
+    queryFn: () => calendarApi.listCalendars(),
+  });
+  const calendars = React.useMemo(() => calendarsData?.calendars ?? [], [calendarsData]);
+  const calendarsById = React.useMemo(() => calendarMap(calendars), [calendars]);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+
+  // Holidays are computed here, not fetched: the key is what they depend on, so a change of
+  // country, region or observances computes them again and nothing else does.
+  const holidayCalendars = calendars.filter((c) => c.kind === 'holidays' && c.visible);
+  const { data: holidays } = useQuery({
+    queryKey: ['holidays', holidayCalendars.map((c) => [c.id, c.country, c.region, c.includeObservances]), from, to],
+    queryFn: () => holidayEvents(holidayCalendars, from, to),
+    enabled: holidayCalendars.length > 0,
+    staleTime: Infinity,
+  });
+
+  const updateCalendar = useMutation({
+    mutationFn: ({ id, req }: { id: string; req: UpdateCalendarRequest }) => calendarApi.updateCalendar(id, req),
+    // Shown at once: a show/hide that waited on the server would feel broken.
+    onMutate: ({ id, req }) => {
+      setCalendarError(null);
+      const previous = qc.getQueryData<{ calendars: CalendarResponse[] }>(['calendars']);
+      qc.setQueryData<{ calendars: CalendarResponse[] }>(['calendars'], (old) =>
+        old && { calendars: old.calendars.map((c) => (c.id === id ? { ...c, ...req } : c)) });
+      return { previous };
+    },
+    onError: (err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(['calendars'], context.previous);
+      setCalendarError(errorMessage(err, 'Could not update the calendar'));
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['calendars'] }),
+  });
+
+  const createCalendar = useMutation({
+    mutationFn: ({ name, color }: { name: string; color: string }) => calendarApi.createCalendar({ name, color }),
+    onMutate: () => setCalendarError(null),
+    onError: (err) => setCalendarError(errorMessage(err, 'Could not add the calendar')),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['calendars'] }),
+  });
+
+  const deleteCalendar = useMutation({
+    mutationFn: (id: string) => calendarApi.deleteCalendar(id),
+    onMutate: () => setCalendarError(null),
+    onError: (err) => setCalendarError(errorMessage(err, 'Could not delete the calendar')),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['calendars'] });
+      qc.invalidateQueries({ queryKey: ['events'] });
+    },
+  });
+
   const { data: remindersData } = useQuery({
     queryKey: ['reminders'],
     queryFn: () => calendarApi.listReminders(),
@@ -154,7 +216,7 @@ export default function CalendarPage() {
     queryKey: ['tasks'],
     queryFn: () => calendarApi.listAllTasks(),
   });
-  const allTasks: TaskResponse[] = allTasksData ?? [];
+  const allTasks: TaskResponse[] = React.useMemo(() => allTasksData ?? [], [allTasksData]);
   const [editingTask, setEditingTask] = useState<TaskResponse | null>(null);
 
   // Browser notifications for due reminders
@@ -261,6 +323,7 @@ export default function CalendarPage() {
 
   /** Opens the form on an event, asking first which occurrences it is for if it repeats. */
   function requestEdit(occurrence: CalendarOccurrence) {
+    if (isReadOnlyEvent(occurrence, calendarsById)) return;
     if (occurrence.series) setScopePrompt({ action: 'edit', kind: 'event', occurrence });
     else setEditingEvent({ form: occurrence, occurrence });
   }
@@ -289,6 +352,7 @@ export default function CalendarPage() {
   }
 
   function requestDelete(occurrence: CalendarOccurrence) {
+    if (isReadOnlyEvent(occurrence, calendarsById)) return;
     if (occurrence.series) setScopePrompt({ action: 'delete', kind: 'event', occurrence });
     else deleteEvent.mutate({ occurrence });
   }
@@ -378,8 +442,26 @@ export default function CalendarPage() {
         done,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    // Ticked at once, in the sidebar and on the calendar alike, and unticked again on a failure.
+    // Not awaiting the cancel: the box must tick in the same frame it was clicked.
+    onMutate: ({ id, done }) => {
+      void qc.cancelQueries({ queryKey: ['tasks'] });
+      const previous = qc.getQueryData<TaskResponse[]>(['tasks']);
+      qc.setQueryData<TaskResponse[]>(['tasks'], (old) => old?.map((t) => (t.id === id ? { ...t, done } : t)));
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(['tasks'], context.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
+
+  /** Ticks or unticks a task drawn on the calendar. */
+  const { mutate: mutateTask } = toggleTask;
+  const toggleCalendarTask = useCallback(
+    (task: TaskOccurrence) => mutateTask({ id: task.taskId, done: !task.done }),
+    [mutateTask],
+  );
 
   const createTask = useMutation({
     mutationFn: (req: CreateTaskRequest) => calendarApi.createTask(req),
@@ -401,9 +483,19 @@ export default function CalendarPage() {
   );
 
   const rawEvents = eventsData?.events ?? [];
+  // What the views draw: the occurrences in calendars that are shown, the holidays, and the
+  // tasks due in the range.
   const events = React.useMemo(
-    () => expandRecurringEvents(rawEvents, new Date(from), new Date(to)),
-    [rawEvents, from, to]
+    () => [
+      ...visibleEvents(expandRecurringEvents(rawEvents, new Date(from), new Date(to)), calendarsById),
+      ...((holidays ?? []) as CalendarOccurrence[]),
+      ...taskEvents(allTasks, from, to),
+    ],
+    [rawEvents, from, to, calendarsById, holidays, allTasks]
+  );
+  const colorOf = useCallback(
+    (ev: EventResponse) => calendarOf(ev, calendarsById)?.color,
+    [calendarsById],
   );
   const reminders = remindersData?.reminders ?? [];
 
@@ -425,9 +517,15 @@ export default function CalendarPage() {
   }, []);
 
   // The views hand back what they were given: occurrences, from `expandRecurringEvents`.
+  // A task drawn on the calendar opens the task, not the event view.
   const handleEventClick = useCallback((ev: EventResponse) => {
+    if (isTaskEvent(ev)) {
+      const task = allTasks.find((t) => t.id === ev.taskId);
+      if (task) setEditingTask(task);
+      return;
+    }
     setViewingEvent(ev as CalendarOccurrence);
-  }, []);
+  }, [allTasks]);
 
   // ICS drag-drop
   function handleDragOver(e: React.DragEvent) {
@@ -460,7 +558,18 @@ export default function CalendarPage() {
   }
 
   // The two sidebar arrangements (with and without an event open) show the same
-  // two panels, so they are built once rather than kept in step by hand.
+  // panels, so they are built once rather than kept in step by hand.
+  const calendarsPanel = (
+    <CalendarsSidebar
+      calendars={calendars}
+      onToggle={(id, visible) => updateCalendar.mutate({ id, req: { visible } })}
+      onRecolor={(id, color) => updateCalendar.mutate({ id, req: { color } })}
+      onCreate={(name, color) => createCalendar.mutate({ name, color })}
+      onDelete={(id) => deleteCalendar.mutate(id)}
+      error={calendarError}
+    />
+  );
+
   const remindersPanel = (
     <RemindersSidebar
       reminders={reminders}
@@ -551,6 +660,8 @@ export default function CalendarPage() {
               onDayClick={(day) => { handleDayClick(day); setIcsPrefill(undefined); setShowNewEvent(true); setNewEventDate(day); }}
               onEventClick={handleEventClick}
               startDay={startDay}
+              colorOf={colorOf}
+              onToggleTask={toggleCalendarTask}
             />
           )}
           {view === 'week' && (
@@ -562,10 +673,12 @@ export default function CalendarPage() {
               startDay={startDay}
               dayStartHour={dayStartHour}
               dayEndHour={dayEndHour}
+              colorOf={colorOf}
+              onToggleTask={toggleCalendarTask}
             />
           )}
           {view === 'agenda' && (
-            <AgendaView cursor={cursor} events={events} onEventClick={handleEventClick} />
+            <AgendaView cursor={cursor} events={events} onEventClick={handleEventClick} colorOf={colorOf} onToggleTask={toggleCalendarTask} />
           )}
         </div>
 
@@ -575,17 +688,21 @@ export default function CalendarPage() {
             <div className={styles.sidebarSection}>
               <EventDetail
                 event={selectedEvent}
+                calendar={calendarOf(selectedEvent, calendarsById)}
+                readOnly={isReadOnlyEvent(selectedEvent, calendarsById)}
                 onClose={() => setSelectedEvent(null)}
                 onDelete={() => requestDelete(selectedEvent)}
                 onEdit={() => requestEdit(selectedEvent)}
               />
               <div style={{ padding: 16 }}>
+                {calendarsPanel}
                 {remindersPanel}
                 {tasksPanel}
               </div>
             </div>
           ) : (
             <div className={styles.sidebarSection}>
+              {calendarsPanel}
               {remindersPanel}
               {tasksPanel}
             </div>
@@ -598,6 +715,7 @@ export default function CalendarPage() {
         <NewEventModal
           defaultDate={newEventDate}
           prefill={icsPrefill}
+          calendars={calendars}
           onClose={() => { setShowNewEvent(false); setIcsPrefill(undefined); }}
           onCreate={(req, reminderOffsets, pendingAttachments) => createEvent.mutate({ req, reminderOffsets, pendingAttachments })}
           isPending={createEvent.isPending}
@@ -608,6 +726,8 @@ export default function CalendarPage() {
       {viewingEvent && (
         <EventViewModal
           event={viewingEvent}
+          calendar={calendarOf(viewingEvent, calendarsById)}
+          readOnly={isReadOnlyEvent(viewingEvent, calendarsById)}
           onClose={() => setViewingEvent(null)}
           onEdit={() => { requestEdit(viewingEvent); setViewingEvent(null); }}
           onDelete={() => requestDelete(viewingEvent)}
@@ -621,6 +741,7 @@ export default function CalendarPage() {
           defaultDate={new Date(editingEvent.form.startTime)}
           existingEvent={editingEvent.form}
           scope={editingEvent.scope}
+          calendars={calendars}
           onClose={() => setEditingEvent(null)}
           onCreate={() => { /* unused in edit mode — onUpdate handles saves */ }}
           onUpdate={(req) => updateEvent.mutate({ edit: editingEvent, req })}

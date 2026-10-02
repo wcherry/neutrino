@@ -5,18 +5,27 @@ import { CalendarDays } from 'lucide-react';
 import type { EventResponse } from '@/lib/api';
 import { DAYS } from './calendarConstants';
 import { eventsForDay, fmtTime } from './calendarHelpers';
+import { eventColorStyle } from './calendars';
+import { isTaskEvent, type TaskOccurrence } from './calendarTasks';
+import { TaskCheckbox } from './TaskCheckbox';
 import styles from './page.module.css';
 
 interface AgendaViewProps {
   cursor: Date;
   events: EventResponse[];
   onEventClick: (e: EventResponse) => void;
+  /** The colour to draw an event in: its calendar's. Absent, the default colour. */
+  colorOf?: (e: EventResponse) => string | undefined;
+  /** Ticks or unticks a task drawn on the calendar (`calendarTasks.ts`). */
+  onToggleTask?: (task: TaskOccurrence) => void;
 }
 
 export default function AgendaView({
   cursor,
   events,
   onEventClick,
+  colorOf,
+  onToggleTask,
 }: AgendaViewProps) {
   const days = useMemo(() => {
     const start = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
@@ -50,9 +59,20 @@ export default function AgendaView({
           </div>
           <div className={styles.agendaEvents}>
             {dayEvents.map((ev) => (
-              <div key={ev.id} className={styles.agendaEvent} onClick={() => onEventClick(ev)}>
+              <div
+                key={ev.id}
+                className={isTaskEvent(ev)
+                  ? `${styles.agendaEvent} ${styles.calendarTask} ${ev.done ? styles.calendarTaskDone : ''}`
+                  : styles.agendaEvent}
+                data-testid={isTaskEvent(ev) ? 'agenda-task' : 'agenda-event'}
+                style={isTaskEvent(ev) ? undefined : eventColorStyle(colorOf?.(ev))}
+                onClick={() => onEventClick(ev)}
+              >
+                {isTaskEvent(ev) && <TaskCheckbox task={ev} onToggle={onToggleTask} />}
                 <div className={styles.agendaEventTime}>
-                  {ev.allDay ? 'All day' : `${fmtTime(ev.startTime)} – ${fmtTime(ev.endTime)}`}
+                  {isTaskEvent(ev)
+                    ? (ev.allDay ? 'Due' : `Due ${fmtTime(ev.startTime)}`)
+                    : ev.allDay ? 'All day' : `${fmtTime(ev.startTime)} – ${fmtTime(ev.endTime)}`}
                 </div>
                 <div>
                   <div className={styles.agendaEventTitle}>{ev.title}</div>

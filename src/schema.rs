@@ -118,6 +118,26 @@ diesel::table! {
         recurring_event_id -> Nullable<Text>,
         original_start_time -> Nullable<Timestamp>,
         cancelled -> Bool,
+        calendar_id -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    calendars (id) {
+        id -> Text,
+        user_id -> Text,
+        name -> Text,
+        color -> Text,
+        visible -> Bool,
+        read_only -> Bool,
+        kind -> Text,
+        is_default -> Bool,
+        source -> Nullable<Text>,
+        country -> Nullable<Text>,
+        region -> Nullable<Text>,
+        include_observances -> Bool,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -1128,6 +1148,7 @@ diesel::joinable!(totp_backup_codes -> users (user_id));
 diesel::joinable!(user_profiles -> users (user_id));
 
 // Calendar
+diesel::joinable!(events -> calendars (calendar_id));
 diesel::joinable!(task_list_memberships -> tasks (task_id));
 diesel::joinable!(task_list_memberships -> task_lists (list_id));
 diesel::joinable!(task_tags -> tasks (task_id));
@@ -1166,6 +1187,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     password_policies,
     password_history,
     // Calendar
+    calendars,
     events,
     reminders,
     event_attachments,

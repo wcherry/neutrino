@@ -17,6 +17,9 @@ pub struct CreateEventRequest {
     #[serde(default)]
     pub attendees: Vec<String>,
     pub timezone: Option<String>,
+    /// The calendar to put the event in. Absent, the user's default calendar. A read-only one is
+    /// refused (403).
+    pub calendar_id: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, ToSchema)]
@@ -31,6 +34,9 @@ pub struct UpdateEventRequest {
     pub recurrence_rule: Option<String>,
     pub attendees: Option<Vec<String>>,
     pub timezone: Option<String>,
+    /// Moves the event to another calendar; a series takes its exceptions with it. Neither
+    /// calendar may be read-only, and one occurrence can't move on its own.
+    pub calendar_id: Option<String>,
 }
 
 /// "This and following": ends the series before the occurrence starting at `original_start_time`
@@ -92,6 +98,8 @@ pub struct EventResponse {
     pub original_start_time: Option<String>,
     /// An exception that deletes its occurrence.
     pub cancelled: bool,
+    /// The calendar the event belongs to. See `GET /calendar/calendars`.
+    pub calendar_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

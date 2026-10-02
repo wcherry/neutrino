@@ -27,6 +27,8 @@ export interface EventResponse {
   originalStartTime?: string | null;
   /** An exception that deletes its occurrence. */
   cancelled?: boolean;
+  /** The calendar the event belongs to; see `calendarApi.listCalendars`. */
+  calendarId?: string | null;
 }
 
 export interface CreateEventRequest {
@@ -39,6 +41,8 @@ export interface CreateEventRequest {
   recurrenceRule?: string | null;
   attendees?: string[];
   timezone?: string | null;
+  /** Absent, the user's default calendar. A read-only calendar is refused. */
+  calendarId?: string | null;
 }
 
 export interface UpdateEventRequest {
@@ -51,6 +55,8 @@ export interface UpdateEventRequest {
   recurrenceRule?: string | null;
   attendees?: string[];
   timezone?: string | null;
+  /** Moves the event, and a repeating one's exceptions with it. Not for one occurrence. */
+  calendarId?: string | null;
 }
 
 /** "This and following": the new series' changes from the occurrence it starts at. */
@@ -61,6 +67,63 @@ export interface SplitEventRequest extends UpdateEventRequest {
 
 export interface ListEventsResponse {
   events: EventResponse[];
+}
+
+// ---------------------------------------------------------------------------
+// Calendar types — see `agent_docs/calendars.md`
+// ---------------------------------------------------------------------------
+
+/**
+ * `local`: the user's own (one is the default). `connection`: a synced provider's events.
+ * `holidays`: a country's holidays, computed by the client; it holds no events.
+ */
+export type CalendarKind = 'local' | 'connection' | 'holidays';
+
+export interface CalendarResponse {
+  id: string;
+  name: string;
+  /** `#rrggbb`. */
+  color: string;
+  visible: boolean;
+  /** Its events can't be created, edited or deleted; the server refuses them (403). */
+  readOnly: boolean;
+  kind: CalendarKind;
+  /** Where an event created without a calendar goes. Can't be deleted. */
+  isDefault: boolean;
+  /** Connection calendars: the provider, `google`, `outlook` or `apple`. */
+  source: string | null;
+  /** Holiday calendars: ISO 3166-1 alpha-2. */
+  country: string | null;
+  /** Holiday calendars: a region of the country, as `date-holidays` names it. */
+  region: string | null;
+  /** Holiday calendars: observances (Mother's Day, Halloween) as well as public holidays. */
+  includeObservances: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListCalendarsResponse {
+  calendars: CalendarResponse[];
+}
+
+export interface CreateCalendarRequest {
+  /** Required for a `local` calendar; a holiday calendar defaults to its country code. */
+  name?: string;
+  color?: string;
+  /** `local` (the default) or `holidays`. */
+  kind?: Exclude<CalendarKind, 'connection'>;
+  country?: string;
+  region?: string | null;
+  includeObservances?: boolean;
+}
+
+/** Only the fields given change. An empty `region` clears it. */
+export interface UpdateCalendarRequest {
+  name?: string;
+  color?: string;
+  visible?: boolean;
+  region?: string;
+  includeObservances?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +449,32 @@ export const calendarApi = {
       `/api/v1/calendar/events/${seriesId}?fromOccurrence=${encodeURIComponent(originalStart)}`,
       { method: 'DELETE' },
     );
+  },
+
+  // ── Calendars ───────────────────────────────────────────────────────────
+
+  /** The user's calendars, the default first. Hidden ones too: hiding is applied when drawing. */
+  async listCalendars(): Promise<ListCalendarsResponse> {
+    return request<ListCalendarsResponse>('/api/v1/calendar/calendars');
+  },
+
+  async createCalendar(body: CreateCalendarRequest): Promise<CalendarResponse> {
+    return request<CalendarResponse>('/api/v1/calendar/calendars', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
+  async updateCalendar(calendarId: string, body: UpdateCalendarRequest): Promise<CalendarResponse> {
+    return request<CalendarResponse>(`/api/v1/calendar/calendars/${calendarId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** Deletes the calendar and every event in it. */
+  async deleteCalendar(calendarId: string): Promise<void> {
+    return request<void>(`/api/v1/calendar/calendars/${calendarId}`, { method: 'DELETE' });
   },
 
   // ── Reminders ───────────────────────────────────────────────────────────

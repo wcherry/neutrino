@@ -10,6 +10,9 @@ import {
   weekStartDate,
   getEventDayBounds,
 } from './calendarHelpers';
+import { eventColorStyle } from './calendars';
+import { isTaskEvent, type TaskOccurrence } from './calendarTasks';
+import { TaskCheckbox } from './TaskCheckbox';
 import styles from './page.module.css';
 import gridStyles from './WeekView.module.css';
 
@@ -29,6 +32,10 @@ interface WeekViewProps {
   startDay: number;
   dayStartHour?: number;
   dayEndHour?: number;
+  /** The colour to draw an event in: its calendar's. Absent, the default colour. */
+  colorOf?: (e: EventResponse) => string | undefined;
+  /** Ticks or unticks a task drawn on the calendar (`calendarTasks.ts`). */
+  onToggleTask?: (task: TaskOccurrence) => void;
 }
 
 // ── Legacy flat view (flag off) ───────────────────────────────────────────────
@@ -108,6 +115,8 @@ function WeekViewGrid({
   startDay,
   dayStartHour = 8,
   dayEndHour = 20,
+  colorOf,
+  onToggleTask,
 }: WeekViewProps) {
   const today = new Date();
   const weekFirst = useMemo(() => weekStartDate(cursor, startDay), [cursor, startDay]);
@@ -172,10 +181,23 @@ function WeekViewGrid({
         <div className={gridStyles.alldayGutter}>all day</div>
         {dayBuckets.map(({ day, allDay }) => (
           <div key={day.toISOString()} className={gridStyles.alldayCol}>
-            {allDay.map((ev) => (
+            {allDay.map((ev) => isTaskEvent(ev) ? (
+              <div
+                key={ev.id}
+                className={`${gridStyles.eventChipInline} ${styles.calendarTask} ${ev.done ? styles.calendarTaskDone : ''}`}
+                data-testid="task-bar"
+                title={ev.title}
+              >
+                <TaskCheckbox task={ev} onToggle={onToggleTask} />
+                <button type="button" className={styles.calendarTaskTitle} onClick={() => onEventClick(ev)}>
+                  {ev.title}
+                </button>
+              </div>
+            ) : (
               <button
                 key={ev.id}
                 className={gridStyles.eventChipInline}
+                style={eventColorStyle(colorOf?.(ev))}
                 onClick={() => onEventClick(ev)}
                 title={ev.title}
               >
@@ -263,11 +285,29 @@ function WeekViewGrid({
                   {timed.map((ev) => {
                     const { top, height } = getEventDayBounds(ev, day, HOUR_HEIGHT);
                     const startsToday = isSameDay(new Date(ev.startTime), day);
+                    if (isTaskEvent(ev)) {
+                      return (
+                        <div
+                          key={`${ev.id}-${ev.startTime}`}
+                          className={`${gridStyles.eventChip} ${styles.calendarTask} ${ev.done ? styles.calendarTaskDone : ''}`}
+                          data-testid="task-bar"
+                          style={{ top, height }}
+                          onClick={(e) => e.stopPropagation()}
+                          title={ev.title}
+                        >
+                          <TaskCheckbox task={ev} onToggle={onToggleTask} />
+                          <button type="button" className={styles.calendarTaskTitle} onClick={() => onEventClick(ev)}>
+                            {startsToday && <span className={gridStyles.eventChipTime}>{fmtTime(ev.startTime)}</span>}
+                            {ev.title}
+                          </button>
+                        </div>
+                      );
+                    }
                     return (
                       <button
                         key={`${ev.id}-${ev.startTime}`}
                         className={gridStyles.eventChip}
-                        style={{ top, height }}
+                        style={{ top, height, ...eventColorStyle(colorOf?.(ev)) }}
                         onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
                         title={ev.title}
                       >

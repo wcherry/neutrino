@@ -24,7 +24,7 @@ function linkifyText(text: string): React.ReactNode[] {
   return parts;
 }
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Paperclip, FileText } from 'lucide-react';
+import { Plus, X, Paperclip, FileText, Lock } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui';
 import {
   calendarApi,
@@ -35,6 +35,7 @@ import {
   type FileItem,
 } from '@/lib/api';
 import { PreviewModal } from '../drive/PreviewModal';
+import type { CalendarResponse } from '@neutrino/api-calendar';
 import { fmtTime } from './calendarHelpers';
 import { DriveFilePicker } from './DriveFilePicker';
 import styles from './page.module.css';
@@ -221,26 +222,54 @@ export function AttachmentItem({
   );
 }
 
+// ── Calendar line ─────────────────────────────────────────────────────────────
+
+/** The calendar an event is in, as a swatch and its name, and whether it is read-only. */
+function CalendarLine({ calendar, readOnly }: { calendar?: CalendarResponse; readOnly?: boolean }) {
+  if (!calendar && !readOnly) return null;
+  return (
+    <div className={styles.detailCalendar} data-testid="event-calendar">
+      {calendar && <span className={styles.detailCalendarSwatch} style={{ background: calendar.color }} />}
+      {calendar && <span>{calendar.name}</span>}
+      {readOnly && (
+        <span className={styles.detailReadOnly}>
+          <Lock size={11} aria-hidden /> Read-only
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── EventViewModal ────────────────────────────────────────────────────────────
 
 export interface EventViewModalProps {
   event: EventResponse;
+  /** The calendar the event is in, when known. */
+  calendar?: CalendarResponse;
+  /**
+   * A holiday, or an event in a read-only calendar: no edit or delete. A holiday is computed on
+   * the client and has nothing stored to look up, so its reminders and attachments aren't asked
+   * for either.
+   */
+  readOnly?: boolean;
   onClose: () => void;
   onEdit: () => void;
   onDelete: (id: string) => void;
 }
 
-export function EventViewModal({ event, onClose, onEdit, onDelete }: EventViewModalProps) {
+export function EventViewModal({ event, calendar, readOnly, onClose, onEdit, onDelete }: EventViewModalProps) {
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
 
   const { data: remindersData } = useQuery({
     queryKey: ['reminders', 'event', event.id],
     queryFn: () => calendarApi.listReminders(event.id),
+    enabled: !readOnly,
   });
 
   const { data: attachmentsData } = useQuery({
     queryKey: ['attachments', event.id],
     queryFn: () => calendarApi.listAttachments(event.id),
+    enabled: !readOnly,
   });
 
   const eventReminders = remindersData?.reminders ?? [];
@@ -270,6 +299,8 @@ export function EventViewModal({ event, onClose, onEdit, onDelete }: EventViewMo
                 })()
               : `${fmtTime(event.startTime)} – ${fmtTime(event.endTime)}${event.timezone ? ` (${event.timezone})` : ''}`}
           </div>
+
+          <CalendarLine calendar={calendar} readOnly={readOnly} />
 
           {/* Location */}
           {event.location && (
@@ -338,12 +369,16 @@ export function EventViewModal({ event, onClose, onEdit, onDelete }: EventViewMo
           )}
         </ModalBody>
         <ModalFooter>
-          <Button variant="danger" onClick={() => { onDelete(event.id); onClose(); }}>
-            Delete
-          </Button>
-          <Button variant="secondary" onClick={onEdit}>
-            Edit
-          </Button>
+          {!readOnly && (
+            <>
+              <Button variant="danger" onClick={() => { onDelete(event.id); onClose(); }}>
+                Delete
+              </Button>
+              <Button variant="secondary" onClick={onEdit}>
+                Edit
+              </Button>
+            </>
+          )}
           <Button variant="primary" onClick={onClose}>
             Close
           </Button>
@@ -361,6 +396,10 @@ export function EventViewModal({ event, onClose, onEdit, onDelete }: EventViewMo
 
 interface EventDetailProps {
   event: EventResponse;
+  /** The calendar the event is in, when known. */
+  calendar?: CalendarResponse;
+  /** See `EventViewModalProps.readOnly`. */
+  readOnly?: boolean;
   onClose: () => void;
   onDelete: (id: string) => void;
   onEdit: (event: EventResponse) => void;
@@ -368,6 +407,8 @@ interface EventDetailProps {
 
 export function EventDetail({
   event,
+  calendar,
+  readOnly,
   onClose,
   onDelete,
   onEdit,
@@ -377,11 +418,13 @@ export function EventDetail({
   const { data: remindersData } = useQuery({
     queryKey: ['reminders', 'event', event.id],
     queryFn: () => calendarApi.listReminders(event.id),
+    enabled: !readOnly,
   });
 
   const { data: attachmentsData } = useQuery({
     queryKey: ['attachments', event.id],
     queryFn: () => calendarApi.listAttachments(event.id),
+    enabled: !readOnly,
   });
 
   const [showAddAttachment, setShowAddAttachment] = useState(false);
@@ -424,6 +467,8 @@ export function EventDetail({
               })()
             : `${fmtTime(event.startTime)} – ${fmtTime(event.endTime)}${event.timezone ? ` (${event.timezone})` : ''}`}
         </div>
+
+        <CalendarLine calendar={calendar} readOnly={readOnly} />
 
         {/* Location */}
         {event.location && (
@@ -474,33 +519,37 @@ export function EventDetail({
         )}
 
         {/* Attachments */}
-        <div style={{ marginTop: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div className={styles.detailSectionLabel}>Attachments</div>
-            <button
-              className={styles.reminderNewBtn}
-              onClick={() => setShowAddAttachment(true)}
-              title="Add attachment"
-            >
-              <Plus size={12} />
-            </button>
+        {!readOnly && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className={styles.detailSectionLabel}>Attachments</div>
+              <button
+                className={styles.reminderNewBtn}
+                onClick={() => setShowAddAttachment(true)}
+                title="Add attachment"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
+            {attachments.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 4 }}>None</div>
+            )}
+            {attachments.map((a) => (
+              <AttachmentItem
+                key={a.id}
+                attachment={a}
+                onDelete={() => deleteAttachment.mutate(a.id)}
+              />
+            ))}
           </div>
-          {attachments.length === 0 && (
-            <div style={{ fontSize: 12, color: 'var(--color-text-tertiary)', marginTop: 4 }}>None</div>
-          )}
-          {attachments.map((a) => (
-            <AttachmentItem
-              key={a.id}
-              attachment={a}
-              onDelete={() => deleteAttachment.mutate(a.id)}
-            />
-          ))}
-        </div>
+        )}
 
-        <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
-          <Button onClick={() => onEdit(event)}>Edit</Button>
-          <Button onClick={() => onDelete(event.id)}>Delete Event</Button>
-        </div>
+        {!readOnly && (
+          <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
+            <Button onClick={() => onEdit(event)}>Edit</Button>
+            <Button onClick={() => onDelete(event.id)}>Delete Event</Button>
+          </div>
+        )}
       </div>
 
       {showAddAttachment && (

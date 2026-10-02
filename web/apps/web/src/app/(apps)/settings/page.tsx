@@ -13,6 +13,7 @@ import { clearDriveImageCache } from '@/lib/driveImages';
 import { getKeyringState, adoptKeyPair } from '@neutrino/auth';
 import { requestEncryptionGate } from '@/components/E2EEUnlockGate';
 import { KeyManagementPanel } from './KeyManagementPanel';
+import { HolidaysSection } from './HolidaysSection';
 import { PROVIDER_LABELS, connectFailureMessage } from './connectErrors';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
@@ -841,6 +842,8 @@ const qc = useQueryClient();
                   </select>
                 </div>
           </section>
+
+          <HolidaysSection />
 
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>Connected Calendars</h2>

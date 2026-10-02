@@ -261,6 +261,9 @@ impl ConnectionsService {
             conn.user_id
         );
 
+        let calendar_id = self
+            .events_repo
+            .provider_calendar_id(&conn.user_id, "google")?;
         let now = Utc::now().naive_utc();
         let mut count = 0usize;
         for ev in events {
@@ -303,6 +306,7 @@ impl ConnectionsService {
                 recurring_event_id: None,
                 original_start_time: None,
                 cancelled: false,
+                calendar_id: Some(calendar_id.clone()),
             };
 
             self.events_repo
@@ -345,6 +349,9 @@ impl ConnectionsService {
             conn.user_id
         );
 
+        let calendar_id = self
+            .events_repo
+            .provider_calendar_id(&conn.user_id, "outlook")?;
         let now = Utc::now().naive_utc();
         let mut count = 0usize;
         for ev in events {
@@ -380,6 +387,7 @@ impl ConnectionsService {
                 recurring_event_id: None,
                 original_start_time: None,
                 cancelled: false,
+                calendar_id: Some(calendar_id.clone()),
             };
 
             self.events_repo
@@ -408,6 +416,9 @@ impl ConnectionsService {
             conn.user_id
         );
 
+        let calendar_id = self
+            .events_repo
+            .provider_calendar_id(&conn.user_id, "apple")?;
         let now = Utc::now().naive_utc();
         let mut count = 0usize;
         for ev in events {
@@ -436,6 +447,7 @@ impl ConnectionsService {
                 recurring_event_id: None,
                 original_start_time: None,
                 cancelled: false,
+                calendar_id: Some(calendar_id.clone()),
             };
 
             self.events_repo
