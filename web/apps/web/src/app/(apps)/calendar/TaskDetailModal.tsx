@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, X } from 'lucide-react';
+import { MapPin, Plus, X } from 'lucide-react';
 import { Button, Modal, ModalHeader, ModalBody, ModalFooter } from '@neutrino/ui';
 import {
   calendarApi,
@@ -24,6 +24,9 @@ import {
 } from './smartAdd';
 import { splitTags } from './tags';
 import TagInput from './TagInput';
+import { PlacePicker, type PlacePick } from './PlacePicker';
+import { describeGeofence, geofenceFields, geofenceOf, type Geofence } from './places';
+import { usePlaces } from './usePlaces';
 import styles from './page.module.css';
 
 /** An hour, the length a task gets when it is first put on the calendar. */
@@ -76,6 +79,12 @@ export default function TaskDetailModal({ task, knownTags = [], onClose, onSave 
   const [tagDraft, setTagDraft] = useState('');
   const [location, setLocation] = useState(task.location ?? '');
   const [error, setError] = useState('');
+
+  // The arrival geofence. Sent only when changed: an untouched one stays exactly as it is.
+  const places = usePlaces();
+  const [geofence, setGeofence] = useState<Geofence | null>(() => geofenceOf(task));
+  const [geofenceTouched, setGeofenceTouched] = useState(false);
+  const [pickingPlace, setPickingPlace] = useState(false);
 
   const [onCalendar, setOnCalendar] = useState(Boolean(task.eventId));
   const [allDay, setAllDay] = useState(false);
@@ -185,6 +194,7 @@ export default function TaskDetailModal({ task, knownTags = [], onClose, onSave 
         repeatAfterCompletion: repeat.value?.after ?? false,
         // A tag typed but not yet added is still meant.
         tags: splitTags([...tags, tagDraft].join(' ')),
+        ...(geofenceTouched ? geofenceFields(geofence) : {}),
       });
 
       // Scheduling is deliberately after the task write: the event carries the
@@ -207,6 +217,32 @@ export default function TaskDetailModal({ task, knownTags = [], onClose, onSave 
     },
     onError: (e: Error) => setError(e.message || 'Could not save this task.'),
   });
+
+  /** A pick saved as a place is sealed and stored first, so the task points at the place. */
+  async function handlePick(pick: PlacePick) {
+    setPickingPlace(false);
+    setError('');
+    let next = pick.geofence;
+    if (pick.saveAs && next.kind === 'point') {
+      try {
+        const saved = await places.create({ name: pick.saveAs, lat: next.lat, lng: next.lng, radiusM: next.radiusM });
+        next = { kind: 'place', placeId: saved.id };
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not save the place.');
+        return;
+      }
+    }
+    setGeofence(next);
+    setGeofenceTouched(true);
+    // The location text is what every client shows for it, older ones included.
+    setLocation(pick.label);
+  }
+
+  const saveUnavailableReason = !places.supported
+    ? 'This server can’t store saved places yet.'
+    : places.locked
+      ? 'Unlock your encryption key to save places.'
+      : null;
 
   /** Moving the start keeps the slot's length rather than inverting it. */
   function handleStartChange(next: string) {
@@ -314,6 +350,29 @@ export default function TaskDetailModal({ task, knownTags = [], onClose, onSave 
                   onChange={(e) => setLocation(e.target.value)}
                   placeholder="Optional"
                 />
+              </div>
+            </div>
+
+            {/* ── Arrival geofence ──────────────────────────────────────────── */}
+            <div className={styles.formGroup}>
+              <span className={styles.formLabel}>Remind me when I arrive</span>
+              <div className={styles.geofenceRow} data-testid="task-geofence">
+                <MapPin size={13} aria-hidden />
+                <span className={styles.geofenceText}>
+                  {geofence ? describeGeofence(geofence, places.places) : 'Nowhere'}
+                </span>
+                <button type="button" className={styles.placeTextBtn} onClick={() => setPickingPlace(true)}>
+                  {geofence ? 'Change…' : 'Choose a place…'}
+                </button>
+                {geofence && (
+                  <button
+                    type="button"
+                    className={styles.placeTextBtn}
+                    onClick={() => { setGeofence(null); setGeofenceTouched(true); }}
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
             </div>
 
@@ -462,6 +521,16 @@ export default function TaskDetailModal({ task, knownTags = [], onClose, onSave 
           </Button>
         </ModalFooter>
       </Modal>
+
+      {pickingPlace && (
+        <PlacePicker
+          places={places.places}
+          saveUnavailableReason={saveUnavailableReason}
+          initialQuery={geofence ? '' : location}
+          onPick={handlePick}
+          onClose={() => setPickingPlace(false)}
+        />
+      )}
 
       {showAddAttachment && (
         <AddAttachmentModal

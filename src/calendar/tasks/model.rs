@@ -67,6 +67,12 @@ pub struct TaskRecord {
     pub recurrence_rule: Option<String>,
     /// Step from the completion date ("*after 1 week") instead of the due date.
     pub repeat_after_completion: bool,
+    /// The arrival geofence: a saved place (`task_places`), or a one-off point below. Never both.
+    pub geo_place_id: Option<String>,
+    pub geo_lat: Option<f64>,
+    pub geo_lng: Option<f64>,
+    /// 100 to 2000 metres. Set with a point only.
+    pub geo_radius_m: Option<i32>,
 }
 
 #[derive(Debug, Insertable)]
@@ -89,6 +95,10 @@ pub struct NewTaskRecord {
     pub location: Option<String>,
     pub recurrence_rule: Option<String>,
     pub repeat_after_completion: bool,
+    pub geo_place_id: Option<String>,
+    pub geo_lat: Option<f64>,
+    pub geo_lng: Option<f64>,
+    pub geo_radius_m: Option<i32>,
 }
 
 #[derive(Debug, AsChangeset)]
@@ -108,6 +118,11 @@ pub struct UpdateTaskRecord {
     pub location: Option<Option<String>>,
     pub recurrence_rule: Option<Option<String>>,
     pub repeat_after_completion: Option<bool>,
+    /// The geofence is written whole or not at all: all four are `Some` or all `None`.
+    pub geo_place_id: Option<Option<String>>,
+    pub geo_lat: Option<Option<f64>>,
+    pub geo_lng: Option<Option<f64>>,
+    pub geo_radius_m: Option<Option<i32>>,
 }
 
 impl UpdateTaskRecord {
@@ -128,6 +143,10 @@ impl UpdateTaskRecord {
             location: None,
             recurrence_rule: None,
             repeat_after_completion: None,
+            geo_place_id: None,
+            geo_lat: None,
+            geo_lng: None,
+            geo_radius_m: None,
         }
     }
 }

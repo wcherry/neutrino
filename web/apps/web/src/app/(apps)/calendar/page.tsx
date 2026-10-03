@@ -50,6 +50,8 @@ import { RemindersSidebar } from './RemindersSidebar';
 import { CalendarsSidebar } from './CalendarsSidebar';
 import { calendarMap, calendarOf, holidayEvents, isReadOnlyEvent, visibleEvents } from './calendars';
 import { isTaskEvent, taskEvents, type TaskOccurrence } from './calendarTasks';
+import { geofenceFields, type Geofence } from './places';
+import { usePlaces } from './usePlaces';
 import { TasksSidebar } from './TasksSidebar';
 import TaskDetailModal from './TaskDetailModal';
 import { allTags } from './tags';
@@ -474,6 +476,16 @@ export default function CalendarPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
+  // Saved places, decrypted here, for Smart Add's `@Home`.
+  const places = usePlaces();
+  const setTaskGeofence = useCallback(
+    async (taskId: string, geofence: Geofence) => {
+      await calendarApi.updateTask(taskId, geofenceFields(geofence));
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
+    [qc],
+  );
+
   const reorderTasks = useCallback(
     async (orderedTaskIds: string[]) => {
       await calendarApi.reorderTasks({ taskIds: orderedTaskIds });
@@ -590,6 +602,8 @@ export default function CalendarPage() {
       onOpenTask={setEditingTask}
       onReorderTasks={reorderTasks}
       dragReorderEnabled={true}
+      places={places.places}
+      onSetGeofence={setTaskGeofence}
     />
   );
 

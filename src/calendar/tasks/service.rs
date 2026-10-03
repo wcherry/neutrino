@@ -111,6 +111,15 @@ impl TasksService {
     ) -> Result<TaskResponse, ApiError> {
         validate_priority(req.priority)?;
         validate_estimate(req.estimate_minutes)?;
+        let geofence = resolve_geofence(
+            Geofence::default(),
+            req.geo_place_id.map(Some),
+            req.geo_lat.map(Some),
+            req.geo_lng.map(Some),
+            req.geo_radius_m.map(Some),
+        )?
+        .unwrap_or_default();
+        self.check_place(user, &Geofence::default(), &geofence)?;
         let now = Utc::now().naive_utc();
         let record = NewTaskRecord {
             id: Uuid::new_v4().to_string(),
@@ -130,6 +139,10 @@ impl TasksService {
             location: non_empty(req.location),
             recurrence_rule: non_empty(req.recurrence_rule),
             repeat_after_completion: req.repeat_after_completion,
+            geo_place_id: geofence.place,
+            geo_lat: geofence.lat,
+            geo_lng: geofence.lng,
+            geo_radius_m: geofence.radius,
         };
         let saved = self.repo.insert_task(record)?;
         let tags = normalize_tags(req.tags);
@@ -156,6 +169,19 @@ impl TasksService {
         validate_estimate(req.estimate_minutes.flatten())?;
         let due_date = parse_patch_dt(req.due_date)?;
         let start_date = parse_patch_dt(req.start_date)?;
+        let before = self.repo.find_task_by_id(task_id, &user.user_id)?;
+        // None when the request names no geo field: an older client's edit keeps the geofence.
+        let current = Geofence::of(&before);
+        let geofence = resolve_geofence(
+            current.clone(),
+            req.geo_place_id,
+            req.geo_lat,
+            req.geo_lng,
+            req.geo_radius_m,
+        )?;
+        if let Some(geofence) = &geofence {
+            self.check_place(user, &current, geofence)?;
+        }
         let changes = UpdateTaskRecord {
             title: req.title,
             notes: req.notes,
@@ -171,12 +197,15 @@ impl TasksService {
             location: req.location.map(non_empty),
             recurrence_rule: req.recurrence_rule.map(non_empty),
             repeat_after_completion: req.repeat_after_completion,
+            geo_place_id: geofence.as_ref().map(|g| g.place.clone()),
+            geo_lat: geofence.as_ref().map(|g| g.lat),
+            geo_lng: geofence.as_ref().map(|g| g.lng),
+            geo_radius_m: geofence.as_ref().map(|g| g.radius),
         };
 
         // Completing a task that was open, not re-sending `done: true` for one already done:
         // the second must not create a second next occurrence.
-        let completing =
-            req.done == Some(true) && !self.repo.find_task_by_id(task_id, &user.user_id)?.done;
+        let completing = req.done == Some(true) && !before.done;
 
         let updated = self.repo.update_task(task_id, &user.user_id, changes)?;
         let tags = match req.tags {
@@ -275,11 +304,26 @@ impl TasksService {
             location: done.location.clone(),
             recurrence_rule: Some(next.rule),
             repeat_after_completion: done.repeat_after_completion,
+            // The next occurrence reminds you at the same place.
+            geo_place_id: done.geo_place_id.clone(),
+            geo_lat: done.geo_lat,
+            geo_lng: done.geo_lng,
+            geo_radius_m: done.geo_radius_m,
         })?;
         if !tags.is_empty() {
             self.repo.replace_tags(&saved.id, tags)?;
         }
         Ok(Some(task_to_response(saved, None, tags.to_vec())))
+    }
+
+    /// A newly set saved place must be the caller's; another user's is not found, as a task is.
+    fn check_place(&self, user: &AuthenticatedUser, before: &Geofence, after: &Geofence) -> Result<(), ApiError> {
+        match after.place.as_deref() {
+            Some(id) if before.place.as_deref() != Some(id) && !self.repo.owns_place(id, &user.user_id)? => {
+                Err(ApiError::not_found("Place not found"))
+            }
+            _ => Ok(()),
+        }
     }
 
     pub fn reorder_tasks(
@@ -634,8 +678,116 @@ fn task_to_response(
         recurrence_rule: r.recurrence_rule,
         repeat_after_completion: r.repeat_after_completion,
         tags,
+        geo_place_id: r.geo_place_id,
+        geo_lat: r.geo_lat,
+        geo_lng: r.geo_lng,
+        geo_radius_m: r.geo_radius_m,
         next_task: None,
     }
+}
+
+// ── Geofences ─────────────────────────────────────────────────────────────────
+
+/// The radius a point gets when none is given, and the range allowed; iOS clamps to the same.
+pub const DEFAULT_GEO_RADIUS_M: i32 = 150;
+pub const MIN_GEO_RADIUS_M: i32 = 100;
+pub const MAX_GEO_RADIUS_M: i32 = 2000;
+
+/// A task's arrival geofence as stored: a saved place, or a point with its radius, or nothing.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Geofence {
+    place: Option<String>,
+    lat: Option<f64>,
+    lng: Option<f64>,
+    radius: Option<i32>,
+}
+
+impl Geofence {
+    fn of(task: &TaskRecord) -> Self {
+        Geofence {
+            place: task.geo_place_id.clone(),
+            lat: task.geo_lat,
+            lng: task.geo_lng,
+            radius: task.geo_radius_m,
+        }
+    }
+}
+
+/// The geofence once a request's geo fields are applied to `current`, or `None` when it names
+/// none of them, so an edit from a client that doesn't know geofences leaves one alone.
+///
+/// Each field is absent (keep), `null` (clear) or a value. Setting a place clears the point and
+/// setting a point clears the place; setting both at once is refused. Latitude and longitude come
+/// together, a point gets a radius of 150 m when it has none, and a radius needs a point.
+fn resolve_geofence(
+    current: Geofence,
+    place: Option<Option<String>>,
+    lat: Option<Option<f64>>,
+    lng: Option<Option<f64>>,
+    radius: Option<Option<i32>>,
+) -> Result<Option<Geofence>, ApiError> {
+    if place.is_none() && lat.is_none() && lng.is_none() && radius.is_none() {
+        return Ok(None);
+    }
+    if let Some(Some(v)) = lat {
+        if !(-90.0..=90.0).contains(&v) {
+            return Err(ApiError::bad_request("geoLat must be between -90 and 90"));
+        }
+    }
+    if let Some(Some(v)) = lng {
+        if !(-180.0..=180.0).contains(&v) {
+            return Err(ApiError::bad_request("geoLng must be between -180 and 180"));
+        }
+    }
+    if let Some(Some(v)) = radius {
+        if !(MIN_GEO_RADIUS_M..=MAX_GEO_RADIUS_M).contains(&v) {
+            return Err(ApiError::bad_request(format!(
+                "geoRadiusM must be between {MIN_GEO_RADIUS_M} and {MAX_GEO_RADIUS_M}"
+            )));
+        }
+    }
+    let place = place.map(|p| p.filter(|id| !id.trim().is_empty()));
+    let sets_place = matches!(place, Some(Some(_)));
+    let sets_point = matches!(lat, Some(Some(_))) || matches!(lng, Some(Some(_)));
+    if sets_place && sets_point {
+        return Err(ApiError::bad_request(
+            "A task's geofence is a saved place or a point, not both",
+        ));
+    }
+    let sets_radius = matches!(radius, Some(Some(_)));
+
+    let mut g = current;
+    if let Some(v) = place {
+        g.place = v;
+    }
+    if let Some(v) = lat {
+        g.lat = v;
+    }
+    if let Some(v) = lng {
+        g.lng = v;
+    }
+    if let Some(v) = radius {
+        g.radius = v;
+    }
+    if sets_place {
+        g.lat = None;
+        g.lng = None;
+        g.radius = None;
+    }
+    if sets_point {
+        g.place = None;
+    }
+    if g.lat.is_some() != g.lng.is_some() {
+        return Err(ApiError::bad_request("geoLat and geoLng come together"));
+    }
+    if g.lat.is_some() {
+        g.radius.get_or_insert(DEFAULT_GEO_RADIUS_M);
+    } else if sets_radius {
+        return Err(ApiError::bad_request("geoRadiusM needs a point"));
+    } else {
+        g.radius = None;
+    }
+    Ok(Some(g))
 }
 
 fn task_attachment_to_response(
@@ -698,6 +850,11 @@ mod tests {
     }
 
     fn test_service() -> (TasksService, AuthenticatedUser, AuthenticatedUser) {
+        let (service, a, b, _) = test_service_and_pool();
+        (service, a, b)
+    }
+
+    fn test_service_and_pool() -> (TasksService, AuthenticatedUser, AuthenticatedUser, DbPool) {
         let pool = test_pool();
         insert_user(&pool, "user-a");
         insert_user(&pool, "user-b");
@@ -705,8 +862,8 @@ mod tests {
             Arc::new(EventsRepository::new(pool.clone())),
             Arc::new(AttendeesRepository::new(pool.clone())),
         ));
-        let service = TasksService::new(Arc::new(TasksRepository::new(pool)), events);
-        (service, test_user("user-a"), test_user("user-b"))
+        let service = TasksService::new(Arc::new(TasksRepository::new(pool.clone())), events);
+        (service, test_user("user-a"), test_user("user-b"), pool)
     }
 
     fn new_task(service: &TasksService, user: &AuthenticatedUser, title: &str) -> TaskResponse {
@@ -1252,6 +1409,10 @@ mod tests {
             location: None,
             recurrence_rule: None,
             repeat_after_completion: after,
+            geo_place_id: None,
+            geo_lat: None,
+            geo_lng: None,
+            geo_radius_m: None,
         }
     }
 
@@ -1305,5 +1466,161 @@ mod tests {
             next_due(&task, "FREQ=DAILY", tz, "2026-09-26T03:00:00Z").as_deref(),
             Some("2026-09-26T00:00:00Z")
         );
+    }
+
+    // ── Geofences ─────────────────────────────────────────────────────────────
+
+    /// A saved place of `owner`'s, made directly: its payload is opaque here.
+    fn place(pool: &DbPool, id: &str, owner: &str) -> String {
+        let mut conn = pool.get().expect("conn");
+        diesel::sql_query(format!(
+            "INSERT INTO task_places (id, user_id, encrypted_payload) VALUES ('{id}', '{owner}', 'sealed')"
+        ))
+        .execute(&mut conn)
+        .expect("place");
+        id.to_string()
+    }
+
+    fn patch(json: &str) -> UpdateTaskRequest {
+        serde_json::from_str(json).expect("patch")
+    }
+
+    fn create_with(service: &TasksService, user: &AuthenticatedUser, req: CreateTaskRequest) -> Result<TaskResponse, ApiError> {
+        service.create_task(user, CreateTaskRequest { title: "Buy milk".into(), ..req })
+    }
+
+    #[test]
+    fn a_task_is_created_with_a_point_or_a_place() {
+        let (service, user, _, pool) = test_service_and_pool();
+        let point = create_with(&service, &user, CreateTaskRequest {
+            geo_lat: Some(51.5), geo_lng: Some(-0.14), ..Default::default()
+        }).unwrap();
+        assert_eq!((point.geo_lat, point.geo_lng), (Some(51.5), Some(-0.14)));
+        assert_eq!(point.geo_radius_m, Some(DEFAULT_GEO_RADIUS_M), "a point gets the default radius");
+        assert_eq!(point.geo_place_id, None);
+
+        let home = place(&pool, "home", "user-a");
+        let at_home = create_with(&service, &user, CreateTaskRequest {
+            geo_place_id: Some(home.clone()), ..Default::default()
+        }).unwrap();
+        assert_eq!(at_home.geo_place_id, Some(home));
+        assert_eq!((at_home.geo_lat, at_home.geo_radius_m), (None, None));
+
+        let plain = create_with(&service, &user, CreateTaskRequest::default()).unwrap();
+        assert_eq!((plain.geo_place_id, plain.geo_lat), (None, None));
+    }
+
+    #[test]
+    fn out_of_range_or_half_points_are_refused() {
+        let (service, user, _) = test_service();
+        let refused = |req: CreateTaskRequest| create_with(&service, &user, req).unwrap_err().status;
+        assert_eq!(refused(CreateTaskRequest { geo_lat: Some(91.0), geo_lng: Some(0.0), ..Default::default() }), 400);
+        assert_eq!(refused(CreateTaskRequest { geo_lat: Some(0.0), geo_lng: Some(180.5), ..Default::default() }), 400);
+        assert_eq!(refused(CreateTaskRequest { geo_lat: Some(10.0), ..Default::default() }), 400);
+        assert_eq!(refused(CreateTaskRequest { geo_lat: Some(1.0), geo_lng: Some(1.0), geo_radius_m: Some(99), ..Default::default() }), 400);
+        assert_eq!(refused(CreateTaskRequest { geo_lat: Some(1.0), geo_lng: Some(1.0), geo_radius_m: Some(2001), ..Default::default() }), 400);
+        assert_eq!(refused(CreateTaskRequest { geo_radius_m: Some(300), ..Default::default() }), 400, "a radius needs a point");
+        assert_eq!(
+            refused(CreateTaskRequest { geo_place_id: Some("p".into()), geo_lat: Some(1.0), geo_lng: Some(1.0), ..Default::default() }),
+            400,
+            "a place or a point, not both"
+        );
+        let edges = create_with(&service, &user, CreateTaskRequest {
+            geo_lat: Some(-90.0), geo_lng: Some(180.0), geo_radius_m: Some(2000), ..Default::default()
+        }).unwrap();
+        assert_eq!(edges.geo_radius_m, Some(2000));
+    }
+
+    #[test]
+    fn another_users_place_is_not_found() {
+        let (service, user, _, pool) = test_service_and_pool();
+        let theirs = place(&pool, "theirs", "user-b");
+        let made = create_with(&service, &user, CreateTaskRequest { geo_place_id: Some(theirs.clone()), ..Default::default() });
+        assert_eq!(made.unwrap_err().status, 404);
+        let task = new_task(&service, &user, "Buy milk");
+        let set = service.update_task(&user, &task.id, patch(&format!(r#"{{"geoPlaceId":"{theirs}"}}"#)));
+        assert_eq!(set.unwrap_err().status, 404);
+    }
+
+    #[test]
+    fn setting_a_place_clears_the_point_and_the_other_way_round() {
+        let (service, user, _, pool) = test_service_and_pool();
+        let home = place(&pool, "home", "user-a");
+        let task = create_with(&service, &user, CreateTaskRequest {
+            geo_lat: Some(1.0), geo_lng: Some(2.0), geo_radius_m: Some(500), ..Default::default()
+        }).unwrap();
+
+        // What iOS sends: all four, the other kind null.
+        let at_home = service.update_task(&user, &task.id, patch(&format!(
+            r#"{{"geoPlaceId":"{home}","geoLat":null,"geoLng":null,"geoRadiusM":null}}"#
+        ))).unwrap();
+        assert_eq!(at_home.geo_place_id, Some(home.clone()));
+        assert_eq!((at_home.geo_lat, at_home.geo_lng, at_home.geo_radius_m), (None, None, None));
+
+        // A client that sends only the place gets the same.
+        let back = service.update_task(&user, &task.id, patch(r#"{"geoLat":3.0,"geoLng":4.0}"#)).unwrap();
+        assert_eq!(back.geo_place_id, None, "a point replaces the place");
+        assert_eq!((back.geo_lat, back.geo_lng, back.geo_radius_m), (Some(3.0), Some(4.0), Some(DEFAULT_GEO_RADIUS_M)));
+
+        let wider = service.update_task(&user, &task.id, patch(r#"{"geoRadiusM":800}"#)).unwrap();
+        assert_eq!((wider.geo_lat, wider.geo_radius_m), (Some(3.0), Some(800)));
+
+        let cleared = service.update_task(&user, &task.id, patch(
+            r#"{"geoPlaceId":null,"geoLat":null,"geoLng":null,"geoRadiusM":null}"#
+        )).unwrap();
+        assert_eq!((cleared.geo_place_id, cleared.geo_lat, cleared.geo_lng, cleared.geo_radius_m), (None, None, None, None));
+    }
+
+    #[test]
+    fn half_a_point_after_a_patch_is_refused() {
+        let (service, user, _) = test_service();
+        let task = create_with(&service, &user, CreateTaskRequest {
+            geo_lat: Some(1.0), geo_lng: Some(2.0), ..Default::default()
+        }).unwrap();
+        let half = service.update_task(&user, &task.id, patch(r#"{"geoLng":null}"#));
+        assert_eq!(half.unwrap_err().status, 400);
+        let unchanged = service.update_task(&user, &task.id, patch("{}")).unwrap();
+        assert_eq!((unchanged.geo_lat, unchanged.geo_lng), (Some(1.0), Some(2.0)));
+    }
+
+    #[test]
+    fn an_edit_without_geo_fields_keeps_the_geofence() {
+        let (service, user, _, pool) = test_service_and_pool();
+        let home = place(&pool, "home", "user-a");
+        let task = create_with(&service, &user, CreateTaskRequest {
+            geo_place_id: Some(home.clone()), location: Some("Home".into()), ..Default::default()
+        }).unwrap();
+        // An older web or iOS build: renames and completes, knowing nothing of geofences.
+        service.update_task(&user, &task.id, patch(r#"{"title":"Buy oat milk","notes":"2 cartons"}"#)).unwrap();
+        let done = service.update_task(&user, &task.id, patch(r#"{"done":true}"#)).unwrap();
+        assert_eq!(done.title, "Buy oat milk");
+        assert_eq!(done.geo_place_id, Some(home));
+        assert_eq!(done.location.as_deref(), Some("Home"));
+    }
+
+    #[test]
+    fn the_next_occurrence_of_a_repeating_task_keeps_its_geofence() {
+        let (service, user, _) = test_service();
+        let task = create_with(&service, &user, CreateTaskRequest {
+            due_date: Some("2026-10-01T00:00:00Z".into()),
+            recurrence_rule: Some("FREQ=WEEKLY".into()),
+            geo_lat: Some(40.7128), geo_lng: Some(-74.006), geo_radius_m: Some(300),
+            ..Default::default()
+        }).unwrap();
+        let done = service.update_task(&user, &task.id, patch(r#"{"done":true}"#)).unwrap();
+        let next = done.next_task.expect("a next occurrence");
+        assert_eq!((next.geo_lat, next.geo_lng, next.geo_radius_m), (Some(40.7128), Some(-74.006), Some(300)));
+    }
+
+    #[test]
+    fn deleting_a_place_clears_it_from_the_task() {
+        let (service, user, _, pool) = test_service_and_pool();
+        let home = place(&pool, "home", "user-a");
+        let task = create_with(&service, &user, CreateTaskRequest { geo_place_id: Some(home.clone()), ..Default::default() }).unwrap();
+        crate::calendar::task_places::service::TaskPlacesService::new(pool)
+            .delete(&user, &home)
+            .unwrap();
+        let after = service.list_tasks(&user, None).unwrap().into_iter().find(|t| t.id == task.id).unwrap();
+        assert_eq!(after.geo_place_id, None);
     }
 }

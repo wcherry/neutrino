@@ -518,6 +518,7 @@ mod tests {
             "/api/v1/calendar/events/abc",
             "/api/v1/calendar/reminders/abc",
             "/api/v1/calendar/tasks/reorder",
+            "/api/v1/calendar/task-places/abc",
             "/api/v1/calendar/sync/trigger",
         ] {
             assert_eq!(signal_for(path), Some(SignalKind::Calendar), "{path}");

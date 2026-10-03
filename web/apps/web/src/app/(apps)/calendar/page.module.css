@@ -746,6 +746,168 @@
   cursor: pointer;
 }
 
+/* ── Task arrival geofences (#243) ───────────────────────────────────────── */
+.geofenceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.geofenceText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text, #111827);
+}
+
+.placeTextBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.placeTextBtn:hover {
+  text-decoration: underline;
+}
+
+.placePicker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.placeChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.placeChoice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 999px;
+  background: var(--color-surface, #fff);
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text, #111827);
+  cursor: pointer;
+}
+
+.placeChoice:hover {
+  border-color: var(--color-primary, #2563eb);
+}
+
+.placeSearch {
+  display: flex;
+  gap: 8px;
+}
+
+.placeSearch input {
+  flex: 1;
+  min-width: 0;
+}
+
+.placeResults {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.placeResult {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.placeResult span {
+  font-size: 12px;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.placeResult:hover {
+  background: var(--color-surface-hover, #f3f4f6);
+}
+
+.placeSpot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.geofenceMap {
+  height: 220px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border, #e5e7eb);
+}
+
+.placeSaveToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.placeError {
+  font-size: 12px;
+  color: var(--color-error, #dc2626);
+}
+
+/* Smart Add's offer for an @place that names no saved place. */
+.placeOffer {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--color-surface-secondary, #f9fafb);
+  font-size: 12px;
+  color: var(--color-text, #111827);
+}
+
+.placeOffer > span {
+  flex: 1;
+  min-width: 140px;
+}
+
+.placeOfferAddress {
+  display: block;
+  color: var(--color-text-tertiary, #9ca3af);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Calendars list ──────────────────────────────────────────────────────── */
 .calendarList {
   list-style: none;
