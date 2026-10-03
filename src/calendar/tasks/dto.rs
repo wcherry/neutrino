@@ -69,6 +69,14 @@ pub struct CreateTaskRequest {
     /// Free-form tags. Stored lowercase with any leading `#` removed.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Remind on arrival at this saved place (`/task-places`). Not with a point.
+    pub geo_place_id: Option<String>,
+    /// Remind on arrival at this point: latitude, -90 to 90. Sent with `geoLng`.
+    pub geo_lat: Option<f64>,
+    /// Longitude, -180 to 180.
+    pub geo_lng: Option<f64>,
+    /// The point's radius in metres, 100 to 2000; 150 if absent.
+    pub geo_radius_m: Option<i32>,
 }
 
 #[derive(Debug, Default, Deserialize, ToSchema)]
@@ -108,6 +116,20 @@ pub struct UpdateTaskRequest {
     pub repeat_after_completion: Option<bool>,
     /// Replaces the task's tags when present.
     pub tags: Option<Vec<String>>,
+    /// The arrival geofence. Omit all four to leave it alone; send `null` to clear one. Setting
+    /// a place clears the point and the other way round, so clients send all four on a change.
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<String>)]
+    pub geo_place_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<f64>)]
+    pub geo_lat: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<f64>)]
+    pub geo_lng: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    #[schema(value_type = Option<i32>)]
+    pub geo_radius_m: Option<Option<i32>>,
     /// The IANA zone to step a repeat in, so a 09:00 task stays at 09:00 across DST. Only read
     /// when completing a repeating task; UTC if absent.
     pub timezone: Option<String>,
@@ -205,6 +227,12 @@ pub struct TaskResponse {
     pub recurrence_rule: Option<String>,
     pub repeat_after_completion: bool,
     pub tags: Vec<String>,
+    /// The saved place the task reminds you at, or `null`.
+    pub geo_place_id: Option<String>,
+    /// The one-off point the task reminds you at, or `null`.
+    pub geo_lat: Option<f64>,
+    pub geo_lng: Option<f64>,
+    pub geo_radius_m: Option<i32>,
     /// Only on the response to completing a repeating task: the new task created for its next
     /// occurrence. The completed task itself stays done.
     #[serde(skip_serializing_if = "Option::is_none")]

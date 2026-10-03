@@ -257,6 +257,15 @@ export interface TaskResponse {
   /** Lowercase, without the '#'. */
   tags?: string[];
   /**
+   * The arrival geofence: a saved place (`calendarApi.listTaskPlaces`) or a one-off point, never
+   * both; null when unset. Absent from servers older than geofencing (#243).
+   */
+  geoPlaceId?: string | null;
+  geoLat?: number | null;
+  geoLng?: number | null;
+  /** The point's radius in metres, 100–2000. */
+  geoRadiusM?: number | null;
+  /**
    * Only on the response to completing a repeating task: the task created for its next
    * occurrence. The completed task stays done.
    */
@@ -286,6 +295,11 @@ export interface CreateTaskRequest {
   recurrenceRule?: string | null;
   repeatAfterCompletion?: boolean;
   tags?: string[];
+  /** A saved place or a point (lat and lng together), not both. */
+  geoPlaceId?: string | null;
+  geoLat?: number | null;
+  geoLng?: number | null;
+  geoRadiusM?: number | null;
 }
 
 export interface UpdateTaskRequest {
@@ -305,6 +319,30 @@ export interface UpdateTaskRequest {
   tags?: string[];
   /** IANA zone to step a repeating task in when it is completed; UTC if absent. */
   timezone?: string;
+  /**
+   * The arrival geofence. Omit all four to leave it alone. Setting a place clears the point and
+   * the other way round, so send all four whenever it changes (`geofenceFields`).
+   */
+  geoPlaceId?: string | null;
+  geoLat?: number | null;
+  geoLng?: number | null;
+  geoRadiusM?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Saved places (task geofences) — end-to-end encrypted; see `sealPlace` in e2e-crypto
+// ---------------------------------------------------------------------------
+
+export interface TaskPlaceResponse {
+  id: string;
+  /** A v1 place envelope. The server can't read it. */
+  encryptedPayload: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListTaskPlacesResponse {
+  places: TaskPlaceResponse[];
 }
 
 export interface ReorderTasksRequest {
@@ -632,6 +670,32 @@ export const calendarApi = {
     return request<void>(`/api/v1/calendar/tasks/${taskId}/attachments/${attachmentId}`, {
       method: 'DELETE',
     });
+  },
+
+  // ── Saved places ────────────────────────────────────────────────────────
+
+  /** The user's saved places, as ciphertext. 404 from a server older than geofencing. */
+  async listTaskPlaces(): Promise<ListTaskPlacesResponse> {
+    return request<ListTaskPlacesResponse>('/api/v1/calendar/task-places');
+  },
+
+  async createTaskPlace(encryptedPayload: string): Promise<TaskPlaceResponse> {
+    return request<TaskPlaceResponse>('/api/v1/calendar/task-places', {
+      method: 'POST',
+      body: JSON.stringify({ encryptedPayload }),
+    });
+  },
+
+  async updateTaskPlace(placeId: string, encryptedPayload: string): Promise<TaskPlaceResponse> {
+    return request<TaskPlaceResponse>(`/api/v1/calendar/task-places/${placeId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ encryptedPayload }),
+    });
+  },
+
+  /** Deletes the place; the server takes it off every task that used it. */
+  async deleteTaskPlace(placeId: string): Promise<void> {
+    return request<void>(`/api/v1/calendar/task-places/${placeId}`, { method: 'DELETE' });
   },
 
   // ── Connections ─────────────────────────────────────────────────────────

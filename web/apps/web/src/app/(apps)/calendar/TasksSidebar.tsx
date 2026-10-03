@@ -42,6 +42,7 @@ import {
   smartAddToCreateRequest,
   type SmartAddResult,
 } from './smartAdd';
+import { DEFAULT_RADIUS_M, geocode, matchPlace, type GeocodeResult, type Geofence, type Place } from './places';
 import styles from './page.module.css';
 
 /**
@@ -63,6 +64,21 @@ interface TasksSidebarProps {
   onOpenTask: (task: TaskResponse) => void;
   onReorderTasks?: (orderedTaskIds: string[]) => Promise<void>;
   dragReorderEnabled?: boolean;
+  /** The user's saved places, decrypted, for Smart Add's `@Home`. */
+  places?: Place[];
+  /**
+   * Sets a task's arrival geofence. Given, an `@place` that names no saved place is looked up
+   * after the task is created and offered to confirm; never attached without asking.
+   */
+  onSetGeofence?: (taskId: string, geofence: Geofence) => Promise<void>;
+  /** Swappable in tests. */
+  geocoder?: (query: string) => Promise<GeocodeResult[]>;
+}
+
+/** A search result for a just-created task's `@place`, waiting on the user's yes or no. */
+interface PlaceOffer {
+  taskId: string;
+  result: GeocodeResult;
 }
 
 export function TasksSidebar({
@@ -73,8 +89,12 @@ export function TasksSidebar({
   onOpenTask,
   onReorderTasks,
   dragReorderEnabled = false,
+  places = [],
+  onSetGeofence,
+  geocoder = geocode,
 }: TasksSidebarProps) {
   const [title, setTitle] = useState('');
+  const [placeOffer, setPlaceOffer] = useState<PlaceOffer | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [createError, setCreateError] = useState('');
 
@@ -90,6 +110,8 @@ export function TasksSidebar({
     () => (title.trim() ? parseSmartAdd(title.trim(), smartAddContext()) : null),
     [title],
   );
+  // `@Home` names a saved place: it is attached on create, and the preview says so.
+  const matchedPlace = parsed?.location ? matchPlace(parsed.location, places) : null;
 
   async function submit(openAfter: boolean) {
     if (!parsed || isCreatingTask) return;
@@ -98,14 +120,36 @@ export function TasksSidebar({
       return;
     }
     setCreateError('');
+    setPlaceOffer(null);
     try {
-      const created = await onCreateTask(smartAddToCreateRequest(parsed));
+      const req = smartAddToCreateRequest(parsed);
+      if (matchedPlace) req.geoPlaceId = matchedPlace.id;
+      const created = await onCreateTask(req);
       setTitle('');
       if (openAfter) onOpenTask(created);
+      if (parsed.location && !matchedPlace && onSetGeofence) offerPlace(created.id, parsed.location);
     } catch {
       // Keep what was typed: re-typing a task because the network blinked is
       // worse than an error message sitting under the box.
       setCreateError('Could not add that task. Please try again.');
+    }
+  }
+
+  /** Looks `@Safeway` up and offers the top result. A failed or empty search offers nothing. */
+  function offerPlace(taskId: string, location: string) {
+    geocoder(location)
+      .then((results) => { if (results[0]) setPlaceOffer({ taskId, result: results[0] }); })
+      .catch(() => {});
+  }
+
+  async function acceptPlaceOffer() {
+    if (!placeOffer || !onSetGeofence) return;
+    const { taskId, result } = placeOffer;
+    setPlaceOffer(null);
+    try {
+      await onSetGeofence(taskId, { kind: 'point', lat: result.lat, lng: result.lng, radiusM: DEFAULT_RADIUS_M });
+    } catch {
+      setCreateError('Could not set the arrival reminder.');
     }
   }
 
@@ -188,7 +232,7 @@ export function TasksSidebar({
           maxLength={500}
           disabled={isCreatingTask}
         />
-        {parsed && <SmartAddPreview parsed={parsed} />}
+        {parsed && <SmartAddPreview parsed={parsed} matchedPlace={matchedPlace} />}
         <div
           className={styles.taskComposerHint}
           title={'^date  ~start  !1–!3 priority  #tag  *repeat  =estimate  @place  // note\n"Quote" a title to keep a date in it'}
@@ -196,6 +240,18 @@ export function TasksSidebar({
           Enter to add · {modifierLabel()}+Enter to add and edit · try ^fri 3pm #tag !1
         </div>
       </div>
+
+      {placeOffer && (
+        <div className={styles.placeOffer} role="status" data-testid="place-offer">
+          <MapPin size={12} aria-hidden />
+          <span>
+            Remind you when you arrive at <strong>{placeOffer.result.name}</strong>?
+            <span className={styles.placeOfferAddress}>{placeOffer.result.label}</span>
+          </span>
+          <button type="button" className={styles.placeTextBtn} onClick={acceptPlaceOffer}>Remind me</button>
+          <button type="button" className={styles.placeTextBtn} onClick={() => setPlaceOffer(null)}>No thanks</button>
+        </div>
+      )}
 
       {createError && <div className={styles.taskUploadError}>{createError}</div>}
       {uploadError && <div className={styles.taskUploadError}>{uploadError}</div>}
@@ -477,7 +533,7 @@ function TaskBadges({ task }: { task: TaskResponse }) {
 }
 
 /** One chip per field Smart Add found in the line being typed. Nothing when it found none. */
-function SmartAddPreview({ parsed }: { parsed: SmartAddResult }) {
+function SmartAddPreview({ parsed, matchedPlace }: { parsed: SmartAddResult; matchedPlace: Place | null }) {
   const chips: { key: string; icon: React.ReactNode; text: string; className?: string }[] = [];
   if (parsed.due) {
     chips.push({ key: 'due', icon: <CalendarDays size={10} />, text: formatSmartDate(parsed.due) });
@@ -506,7 +562,12 @@ function SmartAddPreview({ parsed }: { parsed: SmartAddResult }) {
     chips.push({ key: 'estimate', icon: <Hourglass size={10} />, text: formatEstimate(parsed.estimateMinutes) });
   }
   if (parsed.location) {
-    chips.push({ key: 'location', icon: <MapPin size={10} />, text: parsed.location });
+    chips.push({
+      key: 'location',
+      icon: <MapPin size={10} />,
+      // A saved place says it will remind; plain text is only a label until confirmed.
+      text: matchedPlace ? `${matchedPlace.name} · reminds on arrival` : parsed.location,
+    });
   }
   if (parsed.note) {
     chips.push({ key: 'note', icon: <StickyNote size={10} />, text: parsed.note });

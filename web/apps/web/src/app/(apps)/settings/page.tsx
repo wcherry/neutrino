@@ -14,6 +14,7 @@ import { getKeyringState, adoptKeyPair } from '@neutrino/auth';
 import { requestEncryptionGate } from '@/components/E2EEUnlockGate';
 import { KeyManagementPanel } from './KeyManagementPanel';
 import { HolidaysSection } from './HolidaysSection';
+import { SavedPlacesSection } from './SavedPlacesSection';
 import { PROVIDER_LABELS, connectFailureMessage } from './connectErrors';
 import { useAiSettings, type AiSettings } from '@/hooks/useAiSettings';
 import { usePhotoSettings } from '@/hooks/usePhotoSettings';
@@ -844,6 +845,8 @@ const qc = useQueryClient();
           </section>
 
           <HolidaysSection />
+
+          <SavedPlacesSection />
 
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>Connected Calendars</h2>

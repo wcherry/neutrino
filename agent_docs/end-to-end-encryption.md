@@ -255,3 +255,43 @@ You already have:
 This plugs in as:
 
 “encryption layer around your existing storage + sync engine”
+
+⸻
+
+## Saved-place envelope (v1) — task geofences
+
+Issue #243; the calendar app's side is `neutrino_calendar_ios_mobile/agent_docs/task-geofencing.md`.
+The first end-to-end encrypted data in Calendar: `task_places.encrypted_payload`, a saved place a
+task can remind you at on arrival. It is built only from primitives every client already uses for
+Drive files, so no new cryptography exists anywhere:
+
+```
+encryptedPayload = JSON { "v": 1, "keyVersion": <int>, "key": <string>, "data": <string> }
+  dek  = 32 random bytes, fresh per write             web: generateFileKey · Swift: DriveFileCrypto.newDEK
+  key  = crypto_box_seal(dek, account public key)      web: encryptFileKey  · Swift: DriveFileCrypto.seal
+         base64url, no padding
+  data = one crypto_secretstream_xchacha20poly1305     web: encryptMetadata · Swift: DriveFileCrypto.encrypt
+         push of the payload JSON, TAG_FINAL, header-prefixed, base64url no padding
+payload = JSON { "name": string, "lat": number, "lng": number, "radiusM": int }
+```
+
+- `keyVersion` is the keyring version the DEK was sealed to: the active one when written. A
+  reader opens with that version's keypair, which may be a retired one after a rotation.
+- A reader rejects any `v` other than 1 (`unsupportedVersion`), and anything that isn't an envelope
+  (`malformed`). It ignores payload fields it doesn't know.
+- The server treats the payload as opaque: it caps it at 4 KB, never parses it and never logs it.
+  A database dump shows no place names or coordinates.
+- A task's one-off point (`tasks.geo_lat`, `geo_lng`, `geo_radius_m`) is **not** encrypted, on
+  purpose; only saved places, where Home and Work live, are.
+
+**Implementations.** TypeScript: `web/packages/e2e-crypto/src/place.ts` (`sealPlace`,
+`openPlace`, `placeKeyVersion`). Swift: `PlaceEnvelope` in the calendar app
+(`NeutrinoCalendar/Models/TaskPlace.swift`), to move into `NeutrinoCrypto` in
+`neutrino_shared_ios`. macOS: not used; its `EncryptionService` primitives should open the
+vectors too (follow-up).
+
+**Vectors.** `place_envelope_vectors.json` is generated from this package's `crypto.ts` by the
+calendar repo's `scripts/generate_place_envelope_vectors.mjs`. The Swift tests open it, and so does
+`e2e-crypto/src/__tests__/place.test.ts` (a copy in `__tests__/fixtures/`). Changing anything above
+is a wire-format change across the web, every iOS app and the server: regenerate the vectors and
+update every reader in one coordinated change.
