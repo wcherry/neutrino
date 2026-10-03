@@ -285,13 +285,14 @@ payload = JSON { "name": string, "lat": number, "lng": number, "radiusM": int }
   purpose; only saved places, where Home and Work live, are.
 
 **Implementations.** TypeScript: `web/packages/e2e-crypto/src/place.ts` (`sealPlace`,
-`openPlace`, `placeKeyVersion`). Swift: `PlaceEnvelope` in the calendar app
-(`NeutrinoCalendar/Models/TaskPlace.swift`), to move into `NeutrinoCrypto` in
-`neutrino_shared_ios`. macOS: not used; its `EncryptionService` primitives should open the
+`openPlace`, `placeKeyVersion`). Swift: `PlaceEnvelope` in `NeutrinoCrypto`
+(`neutrino_shared_ios/Sources/NeutrinoCrypto/PlaceEnvelope.swift`), beside the `DriveFileCrypto`
+primitives it is built from. macOS: not used; its `EncryptionService` primitives should open the
 vectors too (follow-up).
 
-**Vectors.** `place_envelope_vectors.json` is generated from this package's `crypto.ts` by the
-calendar repo's `scripts/generate_place_envelope_vectors.mjs`. The Swift tests open it, and so does
+**Vectors.** `place_envelope_vectors.json` is generated from this package's `crypto.ts` by
+`neutrino_shared_ios/scripts/generate_place_envelope_vectors.mjs`, into that package's
+`Tests/NeutrinoCryptoTests/Fixtures/`. `PlaceEnvelopeTests` there opens it, and so does
 `e2e-crypto/src/__tests__/place.test.ts` (a copy in `__tests__/fixtures/`). Changing anything above
 is a wire-format change across the web, every iOS app and the server: regenerate the vectors and
 update every reader in one coordinated change.

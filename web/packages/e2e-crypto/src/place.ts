@@ -12,10 +12,9 @@
  * A reader rejects any `v` but 1 and ignores payload fields it doesn't know. It opens with the
  * keypair for `keyVersion`, which may be a retired one after a rotation.
  *
- * This is a wire format shared with iOS (`PlaceEnvelope` in the calendar app, later
- * `NeutrinoCrypto`) and pinned by `place_envelope_vectors.json`, which the calendar repo
- * generates from this package. Change it in every client at once. See
- * `agent_docs/end-to-end-encryption.md`.
+ * This is a wire format shared with iOS (`PlaceEnvelope` in `NeutrinoCrypto`, neutrino_shared_ios)
+ * and pinned by `place_envelope_vectors.json`, which that package generates from this one.
+ * Change it in every client at once. See `agent_docs/end-to-end-encryption.md`.
  */
 
 import { decryptFileKey, decryptMetadata, encryptFileKey, encryptMetadata, generateFileKey } from './crypto';

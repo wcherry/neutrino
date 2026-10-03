@@ -5,7 +5,7 @@
  * The saved-place envelope (`place.ts`) against the vectors iOS also opens.
  *
  * `fixtures/place_envelope_vectors.json` is a copy of
- * `neutrino_calendar_ios_mobile/NeutrinoCalendarTests/Fixtures/place_envelope_vectors.json`,
+ * `neutrino_shared_ios/Tests/NeutrinoCryptoTests/Fixtures/place_envelope_vectors.json`,
  * generated there from this package's `crypto.ts` by `scripts/generate_place_envelope_vectors.mjs`.
  * Opening every case here and in the Swift tests is what keeps the two clients able to read
  * each other's places. Regenerate and copy it whenever the cases change.
