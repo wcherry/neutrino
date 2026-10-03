@@ -287,12 +287,13 @@ payload = JSON { "name": string, "lat": number, "lng": number, "radiusM": int }
 **Implementations.** TypeScript: `web/packages/e2e-crypto/src/place.ts` (`sealPlace`,
 `openPlace`, `placeKeyVersion`). Swift: `PlaceEnvelope` in `NeutrinoCrypto`
 (`neutrino_shared_ios/Sources/NeutrinoCrypto/PlaceEnvelope.swift`), beside the `DriveFileCrypto`
-primitives it is built from. macOS: not used; its `EncryptionService` primitives should open the
-vectors too (follow-up).
+primitives it is built from. macOS: not used, but its `EncryptionService` primitives open every
+vector (`neutrino_drive_mac_desktop/tests/NeutrinoDriveTests/PlaceEnvelopeVectorTests.swift`).
 
 **Vectors.** `place_envelope_vectors.json` is generated from this package's `crypto.ts` by
 `neutrino_shared_ios/scripts/generate_place_envelope_vectors.mjs`, into that package's
 `Tests/NeutrinoCryptoTests/Fixtures/`. `PlaceEnvelopeTests` there opens it, and so does
-`e2e-crypto/src/__tests__/place.test.ts` (a copy in `__tests__/fixtures/`). Changing anything above
+`e2e-crypto/src/__tests__/place.test.ts` (a copy in `__tests__/fixtures/`), and so does the macOS
+client (a copy in `tests/NeutrinoDriveTests/Fixtures/`). Changing anything above
 is a wire-format change across the web, every iOS app and the server: regenerate the vectors and
 update every reader in one coordinated change.
