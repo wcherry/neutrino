@@ -222,6 +222,20 @@ diesel::table! {
         location -> Nullable<Text>,
         recurrence_rule -> Nullable<Text>,
         repeat_after_completion -> Bool,
+        geo_place_id -> Nullable<Text>,
+        geo_lat -> Nullable<Double>,
+        geo_lng -> Nullable<Double>,
+        geo_radius_m -> Nullable<Integer>,
+    }
+}
+
+diesel::table! {
+    task_places (id) {
+        id -> Text,
+        user_id -> Text,
+        encrypted_payload -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -1150,6 +1164,8 @@ diesel::joinable!(user_profiles -> users (user_id));
 // Calendar
 diesel::joinable!(events -> calendars (calendar_id));
 diesel::joinable!(task_list_memberships -> tasks (task_id));
+diesel::joinable!(task_places -> users (user_id));
+diesel::joinable!(tasks -> task_places (geo_place_id));
 diesel::joinable!(task_list_memberships -> task_lists (list_id));
 diesel::joinable!(task_tags -> tasks (task_id));
 
@@ -1198,6 +1214,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     task_attachments,
     task_list_memberships,
     task_tags,
+    task_places,
     // Docs
     doc_yjs_state,
     // Notes

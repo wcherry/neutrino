@@ -15,6 +15,16 @@ export {
 } from './crypto';
 
 export {
+  sealPlace,
+  openPlace,
+  placeKeyVersion,
+  PlaceEnvelopeError,
+  PLACE_ENVELOPE_VERSION,
+  type PlacePayload,
+  type PlaceEnvelopeErrorCode,
+} from './place';
+
+export {
   loadKeyPair,
   loadKeyPairForVersion,
   activeKeyVersion,

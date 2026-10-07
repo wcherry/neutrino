@@ -1,3 +1,56 @@
+# Manual Verification: Task geofencing — server, web and E2EE envelope (#243)
+
+Delete this section once task geofencing is proven stable. The iOS half (arrival alerts) is
+wcherry/neutrino_calendar_ios_mobile#23, branch `feature/task-geofencing`.
+
+## Prerequisites
+
+- The stack running locally: `cargo xtask dev`. Migration `00140_calendar__…_task_geofencing`
+  runs on start.
+- An account with encryption set up and unlocked (saving places needs the key).
+- For the cross-client checks: the calendar iOS app built from `feature/task-geofencing`, signed in
+  to the same account.
+
+## Steps
+
+### Happy path
+
+1. Open `/calendar`, open a task, and under **Remind me when I arrive** choose **Choose a place…**.
+   Search "Buckingham Palace", pick the result. → A map shows the point and its circle; drag the
+   radius slider → the circle and "Remind within …" follow. Tick **Save as a place**, name it
+   "Home", **Remind me here**, then **Save**. → The row reads "Home"; the location reads
+   "Home".
+2. `sqlite3 ./data/neutrino.db "SELECT encrypted_payload FROM task_places;"` → JSON with only
+   `v`, `keyVersion`, `key`, `data`; no "Home", no coordinates.
+3. Settings → Calendar → **Saved places** → "Home" with its coordinates and radius. Rename it to
+   "My home". → The task's row reads "My home".
+4. In the task sidebar type `Water plants @home` → the preview chip says "My home · reminds on
+   arrival" → Enter. → The task has the place (open it to see).
+5. Type `Buy milk @Safeway` → Enter. → The task is created, then "Remind you when you arrive at
+   Safeway?" appears with the address. **No thanks** → nothing set. Repeat and **Remind me** → the
+   task gets a point (open it: "lat, lng · 150 m").
+6. On iOS, sync. → "My home" appears under Saved Places, and the tasks show their places. Save a
+   place on iOS → it appears in web Settings with the right name and coordinates.
+7. Delete "My home" in Settings (confirm). → The tasks that used it show "Nowhere".
+
+### Edge cases
+
+1. **Older clients keep geofences**: with a geofenced task, edit only its title, then complete it,
+   from a client that predates geofencing (or `PATCH /tasks/{id}` with `{"title":"x"}` and
+   `{"done":true}`) → `geoPlaceId` / `geoLat` are unchanged.
+2. **Repeating**: complete a weekly task that has a point → `nextTask` has the same point.
+3. **Validation**: `PATCH` with `{"geoLat":91,"geoLng":0}` → 400; `{"geoLat":1}` on a task with no
+   point → 400; `{"geoRadiusM":50,"geoLat":1,"geoLng":1}` → 400; another user's `geoPlaceId` → 404;
+   a 5 KB `encryptedPayload` → 400.
+4. **Locked key**: lock the vault and open the picker → "Save as a place" is disabled and says why;
+   Settings says to unlock to see saved places.
+
+## Cleanup
+
+Delete this section once the feature is proven stable.
+
+---
+
 # Manual Verification: Calendars and holiday calendars (#236, #237)
 
 Delete this section once calendars and holidays are proven stable. Design:

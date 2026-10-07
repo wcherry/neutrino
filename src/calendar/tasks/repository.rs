@@ -158,6 +158,12 @@ impl TasksRepository {
             })
     }
 
+    /// Whether `place_id` is one of `user_id`'s saved places.
+    pub fn owns_place(&self, place_id: &str, user_id: &str) -> Result<bool, ApiError> {
+        let mut conn = self.get_conn()?;
+        crate::calendar::task_places::service::is_owned(&mut conn, place_id, user_id)
+    }
+
     pub fn find_task_by_id(&self, id: &str, user_id: &str) -> Result<TaskRecord, ApiError> {
         let mut conn = self.get_conn()?;
         tasks::table
