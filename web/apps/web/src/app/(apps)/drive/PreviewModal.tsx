@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Download, AlertCircle, FileText, Folder } from 'lucide-react';
+import { X, Download, AlertCircle } from 'lucide-react';
 import { Text, Spinner } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
-import { storageApi, authApi, downloadAndDecryptFile, type FileItem, type ZipEntry } from '@/lib/api';
+import { storageApi, authApi, downloadAndDecryptFile, type FileItem } from '@/lib/api';
 import { initSodium, loadKeyPair } from '@neutrino/e2e-crypto';
 import { toRenderableImageBlob } from '@/lib/heic';
+import { highlightText } from './previewText';
+import { ZipViewer } from './ZipViewer';
 import styles from './PreviewModal.module.css';
 
 interface PreviewModalProps {
@@ -21,19 +23,7 @@ type PreviewState =
   | { kind: 'pdf'; url: string }
   | { kind: 'video'; url: string }
   | { kind: 'text'; content: string; language: string }
-  | { kind: 'zip'; entries: ZipEntry[] };
-
-function detectLanguage(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
-  const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
-    py: 'python', rs: 'rust', go: 'go', java: 'java', c: 'c', cpp: 'cpp',
-    cs: 'csharp', rb: 'ruby', sh: 'bash', bash: 'bash', zsh: 'bash',
-    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml', xml: 'xml',
-    html: 'html', css: 'css', scss: 'css', sql: 'sql', md: 'markdown',
-  };
-  return map[ext] ?? 'plaintext';
-}
+  | { kind: 'zip'; blob: Blob };
 
 function isPreviewableText(mimeType: string, name: string): boolean {
   if (mimeType.startsWith('text/')) return true;
@@ -49,7 +39,9 @@ function isPreviewableText(mimeType: string, name: string): boolean {
 }
 
 function isZip(mimeType: string, name: string): boolean {
-  if (mimeType.includes('zip')) return true;
+  // Not `includes('zip')`: that also matches gzip and bzip2, which are not
+  // archives zip.js can open.
+  if (mimeType === 'application/zip' || mimeType === 'application/x-zip-compressed') return true;
   return (name.split('.').pop()?.toLowerCase() ?? '') === 'zip';
 }
 
@@ -90,13 +82,6 @@ function loadFailureMessage(err: unknown): string {
   // the prefix says nothing next to the sentence in front of it.
   const detail = raw.trim().replace(/^Error:\s*/, '');
   return detail ? `Failed to load preview. (${detail})` : 'Failed to load preview.';
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '—';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function PreviewModal({ file, onClose }: PreviewModalProps) {
@@ -193,19 +178,16 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
           const url = await fetchBlobUrl(file.mimeType);
           if (adopt(url)) setState({ kind: 'video', url });
         } else if (isZip(file.mimeType, file.name)) {
-          const { entries } = await storageApi.getZipContents(file.id);
-          if (!cancelled) setState({ kind: 'zip', entries });
+          // Read in the browser rather than listed by `zip-contents`: the
+          // server only has ciphertext for an encrypted zip, and a listing
+          // can't open anything inside. See `lib/zipArchive.ts`.
+          const blob = await fetchBlob('application/zip');
+          if (!cancelled) setState({ kind: 'zip', blob });
         } else if (isPreviewableText(file.mimeType, file.name)) {
           const content = await fetchText();
-          const language = detectLanguage(file.name);
           if (!cancelled) {
-            // Lazy-load highlight.js only when needed
-            const hljs = (await import('highlight.js')).default;
-            const highlighted =
-              language !== 'plaintext' && hljs.getLanguage(language)
-                ? hljs.highlight(content, { language }).value
-                : escapeHtml(content);
-            setState({ kind: 'text', content: highlighted, language });
+            const { html, language } = await highlightText(content, file.name);
+            if (!cancelled) setState({ kind: 'text', content: html, language });
           }
         } else {
           if (!cancelled)
@@ -343,40 +325,9 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
             </div>
           )}
 
-          {state.kind === 'zip' && (
-            <div className={styles['zip-container']}>
-              <div className={styles['zip-header']}>
-                <Text size="xs" color="muted" weight="semibold">Name</Text>
-                <Text size="xs" color="muted" weight="semibold">Size</Text>
-              </div>
-              <ul className={styles['zip-list']} role="list">
-                {state.entries.map((entry, i) => (
-                  <li key={i} className={styles['zip-entry']}>
-                    <span className={styles['zip-icon']}>
-                      {entry.isDir ? <Folder size={14} /> : <FileText size={14} />}
-                    </span>
-                    <span className={styles['zip-entry-name']}>
-                      <Text size="sm" truncate>{entry.name}</Text>
-                    </span>
-                    <span className={styles['zip-entry-size']}>
-                      <Text size="xs" color="muted">{entry.isDir ? '—' : formatBytes(entry.size)}</Text>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {state.kind === 'zip' && <ZipViewer source={state.blob} fileName={file.name} />}
         </div>
       </div>
     </div>
   );
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
