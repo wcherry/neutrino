@@ -8,10 +8,13 @@ import {
   Calendar,
   HardDrive,
   Tag,
+  Maximize,
 } from 'lucide-react';
 import { Text, Heading, Spinner, useToast } from '@neutrino/ui';
 import { storageApi, tagsApi, type FileItem, type Tag as TagType } from '@/lib/api';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
+import { useUser } from '@neutrino/auth';
+import { loadMediaDimensions, mediaKindOf } from './mediaDimensions';
 import { TagPicker, tagWriteErrorMessage } from './TagPicker';
 import styles from './FileInfoPanel.module.css';
 
@@ -44,6 +47,19 @@ export function FileInfoPanel({ file, onClose, focusTags = false }: Props) {
   const [pickerOpen, setPickerOpen] = useState(focusTags);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const currentUser = useUser();
+
+  // Dimensions live in the file itself, which the server cannot read when it is
+  // encrypted, so the browser measures it — only for pictures and movies, and
+  // only once the panel is open.
+  const mediaKind = mediaKindOf(file);
+  const { data: dimensions, isLoading: dimensionsLoading } = useQuery({
+    queryKey: ['file-dimensions', file.id, file.contentVersion],
+    queryFn: () => loadMediaDimensions(file, currentUser?.id),
+    enabled: mediaKind !== null,
+    staleTime: Infinity,
+    retry: false,
+  });
 
   const { data: versionsData, isLoading: versionsLoading } = useQuery({
     queryKey: ['file-versions', file.id],
@@ -127,6 +143,28 @@ export function FileInfoPanel({ file, onClose, focusTags = false }: Props) {
             </dt>
             <dd>{ext}</dd>
           </div>
+          {mediaKind && (dimensionsLoading || dimensions) && (
+            <>
+              <div className={styles.row}>
+                <dt>
+                  <Maximize size={13} />
+                  Dimensions
+                </dt>
+                <dd>
+                  {dimensions ? `${dimensions.width} × ${dimensions.height} px` : <Spinner size="sm" />}
+                </dd>
+              </div>
+              {dimensions && (
+                <div className={styles.row}>
+                  <dt>
+                    <Maximize size={13} />
+                    Orientation
+                  </dt>
+                  <dd>{dimensions.orientation[0].toUpperCase() + dimensions.orientation.slice(1)}</dd>
+                </div>
+              )}
+            </>
+          )}
           <div className={styles.row}>
             <dt>
               <Calendar size={13} />
