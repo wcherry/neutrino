@@ -125,8 +125,45 @@ function DriveContent() {
   const [renamingFolder, setRenamingFolder] = useState<FolderItem | null>(null);
   const [renameFolderValue, setRenameFolderValue] = useState('');
   const [movingFolder, setMovingFolder] = useState<FolderItem | null>(null);
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  // The open folder lives in the URL (`?folder=<id>`) so a refresh, a shared
+  // link and the browser's back button all land on the same folder.
+  const currentFolderId = searchParams.get('folder') || null;
   const [folderPath, setFolderPath] = useState<Array<{ id: string; name: string }>>([]);
+  const setFolderParam = useCallback(
+    (id: string | null) => router.push(id ? `/drive?folder=${encodeURIComponent(id)}` : '/drive'),
+    [router],
+  );
+
+  // After a refresh or back/forward the URL names a folder the breadcrumb
+  // knows nothing about: rebuild the trail by walking parents to the root.
+  useEffect(() => {
+    if (!currentFolderId) {
+      setFolderPath((prev) => (prev.length ? [] : prev));
+      return;
+    }
+    const idx = folderPath.findIndex((f) => f.id === currentFolderId);
+    if (idx !== -1) {
+      if (idx !== folderPath.length - 1) setFolderPath(folderPath.slice(0, idx + 1));
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const trail: Array<{ id: string; name: string }> = [];
+      let id: string | null = currentFolderId;
+      try {
+        while (id && trail.length < 50) {
+          const res = await filesystemApi.getFolderContents(id, { limit: 1 });
+          if (!res.folder) break;
+          trail.unshift({ id: res.folder.id, name: res.folder.name });
+          id = res.folder.parentId;
+        }
+      } catch {
+        // Keep whatever part of the trail was resolved.
+      }
+      if (!cancelled && trail.length) setFolderPath(trail);
+    })();
+    return () => { cancelled = true; };
+  }, [currentFolderId, folderPath]);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -327,18 +364,18 @@ function DriveContent() {
   );
 
   const openFolder = useCallback((folder: FolderItem) => {
-    setCurrentFolderId(folder.id);
     setFolderPath((prev) => [...prev, { id: folder.id, name: folder.name }]);
-  }, []);
+    setFolderParam(folder.id);
+  }, [setFolderParam]);
 
   function navigateTo(index: number) {
     if (index === -1) {
-      setCurrentFolderId(null);
       setFolderPath([]);
+      setFolderParam(null);
     } else {
       const target = folderPath[index];
-      setCurrentFolderId(target.id);
       setFolderPath((prev) => prev.slice(0, index + 1));
+      setFolderParam(target.id);
     }
   }
 
