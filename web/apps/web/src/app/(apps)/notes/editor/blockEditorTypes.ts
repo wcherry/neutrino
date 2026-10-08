@@ -110,6 +110,16 @@ export interface TableBlockProps {
   onLinkClick: (id: string) => void;
 }
 
+/** A formatting command aimed at one block, from the Format menu or the right-click menu. */
+export interface FormatRequest {
+  id: string;
+  action: MarkdownAction;
+  /** The block's selection when the command was issued (its textarea may be gone by now). */
+  start: number;
+  end: number;
+  nonce: number;
+}
+
 export interface BlockRowProps {
   block: Block;
   blockIndex: number;
@@ -117,6 +127,8 @@ export interface BlockRowProps {
   isFirst: boolean;
   focusRequest: FocusRequest | null;
   onFocusHandled: () => void;
+  formatRequest: FormatRequest | null;
+  onFormatHandled: () => void;
   /** Bumped whenever the parent needs every block back in (non-editable) view
    * mode right now — e.g. before building a native selection that spans the
    * whole note, which can't include a block still rendered as a <textarea>. */

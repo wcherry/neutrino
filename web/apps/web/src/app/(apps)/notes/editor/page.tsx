@@ -650,6 +650,7 @@ function NoteEditor({ noteId }: { noteId: string }) {
           onExport={handleExport}
           onPrint={handlePrint}
           onSelectAll={handleSelectAll}
+          onFormat={(action) => blockEditorRef.current?.applyFormat(action)}
           showBacklinks={showBacklinks}
           onToggleBacklinks={() => setShowBacklinks((v) => !v)}
         />

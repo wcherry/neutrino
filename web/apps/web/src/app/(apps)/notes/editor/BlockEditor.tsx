@@ -2,7 +2,8 @@
 
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import type { Block, BlockType, BlockEditorProps, FocusRequest } from './blockEditorTypes';
+import type { Block, BlockType, BlockEditorProps, FocusRequest, FormatRequest, MarkdownAction } from './blockEditorTypes';
+import { MARKDOWN_SHORTCUTS } from './blockEditorConstants';
 import { caretIndexForColumn, genId, blockToMarkdown } from './blockEditorHelpers';
 import BlockRow from './BlockRow';
 import styles from './BlockEditor.module.css';
@@ -21,7 +22,17 @@ export interface BlockEditorHandle {
    * over the whole container.
    */
   selectAll: () => void;
+  /** Apply a formatting command to the block last edited, over the selection it last had. */
+  applyFormat: (action: MarkdownAction) => void;
 }
+
+/** The right-click menu's entries, drawn from the keyboard-shortcut table so the two stay in step. */
+const CONTEXT_MENU_LABELS = [
+  'Bold', 'Italic', 'Strikethrough', 'Inline code', 'Link to a note',
+  'Heading 1', 'Heading 2', 'Heading 3', 'Plain text',
+  'Bullet list', 'Numbered list', 'Task', 'Quote', 'Code block',
+];
+const CONTEXT_MENU_ITEMS = CONTEXT_MENU_LABELS.flatMap((label) => MARKDOWN_SHORTCUTS.filter((m) => m.label === label));
 
 // ── BlockEditor ───────────────────────────────────────────────────────────────
 
@@ -37,6 +48,34 @@ function BlockEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const dragFromIndex = useRef<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [formatRequest, setFormatRequest] = useState<FormatRequest | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string; start: number; end: number } | null>(null);
+  // Where the caret last was. A menu click moves focus out of the textarea
+  // (which then leaves edit mode), so the selection has to be remembered.
+  const lastSelection = useRef<{ id: string; start: number; end: number } | null>(null);
+  const formatNonce = useRef(0);
+
+  function requestFormat(id: string, action: MarkdownAction, start: number, end: number) {
+    setFormatRequest({ id, action, start, end, nonce: ++formatNonce.current });
+  }
+
+  function rememberSelection(e: React.SyntheticEvent<HTMLElement>) {
+    const ta = e.target;
+    if (!(ta instanceof HTMLTextAreaElement)) return;
+    const id = ta.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
+    if (id) lastSelection.current = { id, start: ta.selectionStart, end: ta.selectionEnd };
+  }
+
+  function handleContextMenu(e: React.MouseEvent<HTMLDivElement>) {
+    const ta = e.target;
+    // Only a selection inside a block being edited: anywhere else the browser's
+    // own menu (spelling, copy link, …) is the better one.
+    if (!(ta instanceof HTMLTextAreaElement) || ta.selectionStart === ta.selectionEnd) return;
+    const id = ta.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
+    if (!id) return;
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, id, start: ta.selectionStart, end: ta.selectionEnd });
+  }
 
   useImperativeHandle(ref, () => ({
     selectAll() {
@@ -63,6 +102,10 @@ function BlockEditor({
       }
       selection.removeAllRanges();
       selection.addRange(range);
+    },
+    applyFormat(action) {
+      const sel = lastSelection.current;
+      if (sel && blocks.some((b) => b.id === sel.id)) requestFormat(sel.id, action, sel.start, sel.end);
     },
   }));
 
@@ -209,7 +252,14 @@ function BlockEditor({
   }
 
   return (
-    <div className={styles.editor} ref={containerRef} onCopy={handleCopy}>
+    <div
+      className={styles.editor}
+      ref={containerRef}
+      onCopy={handleCopy}
+      onSelect={rememberSelection}
+      onBlur={rememberSelection}
+      onContextMenu={handleContextMenu}
+    >
       {blocks.map((block, index) => (
         <BlockRow
           key={block.id}
@@ -219,6 +269,8 @@ function BlockEditor({
           isFirst={index === 0}
           focusRequest={focusRequest}
           onFocusHandled={() => setFocusRequest(null)}
+          formatRequest={formatRequest}
+          onFormatHandled={() => setFormatRequest(null)}
           exitEditSignal={exitEditNonce}
           onContentChange={handleContentChange}
           onTypeChange={handleTypeChange}
@@ -236,6 +288,28 @@ function BlockEditor({
           isDragOver={dragOverIndex === index}
         />
       ))}
+      {contextMenu && (
+        <>
+          <div className={styles.contextBackdrop} onMouseDown={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }} />
+          <ul className={styles.contextMenu} style={{ left: contextMenu.x, top: contextMenu.y }} role="menu" aria-label="Format">
+            {CONTEXT_MENU_ITEMS.map((item) => (
+              <li
+                key={item.label}
+                role="menuitem"
+                className={styles.contextItem}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  requestFormat(contextMenu.id, item.action, contextMenu.start, contextMenu.end);
+                  setContextMenu(null);
+                }}
+              >
+                <span>{item.label}</span>
+                <span className={styles.contextShortcut}>{item.keys.join('+')}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
