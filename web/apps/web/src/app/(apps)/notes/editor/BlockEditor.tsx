@@ -104,6 +104,19 @@ function BlockEditor({
     setFocusRequest({ id: newBlock.id, position: 'start' });
   }
 
+  function handlePasteBlocks(id: string, before: string, after: string, pasted: Block[]) {
+    const idx = blocks.findIndex((b) => b.id === id);
+    if (idx === -1) return;
+    const current = blocks[idx];
+    const head = before ? [{ ...current, content: before }] : [];
+    // Text that followed the selection continues in a block of its own; when
+    // nothing was typed around the paste, the (empty) block is replaced.
+    const tail = after ? [{ id: genId(), type: 'paragraph' as BlockType, content: after }] : [];
+    const kept = !before && !after && current.content === '' ? [] : head;
+    onChange([...blocks.slice(0, idx), ...kept, ...pasted, ...tail, ...blocks.slice(idx + 1)]);
+    setFocusRequest({ id: pasted[pasted.length - 1].id, position: 'end' });
+  }
+
   function handleDeleteBlock(id: string) {
     const idx = blocks.findIndex((b) => b.id === id);
     if (idx === -1 || idx === 0) return;
@@ -225,6 +238,7 @@ function BlockEditor({
           onBlockPatch={handleBlockPatch}
           onToggleCheck={handleToggleCheck}
           onSplitBlock={handleSplitBlock}
+          onPasteBlocks={handlePasteBlocks}
           onDeleteBlock={handleDeleteBlock}
           onMoveFocus={handleMoveFocus}
           allNotes={allNotes}
