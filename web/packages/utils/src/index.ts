@@ -226,6 +226,112 @@ export function generateThumbnail(file: File, maxSize = 512): Promise<string | n
   });
 }
 
+const VIDEO_MIME_BY_EXTENSION: Record<string, string> = {
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  ogv: 'video/ogg',
+  mkv: 'video/x-matroska',
+};
+
+/**
+ * The video type of a file, or null if it is not one.
+ *
+ * The declared type decides, with the extension as a fallback: Chrome outside
+ * macOS reports an empty `File.type` for a `.mov` or `.mkv`, and the upload
+ * then stores it as `application/octet-stream` — which is how a perfectly good
+ * movie ended up with no thumbnail and "Preview not available".
+ */
+export function videoMimeType(mimeType: string | null | undefined, name: string): string | null {
+  if (mimeType?.startsWith('video/')) return mimeType;
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  return VIDEO_MIME_BY_EXTENSION[ext] ?? null;
+}
+
+/**
+ * Grab a frame out of a video as a base64 JPEG, in the shape `generateThumbnail`
+ * returns for images (raw base64, no data-URL prefix, null on failure).
+ *
+ * This is what stops a motion photo with no still beside it from sitting in the
+ * library as a black tile. Without a hint from the file the middle of the clip
+ * is the frame to take: a motion photo records roughly a second either side of
+ * the shutter, so the middle is the picture.
+ */
+export function generateVideoThumbnail(
+  file: Blob,
+  opts: { atSeconds?: number; maxSize?: number } = {},
+): Promise<string | null> {
+  const { atSeconds, maxSize = 512 } = opts;
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    let settled = false;
+
+    const finish = (value: string | null) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      video.removeAttribute('src');
+      resolve(value);
+    };
+
+    video.preload = 'metadata';
+    video.muted = true;
+    video.playsInline = true;
+    // Without this Chrome refuses to paint a blob-backed video onto a canvas.
+    video.crossOrigin = 'anonymous';
+
+    video.onloadeddata = () => {
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      const target =
+        atSeconds != null && atSeconds >= 0 && (duration === 0 || atSeconds < duration)
+          ? atSeconds
+          : duration / 2;
+      // A seek to 0 fires no `seeked` event in some browsers — the frame is
+      // already decoded, so draw it straight away.
+      if (target <= 0) {
+        draw();
+        return;
+      }
+      video.onseeked = draw;
+      video.currentTime = target;
+    };
+
+    const draw = () => {
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      if (!width || !height) {
+        finish(null);
+        return;
+      }
+      const scale = Math.min(maxSize / width, maxSize / height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        finish(null);
+        return;
+      }
+      try {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        finish(canvas.toDataURL('image/jpeg', 0.8).split(',')[1] ?? null);
+      } catch (err) {
+        console.warn('[thumbnail] could not draw video frame:', err);
+        finish(null);
+      }
+    };
+
+    video.onerror = () => {
+      console.warn('[thumbnail] video load failed for', (file as File).name ?? 'blob');
+      finish(null);
+    };
+
+    video.src = url;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Performance phase marks
 // ---------------------------------------------------------------------------
