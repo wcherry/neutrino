@@ -1,3 +1,4 @@
+use crate::drive::encryption::model::NewFileKeyRef;
 use crate::drive::filesystem::dto::DriveFileType;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
@@ -8,7 +9,7 @@ use crate::drive::storage::{
     },
     model::{
         cover_thumbnail_url, AutosaveFileContent, FileRecord, ImportProvenance, NewFileRecord,
-        NewFileVersionRecord, UpdateFileContent,
+        NewFileVersionRecord, UpdateFileContent, UploadExtras, UploadFileKey, UploadStamp,
     },
     repository::StorageRepository,
     store::{LocalFileStore, ServeResolveError},
@@ -178,6 +179,40 @@ impl StorageService {
         })
     }
 
+    /// Refuse upload extras that could never be committed, so the handler can
+    /// say so before streaming the body rather than after.
+    ///
+    /// A key must name a keyring version the uploader has actually published.
+    /// Retired versions are accepted — the key still opens the file — but a
+    /// version that never existed would leave a file no key opens, which is
+    /// the very failure carrying the key in the upload exists to remove.
+    pub fn validate_upload_extras(
+        &self,
+        user_id: &str,
+        extras: &UploadExtras,
+    ) -> Result<(), ApiError> {
+        let Some(key) = extras.file_key.as_ref() else {
+            return Ok(());
+        };
+        if key.encrypted_file_key.is_empty() {
+            return Err(ApiError::bad_request("encrypted_file_key cannot be empty"));
+        }
+        if key.key_version < 1 {
+            return Err(ApiError::bad_request("key_version must be 1 or greater"));
+        }
+        if !self
+            .repo
+            .public_key_version_exists(user_id, key.key_version)?
+        {
+            return Err(ApiError::new(
+                400,
+                "UNKNOWN_KEY_VERSION",
+                "key_version is not a key this account has published",
+            ));
+        }
+        Ok(())
+    }
+
     /// Called after a file has been streamed to `temp_path`.
     /// Enforces per-user quota and daily cap, then commits the upload.
     /// Automatically creates version 1 for the new file.
@@ -196,7 +231,9 @@ impl StorageService {
         size_bytes: i64,
         folder_id: Option<&str>,
         encrypted_metadata: Option<&str>,
+        extras: UploadExtras,
     ) -> Result<FileMetadataResponse, ApiError> {
+        self.validate_upload_extras(&user.user_id, &extras)?;
         let quota = self.repo.get_or_create_quota(&user.user_id)?;
 
         let now = Utc::now().naive_utc();
@@ -260,9 +297,27 @@ impl StorageService {
             encrypted_metadata,
         };
 
-        let file = self.repo.insert_file(new_file).inspect_err(|_| {
-            self.store.remove_file_dir(&user.user_id, &file_id);
-        })?;
+        let stamp = UploadStamp {
+            created_at: extras.created_at,
+            updated_at: extras.updated_at,
+            imported_at: extras.import_source.as_ref().map(|_| now),
+            import_source: extras.import_source,
+        };
+        let key_ref_id = Uuid::new_v4().to_string();
+        let file_key = extras.file_key.as_ref().map(|key| NewFileKeyRef {
+            id: &key_ref_id,
+            file_id: &file_id,
+            user_id: &user.user_id,
+            encrypted_file_key: &key.encrypted_file_key,
+            key_version: key.key_version,
+        });
+
+        let file = self
+            .repo
+            .insert_uploaded_file(new_file, stamp, file_key)
+            .inspect_err(|_| {
+                self.store.remove_file_dir(&user.user_id, &file_id);
+            })?;
 
         if let Err(e) = self
             .permissions
@@ -1393,6 +1448,7 @@ mod tests {
                 content.len() as i64,
                 None,
                 None,
+                UploadExtras::default(),
             )
             .await
             .expect("finalize upload");
@@ -1690,6 +1746,7 @@ mod tests {
                 content.len() as i64,
                 None,
                 None,
+                UploadExtras::default(),
             )
             .await
             .expect_err("the history's bytes must count against the limit");
@@ -1942,6 +1999,229 @@ mod tests {
         service.store().remove_file_dir(&user.user_id, &file.id);
 
         assert!(!service.store().thumbnail_path(&user.user_id, &file.id).exists());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    // ── Self-contained uploads (drive-ios#38) ────────────────────────────────
+    //
+    // An upload can carry its sealed key and its dates, written with the row in
+    // one transaction, so a background client has no follow-up request to stay
+    // awake for and no window in which the file exists without its key.
+
+    /// Like `upload`, but with extras, and handing back the error.
+    async fn upload_with(
+        service: &StorageService,
+        user: &AuthenticatedUser,
+        extras: UploadExtras,
+    ) -> Result<FileMetadataResponse, ApiError> {
+        service.store().ensure_user_dir(&user.user_id).expect("mkdir");
+        let temp = service
+            .store()
+            .temp_upload(&user.user_id, &uuid::Uuid::new_v4().to_string());
+        std::fs::write(temp.path(), b"ciphertext").expect("stage upload");
+        let saved = service
+            .finalize_upload(
+                user,
+                temp.path(),
+                "IMG_0001.HEIC.enc",
+                "application/octet-stream",
+                10,
+                None,
+                None,
+                extras,
+            )
+            .await?;
+        temp.commit();
+        Ok(saved)
+    }
+
+    /// A user with keyring versions 1 (retired) and 2 (active).
+    fn user_with_rotated_keyring(pool: &DbPool, user_id: &str) -> AuthenticatedUser {
+        crate::search::repository::insert_test_user(pool, user_id);
+        let auth = AuthRepository::new(pool.clone());
+        auth.publish_public_key(user_id, "pk-v1").expect("publish v1");
+        auth.publish_public_key(user_id, "pk-v2").expect("publish v2");
+        test_user_named(user_id)
+    }
+
+    fn sealed(key_version: i32) -> Option<UploadFileKey> {
+        Some(UploadFileKey {
+            encrypted_file_key: format!("sealed-to-v{key_version}"),
+            key_version,
+        })
+    }
+
+    fn file_key_rows(pool: &DbPool, file_id: &str) -> Vec<(String, String, i32)> {
+        use crate::schema::file_key_refs::dsl as fk;
+        fk::file_key_refs
+            .filter(fk::file_id.eq(file_id))
+            .select((fk::user_id, fk::encrypted_file_key, fk::key_version))
+            .load(&mut pool.get().expect("conn"))
+            .expect("load key refs")
+    }
+
+    fn file_count(pool: &DbPool) -> i64 {
+        crate::schema::files::table
+            .count()
+            .get_result(&mut pool.get().expect("conn"))
+            .expect("count files")
+    }
+
+    #[tokio::test]
+    async fn an_upload_carrying_its_key_stores_it_with_the_file() {
+        let (service, _repo, _perms, pool, base) = test_service_with_permissions();
+        let user = user_with_rotated_keyring(&pool, "user-1");
+
+        let file = upload_with(
+            &service,
+            &user,
+            UploadExtras { file_key: sealed(2), ..Default::default() },
+        )
+        .await
+        .expect("upload");
+
+        assert_eq!(
+            file_key_rows(&pool, &file.id),
+            vec![("user-1".to_string(), "sealed-to-v2".to_string(), 2)]
+        );
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A photo sealed just before a rotation is still openable by the retired
+    /// key, so it must not be refused.
+    #[tokio::test]
+    async fn an_upload_sealed_to_a_retired_key_version_is_accepted() {
+        let (service, _repo, _perms, pool, base) = test_service_with_permissions();
+        let user = user_with_rotated_keyring(&pool, "user-1");
+
+        let file = upload_with(
+            &service,
+            &user,
+            UploadExtras { file_key: sealed(1), ..Default::default() },
+        )
+        .await
+        .expect("upload sealed to the retired version");
+
+        assert_eq!(file_key_rows(&pool, &file.id)[0].2, 1);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// A version the account never published would leave a file no key opens:
+    /// refuse it, and leave nothing behind.
+    #[tokio::test]
+    async fn an_upload_sealed_to_an_unpublished_key_version_is_refused_whole() {
+        let (service, _repo, _perms, pool, base) = test_service_with_permissions();
+        let user = user_with_rotated_keyring(&pool, "user-1");
+
+        let err = upload_with(
+            &service,
+            &user,
+            UploadExtras { file_key: sealed(3), ..Default::default() },
+        )
+        .await
+        .expect_err("version 3 was never published");
+
+        assert_eq!(err.status, 400);
+        assert_eq!(err.code, "UNKNOWN_KEY_VERSION");
+        assert_eq!(file_count(&pool), 0);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn an_upload_with_an_empty_key_is_refused() {
+        let (service, _repo, _perms, pool, base) = test_service_with_permissions();
+        let user = user_with_rotated_keyring(&pool, "user-1");
+
+        let err = upload_with(
+            &service,
+            &user,
+            UploadExtras {
+                file_key: Some(UploadFileKey {
+                    encrypted_file_key: String::new(),
+                    key_version: 2,
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect_err("empty key");
+
+        assert_eq!(err.status, 400);
+        assert_eq!(file_count(&pool), 0);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// Dates are accepted from any client, not only an importer: without an
+    /// `import_source` the file keeps its dates and is not marked imported.
+    #[tokio::test]
+    async fn an_upload_carrying_dates_keeps_them_without_being_marked_imported() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let created = parse_import_timestamp("2014-03-01T12:00:00Z").unwrap();
+        let updated = parse_import_timestamp("2014-03-02T08:30:00Z").unwrap();
+
+        let file = upload_with(
+            &service,
+            &user,
+            UploadExtras {
+                created_at: Some(created),
+                updated_at: Some(updated),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("upload");
+
+        let row = repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert_eq!(row.created_at, created);
+        assert_eq!(row.updated_at, updated);
+        assert_eq!(row.imported_at, None);
+        assert_eq!(row.import_source, None);
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[tokio::test]
+    async fn an_upload_carrying_an_import_source_is_marked_imported() {
+        let (service, repo, _perms, _pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let created = parse_import_timestamp("2014-03-01T12:00:00Z").unwrap();
+
+        let file = upload_with(
+            &service,
+            &user,
+            UploadExtras {
+                created_at: Some(created),
+                import_source: Some("photo-sync:ABC/L0/001".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("upload");
+
+        let row = repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert_eq!(row.created_at, created);
+        // Only the date that was sent moves; the other is the upload's own.
+        assert!(row.updated_at > created);
+        assert_eq!(row.import_source.as_deref(), Some("photo-sync:ABC/L0/001"));
+        assert!(row.imported_at.is_some());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    /// Every client that predates these fields sends none of them.
+    #[tokio::test]
+    async fn an_upload_without_extras_stores_no_key_and_todays_dates() {
+        let (service, repo, _perms, pool, base) = test_service_with_permissions();
+        let user = test_user_named("user-1");
+        let before = Utc::now().naive_utc() - chrono::Duration::seconds(5);
+
+        let file = upload_with(&service, &user, UploadExtras::default())
+            .await
+            .expect("upload");
+
+        assert!(file_key_rows(&pool, &file.id).is_empty());
+        let row = repo.find_file_by_id(&file.id).unwrap().unwrap();
+        assert!(row.created_at >= before);
+        assert_eq!(row.imported_at, None);
         let _ = std::fs::remove_dir_all(base);
     }
 }

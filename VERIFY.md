@@ -1,3 +1,34 @@
+# Manual Verification: Self-contained uploads (neutrino_drive_ios_mobile#38)
+
+Delete this section once the Drive iOS photo sync has shipped on it and proven stable. Design:
+`neutrino_drive_ios_mobile/agent_docs/research/2026-10-09-photo-sync-latency.md`, Phase 1.
+
+## Prerequisites
+- Backend running locally (`cargo run`, or docker-compose-dev.yml)
+- An account with an access token in `$T`, and two published keys: `POST /api/v1/auth/keys`
+  twice with different 32-byte base64url `publicKey` values, so version 1 is retired and 2 active
+- Any small file at `./f.bin`
+
+## Steps
+
+### Happy Path
+1. `curl -s localhost:8080/api/v1/drive/files/upload -H "Authorization: Bearer $T" -F encrypted_file_key=sealed -F key_version=2 -F created_at=2014-03-01T12:00:00Z -F updated_at=2014-03-02T08:30:00Z -F import_source=photo-sync:test -F "file=@f.bin"`
+2. The response has `createdAt` `2014-03-01T12:00:00`, `updatedAt` `2014-03-02T08:30:00`,
+   `importSource` `photo-sync:test` and a non-null `importedAt`.
+3. `GET /api/v1/drive/files/{id}/key` returns `encryptedFileKey: "sealed"`, `keyVersion: 2`,
+   with no `PUT /key` ever sent.
+
+### Edge Cases
+1. Retired key: repeat with `key_version=1` → 200, and `GET /key` shows `keyVersion: 1`.
+2. Unpublished key: `key_version=9` → 400 `UNKNOWN_KEY_VERSION`, and no file is created.
+3. `key_version` without `encrypted_file_key` → 400.
+4. `created_at=yesterday` → 400 naming the unreadable timestamp.
+5. Dates without `import_source` → 200, dates kept, `importedAt` null.
+6. No extra fields at all (any existing client) → 200, today's dates, no key row.
+
+## Cleanup
+Delete this section once the feature is proven stable.
+
 # Manual Verification: Task geofencing — server, web and E2EE envelope (#243)
 
 Delete this section once task geofencing is proven stable. The iOS half (arrival alerts) is
