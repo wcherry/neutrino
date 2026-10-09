@@ -3,12 +3,13 @@ use crate::drive::filesystem::repository::FilesystemRepository;
 use crate::drive::permissions::service::PermissionsService;
 use crate::drive::storage::{
     dto::{
-        AutosaveMetadata, CreateFileRequest, DocFileMetadataResponse,
+        parse_import_timestamp, AutosaveMetadata, CreateFileRequest, DocFileMetadataResponse,
         FileMetadataResponse, FileOrderField, FileVersionResponse, ImportMetadataRequest,
         ListFilesResponse, ListVersionsResponse, QuotaResponse, SaveVersionRequest,
         UpdateVersionLabelRequest, VersionOrderField, ZipContentsResponse, ZipEntry,
         ZipEntryOrderField,
     },
+    model::{UploadExtras, UploadFileKey},
     native_types,
     service::{StorageService, UploadAllowance},
     store::TempUpload,
@@ -113,12 +114,24 @@ async fn stream_field_to_file(
 ///
 /// Streams the body to disk, charges it against the caller's storage quota (413 when it would
 /// not fit) and the daily upload allowance (429), and returns the new file's metadata.
+///
+/// Optional text fields let one request carry everything a file needs, so a client uploading
+/// from the background has no follow-up call to stay awake for (drive-ios#38):
+///
+/// - `encrypted_file_key` + `key_version`: the uploader's sealed DEK, stored as if by
+///   `PUT /files/{id}/key`. `key_version` defaults to 1 and may name any keyring version the
+///   uploader has published, retired ones included.
+/// - `created_at`, `updated_at`: the file's own dates (ISO 8601), from any client.
+/// - `import_source`: records the file as imported, as `PATCH /files/{id}/import-metadata` does.
+///
+/// All of them are written in the same transaction as the file row. Like every other text
+/// field, they must come before the file part.
 #[utoipa::path(
     post,
     path = "/api/v1/drive/files/upload",
     responses(
         (status = 201, description = "File uploaded successfully", body = FileMetadataResponse),
-        (status = 400, description = "No file provided or invalid multipart data"),
+        (status = 400, description = "No file provided, invalid multipart data, an unreadable date, or a key_version the account never published"),
         (status = 413, description = "File too large, or storage quota exceeded"),
         (status = 429, description = "Daily upload limit exceeded"),
     ),
@@ -135,6 +148,9 @@ pub async fn upload_file(
     let mut encrypted_metadata: Option<String> = None;
     let mut explicit_mime_type: Option<String> = None;
     let mut thumbnail_b64: Option<String> = None;
+    let mut encrypted_file_key: Option<String> = None;
+    let mut key_version: Option<i32> = None;
+    let mut extras = UploadExtras::default();
 
     // Settled before the body is touched, so a file that was never going to
     // fit is refused as it streams rather than after it has all been written.
@@ -161,7 +177,15 @@ pub async fn upload_file(
         {
             if matches!(
                 field_name.as_str(),
-                "folder_id" | "encrypted_metadata" | "mime_type" | "thumbnail_b64"
+                "folder_id"
+                    | "encrypted_metadata"
+                    | "mime_type"
+                    | "thumbnail_b64"
+                    | "encrypted_file_key"
+                    | "key_version"
+                    | "created_at"
+                    | "updated_at"
+                    | "import_source"
             ) {
                 let mut buf = Vec::new();
                 while let Some(chunk) = field.next().await {
@@ -181,6 +205,15 @@ pub async fn upload_file(
                             tracing::info!("thumbnail_b64 received, length: {}", value.len());
                             thumbnail_b64 = Some(value);
                         }
+                        "encrypted_file_key" => encrypted_file_key = Some(value),
+                        "key_version" => {
+                            key_version = Some(value.parse().map_err(|_| {
+                                ApiError::bad_request("key_version must be an integer")
+                            })?)
+                        }
+                        "created_at" => extras.created_at = Some(parse_import_timestamp(&value)?),
+                        "updated_at" => extras.updated_at = Some(parse_import_timestamp(&value)?),
+                        "import_source" => extras.import_source = Some(value),
                         _ => {}
                     }
                 }
@@ -204,6 +237,26 @@ pub async fn upload_file(
                         .to_string()
                 })
         });
+
+        extras.file_key = match (encrypted_file_key.take(), key_version) {
+            (Some(encrypted_file_key), version) => Some(UploadFileKey {
+                encrypted_file_key,
+                // As on `PUT /files/{id}/key`: a client that predates rotation
+                // only ever had version 1.
+                key_version: version.unwrap_or(1),
+            }),
+            (None, Some(_)) => {
+                return Err(ApiError::bad_request(
+                    "key_version was sent without encrypted_file_key",
+                ))
+            }
+            (None, None) => None,
+        };
+        // Before the body streams: a key that can never be stored should cost
+        // the client a 400, not a full upload and then a 400.
+        state
+            .storage_service
+            .validate_upload_extras(&user.user_id, &extras)?;
 
         let temp_id = Uuid::new_v4().to_string();
         state
@@ -232,6 +285,7 @@ pub async fn upload_file(
                 size,
                 folder_id.as_deref(),
                 encrypted_metadata.as_deref(),
+                std::mem::take(&mut extras),
             )
             .await?;
         temp.commit();

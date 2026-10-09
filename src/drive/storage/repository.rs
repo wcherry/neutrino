@@ -1,11 +1,12 @@
 use crate::drive::filesystem::dto::MimeFilter;
 use crate::drive::filesystem::repository::mime_matches;
 use crate::drive::storage::dto::FileOrderField;
+use crate::drive::encryption::model::NewFileKeyRef;
 use crate::drive::storage::model::{
     AutosaveFileContent, FileRecord, FileVersionRecord, ImportProvenance, NewFileRecord,
-    NewFileVersionRecord, NewUserQuota, UpdateFileContent, UserQuota,
+    NewFileVersionRecord, NewUserQuota, UpdateFileContent, UploadStamp, UserQuota,
 };
-use crate::schema::{file_versions, files, user_quotas};
+use crate::schema::{file_key_refs, file_versions, files, user_public_keys, user_quotas};
 use crate::shared::{ApiError, ContentVersionCheck, ListQuery, OrderDirection};
 use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
@@ -66,6 +67,71 @@ impl StorageRepository {
                 tracing::error!("DB query after insert error: {:?}", e);
                 ApiError::internal("Database error")
             })
+    }
+
+    /// Insert a freshly uploaded file together with whatever the upload
+    /// carried besides its bytes — the uploader's sealed DEK and the file's
+    /// own dates — in one transaction.
+    ///
+    /// One transaction is the point: either the row lands with its key and
+    /// dates or nothing does. Before this, the key was a second request, and a
+    /// client suspended between the two left a file nothing could decrypt.
+    /// Nothing stamps `updated_at` after this insert, so dates set here stick —
+    /// unlike dates set before a later content write, which is why
+    /// `PATCH /import-metadata` runs afterwards instead.
+    pub fn insert_uploaded_file(
+        &self,
+        new_file: NewFileRecord,
+        stamp: UploadStamp,
+        file_key: Option<NewFileKeyRef>,
+    ) -> Result<FileRecord, ApiError> {
+        let mut conn = self.get_conn()?;
+
+        conn.immediate_transaction::<FileRecord, diesel::result::Error, _>(|conn| {
+            diesel::insert_into(files::table)
+                .values(&new_file)
+                .execute(conn)?;
+
+            if !stamp.is_empty() {
+                diesel::update(files::table.filter(files::id.eq(new_file.id)))
+                    .set(&stamp)
+                    .execute(conn)?;
+            }
+
+            if let Some(key) = file_key.as_ref() {
+                diesel::insert_into(file_key_refs::table)
+                    .values(key)
+                    .execute(conn)?;
+            }
+
+            files::table
+                .filter(files::id.eq(new_file.id))
+                .select(FileRecord::as_select())
+                .first(conn)
+        })
+        .map_err(|e| {
+            tracing::error!("DB insert uploaded file error: {:?}", e);
+            ApiError::internal("Database error")
+        })
+    }
+
+    /// Whether `user_id` has ever published keyring version `version`.
+    ///
+    /// Retired versions count: `user_public_keys` rows are never deleted, and
+    /// a retired key still opens everything sealed to it.
+    pub fn public_key_version_exists(&self, user_id: &str, version: i32) -> Result<bool, ApiError> {
+        let mut conn = self.get_conn()?;
+
+        diesel::select(diesel::dsl::exists(
+            user_public_keys::table
+                .filter(user_public_keys::user_id.eq(user_id))
+                .filter(user_public_keys::version.eq(version)),
+        ))
+        .get_result(&mut conn)
+        .map_err(|e| {
+            tracing::error!("DB public key version lookup error: {:?}", e);
+            ApiError::internal("Database error")
+        })
     }
 
     /// Stamp a file with the dates it had before it was imported, plus the

@@ -162,6 +162,60 @@ pub struct ImportProvenance {
     pub import_source: String,
 }
 
+/// What an upload may carry besides its bytes, written in the same
+/// transaction as the file row (issue drive-ios#38).
+///
+/// Each part is something a client used to send as its own follow-up request
+/// — `PUT /files/{id}/key` and `PATCH /files/{id}/import-metadata` — and so
+/// needed to be awake for after the body landed. Sent with the body instead,
+/// a background upload is complete the moment the server accepts it, and
+/// there is no window in which a file exists without the key that opens it.
+///
+/// Every field is optional and the default is "nothing extra", which is what
+/// every client that predates these fields gets.
+#[derive(Debug, Default)]
+pub struct UploadExtras {
+    pub file_key: Option<UploadFileKey>,
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
+    /// When set, the file is recorded as imported (`imported_at` = now),
+    /// exactly as `PATCH /import-metadata` would record it.
+    pub import_source: Option<String>,
+}
+
+/// The uploader's own sealed DEK for the file being uploaded.
+#[derive(Debug)]
+pub struct UploadFileKey {
+    pub encrypted_file_key: String,
+    /// Any version of the uploader's keyring that still exists, not only the
+    /// active one: a photo sealed just before a rotation is still openable by
+    /// the retired key, and rotation re-wraps it like any other file.
+    pub key_version: i32,
+}
+
+/// The date and provenance columns an upload may set on its new row.
+///
+/// All `Option`, so Diesel leaves an unset one at the value the insert gave
+/// it. Only applied when at least one is `Some` — an all-`None` changeset is
+/// an error in Diesel.
+#[derive(Debug, AsChangeset)]
+#[diesel(table_name = crate::schema::files)]
+pub struct UploadStamp {
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
+    pub imported_at: Option<NaiveDateTime>,
+    pub import_source: Option<String>,
+}
+
+impl UploadStamp {
+    pub fn is_empty(&self) -> bool {
+        self.created_at.is_none()
+            && self.updated_at.is_none()
+            && self.imported_at.is_none()
+            && self.import_source.is_none()
+    }
+}
+
 #[derive(Debug, AsChangeset)]
 #[diesel(table_name = crate::schema::files)]
 pub struct UpdateFileContent {
