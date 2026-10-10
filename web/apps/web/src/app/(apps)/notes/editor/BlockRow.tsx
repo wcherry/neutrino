@@ -18,6 +18,7 @@ import {
   numberedIndexInGroup,
   toggleHeadingPrefix,
   toggleInlineMarker,
+  markdownToBlocks,
 } from './blockEditorHelpers';
 import TableBlock from './TableBlock';
 import styles from './BlockEditor.module.css';
@@ -35,6 +36,7 @@ export default function BlockRow({
   onBlockPatch,
   onToggleCheck,
   onSplitBlock,
+  onPasteBlocks,
   onDeleteBlock,
   onMoveFocus,
   allNotes,
@@ -157,6 +159,24 @@ export default function BlockRow({
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed && selection.toString() !== '') return;
     enterEditMode('end');
+  }
+
+  /**
+   * Pasted Markdown is parsed into blocks here. Left to the textarea's default
+   * it lands as literal text in the current block and only becomes headings,
+   * lists and so on when the note is next loaded and re-parsed. Code blocks
+   * keep pasted text verbatim, and plain single-line text is left alone.
+   */
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    if (block.type === 'code') return;
+    const text = e.clipboardData.getData('text/plain');
+    if (!text) return;
+    const parsed = markdownToBlocks(text);
+    const formatted = parsed.length > 1 || (parsed.length === 1 && parsed[0].type !== 'paragraph');
+    if (!formatted) return;
+    e.preventDefault();
+    const ta = e.currentTarget;
+    onPasteBlocks(block.id, block.content.slice(0, ta.selectionStart), block.content.slice(ta.selectionEnd), parsed);
   }
 
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -505,6 +525,7 @@ export default function BlockRow({
               className={`${styles.blockTextarea} ${block.type === 'code' ? styles.blockTextareaCode : ''} ${block.type === 'blockquote' ? styles.blockTextareaQuote : ''}`}
               value={block.content}
               onChange={handleChange}
+              onPaste={handlePaste}
               onKeyDown={handleKeyDown}
               onBlur={handleBlur}
               placeholder={editPlaceholder}

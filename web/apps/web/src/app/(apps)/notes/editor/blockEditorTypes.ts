@@ -126,6 +126,8 @@ export interface BlockRowProps {
   onBlockPatch: (id: string, patch: Partial<Block>) => void;
   onToggleCheck: (id: string) => void;
   onSplitBlock: (id: string, before: string, after: string) => void;
+  /** Multi-block Markdown pasted into a block: `before`/`after` are the text either side of the selection. */
+  onPasteBlocks: (id: string, before: string, after: string, pasted: Block[]) => void;
   onDeleteBlock: (id: string) => void;
   onMoveFocus: (id: string, direction: 'up' | 'down', column: number) => void;
   allNotes: import('./blockEditorHelpers').NoteLinkTarget[];
