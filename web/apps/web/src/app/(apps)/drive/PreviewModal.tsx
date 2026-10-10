@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Download, AlertCircle } from 'lucide-react';
 import { Text, Spinner } from '@neutrino/ui';
 import { useUser } from '@neutrino/auth';
+import { videoMimeType } from '@neutrino/utils';
 import { storageApi, authApi, downloadAndDecryptFile, type FileItem } from '@/lib/api';
 import { initSodium, loadKeyPair } from '@neutrino/e2e-crypto';
 import { toRenderableImageBlob } from '@/lib/heic';
@@ -174,8 +175,10 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
         } else if (file.mimeType === 'application/pdf') {
           const url = await fetchBlobUrl(file.mimeType);
           if (adopt(url)) setState({ kind: 'pdf', url });
-        } else if (file.mimeType.startsWith('video/')) {
-          const url = await fetchBlobUrl(file.mimeType);
+        } else if (videoMimeType(file.mimeType, file.name)) {
+          const type = videoMimeType(file.mimeType, file.name)!;
+          // Retyped: the server may only know the file as octet-stream.
+          const url = URL.createObjectURL(new Blob([await fetchBlob(type)], { type }));
           if (adopt(url)) setState({ kind: 'video', url });
         } else if (isZip(file.mimeType, file.name)) {
           // Read in the browser rather than listed by `zip-contents`: the
@@ -307,8 +310,16 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
 
           {state.kind === 'video' && (
             <div className={styles['video-container']}>
-              <video controls className={styles.video} key={state.url}>
-                <source src={state.url} type={file.mimeType} />
+              {/* `src` rather than `<source type>`: a declared type the browser
+                  doesn't list (`video/quicktime` for a .mov, which Chrome plays
+                  fine as H.264) makes it skip the source without trying it. */}
+              <video
+                controls
+                className={styles.video}
+                key={state.url}
+                src={state.url}
+                onError={() => setState({ kind: 'error', message: 'This browser cannot play this video format.' })}
+              >
                 Your browser does not support video playback.
               </video>
             </div>

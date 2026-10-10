@@ -41,7 +41,7 @@ import {
   type AutosaveTransport,
 } from './client';
 import type { ContentVersionCheck } from '@neutrino/api-core';
-import { generateThumbnail } from '@neutrino/utils';
+import { generateThumbnail, generateVideoThumbnail, videoMimeType } from '@neutrino/utils';
 
 /**
  * This device cannot encrypt right now: the vault is locked, or the keyring
@@ -194,9 +194,10 @@ export async function uploadDriveFile(
  * happen.
  */
 async function generateThumbnailIfImage(file: File): Promise<string | null> {
-  if (!file.type.startsWith('image/')) return null;
+  const isVideo = videoMimeType(file.type, file.name) !== null;
+  if (!isVideo && !file.type.startsWith('image/')) return null;
   try {
-    return await generateThumbnail(file);
+    return isVideo ? await generateVideoThumbnail(file) : await generateThumbnail(file);
   } catch {
     return null;
   }

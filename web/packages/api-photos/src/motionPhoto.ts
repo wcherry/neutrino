@@ -250,88 +250,9 @@ export function stillFrameSeconds(info: MotionPhotoInfo): number | undefined {
 // A representative frame
 // ---------------------------------------------------------------------------
 
-/**
- * Grab a frame out of a video as a base64 JPEG, in the shape `generateThumbnail`
- * returns for images (raw base64, no data-URL prefix, null on failure).
- *
- * This is what stops a motion photo with no still beside it from sitting in the
- * library as a black tile. Without a hint from the file the middle of the clip
- * is the frame to take: a motion photo records roughly a second either side of
- * the shutter, so the middle is the picture.
- */
-export function generateVideoThumbnail(
-  file: Blob,
-  opts: { atSeconds?: number; maxSize?: number } = {},
-): Promise<string | null> {
-  const { atSeconds, maxSize = 512 } = opts;
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement('video');
-    let settled = false;
-
-    const finish = (value: string | null) => {
-      if (settled) return;
-      settled = true;
-      URL.revokeObjectURL(url);
-      video.removeAttribute('src');
-      resolve(value);
-    };
-
-    video.preload = 'metadata';
-    video.muted = true;
-    video.playsInline = true;
-    // Without this Chrome refuses to paint a blob-backed video onto a canvas.
-    video.crossOrigin = 'anonymous';
-
-    video.onloadeddata = () => {
-      const duration = Number.isFinite(video.duration) ? video.duration : 0;
-      const target =
-        atSeconds != null && atSeconds >= 0 && (duration === 0 || atSeconds < duration)
-          ? atSeconds
-          : duration / 2;
-      // A seek to 0 fires no `seeked` event in some browsers — the frame is
-      // already decoded, so draw it straight away.
-      if (target <= 0) {
-        draw();
-        return;
-      }
-      video.onseeked = draw;
-      video.currentTime = target;
-    };
-
-    const draw = () => {
-      const width = video.videoWidth;
-      const height = video.videoHeight;
-      if (!width || !height) {
-        finish(null);
-        return;
-      }
-      const scale = Math.min(maxSize / width, maxSize / height, 1);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(width * scale);
-      canvas.height = Math.round(height * scale);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        finish(null);
-        return;
-      }
-      try {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        finish(canvas.toDataURL('image/jpeg', 0.8).split(',')[1] ?? null);
-      } catch (err) {
-        console.warn('[motionPhoto] could not draw video frame:', err);
-        finish(null);
-      }
-    };
-
-    video.onerror = () => {
-      console.warn('[motionPhoto] video load failed for', (file as File).name ?? 'blob');
-      finish(null);
-    };
-
-    video.src = url;
-  });
-}
+// `generateVideoThumbnail` lives in `@neutrino/utils` so `@neutrino/api-drive`,
+// which api-photos imports, can use it for ordinary Drive uploads too.
+export { generateVideoThumbnail } from '@neutrino/utils';
 
 // ---------------------------------------------------------------------------
 // Pairing a library listing
