@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { HamburgerMenu as HamburgerMenuBase, HamburgerMenuItem } from '@neutrino/ui';
 import { Modal, ModalHeader, ModalBody } from '@neutrino/ui';
 import { MARKDOWN_SHORTCUTS } from './blockEditorConstants';
+import type { MarkdownAction } from './blockEditorTypes';
 import styles from './MenuBar.module.css';
 
 // ── Help modal ────────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ export interface HamburgerMenuProps {
   onExport: (format: 'md' | 'txt') => void;
   onPrint: () => void;
   onSelectAll: () => void;
+  onFormat: (action: MarkdownAction) => void;
   showBacklinks: boolean;
   onToggleBacklinks: () => void;
 }
@@ -128,6 +130,7 @@ export function HamburgerMenu({
   onExport,
   onPrint,
   onSelectAll,
+  onFormat,
   showBacklinks,
   onToggleBacklinks,
 }: HamburgerMenuProps) {
@@ -170,6 +173,16 @@ export function HamburgerMenu({
         { kind: 'separator' },
         { kind: 'action', label: 'Select all', shortcut: 'Ctrl+A',       action: () => onSelectAll() },
       ],
+    },
+    {
+      kind: 'submenu',
+      label: 'Format',
+      items: MARKDOWN_SHORTCUTS.map((m) => ({
+        kind: 'action' as const,
+        label: m.label,
+        shortcut: m.keys.join('+'),
+        action: () => onFormat(m.action),
+      })),
     },
     {
       kind: 'submenu',

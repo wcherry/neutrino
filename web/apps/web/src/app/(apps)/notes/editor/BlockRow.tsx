@@ -2,7 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { NoteLinkTarget } from './blockEditorHelpers';
-import type { Block, BlockRowProps, MarkdownShortcut, SlashCommand } from './blockEditorTypes';
+import type { Block, BlockRowProps, MarkdownAction, MarkdownShortcut, SlashCommand } from './blockEditorTypes';
 import { SLASH_COMMANDS } from './blockEditorConstants';
 import {
   caretColumn,
@@ -30,6 +30,8 @@ export default function BlockRow({
   isFirst,
   focusRequest,
   onFocusHandled,
+  formatRequest,
+  onFormatHandled,
   exitEditSignal,
   onContentChange,
   onTypeChange,
@@ -286,6 +288,17 @@ export default function BlockRow({
     }
   }
 
+  // Commands from the menus arrive as a request, because the block may have
+  // left edit mode when focus moved to the menu: edit mode is re-entered and
+  // the selection it had is put back by the same handoff a shortcut uses.
+  useEffect(() => {
+    if (!formatRequest || formatRequest.id !== block.id) return;
+    setIsEditing(true);
+    applyFormatAction(formatRequest.action, formatRequest.start, formatRequest.end);
+    onFormatHandled();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formatRequest]);
+
   function applySlashCommand(cmd: SlashCommand) {
     const content = cmd.content ?? '';
     const patch: Partial<Block> = { type: cmd.type, content };
@@ -320,9 +333,11 @@ export default function BlockRow({
    */
   function applyMarkdownShortcut(shortcut: MarkdownShortcut, ta: HTMLTextAreaElement): boolean {
     const start = ta.selectionStart ?? block.content.length;
-    const end = ta.selectionEnd ?? start;
-    const action = shortcut.action;
+    return applyFormatAction(shortcut.action, start, ta.selectionEnd ?? start);
+  }
 
+  /** The shared body of the keyboard shortcuts and the Format / right-click menus. */
+  function applyFormatAction(action: MarkdownAction, start: number, end: number): boolean {
     if (action.kind === 'block') {
       // The same shortcut again goes back to a plain paragraph.
       onBlockPatch(block.id, { type: block.type === action.type ? 'paragraph' : action.type });
