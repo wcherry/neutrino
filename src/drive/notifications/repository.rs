@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use crate::drive::notifications::model::{NewNotification, Notification};
-use crate::schema::notifications;
+use crate::schema::{files, notifications, user_profiles, users};
 use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -122,4 +122,59 @@ impl NotificationsRepository {
             })?;
         Ok(())
     }
+
+    /// Where to email `user_id`, or `None` when they should not get one: the
+    /// account is gone or disabled, or they turned "General" email off in
+    /// Settings → Notifications. A user who never saved preferences has no
+    /// profile row and gets the default, which is on.
+    pub fn email_recipient(&self, user_id: &str) -> Result<Option<EmailRecipient>, ApiError> {
+        let mut conn = self.get_conn()?;
+        let found: Option<(String, String, Option<i32>)> = users::table
+            .left_join(user_profiles::table)
+            .filter(users::id.eq(user_id))
+            .filter(users::deleted_at.is_null())
+            .filter(users::disabled_at.is_null())
+            .select((users::email, users::name, user_profiles::email_general.nullable()))
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB email recipient lookup error: {:?}", e);
+                ApiError::internal("Database error")
+            })?;
+        Ok(found.and_then(|(email, name, general)| {
+            (general.unwrap_or(1) != 0).then_some(EmailRecipient { email, name })
+        }))
+    }
+
+    pub fn user_name(&self, user_id: &str) -> Result<Option<String>, ApiError> {
+        let mut conn = self.get_conn()?;
+        users::table
+            .filter(users::id.eq(user_id))
+            .select(users::name)
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB user name lookup error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+
+    /// A file's name and MIME type, for wording the email and linking it.
+    pub fn file_summary(&self, file_id: &str) -> Result<Option<(String, String)>, ApiError> {
+        let mut conn = self.get_conn()?;
+        files::table
+            .filter(files::id.eq(file_id))
+            .select((files::name, files::mime_type))
+            .first(&mut conn)
+            .optional()
+            .map_err(|e| {
+                tracing::error!("DB file summary lookup error: {:?}", e);
+                ApiError::internal("Database error")
+            })
+    }
+}
+
+pub struct EmailRecipient {
+    pub email: String,
+    pub name: String,
 }

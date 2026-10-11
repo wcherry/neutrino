@@ -498,7 +498,7 @@ async fn main() -> std::io::Result<()> {
     use jobs::service::JobsService;
     use drive::notifications::hub::NotificationHub;
     use drive::notifications::repository::NotificationsRepository;
-    use drive::notifications::service::{NotificationService, SmtpConfig};
+    use drive::notifications::service::NotificationService;
     use drive::permissions::repository::PermissionsRepository;
     use drive::permissions::service::PermissionsService;
     use drive::security::repository::SecurityRepository;
@@ -590,28 +590,33 @@ async fn main() -> std::io::Result<()> {
         notification_hub.clone(),
     ));
 
-    let smtp_config = if let (Ok(host), Ok(port_str), Ok(user_s), Ok(pass), Ok(from)) = (
-        std::env::var("SMTP_HOST"),
-        std::env::var("SMTP_PORT"),
-        std::env::var("SMTP_USER"),
-        std::env::var("SMTP_PASS"),
-        std::env::var("SMTP_FROM"),
-    ) {
-        port_str.parse::<u16>().ok().map(|port| SmtpConfig {
-            host,
-            port,
-            user: user_s,
-            pass,
-            from,
-        })
-    } else {
-        None
+    // Outbox (a file under the database's directory) unless `MAIL_TRANSPORT`,
+    // `RESEND_API_KEY` or `SMTP_HOST` says to send for real; see `shared::mail`.
+    // A transport that is asked for but half-configured stops the server here
+    // rather than dropping every email later.
+    let mailer = {
+        let data_dir = std::path::Path::new(&config.database_url)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .to_path_buf();
+        match shared::mail::Mailer::from_env(&data_dir) {
+            Ok(mailer) => {
+                info!("Mail: {}", mailer.describe());
+                Arc::new(mailer)
+            }
+            Err(e) => {
+                error!("Mail is misconfigured: {}", e);
+                std::process::exit(1);
+            }
+        }
     };
 
     let drive_notifications_repo = Arc::new(NotificationsRepository::new(pool.clone()));
     let drive_notification_service = Arc::new(NotificationService::new(
         drive_notifications_repo,
-        smtp_config,
+        mailer.clone(),
+        config.drive_base_url.clone(),
         notification_hub.clone(),
     ));
 

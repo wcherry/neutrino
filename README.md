@@ -273,7 +273,7 @@ which is how Docker/Kubernetes secrets are mounted — e.g. `JWT_SECRET_PATH=/ru
 | `DATABASE_URL` | `./data/neutrino.db` | SQLite database file path |
 | `STORAGE_PATH` | `./storage` | Root directory for uploaded files |
 | `WEB_DIR` | `web/apps/web/out` | Path to the built Next.js static export (preset in the Docker image) |
-| `DRIVE_URL` | `http://localhost:<PORT>` | Public base URL of this server; used for share links and OAuth callbacks |
+| `DRIVE_URL` | `http://localhost:<PORT>` | Public base URL of this server; used for share links, links in notification email, and OAuth callbacks |
 | `MAX_UPLOAD_BYTES` | `10737418240` | Largest single-file upload (default 10 GiB) |
 | `JWT_ACCESS_EXPIRY_SECS` | `900` | Access token lifetime |
 | `JWT_REFRESH_EXPIRY_SECS` | `604800` | Refresh token lifetime (7 days) |
@@ -289,7 +289,12 @@ which is how Docker/Kubernetes secrets are mounted — e.g. `JWT_SECRET_PATH=/ru
 | `OUTLOOK_CLIENT_ID` / `OUTLOOK_CLIENT_SECRET` | *(optional)* | Microsoft OAuth, for calendar sync |
 | `OUTLOOK_REDIRECT_URI` | `<origin>/calendar/settings/oauth/outlook/callback` | Microsoft OAuth redirect URI, derived the same way — register that URL in the Azure portal |
 | `ANTHROPIC_API_KEY` | *(deprecated)* | No longer read. The AI features take their provider and API key from **Settings → AI Assistant**, per user — see [AI features](#ai-features) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | *(optional)* | Outbound email for notifications. All five must be set or email is disabled |
+| `MAIL_TRANSPORT` | *(inferred)* | How notification email goes out: `resend`, `smtp` or `outbox`. Unset, it is `resend` if `RESEND_API_KEY` is set, else `smtp` if `SMTP_HOST` is, else `outbox`. A transport that is chosen but missing a required setting stops the server at startup |
+| `RESEND_API_KEY` | *(required for resend)* | Resend API key (`re_…`); `RESEND_API_KEY_PATH` reads it from a file |
+| `MAIL_FROM` | *(required for resend, smtp)* | Sender, e.g. `Neutrino <notifications@getneutrino.app>`, on a domain verified with the provider. Falls back to `SMTP_FROM` |
+| `RESEND_URL` | `https://api.resend.com` | Resend API base URL, for tests |
+| `MAIL_OUTBOX` | `<database dir>/outbox.jsonl` | Where `outbox` appends each message as a line of JSON instead of sending it |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | *(required host for smtp)* | SMTP relay (STARTTLS). User and password are optional |
 | `FACE_MODEL_PATH` | `models/seeta_fd_frontal_v1.0.bin` | Face-detection model, read by the worker (preset in the Docker image) |
 
 ### AI features
