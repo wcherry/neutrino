@@ -26,13 +26,18 @@ impl EventsRepository {
     }
 
     /// Runs `f` in one transaction: everything it writes lands together or not at all.
+    ///
+    /// `BEGIN IMMEDIATE`, for the reason `AuthRepository::publish_public_key` gives: every body
+    /// here reads before it writes (the default calendar, the series), and a deferred
+    /// transaction upgrading to a write lock gets `SQLITE_BUSY` at once rather than waiting out
+    /// `busy_timeout`. Two creates at once — an `.ics` import beside a Drive upload — were a 500.
     pub fn transaction<T>(
         &self,
         f: impl FnOnce(&mut SqliteConnection) -> Result<T, ApiError>,
     ) -> Result<T, ApiError> {
         let mut conn = self.get_conn()?;
         let conn: &mut SqliteConnection = &mut conn;
-        conn.transaction(f)
+        conn.immediate_transaction(f)
     }
 
     pub fn find_by_user(

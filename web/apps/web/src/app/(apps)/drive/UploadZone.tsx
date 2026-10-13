@@ -5,7 +5,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, CheckCircle, AlertCircle, File } from 'lucide-react';
 import { authApi, uploadDriveFile, isMissingEncryptionKey } from '@/lib/api';
 import { useUser } from '@neutrino/auth';
-import { DropZone } from '@neutrino/ui';
+import { DropZone, useToast } from '@neutrino/ui';
+import { describeIcsImport, importIcsFiles, isIcsFile } from '../calendar/icsImport';
 import styles from './UploadZone.module.css';
 
 /** Shown against a queued file the vault was locked for. */
@@ -35,6 +36,7 @@ function formatFileSize(bytes: number): string {
 
 export function UploadZone({ onClose, folderId, initialFiles }: UploadZoneProps) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [entries, setEntries] = useState<UploadEntry[]>([]);
   const currentUser = useUser();
 
@@ -81,8 +83,23 @@ export function UploadZone({ onClose, folderId, initialFiles }: UploadZoneProps)
       }));
       setEntries((prev) => [...prev, ...newEntries]);
       newEntries.forEach((entry) => uploadFile({ entry }));
+
+      // An .ics is stored like any other file, and its events are added to the calendar too.
+      const icsFiles = files.filter(isIcsFile);
+      if (icsFiles.length > 0) {
+        importIcsFiles(icsFiles)
+          .then((result) => {
+            const { ok, message } = describeIcsImport(result);
+            if (ok) toast.success(message);
+            else toast.error(message);
+            if (result.added.length > 0) void queryClient.invalidateQueries({ queryKey: ['events'] });
+          })
+          .catch(() => toast.error('The calendar file could not be read'));
+      }
     },
-    [uploadFile]
+    // `toast` is deliberately not a dependency: it is recreated on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [uploadFile, queryClient]
   );
 
   // Enqueue any files that were dropped onto the drive area before the zone opened.

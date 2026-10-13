@@ -1,5 +1,5 @@
 import type { EventResponse } from '@/lib/api';
-import type { View, ParsedIcsEvent } from './calendarTypes';
+import type { View } from './calendarTypes';
 import { MONTHS } from './calendarConstants';
 
 // ── Week-view hour-grid helpers ──────────────────────────────────────────────
@@ -588,54 +588,4 @@ export function isWithinReminderRange(
   // A due time we cannot read is shown rather than silently dropped.
   if (Number.isNaN(due.getTime())) return true;
   return due <= end;
-}
-
-export function icsDateToIso(val: string): string {
-  if (val.length === 8) {
-    return `${val.slice(0, 4)}-${val.slice(4, 6)}-${val.slice(6, 8)}T00:00:00Z`;
-  }
-  const y = val.slice(0, 4), mo = val.slice(4, 6), d = val.slice(6, 8);
-  const h = val.slice(9, 11) || '00', mi = val.slice(11, 13) || '00', s = val.slice(13, 15) || '00';
-  return `${y}-${mo}-${d}T${h}:${mi}:${s}Z`;
-}
-
-export function parseIcs(text: string): ParsedIcsEvent | null {
-  const lines: string[] = [];
-  // Unfold continuation lines
-  for (const raw of text.split(/\r?\n/)) {
-    if (/^[ \t]/.test(raw) && lines.length > 0) {
-      lines[lines.length - 1] += raw.slice(1);
-    } else {
-      lines.push(raw);
-    }
-  }
-
-  let inEvent = false;
-  const ev: ParsedIcsEvent = { attendees: [] };
-
-  for (const line of lines) {
-    if (line === 'BEGIN:VEVENT') { inEvent = true; continue; }
-    if (line === 'END:VEVENT') { break; }
-    if (!inEvent) continue;
-
-    const colon = line.indexOf(':');
-    if (colon === -1) continue;
-    const key = line.slice(0, colon).toUpperCase();
-    const val = line.slice(colon + 1).trim();
-
-    if (key === 'SUMMARY') ev.title = val;
-    else if (key === 'DESCRIPTION') ev.description = val.replace(/\\n/g, '\n');
-    else if (key === 'LOCATION') ev.location = val;
-    else if (key.startsWith('DTSTART')) {
-      ev.allDay = key.includes('VALUE=DATE') || val.length === 8;
-      ev.startTime = icsDateToIso(val);
-    } else if (key.startsWith('DTEND')) {
-      ev.endTime = icsDateToIso(val);
-    } else if (key.startsWith('ATTENDEE')) {
-      const mailto = val.match(/mailto:(.+)/i);
-      if (mailto) ev.attendees!.push(mailto[1]);
-    }
-  }
-
-  return ev.title ? ev : null;
 }

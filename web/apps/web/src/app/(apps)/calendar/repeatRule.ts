@@ -173,12 +173,21 @@ function untilDate(value: string, ctx: RepeatContext): string | null {
 function untilValue(date: string, ctx: RepeatContext): string {
   const [y, m, d] = date.split('-').map(Number);
   if (ctx.allDay) return `${date.replace(/-/g, '')}T235959Z`;
-  // The last second of the day in the event's zone. The zone's offset at a UTC guess, then again
-  // at the answer, since a DST change can fall between the two.
-  const target = Date.UTC(y, m - 1, d, 23, 59, 59);
-  let instant = target - offsetMs(target, ctx.timeZone);
-  instant = target - offsetMs(instant, ctx.timeZone);
+  // The last second of the day in the event's zone.
+  const instant = zonedTimeToUtc(y, m, d, 23, 59, 59, ctx.timeZone);
   return new Date(instant).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+}
+
+/**
+ * The instant a wall-clock time in `timeZone` names (`month` 1-based). The zone's offset at a UTC
+ * guess, then again at the answer, since a DST change can fall between the two.
+ */
+export function zonedTimeToUtc(
+  year: number, month: number, day: number, hour: number, minute: number, second: number, timeZone: string,
+): number {
+  const target = Date.UTC(year, month - 1, day, hour, minute, second);
+  const instant = target - offsetMs(target, timeZone);
+  return target - offsetMs(instant, timeZone);
 }
 
 /** How far `timeZone`'s wall clock is ahead of UTC at `instant`. */
