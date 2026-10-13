@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter as useNextRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button } from '@neutrino/ui';
+import { Button, useToast } from '@neutrino/ui';
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import {
   calendarApi,
@@ -30,12 +30,11 @@ import {
   DEFAULT_DAY_END_HOUR,
 } from './constants';
 
-import type { View, ParsedIcsEvent } from './calendarTypes';
+import type { View } from './calendarTypes';
 import {
   monthRange,
   weekStartDate,
   fmtRangeLabel,
-  parseIcs,
   expandRecurringEvents,
   ruleFromOccurrence,
   type CalendarOccurrence,
@@ -56,6 +55,7 @@ import { TasksSidebar } from './TasksSidebar';
 import TaskDetailModal from './TaskDetailModal';
 import { allTags } from './tags';
 import { EventDetail, EventViewModal } from './EventDetail';
+import { describeIcsImport, importIcsFiles, isIcsFile } from './icsImport';
 import styles from './page.module.css';
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -89,6 +89,7 @@ const occurrenceStartOf = (occurrence: CalendarOccurrence) =>
 
 export default function CalendarPage() {
   const qc = useQueryClient();
+  const toast = useToast();
   const searchParams = useSearchParams();
   const calendarRouter = useNextRouter();
   const [view, setView] = useState<View>('month');
@@ -130,7 +131,6 @@ export default function CalendarPage() {
   const [scopePrompt, setScopePrompt] = useState<ScopePrompt | null>(null);
   const [showNewEvent, setShowNewEvent] = useState(false);
   const [newEventDate, setNewEventDate] = useState<Date>(() => new Date());
-  const [icsPrefill, setIcsPrefill] = useState<ParsedIcsEvent | undefined>();
   const [reminderModal, setReminderModal] = useState<{ open: boolean; editing: ReminderResponse | null; scope?: RecurrenceScope }>({ open: false, editing: null });
 
   useEffect(() => {
@@ -280,7 +280,6 @@ export default function CalendarPage() {
       qc.invalidateQueries({ queryKey: ['events'] });
       qc.invalidateQueries({ queryKey: ['reminders'] });
       setShowNewEvent(false);
-      setIcsPrefill(undefined);
     },
   });
 
@@ -539,9 +538,11 @@ export default function CalendarPage() {
     setViewingEvent(ev as CalendarOccurrence);
   }, [allTasks]);
 
-  // ICS drag-drop
+  // ICS drag-drop: every event in the file goes straight into the default calendar.
   function handleDragOver(e: React.DragEvent) {
-    if ([...e.dataTransfer.items].some((i) => i.kind === 'file' && i.type === 'text/calendar')) {
+    // Safari, and Chrome for some files, report no type while an .ics is being dragged; only a
+    // file that says it is something else is refused here.
+    if ([...e.dataTransfer.items].some((i) => i.kind === 'file' && (i.type === 'text/calendar' || i.type === ''))) {
       e.preventDefault();
       setIsDragOver(true);
     }
@@ -551,22 +552,26 @@ export default function CalendarPage() {
     setIsDragOver(false);
   }
 
-  function handleDrop(e: React.DragEvent) {
+  async function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragOver(false);
-    const file = [...e.dataTransfer.files].find((f) => f.name.endsWith('.ics') || f.type === 'text/calendar');
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      const parsed = parseIcs(text);
-      if (parsed) {
-        setIcsPrefill(parsed);
-        setNewEventDate(parsed.startTime ? new Date(parsed.startTime) : new Date());
-        setShowNewEvent(true);
+    const files = [...e.dataTransfer.files].filter(isIcsFile);
+    if (files.length === 0) {
+      toast.error('Only .ics files can be added to the calendar');
+      return;
+    }
+    try {
+      const result = await importIcsFiles(files);
+      const { ok, message } = describeIcsImport(result);
+      if (ok) toast.success(message);
+      else toast.error(message);
+      if (result.added.length > 0) {
+        qc.invalidateQueries({ queryKey: ['events'] });
+        setCursor(new Date(result.added[0].startTime));
       }
-    };
-    reader.readAsText(file);
+    } catch {
+      toast.error('That file could not be read');
+    }
   }
 
   // The two sidebar arrangements (with and without an event open) show the same
@@ -615,8 +620,7 @@ export default function CalendarPage() {
           <Button
             icon={<Plus size={16} />}
             onClick={() => {
-              setIcsPrefill(undefined);
-              setNewEventDate(new Date());
+                      setNewEventDate(new Date());
               setShowNewEvent(true);
             }}
           >
@@ -656,6 +660,7 @@ export default function CalendarPage() {
       <div className={styles.body}>
         <div
           ref={calendarAreaRef}
+          data-testid="calendar-drop-area"
           className={`${styles.calendarArea} ${isDragOver ? styles.calendarAreaDragOver : ''}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -664,14 +669,14 @@ export default function CalendarPage() {
           {isDragOver && (
             <div className={styles.dropOverlay}>
               <CalendarDays size={32} />
-              <span>Drop .ics file to import event</span>
+              <span>Drop an .ics file to add its events</span>
             </div>
           )}
           {view === 'month' && (
             <MonthView
               cursor={cursor}
               events={events}
-              onDayClick={(day) => { handleDayClick(day); setIcsPrefill(undefined); setShowNewEvent(true); setNewEventDate(day); }}
+              onDayClick={(day) => { handleDayClick(day); setShowNewEvent(true); setNewEventDate(day); }}
               onEventClick={handleEventClick}
               startDay={startDay}
               colorOf={colorOf}
@@ -682,7 +687,7 @@ export default function CalendarPage() {
             <WeekView
               cursor={cursor}
               events={events}
-              onDayClick={(day) => { handleDayClick(day); setIcsPrefill(undefined); setShowNewEvent(true); setNewEventDate(day); }}
+              onDayClick={(day) => { handleDayClick(day); setShowNewEvent(true); setNewEventDate(day); }}
               onEventClick={handleEventClick}
               startDay={startDay}
               dayStartHour={dayStartHour}
@@ -728,9 +733,8 @@ export default function CalendarPage() {
       {showNewEvent && (
         <NewEventModal
           defaultDate={newEventDate}
-          prefill={icsPrefill}
           calendars={calendars}
-          onClose={() => { setShowNewEvent(false); setIcsPrefill(undefined); }}
+          onClose={() => { setShowNewEvent(false); }}
           onCreate={(req, reminderOffsets, pendingAttachments) => createEvent.mutate({ req, reminderOffsets, pendingAttachments })}
           isPending={createEvent.isPending}
         />

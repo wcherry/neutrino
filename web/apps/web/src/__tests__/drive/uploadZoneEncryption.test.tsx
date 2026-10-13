@@ -26,7 +26,15 @@ vi.mock('@/lib/api', () => ({
 let currentUser: { id: string } | null = { id: 'user-1' };
 vi.mock('@neutrino/auth', () => ({ useUser: () => currentUser }));
 
+const toast = { success: vi.fn(), error: vi.fn() };
+const importIcsFiles = vi.fn();
+vi.mock('../../app/(apps)/calendar/icsImport', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../app/(apps)/calendar/icsImport')>()),
+  importIcsFiles: (...a: unknown[]) => importIcsFiles(...a),
+}));
+
 vi.mock('@neutrino/ui', () => ({
+  useToast: () => toast,
   DropZone: ({ onFiles }: { onFiles: (files: File[]) => void }) => (
     <input
       type="file"
@@ -60,6 +68,7 @@ beforeEach(() => {
   currentUser = { id: 'user-1' };
   uploadDriveFile.mockResolvedValue({ id: 'file-1' });
   getProfile.mockResolvedValue({ id: 'user-1' });
+  importIcsFiles.mockResolvedValue({ added: [], duplicates: 0, failed: 0 });
 });
 
 describe('UploadZone', () => {
@@ -104,5 +113,23 @@ describe('UploadZone', () => {
     await act(async () => { renderZone([aFile()]); });
 
     await waitFor(() => expect(screen.getByText('Network unreachable')).toBeTruthy());
+  });
+
+  it('adds an .ics to the calendar as well as storing it', async () => {
+    const invite = new File(['BEGIN:VCALENDAR'], 'invite.ics', { type: 'text/calendar' });
+    importIcsFiles.mockResolvedValue({ added: [{ title: 'Offsite' }], duplicates: 0, failed: 0 });
+
+    await act(async () => { renderZone([aFile(), invite]); });
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Added “Offsite” to your calendar'));
+    expect(importIcsFiles).toHaveBeenCalledWith([invite]);
+    expect(uploadDriveFile).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the calendar alone when no .ics is uploaded', async () => {
+    await act(async () => { renderZone([aFile()]); });
+
+    await waitFor(() => expect(uploadDriveFile).toHaveBeenCalledTimes(1));
+    expect(importIcsFiles).not.toHaveBeenCalled();
   });
 });
