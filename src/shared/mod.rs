@@ -10,6 +10,7 @@ pub mod errors;
 pub mod file_events;
 pub mod helper;
 pub mod logger;
+pub mod mail;
 pub mod pagination;
 pub mod presence_room;
 
