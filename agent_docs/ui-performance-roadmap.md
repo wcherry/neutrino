@@ -29,7 +29,8 @@ measured by the existing `e2e/perf` suite in real Chromium through CDP, not by r
 
 It was run against a local server rather than the Docker stack (the daemon was down), through a
 wrapper config that drops `global-setup.ts`'s `docker compose up` and nothing else. Results:
-16 sections, 14 passed; the two failures are single scenarios, C5 and E4b, covered in §4.
+16 sections, 14 passed; the two failures are single scenarios, C5 and E4b, both triaged in
+Stage 0 (P2 and "Instrument gaps" below).
 
 **No baseline was written**, for the reason `performance-testing.md` §10 gives: one laptop's
 numbers committed as a baseline look authoritative and compare against nothing. The first job of
@@ -127,10 +128,27 @@ first rung is currently broken** — see "Instrument gaps" below.
 **Proves it:** C2 INP ≤ 100 ms and TBT under 1 s for the 60 characters; C6 grow/undo ≤ 300 ms;
 C8 no task over 50 ms.
 
-**C5 is unresolved.** Applying Heading 1 across the whole 1 000-paragraph document produced no
-`<h1>` within the scenario's 60 s timeout. That is either a real hang — the most severe Docs
-finding by far — or a broken step in the scenario (`select[title="Paragraph style"]`). Triage it
-by hand in phase 0 before anything else in Docs; a 60-second freeze outranks every number above.
+**C5, triaged in Stage 0 — slow, not hung; and it led to a data-loss bug.** Run alone, applying
+Heading 1 across the whole 1 000-paragraph document works and takes **12.4 s** at 4× CPU
+(2.8 s unthrottled; 113 ms on the 20-paragraph document) — far over any budget, and a P2 item in
+its own right. It only *fails* when C2/C3's typing runs first, and chasing that found the
+following, which outranks everything in this document:
+
+> **Typing into a `.docx` the moment it opens can overwrite the stored document.** The editor
+> mounts with one empty placeholder paragraph before the file's content is applied. Keystrokes in
+> that window go into the empty document, the content is then never applied (the dirty guard keeps
+> the "unsaved" typing), and the autosave writes the near-empty document over the file. Measured on
+> a seeded 20-paragraph `.docx`: typing at once → **the stored file went from 21 paragraphs to 1**
+> (only the typed text); waiting 8 s first → intact. The window was 448 → 503 ms locally and is
+> the download-and-decrypt time in general, so longer on a real network and for a larger file.
+> It affects the **first open of any `.docx` the app has not yet saved** — every uploaded Word file
+> and every Takeout import, which are stored byte for byte. A document the app has already saved
+> opens with its content and no window, and immediate typing left it intact. Not fixed in Stage 0;
+> tracked as its own fix ahead of every other Docs item.
+
+The scenarios should not be able to trip it either: `openDoc` (`perf/fixtures/actions.ts`) returns
+as soon as *a* paragraph is visible, which the placeholder satisfies. It should wait for the
+document's own content, or C2–C8 can measure an empty document.
 
 ### P3 — Sheets paints fast, then freezes
 
@@ -244,17 +262,30 @@ with a small message protocol, not one per feature.
 
 ### Instrument gaps — fix these first
 
-1. **No production source maps, so attribution stops at a hashed chunk.** Every "slowest frames"
-   entry in this run reads `(anonymous) b895d1f2-….js @ ?`. Step 1 of the attribution ladder
-   (`performance-testing.md` §7) depends on `sourcemap.ts` resolving those, and there is nothing to
-   resolve. Emit hidden source maps for the build the perf suite tests
-   (`productionBrowserSourceMaps` behind an env flag, maps kept out of the served `out/` directory)
-   — not for the shipped image.
-2. **C5 and E4b fail.** Triage both by hand (§P2 for C5). E4b timed out reading the drawing
-   canvas's bounding box after the canvas became visible, which suggests the canvas element is
-   replaced after mount — possibly the Konva stage re-creating itself, which would be its own
-   finding.
-3. **No baseline and no CI** (issue #196). Without them, every fix in §6 can regress silently.
+1. ~~**No production source maps.**~~ **Fixed in Stage 0.** `NEUTRINO_BROWSER_SOURCEMAPS=1` turns on
+   `productionBrowserSourceMaps`; `run-perf.sh` sets it and the Dockerfile passes it through as a
+   build arg that defaults off, so only the image the suite measures carries maps (served beside
+   each chunk, which is what `sourcemap.ts` fetches; the export grows to ~63 MB). A frame spent
+   *evaluating* a chunk has no character position to map, so `sourcemap.ts` now names the chunk's
+   largest packages instead of printing `@ ?`. The first attributed run already says something:
+   - **Opening a document evaluates `nspell` — 206 ms on the main thread** (C1). The spell-checker
+     loads with the editor; P2's worker plan should take it off the open path entirely.
+   - **The first PDF export evaluates `html-to-pdfmake` (688 ms) and `pdfmake` (242 ms)** (C7) —
+     one blocking second the first time a user exports.
+   - **The longest typing frames are React, not ProseMirror**: 260–287 ms in react-dom's commit
+     in C2, C3 and C8 — the editor component re-rendering on each keystroke, which is
+     `performance-testing.md` §8 finding 7 confirmed. `src/lib/extensions/PaginationExtension.ts:477`
+     is next (14–83 ms; 83 ms in C6's table growth). P2 should start with what `DocEditor`
+     re-renders per transaction, then pagination — not with plugin decorations, which the plan
+     above guessed at.
+2. ~~**C5 and E4b fail.**~~ **Triaged in Stage 0.** C5: see P2 above. E4b was a **broken fixture**:
+   `buildDrawing` wrote the old version 1 flat-shape body, which the layer-tree editor refuses
+   ("This file is not a drawing this version can open"), so there was never a drawing canvas to
+   measure. It is now built with the editor's own `document/factory.ts` and `serializeDocument`, so
+   it cannot drift from the format again. With a real drawing: **open 304 ms, pan 62 fps, 0 % dropped**
+   — the Konva canvas is healthy.
+3. **No baseline and no CI** (issue #196). Baseline: on this Mac, decided in Stage 0; CI stays
+   open. Without them, every fix in §6 can regress silently.
 
 ---
 
@@ -358,7 +389,7 @@ gets built here:
 | C1 | Open doc 20 / 250 / 1 000 ¶ | 498 / 490 / 494 ms |
 | C2 | Typing, 1 000 ¶ | INP 312 ms, TBT 10.2 s |
 | C3 | Typing during autosave | max task 288 ms |
-| C5 | Heading across 1 000 ¶ | **failed — no result in 60 s** |
+| C5 | Heading across 1 000 ¶ | failed in the full run; **12.4 s** run alone (Stage 0 triage) |
 | C6 | Table insert / grow / undo | 837 / 3 014 / 3 433 ms |
 | C7 | PDF export, 250 ¶ | 1 358 ms |
 | C8 | Spell-check, 1 000 ¶ | TBT 4.7 s, max task 267 ms |
@@ -375,7 +406,7 @@ gets built here:
 | E2 | Slide navigation | INP 16 ms |
 | E3 | Drag on 50-element slide | 67 fps |
 | E4 | Drag in 200-node diagram | 60 fps |
-| E4b | Konva drawing pan | **failed — canvas bounding box timeout** |
+| E4b | Konva drawing pan | failed in the full run (stale fixture); **open 304 ms, 62 fps** once fixed |
 | E5 | Photos grid, 620 photos | first row 561 ms, 61 fps |
 | E6 | Photo editor, 12 MP | 554 ms |
 | E7 | Presenter view | 51 ms |
