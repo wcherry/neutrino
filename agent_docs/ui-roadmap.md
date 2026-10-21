@@ -104,7 +104,8 @@ or user-authored content in `localStorage`.
 **Status — built 2026-10-21 (`feature/ui-stage-1`).** Measured in real Chromium at 4× CPU against
 the same 1 000-file folder: B2 38 → **60 fps, 0 % dropped**; B3 INP 1 080 → **112 ms**; B5 menu
 894 → **122 ms** (INP 32 ms); B4 sort/filter 664/488 → 274/350 ms. **B1 is not met**: 4 055 →
-2 161 ms, growth 8.4 → **3.9×** against a ≤ 2× target — what remains is five sequential page
+3 132 ms, growth 8.4 → **4.9×** against a ≤ 2× target (the baseline's figures; an earlier 2 161 ms
+came from a scroll helper that could stop at the first page) — what remains is five sequential page
 fetches for 1 000 files against a debug server, not rendering, and is a pagination question for
 Stage 2 rather than a windowing one. F1 measures **zero third-party requests**. The token groups,
 `data-look`/`data-density`/route-following `data-app` and warn-only `pnpm lint:css` are in, with

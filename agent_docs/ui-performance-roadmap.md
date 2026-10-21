@@ -62,9 +62,12 @@ first result 297 ms), and sheet open time staying flat with size (D1 0.93 ratio,
 ### P1 — Drive listings render every row, and pay for it on every interaction
 
 > **Done in Stage 1** (`useWindowedItems`, memoised rows, `aria-setsize`/`aria-posinset`): B2
-> 60 fps / 0 % dropped, B3 INP 112 ms, B5 122 ms, B1 2 161 ms — growth 3.9×, still above the ≤ 2×
-> target; the remainder is sequential page fetches, not rendering. Details in `ui-roadmap.md`,
-> Stage 1.
+> 60 fps / 0 % dropped, B3 INP 112 ms, B5 122 ms. B1 is 715 / 1 100 / 3 132 ms for 25 / 200 /
+> 1 000 rows — growth 4.9×, still above the ≤ 2× target; the remainder is five sequential page
+> fetches, not rendering. (A first measurement of 2 161 ms came from a scroll helper that could stop
+> at the first page of 200; `e2e/perf/fixtures/actions.ts` now scrolls the last rendered row into
+> view until `aria-posinset` reaches `aria-setsize`, and the committed baseline uses it.) Details in
+> `ui-roadmap.md`, Stage 1.
 
 **Mechanism, confirmed.** `FileGrid` (`packages/ui/src/components/display/FileGrid.tsx`) has no
 windowing. My Drive pages at 200 (A7: 201 rows in the DOM after the first page settles) and the

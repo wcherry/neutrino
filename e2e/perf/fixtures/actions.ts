@@ -44,7 +44,6 @@ export async function waitForFirstRow(page: Page): Promise<void> {
  */
 export async function loadAllDriveRows(page: Page, expected: number): Promise<number> {
   await waitForFirstRow(page);
-  const scroller = await scrollerFor(page, FILES_LIST);
 
   let previous = -1;
   for (let guard = 0; guard < 200; guard += 1) {
@@ -57,7 +56,7 @@ export async function loadAllDriveRows(page: Page, expected: number): Promise<nu
       break;
     }
     previous = count;
-    await scrollToBottom(page, scroller);
+    await scrollToBottom(page);
     await page
       .waitForFunction(
         ({ sel, n }) => {
@@ -73,7 +72,7 @@ export async function loadAllDriveRows(page: Page, expected: number): Promise<nu
   }
   // End at the bottom with the last page painted, so a scenario that wants the
   // final rows finds them in the window.
-  await scrollToBottom(page, scroller);
+  await scrollToBottom(page);
   return loadedRowCount(page);
 }
 
@@ -95,13 +94,34 @@ async function loadedRowCount(page: Page): Promise<number> {
   }, FILES_LIST);
 }
 
-async function scrollToBottom(page: Page, scroller: string): Promise<void> {
+/**
+ * Scroll the listing to its last row, the way a user's scrolling would.
+ *
+ * Deliberately not "set the scroller's `scrollTop` to its `scrollHeight`": which element scrolls
+ * is only knowable once the windowed list has applied its full height, and asking a moment
+ * earlier — the first paint renders a short slice — picks `<html>`, which does not scroll here
+ * (the app shell's main area does). That silently left Drive at its first page of 200 in four of
+ * five repeats of the first baseline run. Bringing the last *rendered* row into view instead moves
+ * whatever really scrolls, and the window follows it; the walk stops when the last rendered row is
+ * the last row of the listing (`aria-posinset` equals `aria-setsize`), which is where the
+ * infinite-scroll sentinel sits.
+ */
+async function scrollToBottom(page: Page): Promise<void> {
   await page.evaluate(async (sel) => {
-    const el = document.querySelector(sel);
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-  }, scroller);
+    const frame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    for (let i = 0; i < 200; i += 1) {
+      const rows = document.querySelectorAll(`${sel} [role="listitem"]`);
+      const last = rows[rows.length - 1] as HTMLElement | undefined;
+      if (!last) return;
+      last.scrollIntoView({ block: 'end' });
+      await frame();
+      const pos = Number(last.getAttribute('aria-posinset') ?? 0);
+      const size = Number(last.getAttribute('aria-setsize') ?? 0);
+      if (!size || pos >= size) break;
+    }
+    document.querySelector(`${sel} [aria-live="polite"]`)?.scrollIntoView({ block: 'end' });
+    await frame();
+  }, FILES_LIST);
 }
 
 /**

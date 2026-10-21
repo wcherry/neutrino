@@ -1,0 +1,2196 @@
+{
+  "machineClass": "darwin-arm64-apple-m2-8x",
+  "cpuThrottling": 4,
+  "scale": "default",
+  "updatedAt": "2026-10-21T22:12:49.604Z",
+  "metrics": {
+    "A1/bytes": {
+      "median": 544666,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/cls": {
+      "median": 0.00003837776759687928,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/domContentLoaded": {
+      "median": 553.6000000238419,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/fcp": {
+      "median": 3260,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/jsBytes": {
+      "median": 503499,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/lcp": {
+      "median": 3260,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/loafMax": {
+      "median": 372.7999999523163,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/requests": {
+      "median": 37,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A1/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/bytes": {
+      "median": 814778,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/cls": {
+      "median": 0.0072755554952739195,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/domContentLoaded": {
+      "median": 577,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/fcp": {
+      "median": 4824,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/firstRow": {
+      "median": 5566,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/jsBytes": {
+      "median": 709448,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/lcp": {
+      "median": 5008,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/loafMax": {
+      "median": 390.89999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/requests": {
+      "median": 108,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A2/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/bytes": {
+      "median": 819381,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/cls": {
+      "median": 0.0072755554952739195,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/coldBytes": {
+      "median": 814764,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/domContentLoaded": {
+      "median": 39.60000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/fcp": {
+      "median": 368,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/jsBytes": {
+      "median": 709448,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/lcp": {
+      "median": 520,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/requests": {
+      "median": 216,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/warmByteRatio": {
+      "median": 0.0056666715760637434,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A3/warmBytes": {
+      "median": 4617,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/bytes": {
+      "median": 8540,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/domContentLoaded": {
+      "median": 37.300000071525574,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/hop_calendar": {
+      "median": 51,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/hop_docs": {
+      "median": 141,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/hop_sheets": {
+      "median": 84,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/inp": {
+      "median": 40,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/inpPageWorst": {
+      "median": 40,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/interactionCount": {
+      "median": 4,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/requests": {
+      "median": 119,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A4/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/bytes": {
+      "median": 11776,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/domContentLoaded": {
+      "median": 35.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/framesOver100ms": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/inp": {
+      "median": 16,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/inpPageWorst": {
+      "median": 16,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/requests": {
+      "median": 111,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A5/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/bytes": {
+      "median": 814744,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/cls": {
+      "median": 0.02966961805555555,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/domContentLoaded": {
+      "median": 131.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/fcp": {
+      "median": 756,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/jsBytes": {
+      "median": 709448,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/largestChunkBytes": {
+      "median": 787106,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/lcp": {
+      "median": 872,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/loafBlockingTotal": {
+      "median": 123.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/loafMax": {
+      "median": 159.60000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/longTaskCount": {
+      "median": 2,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/longTaskMax": {
+      "median": 159,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/requests": {
+      "median": 107,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/shellJsBytes": {
+      "median": 3001434,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/tbt": {
+      "median": 122,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/ttfb": {
+      "median": 2,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A6/unusedByteRatio": {
+      "median": -1.766023174256039,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/bytes": {
+      "median": 27362,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/cls": {
+      "median": 0.032721556712962965,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/domContentLoaded": {
+      "median": 34.800000071525574,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/fcp": {
+      "median": 192,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/lcp": {
+      "median": 428,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/loafBlockingTotal": {
+      "median": 126.2,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/loafMax": {
+      "median": 178.80000007152557,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/longTaskCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/longTaskMax": {
+      "median": 172,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/requests": {
+      "median": 107,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/rowsInDom": {
+      "median": 42,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/tbt": {
+      "median": 122,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "A7/ttfb": {
+      "median": 0.7999999523162842,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/bytes": {
+      "median": 163881,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/cls": {
+      "median": 0.027105729166666665,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/domContentLoaded": {
+      "median": 35.10000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/fcp": {
+      "median": 188,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/inp": {
+      "median": 16,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/inpPageWorst": {
+      "median": 16,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/interactionCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/lcp": {
+      "median": 252,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/loafBlockingTotal": {
+      "median": 489.7,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/loafMax": {
+      "median": 179.69999992847443,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/longTaskCount": {
+      "median": 6,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/longTaskMax": {
+      "median": 167,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/render_L": {
+      "median": 3132,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/render_M": {
+      "median": 1100,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/requests": {
+      "median": 336,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/rows_L": {
+      "median": 1000,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/rows_M": {
+      "median": 200,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/rows_S": {
+      "median": 25,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B1/tbt": {
+      "median": 464,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/bytes": {
+      "median": 130959,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/domContentLoaded": {
+      "median": 38.89999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/requests": {
+      "median": 115,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/scrollDroppedRatio": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/scrollFps": {
+      "median": 60.07810153199159,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B2/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/bytes": {
+      "median": 130959,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/domContentLoaded": {
+      "median": 37.39999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/longTaskCount": {
+      "median": 3,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/longTaskMax": {
+      "median": 629,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/requests": {
+      "median": 115,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/switch_detailed": {
+      "median": 439,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/switch_large": {
+      "median": 701,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/switch_small": {
+      "median": 111,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B3/tbt": {
+      "median": 836,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B4/bytes": {
+      "median": 208314,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B4/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B4/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B4/loafBlockingTotal": {
+      "median": 217.6,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B4/loafMax": {
+      "median": 164.79999995231628,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B4/longTaskMax": {
+      "median": 155,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B4/requests": {
+      "median": 118,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B4/tbt": {
+      "median": 207,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/bytes": {
+      "median": 130959,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/inp": {
+      "median": 32,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/inpPageWorst": {
+      "median": 32,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/menuOpen": {
+      "median": 419,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/requests": {
+      "median": 115,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B5/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/bytes": {
+      "median": 27538,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/bytesIn2s": {
+      "median": 26279,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/domContentLoaded": {
+      "median": 39.299999952316284,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/imageRequestsIn2s": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/inp": {
+      "median": 16,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/inpPageWorst": {
+      "median": 16,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/interactionCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/lcp": {
+      "median": 262,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/loafBlockingTotal": {
+      "median": 114.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/loafMax": {
+      "median": 171.29999995231628,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/longTaskCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/longTaskMax": {
+      "median": 159,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/requests": {
+      "median": 110,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "B6/tbt": {
+      "median": 109,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C1/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C1/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C1/requests": {
+      "median": 510,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C1/neutrino:doc:parse": {
+      "median": 144,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/inp": {
+      "median": 392,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/inpPageWorst": {
+      "median": 368,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/interactionCount": {
+      "median": 49,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/loafBlockingTotal": {
+      "median": 12273.9,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/loafMax": {
+      "median": 366.39999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/longTaskCount": {
+      "median": 85,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/longTaskMax": {
+      "median": 337,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/requests": {
+      "median": 130,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/tbt": {
+      "median": 11398,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C2/neutrino:autosave:upload": {
+      "median": 45.69999998807907,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/bytes": {
+      "median": 30970,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/cls": {
+      "median": 0.0004457339188689558,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/domContentLoaded": {
+      "median": 124.70000004768372,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/inp": {
+      "median": 344,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/inpPageWorst": {
+      "median": 344,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/interactionCount": {
+      "median": 37,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/loafBlockingTotal": {
+      "median": 8733.899999999998,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/loafMax": {
+      "median": 319.89999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/longTaskCount": {
+      "median": 46,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/longTaskMax": {
+      "median": 291,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/requests": {
+      "median": 131,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/tbt": {
+      "median": 7924,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C3/neutrino:autosave:upload": {
+      "median": 23.700000047683716,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/bytes": {
+      "median": 30423,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/growTable": {
+      "median": 3280,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/inp": {
+      "median": 568,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/inpPageWorst": {
+      "median": 568,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/insertTable": {
+      "median": 819,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/interactionCount": {
+      "median": 21,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/loafBlockingTotal": {
+      "median": 5210.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/loafMax": {
+      "median": 537.2999999523163,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/longTaskCount": {
+      "median": 32,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/longTaskMax": {
+      "median": 423,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/requests": {
+      "median": 130,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/tbt": {
+      "median": 5272,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/undoTable": {
+      "median": 3545,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/neutrino:autosave:upload": {
+      "median": 685.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C6/neutrino:doc:parse": {
+      "median": 448.6999999284744,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/bytes": {
+      "median": 22201,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/domContentLoaded": {
+      "median": 70.59999990463257,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/exportPdf": {
+      "median": 1466,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/heapAfterExport": {
+      "median": 6339308,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/interactionCount": {
+      "median": 3,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/loafBlockingTotal": {
+      "median": 716.1999999999999,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/loafMax": {
+      "median": 694.87,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/longTaskCount": {
+      "median": 2,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/longTaskMax": {
+      "median": 694,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/requests": {
+      "median": 132,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C7/tbt": {
+      "median": 714,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/bytes": {
+      "median": 30499,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/inp": {
+      "median": 344,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/inpPageWorst": {
+      "median": 344,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/interactionCount": {
+      "median": 23,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/loafBlockingTotal": {
+      "median": 5858.4,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/loafMax": {
+      "median": 325.39999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/longTaskCount": {
+      "median": 45,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/longTaskMax": {
+      "median": 295,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/requests": {
+      "median": 130,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "C8/tbt": {
+      "median": 5386,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D1/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D1/domContentLoaded": {
+      "median": 35,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D1/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D1/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D1/requests": {
+      "median": 389,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/bytes": {
+      "median": 3791595,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/domContentLoaded": {
+      "median": 37.800000071525574,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/lcp": {
+      "median": 4992,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/loafBlockingTotal": {
+      "median": 4168.1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/loafMax": {
+      "median": 4220.399999976158,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/requests": {
+      "median": 123,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/scrollAcrossDroppedRatio": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/scrollAcrossFps": {
+      "median": 121.34831460674157,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D2/scrollDownFps": {
+      "median": 60.06006006006006,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/bytes": {
+      "median": 3791595,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/domContentLoaded": {
+      "median": 409.10000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/inp": {
+      "median": 136,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/interactionCount": {
+      "median": 2,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/lcp": {
+      "median": 5368,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/loafBlockingTotal": {
+      "median": 4180.2,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/loafMax": {
+      "median": 4158.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/longTaskMax": {
+      "median": 125,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/recalc": {
+      "median": 476,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/requests": {
+      "median": 123,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D3/neutrino:sheet:recalc": {
+      "median": 61.299999952316284,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/bytes": {
+      "median": 762453,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/domContentLoaded": {
+      "median": 173.79999995231628,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/inp": {
+      "median": 200,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/interactionCount": {
+      "median": 3,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/loafBlockingTotal": {
+      "median": 126.4,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/loafMax": {
+      "median": 184.39999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/longTaskCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/longTaskMax": {
+      "median": 173,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/paste": {
+      "median": 236,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/requests": {
+      "median": 123,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/tbt": {
+      "median": 123,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D4/neutrino:sheet:recalc": {
+      "median": 34.70000076293945,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/applyRule": {
+      "median": 476,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/bytes": {
+      "median": 3791595,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/domContentLoaded": {
+      "median": 405.7000000476837,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/loafMax": {
+      "median": 155.10000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/longTaskMax": {
+      "median": 122,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/requests": {
+      "median": 123,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/scrollAfterRuleFps": {
+      "median": 54.95495495495496,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D5/tbt": {
+      "median": 146,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/bytes": {
+      "median": 3791595,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/deleteRow": {
+      "median": 280,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/domContentLoaded": {
+      "median": 393.2999999523163,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/inp": {
+      "median": 224,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/inpPageWorst": {
+      "median": 224,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/insertRow": {
+      "median": 616,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/interactionCount": {
+      "median": 4,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/lcp": {
+      "median": 5572,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/loafBlockingTotal": {
+      "median": 4710,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/loafMax": {
+      "median": 4357.700000047684,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/longTaskCount": {
+      "median": 4,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/longTaskMax": {
+      "median": 211,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/requests": {
+      "median": 123,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D6/tbt": {
+      "median": 420,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/bytes": {
+      "median": 762453,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/chartPainted": {
+      "median": 1552,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/domContentLoaded": {
+      "median": 115.39999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/inpPageWorst": {
+      "median": 32,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/longTaskCount": {
+      "median": 5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/longTaskMax": {
+      "median": 645,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/requests": {
+      "median": 123,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D7/tbt": {
+      "median": 1089,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/bytes": {
+      "median": 3791595,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/inp": {
+      "median": 1336,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/interactionCount": {
+      "median": 3,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/lcp": {
+      "median": 5320,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/loafBlockingTotal": {
+      "median": 7281.500000000001,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/loafMax": {
+      "median": 4380.399999976158,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/longTaskCount": {
+      "median": 4,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/multiSelect": {
+      "median": 2979,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/requests": {
+      "median": 123,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D8/tbt": {
+      "median": 2809,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/domContentLoaded": {
+      "median": 40.60000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/inp": {
+      "median": 72,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/inpPageWorst": {
+      "median": 72,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/interactionCount": {
+      "median": 2,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/lcp": {
+      "median": 5304,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/loafBlockingTotal": {
+      "median": 5065.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/loafMax": {
+      "median": 4304,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/requests": {
+      "median": 124,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/neutrino:autosave:upload": {
+      "median": 30.899999976158142,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "D9/neutrino:crypto:encrypt": {
+      "median": 3.399999976158142,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/bytes": {
+      "median": 1002781,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/cls": {
+      "median": 0.00001533832733196159,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/domContentLoaded": {
+      "median": 34.10000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/fcp": {
+      "median": 172,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/lcp": {
+      "median": 544,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/openDeck": {
+      "median": 281,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/railPainted": {
+      "median": 381,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/requests": {
+      "median": 167,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/neutrino:slide:decrypt": {
+      "median": 6,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/neutrino:slide:fetch": {
+      "median": 115.29999995231628,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E1/neutrino:slide:import": {
+      "median": 110.79999995231628,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/bytes": {
+      "median": 1002781,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/domContentLoaded": {
+      "median": 59.200000047683716,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/inp": {
+      "median": 16,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/inpPageWorst": {
+      "median": 16,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/interactionCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/requests": {
+      "median": 117,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E2/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/bytes": {
+      "median": 314281,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/dragFps": {
+      "median": 65.78947368421052,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/requests": {
+      "median": 117,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E3/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/bytes": {
+      "median": 5774,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/domContentLoaded": {
+      "median": 37.89999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/dragFps": {
+      "median": 60.02265005662514,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/inp": {
+      "median": 32,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/requests": {
+      "median": 120,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/bytes": {
+      "median": 62715,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/domContentLoaded": {
+      "median": 34.10000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/fcp": {
+      "median": 164,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/lcp": {
+      "median": 260,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/openDrawing": {
+      "median": 253,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/panDroppedRatio": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/panFps": {
+      "median": 64.07322654462243,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/requests": {
+      "median": 165,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E4b/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/bytes": {
+      "median": 43934,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/cardsInDom": {
+      "median": 200,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/domContentLoaded": {
+      "median": 32.199999928474426,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/fcp": {
+      "median": 188,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/heapAfterGrid": {
+      "median": 10497896,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/lcp": {
+      "median": 556,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/loafBlockingTotal": {
+      "median": 145.1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/loafMax": {
+      "median": 230.10000002384186,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/longTaskCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/longTaskMax": {
+      "median": 132,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/requests": {
+      "median": 364,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/scrollDroppedRatio": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/scrollFps": {
+      "median": 60.70143884892086,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/tbt": {
+      "median": 82,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E5/ttfb": {
+      "median": 0.7999999523162842,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/bytes": {
+      "median": 550440,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/cls": {
+      "median": 0.10989711934156379,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/domContentLoaded": {
+      "median": 31.5,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/fcp": {
+      "median": 148,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/heapAfterDecode": {
+      "median": 8608508,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/lcp": {
+      "median": 312,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/loafBlockingTotal": {
+      "median": 142.9,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/loafMax": {
+      "median": 192.89999997615814,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/longTaskCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/longTaskMax": {
+      "median": 191,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/openEditor": {
+      "median": 574,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/requests": {
+      "median": 155,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/tbt": {
+      "median": 141,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E6/ttfb": {
+      "median": 0.7000000476837158,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/bytes": {
+      "median": 1004533,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/domContentLoaded": {
+      "median": 41.700000047683716,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/inp": {
+      "median": 24,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/inpPageWorst": {
+      "median": 24,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/interactionCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/presenterReady": {
+      "median": 62,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/requests": {
+      "median": 118,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "E7/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F1/assetCount": {
+      "median": 105,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F1/staticAssetCount": {
+      "median": 78,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F1/staticAssetsWithoutImmutable": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F1/textAssetCount": {
+      "median": 87,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F1/thirdPartyRequests": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F1/uncompressedTextAssets": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F1/uncompressedTextBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/heaviestRouteBytes": {
+      "median": 2887395,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_calendar": {
+      "median": 2285724,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_diagrams": {
+      "median": 1974970,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_docs": {
+      "median": 2178052,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_docs_editor": {
+      "median": 2756485,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_drive": {
+      "median": 2406857,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_notes": {
+      "median": 2174128,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_photos": {
+      "median": 2007967,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_sheets": {
+      "median": 2172423,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_sheets_editor": {
+      "median": 2887395,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_sign-in": {
+      "median": 1832910,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_slides": {
+      "median": 2172447,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/route_slides_editor": {
+      "median": 2195018,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F2/sharedChunkBytes": {
+      "median": 4482023,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/bytes": {
+      "median": 58356,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/cls": {
+      "median": 0.029663454861111105,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/domContentLoaded": {
+      "median": 33.90000009536743,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/fcp": {
+      "median": 176,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/heapAfterSweep": {
+      "median": 8875800,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/heapBaseline": {
+      "median": 8414336,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/heapGrowthRatio": {
+      "median": 1.0497755059879972,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/lcp": {
+      "median": 280,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/requests": {
+      "median": 2360,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F3/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/bytes": {
+      "median": 148326,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/cls": {
+      "median": 0.0003792099187403549,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/domContentLoaded": {
+      "median": 49.200000047683716,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/fcp": {
+      "median": 152,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/interactionCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/lcp": {
+      "median": 152,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/requests": {
+      "median": 2298,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F4/ttfb": {
+      "median": 3.600000023841858,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/block_16mb": {
+      "median": 220,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/block_1mb": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/bytes": {
+      "median": 32155,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/cls": {
+      "median": 0.2887161672668039,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/loafBlockingTotal": {
+      "median": 170.9,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/loafMax": {
+      "median": 220.841,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/longTaskCount": {
+      "median": 1,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/longTaskMax": {
+      "median": 220,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/maxBlock": {
+      "median": 220,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/requests": {
+      "median": 226,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/tbt": {
+      "median": 170,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/upload_1mb": {
+      "median": 161,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F5/neutrino:crypto:encrypt": {
+      "median": 205.80000007152557,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/bytes": {
+      "median": 27081,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/cls": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/domContentLoaded": {
+      "median": 35.799999952316284,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/firstResult": {
+      "median": 284,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/jsBytes": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/loafBlockingTotal": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/loafMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/longTaskCount": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/longTaskMax": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/requests": {
+      "median": 107,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    },
+    "F6/tbt": {
+      "median": 0,
+      "recordedAt": "2026-10-21T22:12:49.604Z"
+    }
+  }
+}
