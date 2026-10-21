@@ -9,10 +9,11 @@
  * This resolves that offset against the chunk's source map, when one is
  * reachable. Two things have to be true for it to be:
  *
- *  1. The build emitted browser source maps. Next does not by default; set
- *     `productionBrowserSourceMaps: true` in `next.config.ts` (or build with
- *     `NEXT_PUBLIC_SOURCEMAPS`) for the build under measurement. A run without
- *     them still reports the chunk and offset, it just cannot name the file.
+ *  1. The build emitted browser source maps. Next does not by default;
+ *     `NEUTRINO_BROWSER_SOURCEMAPS=1` turns on `productionBrowserSourceMaps`
+ *     in `next.config.ts`, and `run-perf.sh` sets it for the image it builds.
+ *     A run without them still reports the chunk and offset, it just cannot
+ *     name the file.
  *  2. The map is served next to the chunk, which `actix-files` does for
  *     anything in the export output.
  *
@@ -94,6 +95,38 @@ function tidySource(source: string): string {
     .replace(/\?.*$/, '');
 }
 
+/** `node_modules/.pnpm/pdfmake@0.3.9/node_modules/pdfmake/build/…` → `pdfmake`; app code keeps its path. */
+function packageOf(file: string): string {
+  const parts = file.split('node_modules/');
+  if (parts.length === 1) return file;
+  const rest = parts[parts.length - 1].split('/');
+  return rest[0].startsWith('@') ? `${rest[0]}/${rest[1]}` : rest[0];
+}
+
+/**
+ * What a chunk is made of, by share of its source text, largest first.
+ *
+ * A LoAF script entry for *evaluating* a chunk — a dynamically imported
+ * library running its top level for the first time — carries no character
+ * position, so there is no line to resolve. Naming the packages inside it is
+ * what makes a 700 ms "(anonymous) 6919.js" entry say "pdfmake" instead.
+ */
+function chunkContents(map: TraceMap, limit = 3): string[] {
+  const sizes = new Map<string, number>();
+  const contents = map.sourcesContent ?? [];
+  map.sources.forEach((source, i) => {
+    if (!source) return;
+    const name = packageOf(tidySource(source));
+    sizes.set(name, (sizes.get(name) ?? 0) + (contents[i]?.length ?? 0));
+  });
+  const total = [...sizes.values()].reduce((a, b) => a + b, 0);
+  if (total === 0) return [];
+  return [...sizes.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name, size]) => `${name} ${Math.round((size / total) * 100)}%`);
+}
+
 /** Resolve one LoAF script entry to a source location, where possible. */
 export async function resolveFrame(
   request: APIRequestContext,
@@ -106,11 +139,20 @@ export async function resolveFrame(
     source: null,
   };
 
-  if (!script.sourceURL || script.sourceCharPosition < 0) return frame;
+  if (!script.sourceURL) return frame;
   if (!/^https?:/.test(script.sourceURL)) return frame;
 
   const chunk = await loadChunk(request, script.sourceURL);
   if (!chunk) return frame;
+
+  if (script.sourceCharPosition < 0) {
+    const contents = chunkContents(chunk.map);
+    if (contents.length > 0) {
+      frame.functionName = '(evaluate chunk)';
+      frame.contents = contents;
+    }
+    return frame;
+  }
 
   const { line, column } = offsetToLineColumn(chunk.text, script.sourceCharPosition);
   const original = originalPositionFor(chunk.map, { line, column });

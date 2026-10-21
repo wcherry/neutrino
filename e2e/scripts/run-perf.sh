@@ -30,6 +30,10 @@ RUN_ID="$(date +%Y%m%d_%H%M%S)_$(openssl rand -hex 4)"
 BASE_DIR="${NEUTRINO_E2E_BASE_DIR:-/tmp/neutrino-e2e}"
 export RUN_DIR="${BASE_DIR}/${RUN_ID}"
 export PERF=1
+# Without browser source maps every slow frame is a hashed chunk and an offset.
+# The :test image is shared with the functional suite, which is unaffected by
+# the extra .map files. Set to empty to measure a map-free build.
+export NEUTRINO_BROWSER_SOURCEMAPS="${NEUTRINO_BROWSER_SOURCEMAPS-1}"
 
 echo "Run ID  : ${RUN_ID}"
 echo "Run dir : ${RUN_DIR}"

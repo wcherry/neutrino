@@ -57,6 +57,11 @@ ARG APP_VERSION=""
 ARG BUILD_COMMIT=""
 RUN node web/apps/web/scripts/write-version.mjs
 
+# `1` only for the image the perf suite measures (e2e/scripts/run-perf.sh), so
+# its slow frames can be traced to source. Off by default: served maps would
+# publish the app's source from a real deployment (see next.config.ts).
+ARG NEUTRINO_BROWSER_SOURCEMAPS=""
+
 WORKDIR /app/web/apps/web
 RUN pnpm build
 

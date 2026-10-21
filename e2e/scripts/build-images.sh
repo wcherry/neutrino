@@ -26,7 +26,11 @@ if [ -f "${NEUTRINO_ROOT}/Dockerfile" ]; then
   echo ""
   echo "=== Building neutrino from local source ==="
   # docker build --no-cache -t "$IMAGE" "$NEUTRINO_ROOT"
-  docker build -t "$IMAGE" "$NEUTRINO_ROOT"
+  # NEUTRINO_BROWSER_SOURCEMAPS=1 (set by run-perf.sh) builds the export with
+  # browser source maps so perf attribution can name a file and line.
+  docker build \
+    --build-arg NEUTRINO_BROWSER_SOURCEMAPS="${NEUTRINO_BROWSER_SOURCEMAPS:-}" \
+    -t "$IMAGE" "$NEUTRINO_ROOT"
 else
   echo ""
   echo "=== Local Dockerfile not found — pulling from GHCR ==="

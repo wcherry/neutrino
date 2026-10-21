@@ -138,7 +138,9 @@ function renderScenario(scenario: ScenarioResult): string {
     for (const frame of scenario.attribution) {
       const where = frame.source
         ? `\`${frame.source.file}:${frame.source.line}\``
-        : `\`${frame.chunk.split('/').pop()}\` (no source map)`;
+        : frame.contents
+          ? `\`${frame.chunk.split('/').pop()}\` — ${frame.contents.join(', ')}`
+          : `\`${frame.chunk.split('/').pop()}\` (no source map)`;
       lines.push(
         `| ${frame.duration.toFixed(0)} ms | \`${frame.functionName}\` | ${where} |`,
       );

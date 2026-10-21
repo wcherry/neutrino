@@ -15,6 +15,23 @@ const isDev = process.env.NODE_ENV === 'development';
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 /**
+ * Emit a `.map` beside every browser chunk — for the build the perf suite
+ * measures, never for a shipped image.
+ *
+ * The suite's attribution (`e2e/perf/fixtures/sourcemap.ts`) turns a slow
+ * frame's `chunk.js @ offset` into a source file and line by fetching the map
+ * served next to the chunk. Without maps every slow frame reads
+ * `(anonymous) b895d1f2-….js @ ?`, which is where the first full run stopped
+ * (agent_docs/ui-performance-roadmap.md, "Instrument gaps").
+ *
+ * Opt-in because the maps are the app's source: served from a production
+ * deployment they would publish it, and they roughly double the export's size.
+ * `e2e/scripts/run-perf.sh` sets it; the Dockerfile passes it through as a
+ * build arg that defaults to off.
+ */
+const browserSourceMaps = process.env.NEUTRINO_BROWSER_SOURCEMAPS === '1';
+
+/**
  * The ceiling on a request body passing through the dev `/api/*` proxy below.
  *
  * `next dev` clones the body of an externally-rewritten request through a
@@ -102,6 +119,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_BUILD_ID: buildCommit,
   },
   output: isDev ? undefined : 'export',
+  productionBrowserSourceMaps: browserSourceMaps,
   ...(isDev && {
     async rewrites() {
       return [

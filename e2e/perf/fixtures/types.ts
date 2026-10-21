@@ -98,6 +98,12 @@ export interface ResolvedFrame {
   duration: number;
   /** `null` when no source map was reachable for the chunk. */
   source: { file: string; line: number; column: number } | null;
+  /**
+   * For a frame spent evaluating a whole chunk — the browser reports no
+   * character position, so there is no line to name — the chunk's largest
+   * packages by source size, e.g. `["pdfmake 61%", "html-to-pdfmake 12%"]`.
+   */
+  contents?: string[];
 }
 
 /**
