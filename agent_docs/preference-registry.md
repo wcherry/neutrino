@@ -1,8 +1,9 @@
 # Preference registry — the key list
 
-**Status:** spec, 2026-10-21 — Stage 0 of [`ui-roadmap.md`](ui-roadmap.md). Stage 1 builds the
-registry, storage and migration described in
-[`ui-customization-roadmap.md`](ui-customization-roadmap.md) §3.1–3.2 from this list.
+**Status:** implemented in Stage 1 of [`ui-roadmap.md`](ui-roadmap.md). The list below is
+`web/packages/preferences/src/registry.json`; `src/preferences/catalog.rs` is the server's copy of
+its plain tier, and `the_catalog_matches_the_registry` fails when the two drift. Architecture:
+[`ui-customization-roadmap.md`](ui-customization-roadmap.md) §3.1–3.2.
 
 This is every value the web client keeps in `localStorage`/`sessionStorage` today, sorted into
 what becomes a **preference** in the registry, what becomes **personal library content** in the
@@ -35,8 +36,6 @@ Columns: **Scopes** — who may set it (`org` default/lock, `team` default, `use
 | `docs.splitParagraphs` | `neutrino:docs:splitParagraphs` | boolean | `false` | user | plain | | Whether a paragraph may break across pages. |
 | `photos.autoFaceDetect` | `neutrino:photos:autoFaceDetect` | boolean | `false` | org, user | plain | | An org lock to *off* is a real privacy policy. |
 | `drawing.brush` | `neutrino:drawing:brush` | brush object, repaired by `clampBrush` | built-in brush | user | plain | | Already "never in the document"; now it follows the user. |
-| `diagrams.shapeLibraries.hidden` | part of `neutrino:diagrams:shapeLibraries` (`hiddenBuiltins`, `hiddenThirdParty`) | string[] | `[]` | team, user | plain | | Split from the library content below. |
-| `diagrams.shapeLibraries.order` | part of the same (`libraryOrder`) | string[] | — | team, user | plain | | Unknown ids dropped on read. |
 | `search.syncDisabled` | `neutrino:search:syncDisabled` | boolean | `false` | org, user, device | device | | Turns off this browser's index snapshot exchange; device by nature. Org lock lets an admin forbid the encrypted snapshot upload. |
 | `ai.provider` | `neutrino.ai.settings` (`provider`) | `anthropic` \| `openai` \| `gemini` \| `none` | `gemini` (current) | org, user | plain | | Org may restrict or set `none`. |
 | `ai.apiKey` | `neutrino.ai.settings` (`apiKey`) | string | `''` | user | **encrypted** | | Leaves plaintext `localStorage` (roadmap U12). `readAiSettings` in `@neutrino/api-core` keeps its signature and reads through the registry. |
@@ -54,11 +53,16 @@ and become publishable to a team in stage 6 (T4).
 | Gradient presets — diagrams | `neutrino:diagrams:gradientPresets` | preset[] | same |
 | Gradient presets — default | `neutrino:bg:gradientPresets` | preset[] | `FillPicker` default |
 | Fill presets — drawing | `neutrino:drawing:fillPresets` | preset[] | `drawing/editor/StylePanel.tsx` |
-| Custom shape libraries | `neutrino:diagrams:shapeLibraries` (`customLibraries`) | library[] | `diagrams/editor/shapes/useShapeLibraries.ts` |
+| Shape-library config — custom libraries, hidden built-in and third-party libraries, order | `neutrino:diagrams:shapeLibraries` → `library.diagrams.shapeLibraries` | one object, as the editor stores it | `diagrams/editor/shapes/useShapeLibraries.ts` |
 
-`FillPicker` lives in `@neutrino/ui`, which has no API dependency; it keeps taking its storage
-through props (`presetsKey` becomes a library id plus load/save callbacks), the same pattern as
-`ImagePickerDialog`.
+The shape-library config was planned as two plain lists plus the custom libraries, and kept whole
+instead: the editor treats hidden built-ins, hidden third-party libraries and order as one record,
+and splitting the hidden lists would have lost which ids were built-in.
+
+`FillPicker` lives in `@neutrino/ui`, which has no API dependency; it takes the presets through
+`presets`/`onPresetsChange` props (falling back to `presetsKey` in `localStorage` when a caller
+passes neither), the same pattern as `ImagePickerDialog`. Until the vault opens, `useLibrary` /
+`readVaultOrLegacy` show a library's legacy copy so it does not flash empty.
 
 ## 3. Stays device-local — not a preference
 
@@ -78,7 +82,10 @@ Not storage at all, listed so nobody migrates them: `neutrino:access-revoked` an
 ## 4. Migration rules for stage 1
 
 1. On first load with the registry, each legacy key in §1–2 is read **once**, validated against its
-   registry type, written through the new API, and **deleted** — never left as a second source.
+   registry type and written through the store — and **deleted only once the server has confirmed
+   the save**. A failed save leaves the legacy key for the next load to retry; deleting it as soon as
+   the value was in memory is how a busy server ("database is locked") once lost the AI key in
+   testing. Only one migration runs at a time per store (sign-in and unlock both start one).
 2. A value that fails validation is dropped and the default applies; the drop is logged
    (`[prefs:migrate]`), not surfaced.
 3. `appearance.theme`: if `localStorage` and `user_profiles.theme` disagree, the browser's value

@@ -61,6 +61,11 @@ first result 297 ms), and sheet open time staying flat with size (D1 0.93 ratio,
 
 ### P1 — Drive listings render every row, and pay for it on every interaction
 
+> **Done in Stage 1** (`useWindowedItems`, memoised rows, `aria-setsize`/`aria-posinset`): B2
+> 60 fps / 0 % dropped, B3 INP 112 ms, B5 122 ms, B1 2 161 ms — growth 3.9×, still above the ≤ 2×
+> target; the remainder is sequential page fetches, not rendering. Details in `ui-roadmap.md`,
+> Stage 1.
+
 **Mechanism, confirmed.** `FileGrid` (`packages/ui/src/components/display/FileGrid.tsx`) has no
 windowing. My Drive pages at 200 (A7: 201 rows in the DOM after the first page settles) and the
 list is never trimmed, so a user who scrolls a large folder accumulates every row. The cost
@@ -144,7 +149,7 @@ following, which outranks everything in this document:
 > It affects the **first open of any `.docx` the app has not yet saved** — every uploaded Word file
 > and every Takeout import, which are stored byte for byte. A document the app has already saved
 > opens with its content and no window, and immediate typing left it intact. Not fixed in Stage 0;
-> tracked as its own fix ahead of every other Docs item.
+> tracked as **issue #265**, ahead of every other Docs item.
 
 The scenarios should not be able to trip it either: `openDoc` (`perf/fixtures/actions.ts`) returns
 as soon as *a* paragraph is visible, which the placeholder satisfies. It should wait for the
@@ -221,6 +226,10 @@ every upgrade.
 trending down per release.
 
 ### P5 — Fonts come from a third party, and block first paint
+
+> **Done in Stage 1**: every family is self-hosted from `@fontsource` (`app/fonts.ts`); sign-in
+> fetches four Latin Inter files and nothing else, and F1 now budgets and measures zero third-party
+> requests.
 
 **Measured for this document,** with a cold `/sign-in` at Fast 3G and 4× CPU, three runs each:
 

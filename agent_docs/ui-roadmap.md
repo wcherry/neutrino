@@ -101,6 +101,21 @@ cheap once the foundation exists and fix data loss and a plaintext secret.
 requests; tokens and lint baseline in place; no preference read outside `usePreference`; no secret
 or user-authored content in `localStorage`.
 
+**Status — built 2026-10-21 (`feature/ui-stage-1`).** Measured in real Chromium at 4× CPU against
+the same 1 000-file folder: B2 38 → **60 fps, 0 % dropped**; B3 INP 1 080 → **112 ms**; B5 menu
+894 → **122 ms** (INP 32 ms); B4 sort/filter 664/488 → 274/350 ms. **B1 is not met**: 4 055 →
+2 161 ms, growth 8.4 → **3.9×** against a ≤ 2× target — what remains is five sequential page
+fetches for 1 000 files against a debug server, not rendering, and is a pagination question for
+Stage 2 rather than a windowing one. F1 measures **zero third-party requests**. The token groups,
+`data-look`/`data-density`/route-following `data-app` and warn-only `pnpm lint:css` are in, with
+**1 847 warnings** as the baseline and a computed-style snapshot of seven pages × two themes
+unchanged. Every preference reads through the store; what remains in `localStorage` is the
+device-only allowlist in `preference-registry.md` §3. An end-to-end run (real account, keyring and
+server) migrated a pre-upgrade user's keys, sealed the AI key (no plaintext on the server or in the
+browser), applied the theme before first paint, restored the key after reload and followed a change
+in a second tab. Found on the way and fixed before shipping: the migration deleted a legacy key
+before its save was confirmed, which a busy server turned into a lost AI key.
+
 ### Stage 2 — Make room
 
 *The shell gets lighter, the command layer exists, the building blocks get their new look.*
