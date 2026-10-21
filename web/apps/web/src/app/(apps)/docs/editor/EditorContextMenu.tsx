@@ -8,6 +8,7 @@ import {
   Braces, RefreshCw,
 } from 'lucide-react';
 import { fieldPosNearSelection } from '@/lib/extensions/DocFieldExtension';
+import { useDismiss } from '@neutrino/commands';
 import styles from './EditorContextMenu.module.css';
 
 const MAX_SUGGESTIONS = 5;
@@ -75,16 +76,13 @@ export function EditorContextMenu({
     function onPointerDown(e: PointerEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   // Keep menu within viewport
   const menuWidth = 220;

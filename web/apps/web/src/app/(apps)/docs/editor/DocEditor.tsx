@@ -153,6 +153,7 @@ import {
   type HeaderFooterSlots,
 } from '@/lib/docHeaderFooter';
 import { preferences, usePreference } from '@neutrino/preferences';
+import { useCommand, useCommands, useDismiss } from '@neutrino/commands';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
 // Dimensions in inches; rendered at 96 dpi for screen display.
@@ -1372,60 +1373,32 @@ export function DocEditor() {
     editor.commands.setGrammarEnabled(grammarEnabled);
   }, [grammarEnabled, editor]);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && distractionFree) {
-        setDistractionFree(false);
-        return;
-      }
+  // In the capture phase, so each runs before the contenteditable sees the key.
+  useCommands({
+    'docs.focusMode': () => setDistractionFree(v => !v),
+    'docs.find': () => setShowFindReplace(true),
+    'docs.save': () => handleManualSave(),
+    'docs.clearFormatting': () => { editor?.chain().focus().clearNodes().unsetAllMarks().run(); },
+  }, { phase: 'capture' });
 
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        setDistractionFree(v => !v);
-        return;
-      }
+  // Stopped as well, or macOS Chrome takes Ctrl+K in the contenteditable as "delete to end of
+  // line" before the link prompt opens.
+  useCommand('docs.insertLink', () => {
+    if (!editor) return;
+    const { anchor, head } = editor.state.selection;
+    const selFrom = Math.min(anchor, head);
+    const selTo = Math.max(anchor, head);
+    const existing = editor.getAttributes('link').href as string | undefined;
+    const url = window.prompt('Enter URL:', existing ?? 'https://');
+    if (url === null) return;
+    if (url === '') {
+      editor.chain().focus().setTextSelection({ from: selFrom, to: selTo }).extendMarkRange('link').unsetLink().run();
+    } else {
+      editor.chain().focus().setTextSelection({ from: selFrom, to: selTo }).setLink({ href: url }).run();
+    }
+  }, { phase: 'capture', stopPropagation: true });
 
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        setShowFindReplace(true);
-        return;
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        handleManualSave();
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        // Use stopPropagation to prevent Ctrl+K from reaching the contenteditable
-        // element, where macOS Chrome would treat it as "delete to end of line".
-        e.preventDefault();
-        e.stopPropagation();
-        if (!editor) return;
-        const { anchor, head } = editor.state.selection;
-        const selFrom = Math.min(anchor, head);
-        const selTo = Math.max(anchor, head);
-        const existing = editor.getAttributes('link').href as string | undefined;
-        const url = window.prompt('Enter URL:', existing ?? 'https://');
-        if (url === null) return;
-        if (url === '') {
-          editor.chain().focus().setTextSelection({ from: selFrom, to: selTo }).extendMarkRange('link').unsetLink().run();
-        } else {
-          editor.chain().focus().setTextSelection({ from: selFrom, to: selTo }).setLink({ href: url }).run();
-        }
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
-        e.preventDefault();
-        editor?.chain().focus().clearNodes().unsetAllMarks().run();
-      }
-    };
-    // Use capture phase so this handler fires before the event reaches the
-    // contenteditable, preventing macOS Chrome from processing Ctrl+K as
-    // "delete to end of line" before our stopPropagation can take effect.
-    document.addEventListener('keydown', handler, true);
-    return () => document.removeEventListener('keydown', handler, true);
-  }, [handleManualSave, editor, distractionFree, setDistractionFree]);
+  useDismiss(() => setDistractionFree(false), distractionFree);
 
   const handleNewDoc = useCallback(async () => {
     const newDoc = await docsApi.createDoc({ title: 'Untitled document' });
@@ -1658,14 +1631,7 @@ export function DocEditor() {
   }, [headerFooterFocus]);
 
   // Esc leaves the bands from anywhere in edit mode, including the toolbar.
-  useEffect(() => {
-    if (!headerFooterEditing) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') exitHeaderFooterEdit();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [headerFooterEditing, exitHeaderFooterEdit]);
+  useDismiss(() => exitHeaderFooterEdit(), headerFooterEditing);
 
   const handleWatermarkSave = useCallback((wt: string, bg: string) => {
     setWatermarkText(wt);

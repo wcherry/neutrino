@@ -59,9 +59,12 @@ import { useCharts } from './charts/useCharts';
 import { ChartLayer } from './charts/ChartLayer';
 import { ChartCreationDialog } from './charts/ChartCreationDialog';
 import { ChartEditorPanel } from './charts/ChartEditorPanel';
+import { useCommand, useCommands, useKeyHandler } from '@neutrino/commands';
 import styles from './page.module.css';
 import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 import { preferences, readVaultOrLegacy } from '@neutrino/preferences';
+
+const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
 type SheetKeyboardMode = 'movement' | 'formula';
 
@@ -543,41 +546,19 @@ export function SheetEditor() {
     const selectedCellStyleRef = useRef(editing.selectedCellStyle);
     selectedCellStyleRef.current = editing.selectedCellStyle;
 
-    // Document-level Ctrl/Cmd+B and +I shortcuts for cell formatting.
-    // Using document.addEventListener (not onKeyDown on the wrapper div) ensures
-    // the handler fires regardless of which child element has focus.
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (isViewerRef.current) return;
-            if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
-            if ((document.activeElement as HTMLElement | null)?.isContentEditable) return;
-            if (e.key.toLowerCase() === 'b') {
-                e.preventDefault();
-                applyStyleRef.current({ fontWeight: selectedCellStyleRef.current?.fontWeight === 'bold' ? 'normal' : 'bold' });
-            } else if (e.key.toLowerCase() === 'i') {
-                e.preventDefault();
-                applyStyleRef.current({ fontStyle: selectedCellStyleRef.current?.fontStyle === 'italic' ? 'normal' : 'italic' });
-            }
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, []); // empty deps — handler reads from refs, never stale
-
-    // Ctrl/Cmd+F = Find, Ctrl/Cmd+H = Find & Replace
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (!(e.ctrlKey || e.metaKey) || e.shiftKey) return;
-            if (e.key === 'f') {
-                e.preventDefault();
-                setFindReplaceMode('find');
-            } else if (e.key === 'h') {
-                e.preventDefault();
-                setFindReplaceMode('replace');
-            }
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, []); // empty deps — setFindReplaceMode is a stable setter
+    // Cell formatting, from anywhere in the editor including the formula bar — but not from a
+    // contenteditable (the title, a text box), which formats its own text.
+    const cellFormat = (run: () => void) => () => {
+        if (isViewerRef.current) return false;
+        if ((document.activeElement as HTMLElement | null)?.isContentEditable) return false;
+        run();
+    };
+    useCommands({
+        'sheets.bold': cellFormat(() => applyStyleRef.current({ fontWeight: selectedCellStyleRef.current?.fontWeight === 'bold' ? 'normal' : 'bold' })),
+        'sheets.italic': cellFormat(() => applyStyleRef.current({ fontStyle: selectedCellStyleRef.current?.fontStyle === 'italic' ? 'normal' : 'italic' })),
+        'sheets.find': () => setFindReplaceMode('find'),
+        'sheets.replace': () => setFindReplaceMode('replace'),
+    });
 
     // Stable refs for arrow-key navigation; updated every render so the effect
     // with empty deps always reads the latest values without re-registering.
@@ -602,95 +583,87 @@ export function SheetEditor() {
     // Initialized with a no-op; updated after handleClearCells is defined below.
     const handleClearCellsNavRef = useRef<() => void>(() => {});
 
-    // Document-level arrow-key handler for cell navigation.
+    // Arrow-key cell navigation, from anywhere in the editor.
     // Only fires when a cell is selected and the user is NOT actively editing
     // (i.e. the formula bar input or another text input is not focused).
-    useEffect(() => {
-        const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-        const handler = (e: KeyboardEvent) => {
-            if (!ARROW_KEYS.has(e.key)) return;
-            if (keyboardModeNavRef.current !== 'movement') return;
-            if (e.metaKey || e.altKey) return;
-            const active = document.activeElement as HTMLElement | null;
-            const isFormulaInput = active === formulaInputNavRef.current.current;
-            // Skip other inputs, textareas, and contenteditables. When the
-            // formula input is focused while still in Movement Mode, arrows
-            // continue to navigate the grid.
-            if (active && !isFormulaInput && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-            const anchor = selectionAnchorNavRef.current;
-            if (!anchor) return;
-            const activeCell = selectionActiveNavRef.current ?? anchor;
+    useKeyHandler((e) => {
+        if (!ARROW_KEYS.has(e.key)) return;
+        if (keyboardModeNavRef.current !== 'movement') return;
+        if (e.metaKey || e.altKey) return;
+        const active = document.activeElement as HTMLElement | null;
+        const isFormulaInput = active === formulaInputNavRef.current.current;
+        // Skip other inputs, textareas, and contenteditables. When the
+        // formula input is focused while still in Movement Mode, arrows
+        // continue to navigate the grid.
+        if (active && !isFormulaInput && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+        const anchor = selectionAnchorNavRef.current;
+        if (!anchor) return;
+        const activeCell = selectionActiveNavRef.current ?? anchor;
 
+        e.preventDefault();
+        const nextId = navigateCell(activeCell, e.key as ArrowNavigationKey, {
+            ctrlKey: e.ctrlKey,
+            data: dataNavRef.current,
+        });
+        if (nextId === activeCell) return; // already at boundary or populated edge
+
+        clearHeaderSelectionNavRef.current();
+        if (e.shiftKey) {
+            stableOnSelectionExtendNavRef.current(nextId);
+        } else {
+            stableOnCellActivateNavRef.current(nextId);
+        }
+
+        // Scroll the newly selected cell into view if it's off-screen.
+        // The cell elements are plain divs with id={cellId} inside the
+        // scrollable bodyRef container in SheetGrid.
+        requestAnimationFrame(() => {
+            const el = document.getElementById(nextId);
+            if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        });
+    });
+
+    // Enter/Tab move, Delete clears, and any printable key starts typing into the formula bar.
+    useKeyHandler((e) => {
+        if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+        const active = document.activeElement as HTMLElement | null;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+
+        const anchor = selectionAnchorNavRef.current;
+        if (!anchor) return;
+
+        if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault();
-            const nextId = navigateCell(activeCell, e.key as ArrowNavigationKey, {
-                ctrlKey: e.ctrlKey,
-                data: dataNavRef.current,
-            });
-            if (nextId === activeCell) return; // already at boundary or populated edge
-
+            setKeyboardMode('movement');
+            const direction = e.key === 'Enter' ? 'ArrowDown' : 'ArrowRight';
+            const activeCell = selectionActiveNavRef.current ?? anchor;
+            const nextId = navigateCell(activeCell, direction);
             clearHeaderSelectionNavRef.current();
-            if (e.shiftKey) {
-                stableOnSelectionExtendNavRef.current(nextId);
-            } else {
-                stableOnCellActivateNavRef.current(nextId);
-            }
-
-            // Scroll the newly selected cell into view if it's off-screen.
-            // The cell elements are plain divs with id={cellId} inside the
-            // scrollable bodyRef container in SheetGrid.
+            stableOnCellActivateNavRef.current(nextId);
             requestAnimationFrame(() => {
                 const el = document.getElementById(nextId);
                 if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             });
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, []); // empty deps — handler reads only from stable refs
+            return;
+        }
 
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (isViewerRef.current) return;
 
-            const active = document.activeElement as HTMLElement | null;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-
-            const anchor = selectionAnchorNavRef.current;
-            if (!anchor) return;
-
-            if (e.key === 'Enter' || e.key === 'Tab') {
-                e.preventDefault();
-                setKeyboardMode('movement');
-                const direction = e.key === 'Enter' ? 'ArrowDown' : 'ArrowRight';
-                const activeCell = selectionActiveNavRef.current ?? anchor;
-                const nextId = navigateCell(activeCell, direction);
-                clearHeaderSelectionNavRef.current();
-                stableOnCellActivateNavRef.current(nextId);
-                requestAnimationFrame(() => {
-                    const el = document.getElementById(nextId);
-                    if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                });
-                return;
-            }
-
-            if (isViewerRef.current) return;
-
-            if (e.key === 'Delete' || e.key === 'Backspace') {
-                e.preventDefault();
-                clearHeaderSelectionNavRef.current();
-                handleClearCellsNavRef.current();
-                return;
-            }
-
-            if (e.key.length !== 1) return;
-
+        if (e.key === 'Delete' || e.key === 'Backspace') {
             e.preventDefault();
             clearHeaderSelectionNavRef.current();
-            suppressNextFormulaFocusModeRef.current = true;
-            beginTypingInFormulaBarNavRef.current(e.key);
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, []);
+            handleClearCellsNavRef.current();
+            return;
+        }
+
+        if (e.key.length !== 1) return;
+
+        e.preventDefault();
+        clearHeaderSelectionNavRef.current();
+        suppressNextFormulaFocusModeRef.current = true;
+        beginTypingInFormulaBarNavRef.current(e.key);
+    });
 
     const clipboard = useClipboard({
         dataRef,
@@ -1453,16 +1426,7 @@ export function SheetEditor() {
         persist.save();
     }, [sheets, persist]);
 
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                handleManualSave();
-            }
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, [handleManualSave]);
+    useCommand('sheets.save', () => { void handleManualSave(); });
 
 
     // ── Effects ──────────────────────────────────────────────────────────────

@@ -29,7 +29,7 @@ export interface PreferenceSpec {
   paint?: boolean;
   label: string;
   /**
-   * Where its control lives: a Settings tab id (`appearance`, `calendar`, `advanced`, `ai`), an
+   * Where its control lives: a Settings tab id (`appearance`, `calendar`, `keyboard`, `advanced`, `ai`), an
    * app or surface (`docs`, `sheets`, `editors`, `sidebar`, …), or `none` while it has no control
    * yet. Settings search is built from this.
    */
@@ -52,6 +52,9 @@ export interface PreferenceValues {
   'photos.autoFaceDetect': boolean;
   'drawing.brush': Record<string, unknown> | null;
   'search.syncDisabled': boolean;
+  'keyboard.preset': 'neutrino' | 'google' | 'microsoft';
+  /** Command id → chords; see @neutrino/commands `sanitizeBindings`. */
+  'keyboard.bindings': Record<string, string[]> | null;
   'ai.provider': 'gemini' | 'claude' | 'openai';
   'ai.apiKey': string;
   'library.sheets.cfTemplates': unknown[];

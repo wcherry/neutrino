@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { addKeyHandler, useDismiss } from '@neutrino/commands';
 import { scaleIn, fadeIn } from '../../motion/variants';
 import styles from './Modal.module.css';
 
@@ -64,11 +65,6 @@ export function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!modalRef.current) return;
 
-      if (e.key === 'Escape' && closeOnEscRef.current) {
-        onCloseRef.current();
-        return;
-      }
-
       if (e.key === 'Tab') {
         const focusableEls = modalRef.current.querySelectorAll<HTMLElement>(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -90,15 +86,18 @@ export function Modal({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    const offKeys = addKeyHandler('keydown', handleKeyDown);
     document.body.style.overflow = 'hidden';
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      offKeys();
       document.body.style.overflow = '';
       previouslyFocused?.focus();
     };
   }, [open]);
+
+  // A modal is a layer even when Escape does not close it, so the key never reaches what is under it.
+  useDismiss(() => { if (closeOnEscRef.current) onCloseRef.current(); }, open);
 
   if (typeof window === 'undefined') return null;
 

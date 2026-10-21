@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, CheckCircle, AlertTriangle, Info, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { addKeyHandler, useDismiss } from '@neutrino/commands';
 import { scaleIn, fadeIn } from '../../motion/variants';
 import { Button } from '../primitives/Button';
 import type { ButtonVariant } from '../primitives/Button';
@@ -66,11 +67,6 @@ export function AlertDialog({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!dialogRef.current) return;
 
-      if (e.key === 'Escape') {
-        onClose();
-        return;
-      }
-
       if (e.key === 'Tab') {
         const focusableEls = dialogRef.current.querySelectorAll<HTMLElement>(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -92,15 +88,17 @@ export function AlertDialog({
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    const offKeys = addKeyHandler('keydown', handleKeyDown);
     document.body.style.overflow = 'hidden';
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      offKeys();
       document.body.style.overflow = '';
       previouslyFocused?.focus();
     };
   }, [open, onClose]);
+
+  useDismiss(onClose, open);
 
   if (typeof window === 'undefined') return null;
 

@@ -66,6 +66,7 @@ import { routeForFile } from '../../drive/routeForFile';
 import { formatBytes } from '../../admin/bytes';
 import { roleCan, teamCan } from '../permissions';
 import menuStyles from '../../drive/FileContextMenu.module.css';
+import { useDismiss } from '@neutrino/commands';
 import styles from './space.module.css';
 
 const LOCKED_MESSAGE =
@@ -104,16 +105,13 @@ function RowMenu({
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   return (
     <div

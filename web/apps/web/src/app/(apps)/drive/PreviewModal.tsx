@@ -10,6 +10,7 @@ import { initSodium, loadKeyPair } from '@neutrino/e2e-crypto';
 import { toRenderableImageBlob } from '@/lib/heic';
 import { highlightText } from './previewText';
 import { ZipViewer } from './ZipViewer';
+import { useDismiss } from '@neutrino/commands';
 import styles from './PreviewModal.module.css';
 
 interface PreviewModalProps {
@@ -218,13 +219,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
   }
 
   // Close on Escape
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useDismiss(() => onClose());
 
   async function handleDownload() {
     const blob = await storageApi.downloadFile(file.id);

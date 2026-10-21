@@ -21,6 +21,7 @@ import { getShapePath } from './shapes/ShapeLibrary';
 import { ShapeFillDefs, useFillImages } from './ShapeFillDefs';
 import { fillDefFor, fillPaint } from './utils/shapeFill';
 import { freehandStrokePath, freehandStrokePaint } from './diagramSvg';
+import { addKeyHandler } from '@neutrino/commands';
 import styles from './DiagramCanvas.module.css';
 
 // ---------------------------------------------------------------------------
@@ -1179,11 +1180,9 @@ export function DiagramCanvas({
 
   // Track Shift key for split-handle remove mode
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(true); };
-    const onKeyUp = (e: KeyboardEvent) => { if (e.key === 'Shift') setShiftHeld(false); };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); };
+    const offDown = addKeyHandler('keydown', (e) => { if (e.key === 'Shift') setShiftHeld(true); });
+    const offUp = addKeyHandler('keyup', (e) => { if (e.key === 'Shift') setShiftHeld(false); });
+    return () => { offDown(); offUp(); };
   }, []);
 
   // Clear connector handles when leaving connector/select mode

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HardDrive, Upload, Link2, X, Search, ImageOff } from 'lucide-react';
+import { useDismiss } from '@neutrino/commands';
 import styles from './ImagePickerDialog.module.css';
 
 // ── Public types ────────────────────────────────────────────────────────────
@@ -162,13 +163,8 @@ export function ImagePickerDialog({
   // selection revokes the previous one and unmount revokes the last.
   useEffect(() => () => { if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl); }, [localPreviewUrl]);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
-    }
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => document.removeEventListener('keydown', onKeyDown, true);
-  }, [onClose]);
+  // The topmost layer, so Escape closes this and not the editor or dialog it was opened from.
+  useDismiss(onClose);
 
   const selectedDriveItem = useMemo(
     () => driveItems?.find((i) => i.id === selectedDriveId) ?? null,

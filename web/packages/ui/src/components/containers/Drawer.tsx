@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useDismiss } from '@neutrino/commands';
 import { fadeIn, drawerLeft, drawerRight, drawerBottom, slideDown } from '../../motion/variants';
 import styles from './Drawer.module.css';
 
@@ -46,21 +47,13 @@ export function Drawer({
 }: DrawerProps) {
   useEffect(() => {
     if (!open) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
     document.body.style.overflow = 'hidden';
-
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [open, onClose]);
+  }, [open]);
+
+  useDismiss(onClose, open);
 
   if (typeof window === 'undefined') return null;
 

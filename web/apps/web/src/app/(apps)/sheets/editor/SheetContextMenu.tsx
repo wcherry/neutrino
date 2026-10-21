@@ -5,6 +5,7 @@ import {
     Scissors, Copy, Clipboard,
     RowsIcon, Columns2, Trash2, Eraser,
 } from 'lucide-react';
+import { useDismiss } from '@neutrino/commands';
 import styles from './SheetContextMenu.module.css';
 
 export interface SheetContextMenuProps {
@@ -61,16 +62,13 @@ export function SheetContextMenu({
         function onPointerDown(e: PointerEvent) {
             if (ref.current && !ref.current.contains(e.target as Node)) onClose();
         }
-        function onKeyDown(e: KeyboardEvent) {
-            if (e.key === 'Escape') onClose();
-        }
         document.addEventListener('pointerdown', onPointerDown);
-        document.addEventListener('keydown', onKeyDown);
         return () => {
             document.removeEventListener('pointerdown', onPointerDown);
-            document.removeEventListener('keydown', onKeyDown);
         };
     }, [onClose]);
+
+    useDismiss(() => onClose());
 
     // Keep menu within viewport
     const menuWidth = 220;

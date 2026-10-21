@@ -47,6 +47,8 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "docs.splitParagraphs", kind: Kind::Boolean },
     Spec { key: "photos.autoFaceDetect", kind: Kind::Boolean },
     Spec { key: "drawing.brush", kind: Kind::Object { max_bytes: 4096 } },
+    Spec { key: "keyboard.preset", kind: Kind::Enum(&["neutrino", "google", "microsoft"]) },
+    Spec { key: "keyboard.bindings", kind: Kind::Object { max_bytes: 8192 } },
     Spec { key: "ai.provider", kind: Kind::Enum(&["gemini", "claude", "openai"]) },
 ];
 

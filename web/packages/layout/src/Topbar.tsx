@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Menu, Bell, Bug, Settings, Import, LogOut, User, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useDismiss } from '@neutrino/commands';
 import { slideUp } from './variants';
 import { SearchInput } from '@neutrino/ui';
 import { Avatar } from '@neutrino/ui';
@@ -141,18 +142,10 @@ export function Topbar({
         setUserMenuOpen(false);
       }
     };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setUserMenuOpen(false);
-    };
-
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [userMenuOpen]);
+  useDismiss(() => setUserMenuOpen(false), userMenuOpen);
 
   useEffect(() => {
     if (!notificationPanelOpen) return;
@@ -161,16 +154,10 @@ export function Topbar({
         setNotificationPanelOpen(false);
       }
     };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setNotificationPanelOpen(false);
-    };
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [notificationPanelOpen]);
+  useDismiss(() => setNotificationPanelOpen(false), notificationPanelOpen);
 
   useEffect(() => {
     if (!searchDropdownOpen) return;
@@ -180,22 +167,14 @@ export function Topbar({
         setSearchDropdownOpen(false);
       }
     };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setSearchDropdownOpen(false);
-        setSearchValue('');
-        onSearch?.('');
-      }
-    };
-
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [searchDropdownOpen, onSearch]);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [searchDropdownOpen]);
+  useDismiss(() => {
+    setSearchDropdownOpen(false);
+    setSearchValue('');
+    onSearch?.('');
+  }, searchDropdownOpen);
 
   // The drop-down opens on the query, not on the results: an empty result set
   // still has something to say ("No matches"), which is the only feedback the

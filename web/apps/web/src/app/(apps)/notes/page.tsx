@@ -9,6 +9,7 @@ import { createNote, listAllNotes, type NoteMeta } from '@/lib/noteFiles';
 import { filesystemApi, storageApi } from '@neutrino/api-drive';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal } from '@/components/DocumentPreviewModal';
+import { useDismiss } from '@neutrino/commands';
 import styles from './page.module.css';
 import contextMenuStyles from '../drive/FileContextMenu.module.css';
 
@@ -53,16 +54,13 @@ function NoteContextMenu({ id: _id, title: _title, x, y, onClose, onPreview, onR
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   const adjustedX = Math.min(x, window.innerWidth - 200);
   const adjustedY = Math.min(y, window.innerHeight - 200);

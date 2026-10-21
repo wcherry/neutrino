@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useId } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useDismiss } from '@neutrino/commands';
 import { slideUp } from '../../motion/variants';
 import { Menu } from './Menu';
 import type { MenuItemDef } from './Menu';
@@ -40,18 +41,11 @@ export function Dropdown({
       }
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, onClose]);
+
+  useDismiss(onClose, open);
 
   const contentClasses = [styles.content, styles[placement], className]
     .filter(Boolean)

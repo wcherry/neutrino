@@ -3,16 +3,18 @@
 import React, { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { REGISTRY } from '@neutrino/preferences';
+import { COMMANDS, COMMAND_APPS } from '@neutrino/commands';
 import styles from './SettingsSearch.module.css';
 
 /** The Settings tabs a result can open; the page's own `TABS` list names them. */
-export type SettingsTabId = 'ai' | 'appearance' | 'notifications' | 'calendar' | 'account' | 'security' | 'advanced';
+export type SettingsTabId = 'ai' | 'appearance' | 'notifications' | 'calendar' | 'keyboard' | 'account' | 'security' | 'advanced';
 
 const TAB_LABELS: Record<SettingsTabId, string> = {
   ai: 'AI Assistant',
   appearance: 'Appearance',
   notifications: 'Notifications',
   calendar: 'Calendar',
+  keyboard: 'Keyboard',
   account: 'Account',
   security: 'Security',
   advanced: 'Advanced',
@@ -39,8 +41,9 @@ export interface SettingsSearchResult {
 
 /**
  * Every setting a person can look for: each registered preference, wherever its control lives,
- * and each Settings tab by name. Generated from the preference registry, so a new preference is
- * findable the moment it is registered rather than when someone remembers to add it here.
+ * each keyboard command (its shortcut is set on the Keyboard tab), and each Settings tab by name.
+ * Generated from the preference registry and the command catalog, so a new preference or command
+ * is findable the moment it is registered rather than when someone remembers to add it here.
  */
 export function searchSettings(query: string): SettingsSearchResult[] {
   const q = query.trim().toLowerCase();
@@ -57,6 +60,11 @@ export function searchSettings(query: string): SettingsSearchResult[] {
       tab,
       where: tab ? `Settings › ${TAB_LABELS[tab]}` : ELSEWHERE[spec.section] ?? 'Elsewhere in the app',
     });
+  }
+  for (const cmd of COMMANDS) {
+    if (!cmd.title.toLowerCase().includes(q)) continue;
+    const app = COMMAND_APPS.find((a) => a.id === cmd.app)!.label;
+    results.push({ label: `${cmd.title} (${app}) shortcut`, tab: 'keyboard', where: 'Settings › Keyboard' });
   }
   return results;
 }

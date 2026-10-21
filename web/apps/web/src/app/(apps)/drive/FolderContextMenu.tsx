@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Pencil, Star, StarOff, FolderInput, Trash2 } from 'lucide-react';
 import { type Folder as FolderItem } from '@/lib/api';
+import { useDismiss } from '@neutrino/commands';
 import styles from './FileContextMenu.module.css';
 
 interface Props {
@@ -23,16 +24,13 @@ export function FolderContextMenu({ folder, x, y, onClose, onRename, onStarToggl
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   const adjustedX = Math.min(x, window.innerWidth - 200);
   const adjustedY = Math.min(y, window.innerHeight - 200);

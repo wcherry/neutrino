@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import type { DiagramDocument, DiagramShape, DiagramConnector } from '../../types';
 import { parseImport, type ImportResult } from './importUtils';
+import { useDismiss } from '@neutrino/commands';
 import styles from './ImportDialog.module.css';
 
 interface ImportDialogProps {
@@ -20,13 +21,7 @@ export function ImportDialog({ onImportDocument, onImportShapes, onClose }: Impo
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  useDismiss(() => onClose());
 
   function apply(result: ImportResult) {
     if (result.kind === 'document') {

@@ -49,6 +49,7 @@ import {
   formatDate,
   formatFileSize,
 } from './gridItems';
+import { useDismiss } from '@neutrino/commands';
 import styles from './page.module.css';
 
 /** Items fetched per request; more are pulled in as the grid is scrolled. */
@@ -206,14 +207,7 @@ function DriveContent() {
     };
   }, []);
 
-  useEffect(() => {
-    if (selectedIds.size === 0) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') setSelectedIds(new Set());
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedIds.size]);
+  useDismiss(() => setSelectedIds(new Set()), selectedIds.size > 0);
 
   // ── Search view (`/drive?q=…`) ───────────────────────────────────────────
   // Runs against the same client-side index the topbar drop-down uses, so the

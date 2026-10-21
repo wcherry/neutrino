@@ -25,6 +25,7 @@ import { APP_VERSION, BUILD_ID } from '@/lib/version';
 import { forceUploadSnapshot } from '@/lib/searchIndexSnapshot';
 import { usePreference } from '@neutrino/preferences';
 import { SettingsSearch } from './SettingsSearch';
+import { KeyboardSettings } from './KeyboardSettings';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -83,13 +84,14 @@ const AI_KEY_PAGES: Record<AiSettings['provider'], { url: string; label: string 
  * password live now; Account keeps the address, a pointer at /profile for the
  * user's own details, and deletion.
  */
-type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'security' | 'calendar' | 'advanced';
+type Tab = 'ai' | 'appearance' | 'notifications' | 'account' | 'security' | 'calendar' | 'keyboard' | 'advanced';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'ai', label: 'AI Assistant' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'calendar', label: 'Calendar' },
+  { id: 'keyboard', label: 'Keyboard' },
   { id: 'account', label: 'Account' },
   { id: 'security', label: 'Security' },
   { id: 'advanced', label: 'Advanced' },
@@ -1071,6 +1073,13 @@ const qc = useQueryClient();
               </button>
             </div>
           </section>
+        </div>
+      )}
+
+      {/* ── Keyboard tab ────────────────────────────────────────────────── */}
+      {activeTab === 'keyboard' && (
+        <div className={styles.content}>
+          <KeyboardSettings />
         </div>
       )}
 

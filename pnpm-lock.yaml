@@ -158,6 +158,9 @@ importers:
       '@neutrino/collab-core':
         specifier: workspace:*
         version: link:../../packages/collab-core
+      '@neutrino/commands':
+        specifier: workspace:*
+        version: link:../../packages/commands
       '@neutrino/e2e-crypto':
         specifier: workspace:*
         version: link:../../packages/e2e-crypto
@@ -533,6 +536,22 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  web/packages/commands:
+    dependencies:
+      '@neutrino/preferences':
+        specifier: workspace:*
+        version: link:../preferences
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.0
+        version: 18.3.31
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   web/packages/e2e-crypto:
     dependencies:
       hash-wasm:
@@ -567,6 +586,9 @@ importers:
 
   web/packages/layout:
     dependencies:
+      '@neutrino/commands':
+        specifier: workspace:*
+        version: link:../commands
       '@neutrino/preferences':
         specifier: workspace:*
         version: link:../preferences
@@ -653,6 +675,9 @@ importers:
       '@emotion/is-prop-valid':
         specifier: ^1.4.0
         version: 1.4.0
+      '@neutrino/commands':
+        specifier: workspace:*
+        version: link:../commands
       '@neutrino/tokens':
         specifier: workspace:*
         version: link:../tokens

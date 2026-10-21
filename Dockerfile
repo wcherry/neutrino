@@ -31,6 +31,7 @@ COPY web/packages/api-slides/package.json web/packages/api-slides/package.json
 COPY web/packages/api-themes/package.json web/packages/api-themes/package.json
 COPY web/packages/auth/package.json web/packages/auth/package.json
 COPY web/packages/collab-core/package.json web/packages/collab-core/package.json
+COPY web/packages/commands/package.json web/packages/commands/package.json
 COPY web/packages/e2e-crypto/package.json web/packages/e2e-crypto/package.json
 COPY web/packages/hooks/package.json web/packages/hooks/package.json
 COPY web/packages/layout/package.json web/packages/layout/package.json

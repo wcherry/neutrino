@@ -1,11 +1,12 @@
 'use client';
 
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import type { CellProps } from '../types';
 import { MAX_HISTORY } from '../constants';
 import { alphaToNum, numToAlpha } from '../utils';
 import { applyPatch, buildReversePatch } from '../cellPatch';
 import type { UndoPatch } from '../cellPatch';
+import { useCommands } from '@neutrino/commands';
 
 // ── History entry types ───────────────────────────────────────────────────────
 // The undo/redo stacks store either a legacy full-snapshot entry (for callers
@@ -133,29 +134,12 @@ export function useHistory({
         setSelectionActive(`${numToAlpha(maxCol)}${maxRow}`);
     }, [dataRef, setSelectionAnchor, setSelectionActive]);
 
-    // Keyboard shortcuts: Cmd/Ctrl+Z → undo, Cmd/Ctrl+Shift+Z / Y → redo, Cmd/Ctrl+A → select all
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (!(e.metaKey || e.ctrlKey)) return;
-            const active = document.activeElement as HTMLElement | null;
-            const isTextInput = active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA' || !!active?.isContentEditable;
-            if (e.key === 'z') {
-                if (isTextInput) return;
-                e.preventDefault();
-                if (e.shiftKey) { redo(); } else { undo(); }
-            } else if (e.key === 'y') {
-                if (isTextInput) return;
-                e.preventDefault();
-                redo();
-            } else if (e.key === 'a') {
-                if (isTextInput) return;
-                e.preventDefault();
-                selectAll();
-            }
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, [undo, redo, selectAll]);
+    // Not while typing (the catalog says so): a text field keeps its own undo and select-all.
+    useCommands({
+        'sheets.undo': () => undo(),
+        'sheets.redo': () => redo(),
+        'sheets.selectAll': () => selectAll(),
+    });
 
     return {
         undoStackRef,

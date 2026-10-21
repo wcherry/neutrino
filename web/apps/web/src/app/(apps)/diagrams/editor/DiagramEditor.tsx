@@ -52,6 +52,7 @@ import { AiDiagramPanel } from './ai/AiDiagramPanel';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import type { DiagramDocument, EditorSelection, SelectionMode, FreehandStroke, DiagramShape, DiagramConnector } from '../types';
 import type { LayoutAlgorithm } from './layout/layoutEngine';
+import { useCommands, useDismiss } from '@neutrino/commands';
 import styles from './DiagramEditor.module.css';
 import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 
@@ -139,11 +140,7 @@ function ExportRegionOverlay({ onRegionSelected, onCancel }: ExportRegionOverlay
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const [selRect, setSelRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onCancel]);
+  useDismiss(() => onCancel());
 
   const getPos = (e: React.MouseEvent) => {
     const el = overlayRef.current;
@@ -676,84 +673,51 @@ export function DiagramEditor() {
   }, [editor.document, diagramId]);
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+  // None of these run while typing in a field (the command catalog says so).
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const isInput =
-        (e.target as HTMLElement).tagName === 'INPUT' ||
-        (e.target as HTMLElement).tagName === 'TEXTAREA' ||
-        (e.target as HTMLElement).isContentEditable;
-      if (isInput) return;
-
-      const meta = e.metaKey || e.ctrlKey;
-
-      if (meta && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          editor.redo();
-        } else {
-          editor.undo();
-        }
-      }
-
-      if (meta && e.key === 'y') {
-        e.preventDefault();
-        editor.redo();
-      }
-
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
-        e.preventDefault();
-        if (selection.shapeIds.size > 0) {
-          editor.removeShapes(Array.from(selection.shapeIds));
-          setSelection({ shapeIds: new Set(), connectorIds: new Set() });
-        }
-        if (selection.connectorIds.size > 0) {
-          editor.removeConnectors(Array.from(selection.connectorIds));
-          setSelection({ shapeIds: new Set(), connectorIds: new Set() });
-        }
-      }
-
-      if (meta && e.key === 'd') {
-        e.preventDefault();
-        if (selection.shapeIds.size > 0) {
-          const newIds = editor.duplicateShapes(Array.from(selection.shapeIds));
-          setSelection({ shapeIds: new Set(newIds), connectorIds: new Set() });
-        }
-      }
-
-      if (meta && e.key === 'a') {
-        e.preventDefault();
-        const page = editor.document.pages[editor.activePageIndex];
-        if (page) {
-          setSelection({
-            shapeIds: new Set(page.shapes.map((s) => s.id)),
-            connectorIds: new Set(page.connectors.map((c) => c.id)),
-          });
-        }
-      }
-
-      // Escape — exit presentation or deselect
-      if (e.key === 'Escape') {
-        if (presentationMode) {
-          setPresentationMode(false);
-          return;
-        }
+  useCommands({
+    'diagrams.undo': () => editor.undo(),
+    'diagrams.redo': () => editor.redo(),
+    'diagrams.delete': () => {
+      if (selection.shapeIds.size > 0) {
+        editor.removeShapes(Array.from(selection.shapeIds));
         setSelection({ shapeIds: new Set(), connectorIds: new Set() });
-        setMode('select');
       }
+      if (selection.connectorIds.size > 0) {
+        editor.removeConnectors(Array.from(selection.connectorIds));
+        setSelection({ shapeIds: new Set(), connectorIds: new Set() });
+      }
+    },
+    'diagrams.duplicate': () => {
+      if (selection.shapeIds.size > 0) {
+        const newIds = editor.duplicateShapes(Array.from(selection.shapeIds));
+        setSelection({ shapeIds: new Set(newIds), connectorIds: new Set() });
+      }
+    },
+    'diagrams.selectAll': () => {
+      const page = editor.document.pages[editor.activePageIndex];
+      if (page) {
+        setSelection({
+          shapeIds: new Set(page.shapes.map((s) => s.id)),
+          connectorIds: new Set(page.connectors.map((c) => c.id)),
+        });
+      }
+    },
+    'diagrams.tool.select': () => setMode('select'),
+    'diagrams.tool.pan': () => setMode('pan'),
+    'diagrams.tool.text': () => setMode('text'),
+  });
 
-      // V — select tool
-      if (e.key === 'v' || e.key === 'V') setMode('select');
-      // H — pan
-      if (e.key === 'h' || e.key === 'H') setMode('pan');
-      // T — text tool
-      if (e.key === 't' || e.key === 'T') setMode('text');
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, editor, presentationMode]);
+  // Escape leaves presentation mode, else drops the selection — but not while typing in a
+  // shape's label, which handles its own Escape.
+  useDismiss(() => {
+    if (presentationMode) {
+      setPresentationMode(false);
+      return;
+    }
+    setSelection({ shapeIds: new Set(), connectorIds: new Set() });
+    setMode('select');
+  }, true, { whileTyping: false });
 
   // ── Fit to screen ─────────────────────────────────────────────────────────
 

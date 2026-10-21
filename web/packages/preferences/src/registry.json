@@ -1,5 +1,5 @@
 {
-  "$comment": "The one list of user preferences. agent_docs/preference-registry.md explains every entry; src/preferences/catalog.rs is the server's copy of the plain-tier entries, and a test there fails when the two disagree. sync: plain = server-readable and validated; vault = sealed in the browser with the user's key; device = never leaves this browser. paint = applied before first paint from the boot cache. section: where the control lives — a Settings tab id (appearance, calendar, advanced, ai), an app or surface (docs, sheets, slides, diagrams, drawing, photos, editors, sidebar), or none while it has no control yet. Settings search is built from it.",
+  "$comment": "The one list of user preferences. agent_docs/preference-registry.md explains every entry; src/preferences/catalog.rs is the server's copy of the plain-tier entries, and a test there fails when the two disagree. sync: plain = server-readable and validated; vault = sealed in the browser with the user's key; device = never leaves this browser. paint = applied before first paint from the boot cache. section: where the control lives — a Settings tab id (appearance, calendar, keyboard, advanced, ai), an app or surface (docs, sheets, slides, diagrams, drawing, photos, editors, sidebar), or none while it has no control yet. Settings search is built from it.",
   "preferences": [
     {
       "key": "appearance.theme",
@@ -154,6 +154,32 @@
       "label": "Don't sync the search index from this device",
       "section": "advanced",
       "legacyKey": "neutrino:search:syncDisabled"
+    },
+    {
+      "key": "keyboard.preset",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "neutrino",
+          "google",
+          "microsoft"
+        ]
+      },
+      "default": "neutrino",
+      "sync": "plain",
+      "label": "Shortcut preset",
+      "section": "keyboard"
+    },
+    {
+      "key": "keyboard.bindings",
+      "type": {
+        "kind": "object",
+        "maxBytes": 8192
+      },
+      "default": null,
+      "sync": "plain",
+      "label": "Custom keyboard shortcuts",
+      "section": "keyboard"
     },
     {
       "key": "ai.provider",

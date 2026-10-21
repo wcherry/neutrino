@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
+import { useDismiss } from '@neutrino/commands';
 import { findReplacePluginKey } from '@/lib/extensions/FindReplaceExtension';
 import styles from './FindReplaceBar.module.css';
 
@@ -36,17 +37,7 @@ export function FindReplaceBar({ editor, onClose }: FindReplaceBarProps) {
     };
   }, [editor]);
 
-  // Keyboard handling: Escape closes, Enter navigates
-  useEffect(() => {
-    function handler(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        handleClose();
-      }
-    }
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useDismiss(() => handleClose());
 
   const handleClose = useCallback(() => {
     editor.commands.setFindTerm('');

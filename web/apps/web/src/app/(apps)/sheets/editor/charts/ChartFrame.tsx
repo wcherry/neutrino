@@ -6,6 +6,7 @@ import type { ChartDef, ChartAnnotation } from './chartTypes';
 import { ChartRenderer } from './ChartRenderer';
 import { ChartAnnotationLayer } from './ChartAnnotationLayer';
 import { useSheetZoom } from '../zoom';
+import { useCommand } from '@neutrino/commands';
 import styles from './charts.module.css';
 import animStyles from './chartAnimation.module.css';
 
@@ -63,18 +64,8 @@ export function ChartFrame({
         setFrameDims({ w: def.w, h: def.h });
     }, [def.w, def.h]);
 
-    // Keyboard Delete handler when selected
-    useEffect(() => {
-        if (!isSelected) return;
-        const handler = (e: KeyboardEvent) => {
-            if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-            const active = document.activeElement as HTMLElement | null;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
-            onDelete();
-        };
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, [isSelected, onDelete]);
+    // Not while typing: a bare key never runs a command in a text field.
+    useCommand('sheets.chart.delete', () => onDelete(), { enabled: isSelected, preventDefault: false });
 
     function handleBodyMouseDown(e: React.MouseEvent) {
         if (e.button !== 0) return;

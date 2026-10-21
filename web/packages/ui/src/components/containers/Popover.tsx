@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useId } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useDismiss } from '@neutrino/commands';
 import { scaleIn } from '../../motion/variants';
 import styles from './Popover.module.css';
 
@@ -44,20 +45,11 @@ export function Popover({
       }
     };
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [open, onClose]);
+
+  useDismiss(onClose, open);
 
   const placementClass = placement.replace('-', '-');
 

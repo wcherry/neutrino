@@ -128,6 +128,7 @@ import SlideCanvas from './SlideCanvas';
 import SlideThumbnail from './SlideThumbnail';
 import PresenterView from './PresenterView';
 import { LayoutPreview, ThemePreview } from './slideEditorPreviews';
+import { useCommand, useKeyHandler } from '@neutrino/commands';
 import styles from './page.module.css';
 import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 
@@ -937,29 +938,22 @@ export function SlideEditor() {
     };
   }, []);
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (!selectedElementId || editingElementId) return;
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  const elementKeysLive = !!selectedElementId && !editingElementId;
+  useCommand('slides.element.delete', () => { if (selectedElementId) deleteElement(selectedElementId); }, { enabled: elementKeysLive });
 
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        deleteElement(selectedElementId);
-        return;
-      }
-
-      const slide = presentation.slides[selectedSlideIdx] ?? presentation.slides[0];
-      const selectedEl = slide?.elements.find((el) => el.id === selectedElementId);
-      if (selectedEl?.type === 'text' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        setEditingInitialText(e.key);
-        setEditingElementId(selectedElementId);
-      }
+  // Typing onto a selected text box starts editing it with that character.
+  useKeyHandler((e) => {
+    if (!selectedElementId) return;
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const slide = presentation.slides[selectedSlideIdx] ?? presentation.slides[0];
+    const selectedEl = slide?.elements.find((el) => el.id === selectedElementId);
+    if (selectedEl?.type === 'text' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      setEditingInitialText(e.key);
+      setEditingElementId(selectedElementId);
     }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElementId, editingElementId, presentation, selectedSlideIdx]);
+  }, { enabled: elementKeysLive });
 
   // ── Slide operations ─────────────────────────────────────────────────────
 

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useCommand } from '@neutrino/commands';
 import { preferences, usePreference } from '@neutrino/preferences';
 
 /**
@@ -9,8 +10,8 @@ import { preferences, usePreference } from '@neutrino/preferences';
  * The user's spell-check preference across Docs, Slides, and Sheets editors — the synced
  * `docs.spellCheck` preference (`@neutrino/preferences`), on by default.
  *
- * Also registers a Cmd+Shift+; (macOS) / Ctrl+Shift+; (other platforms) keyboard shortcut that
- * toggles the preference.
+ * Also runs the `editors.spellCheck.toggle` command (⌘⇧; / Ctrl+Shift+; unless remapped in
+ * Settings › Keyboard), which toggles the preference.
  *
  * @returns { spellCheck, toggle }
  *   spellCheck — current boolean state (true = enabled)
@@ -24,18 +25,7 @@ export function useSpellCheck(): { spellCheck: boolean; toggle: () => void } {
         preferences.set('docs.spellCheck', !preferences.get('docs.spellCheck'));
     }, []);
 
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            const isModifier = e.metaKey || e.ctrlKey;
-            if (isModifier && e.shiftKey && e.key === ';') {
-                e.preventDefault();
-                toggle();
-            }
-        };
-
-        document.addEventListener('keydown', handler);
-        return () => document.removeEventListener('keydown', handler);
-    }, [toggle]);
+    useCommand('editors.spellCheck.toggle', toggle);
 
     return { spellCheck, toggle };
 }

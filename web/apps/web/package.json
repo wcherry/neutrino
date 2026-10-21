@@ -36,6 +36,7 @@
     "@neutrino/api-themes": "workspace:*",
     "@neutrino/auth": "workspace:*",
     "@neutrino/collab-core": "workspace:*",
+    "@neutrino/commands": "workspace:*",
     "@neutrino/e2e-crypto": "workspace:*",
     "@neutrino/hooks": "workspace:*",
     "@neutrino/layout": "workspace:*",

@@ -268,7 +268,7 @@ describe('the typed value map', () => {
       'appearance.theme': true, 'appearance.look': true, 'appearance.density': true, 'shell.sidebarCollapsed': true,
       'calendar.weekStart': true, 'calendar.dayStartHour': true, 'calendar.dayEndHour': true,
       'docs.spellCheck': true, 'docs.splitParagraphs': true, 'photos.autoFaceDetect': true, 'drawing.brush': true,
-      'search.syncDisabled': true, 'ai.provider': true, 'ai.apiKey': true,
+      'search.syncDisabled': true, 'keyboard.preset': true, 'keyboard.bindings': true, 'ai.provider': true, 'ai.apiKey': true,
       'library.sheets.cfTemplates': true, 'library.sheets.cfVariables': true, 'library.fill.slides': true,
       'library.fill.diagrams': true, 'library.fill.drawing': true, 'library.fill.default': true,
       'library.diagrams.shapeLibraries': true,

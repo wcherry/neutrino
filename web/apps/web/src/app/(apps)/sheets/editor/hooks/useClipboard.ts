@@ -8,6 +8,7 @@ import { computeCell, propagateDeps, type SheetRef } from '../formula';
 import { parseGoogleSpreadsheetCompactTableJson, parseGoogleSheetsHtml, fixRealtiveFormulas, mergeCellStyles, preferUnderlyingValue } from '../google.transfomer';
 import { NEUTRINO_SHEET_SELECTION_MIME, buildSheetSelectionPayload } from '@neutrino/sheet-embed';
 import { clipboardSource, NEUTRINO_SHEET_MIME } from './clipboardSource';
+import { registerCommand } from '@neutrino/commands';
 
 export function useClipboard({
     dataRef,
@@ -505,17 +506,18 @@ export function useClipboard({
             } as DataTransfer;
         };
 
-        const onKeyDown = (e: KeyboardEvent) => {
-            if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
-            if (shouldLetFormulaInputHandleShortcut()) return;
-            if (!selectionAnchorRef.current) return;
-
-            const key = e.key.toLowerCase();
-            if (key === 'c') {
-                handleCopy(false, createMemoryTransfer());
-            } else if (key === 'x') {
-                handleCopy(true, createMemoryTransfer());
-            } else if (key === 'v') {
+        // Declines (so the browser's own copy runs) when the formula bar has text selected or no
+        // cell is selected.
+        const forCells = (run: () => void) => () => {
+            if (shouldLetFormulaInputHandleShortcut()) return false;
+            if (!selectionAnchorRef.current) return false;
+            run();
+        };
+        // None of these prevent the default: the native copy/cut/paste events below must still fire.
+        const offCommands = [
+            registerCommand('sheets.copy', forCells(() => handleCopy(false, createMemoryTransfer())), { preventDefault: false }),
+            registerCommand('sheets.cut', forCells(() => handleCopy(true, createMemoryTransfer())), { preventDefault: false }),
+            registerCommand('sheets.paste', forCells(() => {
                 // Never preventDefault here: that cancels the native `paste` event,
                 // which is the only place the system clipboard can be read, and is
                 // what made every external paste replay the last in-app copy.
@@ -532,8 +534,8 @@ export function useClipboard({
                     if (!clipboardRef.current) return;
                     handlePaste();
                 }, 0);
-            }
-        };
+            }), { preventDefault: false }),
+        ];
 
         const onCopy = (e: ClipboardEvent) => {
             // Let the browser copy if the user has text selected inside the formula bar.
@@ -558,12 +560,11 @@ export function useClipboard({
             e.preventDefault();
             handlePaste(e.clipboardData ?? undefined);
         };
-        document.addEventListener('keydown', onKeyDown);
         document.addEventListener('copy', onCopy);
         document.addEventListener('cut', onCut);
         document.addEventListener('paste', onPaste);
         return () => {
-            document.removeEventListener('keydown', onKeyDown);
+            offCommands.forEach((off) => off());
             document.removeEventListener('copy', onCopy);
             document.removeEventListener('cut', onCut);
             document.removeEventListener('paste', onPaste);

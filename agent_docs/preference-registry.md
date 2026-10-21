@@ -37,6 +37,8 @@ Columns: **Scopes** — who may set it (`org` default/lock, `team` default, `use
 | `photos.autoFaceDetect` | `neutrino:photos:autoFaceDetect` | boolean | `false` | org, user | plain | | An org lock to *off* is a real privacy policy. |
 | `drawing.brush` | `neutrino:drawing:brush` | brush object, repaired by `clampBrush` | built-in brush | user | plain | | Already "never in the document"; now it follows the user. |
 | `search.syncDisabled` | `neutrino:search:syncDisabled` | boolean | `false` | org, user, device | device | | Turns off this browser's index snapshot exchange; device by nature. Org lock lets an admin forbid the encrypted snapshot upload. |
+| `keyboard.preset` | — *(new, stage 2)* | `neutrino` \| `google` \| `microsoft` | `neutrino` | org, user | plain | | The starting keymap (`PRESETS` in `@neutrino/commands`); each preset changes only the commands where that suite differs. |
+| `keyboard.bindings` | — *(new, stage 2)* | object, command id → chords, ≤ 8 KB | `null` (no changes) | user | plain | | Only the user's departures from the preset; an empty list unbinds. Read through `sanitizeBindings`, which drops ids no longer in the command catalog and chords that do not parse, so a stale binding is never dispatched. Edited in Settings › Keyboard. |
 | `ai.provider` | `neutrino.ai.settings` (`provider`) | `anthropic` \| `openai` \| `gemini` \| `none` | `gemini` (current) | org, user | plain | | Org may restrict or set `none`. |
 | `ai.apiKey` | `neutrino.ai.settings` (`apiKey`) | string | `''` | user | **encrypted** | | Leaves plaintext `localStorage` (roadmap U12). `readAiSettings` in `@neutrino/api-core` keeps its signature and reads through the registry. |
 

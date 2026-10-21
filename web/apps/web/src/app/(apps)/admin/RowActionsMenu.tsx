@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useDismiss } from '@neutrino/commands';
 import styles from './RowActionsMenu.module.css';
 
 export interface RowActionItem {
@@ -48,16 +49,13 @@ export function RowActionsMenu({ x, y, entries, onClose, 'aria-label': ariaLabel
     function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
+
+  useDismiss(() => onClose());
 
   // After first render, measure actual dimensions and clamp within viewport.
   useLayoutEffect(() => {
