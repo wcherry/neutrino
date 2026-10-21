@@ -85,6 +85,7 @@ import {
   type VectorStyle,
 } from './types';
 import styles from './page.module.css';
+import { preferences } from '@neutrino/preferences';
 
 const VersionHistoryPanel = dynamic(
   () => import('@/components/VersionHistoryPanel').then((m) => ({ default: m.VersionHistoryPanel })),
@@ -113,27 +114,20 @@ const HISTORY_LIMIT = 100;
 /**
  * Where the brush is remembered between sessions.
  *
- * `localStorage` and not the document: a brush is a tool, not content
- * (`agent_docs/drawing_app_redesign.md` §3), so it belongs to the person rather
- * than to the drawing — the same rule the theme and the calendar's week start
- * follow. Storing it in the file would make opening somebody else's drawing
- * silently change your brush.
+ * A synced preference (`drawing.brush`) and not the document: a brush is a
+ * tool, not content (`agent_docs/drawing_app_redesign.md` §3), so it belongs to
+ * the person rather than to the drawing — the same rule the theme and the
+ * calendar's week start follow. Storing it in the file would make opening
+ * somebody else's drawing silently change your brush.
  */
-const BRUSH_STORAGE_KEY = 'neutrino:drawing:brush';
-
 function loadBrush(): BrushSettings {
   const fallback = createBrush('brush');
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(BRUSH_STORAGE_KEY);
-    if (!raw) return fallback;
-    // Merged over a real preset rather than trusted outright: the stored shape
-    // is from whichever build last wrote it, and a missing `pressure` object
-    // would be read on the first stroke.
-    return clampBrush({ ...fallback, ...(JSON.parse(raw) as Partial<BrushSettings>) });
-  } catch {
-    return fallback;
-  }
+  const stored = preferences.get('drawing.brush');
+  if (!stored) return fallback;
+  // Merged over a real preset rather than trusted outright: the stored shape
+  // is from whichever build last wrote it, and a missing `pressure` object
+  // would be read on the first stroke.
+  return clampBrush({ ...fallback, ...(stored as Partial<BrushSettings>) });
 }
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -587,12 +581,8 @@ export function DrawingEditor() {
   // ── Brushes ───────────────────────────────────────────────────────
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(BRUSH_STORAGE_KEY, JSON.stringify(brush));
-    } catch {
-      // A private window, or storage that is full. The brush still works for
-      // this session; only remembering it fails.
-    }
+    // Refused (and only for this session) if it outgrows the preference's size limit.
+    preferences.set('drawing.brush', brush as unknown as Record<string, unknown>);
   }, [brush]);
 
   /**

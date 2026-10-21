@@ -152,6 +152,7 @@ import {
   type HeaderFooterConfig,
   type HeaderFooterSlots,
 } from '@/lib/docHeaderFooter';
+import { preferences, usePreference } from '@neutrino/preferences';
 
 // ── Paper sizes ───────────────────────────────────────────────────────────
 // Dimensions in inches; rendered at 96 dpi for screen display.
@@ -180,10 +181,6 @@ function pageDimensions(ps: PageSetup): { widthPx: number; heightPx: number } {
 // 0.5 in gap between pages (rendered via backgroundImage on the page div, behind text)
 const PAGE_GAP_PX = 48;
 
-// Whether a paragraph may be broken across a page boundary instead of moving
-// to the next page whole. A user preference, stored per browser like the theme
-// and the calendar week start.
-const SPLIT_PARAGRAPHS_KEY = 'neutrino:docs:splitParagraphs';
 
 // ── Print ──────────────────────────────────────────────────────────────────
 
@@ -656,7 +653,9 @@ export function DocEditor() {
   // Off by default: a paragraph kept whole never strands a line by itself at a
   // page break. Persisted like the other user preferences, so the choice
   // survives a reload and reaches the other tabs.
-  const [splitParagraphs, setSplitParagraphs] = useState(false);
+  // Whether a paragraph may be broken across a page boundary instead of moving
+  // to the next page whole — the synced `docs.splitParagraphs` preference.
+  const [splitParagraphs] = usePreference('docs.splitParagraphs');
   const [currentPage, setCurrentPage] = useState(1);
   // How many pages the content covers, reported by PaginationExtension after it
   // measures the blocks. Deliberately not derived from the sheet's rendered
@@ -2194,26 +2193,8 @@ export function DocEditor() {
     [editor, triggerSave],
   );
 
-  // Read the split-paragraphs preference back on mount, and follow it when
-  // another tab changes it.
-  useEffect(() => {
-    const read = () => setSplitParagraphs(localStorage.getItem(SPLIT_PARAGRAPHS_KEY) === 'true');
-    read();
-    window.addEventListener('storage', read);
-    return () => window.removeEventListener('storage', read);
-  }, []);
-
   const handleToggleSplitParagraphs = useCallback(() => {
-    setSplitParagraphs(prev => {
-      const next = !prev;
-      try {
-        localStorage.setItem(SPLIT_PARAGRAPHS_KEY, String(next));
-      } catch {
-        // Storage can be unavailable (private mode, blocked cookies); the
-        // setting still applies to this session.
-      }
-      return next;
-    });
+    preferences.set('docs.splitParagraphs', !preferences.get('docs.splitParagraphs'));
   }, []);
 
   // Track the page div's scroll height, so pageZoomWrap can be sized to hold

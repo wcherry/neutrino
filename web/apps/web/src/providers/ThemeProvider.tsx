@@ -7,6 +7,7 @@ import React, {
   useEffect,
   useState,
 } from 'react';
+import { usePreference } from '@neutrino/preferences';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,32 +35,12 @@ interface ThemeContextValue {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const STORAGE_KEY = 'neutrino.theme';
-
-const FIXED_CHOICES: ThemeChoice[] = ['light', 'dark', 'system', 'glass', 'midnight', 'beach', 'forest', 'sunbeams', 'light-glass'];
-
 /**
- * Valid if it's one of the fixed presets OR matches `/^custom-/`. We don't
- * validate that the custom ID actually exists client-side — a stale/deleted
- * custom theme ID just resolves to a `data-theme` attribute with no matching
- * `<style>` rule, which safely falls through to `:root` defaults with no
- * visual break (see the plan's "ThemeProvider.tsx changes" section).
+ * The choice is the `appearance.theme` preference (`@neutrino/preferences`), which syncs it
+ * across devices and validates it — a stale or unknown value resolves to `system` there, so
+ * nothing here re-checks it. A deleted custom theme's id still resolves to a `data-theme` with
+ * no matching rule, which falls through to `:root` with no visual break.
  */
-function isValidChoice(value: string): value is ThemeChoice {
-  return (FIXED_CHOICES as string[]).includes(value) || /^custom-/.test(value);
-}
-
-function readStoredTheme(): ThemeChoice {
-  if (typeof window === 'undefined') return 'system';
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && isValidChoice(stored)) return stored;
-  } catch {
-    // localStorage unavailable (private browsing restrictions, etc.)
-  }
-  return 'system';
-}
-
 function resolveTheme(choice: ThemeChoice): ResolvedTheme {
   if (choice !== 'system') return choice;
   if (typeof window !== 'undefined') {
@@ -89,24 +70,25 @@ const ThemeContext = createContext<ThemeContextValue>({
 // ---------------------------------------------------------------------------
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeChoice>('system');
+  const [theme, setThemePreference] = usePreference('appearance.theme') as [ThemeChoice, (t: ThemeChoice) => void];
+  const [look] = usePreference('appearance.look');
+  const [density] = usePreference('appearance.density');
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>('light');
 
-  // Initialise from localStorage on mount (client-only)
-  useEffect(() => {
-    const stored = readStoredTheme();
-    setThemeState(stored);
-    const resolved = resolveTheme(stored);
-    setResolvedTheme(resolved);
-    applyTheme(resolved);
-  }, []);
-
-  // Re-apply whenever theme state changes
+  // The anti-FOUC script applied all three before first paint; these keep them current.
   useEffect(() => {
     const resolved = resolveTheme(theme);
     setResolvedTheme(resolved);
     applyTheme(resolved);
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-look', look);
+  }, [look]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-density', density);
+  }, [density]);
 
   // Listen to OS preference changes when choice is 'system'
   useEffect(() => {
@@ -123,14 +105,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => mq.removeEventListener('change', handler);
   }, [theme]);
 
-  const setTheme = useCallback((t: ThemeChoice) => {
-    setThemeState(t);
-    try {
-      localStorage.setItem(STORAGE_KEY, t);
-    } catch {
-      // ignore write failures
-    }
-  }, []);
+  const setTheme = useCallback((t: ThemeChoice) => setThemePreference(t), [setThemePreference]);
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, resolvedTheme }}>

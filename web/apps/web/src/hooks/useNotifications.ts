@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { notificationsApi, getNotificationsWsUrl } from '@neutrino/api-drive';
 import type { NotificationItem } from '@neutrino/api-drive';
 import { getClientId, refreshTokensOnce } from '@neutrino/api-core';
+import { PREFERENCES_CHANGED_EVENT, PREFERENCES_CHANGED_TYPE } from '@/lib/preferencesSignal';
 import {
   DRIVE_CHANGED_EVENT,
   isSocketSignal,
@@ -89,6 +90,14 @@ export function useNotifications() {
           // would double every listing read during a bulk upload from this very tab.
           if (driveChanged.originClientId === getClientId()) return;
           window.dispatchEvent(new CustomEvent(DRIVE_CHANGED_EVENT));
+          return;
+        }
+        // Another device (or tab) changed the user's preferences: the store re-reads them. Our own
+        // writes are already applied locally, so the echo is dropped like a drive signal's.
+        if (isSocketSignal(message) && (message as { type: string }).type === PREFERENCES_CHANGED_TYPE) {
+          if ((message as { originClientId?: string }).originClientId !== getClientId()) {
+            window.dispatchEvent(new CustomEvent(PREFERENCES_CHANGED_EVENT));
+          }
           return;
         }
         // Any other signal (the calendar's, for one) is for a client that watches it; it is never

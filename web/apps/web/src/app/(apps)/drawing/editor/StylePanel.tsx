@@ -69,6 +69,7 @@ import type {
   VectorStyle,
 } from './types';
 import styles from './StylePanel.module.css';
+import { useLibrary } from '@neutrino/preferences';
 
 interface StylePanelProps {
   doc: DrawingDocument;
@@ -301,6 +302,8 @@ function ObjectStyle({
   onNewObjectStyleChange: (style: VectorStyle) => void;
   onFetchDriveImages?: () => Promise<DriveImageItem[]>;
 }) {
+  // Saved fills follow the user across devices (the preference vault).
+  const [fillPresets, setFillPresets] = useLibrary('library.fill.drawing');
   const ids = objects.map((o) => o.id);
   const first = objects[0];
   const { style } = first;
@@ -329,7 +332,8 @@ function ObjectStyle({
               <FillPicker
                 background={fillToBackground(style.fill)}
                 onChange={(bg) => changeStyle({ fill: bg.type === 'image' ? `url(${bg.value})` : bg.value })}
-                presetsKey="neutrino:drawing:fillPresets"
+                presets={fillPresets as string[]}
+                onPresetsChange={setFillPresets}
                 triggerLabel=""
                 onFetchDriveImages={onFetchDriveImages}
               />

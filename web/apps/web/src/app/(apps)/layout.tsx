@@ -43,6 +43,8 @@ import { signInHref } from '@/lib/signInRedirect';
 import { FULL_VERSION_LABEL, VERSION_LABEL } from '@/lib/version';
 import { clearDriveImageCache } from '@/lib/driveImages';
 import { appForPath } from '@/lib/appForPath';
+import { usePreferencesSync } from '@/lib/preferencesSync';
+import { preferences } from '@neutrino/preferences';
 
 /** Search hits carry an icon *component* so Drive can size it its own way. */
 function toTopbarResult(hit: SearchHit): TopbarSearchResult {
@@ -106,6 +108,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Nothing is searched server-side, so the local index has to be kept current
   // or the box would have nothing to match against.
   useSearchIndexSync(auth.status === 'ready' ? auth.user.id : undefined);
+  usePreferencesSync(auth.status === 'ready' ? auth.user.id : undefined);
 
   const isAdmin = auth.status === 'ready' ? (auth.user.isAdmin ?? false) : false;
 
@@ -264,6 +267,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // Decrypted image bytes and this account's Attachments folder id are held
     // in module state, which outlives the route change.
     clearDriveImageCache();
+    // The user's synced preferences and decrypted vault are module state too.
+    preferences.detach();
     router.replace('/sign-in');
   }
 

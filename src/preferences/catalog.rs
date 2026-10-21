@@ -25,7 +25,6 @@ pub enum Kind {
     /// A JSON object, opaque here beyond its size — the client repairs its fields on read
     /// (`clampBrush` does for the drawing brush).
     Object { max_bytes: usize },
-    StringList { max_items: usize, max_length: usize },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,8 +47,6 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "docs.splitParagraphs", kind: Kind::Boolean },
     Spec { key: "photos.autoFaceDetect", kind: Kind::Boolean },
     Spec { key: "drawing.brush", kind: Kind::Object { max_bytes: 4096 } },
-    Spec { key: "diagrams.shapeLibraries.hidden", kind: Kind::StringList { max_items: 200, max_length: 200 } },
-    Spec { key: "diagrams.shapeLibraries.order", kind: Kind::StringList { max_items: 200, max_length: 200 } },
     Spec { key: "ai.provider", kind: Kind::Enum(&["gemini", "claude", "openai"]) },
 ];
 
@@ -97,17 +94,6 @@ pub fn validate(spec: &Spec, value: &Value) -> Result<(), String> {
             }
             Ok(())
         }
-        Kind::StringList { max_items, max_length } => {
-            let items = value.as_array().ok_or("must be a list")?;
-            if items.len() > max_items {
-                return Err(format!("must have at most {max_items} items"));
-            }
-            if items.iter().all(|v| v.as_str().is_some_and(|s| s.chars().count() <= max_length)) {
-                Ok(())
-            } else {
-                Err(format!("must be strings of at most {max_length} characters"))
-            }
-        }
     }
 }
 
@@ -129,8 +115,6 @@ mod tests {
         assert!(check("calendar.weekStart", json!("1")).is_err());
         assert!(check("docs.spellCheck", json!(false)).is_ok());
         assert!(check("docs.spellCheck", json!(0)).is_err());
-        assert!(check("diagrams.shapeLibraries.order", json!(["a", "b"])).is_ok());
-        assert!(check("diagrams.shapeLibraries.order", json!(["a", 1])).is_err());
         assert!(check("drawing.brush", json!({ "size": 4 })).is_ok());
         assert!(check("drawing.brush", json!([1, 2])).is_err());
     }
@@ -177,9 +161,6 @@ mod tests {
                     ty["kind"] == "string" && ty["maxLength"] == max_length && ty["pattern"].as_str() == pattern
                 }
                 Kind::Object { max_bytes } => ty["kind"] == "object" && ty["maxBytes"] == max_bytes,
-                Kind::StringList { max_items, max_length } => {
-                    ty["kind"] == "stringList" && ty["maxItems"] == max_items && ty["maxLength"] == max_length
-                }
             };
             assert!(matches, "{} is typed differently in registry.json", spec.key);
             // The registry's default must be a value the server would accept.

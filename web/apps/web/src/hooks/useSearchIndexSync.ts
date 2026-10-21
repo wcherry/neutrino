@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { loadKeyPair, subscribeToLockState } from '@neutrino/e2e-crypto';
 import { isSyncDue, syncSearchIndex } from '@/lib/searchIndexer';
 import { pullSnapshot, syncSnapshot } from '@/lib/searchIndexSnapshot';
+import { preferences } from '@neutrino/preferences';
 
 /** One run at a time per tab — remounts and focus events share this promise. */
 let inFlight: Promise<unknown> | null = null;
@@ -16,15 +17,9 @@ let inFlight: Promise<unknown> | null = null;
 const MIN_RUN_INTERVAL_MS = 60_000;
 let lastRunAt = 0;
 
-/** Settings → Advanced writes this; the toggle is only meaningful if we read it. */
-const SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
-
+/** Settings → Advanced writes this device preference; the toggle is only meaningful if we read it. */
 function syncDisabled(): boolean {
-  try {
-    return localStorage.getItem(SYNC_DISABLED_KEY) === 'true';
-  } catch {
-    return false;
-  }
+  return preferences.get('search.syncDisabled');
 }
 
 /**

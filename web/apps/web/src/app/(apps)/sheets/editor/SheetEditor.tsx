@@ -16,7 +16,7 @@ import { measurePhase } from '@neutrino/utils';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
 import { useUser } from '@neutrino/auth';
 import { useSheetPresence, type CellSyncItem } from '@/hooks/useSheetPresence';
-import type { CellProps, ClipboardCFRule, CFRule, SheetFile, TableRegion } from './types';
+import type { CellProps, ClipboardCFRule, CFRule, CFVariable, SheetFile, TableRegion } from './types';
 import type { SheetTemplate } from './templates/sheetTemplates';
 import { sheetFileToSheetsData } from './hooks/sheetFileUtils';
 import { rangeAddress, numToAlpha, alphaToNum, navigateCell, parseCellId, getRangeCells, getCellBounds, type ArrowNavigationKey } from './utils';
@@ -61,6 +61,7 @@ import { ChartCreationDialog } from './charts/ChartCreationDialog';
 import { ChartEditorPanel } from './charts/ChartEditorPanel';
 import styles from './page.module.css';
 import { useAccessRevocation } from '@/hooks/useAccessRevocation';
+import { preferences, readVaultOrLegacy } from '@neutrino/preferences';
 
 type SheetKeyboardMode = 'movement' | 'formula';
 
@@ -235,9 +236,9 @@ export function SheetEditor() {
 
     // ── Conditional formatting state ───────────────────────
     const [showCFDialog, setShowCFDialog] = useState(false);
-    const [cfVariables, setCfVariables] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('neutrino:sheets:cf-variables') ?? '[]'); } catch { return []; }
-    });
+    const [cfVariables, setCfVariables] = useState<CFVariable[]>(
+        () => readVaultOrLegacy(preferences, 'library.sheets.cfVariables') as CFVariable[],
+    );
 
     // ── Chart state ────────────────────────────────────────
     const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
@@ -2031,9 +2032,7 @@ export function SheetEditor() {
                     onUpdate={cf.updateConditionalFormats}
                     onClose={() => {
                         setShowCFDialog(false);
-                        try {
-                            setCfVariables(JSON.parse(localStorage.getItem('neutrino:sheets:cf-variables') ?? '[]'));
-                        } catch { /* ignore */ }
+                        setCfVariables(readVaultOrLegacy(preferences, 'library.sheets.cfVariables') as CFVariable[]);
                     }}
                 />
             )}

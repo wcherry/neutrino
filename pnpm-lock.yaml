@@ -170,6 +170,9 @@ importers:
       '@neutrino/markdown':
         specifier: workspace:*
         version: link:../../packages/markdown
+      '@neutrino/preferences':
+        specifier: workspace:*
+        version: link:../../packages/preferences
       '@neutrino/search':
         specifier: workspace:*
         version: link:../../packages/search
@@ -564,6 +567,9 @@ importers:
 
   web/packages/layout:
     dependencies:
+      '@neutrino/preferences':
+        specifier: workspace:*
+        version: link:../preferences
       '@neutrino/tokens':
         specifier: workspace:*
         version: link:../tokens
@@ -601,6 +607,16 @@ importers:
       fake-indexeddb:
         specifier: ^6.0.0
         version: 6.2.5
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  web/packages/preferences:
+    dependencies:
+      react:
+        specifier: ^18.3.0
+        version: 18.3.1
+    devDependencies:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3

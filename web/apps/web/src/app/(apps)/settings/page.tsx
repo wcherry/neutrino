@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -23,13 +23,8 @@ import { ThemeGrid } from '@/components/theme/ThemeGrid';
 import { rebuildSearchIndex } from '@/lib/searchIndexer';
 import { APP_VERSION, BUILD_ID } from '@/lib/version';
 import { forceUploadSnapshot } from '@/lib/searchIndexSnapshot';
-import {
-  WEEK_START_KEY,
-  DAY_START_HOUR_KEY,
-  DAY_END_HOUR_KEY,
-  DEFAULT_DAY_START_HOUR,
-  DEFAULT_DAY_END_HOUR,
-} from '../calendar/constants';
+import { usePreference } from '@neutrino/preferences';
+import { SettingsSearch } from './SettingsSearch';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -67,7 +62,6 @@ const PROVIDER_DESCRIPTIONS: Record<ConnectionProvider, string> = {
 };
 
 /** Read by `useSearchIndexSync` to skip the periodic background index sync. */
-const SEARCH_SYNC_DISABLED_KEY = 'neutrino:search:syncDisabled';
 
 /**
  * Where each provider hands out an API key.
@@ -220,12 +214,22 @@ const qc = useQueryClient();
   const [aiProvider, setAiProvider] = useState<AiSettings['provider']>(aiSettings.provider);
   const [aiApiKey, setAiApiKey] = useState(aiSettings.apiKey);
   const [aiSaved, setAiSaved] = useState(false);
+  // The form is a draft over the stored settings. Those arrive after mount — the key is sealed in
+  // the preference vault, which opens a moment after the page loads — and can change from another
+  // device, so the draft follows them until the user starts editing it.
+  const aiDraftEdited = useRef(false);
+  useEffect(() => {
+    if (aiDraftEdited.current) return;
+    setAiProvider(aiSettings.provider);
+    setAiApiKey(aiSettings.apiKey);
+  }, [aiSettings.provider, aiSettings.apiKey]);
 
   // ── Photos settings ──────────────────────────────────────────────────────────
   const { autoFaceDetect, setAutoFaceDetect } = usePhotoSettings();
 
   function handleAiSave() {
     setAiSettings({ provider: aiProvider, apiKey: aiApiKey });
+    aiDraftEdited.current = false;
     setAiSaved(true);
     setTimeout(() => setAiSaved(false), 2000);
   }
@@ -260,15 +264,16 @@ const qc = useQueryClient();
   const [keyFingerprint, setKeyFingerprint] = useState('');
 
   // ── Advanced state ─────────────────────────────────────────────────────────
-  const [searchSyncDisabled, setSearchSyncDisabled] = useState<boolean>(false);
+  const [searchSyncDisabled, setSearchSyncDisabled] = usePreference('search.syncDisabled');
   const [rebuildingIndex, setRebuildingIndex] = useState(false);
   const [rebuildProgress, setRebuildProgress] = useState<{ done: number; total: number } | null>(null);
 
   // ── Calendar state ─────────────────────────────────────────────────────────
   const { success: toastSuccess, error: toastError } = useToast();
-  const [weekStart, setWeekStart] = useState<number>(0);
-  const [dayStartHour, setDayStartHourState] = useState<number>(DEFAULT_DAY_START_HOUR);
-  const [dayEndHour, setDayEndHourState] = useState<number>(DEFAULT_DAY_END_HOUR);
+  // Synced preferences (@neutrino/preferences); the calendar reads the same keys.
+  const [weekStart, setWeekStart] = usePreference('calendar.weekStart');
+  const [dayStartHour, setDayStartHourState] = usePreference('calendar.dayStartHour');
+  const [dayEndHour, setDayEndHourState] = usePreference('calendar.dayEndHour');
   const [showAppleModal, setShowAppleModal] = useState(false);
 
   /**
@@ -337,19 +342,6 @@ const qc = useQueryClient();
       cancelled = true;
     };
   }, [user, keyStatus]);
-
-  useEffect(() => {
-    const stored = localStorage.getItem(WEEK_START_KEY);
-    if (stored !== null) setWeekStart(Number(stored));
-
-    const storedStart = localStorage.getItem(DAY_START_HOUR_KEY);
-    if (storedStart !== null) setDayStartHourState(Number(storedStart));
-
-    const storedEnd = localStorage.getItem(DAY_END_HOUR_KEY);
-    if (storedEnd !== null) setDayEndHourState(Number(storedEnd));
-
-    setSearchSyncDisabled(localStorage.getItem(SEARCH_SYNC_DISABLED_KEY) === 'true');
-  }, []);
 
   async function handleExportKey() {
     if (!user) return;
@@ -434,19 +426,14 @@ const qc = useQueryClient();
 
   function handleWeekStartChange(value: number) {
     setWeekStart(value);
-    localStorage.setItem(WEEK_START_KEY, String(value));
   }
 
   function handleDayStartHourChange(value: number) {
-    const clamped = Math.min(value, dayEndHour - 1);
-    setDayStartHourState(clamped);
-    localStorage.setItem(DAY_START_HOUR_KEY, String(clamped));
+    setDayStartHourState(Math.min(value, dayEndHour - 1));
   }
 
   function handleDayEndHourChange(value: number) {
-    const clamped = Math.max(value, dayStartHour + 1);
-    setDayEndHourState(clamped);
-    localStorage.setItem(DAY_END_HOUR_KEY, String(clamped));
+    setDayEndHourState(Math.max(value, dayStartHour + 1));
   }
 
   const { data: connectionsData, isLoading: connectionsLoading } = useQuery({
@@ -563,7 +550,6 @@ const qc = useQueryClient();
 
   function handleSearchSyncToggle(disabled: boolean) {
     setSearchSyncDisabled(disabled);
-    localStorage.setItem(SEARCH_SYNC_DISABLED_KEY, String(disabled));
   }
 
   async function handleRebuildIndex() {
@@ -619,6 +605,9 @@ const qc = useQueryClient();
         </button>
         <h1 className={styles.heading}>Settings</h1>
 
+        {/* Generated from the preference registry: a new preference is findable when registered. */}
+        <SettingsSearch onOpenTab={setActiveTab} />
+
         {/* ── Tab bar ─────────────────────────────────────────────────── */}
         <div className={styles.tabBar}>
           {TABS.map((tab) => (
@@ -651,7 +640,7 @@ const qc = useQueryClient();
               <select
                 className={styles.formInput}
                 value={aiProvider}
-                onChange={(e) => setAiProvider(e.target.value as AiSettings['provider'])}
+                onChange={(e) => { aiDraftEdited.current = true; setAiProvider(e.target.value as AiSettings['provider']); }}
               >
                 <option value="gemini">Google Gemini (free tier available)</option>
                 <option value="claude">Anthropic Claude</option>
@@ -665,7 +654,7 @@ const qc = useQueryClient();
                 className={styles.formInput}
                 type="password"
                 value={aiApiKey}
-                onChange={(e) => setAiApiKey(e.target.value)}
+                onChange={(e) => { aiDraftEdited.current = true; setAiApiKey(e.target.value); }}
                 placeholder="Required"
                 autoComplete="off"
               />

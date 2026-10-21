@@ -22,13 +22,7 @@ import {
   type ReminderResponse,
 } from '@/lib/api';
 import type { CalendarResponse, UpdateCalendarRequest } from '@neutrino/api-calendar';
-import {
-  WEEK_START_KEY,
-  DAY_START_HOUR_KEY,
-  DAY_END_HOUR_KEY,
-  DEFAULT_DAY_START_HOUR,
-  DEFAULT_DAY_END_HOUR,
-} from './constants';
+import { usePreference } from '@neutrino/preferences';
 
 import type { View } from './calendarTypes';
 import {
@@ -94,36 +88,13 @@ export default function CalendarPage() {
   const calendarRouter = useNextRouter();
   const [view, setView] = useState<View>('month');
   const [cursor, setCursor] = useState(() => new Date());
-  const [startDay, setStartDay] = useState(0);
-  const [dayStartHour, setDayStartHour] = useState(DEFAULT_DAY_START_HOUR);
-  const [dayEndHour, setDayEndHour] = useState(DEFAULT_DAY_END_HOUR);
+  // Synced preferences (@neutrino/preferences): set in Settings → Calendar, on any device.
+  const [startDay] = usePreference('calendar.weekStart');
+  const [dayStartHour] = usePreference('calendar.dayStartHour');
+  const [dayEndHour] = usePreference('calendar.dayEndHour');
   const calendarAreaRef = useRef<HTMLDivElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  useEffect(() => {
-    const stored = localStorage.getItem(WEEK_START_KEY);
-    if (stored !== null) setStartDay(Number(stored));
-
-    const storedStart = localStorage.getItem(DAY_START_HOUR_KEY);
-    if (storedStart !== null) setDayStartHour(Number(storedStart));
-
-    const storedEnd = localStorage.getItem(DAY_END_HOUR_KEY);
-    if (storedEnd !== null) setDayEndHour(Number(storedEnd));
-
-    function onStorage(e: StorageEvent) {
-      if (e.key === WEEK_START_KEY && e.newValue !== null) {
-        setStartDay(Number(e.newValue));
-      }
-      if (e.key === DAY_START_HOUR_KEY && e.newValue !== null) {
-        setDayStartHour(Number(e.newValue));
-      }
-      if (e.key === DAY_END_HOUR_KEY && e.newValue !== null) {
-        setDayEndHour(Number(e.newValue));
-      }
-    }
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
 
   const [selectedEvent, setSelectedEvent] = useState<CalendarOccurrence | null>(null);
   const [viewingEvent, setViewingEvent] = useState<CalendarOccurrence | null>(null);

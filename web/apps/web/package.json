@@ -40,6 +40,7 @@
     "@neutrino/hooks": "workspace:*",
     "@neutrino/layout": "workspace:*",
     "@neutrino/markdown": "workspace:*",
+    "@neutrino/preferences": "workspace:*",
     "@neutrino/search": "workspace:*",
     "@neutrino/sheet-embed": "workspace:*",
     "@neutrino/tokens": "workspace:*",

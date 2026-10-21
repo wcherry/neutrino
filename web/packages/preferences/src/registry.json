@@ -1,9 +1,13 @@
 {
-  "$comment": "The one list of user preferences. agent_docs/preference-registry.md explains every entry; src/preferences/catalog.rs is the server's copy of the plain-tier entries, and a test there fails when the two disagree. sync: plain = server-readable and validated; vault = sealed in the browser with the user's key; device = never leaves this browser. paint = applied before first paint from the boot cache.",
+  "$comment": "The one list of user preferences. agent_docs/preference-registry.md explains every entry; src/preferences/catalog.rs is the server's copy of the plain-tier entries, and a test there fails when the two disagree. sync: plain = server-readable and validated; vault = sealed in the browser with the user's key; device = never leaves this browser. paint = applied before first paint from the boot cache. section: where the control lives — a Settings tab id (appearance, calendar, advanced, ai), an app or surface (docs, sheets, slides, diagrams, drawing, photos, editors, sidebar), or none while it has no control yet. Settings search is built from it.",
   "preferences": [
     {
       "key": "appearance.theme",
-      "type": { "kind": "string", "maxLength": 80, "pattern": "^(system|light|dark|glass|midnight|beach|forest|sunbeams|light-glass|custom-[A-Za-z0-9_-]{1,64})$" },
+      "type": {
+        "kind": "string",
+        "maxLength": 80,
+        "pattern": "^(system|light|dark|glass|midnight|beach|forest|sunbeams|light-glass|custom-[A-Za-z0-9_-]{1,64})$"
+      },
       "default": "system",
       "sync": "plain",
       "paint": true,
@@ -13,35 +17,56 @@
     },
     {
       "key": "appearance.look",
-      "type": { "kind": "enum", "options": ["classic", "lightflow", "precision", "blended"] },
+      "type": {
+        "kind": "enum",
+        "options": [
+          "classic",
+          "lightflow",
+          "precision",
+          "blended"
+        ]
+      },
       "default": "classic",
       "sync": "plain",
       "paint": true,
       "label": "Look",
-      "section": "appearance"
+      "section": "none"
     },
     {
       "key": "appearance.density",
-      "type": { "kind": "enum", "options": ["compact", "comfortable", "spacious"] },
+      "type": {
+        "kind": "enum",
+        "options": [
+          "compact",
+          "comfortable",
+          "spacious"
+        ]
+      },
       "default": "comfortable",
       "sync": "plain",
       "paint": true,
       "label": "Density",
-      "section": "appearance"
+      "section": "none"
     },
     {
       "key": "shell.sidebarCollapsed",
-      "type": { "kind": "boolean" },
+      "type": {
+        "kind": "boolean"
+      },
       "default": false,
       "sync": "device",
       "paint": true,
       "label": "Collapse the sidebar",
-      "section": "appearance",
+      "section": "sidebar",
       "legacyKey": "neutrino.sidebar.collapsed"
     },
     {
       "key": "calendar.weekStart",
-      "type": { "kind": "integer", "min": 0, "max": 6 },
+      "type": {
+        "kind": "integer",
+        "min": 0,
+        "max": 6
+      },
       "default": 0,
       "sync": "plain",
       "label": "Week starts on",
@@ -50,7 +75,11 @@
     },
     {
       "key": "calendar.dayStartHour",
-      "type": { "kind": "integer", "min": 0, "max": 23 },
+      "type": {
+        "kind": "integer",
+        "min": 0,
+        "max": 23
+      },
       "default": 8,
       "sync": "plain",
       "label": "Working day starts",
@@ -59,7 +88,11 @@
     },
     {
       "key": "calendar.dayEndHour",
-      "type": { "kind": "integer", "min": 1, "max": 24 },
+      "type": {
+        "kind": "integer",
+        "min": 1,
+        "max": 24
+      },
       "default": 20,
       "sync": "plain",
       "label": "Working day ends",
@@ -68,59 +101,54 @@
     },
     {
       "key": "docs.spellCheck",
-      "type": { "kind": "boolean" },
+      "type": {
+        "kind": "boolean"
+      },
       "default": true,
       "sync": "plain",
       "label": "Check spelling as you type",
-      "section": "general",
+      "section": "editors",
       "legacyKey": "neutrino.spellCheck"
     },
     {
       "key": "docs.splitParagraphs",
-      "type": { "kind": "boolean" },
+      "type": {
+        "kind": "boolean"
+      },
       "default": false,
       "sync": "plain",
       "label": "Let paragraphs break across pages",
-      "section": "general",
+      "section": "docs",
       "legacyKey": "neutrino:docs:splitParagraphs"
     },
     {
       "key": "photos.autoFaceDetect",
-      "type": { "kind": "boolean" },
+      "type": {
+        "kind": "boolean"
+      },
       "default": false,
       "sync": "plain",
       "label": "Detect faces in new photos automatically",
-      "section": "general",
+      "section": "advanced",
       "legacyKey": "neutrino:photos:autoFaceDetect"
     },
     {
       "key": "drawing.brush",
-      "type": { "kind": "object", "maxBytes": 4096 },
+      "type": {
+        "kind": "object",
+        "maxBytes": 4096
+      },
       "default": null,
       "sync": "plain",
       "label": "Drawing brush",
-      "section": "general",
+      "section": "drawing",
       "legacyKey": "neutrino:drawing:brush"
     },
     {
-      "key": "diagrams.shapeLibraries.hidden",
-      "type": { "kind": "stringList", "maxItems": 200, "maxLength": 200 },
-      "default": [],
-      "sync": "plain",
-      "label": "Hidden shape libraries",
-      "section": "general"
-    },
-    {
-      "key": "diagrams.shapeLibraries.order",
-      "type": { "kind": "stringList", "maxItems": 200, "maxLength": 200 },
-      "default": [],
-      "sync": "plain",
-      "label": "Shape library order",
-      "section": "general"
-    },
-    {
       "key": "search.syncDisabled",
-      "type": { "kind": "boolean" },
+      "type": {
+        "kind": "boolean"
+      },
       "default": false,
       "sync": "device",
       "label": "Don't sync the search index from this device",
@@ -129,7 +157,14 @@
     },
     {
       "key": "ai.provider",
-      "type": { "kind": "enum", "options": ["gemini", "claude", "openai"] },
+      "type": {
+        "kind": "enum",
+        "options": [
+          "gemini",
+          "claude",
+          "openai"
+        ]
+      },
       "default": "gemini",
       "sync": "plain",
       "label": "AI provider",
@@ -137,7 +172,10 @@
     },
     {
       "key": "ai.apiKey",
-      "type": { "kind": "string", "maxLength": 512 },
+      "type": {
+        "kind": "string",
+        "maxLength": 512
+      },
       "default": "",
       "sync": "vault",
       "label": "AI API key",
@@ -145,65 +183,80 @@
     },
     {
       "key": "library.sheets.cfTemplates",
-      "type": { "kind": "list" },
+      "type": {
+        "kind": "list"
+      },
       "default": [],
       "sync": "vault",
       "label": "Conditional-format templates",
-      "section": "general",
+      "section": "sheets",
       "legacyKey": "neutrino:sheets:cf-templates"
     },
     {
       "key": "library.sheets.cfVariables",
-      "type": { "kind": "list" },
+      "type": {
+        "kind": "list"
+      },
       "default": [],
       "sync": "vault",
       "label": "Conditional-format variables",
-      "section": "general",
+      "section": "sheets",
       "legacyKey": "neutrino:sheets:cf-variables"
     },
     {
       "key": "library.fill.slides",
-      "type": { "kind": "list" },
+      "type": {
+        "kind": "list"
+      },
       "default": [],
       "sync": "vault",
       "label": "Saved gradients (Slides)",
-      "section": "general",
+      "section": "slides",
       "legacyKey": "neutrino:slides:gradientPresets"
     },
     {
       "key": "library.fill.diagrams",
-      "type": { "kind": "list" },
+      "type": {
+        "kind": "list"
+      },
       "default": [],
       "sync": "vault",
       "label": "Saved gradients (Diagrams)",
-      "section": "general",
+      "section": "diagrams",
       "legacyKey": "neutrino:diagrams:gradientPresets"
     },
     {
       "key": "library.fill.drawing",
-      "type": { "kind": "list" },
+      "type": {
+        "kind": "list"
+      },
       "default": [],
       "sync": "vault",
       "label": "Saved fills (Drawing)",
-      "section": "general",
+      "section": "drawing",
       "legacyKey": "neutrino:drawing:fillPresets"
     },
     {
       "key": "library.fill.default",
-      "type": { "kind": "list" },
+      "type": {
+        "kind": "list"
+      },
       "default": [],
       "sync": "vault",
       "label": "Saved gradients",
-      "section": "general",
+      "section": "photos",
       "legacyKey": "neutrino:bg:gradientPresets"
     },
     {
-      "key": "library.diagrams.customShapeLibraries",
-      "type": { "kind": "list" },
-      "default": [],
+      "key": "library.diagrams.shapeLibraries",
+      "type": {
+        "kind": "json"
+      },
+      "default": null,
       "sync": "vault",
-      "label": "Custom shape libraries",
-      "section": "general"
+      "label": "Shape libraries (Diagrams)",
+      "section": "diagrams",
+      "legacyKey": "neutrino:diagrams:shapeLibraries"
     }
   ]
 }

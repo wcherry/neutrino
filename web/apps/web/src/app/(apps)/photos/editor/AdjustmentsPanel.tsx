@@ -9,6 +9,7 @@ import type { Adjustments, PhotoFilter, Tool, CloneStampSettings, TextSettings, 
 import type { DetectedObject, SmartEraseTarget, BlurAnalysis } from '@neutrino/api-photos';
 import { DEFAULT_ADJUSTMENTS, FILTER_LABELS, FILTER_PREVIEW_CSS } from './types';
 import styles from './page.module.css';
+import { useLibrary } from '@neutrino/preferences';
 
 const ALL_FILTERS: PhotoFilter[] = ['none', 'grayscale', 'sepia', 'vintage', 'hdr', 'bw'];
 
@@ -202,6 +203,8 @@ export function AdjustmentsPanel({
   onRemoveObjects,
   onSmartEraseClear,
 }: AdjustmentsPanelProps) {
+  // The picker's saved gradients, synced like every other library (the preference vault).
+  const [fillPresets, setFillPresets] = useLibrary('library.fill.default');
 
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrResult, setOcrResult] = useState<string | null>(null);
@@ -352,6 +355,8 @@ export function AdjustmentsPanel({
                 background={bgReplaceFill}
                 onChange={onBgReplaceFillChange}
                 triggerLabel=""
+                presets={fillPresets as string[]}
+                onPresetsChange={setFillPresets}
               />
               <button
                 className={styles.bgReplaceBtn}

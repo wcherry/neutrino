@@ -12,6 +12,7 @@ import {
 } from '@/lib/driveImages';
 import type { ShapeFill, ShapeStyle } from '../types';
 import { representativeColor, shapeFillOf } from './utils/shapeFill';
+import { useLibrary } from '@neutrino/preferences';
 
 const DRIVE_IMAGE_PAGE = 200;
 
@@ -33,6 +34,8 @@ export interface DiagramFillPickerProps {
  * picked one into a stored value are the caller's to supply.
  */
 export function DiagramFillPicker({ style, onChange }: DiagramFillPickerProps) {
+  // Saved gradients follow the user across devices (the preference vault).
+  const [fillPresets, setFillPresets] = useLibrary('library.fill.diagrams');
   const fetchDriveImages = useCallback(async (): Promise<DriveImageItem[]> => {
     const { items } = await storageApi.listFiles({
       limit: DRIVE_IMAGE_PAGE,
@@ -80,7 +83,8 @@ export function DiagramFillPicker({ style, onChange }: DiagramFillPickerProps) {
     <FillPicker
       background={shapeFillOf(style) as Background}
       onChange={handleChange}
-      presetsKey="neutrino:diagrams:gradientPresets"
+      presets={fillPresets as string[]}
+      onPresetsChange={setFillPresets}
       triggerLabel=""
       showAlpha
       onFetchDriveImages={fetchDriveImages}
