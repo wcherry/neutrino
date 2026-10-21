@@ -1,0 +1,57 @@
+.root {
+  min-height: 130px;
+}
+
+/* A note's page at card size: small type, the editor's line spacing. The
+   zoom slider scales this as a whole, so sizes here are the 100% view. */
+.page {
+  padding: var(--space-3);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 130px;
+  color: var(--color-orange, #ea580c);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-3);
+  font-size: 11px;
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3);
+}
+
+.skeleton span {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-bg-subtle);
+}
+
+.skeleton span:nth-child(2) { width: 85%; }
+.skeleton span:nth-child(3) { width: 92%; }
+.skeleton span:nth-child(4) { width: 60%; }
+
+/* The shared block styles are sized for the modal's 14px text; at card size
+   the code block's rem font and padding would dwarf the prose around it. */
+.page pre {
+  font-size: 0.9em;
+  padding: var(--space-1) var(--space-2);
+}
+
+.page blockquote {
+  padding: var(--space-1) var(--space-2);
+}
