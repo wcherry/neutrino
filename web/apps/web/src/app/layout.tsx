@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import '@neutrino/ui/styles';
+import './fonts';
 import { ToastProvider } from '@neutrino/ui';
 import { AuthProvider } from '@neutrino/auth';
 import { QueryProvider } from '@/providers/QueryProvider';
@@ -39,12 +40,6 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var v=['light','dark','system','glass','midnight','beach','forest','sunbeams','light-glass'];var t=localStorage.getItem('neutrino.theme')||'system';if(v.indexOf(t)<0&&t.indexOf('custom-')!==0)t='system';var r=t==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;document.documentElement.setAttribute('data-theme',r);}catch(e){}})();`,
           }}
-        />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Open+Sans:wght@400;600;700&family=Lato:wght@400;700&family=Playfair+Display:wght@400;700&display=swap"
-          rel="stylesheet"
         />
         <link rel="manifest" href="/manifest.json" />
       </head>
