@@ -36,6 +36,7 @@ COPY web/packages/hooks/package.json web/packages/hooks/package.json
 COPY web/packages/layout/package.json web/packages/layout/package.json
 COPY web/packages/markdown/package.json web/packages/markdown/package.json
 COPY web/packages/offline/package.json web/packages/offline/package.json
+COPY web/packages/preferences/package.json web/packages/preferences/package.json
 COPY web/packages/search/package.json web/packages/search/package.json
 COPY web/packages/sheet-embed/package.json web/packages/sheet-embed/package.json
 COPY web/packages/tokens/package.json web/packages/tokens/package.json
