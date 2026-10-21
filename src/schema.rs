@@ -1142,6 +1142,25 @@ diesel::table! {
     }
 }
 
+// ── Preferences ──────────────────────────────────────────────────────────────
+
+diesel::table! {
+    user_preferences (user_id, key) {
+        user_id -> Text,
+        key -> Text,
+        value -> Text,
+        updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    user_preference_vault (user_id) {
+        user_id -> Text,
+        blob -> Text,
+        updated_at -> Text,
+    }
+}
+
 // ── Joinable relationships ────────────────────────────────────────────────────
 
 // Auth
@@ -1151,6 +1170,10 @@ diesel::joinable!(user_key_unlocks -> users (user_id));
 
 // Themes
 diesel::joinable!(custom_themes -> users (user_id));
+
+// Preferences
+diesel::joinable!(user_preferences -> users (user_id));
+diesel::joinable!(user_preference_vault -> users (user_id));
 
 // Search
 diesel::joinable!(search_index_snapshots -> users (user_id));
@@ -1283,6 +1306,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     custom_fonts,
     // Themes
     custom_themes,
+    // Preferences
+    user_preferences,
+    user_preference_vault,
     // Key vault
     user_key_vaults,
     user_key_unlocks,

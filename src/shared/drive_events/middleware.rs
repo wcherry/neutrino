@@ -56,11 +56,20 @@ pub fn changes_calendar(path: &str) -> bool {
 }
 
 /// Which signal, if any, a successful write at `path` calls for.
+/// Whether a successful write at `path` changed the user's synced preferences or vault. Every
+/// such write is a deliberate user action (a setting changed), never a timer.
+pub fn changes_preferences(path: &str) -> bool {
+    path.strip_prefix("/api/v1/")
+        .is_some_and(|rest| matches_area(rest, "preferences"))
+}
+
 fn signal_for(path: &str) -> Option<SignalKind> {
     if changes_drive_listing(path) {
         Some(SignalKind::Drive)
     } else if changes_calendar(path) {
         Some(SignalKind::Calendar)
+    } else if changes_preferences(path) {
+        Some(SignalKind::Preferences)
     } else {
         None
     }
@@ -529,6 +538,15 @@ mod tests {
         );
         assert_eq!(signal_for("/api/v1/calendarish"), None);
         assert_eq!(signal_for("/api/v1/ai/complete"), None);
+    }
+
+    #[test]
+    fn preference_writes_signal_preferences_and_nothing_else() {
+        for path in ["/api/v1/preferences", "/api/v1/preferences/vault"] {
+            assert_eq!(signal_for(path), Some(SignalKind::Preferences), "{path}");
+        }
+        assert_eq!(signal_for("/api/v1/preferencesx"), None);
+        assert_eq!(SignalKind::Preferences.wire_type(), "preferences.changed");
     }
 
     /// The area match is on a path segment, not a string prefix, so a future top-level route whose

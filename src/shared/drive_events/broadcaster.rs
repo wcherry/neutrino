@@ -11,12 +11,17 @@ pub const DRIVE_CHANGED_TYPE: &str = "drive.changed";
 /// The `type` of the calendar's signal: an event, reminder or task changed.
 pub const CALENDAR_CHANGED_TYPE: &str = "calendar.changed";
 
+/// The `type` of the preferences signal: the user's synced preferences or vault changed, so their
+/// other devices re-read them (`src/preferences/`).
+pub const PREFERENCES_CHANGED_TYPE: &str = "preferences.changed";
+
 /// Which part of the user's data a signal is about. Each is rate-limited on its own, so a burst of
 /// calendar writes can never swallow the drive signal a folder listing is waiting for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SignalKind {
     Drive,
     Calendar,
+    Preferences,
 }
 
 impl SignalKind {
@@ -24,6 +29,7 @@ impl SignalKind {
         match self {
             SignalKind::Drive => DRIVE_CHANGED_TYPE,
             SignalKind::Calendar => CALENDAR_CHANGED_TYPE,
+            SignalKind::Preferences => PREFERENCES_CHANGED_TYPE,
         }
     }
 }

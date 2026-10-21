@@ -34,6 +34,7 @@ mod photos;
 mod schema;
 mod search;
 mod shared;
+mod preferences;
 mod sheets;
 mod slides;
 mod themes;
@@ -1124,6 +1125,18 @@ async fn main() -> std::io::Result<()> {
         service: themes_service,
     });
 
+    // ── Preferences ───────────────────────────────────────────────────────────
+    //
+    // Synced user preferences: the validated plain tier and the sealed vault
+    // (agent_docs/ui-customization-roadmap.md §3.2).
+
+    use preferences::repository::PreferencesRepository;
+    use preferences::service::PreferencesService;
+
+    let preferences_state = web::Data::new(preferences::api::PreferencesApiState {
+        service: Arc::new(PreferencesService::new(Arc::new(PreferencesRepository::new(pool.clone())))),
+    });
+
     // ── Search index sync ─────────────────────────────────────────────────────
     //
     // No server-side search: this only stores the encrypted index snapshot a
@@ -1236,6 +1249,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(diagrams::ai::api::DiagramsAIApiDoc::openapi());
         doc.merge(oauth::api::OauthApiDoc::openapi());
         doc.merge(themes::api::ThemesApiDoc::openapi());
+        doc.merge(preferences::api::PreferencesApiDoc::openapi());
         doc.merge(search::api::SearchApiDoc::openapi());
         doc
     };
@@ -1333,6 +1347,8 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(private_lib_state.clone())
             // Themes
             .app_data(themes_state.clone())
+            // Preferences
+            .app_data(preferences_state.clone())
             // Search
             .app_data(search_state.clone())
             // Middleware — actix runs these in reverse registration order, so `Compress` sits
@@ -1365,6 +1381,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     .configure(oauth::api::configure)
                     .configure(drive::fonts::api::configure_public)
                     .configure(themes::api::configure)
+                    .configure(preferences::api::configure)
                     .configure(search::api::configure)
                     .configure(calendar::configure)
                     .configure(docs::configure)
