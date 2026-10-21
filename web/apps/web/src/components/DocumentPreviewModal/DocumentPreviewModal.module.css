@@ -126,7 +126,7 @@
 }
 
 .docContent blockquote {
-  border-left: 3px solid var(--color-border-strong, #9ca3af);
+  border-left: 3px solid var(--color-border-strong);
   margin: var(--space-3) 0;
   padding: var(--space-2) var(--space-4);
   color: var(--color-text-muted);
@@ -340,7 +340,7 @@
 }
 
 .noteBlockQuote {
-  border-left: 3px solid var(--color-border-strong, #9ca3af);
+  border-left: 3px solid var(--color-border-strong);
   margin: 0 0 var(--space-2);
   padding: var(--space-2) var(--space-4);
   color: var(--color-text-muted);
@@ -358,7 +358,7 @@
   flex-shrink: 0;
   width: 14px;
   height: 14px;
-  border: 1.5px solid var(--color-border-strong, #9ca3af);
+  border: 1.5px solid var(--color-border-strong);
   border-radius: 3px;
   margin-top: 4px;
   background: transparent;

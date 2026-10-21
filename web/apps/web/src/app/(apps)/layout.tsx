@@ -42,6 +42,7 @@ import { BUG_REPORT_URL } from '@/lib/bugReport';
 import { signInHref } from '@/lib/signInRedirect';
 import { FULL_VERSION_LABEL, VERSION_LABEL } from '@/lib/version';
 import { clearDriveImageCache } from '@/lib/driveImages';
+import { appForPath } from '@/lib/appForPath';
 
 /** Search hits carry an icon *component* so Drive can size it its own way. */
 function toTopbarResult(hit: SearchHit): TopbarSearchResult {
@@ -139,6 +140,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // here, above every route, because no listing page owns its own refresh — see
   // `lib/driveLiveUpdates.ts`.
   useDriveLiveUpdates({ connected });
+
+  // The anti-FOUC script set `data-app` for the page that loaded; a client-side
+  // navigation into another app changes it here (lib/appForPath.ts).
+  useEffect(() => {
+    document.documentElement.setAttribute('data-app', appForPath(pathname));
+  }, [pathname]);
 
   async function handleUpload(files: FileList) {
     const fileArr = Array.from(files);

@@ -15,14 +15,14 @@
   background: none;
   border-radius: var(--radius-md, 6px);
   cursor: pointer;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   transition: background 0.1s, color 0.1s;
 }
 
 .btn:hover,
 .btnOpen {
-  background: var(--color-bg-hover, #f1f3f4);
-  color: var(--color-text, #202124);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 /* ── Dropdown panel ── */
@@ -31,8 +31,8 @@
   top: calc(100% + 6px);
   left: 0;
   z-index: 300;
-  background: var(--color-bg, #ffffff);
-  border: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
   width: 200px;
@@ -43,7 +43,7 @@
 /* ── Separator ── */
 .sep {
   height: 1px;
-  background: var(--color-border, #e0e0e0);
+  background: var(--color-border);
   margin: 4px 0;
 }
 
@@ -58,7 +58,7 @@
   border: none;
   background: none;
   font-size: 13px;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   cursor: pointer;
   text-align: left;
   transition: background 0.1s;
@@ -66,11 +66,11 @@
 }
 
 .item:hover:not(:disabled) {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 .item:disabled {
-  color: var(--color-text-muted, #c0c4c8);
+  color: var(--color-text-muted);
   cursor: default;
 }
 
@@ -85,7 +85,7 @@
 /* ── Shortcut label ── */
 .shortcut {
   font-size: 11px;
-  color: var(--color-text-muted, #9aa0a6);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
@@ -97,7 +97,7 @@
 }
 
 .submenuArrow {
-  color: var(--color-text-muted, #9aa0a6);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
@@ -106,8 +106,8 @@
   top: -6px;
   left: calc(100% + 2px);
   z-index: 310;
-  background: var(--color-bg, #ffffff);
-  border: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
   min-width: 220px;

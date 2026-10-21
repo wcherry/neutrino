@@ -2,8 +2,8 @@
   display: flex;
   align-items: center;
   height: 36px;
-  background: var(--color-surface, #fff);
-  border-top: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
   padding: 0 4px;
   flex-shrink: 0;
   overflow: hidden;
@@ -30,7 +30,7 @@
 .zoomDivider {
   width: 1px;
   height: 20px;
-  background: var(--color-border, #e2e8f0);
+  background: var(--color-border);
 }
 
 .fitBtn {
@@ -43,14 +43,14 @@
   background: none;
   border-radius: 4px;
   cursor: pointer;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
   transition: background 0.1s, color 0.1s;
 }
 
 .fitBtn:hover {
-  background: var(--color-bg-hover, #f1f5f9);
-  color: var(--color-text, #1e293b);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 .tab {
@@ -62,7 +62,7 @@
   border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   border: 1px solid transparent;
   transition: background 0.1s, color 0.1s;
@@ -70,14 +70,14 @@
 }
 
 .tab:hover {
-  background: var(--color-bg-hover, #f1f5f9);
-  color: var(--color-text, #1e293b);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 .tab.active {
-  background: var(--color-primary-light, #eff6ff);
-  color: var(--color-primary, #2563eb);
-  border-color: var(--color-primary-light, #dbeafe);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-color: var(--color-primary-light);
   font-weight: 500;
 }
 
@@ -91,7 +91,7 @@
   width: 80px;
   height: 20px;
   padding: 0 4px;
-  border: 1px solid var(--color-primary, #2563eb);
+  border: 1px solid var(--color-primary);
   border-radius: 3px;
   font-size: 12px;
   outline: none;
@@ -108,7 +108,7 @@
   background: none;
   border-radius: 3px;
   cursor: pointer;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   opacity: 0;
   transition: opacity 0.1s, background 0.1s;
   flex-shrink: 0;
@@ -121,7 +121,7 @@
 
 .removeBtn:hover {
   background: var(--color-error-light, #fee2e2);
-  color: var(--color-error, #ef4444);
+  color: var(--color-error);
 }
 
 .addBtn {
@@ -130,15 +130,15 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px dashed var(--color-border, #e2e8f0);
+  border: 1px dashed var(--color-border);
   background: none;
   border-radius: 5px;
   cursor: pointer;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
 .addBtn:hover {
-  border-color: var(--color-primary, #2563eb);
-  color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }

@@ -123,7 +123,7 @@
 }
 
 .bgUploadBtn:hover {
-  background: var(--color-accent-subtle, #ede9fe);
+  background: var(--color-accent-subtle);
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
@@ -169,7 +169,7 @@
 }
 
 .imgSourceBtnActive {
-  background: var(--color-accent-subtle, #ede9fe);
+  background: var(--color-accent-subtle);
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
@@ -204,7 +204,7 @@
 
 .driveThumbActive {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px var(--color-accent-subtle, #ede9fe);
+  box-shadow: 0 0 0 2px var(--color-accent-subtle);
 }
 
 .driveThumbImg {
@@ -260,7 +260,7 @@
 
 .gradPresetSwatch:hover {
   transform: scale(1.1);
-  box-shadow: 0 0 0 2px var(--color-accent-subtle, #ede9fe);
+  box-shadow: 0 0 0 2px var(--color-accent-subtle);
 }
 
 .gradPresetSwatchActive {
@@ -363,7 +363,7 @@
 }
 
 .gradTypeBtnActive {
-  background: var(--color-accent-subtle, #ede9fe);
+  background: var(--color-accent-subtle);
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
@@ -404,7 +404,7 @@
 }
 
 .gradDirBtnActive {
-  background: var(--color-accent-subtle, #ede9fe);
+  background: var(--color-accent-subtle);
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
@@ -464,7 +464,7 @@
 }
 
 .gradStopSwatch:hover {
-  box-shadow: 0 0 0 2px var(--color-accent-subtle, #ede9fe);
+  box-shadow: 0 0 0 2px var(--color-accent-subtle);
 }
 
 .gradStopSlider {

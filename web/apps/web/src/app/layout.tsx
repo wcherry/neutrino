@@ -10,6 +10,7 @@ import { CustomFontsProvider } from '@/providers/CustomFontsProvider';
 import { CustomThemesProvider } from '@/providers/CustomThemesProvider';
 import { E2ECryptoExpose } from '@/components/E2ECryptoExpose';
 import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
+import { APP_IDS } from '@/lib/appForPath';
 
 export const metadata: Metadata = {
   title: {
@@ -33,12 +34,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" data-app="drive" suppressHydrationWarning>
+    // `data-look` and `data-density` are the look-and-feel axes beside
+    // `data-theme` (packages/tokens/src/looks.css, density.css); classic and
+    // comfortable are today's UI until the preference registry sets them.
+    <html lang="en" data-app="drive" data-look="classic" data-density="comfortable" suppressHydrationWarning>
       <head>
-        {/* Anti-FOUC: resolves and applies theme before first paint */}
+        {/* Anti-FOUC: resolves and applies the theme, and the app the route belongs to, before first paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var v=['light','dark','system','glass','midnight','beach','forest','sunbeams','light-glass'];var t=localStorage.getItem('neutrino.theme')||'system';if(v.indexOf(t)<0&&t.indexOf('custom-')!==0)t='system';var r=t==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;document.documentElement.setAttribute('data-theme',r);}catch(e){}})();`,
+            __html: `(function(){try{var v=['light','dark','system','glass','midnight','beach','forest','sunbeams','light-glass'];var t=localStorage.getItem('neutrino.theme')||'system';if(v.indexOf(t)<0&&t.indexOf('custom-')!==0)t='system';var r=t==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;document.documentElement.setAttribute('data-theme',r);}catch(e){}try{var a=${JSON.stringify(APP_IDS)};var s=location.pathname.split('/').filter(Boolean)[0]||'';document.documentElement.setAttribute('data-app',a.indexOf(s)>=0?s:'drive');}catch(e){}})();`,
           }}
         />
         <link rel="manifest" href="/manifest.json" />

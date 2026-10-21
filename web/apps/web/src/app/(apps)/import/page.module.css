@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface);
 }
 
 .header {
@@ -23,26 +23,26 @@
   border: none;
   background: transparent;
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.15s;
 }
 
 .backBtn:hover {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
 }
 
 .heading {
   font-size: 20px;
   font-weight: 700;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   margin: 0;
 }
 
 .subheading {
   margin: 0;
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   max-width: 640px;
 }
 
@@ -70,25 +70,25 @@
   gap: 10px;
   padding: 40px;
   justify-content: center;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   font-size: 14px;
-  border: 1px dashed var(--color-border, #e5e7eb);
+  border: 1px dashed var(--color-border);
   border-radius: 8px;
 }
 
 /* ── Help ────────────────────────────────────────────────────────────────── */
 .helpBox {
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 16px 20px;
-  background: var(--color-bg-subtle, #f9fafb);
+  background: var(--color-bg-subtle);
 }
 
 .helpHeading {
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .helpList {
@@ -96,13 +96,13 @@
   padding-left: 18px;
   font-size: 13px;
   line-height: 1.7;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .helpNote {
   margin: 12px 0 0;
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .mono {
@@ -115,26 +115,26 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 14px 16px;
 }
 
 .archiveIcon {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
 .archiveName {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   word-break: break-all;
 }
 
 .archiveMeta {
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin-top: 2px;
 }
 
@@ -142,7 +142,7 @@
   margin-left: auto;
   border: none;
   background: transparent;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: pointer;
   padding: 4px;
   border-radius: 4px;
@@ -152,8 +152,8 @@
 }
 
 .clearBtn:hover {
-  background: var(--color-bg-subtle, #f3f4f6);
-  color: var(--color-text, #111827);
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
 }
 
 /* ── Detected product ────────────────────────────────────────────────────── */
@@ -167,7 +167,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--color-primary, #2563eb);
+  border: 1px solid var(--color-primary);
   border-radius: 8px;
   padding: 14px 16px;
   background: var(--color-primary-subtle, rgb(37 99 235 / 6%));
@@ -175,17 +175,17 @@
 
 /* A product the user has switched off: still listed, visibly not taking part. */
 .productRowOff {
-  border-color: var(--color-border, #e5e7eb);
+  border-color: var(--color-border);
   background: transparent;
 }
 
 .productRowOff .productIcon,
 .productRowOff .productName {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .productIcon {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   flex-shrink: 0;
 }
 
@@ -204,12 +204,12 @@
 .productName {
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .productDest {
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Options ─────────────────────────────────────────────────────────────── */
@@ -228,7 +228,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .actions {
@@ -243,7 +243,7 @@
   flex-direction: column;
   gap: 12px;
   align-items: flex-start;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 20px;
 }
@@ -254,7 +254,7 @@
 
 .progressCurrent {
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   min-height: 18px;
   overflow-wrap: anywhere;
 }
@@ -267,26 +267,26 @@
 }
 
 .resultIcon {
-  color: var(--color-success, #16a34a);
+  color: var(--color-success);
   flex-shrink: 0;
 }
 
 .resultTitle {
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
 }
 
 .resultCounts {
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   margin-top: 2px;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -299,8 +299,8 @@
   gap: 12px;
   min-height: 38px;
   padding: 4px 8px 4px 14px;
-  background: var(--color-bg-subtle, #f9fafb);
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-bg-subtle);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .listHeading {
@@ -309,7 +309,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .listRow {
@@ -319,7 +319,7 @@
   gap: 16px;
   padding: 8px 14px;
   font-size: 13px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .listRow:last-child {
@@ -328,12 +328,12 @@
 
 .listTitle {
   flex: 1 1 auto;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   overflow-wrap: anywhere;
 }
 
 .listReason {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
   text-align: right;
 }
@@ -346,20 +346,20 @@
   flex-shrink: 0;
   padding: 3px 8px;
   font-size: 12px;
-  color: var(--color-text-secondary, #6b7280);
-  background: var(--color-bg, #ffffff);
-  border: 1px solid var(--color-border, #e5e7eb);
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .retryBtn:hover {
-  color: var(--color-primary, #2563eb);
-  border-color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .details {
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -368,14 +368,14 @@
   padding: 10px 14px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   cursor: pointer;
-  background: var(--color-bg-subtle, #f9fafb);
+  background: var(--color-bg-subtle);
 }
 
 .details .list {
   border: none;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
   border-radius: 0;
   max-height: 320px;
   overflow-y: auto;

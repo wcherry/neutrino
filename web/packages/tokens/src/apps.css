@@ -1,0 +1,52 @@
+/*
+ * Brand and per-app identity colours (look-and-feel roadmap §2, "Colour").
+ *
+ * `data-app` on <html> names the current app; it follows the route from first
+ * paint (the anti-FOUC script in app/layout.tsx) instead of being hard-coded
+ * to "drive". Identity colours identify — an app's icon, its documents in a
+ * listing, Blended Flow's wash — and never carry text, so they need 3:1
+ * against the ground, not 4.5:1.
+ *
+ * `--brand-accent` is the new brand blue the three looks use. Classic keeps
+ * `--color-accent` (Tailwind's blue-600) until the default look flips.
+ */
+:root {
+  --brand-accent: #3346e8;
+  --brand-accent-hover: #2836c4;
+
+  --app-color-drive: var(--brand-accent);
+  --app-color-docs: #2f6fe4;
+  --app-color-sheets: #13945a;
+  --app-color-slides: #d97706;
+  --app-color-notes: #b88a00;
+  --app-color-photos: #d6336c;
+  --app-color-calendar: #0e8c8c;
+  --app-color-diagrams: #7a4fdb;
+  --app-color-drawing: #e0533d;
+
+  /* The current app's colour and Blended Flow's wash; drive's unless overridden below. */
+  --app-color: var(--app-color-drive);
+  --app-wash-from: #e4e9ff;
+  --app-wash-to: #ffffff;
+}
+
+[data-theme="dark"] {
+  --brand-accent: #7c8aff;
+  --brand-accent-hover: #97a3ff;
+  --app-wash-from: #1b2046;
+  --app-wash-to: #0e1015;
+}
+
+[data-app="docs"] { --app-color: var(--app-color-docs); --app-wash-from: #dce7fb; }
+[data-app="sheets"] { --app-color: var(--app-color-sheets); --app-wash-from: #d8f0e2; }
+[data-app="slides"] { --app-color: var(--app-color-slides); --app-wash-from: #fbead2; }
+[data-app="notes"] { --app-color: var(--app-color-notes); --app-wash-from: #f6edc8; }
+[data-app="photos"] { --app-color: var(--app-color-photos); --app-wash-from: #f9dbe6; }
+[data-app="calendar"] { --app-color: var(--app-color-calendar); --app-wash-from: #d3eeee; }
+[data-app="diagrams"] { --app-color: var(--app-color-diagrams); --app-wash-from: #e6defa; }
+[data-app="drawing"] { --app-color: var(--app-color-drawing); --app-wash-from: #f9dcd6; }
+
+/* Dark washes: the identity colour at low strength over the dark ground. */
+[data-theme="dark"][data-app]:not([data-app="drive"]) {
+  --app-wash-from: color-mix(in srgb, var(--app-color) 22%, #0e1015);
+}

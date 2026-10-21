@@ -95,7 +95,7 @@
 
 .slider {
   width: 100%;
-  accent-color: var(--color-accent, #3b82f6);
+  accent-color: var(--color-accent);
 }
 
 .filterGrid {
@@ -116,13 +116,13 @@
 }
 
 .filterBtn:hover {
-  background: var(--color-surface-raised, #f3f4f6);
+  background: var(--color-surface-raised);
 }
 
 .filterBtnActive {
-  border-color: var(--color-accent, #3b82f6);
-  background: color-mix(in srgb, var(--color-accent, #3b82f6) 10%, transparent);
-  color: var(--color-accent, #3b82f6);
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-accent);
 }
 
 .rotateRow {
@@ -141,7 +141,7 @@
 }
 
 .rotateBtn:hover {
-  background: var(--color-surface-raised, #f3f4f6);
+  background: var(--color-surface-raised);
 }
 
 .noPhoto {

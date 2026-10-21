@@ -15,7 +15,7 @@
 .searchIcon {
   position: absolute;
   left: 9px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   pointer-events: none;
   flex-shrink: 0;
 }
@@ -23,17 +23,17 @@
 .searchInput {
   width: 100%;
   padding: 7px 30px 7px 30px;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 13px;
-  color: var(--color-text, #111827);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   outline: none;
   transition: border-color 0.15s;
 }
 
 .searchInput:focus {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .searchClear {
@@ -45,14 +45,14 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   padding: 2px;
   border-radius: 3px;
   transition: color 0.1s;
 }
 
 .searchClear:hover {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 /* ── Breadcrumbs ─────────────────────────────────────────────────────────── */
@@ -65,7 +65,7 @@
 }
 
 .breadcrumbSep {
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   flex-shrink: 0;
 }
 
@@ -78,17 +78,17 @@
   background: transparent;
   font-size: 12px;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
 }
 
 .breadcrumbItem:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .breadcrumbItemActive {
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   cursor: default;
   pointer-events: none;
 }
@@ -97,7 +97,7 @@
 .fileList {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   overflow: hidden;
   min-height: 220px;
@@ -116,7 +116,7 @@
   text-align: left;
   cursor: pointer;
   transition: background 0.1s;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .fileRow:last-child {
@@ -124,7 +124,7 @@
 }
 
 .fileRow:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .fileIcon {
@@ -136,7 +136,7 @@
 .fileName {
   flex: 1;
   font-size: 13px;
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -144,7 +144,7 @@
 }
 
 .folderChevron {
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   flex-shrink: 0;
 }
 
@@ -157,7 +157,7 @@
   flex: 1;
   padding: 40px 16px;
   font-size: 13px;
-  color: var(--color-text-tertiary, #9ca3af);
+  color: var(--color-text-tertiary);
   font-style: italic;
 }
 

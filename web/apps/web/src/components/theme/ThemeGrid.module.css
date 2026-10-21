@@ -20,15 +20,15 @@
 
 .card:hover {
   transform: translateY(-1px);
-  border-color: var(--color-border-strong, #d1d5db);
+  border-color: var(--color-border-strong);
 }
 
 .cardActive {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .cardActive:hover {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .swatch {
@@ -41,7 +41,7 @@
   justify-content: flex-end;
   padding: 5px;
   box-sizing: border-box;
-  color: var(--color-text-muted, #9ca3af);
+  color: var(--color-text-muted);
 }
 
 .swatchAccent {
@@ -55,7 +55,7 @@
 .cardLabel {
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   white-space: nowrap;
   max-width: 100%;
   overflow: hidden;
@@ -93,14 +93,14 @@
 
 .itemMenuBtn:focus-visible {
   opacity: 1;
-  outline: 2px solid var(--color-primary, #2563eb);
+  outline: 2px solid var(--color-primary);
   outline-offset: 1px;
 }
 
 .sectionLabel {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   margin: 14px 0 8px;

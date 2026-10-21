@@ -5,11 +5,11 @@
   flex-wrap: wrap;
   margin-bottom: 12px;
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .chevron {
-  color: var(--color-text-muted, #9ca3af);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
@@ -28,11 +28,11 @@
 }
 
 .crumb:hover:not(:disabled) {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .crumbActive {
-  color: var(--color-text, #111827);
+  color: var(--color-text);
   cursor: default;
   font-weight: 500;
 }
@@ -71,7 +71,7 @@
 }
 
 .folderRow:hover {
-  background: var(--color-surface-hover, #f3f4f6);
+  background: var(--color-surface-hover);
 }
 
 .folderIcon {
@@ -81,7 +81,7 @@
 .folderChevron {
   margin-left: auto;
   flex-shrink: 0;
-  color: var(--color-text-muted, #9ca3af);
+  color: var(--color-text-muted);
 }
 
 /* Sits between the browser and the confirm button, so the warning is read on the way to the click
@@ -95,5 +95,5 @@
   justify-content: flex-end;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
 }

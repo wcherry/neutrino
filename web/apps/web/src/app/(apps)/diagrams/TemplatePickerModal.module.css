@@ -10,8 +10,8 @@
   align-items: flex-start;
   gap: 6px;
   padding: 16px;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   cursor: pointer;
   text-align: left;
@@ -20,7 +20,7 @@
 
 .card:hover:not(:disabled) {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  border-color: var(--color-primary-light, #bfdbfe);
+  border-color: var(--color-primary-light);
 }
 
 .card:disabled {
@@ -35,17 +35,17 @@
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  background: var(--color-bg, #f8fafc);
-  color: var(--color-primary, #2563eb);
+  background: var(--color-bg);
+  color: var(--color-primary);
 }
 
 .cardName {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
 }
 
 .cardDesc {
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
 }

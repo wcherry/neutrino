@@ -12,7 +12,7 @@
 .title {
   font-size: 24px;
   font-weight: 600;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
 }
 
 .loading {
@@ -29,19 +29,19 @@
   justify-content: center;
   height: 60vh;
   gap: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
 .disabledIcon {
-  color: var(--color-border, #cbd5e1);
+  color: var(--color-border);
   margin-bottom: 8px;
 }
 
 .disabled h2 {
   font-size: 20px;
   font-weight: 600;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -57,19 +57,19 @@
   justify-content: center;
   height: 50vh;
   gap: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   text-align: center;
 }
 
 .emptyIcon {
-  color: var(--color-border, #cbd5e1);
+  color: var(--color-border);
   margin-bottom: 8px;
 }
 
 .empty h3 {
   font-size: 18px;
   font-weight: 600;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -84,7 +84,7 @@
   gap: 6px;
   height: 36px;
   padding: 0 16px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -110,8 +110,8 @@
 }
 
 .card {
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   overflow: hidden;
   cursor: pointer;
@@ -120,20 +120,20 @@
 
 .card:hover {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  border-color: var(--color-primary-light, #bfdbfe);
+  border-color: var(--color-primary-light);
 }
 
 .cardThumb {
   height: 120px;
-  background: var(--color-bg, #f8fafc);
+  background: var(--color-bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .thumbIcon {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   opacity: 0.4;
 }
 
@@ -144,7 +144,7 @@
 .cardTitle {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   margin-bottom: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -156,7 +156,7 @@
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
 }
 
 /* Marks the diagrams stored as `.svg`. Pushed to the end of the meta row so it
@@ -164,11 +164,11 @@
 .formatBadge {
   margin-left: auto;
   padding: 1px 5px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 3px;
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.04em;
   line-height: 1.4;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
 }

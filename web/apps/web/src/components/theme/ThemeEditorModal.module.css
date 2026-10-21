@@ -13,7 +13,7 @@
 .baseLabel {
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
 }
 
 .fieldGrid {
@@ -31,7 +31,7 @@
 
 .fieldLabel {
   font-size: 13px;
-  color: var(--color-text-secondary, #6b7280);
+  color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -39,7 +39,7 @@
 
 .visibilityRow {
   padding-top: 4px;
-  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-top: 1px solid var(--color-border);
 }
 
 .footerLeft {
@@ -49,5 +49,5 @@
 }
 
 .deleteBtn {
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }

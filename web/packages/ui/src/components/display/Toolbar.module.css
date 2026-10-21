@@ -3,8 +3,8 @@
   align-items: center;
   gap: 2px;
   padding: 6px 12px;
-  background: var(--color-bg, #ffffff);
-  border-bottom: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
   flex-wrap: wrap;
   flex-shrink: 0;
 }
@@ -18,7 +18,7 @@
 .toolbarDivider {
   width: 1px;
   height: 20px;
-  background: var(--color-border, #e0e0e0);
+  background: var(--color-border);
   margin: 0 6px;
 }
 
@@ -32,20 +32,20 @@
   background: none;
   border-radius: 4px;
   cursor: pointer;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   transition: background 0.1s, color 0.1s;
   font-size: 14px;
   font-weight: 600;
 }
 
 .toolBtn:hover {
-  background: var(--color-surface-hover, #f1f3f4);
-  color: var(--color-text, #202124);
+  background: var(--color-surface-hover);
+  color: var(--color-text);
 }
 
 .toolBtn.active {
-  background: var(--color-accent-subtle, #e8f0fe);
-  color: var(--color-accent, #1a73e8);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
 }
 
 .toolBtnWide {
@@ -66,17 +66,17 @@
 .toolbarSelect {
   height: 28px;
   padding: 0 6px;
-  border: 1px solid var(--color-border, #e0e0e0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 13px;
-  background: var(--color-bg, #ffffff);
-  color: var(--color-text, #202124);
+  background: var(--color-bg);
+  color: var(--color-text);
   cursor: pointer;
   outline: none;
 }
 
 .toolbarSelect:hover {
-  background: var(--color-surface-hover, #f1f3f4);
+  background: var(--color-surface-hover);
 }
 
 .hiddenInput {

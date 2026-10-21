@@ -117,7 +117,7 @@
 
 .checkOn {
   background-color: var(--color-primary);
-  color: var(--color-text-inverse, #fff);
+  color: var(--color-text-inverse);
   border: 1px solid var(--color-primary);
 }
 

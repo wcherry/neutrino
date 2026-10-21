@@ -1,0 +1,202 @@
+/*
+ * Looks — the surface-style token groups behind the three looks in
+ * agent_docs/ui-look-and-feel-roadmap.md §3–4: Light Flow, Quiet Precision
+ * and Blended Flow, plus `classic`, which is today's UI.
+ *
+ * A look is a set of values over ONE structure, never a second copy of the
+ * CSS. It is selected by `data-look` on <html> (set before first paint by the
+ * anti-FOUC script in app/layout.tsx) and combines with `data-theme` (colour)
+ * and `data-density` (density.css) — three independent axes.
+ *
+ * Nothing reads these yet. Stage 2 moves the @neutrino/ui primitives onto them
+ * and Stage 3 the shell; until then `classic` is the only look in use, and its
+ * values describe what the current components already draw, so adopting a
+ * token never changes how classic looks.
+ *
+ * Groups (the table in the look-and-feel roadmap §4):
+ *   surface   --surface-ground, --surface-region, --region-*
+ *   rules     --rule, --row-rule               (separators; `none` in the flows)
+ *   buttons   --button-border-rest/-hover, --button-bg-hover
+ *   primary   --primary-bg/-fg/-border-hover   (filled only in Precision)
+ *   paper     --paper-bg/-shadow/-radius       (a document page)
+ *   glass     --glass-bg/-border/-shadow, --scrim, --glass-blur
+ */
+
+/* ── classic — the current UI ─────────────────────────────────────────────── */
+:root,
+[data-look="classic"] {
+  --surface-ground: var(--color-bg);
+  --surface-region: var(--color-surface);
+  --region-border: 1px solid var(--color-border);
+  --region-radius: var(--radius-lg);
+  --region-shadow: none;
+  --region-gap: 0px;
+
+  --rule: 1px solid var(--color-border);
+  --row-rule: 1px solid var(--color-border);
+
+  --button-border-rest: var(--color-border);
+  --button-border-hover: var(--color-border-strong);
+  --button-bg-hover: var(--color-bg-subtle);
+
+  --primary-bg: var(--color-accent);
+  --primary-fg: var(--color-text-on-accent);
+  --primary-border-hover: var(--color-accent-hover);
+
+  --paper-bg: #ffffff;
+  --paper-shadow: var(--shadow-md);
+  --paper-radius: 0px;
+
+  --glass-bg: var(--color-surface-overlay);
+  --glass-border: var(--color-border);
+  --glass-shadow: var(--shadow-lg);
+  --glass-blur: 0px;
+  --scrim: rgb(0 0 0 / 0.4);
+}
+
+/* ── Light Flow — one seamless surface ────────────────────────────────────── */
+[data-look="lightflow"] {
+  --surface-ground: #ffffff;
+  --surface-region: transparent;
+  --region-border: 0;
+  --region-radius: 0px;
+  --region-shadow: none;
+  --region-gap: 0px;
+
+  --rule: none;
+  --row-rule: none;
+
+  --button-border-rest: transparent;
+  --button-border-hover: rgb(22 24 29 / 0.12);
+  --button-bg-hover: rgb(22 24 29 / 0.035);
+
+  --primary-bg: transparent;
+  --primary-fg: var(--brand-accent);
+  --primary-border-hover: rgb(51 70 232 / 0.35);
+
+  --paper-bg: #ffffff;
+  --paper-shadow: none;
+  --paper-radius: 0px;
+
+  --glass-bg: rgb(255 255 255 / 0.74);
+  --glass-border: rgb(22 24 29 / 0.08);
+  --glass-shadow: 0 16px 48px rgb(22 24 29 / 0.14), 0 2px 6px rgb(22 24 29 / 0.06);
+  --glass-blur: 22px;
+  --scrim: rgb(22 24 29 / 0.16);
+}
+
+/* ── Quiet Precision — every element floats ───────────────────────────────── */
+[data-look="precision"] {
+  --surface-ground: #eef0f3;
+  --surface-region: #ffffff;
+  --region-border: 1px solid #e3e6eb;
+  --region-radius: 14px;
+  --region-shadow: 0 1px 2px rgb(22 24 29 / 0.04), 0 6px 20px rgb(22 24 29 / 0.05);
+  --region-gap: 10px;
+
+  --rule: 1px solid #e3e6eb;
+  --row-rule: 1px solid #f0f2f5;
+
+  --button-border-rest: #e3e6eb;
+  --button-border-hover: #d4d8e0;
+  --button-bg-hover: #f6f7f9;
+
+  --primary-bg: var(--brand-accent);
+  --primary-fg: #ffffff;
+  --primary-border-hover: var(--brand-accent-hover);
+
+  --paper-bg: #ffffff;
+  --paper-shadow: 0 1px 2px rgb(22 24 29 / 0.05), 0 10px 30px rgb(22 24 29 / 0.07);
+  --paper-radius: 8px 8px 0 0;
+
+  --glass-bg: rgb(255 255 255 / 0.82);
+  --glass-border: rgb(22 24 29 / 0.08);
+  --glass-shadow: 0 16px 48px rgb(22 24 29 / 0.14), 0 2px 6px rgb(22 24 29 / 0.06);
+  --glass-blur: 22px;
+  --scrim: rgb(22 24 29 / 0.16);
+}
+
+/* ── Blended Flow — seamless, washed in the app's colour ──────────────────── */
+[data-look="blended"] {
+  --surface-ground: linear-gradient(180deg, var(--app-wash-from) 0px, var(--app-wash-to) 700px);
+  --surface-region: transparent;
+  --region-border: 0;
+  --region-radius: 0px;
+  --region-shadow: none;
+  --region-gap: 0px;
+
+  --rule: none;
+  --row-rule: none;
+
+  --button-border-rest: transparent;
+  --button-border-hover: color-mix(in srgb, var(--app-color) 24%, transparent);
+  --button-bg-hover: rgb(255 255 255 / 0.55);
+
+  --primary-bg: transparent;
+  --primary-fg: var(--brand-accent);
+  --primary-border-hover: rgb(51 70 232 / 0.4);
+
+  --paper-bg: transparent;
+  --paper-shadow: none;
+  --paper-radius: 0px;
+
+  --glass-bg: rgb(246 247 255 / 0.7);
+  --glass-border: color-mix(in srgb, var(--app-color) 16%, transparent);
+  --glass-shadow: 0 18px 50px rgb(37 52 170 / 0.18), 0 2px 6px rgb(37 52 170 / 0.08);
+  --glass-blur: 22px;
+  --scrim: color-mix(in srgb, var(--app-color) 14%, transparent);
+}
+
+/* ── Dark values for the three new looks ──────────────────────────────────── */
+[data-look="lightflow"][data-theme="dark"] {
+  --surface-ground: #0f1115;
+  --paper-bg: #0f1115;
+  --button-border-hover: rgb(255 255 255 / 0.14);
+  --button-bg-hover: rgb(255 255 255 / 0.045);
+  --primary-border-hover: rgb(124 138 255 / 0.45);
+  --glass-bg: rgb(30 33 41 / 0.72);
+  --glass-border: rgb(255 255 255 / 0.09);
+  --glass-shadow: 0 18px 50px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.35);
+  --scrim: rgb(0 0 0 / 0.45);
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --surface-ground: #0a0c0f;
+  --surface-region: #15181e;
+  --region-border: 1px solid #242832;
+  --region-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.28);
+  --rule: 1px solid #242832;
+  --row-rule: 1px solid #1d2027;
+  --button-border-rest: #242832;
+  --button-border-hover: #343a45;
+  --button-bg-hover: #1c2027;
+  --primary-fg: #0f1115;
+  --paper-bg: #22262f;
+  --paper-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+  --glass-bg: rgb(30 33 41 / 0.82);
+  --glass-border: rgb(255 255 255 / 0.09);
+  --glass-shadow: 0 18px 50px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.35);
+  --scrim: rgb(0 0 0 / 0.45);
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --button-border-hover: color-mix(in srgb, var(--app-color) 30%, transparent);
+  --button-bg-hover: color-mix(in srgb, var(--app-color) 8%, transparent);
+  --glass-bg: rgb(27 31 58 / 0.7);
+  --glass-border: color-mix(in srgb, var(--app-color) 18%, transparent);
+  --glass-shadow: 0 18px 50px rgb(5 8 30 / 0.6), 0 2px 6px rgb(5 8 30 / 0.4);
+  --scrim: rgb(8 10 30 / 0.5);
+}
+
+/* Translucency is a preference too: with it reduced, every frosted surface
+   is opaque (look-and-feel roadmap §2, "Menus, popups and translucency"). */
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-transparency="on"]) {
+    --glass-blur: 0px;
+    --glass-bg: var(--color-surface-overlay);
+  }
+}
+[data-transparency="off"] {
+  --glass-blur: 0px;
+  --glass-bg: var(--color-surface-overlay);
+}

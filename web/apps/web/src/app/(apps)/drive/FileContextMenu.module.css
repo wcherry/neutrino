@@ -37,11 +37,11 @@
 }
 
 .item.danger {
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 .item.danger:hover {
-  background-color: color-mix(in srgb, var(--color-error, #dc2626) 8%, transparent);
+  background-color: color-mix(in srgb, var(--color-error) 8%, transparent);
 }
 
 .itemIcon {
@@ -52,7 +52,7 @@
 }
 
 .danger .itemIcon {
-  color: var(--color-error, #dc2626);
+  color: var(--color-error);
 }
 
 .separator {

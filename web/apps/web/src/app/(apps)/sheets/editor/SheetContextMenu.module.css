@@ -2,8 +2,8 @@
   position: fixed;
   z-index: 1000;
   min-width: 220px;
-  background: var(--color-bg, #ffffff);
-  border: 1px solid var(--color-border, #e0e0e0);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14), 0 1px 4px rgba(0, 0, 0, 0.08);
   padding: 4px;
@@ -14,7 +14,7 @@
 
 .separator {
   height: 1px;
-  background: var(--color-border, #e0e0e0);
+  background: var(--color-border);
   margin: 3px 4px;
 }
 
@@ -27,7 +27,7 @@
   border: none;
   border-radius: 5px;
   background: transparent;
-  color: var(--color-text, #202124);
+  color: var(--color-text);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -35,7 +35,7 @@
 }
 
 .item:hover:not(.disabled) {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 .item.disabled {
@@ -47,7 +47,7 @@
 .itemIcon {
   display: flex;
   align-items: center;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   flex-shrink: 0;
 }
 
@@ -57,7 +57,7 @@
 
 .shortcut {
   font-size: 11px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   letter-spacing: 0.02em;
   margin-left: auto;
 }
@@ -70,14 +70,14 @@
 }
 
 .suggestion:hover {
-  background: var(--color-bg-hover, #f1f3f4);
+  background: var(--color-bg-hover);
 }
 
 /* "Checking…" placeholder while dictionary loads */
 .checking {
   padding: 7px 10px;
   font-size: 12px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   font-style: italic;
   user-select: none;
 }
@@ -86,6 +86,6 @@
 .noSuggestions {
   padding: 7px 10px;
   font-size: 12px;
-  color: var(--color-text-muted, #5f6368);
+  color: var(--color-text-muted);
   user-select: none;
 }

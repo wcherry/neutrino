@@ -8,14 +8,14 @@
 .cell {
     padding: 3px 5px;
     border: none;
-    color: var(--color-text-secondary, #475569);
+    color: var(--color-text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 :global([data-theme="dark"]) .cell {
-    color: var(--color-text-secondary, #94a3b8);
+    color: var(--color-text-secondary);
 }
 
 /* "Blank" card: no fill colors, no real borders — a light dashed grid plus a
@@ -31,8 +31,8 @@
 
 .blankCell {
     padding: 3px 5px;
-    border: 1px dashed var(--color-border, #cbd5e1);
-    color: var(--color-text-secondary, #94a3b8);
+    border: 1px dashed var(--color-border);
+    color: var(--color-text-secondary);
     background-color: transparent;
     white-space: nowrap;
     overflow: hidden;
@@ -40,8 +40,8 @@
 }
 
 :global([data-theme="dark"]) .blankCell {
-    border-color: var(--color-border, #475569);
-    color: var(--color-text-secondary, #64748b);
+    border-color: var(--color-border);
+    color: var(--color-text-secondary);
 }
 
 .blankIcon {
@@ -49,11 +49,11 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    color: var(--color-text-secondary, #94a3b8);
+    color: var(--color-text-secondary);
     opacity: 0.55;
     pointer-events: none;
 }
 
 :global([data-theme="dark"]) .blankIcon {
-    color: var(--color-text-secondary, #64748b);
+    color: var(--color-text-secondary);
 }

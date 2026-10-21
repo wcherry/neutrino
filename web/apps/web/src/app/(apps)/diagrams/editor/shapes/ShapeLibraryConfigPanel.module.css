@@ -1,8 +1,8 @@
 .panel {
   width: 200px;
   flex-shrink: 0;
-  background: var(--color-surface, #fff);
-  border-right: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -14,7 +14,7 @@
   align-items: center;
   gap: 4px;
   padding: 10px 12px 8px;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -22,7 +22,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   padding: 2px;
   border-radius: 4px;
   display: flex;
@@ -32,8 +32,8 @@
 }
 
 .backBtn:hover {
-  background: var(--color-bg-hover, #f1f5f9);
-  color: var(--color-text, #1e293b);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 .headerTitle {
@@ -41,7 +41,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   flex: 1;
 }
 
@@ -52,7 +52,7 @@
 
 .section {
   padding: 8px 0 4px;
-  border-bottom: 1px solid var(--color-border, #f1f5f9);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .section:last-child {
@@ -70,7 +70,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   flex: 1;
 }
 
@@ -83,19 +83,19 @@
 }
 
 .builtinRow:hover {
-  background: var(--color-bg-hover, #f8fafc);
+  background: var(--color-bg-hover);
 }
 
 .builtinRowName {
   font-size: 12px;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
 }
 
 .eyeBtn {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   padding: 2px;
   border-radius: 3px;
   display: flex;
@@ -105,8 +105,8 @@
 }
 
 .eyeBtn:hover {
-  color: var(--color-text, #1e293b);
-  background: var(--color-bg-hover, #f1f5f9);
+  color: var(--color-text);
+  background: var(--color-bg-hover);
 }
 
 .dimmed {
@@ -114,7 +114,7 @@
 }
 
 .addBtn {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border: none;
   cursor: pointer;
@@ -148,7 +148,7 @@
   border: none;
   cursor: pointer;
   font-size: 10px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   text-align: left;
   padding: 0;
   display: flex;
@@ -157,7 +157,7 @@
 }
 
 .knownToggle:hover {
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
 }
 
 .knownList {
@@ -171,20 +171,20 @@
   align-items: center;
   gap: 4px;
   width: 100%;
-  background: var(--color-bg-hover, #f8fafc);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   cursor: pointer;
   padding: 3px 6px;
   font-size: 10px;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   text-align: left;
   transition: background 0.1s;
 }
 
 .knownItem:hover:not(:disabled) {
   background: #eff6ff;
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .knownItem:disabled {
@@ -195,21 +195,21 @@
 .urlInput {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 4px 6px;
   font-size: 11px;
-  color: var(--color-text, #1e293b);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   outline: none;
 }
 
 .urlInput:focus {
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary);
 }
 
 .confirmBtn {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border: none;
   cursor: pointer;
@@ -234,7 +234,7 @@
   align-items: center;
   gap: 3px;
   font-size: 10px;
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
   text-decoration: none;
 }
 
@@ -251,7 +251,7 @@
 }
 
 .tpRow:hover {
-  background: var(--color-bg-hover, #f8fafc);
+  background: var(--color-bg-hover);
 }
 
 .tpInfo {
@@ -265,7 +265,7 @@
 .tpName {
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -279,7 +279,7 @@
 
 .tpCount {
   font-size: 10px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
 }
 
 @keyframes spin {
@@ -290,7 +290,7 @@
 .spin {
   animation: spin 1s linear infinite;
   display: inline-flex;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
 }
 
 .errorIcon {
@@ -302,7 +302,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   padding: 1px;
   border-radius: 3px;
   display: flex;
@@ -311,15 +311,15 @@
 }
 
 .retryBtn:hover {
-  color: var(--color-text, #1e293b);
-  background: var(--color-bg-hover, #f1f5f9);
+  color: var(--color-text);
+  background: var(--color-bg-hover);
 }
 
 .removeBtn {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   padding: 2px;
   border-radius: 3px;
   display: flex;
@@ -342,7 +342,7 @@
 }
 
 .customRow:hover {
-  background: var(--color-bg-hover, #f8fafc);
+  background: var(--color-bg-hover);
 }
 
 .customNameArea {
@@ -359,7 +359,7 @@
   cursor: pointer;
   font-size: 11px;
   font-weight: 500;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   text-align: left;
   padding: 0;
   white-space: nowrap;
@@ -370,24 +370,24 @@
 }
 
 .customName:hover {
-  color: var(--color-primary, #2563eb);
+  color: var(--color-primary);
 }
 
 .renameInput {
   flex: 1;
   min-width: 0;
-  border: 1px solid var(--color-primary, #2563eb);
+  border: 1px solid var(--color-primary);
   border-radius: 3px;
   padding: 1px 4px;
   font-size: 11px;
-  color: var(--color-text, #1e293b);
-  background: var(--color-surface, #fff);
+  color: var(--color-text);
+  background: var(--color-surface);
   outline: none;
 }
 
 .shapeBadge {
   font-size: 10px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   flex-shrink: 0;
 }
 
@@ -400,7 +400,7 @@
 .hint {
   padding: 0 10px 6px;
   font-size: 10px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   font-style: italic;
   line-height: 1.4;
 }
@@ -408,6 +408,6 @@
 .emptyNote {
   padding: 4px 10px 6px;
   font-size: 10px;
-  color: var(--color-text-secondary, #94a3b8);
+  color: var(--color-text-secondary);
   font-style: italic;
 }

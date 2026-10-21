@@ -2,8 +2,8 @@
   display: flex;
   align-items: center;
   height: 44px;
-  background: var(--color-surface, #fff);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
   padding: 0 12px;
   gap: 4px;
   flex-shrink: 0;
@@ -31,7 +31,7 @@
 .title {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #1e293b);
+  color: var(--color-text);
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
@@ -42,14 +42,14 @@
 }
 
 .title:hover {
-  background: var(--color-bg-hover, #f1f5f9);
+  background: var(--color-bg-hover);
 }
 
 .titleInput {
   font-size: 14px;
   font-weight: 500;
-  color: var(--color-text, #1e293b);
-  border: 1px solid var(--color-primary, #2563eb);
+  color: var(--color-text);
+  border: 1px solid var(--color-primary);
   border-radius: 4px;
   padding: 3px 8px;
   outline: none;
@@ -66,13 +66,13 @@
   background: none;
   border-radius: 5px;
   cursor: pointer;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
   transition: background 0.1s, color 0.1s;
 }
 
 .toolBtn:hover {
-  background: var(--color-bg-hover, #f1f5f9);
-  color: var(--color-text, #1e293b);
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 .toolBtn:disabled {
@@ -81,14 +81,14 @@
 }
 
 .toolBtn.active {
-  background: var(--color-primary-light, #eff6ff);
-  color: var(--color-primary, #2563eb);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
 .divider {
   width: 1px;
   height: 20px;
-  background: var(--color-border, #e2e8f0);
+  background: var(--color-border);
   margin: 0 4px;
 }
 
@@ -98,7 +98,7 @@
   gap: 5px;
   height: 30px;
   padding: 0 12px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -122,7 +122,7 @@
   display: inline-block;
   width: 18px;
   height: 18px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 50%;
 }
 
@@ -134,8 +134,8 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  background: var(--color-surface, #fff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   min-width: 180px;
@@ -152,11 +152,11 @@
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--color-text-primary, #1e293b);
+  color: var(--color-text-primary);
 }
 
 .dropdownItem:hover {
-  background: var(--color-surface-hover, #f8fafc);
+  background: var(--color-surface-hover);
 }
 
 .textDefaultsDropdown {
@@ -181,7 +181,7 @@
 
 .textDefaultsRow label {
   font-size: 12px;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--color-text-secondary);
 }
 
 .textDefaultsSelect {
@@ -189,18 +189,18 @@
   min-width: 0;
   font-size: 12px;
   padding: 3px 4px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text-primary, #1e293b);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
 }
 
 .textDefaultsNumber {
   width: 52px;
   font-size: 12px;
   padding: 3px 4px;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  background: var(--color-surface, #fff);
-  color: var(--color-text-primary, #1e293b);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
 }

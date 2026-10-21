@@ -33,7 +33,7 @@
 }
 
 .blockRowDragOver {
-  border-top-color: var(--color-accent, #2563eb);
+  border-top-color: var(--color-accent);
 }
 
 /* ── Drag handle ─────────────────────────────────────────────────────────────── */
@@ -281,7 +281,7 @@
 .taskCheckbox {
   margin-top: 3px;
   cursor: pointer;
-  accent-color: var(--color-accent, #2563eb);
+  accent-color: var(--color-accent);
   width: 14px;
   height: 14px;
   flex-shrink: 0;
@@ -333,7 +333,7 @@
 /* ── Wiki-link styles (shared between editor and preview) ────────────────────── */
 
 .wikiLink {
-  color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
   background: none;
   border: none;
   padding: 0;
@@ -435,7 +435,7 @@
 }
 
 .colResizeHandle:hover {
-  background: var(--color-accent, #2563eb);
+  background: var(--color-accent);
   opacity: 0.4;
 }
 
@@ -452,7 +452,7 @@
 }
 
 .rowResizeHandle:hover {
-  background: var(--color-accent, #2563eb);
+  background: var(--color-accent);
   opacity: 0.4;
 }
 
@@ -492,8 +492,8 @@
 }
 
 .tableAddColBtn:hover {
-  color: var(--color-accent, #2563eb);
-  border-color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
   background: var(--color-surface);
 }
 
@@ -537,8 +537,8 @@
 }
 
 .tableAddRowBtn:hover {
-  color: var(--color-accent, #2563eb);
-  border-color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
+  border-color: var(--color-accent);
   background: var(--color-surface);
 }
 
@@ -589,8 +589,8 @@
 }
 
 .tableDeleteColBtn:hover {
-  color: var(--color-error, #dc2626);
-  border-color: var(--color-error, #dc2626);
+  color: var(--color-error);
+  border-color: var(--color-error);
   background: var(--color-surface);
 }
 
@@ -632,8 +632,8 @@
 }
 
 .tableDeleteRowBtn:hover {
-  color: var(--color-error, #dc2626);
-  border-color: var(--color-error, #dc2626);
+  color: var(--color-error);
+  border-color: var(--color-error);
   background: var(--color-surface);
 }
 
@@ -692,8 +692,8 @@
 }
 
 .tablePresetSwatchActive {
-  border-color: var(--color-accent, #2563eb) !important;
-  box-shadow: 0 0 0 1px var(--color-accent, #2563eb);
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
 
 .tablePresetNoneLabel {
@@ -720,7 +720,7 @@
 }
 
 .tableStructureLabel input[type='checkbox'] {
-  accent-color: var(--color-accent, #2563eb);
+  accent-color: var(--color-accent);
   width: 12px;
   height: 12px;
   cursor: pointer;
@@ -772,7 +772,7 @@
 }
 
 .tableCtxItemStyle {
-  color: var(--color-accent, #2563eb);
+  color: var(--color-accent);
 }
 
 .tableCtxDivider {
