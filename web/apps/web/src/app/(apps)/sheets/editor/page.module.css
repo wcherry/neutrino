@@ -31,7 +31,7 @@
   padding: 7px 14px;
   border: 1px solid var(--color-border);
   background: var(--color-bg);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   font-size: var(--font-size-13);
   color: var(--color-text);
@@ -556,7 +556,7 @@
   z-index: var(--z-layer-1000);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   padding: 4px;
   min-width: 160px;
@@ -575,7 +575,7 @@
   font-size: var(--font-size-13);
   color: var(--color-text);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
 }
 
 .tabContextMenuItem:hover:not(:disabled) {
@@ -658,7 +658,7 @@
   background: var(--palette-red-51);
   color: var(--palette-gray-100);
   border: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   font-size: var(--text-xs);
   cursor: pointer;
 }
@@ -673,7 +673,7 @@
   background: transparent;
   color: var(--color-text);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   font-size: var(--text-xs);
   cursor: pointer;
 }
@@ -695,7 +695,7 @@
 
 .dialogBox {
   background: var(--color-surface);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   box-shadow: 0 8px 32px rgba(0,0,0,0.18);
   padding: 28px 28px 20px;
   min-width: 320px;
@@ -728,7 +728,7 @@
   background: var(--color-accent);
   color: var(--palette-gray-100);
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--font-size-13);
   cursor: pointer;
 }
@@ -742,7 +742,7 @@
   background: transparent;
   color: var(--color-text);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--font-size-13);
   cursor: pointer;
 }
@@ -756,7 +756,7 @@
   background: var(--palette-red-51);
   color: var(--palette-gray-100);
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--font-size-13);
   cursor: pointer;
 }
@@ -785,7 +785,7 @@
   align-items: center;
   gap: 0;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   overflow: hidden;
   background: var(--color-surface-raised);
 }
@@ -812,7 +812,7 @@
   width: 100%;
   padding: 7px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--font-size-13);
   background: var(--color-surface-raised);
   color: var(--color-text);

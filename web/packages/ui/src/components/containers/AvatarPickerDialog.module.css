@@ -13,7 +13,7 @@
 /* ── Dialog shell ─────────────────────────────────────────────────────────── */
 .dialog {
   background: var(--color-surface);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale));
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   width: 100%;
   max-width: 620px;
@@ -47,7 +47,7 @@
   height: 28px;
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-secondary);
   transition: background 0.12s, color 0.12s;
@@ -110,7 +110,7 @@
 .cancelBtn {
   padding: 8px 18px;
   border: 1px solid var(--color-border);
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale));
   background: transparent;
   font-size: var(--font-size-13);
   font-weight: 500;
@@ -126,7 +126,7 @@
 .applyBtn {
   padding: 8px 20px;
   border: none;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale));
   background: var(--color-primary);
   color: var(--palette-gray-100);
   font-size: var(--font-size-13);
@@ -197,7 +197,7 @@
   width: 48px;
   padding: 6px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--text-xl);
   font-weight: 700;
   text-align: center;
@@ -221,7 +221,7 @@
 .pill {
   padding: 5px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale));
   background: transparent;
   font-size: var(--font-size-13);
   cursor: pointer;
@@ -373,7 +373,7 @@
 .changeBtn {
   padding: 6px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   font-size: var(--text-xs);
   font-weight: 500;

@@ -2,7 +2,7 @@
 
 .palette {
   background: var(--color-bg);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale));
   padding: 24px;
   min-width: 360px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
@@ -18,7 +18,7 @@
 .styleBtn {
   padding: 10px 14px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--color-bg);
   cursor: pointer;
   font-size: var(--font-size-13);

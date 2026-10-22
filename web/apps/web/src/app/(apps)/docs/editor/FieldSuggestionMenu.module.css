@@ -8,7 +8,7 @@
   max-width: 420px;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
   overflow: hidden;
   font-size: var(--font-size-13);
@@ -27,7 +27,7 @@
   align-items: baseline;
   gap: 2px 8px;
   padding: 6px 8px;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale));
   cursor: pointer;
 }
 
@@ -75,7 +75,7 @@
 .kbd {
   padding: 1px 5px;
   border: 1px solid var(--color-border);
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   background: var(--color-bg);
   font-family: inherit;
   font-size: var(--font-size-10);

@@ -33,7 +33,7 @@
   z-index: var(--z-modal-backdrop);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
   width: 200px;
   padding: 6px 0;
@@ -108,7 +108,7 @@
   z-index: var(--z-layer-310);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
   min-width: 220px;
   padding: 6px 0;

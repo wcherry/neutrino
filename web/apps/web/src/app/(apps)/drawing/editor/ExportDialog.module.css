@@ -10,7 +10,7 @@
 
 .dialog {
   background: var(--palette-gray-100);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   padding: 24px;
   width: 360px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
@@ -45,7 +45,7 @@
   width: 100%;
   font-size: var(--font-size-13);
   border: 1px solid var(--color-neutral-300);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   padding: 6px 10px;
   background: var(--color-neutral-50);
   color: var(--color-neutral-900);
@@ -67,7 +67,7 @@
   flex: 1;
   font-size: var(--font-size-13);
   border: 1px solid var(--color-neutral-300);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   padding: 6px 10px;
   background: var(--color-neutral-50);
   color: var(--color-neutral-900);
@@ -95,7 +95,7 @@
   width: 32px;
   height: 28px;
   border: 1px solid var(--color-neutral-300);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   cursor: pointer;
   padding: 2px;
   background: none;
@@ -131,7 +131,7 @@
 
 .cancelBtn {
   padding: 7px 16px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   border: 1px solid var(--color-neutral-300);
   background: var(--color-neutral-50);
   color: var(--color-neutral-700);
@@ -145,7 +145,7 @@
 
 .exportBtn {
   padding: 7px 18px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   border: none;
   background: var(--palette-blue-53);
   color: var(--palette-gray-100);
@@ -171,5 +171,5 @@
   background: var(--color-neutral-50);
   border-left: 2px solid var(--color-neutral-300);
   padding: 6px 8px;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 calc(4px * var(--radius-scale)) calc(4px * var(--radius-scale)) 0;
 }

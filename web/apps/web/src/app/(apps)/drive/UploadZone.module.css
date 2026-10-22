@@ -157,14 +157,14 @@
 /* Progress bar */
 .progressTrack {
   height: 4px;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   background: var(--color-bg-subtle);
   overflow: hidden;
 }
 
 .progressBar {
   height: 100%;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   background: var(--color-accent);
   transition: width 0.15s var(--ease-default);
 }

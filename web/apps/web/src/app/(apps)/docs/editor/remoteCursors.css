@@ -19,7 +19,7 @@
   font-size: var(--font-size-10);
   font-weight: 600;
   padding: 1px 4px;
-  border-radius: 3px 3px 3px 0;
+  border-radius: calc(3px * var(--radius-scale)) calc(3px * var(--radius-scale)) calc(3px * var(--radius-scale)) 0;
   white-space: nowrap;
   pointer-events: none;
   user-select: none;

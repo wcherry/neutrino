@@ -35,7 +35,7 @@
   align-items: center;
   padding: 4px;
   border: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: transparent;
   cursor: pointer;
   color: var(--color-neutral-400);
@@ -69,7 +69,7 @@
   color: var(--color-neutral-200);
   background: var(--palette-gray-16);
   border: 1px solid var(--color-primary);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   padding: 2px 6px;
   outline: none;
   min-width: 0;
@@ -119,7 +119,7 @@
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: none;
   cursor: pointer;
   color: var(--color-neutral-400);
@@ -229,7 +229,7 @@
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   border: 1px solid var(--palette-gray-23);
   background: transparent;
   font-size: var(--font-size-11);
@@ -310,7 +310,7 @@
   gap: 4px;
   padding: 6px 8px;
   border: 1px solid var(--palette-gray-16);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--palette-gray-7);
   color: var(--color-neutral-400);
   cursor: pointer;
@@ -361,7 +361,7 @@
   gap: 4px;
   padding: 6px 8px;
   border: 1px solid var(--palette-gray-16);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--palette-gray-7);
   color: var(--color-neutral-400);
   cursor: pointer;
@@ -397,7 +397,7 @@
   gap: 6px;
   padding: 6px 10px;
   border: 1px solid var(--palette-gray-16);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--palette-gray-7);
   color: var(--color-neutral-400);
   cursor: pointer;
@@ -512,7 +512,7 @@
   gap: 5px;
   padding: 6px 4px;
   border: 1px solid var(--palette-gray-16);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--palette-gray-7);
   cursor: pointer;
   transition: border-color 150ms ease, background 150ms ease;
@@ -537,7 +537,7 @@
 .filterSwatch {
   width: 48px;
   height: 32px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: linear-gradient(135deg, var(--palette-red-71) 0%, var(--palette-amber-62) 33%, var(--palette-green-61) 66%, var(--palette-blue-65-2) 100%);
   flex-shrink: 0;
 }
@@ -563,7 +563,7 @@
   width: 100%;
   padding: 7px 10px;
   border: 1px solid var(--palette-gray-23);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--palette-gray-7);
   color: var(--color-neutral-400);
   font-size: var(--text-xs);
@@ -600,7 +600,7 @@
   flex: 1;
   padding: 5px 8px;
   border: 1px solid var(--palette-gray-23);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--palette-gray-7);
   color: var(--color-neutral-400);
   font-size: var(--text-xs);
@@ -650,7 +650,7 @@
   background: rgba(20, 20, 20, 0.82);
   backdrop-filter: blur(8px);
   border: 1px solid var(--palette-gray-16);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   padding: 6px 12px;
   z-index: var(--z-layer-10);
   pointer-events: all;
@@ -667,7 +667,7 @@
   color: rgba(255, 255, 255, 0.85);
   font-size: var(--font-size-11);
   padding: 5px 10px;
-  border-radius: 20px;
+  border-radius: calc(20px * var(--radius-scale));
   pointer-events: none;
   white-space: nowrap;
   letter-spacing: 0.02em;
@@ -712,7 +712,7 @@
   gap: 5px;
   padding: 6px 8px;
   border: 1px solid var(--palette-gray-16);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--palette-gray-7);
   color: var(--color-neutral-400);
   cursor: pointer;
@@ -754,7 +754,7 @@
 .aiResultBox {
   margin-top: 8px;
   border: 1px solid var(--palette-gray-16);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   overflow: hidden;
 }
 
@@ -777,7 +777,7 @@
   align-items: center;
   padding: 2px 4px;
   border: none;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   background: transparent;
   cursor: pointer;
   color: var(--color-neutral-500);
@@ -817,7 +817,7 @@
   flex: 1;
   padding: 5px 6px;
   border: 1px solid var(--palette-gray-16);
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale));
   background: var(--palette-gray-7);
   color: var(--color-neutral-400);
   font-size: var(--font-size-11);
@@ -865,7 +865,7 @@
 .detectedObjectChip {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   font-size: var(--font-size-11);
   background: rgba(0, 180, 255, 0.15);
   color: rgba(0, 180, 255, 0.9);
@@ -882,7 +882,7 @@
   gap: 4px;
   padding: 2px 8px;
   border: 1px solid var(--color-neutral-700);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: transparent;
   color: var(--color-neutral-400);
   font-size: var(--font-size-11);

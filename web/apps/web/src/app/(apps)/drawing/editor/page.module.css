@@ -27,7 +27,7 @@
   display: flex;
   align-items: center;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
 }
 
 .backBtn:hover {
@@ -46,7 +46,7 @@
 
 .titleInput:focus {
   background: var(--color-neutral-100);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   padding: 2px 6px;
 }
 

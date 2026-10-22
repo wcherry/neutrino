@@ -29,7 +29,7 @@
   padding: 6px 10px;
   border: none;
   background: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
@@ -44,7 +44,7 @@
   width: 32px;
   height: 32px;
   background: var(--palette-blue-61);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   display: var(--editor-classic-display, flex);
   align-items: center;
   justify-content: center;
@@ -62,7 +62,7 @@
   background: transparent;
   min-width: 0;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   transition: background 0.15s;
 }
 
@@ -94,7 +94,7 @@
   padding: 7px 14px;
   border: 1px solid var(--color-border);
   background: var(--color-bg);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   font-size: var(--font-size-13);
   color: var(--color-text);
@@ -124,7 +124,7 @@
   right: 0;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   min-width: 180px;
   z-index: var(--z-dropdown);
@@ -210,7 +210,7 @@
   border: none;
   border-left: 1px solid var(--color-border);
   background: var(--color-bg);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 calc(6px * var(--radius-scale)) calc(6px * var(--radius-scale)) 0;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -231,7 +231,7 @@
   height: 28px;
   border: none;
   background: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -260,7 +260,7 @@
   height: 26px;
   border: none;
   background: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   cursor: pointer;
   padding: 0 4px;
   transition: background 0.1s;
@@ -372,7 +372,7 @@
 
 .editorContent :global(code) {
   background: var(--palette-sky-95);
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   padding: 1px 4px;
   font-family: 'Roboto Mono', monospace;
   font-size: 10pt;
@@ -380,7 +380,7 @@
 
 .editorContent :global(pre) {
   background: var(--palette-sky-95);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   padding: 12px 16px;
   overflow-x: auto;
   margin: 8px 0;
@@ -413,7 +413,7 @@
 .editorContent :global(img) {
   max-width: 100%;
   height: auto;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   margin: 8px 0;
 }
 
@@ -495,7 +495,7 @@
 
 .modal {
   background: var(--color-bg);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale));
   padding: 24px;
   min-width: 380px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.2);
@@ -527,7 +527,7 @@
   height: 34px;
   padding: 0 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--font-size-13);
   outline: none;
 }
@@ -578,7 +578,7 @@
 
 .fieldHelp code {
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   background: var(--color-bg-secondary, var(--palette-sky-95));
   font-size: var(--font-size-11);
 }
@@ -588,7 +588,7 @@
    without the tint so a field is invisible on paper — it is the value that
    matters there, not the fact that it came from a code. */
 .editorContent :global(.doc-field) {
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   background: rgba(26, 115, 232, 0.1);
   box-shadow: 0 0 0 1px rgba(26, 115, 232, 0.18);
   cursor: default;
@@ -619,7 +619,7 @@
 /* The `{{…` still being typed, while the autocomplete is open — so it is
    obvious which characters the menu is matching against. */
 .editorContent :global(.doc-field-typing) {
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   background: rgba(26, 115, 232, 0.1);
 }
 
@@ -689,7 +689,7 @@
   left: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   padding: 4px 0;
   min-width: 220px;
@@ -804,7 +804,7 @@
 /* ── TOC node ─────────────────────────────────────────────────────────────── */
 .editorContent :global(.toc-node) {
   border: 1px solid var(--palette-gray-88);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   padding: 16px 20px;
   margin: 16px 0;
   background: var(--palette-gray-98);
@@ -919,12 +919,12 @@
 /* ── Find & replace highlight decorations (editing tools feature gap #3) ───── */
 .editorContent :global(.find-replace-match) {
   background-color: rgba(255, 213, 0, 0.45);
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
 }
 
 .editorContent :global(.find-replace-current) {
   background-color: rgba(255, 152, 0, 0.65);
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   outline: 1px solid rgba(255, 120, 0, 0.6);
 }
 
@@ -1158,7 +1158,7 @@
   gap: 4px;
   padding: 4px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-bg);
   font-size: var(--font-size-13);
   cursor: pointer;
@@ -1186,7 +1186,7 @@
 .zoomBtn {
   padding: 2px 8px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-bg);
   font-size: var(--font-size-11);
   cursor: pointer;
@@ -1217,7 +1217,7 @@
   padding: 8px 16px;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 20px;
+  border-radius: calc(20px * var(--radius-scale));
   color: rgba(255, 255, 255, 0.75);
   font-size: var(--font-size-13);
   cursor: pointer;

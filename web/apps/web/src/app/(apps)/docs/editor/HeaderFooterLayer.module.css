@@ -74,7 +74,7 @@
   top: -15px;
   left: 0;
   padding: 1px 6px;
-  border-radius: 3px 3px 0 0;
+  border-radius: calc(3px * var(--radius-scale)) calc(3px * var(--radius-scale)) 0 0;
   background: var(--palette-sky-51);
   color: var(--palette-gray-100);
   font-size: var(--font-size-9);
@@ -88,7 +88,7 @@
 .footer .bandLabel {
   top: auto;
   bottom: -15px;
-  border-radius: 0 0 3px 3px;
+  border-radius: 0 0 calc(3px * var(--radius-scale)) calc(3px * var(--radius-scale));
 }
 
 /* Three equal columns, so the centre slot is centred on the page rather than

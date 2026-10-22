@@ -67,6 +67,8 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "appearance.theme", kind: Kind::Str { max_length: 80, pattern: Some(THEME_PATTERN) }, scopes: USER_ORG },
     Spec { key: "appearance.look", kind: Kind::Enum(&["classic", "lightflow", "precision", "blended"]), scopes: USER_ORG },
     Spec { key: "appearance.density", kind: Kind::Enum(&["compact", "comfortable", "spacious"]), scopes: USER_ORG_TEAM },
+    Spec { key: "appearance.shape", kind: Kind::Enum(&["sharper", "default", "rounder"]), scopes: USER_ORG_TEAM },
+    Spec { key: "appearance.font", kind: Kind::Str { max_length: 80, pattern: Some(r#"^[^'"<>;{}\\]{0,80}$"#) }, scopes: USER_ORG_TEAM },
     Spec { key: "appearance.textSize", kind: Kind::Enum(&["sm", "md", "lg"]), scopes: USER_ORG },
     Spec { key: "appearance.accent", kind: Kind::Str { max_length: 7, pattern: Some(ACCENT_PATTERN) }, scopes: USER_ORG },
     Spec { key: "a11y.reduceMotion", kind: Kind::Enum(&["system", "on", "off"]), scopes: USER },

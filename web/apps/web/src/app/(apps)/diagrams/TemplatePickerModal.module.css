@@ -12,7 +12,7 @@
   padding: 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   cursor: pointer;
   text-align: left;
   transition: box-shadow 0.15s, border-color 0.15s;
@@ -34,7 +34,7 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: var(--color-bg);
   color: var(--color-primary);
 }

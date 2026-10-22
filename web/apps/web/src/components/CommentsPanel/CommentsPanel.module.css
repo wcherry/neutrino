@@ -38,7 +38,7 @@
   font-size: var(--font-size-11);
   font-weight: 500;
   padding: 1px 6px;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   background: var(--palette-blue-95);
   color: var(--palette-sky-51);
 }
@@ -47,7 +47,7 @@
   font-size: var(--text-xs);
   padding: 2px 6px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-bg);
   color: var(--color-text);
   cursor: pointer;
@@ -62,7 +62,7 @@
   height: 28px;
   border: none;
   background: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-muted);
 }
@@ -88,7 +88,7 @@
   font-size: var(--font-size-13);
   padding: 8px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   resize: none;
   font-family: inherit;
   line-height: 1.4;
@@ -112,7 +112,7 @@
   font-size: var(--font-size-13);
   padding: 5px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: none;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -126,7 +126,7 @@
   font-size: var(--font-size-13);
   padding: 5px 12px;
   border: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--screen-primary-bg, var(--palette-sky-51));
   color: var(--screen-primary-fg, var(--palette-gray-100));
   cursor: pointer;
@@ -239,7 +239,7 @@
   font-size: var(--font-size-10);
   font-weight: 500;
   padding: 1px 6px;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   background: var(--palette-green-93);
   color: var(--palette-green-26);
   margin-bottom: 6px;
@@ -270,7 +270,7 @@
   color: var(--color-text-muted);
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   padding: 3px 6px;
   cursor: pointer;
   margin-top: 4px;
@@ -287,7 +287,7 @@
   margin-top: 8px;
   padding: 8px 10px;
   background: var(--color-bg-secondary, var(--palette-sky-98));
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
 }
 
 .replyHeader {
@@ -323,7 +323,7 @@
   height: 24px;
   border: none;
   background: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-muted);
   flex-shrink: 0;

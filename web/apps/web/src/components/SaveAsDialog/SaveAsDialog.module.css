@@ -13,7 +13,7 @@
 .dialog {
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale));
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
   width: 400px;
   max-width: calc(100vw - 32px);
@@ -38,7 +38,7 @@
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -95,7 +95,7 @@
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--font-size-13);
   color: var(--color-text);
   background: var(--color-bg);
@@ -126,7 +126,7 @@
   gap: 6px;
   padding: 7px 14px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   color: var(--color-text-muted);
   font-size: var(--font-size-13);
@@ -160,7 +160,7 @@
   flex-direction: column;
   gap: 0;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   overflow: hidden;
 }
 
@@ -363,7 +363,7 @@
   color: var(--palette-red-50);
   padding: 6px 10px;
   background: var(--palette-red-95);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
 }
 
 /* ── Actions ── */
@@ -380,7 +380,7 @@
 .cancelBtn {
   padding: 7px 16px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   color: var(--color-text);
   font-size: var(--font-size-13);
@@ -400,7 +400,7 @@
 .saveBtn {
   padding: 7px 18px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--screen-primary-bg, var(--palette-sky-51));
   color: var(--screen-primary-fg, var(--palette-gray-100));
   font-size: var(--font-size-13);

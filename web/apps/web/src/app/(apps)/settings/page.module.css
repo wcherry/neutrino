@@ -122,7 +122,7 @@
 .formInput {
   padding: 8px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--text-sm);
   color: var(--color-text);
   background: var(--color-surface);
@@ -156,7 +156,7 @@
   gap: 6px;
   padding: 4px;
   border: 2px solid transparent;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   background: transparent;
   cursor: pointer;
   transition: border-color 0.15s, transform 0.1s;
@@ -178,7 +178,7 @@
 .themeSwatch {
   width: 100%;
   aspect-ratio: 4 / 3;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   border: 1px solid rgba(0, 0, 0, 0.1);
   display: flex;
   align-items: flex-end;
@@ -210,7 +210,7 @@
   gap: 16px;
   padding: 14px 16px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 .settingInfo {
@@ -233,7 +233,7 @@
 .segmented {
   display: flex;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -279,7 +279,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   overflow: hidden;
 }
 
@@ -327,7 +327,7 @@
   gap: 5px;
   padding: 6px 12px;
   border: 1px solid var(--color-primary);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   font-size: var(--font-size-13);
   font-weight: 500;
@@ -348,7 +348,7 @@
   width: 30px;
   height: 30px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   cursor: pointer;
   color: var(--color-text-secondary);
@@ -393,7 +393,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   overflow: hidden;
 }
 
@@ -462,7 +462,7 @@
   gap: 6px;
   padding: 9px 20px;
   border: none;
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale));
   background: var(--screen-primary-bg, var(--color-primary));
   color: var(--screen-primary-fg, var(--palette-gray-100));
   font-size: var(--text-sm);
@@ -504,7 +504,7 @@
   gap: 14px;
   padding: 16px;
   border: 1px solid var(--color-error);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: var(--palette-red-98);
 }
 
@@ -529,7 +529,7 @@
   gap: 6px;
   padding: 9px 20px;
   border: 1px solid var(--color-error);
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale));
   background: transparent;
   color: var(--color-error);
   font-size: var(--text-sm);
@@ -557,7 +557,7 @@
 
 .dialog {
   background: var(--color-surface);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   padding: 24px;
   max-width: 400px;
   width: 90%;
@@ -590,7 +590,7 @@
 .dialogCancelBtn {
   padding: 8px 16px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   font-size: var(--text-sm);
   font-weight: 500;
@@ -606,7 +606,7 @@
 .dialogConfirmBtn {
   padding: 8px 16px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--color-error);
   color: var(--palette-gray-100);
   font-size: var(--text-sm);
@@ -632,7 +632,7 @@
   gap: 6px;
   padding: 7px 16px;
   border: 1px solid var(--color-border);
-  border-radius: 7px;
+  border-radius: calc(7px * var(--radius-scale));
   background: transparent;
   font-size: var(--font-size-13);
   font-weight: 500;
@@ -664,7 +664,7 @@ a.outlineBtn {
   flex: 1;
   padding: 8px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-family: monospace;
   font-size: var(--text-xs);
   color: var(--color-text);
@@ -689,7 +689,7 @@ a.outlineBtn {
   gap: 8px;
   padding: 12px 14px;
   border: 1px dashed var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   font-size: var(--font-size-13);
   color: var(--color-text-secondary);
 }

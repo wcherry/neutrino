@@ -82,7 +82,7 @@
   padding: 6px 8px;
   border: none;
   background: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font: inherit;
   font-size: var(--font-size-13);
   color: var(--color-text);
@@ -92,7 +92,7 @@
 
 .moreCustomize {
   border-top: 1px solid var(--color-border);
-  border-radius: 0 0 6px 6px;
+  border-radius: 0 0 calc(6px * var(--radius-scale)) calc(6px * var(--radius-scale));
   margin-top: 2px;
   padding-top: 8px;
 }
@@ -118,7 +118,7 @@
   padding: 4px;
   background: var(--glass-bg, var(--color-surface-overlay));
   border: 1px solid var(--glass-border, var(--color-border));
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   box-shadow: var(--glass-shadow, var(--shadow-lg));
   backdrop-filter: var(--glass-filter, none);
 }
@@ -180,7 +180,7 @@
   width: 26px;
   height: 26px;
   border: 1px solid var(--button-border-rest, var(--color-border));
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: none;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -207,7 +207,7 @@
 .resetButton {
   padding: 6px 10px;
   border: 1px solid var(--button-border-rest, var(--color-border));
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: none;
   font: inherit;
   font-size: var(--font-size-13);
@@ -233,7 +233,7 @@
   flex-shrink: 0;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   color: var(--doc-icon-color);
   background: color-mix(in srgb, var(--doc-icon-color) 12%, transparent);
 }

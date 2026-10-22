@@ -189,7 +189,7 @@
 
 .docContent mark {
   background: rgba(250, 204, 21, 0.4);
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   padding: 0.1em 0.2em;
 }
 
@@ -359,7 +359,7 @@
   width: 14px;
   height: 14px;
   border: 1.5px solid var(--color-border-strong);
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   margin-top: 4px;
   background: transparent;
   display: flex;

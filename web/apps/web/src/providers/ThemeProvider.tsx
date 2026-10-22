@@ -70,11 +70,21 @@ const ThemeContext = createContext<ThemeContextValue>({
 // Provider
 // ---------------------------------------------------------------------------
 
+/** The `--font-sans` stack for a chosen interface font, or null for the look's own. */
+export function interfaceFontStack(font: string): string | null {
+  const name = font.trim();
+  // The preference's pattern already refuses quotes and braces; checked again where it reaches CSS.
+  if (!name || /['"<>;{}\\]/.test(name)) return null;
+  return `'${name}', 'Inter', system-ui, -apple-system, sans-serif`;
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemePreference] = usePreference('appearance.theme') as [ThemeChoice, (t: ThemeChoice) => void];
   const [look] = usePreference('appearance.look');
   const [density] = usePreference('appearance.density');
   const [textSize] = usePreference('appearance.textSize');
+  const [shape] = usePreference('appearance.shape');
+  const [font] = usePreference('appearance.font');
   const [accent] = usePreference('appearance.accent');
   const [reduceMotion] = usePreference('a11y.reduceMotion');
   const [reduceTransparency] = usePreference('a11y.reduceTransparency');
@@ -107,6 +117,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     set('data-transparency', reduceTransparency === 'system' ? null : reduceTransparency === 'on' ? 'off' : 'on');
     set('data-contrast', contrast === 'system' ? null : contrast);
   }, [textSize, reduceMotion, reduceTransparency, contrast]);
+
+  // Corners and the interface font (customization roadmap §3.3, shape and type). `default` and ''
+  // are no override at all, so the look's own radii and font apply.
+  useEffect(() => {
+    const html = document.documentElement;
+    if (shape === 'default') html.removeAttribute('data-shape');
+    else html.setAttribute('data-shape', shape);
+    const family = interfaceFontStack(font);
+    if (family) html.style.setProperty('--font-sans', family);
+    else html.style.removeProperty('--font-sans');
+  }, [shape, font]);
 
   // The user's accent, legible whatever was picked (lib/accent.ts). Kept for the anti-FOUC script
   // too, so the next load paints it from the first frame.

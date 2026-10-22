@@ -244,5 +244,5 @@ textarea.input {
 .appDot {
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
 }

@@ -58,6 +58,10 @@ export interface PreferenceValues {
   'appearance.look': 'classic' | 'lightflow' | 'precision' | 'blended';
   'appearance.density': 'compact' | 'comfortable' | 'spacious';
   'appearance.textSize': 'sm' | 'md' | 'lg';
+  /** Corner radii: half, as drawn, or 1.75× — `--radius-scale` in tokens/spacing.css. */
+  'appearance.shape': 'sharper' | 'default' | 'rounder';
+  /** The interface font family — a built-in or one from the instance's font library; '' for the look's own. */
+  'appearance.font': string;
   /** `#rrggbb`, or null for the look's own accent. Never stored adjusted: lib/accent.ts adjusts. */
   'appearance.accent': string | null;
   'a11y.reduceMotion': 'system' | 'on' | 'off';

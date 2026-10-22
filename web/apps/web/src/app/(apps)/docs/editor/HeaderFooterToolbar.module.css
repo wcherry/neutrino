@@ -45,7 +45,7 @@
   gap: 4px;
   padding: 4px 9px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale));
   background: transparent;
   color: var(--color-text);
   font-size: var(--text-xs);
@@ -94,7 +94,7 @@
   width: 58px;
   padding: 3px 6px;
   border: 1px solid var(--palette-blue-83);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--palette-gray-100);
   font-size: var(--text-xs);
   color: var(--palette-gray-13);
@@ -117,7 +117,7 @@
   gap: 4px;
   padding: 4px 12px;
   border: none;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--radius-scale));
   background: var(--palette-sky-51);
   color: var(--palette-gray-100);
   font-size: var(--text-xs);

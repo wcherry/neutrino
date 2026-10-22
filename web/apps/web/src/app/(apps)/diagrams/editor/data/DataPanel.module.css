@@ -100,7 +100,7 @@
   font-size: var(--text-xs);
   padding: 3px 6px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text-primary);
 }
@@ -110,7 +110,7 @@
   font-size: var(--text-xs);
   padding: 3px 6px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text-primary);
 }
@@ -123,7 +123,7 @@
   font-size: var(--text-xs);
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-primary);
 }
@@ -139,7 +139,7 @@
   background: var(--color-primary);
   color: var(--palette-gray-100);
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
 }
 
@@ -160,7 +160,7 @@
   padding: 4px 8px;
   background: none;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-secondary);
 }
@@ -178,12 +178,12 @@
   color: var(--palette-red-51);
   background: var(--palette-red-94);
   padding: 6px 8px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
 }
 
 .previewTable {
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   overflow: hidden;
   font-size: var(--font-size-11);
 }
@@ -228,7 +228,7 @@
   align-items: center;
   gap: 6px;
   background: var(--color-surface-elevated);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   padding: 4px 8px;
   font-size: var(--font-size-11);
 }
@@ -244,7 +244,7 @@
 .ruleSwatch {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   flex-shrink: 0;
 }
 

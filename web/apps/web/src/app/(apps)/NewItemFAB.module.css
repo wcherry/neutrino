@@ -127,7 +127,7 @@
 .fab[data-variant='sidebar'] .menuItem {
   color: var(--text-1);
   font-size: var(--ui-font-size);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 .fab[data-variant='sidebar'] .menuItem:hover {

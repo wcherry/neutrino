@@ -33,7 +33,7 @@
   flex-direction: column;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale));
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
   width: 720px;
   max-width: calc(100vw - 32px);
@@ -63,7 +63,7 @@
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -149,7 +149,7 @@
   height: var(--ip-search-h);
   padding: 7px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--color-bg);
   color: var(--color-text);
   font-size: var(--font-size-13);
@@ -202,7 +202,7 @@
   height: var(--ip-item-h);
   padding: 6px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: var(--color-bg);
   cursor: pointer;
   transition: border-color 0.1s, box-shadow 0.1s;
@@ -224,7 +224,7 @@
   flex: 1;
   min-height: 0;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-bg-subtle);
 }
 
@@ -255,7 +255,7 @@
   min-height: 180px;
   padding: 24px;
   border: 2px dashed var(--color-border);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--radius-scale));
   background: var(--color-bg);
   text-align: center;
   cursor: pointer;
@@ -369,7 +369,7 @@
   min-height: 0;
   padding: 8px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: var(--color-bg-subtle);
   overflow: hidden;
 }
@@ -422,7 +422,7 @@
 .progressTrack {
   height: 3px;
   margin: 0 22px;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   background: var(--color-bg-subtle);
   overflow: hidden;
   visibility: hidden;
@@ -458,7 +458,7 @@
 .cancelBtn,
 .confirmBtn {
   padding: 7px 16px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font-size: var(--font-size-13);
   font-weight: 500;
   cursor: pointer;

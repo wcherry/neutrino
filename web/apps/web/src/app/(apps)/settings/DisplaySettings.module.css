@@ -151,3 +151,15 @@
   font-size: var(--text-xs);
   cursor: pointer;
 }
+
+.select {
+  max-width: 280px;
+  height: calc(34px * var(--density, 1));
+  padding: 0 var(--space-2);
+  border: 1px solid var(--field-border, var(--color-border));
+  border-radius: var(--control-radius, var(--radius-md));
+  background: var(--field-bg, var(--color-surface));
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+}

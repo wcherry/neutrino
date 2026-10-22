@@ -65,7 +65,7 @@
   width: 11px;
   height: 2px;
   background-color: currentColor;
-  border-radius: 1px;
+  border-radius: calc(1px * var(--radius-scale));
 }
 
 .content {

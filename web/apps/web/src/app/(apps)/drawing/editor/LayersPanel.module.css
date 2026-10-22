@@ -34,7 +34,7 @@
   display: flex;
   align-items: center;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
 }
 
 .addBtn:hover {
@@ -116,7 +116,7 @@
   display: flex;
   align-items: center;
   padding: 1px;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   flex-shrink: 0;
 }
 
@@ -144,7 +144,7 @@
   font-size: var(--text-xs);
   font-weight: 500;
   border: 1px solid var(--palette-blue-53);
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   padding: 1px 4px;
   outline: none;
   min-width: 0;
@@ -156,7 +156,7 @@
   font-size: var(--font-size-10);
   color: var(--color-neutral-400);
   background: var(--color-neutral-100);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   padding: 1px 5px;
   flex-shrink: 0;
   margin-right: 2px;
@@ -231,7 +231,7 @@
   display: flex;
   align-items: center;
   padding: 2px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   flex-shrink: 0;
   opacity: 0;
 }
@@ -274,7 +274,7 @@
 .confirmYes {
   font-size: var(--font-size-11);
   padding: 2px 8px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   border: 1px solid var(--palette-red-51);
   background: var(--palette-red-51);
   color: var(--palette-gray-100);
@@ -290,7 +290,7 @@
 .confirmNo {
   font-size: var(--font-size-11);
   padding: 2px 8px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   border: 1px solid var(--color-neutral-300);
   background: var(--palette-gray-100);
   color: var(--color-neutral-700);
@@ -316,7 +316,7 @@
   min-width: 150px;
   background: var(--palette-gray-100);
   border: 1px solid var(--color-neutral-200);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
   padding: 4px;
   display: flex;
@@ -332,7 +332,7 @@
   color: var(--color-neutral-700);
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   cursor: pointer;
   text-align: left;
 }
@@ -393,7 +393,7 @@
   font-size: var(--font-size-11);
   padding: 2px 4px;
   border: 1px solid var(--color-neutral-200);
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   background: var(--palette-gray-100);
   color: var(--color-neutral-700);
 }

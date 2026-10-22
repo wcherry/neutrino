@@ -293,7 +293,7 @@
   font-family: var(--font-family-mono, monospace);
   font-size: 0.88em;
   background: var(--color-surface-raised);
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   padding: 0.1em 0.35em;
   color: var(--color-text-primary);
 }
@@ -674,7 +674,7 @@
 .tablePresetSwatch {
   width: 36px;
   height: 28px;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--radius-scale));
   border: 2px solid transparent;
   cursor: pointer;
   padding: 0;

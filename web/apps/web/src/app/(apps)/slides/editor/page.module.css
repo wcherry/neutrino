@@ -377,7 +377,7 @@
   box-shadow: var(--shadow-xl, 0 20px 60px rgba(0,0,0,0.15));
   overflow: hidden;
   cursor: default;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
 }
 
 .slideCanvasDragOver {
@@ -401,7 +401,7 @@
   height: 8px;
   background: var(--color-accent);
   border: 1.5px solid var(--palette-gray-100);
-  border-radius: 1px;
+  border-radius: calc(1px * var(--radius-scale));
   transform: translate(-50%, -50%);
   z-index: var(--z-layer-10);
   box-shadow: 0 0 0 1px var(--color-accent);
@@ -939,7 +939,7 @@
   position: relative;
   overflow: hidden;
   box-shadow: 0 0 40px rgba(0,0,0,0.8);
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
 }
 
 @keyframes presenterFadeIn {
@@ -1117,7 +1117,7 @@
   aspect-ratio: 16 / 9;
   position: relative;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: calc(2px * var(--radius-scale));
   border: 1px solid rgba(255,255,255,0.1);
 }
 
@@ -1678,7 +1678,7 @@
   left: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   padding: 4px 0;
   min-width: 220px;

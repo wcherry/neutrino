@@ -13,7 +13,7 @@
 .dialog {
   background: var(--color-bg);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--radius-scale));
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
   width: 380px;
   max-width: calc(100vw - 32px);
@@ -115,7 +115,7 @@
 .cancelBtn {
   padding: 7px 16px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: transparent;
   color: var(--color-text);
   font-size: var(--font-size-13);
@@ -133,7 +133,7 @@
   gap: 6px;
   padding: 7px 16px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--palette-violet-66);
   color: var(--palette-gray-100);
   font-size: var(--font-size-13);

@@ -25,7 +25,7 @@
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 .activeIcon {
@@ -90,7 +90,7 @@
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: var(--color-surface-secondary, transparent);
 }
 
@@ -109,7 +109,7 @@
   padding: 7px 12px;
   font-size: var(--font-size-13);
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   border: 1px solid var(--color-border);
   background: transparent;
@@ -151,7 +151,7 @@
   letter-spacing: 0.06em;
   text-align: center;
   padding: 14px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   border: 1px dashed var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-primary);
@@ -181,7 +181,7 @@
   justify-content: center;
   padding: 16px;
   background: var(--palette-gray-100);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 .sasLabel {
@@ -213,7 +213,7 @@
   color: var(--color-warning-text, var(--palette-orange-31));
   background: var(--color-warning-bg, var(--palette-amber-96));
   border: 1px solid var(--color-warning-border, var(--palette-amber-77));
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 /*
@@ -256,5 +256,5 @@
   text-align: center;
   color: var(--color-text-secondary);
   background: var(--color-surface-muted, var(--color-neutral-50));
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }

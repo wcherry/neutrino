@@ -12,7 +12,7 @@
     padding: 12px;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-radius: 10px;
+    border-radius: calc(10px * var(--radius-scale));
     cursor: pointer;
     text-align: left;
     transition: box-shadow 0.15s, border-color 0.15s;
@@ -31,7 +31,7 @@
 
 .previewWrap {
     overflow: hidden;
-    border-radius: 6px;
+    border-radius: calc(6px * var(--radius-scale));
 }
 
 :global([data-theme="dark"]) .card {
