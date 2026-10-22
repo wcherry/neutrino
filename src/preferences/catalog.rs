@@ -10,7 +10,12 @@
 // Two copies of one list is the feature-flag catalogue's arrangement
 // (`drive/feature_flags/catalog.rs` beside `FLAG_KEYS`), and so is the guard:
 // `the_catalog_matches_the_registry` reads the client's JSON and fails when an
-// entry is added, removed or retyped on one side only.
+// entry is added, removed, retyped or rescoped on one side only.
+//
+// Each entry also says who may set it (`Scopes`): the user, the organisation
+// (an administrator's default, optionally locked) and a team (a default inside
+// its space). A user write to a key without `user`, or an admin write to one
+// without `org`, is refused rather than stored.
 
 use regex::Regex;
 use serde_json::Value;
@@ -25,31 +30,55 @@ pub enum Kind {
     /// A JSON object, opaque here beyond its size — the client repairs its fields on read
     /// (`clampBrush` does for the drawing brush).
     Object { max_bytes: usize },
+    /// A list of distinct values, each one of `options` — which apps an instance offers.
+    Set(&'static [&'static str]),
 }
+
+/// Who may set a key. Resolution order is the client's (`@neutrino/preferences`, `store.ts`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Scopes {
+    pub user: bool,
+    pub org: bool,
+    pub team: bool,
+}
+
+const USER: Scopes = Scopes { user: true, org: false, team: false };
+const USER_ORG: Scopes = Scopes { user: true, org: true, team: false };
+const USER_ORG_TEAM: Scopes = Scopes { user: true, org: true, team: true };
+const USER_TEAM: Scopes = Scopes { user: true, org: false, team: true };
+const ORG: Scopes = Scopes { user: false, org: true, team: false };
 
 #[derive(Debug, Clone, Copy)]
 pub struct Spec {
     pub key: &'static str,
     pub kind: Kind,
+    pub scopes: Scopes,
 }
+
+/// Every app an instance can offer, in sidebar order — the options of `apps.enabled`.
+pub const APPS: &[&str] = &["docs", "sheets", "slides", "notes", "diagrams", "drawing", "photos", "calendar"];
 
 const THEME_PATTERN: &str =
     "^(system|light|dark|glass|midnight|beach|forest|sunbeams|light-glass|custom-[A-Za-z0-9_-]{1,64})$";
 
 pub const PLAIN: &[Spec] = &[
-    Spec { key: "appearance.theme", kind: Kind::Str { max_length: 80, pattern: Some(THEME_PATTERN) } },
-    Spec { key: "appearance.look", kind: Kind::Enum(&["classic", "lightflow", "precision", "blended"]) },
-    Spec { key: "appearance.density", kind: Kind::Enum(&["compact", "comfortable", "spacious"]) },
-    Spec { key: "calendar.weekStart", kind: Kind::Integer { min: 0, max: 6 } },
-    Spec { key: "calendar.dayStartHour", kind: Kind::Integer { min: 0, max: 23 } },
-    Spec { key: "calendar.dayEndHour", kind: Kind::Integer { min: 1, max: 24 } },
-    Spec { key: "docs.spellCheck", kind: Kind::Boolean },
-    Spec { key: "docs.splitParagraphs", kind: Kind::Boolean },
-    Spec { key: "photos.autoFaceDetect", kind: Kind::Boolean },
-    Spec { key: "drawing.brush", kind: Kind::Object { max_bytes: 4096 } },
-    Spec { key: "keyboard.preset", kind: Kind::Enum(&["neutrino", "google", "microsoft"]) },
-    Spec { key: "keyboard.bindings", kind: Kind::Object { max_bytes: 8192 } },
-    Spec { key: "ai.provider", kind: Kind::Enum(&["gemini", "claude", "openai"]) },
+    Spec { key: "appearance.theme", kind: Kind::Str { max_length: 80, pattern: Some(THEME_PATTERN) }, scopes: USER_ORG },
+    Spec { key: "appearance.look", kind: Kind::Enum(&["classic", "lightflow", "precision", "blended"]), scopes: USER_ORG },
+    Spec { key: "appearance.density", kind: Kind::Enum(&["compact", "comfortable", "spacious"]), scopes: USER_ORG_TEAM },
+    Spec { key: "calendar.weekStart", kind: Kind::Integer { min: 0, max: 6 }, scopes: USER_ORG },
+    Spec { key: "calendar.dayStartHour", kind: Kind::Integer { min: 0, max: 23 }, scopes: USER },
+    Spec { key: "calendar.dayEndHour", kind: Kind::Integer { min: 1, max: 24 }, scopes: USER },
+    Spec { key: "docs.spellCheck", kind: Kind::Boolean, scopes: USER_ORG },
+    Spec { key: "docs.splitParagraphs", kind: Kind::Boolean, scopes: USER },
+    Spec { key: "photos.autoFaceDetect", kind: Kind::Boolean, scopes: USER_ORG },
+    Spec { key: "drawing.brush", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
+    Spec { key: "keyboard.preset", kind: Kind::Enum(&["neutrino", "google", "microsoft"]), scopes: USER_ORG },
+    Spec { key: "keyboard.bindings", kind: Kind::Object { max_bytes: 8192 }, scopes: USER },
+    Spec { key: "ai.provider", kind: Kind::Enum(&["gemini", "claude", "openai"]), scopes: USER_ORG },
+    Spec { key: "apps.enabled", kind: Kind::Set(APPS), scopes: ORG },
+    Spec { key: "teamSpace.view", kind: Kind::Enum(&["large", "small", "list"]), scopes: USER_TEAM },
+    Spec { key: "teamSpace.sort", kind: Kind::Enum(&["name", "size", "createdAt", "updatedAt"]), scopes: USER_TEAM },
+    Spec { key: "teamSpace.sortDirection", kind: Kind::Enum(&["asc", "desc"]), scopes: USER_TEAM },
 ];
 
 pub fn spec(key: &str) -> Option<&'static Spec> {
@@ -96,6 +125,17 @@ pub fn validate(spec: &Spec, value: &Value) -> Result<(), String> {
             }
             Ok(())
         }
+        Kind::Set(options) => {
+            let items = value.as_array().ok_or("must be a list")?;
+            let mut seen = Vec::with_capacity(items.len());
+            for item in items {
+                match item.as_str() {
+                    Some(s) if options.contains(&s) && !seen.contains(&s) => seen.push(s),
+                    _ => return Err(format!("must list distinct values from {}", options.join(", "))),
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -133,6 +173,15 @@ mod tests {
     }
 
     #[test]
+    fn an_app_list_names_known_apps_once_each() {
+        assert!(check("apps.enabled", json!(["docs", "sheets"])).is_ok());
+        assert!(check("apps.enabled", json!([])).is_ok());
+        assert!(check("apps.enabled", json!(["docs", "docs"])).is_err());
+        assert!(check("apps.enabled", json!(["docs", "mail"])).is_err());
+        assert!(check("apps.enabled", json!("docs")).is_err());
+    }
+
+    #[test]
     fn an_oversized_object_is_refused() {
         let big = "x".repeat(5000);
         assert!(check("drawing.brush", json!({ "blob": big })).is_err());
@@ -163,8 +212,17 @@ mod tests {
                     ty["kind"] == "string" && ty["maxLength"] == max_length && ty["pattern"].as_str() == pattern
                 }
                 Kind::Object { max_bytes } => ty["kind"] == "object" && ty["maxBytes"] == max_bytes,
+                Kind::Set(options) => ty["kind"] == "set" && ty["options"] == json!(options),
             };
             assert!(matches, "{} is typed differently in registry.json", spec.key);
+            let scopes = entry["scopes"].as_array().expect("every entry declares its scopes");
+            let has = |s: &str| scopes.iter().any(|v| v == s);
+            assert_eq!(
+                Scopes { user: has("user"), org: has("org"), team: has("team") },
+                spec.scopes,
+                "{} is scoped differently in registry.json",
+                spec.key
+            );
             // The registry's default must be a value the server would accept.
             if !entry["default"].is_null() {
                 assert!(validate(spec, &entry["default"]).is_ok(), "{} default is invalid", spec.key);

@@ -3778,3 +3778,75 @@ fn a_team_is_private_by_default() {
         0
     );
 }
+
+// ── Team preference defaults (customization roadmap §5, T2) ──────────────────
+
+#[test]
+fn owners_and_admins_set_a_teams_defaults_and_every_member_receives_them() {
+    use crate::preferences::dto::PatchPreferencesRequest;
+    use crate::preferences::repository::PreferencesRepository;
+    use crate::preferences::service::PreferencesService;
+
+    let f = Fixture::new();
+    let prefs = PreferencesService::new(Arc::new(PreferencesRepository::new(f.pool.clone())));
+    let owner = user("u1", "owner@example.com");
+    let viewer = user("u2", "v@example.com");
+    f.add_user("u2", "v@example.com", "Vee");
+    let team = f.create_team("Design", &owner);
+    f.service
+        .add_member(&team.id, AddMemberRequest { email: "v@example.com".into(), role: "viewer".into() }, &owner)
+        .expect("add viewer");
+    let stranger = f.outsider("u3");
+
+    // A Viewer may read the defaults but not set them; a non-member cannot even see the team.
+    assert!(f.service.authorize_preferences(&team.id, &viewer, false).is_ok());
+    assert_eq!(f.service.authorize_preferences(&team.id, &viewer, true).unwrap_err().status, 403);
+    assert_eq!(f.service.authorize_preferences(&team.id, &stranger, false).unwrap_err().status, 404);
+
+    f.service.authorize_preferences(&team.id, &owner, true).expect("owner may write");
+    let values = serde_json::json!({ "teamSpace.view": "list", "appearance.density": "compact" });
+    prefs
+        .patch_team(&team.id, &owner.user_id, PatchPreferencesRequest { values: values.as_object().unwrap().clone() })
+        .expect("set defaults");
+
+    // Only keys scoped to teams: a team cannot pick its members' theme.
+    let theme = serde_json::json!({ "appearance.theme": "dark" });
+    let refused = prefs
+        .patch_team(&team.id, &owner.user_id, PatchPreferencesRequest { values: theme.as_object().unwrap().clone() })
+        .unwrap_err();
+    assert_eq!(refused.code, "NOT_A_TEAM_PREFERENCE");
+
+    // Every member's own read carries the team's defaults, keyed by team; an outsider's does not.
+    let read = prefs.get(&viewer).expect("read");
+    assert_eq!(read.teams[&team.id]["teamSpace.view"], "list");
+    assert_eq!(read.teams[&team.id]["appearance.density"], "compact");
+    assert!(prefs.get(&stranger).expect("read").teams.is_empty());
+    let mut members = prefs.team_member_ids(&team.id).expect("members");
+    members.sort();
+    assert_eq!(members, vec!["u1".to_string(), "u2".to_string()]);
+}
+
+#[test]
+fn a_team_colour_is_a_colour_and_nothing_else() {
+    let f = Fixture::new();
+    let owner = user("u1", "owner@example.com");
+    let team = f.create_team("Design", &owner);
+    for bad in ["url(https://example.com/x)", "red", "#12345", "#1234567", "#12345g"] {
+        let mut req = update_team_request();
+        req.avatar_color = Some(Some(bad.into()));
+        assert_eq!(f.service.update_team(&team.id, req, &owner).unwrap_err().status, 400, "{bad}");
+    }
+    let mut req = update_team_request();
+    req.avatar_emoji = Some(Some("<b>".into()));
+    assert_eq!(f.service.update_team(&team.id, req, &owner).unwrap_err().status, 400);
+
+    let mut req = update_team_request();
+    req.avatar_color = Some(Some("#16a34a".into()));
+    req.avatar_emoji = Some(Some("🎨".into()));
+    let updated = f.service.update_team(&team.id, req, &owner).expect("a real colour");
+    assert_eq!(updated.avatar_color.as_deref(), Some("#16a34a"));
+    // Clearing is always allowed.
+    let mut req = update_team_request();
+    req.avatar_color = Some(None);
+    assert!(f.service.update_team(&team.id, req, &owner).is_ok());
+}

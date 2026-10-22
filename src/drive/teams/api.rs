@@ -12,6 +12,8 @@ use std::sync::Arc;
 
 use super::dto::*;
 use super::service::TeamsService;
+use crate::preferences::api::PreferencesApiState;
+use crate::preferences::dto::{PatchPreferencesRequest, TeamPreferencesResponse};
 use crate::shared::{ApiError, AuthenticatedUser};
 
 pub struct TeamsApiState {
@@ -1014,6 +1016,63 @@ pub async fn list_file_team_shares(
     ))
 }
 
+// ── Team preferences ─────────────────────────────────────────────────────────
+
+/// The team's preference defaults — what its space starts with for each member (view, sort,
+/// density). A member's own choice still wins; these fill in where they have none.
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/teams/{teamId}/preferences",
+    params(("teamId" = String, Path, description = "Team id")),
+    responses(
+        (status = 200, description = "The team's defaults", body = TeamPreferencesResponse),
+        (status = 404, description = "No such team, or the caller is not a member of it"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[get("/{team_id}/preferences")]
+pub async fn get_team_preferences(
+    state: web::Data<TeamsApiState>,
+    prefs: web::Data<PreferencesApiState>,
+    path: web::Path<String>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<TeamPreferencesResponse>, ApiError> {
+    let team_id = path.into_inner();
+    state.service.authorize_preferences(&team_id, &user, false)?;
+    Ok(web::Json(prefs.service.team_defaults(&team_id)?))
+}
+
+/// Set or clear the team's preference defaults. Owners and Admins only; `null` clears a key.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/drive/teams/{teamId}/preferences",
+    params(("teamId" = String, Path, description = "Team id")),
+    request_body = PatchPreferencesRequest,
+    responses(
+        (status = 200, description = "The team's defaults after the change", body = TeamPreferencesResponse),
+        (status = 400, description = "Unknown key, a key teams cannot set, or an invalid value"),
+        (status = 403, description = "The caller's role cannot manage this team's settings"),
+        (status = 404, description = "No such team, or the caller is not a member of it"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[patch("/{team_id}/preferences")]
+pub async fn patch_team_preferences(
+    state: web::Data<TeamsApiState>,
+    prefs: web::Data<PreferencesApiState>,
+    path: web::Path<String>,
+    body: web::Json<PatchPreferencesRequest>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<TeamPreferencesResponse>, ApiError> {
+    let team_id = path.into_inner();
+    state.service.authorize_preferences(&team_id, &user, true)?;
+    let defaults = prefs.service.patch_team(&team_id, &user.user_id, body.into_inner())?;
+    prefs.signal_team(&team_id);
+    Ok(web::Json(defaults))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_file_team_shares).service(
         web::scope("/teams")
@@ -1038,6 +1097,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(get_page)
             .service(update_page)
             .service(delete_page)
+            .service(get_team_preferences)
+            .service(patch_team_preferences)
             .service(list_members)
             .service(add_member)
             .service(update_member)
@@ -1066,6 +1127,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         list_teams,
         create_team,
         get_team,
+        get_team_preferences,
+        patch_team_preferences,
         update_team,
         delete_team,
         list_discoverable,

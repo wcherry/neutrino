@@ -43,6 +43,16 @@ impl NotificationHub {
         }
     }
 
+    /// Push a JSON string to every open connection of every user — for a change that is the whole
+    /// instance's, like an administrator's preference defaults or the instance branding.
+    pub fn push_all(&self, json: String) {
+        let mut map = self.senders.lock().unwrap();
+        map.retain(|_, slots| {
+            slots.retain(|_, tx| tx.send(json.clone()).is_ok());
+            !slots.is_empty()
+        });
+    }
+
     /// Push a JSON string to all active connections for `user_id`.
     /// Dead senders are cleaned up automatically.
     pub fn push(&self, user_id: &str, json: String) {

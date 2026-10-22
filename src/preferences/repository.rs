@@ -2,8 +2,10 @@
 //
 // Follows `themes::repository`'s connection and error-mapping style.
 
-use crate::preferences::model::{NewPreferenceRecord, PreferenceRecord, VaultRecord};
-use crate::schema::{user_preference_vault, user_preferences};
+use crate::preferences::model::{
+    NewPreferenceRecord, OrgPreferenceRecord, PreferenceRecord, TeamPreferenceRecord, VaultRecord,
+};
+use crate::schema::{org_preferences, team_members, team_preferences, user_preference_vault, user_preferences};
 use crate::shared::ApiError;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
@@ -134,5 +136,137 @@ impl PreferencesRepository {
             Ok(VaultWrite::Written(now.to_string()))
         })
         .map_err(db_error("put vault"))
+    }
+
+    // ── Organisation ──────────────────────────────────────────────────────────
+
+    pub fn list_org(&self) -> Result<Vec<OrgPreferenceRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        org_preferences::table
+            .order(org_preferences::key.asc())
+            .select(OrgPreferenceRecord::as_select())
+            .load(&mut conn)
+            .map_err(db_error("list org preferences"))
+    }
+
+    /// Apply one admin PATCH in one transaction: `Some((value, locked))` upserts, `None` deletes.
+    pub fn apply_org(
+        &self,
+        changes: &[(String, Option<(String, bool)>)],
+        by: &str,
+        now: &str,
+    ) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            for (key, change) in changes {
+                match change {
+                    Some((value, locked)) => {
+                        diesel::insert_into(org_preferences::table)
+                            .values((
+                                org_preferences::key.eq(key),
+                                org_preferences::value.eq(value),
+                                org_preferences::locked.eq(locked),
+                                org_preferences::updated_by.eq(by),
+                                org_preferences::updated_at.eq(now),
+                            ))
+                            .on_conflict(org_preferences::key)
+                            .do_update()
+                            .set((
+                                org_preferences::value.eq(value),
+                                org_preferences::locked.eq(locked),
+                                org_preferences::updated_by.eq(by),
+                                org_preferences::updated_at.eq(now),
+                            ))
+                            .execute(conn)?;
+                    }
+                    None => {
+                        diesel::delete(org_preferences::table.filter(org_preferences::key.eq(key))).execute(conn)?;
+                    }
+                }
+            }
+            Ok(())
+        })
+        .map_err(db_error("apply org preferences"))
+    }
+
+    // ── Teams ─────────────────────────────────────────────────────────────────
+
+    pub fn list_team(&self, team_id: &str) -> Result<Vec<TeamPreferenceRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        team_preferences::table
+            .filter(team_preferences::team_id.eq(team_id))
+            .order(team_preferences::key.asc())
+            .select(TeamPreferenceRecord::as_select())
+            .load(&mut conn)
+            .map_err(db_error("list team preferences"))
+    }
+
+    /// The defaults of every team `user_id` is a member of, for the caller's own preference read.
+    pub fn list_teams_for_member(&self, user_id: &str) -> Result<Vec<TeamPreferenceRecord>, ApiError> {
+        let mut conn = self.get_conn()?;
+        team_preferences::table
+            .filter(
+                team_preferences::team_id.eq_any(
+                    team_members::table.filter(team_members::user_id.eq(user_id)).select(team_members::team_id),
+                ),
+            )
+            .order((team_preferences::team_id.asc(), team_preferences::key.asc()))
+            .select(TeamPreferenceRecord::as_select())
+            .load(&mut conn)
+            .map_err(db_error("list member team preferences"))
+    }
+
+    /// Who belongs to `team_id` — the users a change to its defaults is signalled to.
+    pub fn team_member_ids(&self, team_id: &str) -> Result<Vec<String>, ApiError> {
+        let mut conn = self.get_conn()?;
+        team_members::table
+            .filter(team_members::team_id.eq(team_id))
+            .select(team_members::user_id)
+            .load(&mut conn)
+            .map_err(db_error("list team member ids"))
+    }
+
+    pub fn apply_team(
+        &self,
+        team_id: &str,
+        changes: &[(String, Option<String>)],
+        by: &str,
+        now: &str,
+    ) -> Result<(), ApiError> {
+        let mut conn = self.get_conn()?;
+        conn.transaction::<_, diesel::result::Error, _>(|conn| {
+            for (key, value) in changes {
+                match value {
+                    Some(value) => {
+                        diesel::insert_into(team_preferences::table)
+                            .values((
+                                team_preferences::team_id.eq(team_id),
+                                team_preferences::key.eq(key),
+                                team_preferences::value.eq(value),
+                                team_preferences::updated_by.eq(by),
+                                team_preferences::updated_at.eq(now),
+                            ))
+                            .on_conflict((team_preferences::team_id, team_preferences::key))
+                            .do_update()
+                            .set((
+                                team_preferences::value.eq(value),
+                                team_preferences::updated_by.eq(by),
+                                team_preferences::updated_at.eq(now),
+                            ))
+                            .execute(conn)?;
+                    }
+                    None => {
+                        diesel::delete(
+                            team_preferences::table
+                                .filter(team_preferences::team_id.eq(team_id))
+                                .filter(team_preferences::key.eq(key)),
+                        )
+                        .execute(conn)?;
+                    }
+                }
+            }
+            Ok(())
+        })
+        .map_err(db_error("apply team preferences"))
     }
 }

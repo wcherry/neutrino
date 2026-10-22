@@ -23,5 +23,5 @@
 mod broadcaster;
 mod middleware;
 
-pub use broadcaster::DriveEventBroadcaster;
+pub use broadcaster::{DriveEventBroadcaster, PREFERENCES_CHANGED_TYPE};
 pub use middleware::broadcast_drive_changes;

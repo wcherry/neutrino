@@ -10,12 +10,47 @@ use std::sync::Arc;
 use actix_web::{get, patch, put, web};
 use utoipa::OpenApi;
 
-use super::dto::{PatchPreferencesRequest, PreferencesResponse, PutVaultRequest, VaultResponse};
+use super::dto::{
+    OrgLayer, OrgPreferenceInput, PatchOrgPreferencesRequest, PatchPreferencesRequest, PreferencesResponse,
+    PutVaultRequest, TeamPreferencesResponse, VaultResponse,
+};
 use super::service::PreferencesService;
-use crate::shared::{ApiError, AuthenticatedUser};
+use crate::drive::notifications::hub::NotificationHub;
+use crate::shared::drive_events::PREFERENCES_CHANGED_TYPE;
+use crate::shared::{AdminUser, ApiError, AuthenticatedUser};
 
 pub struct PreferencesApiState {
     pub service: Arc<PreferencesService>,
+    /// Signals org and team changes to the users they reach. A user's own writes are signalled by
+    /// the drive-events middleware instead; `None` in tests that do not listen.
+    pub hub: Option<Arc<NotificationHub>>,
+}
+
+impl PreferencesApiState {
+    fn signal(&self) -> String {
+        serde_json::json!({ "type": PREFERENCES_CHANGED_TYPE, "originClientId": null }).to_string()
+    }
+
+    /// Every signed-in user re-reads their preferences: the organisation's layer changed.
+    pub fn signal_everyone(&self) {
+        if let Some(hub) = &self.hub {
+            hub.push_all(self.signal());
+        }
+    }
+
+    /// The members of `team_id` re-read their preferences: the team's defaults changed.
+    pub fn signal_team(&self, team_id: &str) {
+        let Some(hub) = &self.hub else { return };
+        match self.service.team_member_ids(team_id) {
+            Ok(ids) => {
+                let json = self.signal();
+                for id in ids {
+                    hub.push(&id, json.clone());
+                }
+            }
+            Err(e) => tracing::warn!("could not signal team {team_id} of a preference change: {e:?}"),
+        }
+    }
 }
 
 /// The caller's synced preferences.
@@ -92,17 +127,74 @@ pub async fn put_vault(
     Ok(web::Json(state.service.put_vault(&user, body.into_inner())?))
 }
 
+/// The organisation's preference defaults and locks.
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/preferences",
+    responses(
+        (status = 200, description = "Organisation defaults and locks", body = OrgLayer),
+        (status = 401, description = "Missing or invalid authentication token"),
+        (status = 403, description = "Not an administrator"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "preferences"
+)]
+#[get("/preferences")]
+pub async fn get_org_preferences(
+    state: web::Data<PreferencesApiState>,
+    _admin: AdminUser,
+) -> Result<web::Json<OrgLayer>, ApiError> {
+    Ok(web::Json(state.service.org_layer()?))
+}
+
+/// Set, lock or clear organisation defaults.
+///
+/// Each value is `{ "value": …, "locked": bool }`, or `null` to remove the default. Only keys the
+/// catalog lets an organisation set are accepted; one bad key fails the whole request. A locked key
+/// overrides every user's own value, and users can no longer change it.
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/preferences",
+    request_body = PatchOrgPreferencesRequest,
+    responses(
+        (status = 200, description = "Organisation defaults after the change", body = OrgLayer),
+        (status = 400, description = "Unknown key, a key organisations cannot set, or an invalid value"),
+        (status = 401, description = "Missing or invalid authentication token"),
+        (status = 403, description = "Not an administrator"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "preferences"
+)]
+#[patch("/preferences")]
+pub async fn patch_org_preferences(
+    state: web::Data<PreferencesApiState>,
+    admin: AdminUser,
+    body: web::Json<PatchOrgPreferencesRequest>,
+) -> Result<web::Json<OrgLayer>, ApiError> {
+    let layer = state.service.patch_org(&admin.user_id, body.into_inner())?;
+    state.signal_everyone();
+    Ok(web::Json(layer))
+}
+
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(get_preferences).service(patch_preferences).service(put_vault);
 }
 
+/// Mounted under `/api/v1/admin`.
+pub fn configure_admin(cfg: &mut web::ServiceConfig) {
+    cfg.service(get_org_preferences).service(patch_org_preferences);
+}
+
 #[derive(OpenApi)]
 #[openapi(
-    paths(get_preferences, patch_preferences, put_vault),
-    components(schemas(PreferencesResponse, VaultResponse, PatchPreferencesRequest, PutVaultRequest)),
+    paths(get_preferences, patch_preferences, put_vault, get_org_preferences, patch_org_preferences),
+    components(schemas(
+        PreferencesResponse, VaultResponse, PatchPreferencesRequest, PutVaultRequest, OrgLayer,
+        OrgPreferenceInput, PatchOrgPreferencesRequest, TeamPreferencesResponse
+    )),
     tags((
         name = "preferences",
-        description = "A user's synced preferences: plain values the server validates against its catalog (theme, look, density, calendar and editor settings), and one sealed vault for what it must not read (the AI API key, personal libraries). Device-only preferences never reach the server."
+        description = "A user's synced preferences: plain values the server validates against its catalog (theme, look, density, calendar and editor settings), and one sealed vault for what it must not read (the AI API key, personal libraries). Device-only preferences never reach the server. Under the user's own values sit the organisation's defaults and locks (set by administrators) and each team's defaults (set by its Owners and Admins)."
     )),
     security(("bearer_auth" = []))
 )]
@@ -149,7 +241,7 @@ mod tests {
         insert_user(&pool, "user-a");
         insert_user(&pool, "user-b");
         let repo = Arc::new(PreferencesRepository::new(pool));
-        web::Data::new(PreferencesApiState { service: Arc::new(PreferencesService::new(repo)) })
+        web::Data::new(PreferencesApiState { service: Arc::new(PreferencesService::new(repo)), hub: None })
     }
 
     fn tokens() -> Arc<TokenService> {
@@ -160,9 +252,21 @@ mod tests {
         format!("Bearer {}", ts.generate_access_token(user, &format!("{user}@example.com")).expect("token"))
     }
 
+    fn admin_bearer(ts: &TokenService, user: &str) -> String {
+        let token = ts.generate_access_token_with_admin(user, &format!("{user}@example.com"), true).expect("token");
+        format!("Bearer {token}")
+    }
+
     macro_rules! app {
         ($state:expr, $ts:expr) => {
-            test::init_service(App::new().app_data($state).app_data(web::Data::new($ts)).configure(configure)).await
+            test::init_service(
+                App::new()
+                    .app_data($state)
+                    .app_data(web::Data::new($ts))
+                    .configure(configure)
+                    .service(web::scope("/admin").configure(configure_admin)),
+            )
+            .await
         };
     }
 
@@ -190,7 +294,7 @@ mod tests {
 
         let (status, body) = call!(app, test::TestRequest::get().uri("/preferences").insert_header(auth.clone()));
         assert_eq!(status, 200);
-        assert_eq!(body, json!({ "values": {}, "vault": null }));
+        assert_eq!(body, json!({ "values": {}, "vault": null, "org": { "values": {}, "locked": [] }, "teams": {} }));
 
         let (status, body) = call!(
             app,
@@ -282,6 +386,97 @@ mod tests {
 
         let (_, body) = call!(app, test::TestRequest::get().uri("/preferences").insert_header(auth.clone()));
         assert_eq!(body["vault"]["blob"], "bmV3ZXI");
+    }
+
+    #[actix_web::test]
+    async fn only_an_administrator_reaches_the_org_layer() {
+        let ts = tokens();
+        let app = app!(test_state(), ts.clone());
+        let (status, _) = call!(
+            app,
+            test::TestRequest::patch().uri("/admin/preferences").insert_header(("Authorization", bearer(&ts, "user-a")))
+                .set_json(json!({ "values": { "appearance.look": { "value": "precision", "locked": true } } }))
+        );
+        assert_eq!(status, 403);
+        let (status, _) = call!(app, test::TestRequest::get().uri("/admin/preferences").insert_header(("Authorization", bearer(&ts, "user-a"))));
+        assert_eq!(status, 403);
+    }
+
+    #[actix_web::test]
+    async fn an_org_lock_reaches_every_user_and_refuses_their_writes() {
+        let ts = tokens();
+        let app = app!(test_state(), ts.clone());
+        let admin = ("Authorization", admin_bearer(&ts, "user-b"));
+        let user = ("Authorization", bearer(&ts, "user-a"));
+
+        // The user had chosen a look before the lock.
+        call!(app, test::TestRequest::patch().uri("/preferences").insert_header(user.clone())
+            .set_json(json!({ "values": { "appearance.look": "blended" } })));
+
+        let (status, body) = call!(
+            app,
+            test::TestRequest::patch().uri("/admin/preferences").insert_header(admin.clone()).set_json(json!({
+                "values": {
+                    "appearance.look": { "value": "precision", "locked": true },
+                    "appearance.density": { "value": "compact" },
+                    "apps.enabled": { "value": ["docs", "sheets", "calendar"], "locked": true }
+                }
+            }))
+        );
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(body["locked"], json!(["appearance.look", "apps.enabled"]));
+
+        // Every user's read carries the org layer beside their own values; the client resolves.
+        let (_, body) = call!(app, test::TestRequest::get().uri("/preferences").insert_header(user.clone()));
+        assert_eq!(body["org"]["values"]["appearance.look"], "precision");
+        assert_eq!(body["org"]["values"]["appearance.density"], "compact");
+        assert_eq!(body["org"]["locked"], json!(["appearance.look", "apps.enabled"]));
+        assert_eq!(body["values"]["appearance.look"], "blended", "the user's own row is kept, only outranked");
+
+        // A locked key cannot be written; an unlocked org default can be overridden.
+        let (status, body) = call!(app, test::TestRequest::patch().uri("/preferences").insert_header(user.clone())
+            .set_json(json!({ "values": { "appearance.look": "lightflow" } })));
+        assert_eq!(status, 403);
+        assert_eq!(body["error"]["code"], "PREFERENCE_LOCKED");
+        let (status, _) = call!(app, test::TestRequest::patch().uri("/preferences").insert_header(user.clone())
+            .set_json(json!({ "values": { "appearance.density": "spacious" } })));
+        assert_eq!(status, 200);
+
+        // Unlocking (re-setting without the lock) lets the user's write through again.
+        call!(app, test::TestRequest::patch().uri("/admin/preferences").insert_header(admin.clone())
+            .set_json(json!({ "values": { "appearance.look": { "value": "precision", "locked": false } } })));
+        let (status, _) = call!(app, test::TestRequest::patch().uri("/preferences").insert_header(user.clone())
+            .set_json(json!({ "values": { "appearance.look": "lightflow" } })));
+        assert_eq!(status, 200);
+
+        // `null` removes a default and its lock.
+        let (_, body) = call!(app, test::TestRequest::patch().uri("/admin/preferences").insert_header(admin)
+            .set_json(json!({ "values": { "apps.enabled": null } })));
+        assert_eq!(body["locked"], json!([]));
+        assert!(body["values"].get("apps.enabled").is_none());
+    }
+
+    #[actix_web::test]
+    async fn each_layer_takes_only_the_keys_scoped_to_it() {
+        let ts = tokens();
+        let app = app!(test_state(), ts.clone());
+        // Which apps an instance offers is the organisation's decision, not a user's.
+        let (status, body) = call!(app, test::TestRequest::patch().uri("/preferences").insert_header(("Authorization", bearer(&ts, "user-a")))
+            .set_json(json!({ "values": { "apps.enabled": ["docs"] } })));
+        assert_eq!(status, 400);
+        assert_eq!(body["error"]["code"], "NOT_A_USER_PREFERENCE");
+        // And someone's custom shortcuts are not something to impose on an organisation.
+        let admin = ("Authorization", admin_bearer(&ts, "user-b"));
+        for values in [
+            json!({ "keyboard.bindings": { "value": {} } }),
+            json!({ "teamSpace.view": { "value": "list" } }),
+            json!({ "appearance.look": { "value": "neon" } }),
+            json!({ "appearance.look": "precision" }),
+        ] {
+            let (status, _) = call!(app, test::TestRequest::patch().uri("/admin/preferences").insert_header(admin.clone())
+                .set_json(json!({ "values": values })));
+            assert_eq!(status, 400, "{values}");
+        }
     }
 
     #[actix_web::test]

@@ -34,3 +34,29 @@ pub struct VaultRecord {
     /// Also the vault's version: a write names the one it was based on.
     pub updated_at: String,
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = crate::schema::org_preferences)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct OrgPreferenceRecord {
+    pub key: String,
+    /// JSON text, validated against `catalog::PLAIN` and an `org` scope before it was stored.
+    pub value: String,
+    pub locked: bool,
+    pub updated_by: Option<String>,
+    pub updated_at: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Queryable, Selectable)]
+#[diesel(table_name = crate::schema::team_preferences)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct TeamPreferenceRecord {
+    pub team_id: String,
+    pub key: String,
+    /// JSON text, validated against `catalog::PLAIN` and a `team` scope before it was stored.
+    pub value: String,
+    pub updated_by: Option<String>,
+    pub updated_at: String,
+}

@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use utoipa::ToSchema;
 
-/// Everything synced for the caller: the plain values they have set, and their sealed vault.
+/// Everything synced for the caller: the plain values they have set, their sealed vault, and the
+/// layers under their own choices — the organisation's defaults and locks, and the defaults of
+/// each team they belong to. The client resolves a key from these (`@neutrino/preferences`).
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PreferencesResponse {
@@ -12,6 +14,47 @@ pub struct PreferencesResponse {
     #[schema(value_type = Object)]
     pub values: Map<String, Value>,
     pub vault: Option<VaultResponse>,
+    pub org: OrgLayer,
+    /// Team id → that team's defaults, for every team the caller is a member of. They apply only
+    /// inside the team's space.
+    #[schema(value_type = Object)]
+    pub teams: Map<String, Value>,
+}
+
+/// The organisation's layer: an administrator's defaults, and which of them are locked.
+#[derive(Debug, Default, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgLayer {
+    #[schema(value_type = Object)]
+    pub values: Map<String, Value>,
+    /// Keys whose org value overrides any user or device value, and that users cannot set.
+    pub locked: Vec<String>,
+}
+
+/// One org default as an administrator writes it.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgPreferenceInput {
+    #[schema(value_type = Object)]
+    pub value: Value,
+    #[serde(default)]
+    pub locked: bool,
+}
+
+/// Set, lock, unlock or clear organisation defaults. `null` removes the default (and its lock).
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchOrgPreferencesRequest {
+    #[schema(value_type = Object)]
+    pub values: Map<String, Value>,
+}
+
+/// A team's defaults.
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamPreferencesResponse {
+    #[schema(value_type = Object)]
+    pub values: Map<String, Value>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

@@ -35,6 +35,7 @@ mod schema;
 mod search;
 mod shared;
 mod preferences;
+mod branding;
 mod sheets;
 mod slides;
 mod themes;
@@ -247,7 +248,10 @@ fn configure_web_app(web_dir: &str) -> impl FnOnce(&mut web::ServiceConfig) {
                         .use_etag(true),
                 ),
         )
+        // Every page gets the instance's brand and the organisation's preference defaults written
+        // into its <head> on the way out (`branding::inject`); the hashed assets above do not.
         .service(
+            web::scope("").wrap(from_fn(branding::inject::inject_instance)).service(
             actix_files::Files::new("/", web_dir)
                 .index_file("index.html")
                 .use_last_modified(true)
@@ -271,6 +275,7 @@ fn configure_web_app(web_dir: &str) -> impl FnOnce(&mut web::ServiceConfig) {
                             .map_err(actix_web::error::ErrorNotFound)
                     }
                 })),
+            ),
         );
     }
 }
@@ -1133,8 +1138,25 @@ async fn main() -> std::io::Result<()> {
     use preferences::repository::PreferencesRepository;
     use preferences::service::PreferencesService;
 
+    let preferences_service = Arc::new(PreferencesService::new(Arc::new(PreferencesRepository::new(pool.clone()))));
     let preferences_state = web::Data::new(preferences::api::PreferencesApiState {
-        service: Arc::new(PreferencesService::new(Arc::new(PreferencesRepository::new(pool.clone())))),
+        service: preferences_service.clone(),
+        hub: Some(notification_hub.clone()),
+    });
+
+    // ── Branding ──────────────────────────────────────────────────────────────
+    //
+    // The instance's name, accent, sign-in message and images (customization roadmap §6.1),
+    // written into every served page along with the org's preference defaults.
+
+    use branding::repository::BrandingRepository;
+    use branding::service::BrandingService;
+
+    let branding_service = Arc::new(BrandingService::new(Arc::new(BrandingRepository::new(pool.clone()))));
+    let branding_state = web::Data::new(branding::api::BrandingApiState { service: branding_service.clone() });
+    let instance_head = web::Data::new(branding::inject::InstanceHead {
+        branding: branding_service,
+        preferences: preferences_service,
     });
 
     // ── Search index sync ─────────────────────────────────────────────────────
@@ -1250,6 +1272,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
         doc.merge(oauth::api::OauthApiDoc::openapi());
         doc.merge(themes::api::ThemesApiDoc::openapi());
         doc.merge(preferences::api::PreferencesApiDoc::openapi());
+        doc.merge(branding::api::BrandingApiDoc::openapi());
         doc.merge(search::api::SearchApiDoc::openapi());
         doc
     };
@@ -1349,6 +1372,9 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
             .app_data(themes_state.clone())
             // Preferences
             .app_data(preferences_state.clone())
+            // Branding, and what every served page carries in its <head>
+            .app_data(branding_state.clone())
+            .app_data(instance_head.clone())
             // Search
             .app_data(search_state.clone())
             // Middleware — actix runs these in reverse registration order, so `Compress` sits
@@ -1382,6 +1408,7 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                     .configure(drive::fonts::api::configure_public)
                     .configure(themes::api::configure)
                     .configure(preferences::api::configure)
+                    .configure(branding::api::configure_public)
                     .configure(search::api::configure)
                     .configure(calendar::configure)
                     .configure(docs::configure)
@@ -1407,7 +1434,10 @@ admin-only require an account with the admin role; the routes under `/api/v1/int
                             // member-facing routes but takes `AdminUser`, which is the whole
                             // difference between the two files.
                             .configure(drive::teams::admin_api::configure_admin)
-                            .configure(drive::fonts::api::configure_admin),
+                            .configure(drive::fonts::api::configure_admin)
+                            // Organisation preference defaults and locks, and the instance brand.
+                            .configure(preferences::api::configure_admin)
+                            .configure(branding::api::configure_admin),
                     )
                     // Internal routes
                     .service(
@@ -1776,7 +1806,100 @@ mod tests {
             assert_ne!(resp.status(), 200);
             let _ = std::fs::remove_file(&outside);
         }
-    }
+    
+        /// The brand and the org's defaults reach the page before any script runs, and a
+        /// revalidation still answers 304 until either of them changes.
+        #[actix_web::test]
+        async fn pages_carry_the_instance_brand_and_org_defaults() {
+            use diesel::r2d2::{ConnectionManager, Pool};
+            use diesel::SqliteConnection;
+            use diesel_migrations::MigrationHarness;
+
+            let dir = TestWebDir::new();
+            std::fs::write(
+                dir.0.join("index.html"),
+                r#"<!doctype html><html><head><meta charSet="utf-8"/><script>boot()</script></head><body></body></html>"#,
+            )
+            .expect("index");
+
+            let manager = ConnectionManager::<SqliteConnection>::new(":memory:");
+            let pool = Pool::builder().max_size(1).build(manager).expect("pool");
+            pool.get().expect("conn").run_pending_migrations(MIGRATIONS).expect("migrations");
+            {
+                use diesel::RunQueryDsl;
+                // `updated_by` names a real user.
+                diesel::sql_query(
+                    "INSERT INTO users (id, email, name, password_hash, created_at, role, totp_enabled) \
+                     VALUES ('admin', 'admin@example.com', 'Admin', 'hash', datetime('now'), 'admin', 0)",
+                )
+                .execute(&mut pool.get().expect("conn"))
+                .expect("admin user");
+            }
+            let branding = Arc::new(branding::service::BrandingService::new(Arc::new(
+                branding::repository::BrandingRepository::new(pool.clone()),
+            )));
+            let prefs = Arc::new(preferences::service::PreferencesService::new(Arc::new(
+                preferences::repository::PreferencesRepository::new(pool.clone()),
+            )));
+            let head = web::Data::new(branding::inject::InstanceHead {
+                branding: branding.clone(),
+                preferences: prefs.clone(),
+            });
+            let app = test::init_service(
+                App::new().app_data(head).configure(configure_web_app(dir.as_str())),
+            )
+            .await;
+
+            let body_of = |resp: ServiceResponse| async move { String::from_utf8(test::read_body(resp).await.to_vec()).unwrap() };
+
+            // Unbranded: the org layer is still there, before the page's own script.
+            let resp = test::call_service(&app, test::TestRequest::get().uri("/").to_request()).await;
+            assert_eq!(resp.status(), 200);
+            let etag = header_of(&resp, header::ETAG);
+            assert!(etag.contains("-n"), "{etag}");
+            let html = body_of(resp).await;
+            assert!(
+                html.contains(r#"<meta charSet="utf-8"/><script id="neutrino-instance">window.__NEUTRINO_INSTANCE__="#),
+                "{html}"
+            );
+            assert!(html.find("neutrino-instance").unwrap() < html.find("boot()").unwrap());
+
+            // Same page, same brand: 304.
+            let resp = test::call_service(
+                &app,
+                test::TestRequest::get().uri("/").insert_header((header::IF_NONE_MATCH, etag.clone())).to_request(),
+            )
+            .await;
+            assert_eq!(resp.status(), 304);
+            assert_eq!(header_of(&resp, header::ETAG), etag);
+
+            // The admin brands the instance: the old ETag no longer matches, and the page says so.
+            branding
+                .put(
+                    "admin",
+                    branding::dto::PutBrandingRequest {
+                        name: Some("Acme Cloud".into()),
+                        accent: Some("#0e7a4a".into()),
+                        sign_in_message: None,
+                    },
+                )
+                .unwrap_or_else(|e| panic!("branding: {e:?}"));
+            let resp = test::call_service(
+                &app,
+                test::TestRequest::get().uri("/").insert_header((header::IF_NONE_MATCH, etag.clone())).to_request(),
+            )
+            .await;
+            assert_eq!(resp.status(), 200);
+            assert_ne!(header_of(&resp, header::ETAG), etag);
+            let html = body_of(resp).await;
+            assert!(html.contains(r#""name":"Acme Cloud""#), "{html}");
+            assert!(html.contains("--brand-accent:#0e7a4a"), "{html}");
+
+            // Assets beside the pages are left alone.
+            let resp = test::call_service(&app, test::TestRequest::get().uri("/_next/static/chunks/main-abc123.js").to_request()).await;
+            assert!(!body_of(resp).await.contains("neutrino-instance"));
+        }
+}
 
     /// Six endpoints upgrade to WebSocket, and browsers send `Accept-Encoding` on the handshake
     /// like any other request. Compressing a 101 would break all of them at once, in a way no

@@ -109,6 +109,24 @@ pub fn slugify(input: &str) -> String {
 /// says so at the point of admitting them.
 const DEFAULT_JOIN_ROLE: Role = Role::Viewer;
 
+/// A team's accent is drawn into every member's page — its avatar, its sidebar entry and the tint
+/// of its space — so it is a colour and nothing else: `#rrggbb`. Anything wider (a `url(…)`
+/// would have every member's browser fetch it) is refused. The emoji is a short plain mark.
+fn validate_avatar(color: Option<&str>, emoji: Option<&str>) -> Result<(), ApiError> {
+    if let Some(c) = color {
+        let hex = c.strip_prefix('#').filter(|h| h.len() == 6 && h.bytes().all(|b| b.is_ascii_hexdigit()));
+        if hex.is_none() {
+            return Err(ApiError::bad_request("A team colour must look like #2563eb"));
+        }
+    }
+    if let Some(e) = emoji {
+        if e.chars().count() > 8 || e.chars().any(|ch| ch.is_control() || "<>\"'&;{}".contains(ch)) {
+            return Err(ApiError::bad_request("A team icon must be a single emoji or a short mark"));
+        }
+    }
+    Ok(())
+}
+
 fn parse_visibility(value: &str) -> Result<Visibility, ApiError> {
     Visibility::parse(value).ok_or_else(|| {
         ApiError::bad_request(
@@ -285,6 +303,20 @@ impl TeamsService {
         })
     }
 
+    /// Authorise a read (any member) or a write (`ManageSettings`: Owners and Admins) of the team's
+    /// preference defaults, which `preferences::service` stores. Gated and archived-checked like
+    /// every other team route; a non-member gets the same 404 as for the team itself.
+    pub fn authorize_preferences(
+        &self,
+        team_id: &str,
+        user: &AuthenticatedUser,
+        write: bool,
+    ) -> Result<(), ApiError> {
+        self.gate.require(FLAG_TEAM_SPACES)?;
+        let action = if write { TeamAction::ManageSettings } else { TeamAction::ViewTeam };
+        self.authorize(team_id, user, action).map(|_| ())
+    }
+
     pub fn get_team(
         &self,
         team_id: &str,
@@ -329,6 +361,7 @@ impl TeamsService {
             Some(v) => parse_visibility(v)?,
             None => Visibility::Private,
         };
+        validate_avatar(req.avatar_color.as_deref(), req.avatar_emoji.as_deref())?;
 
         let now = Self::now();
         let team_id = Uuid::new_v4().to_string();
@@ -439,6 +472,10 @@ impl TeamsService {
             }
         }
         let new_visibility = req.visibility.as_deref().map(parse_visibility).transpose()?;
+        validate_avatar(
+            req.avatar_color.as_ref().and_then(|c| c.as_deref()),
+            req.avatar_emoji.as_ref().and_then(|e| e.as_deref()),
+        )?;
 
         // A rename does not move the team. The slug is what links point at, so changing it would
         // break every bookmark into the space for the sake of a tidier URL.
