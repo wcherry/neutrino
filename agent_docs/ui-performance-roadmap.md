@@ -207,6 +207,10 @@ Separately, interaction costs on the L sheet:
 > 2.5 s. The listing no longer waits for auth; the remainder is script transfer at Fast 3G and the
 > first render. Next: the duplicated `/auth/me`, `/preferences` and search-meta requests, and a
 > `(mirror)` layout chunk that loads on `/drive` (`ui-roadmap.md`, Stage 3).
+>
+> **Stage 4:** the duplicate `/auth/me` is gone. B1's scroll helper no longer sets the time it
+> measures (it advanced by the window's overscan; the list took six times the passes); B3's large-grid
+> switch is 648 → 344 ms after caching date formatters, still over budget (`ui-roadmap.md`, Stage 4).
 
 **Confirmed and unchanged in shape since `performance-testing.md` §8.4.**
 

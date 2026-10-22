@@ -36,11 +36,13 @@ Columns: **Scopes** — who may set it (`org` default/lock, `team` default, `use
 |---|---|---|---|---|---|---|---|
 | `appearance.theme` | `neutrino.theme` (+ `user_profiles.theme` server-side) | `ThemeChoice` (`system`, the presets, `custom-<id>`) | `system` | org, user | plain | ✓ | Ends the dual write: the server column becomes this row. A per-device override (`device` scope, so one machine can stay on `system`) is planned, not built. |
 | `appearance.look` | — *(new)* | `classic` \| `lightflow` \| `precision` \| `blended` | `classic` until the default flips (roadmap stage 5) | org, user | plain | ✓ | `classic` is today's UI, kept selectable until stage 6. Chosen in Settings › Appearance (stage 3); the three new looks also switch the shell. |
-| `appearance.density` | — *(new)* | `compact` \| `comfortable` \| `spacious` | `comfortable` | org, team, user | plain | ✓ | Feeds `--row-height`; windowed lists re-measure on change. A team default applies inside its space. No control yet (stage 4, U2). |
-| `appearance.textSize` | — *(planned, stage 4)* | `sm` \| `md` \| `lg` | `md` | org, user, device | plain | ✓ | Not in the registry yet. |
-| `appearance.accent` | — *(planned, stage 4)* | hex colour | look's accent | org, team, user | plain | ✓ | Not in the registry yet. Contrast-adjusted by the engine, never stored adjusted. The instance's brand accent (Admin › Organisation) is separate: it is branding, injected by the server. |
-| `a11y.reduceMotion` | — *(planned, stage 4; today the OS query only)* | `system` \| `on` \| `off` | `system` | user, device | plain | ✓ | Not in the registry yet. |
-| `a11y.reduceTransparency` | — *(planned, stage 4)* | `system` \| `on` \| `off` | `system` | org, user, device | plain | ✓ | Not in the registry yet. Frosted surfaces fall back to opaque. |
+| `appearance.density` | — *(new)* | `compact` \| `comfortable` \| `spacious` | `comfortable` | org, team, user | plain | ✓ | Feeds `--row-height`, `--ui-font-size` and the shell's spacing; windowed lists re-measure on change. A team default applies inside its space. Settings › Appearance (stage 4, U2). |
+| `appearance.textSize` | — *(new, stage 4)* | `sm` \| `md` \| `lg` | `md` | org, user | plain | ✓ | `data-text-size`: the root font size (15 / 16 / 18 px) and `--text-scale` under the UI's px sizes (tokens `a11y.css`). |
+| `appearance.accent` | — *(new, stage 4)* | `#rrggbb` or `null` (the look's own) | `null` | org, user | plain | ✓ | Drawn adjusted to 4.5:1 on white and on the dark ground (`lib/accent.ts`), stored as picked. A user's accent wins over the instance's brand accent. The derived CSS is cached per device for the anti-FOUC script (§3). |
+| `a11y.reduceMotion` | — *(new, stage 4)* | `system` \| `on` \| `off` | `system` | user | plain | ✓ | `data-reduce-motion`; `off` overrides the OS setting. |
+| `a11y.reduceTransparency` | — *(new, stage 4)* | `system` \| `on` \| `off` | `system` | org, user | plain | ✓ | Maps onto `data-transparency` (`on` → off): every frosted surface falls back to opaque. |
+| `a11y.contrast` | — *(new, stage 4)* | `system` \| `more` \| `standard` | `system` | user | plain | ✓ | `data-contrast`: muted text up a step, strong borders, controls bordered at rest, no frosting; `system` follows `prefers-contrast`. |
+| `shell.sidebar` | — *(new, stage 4)* | object ≤ 4 KB: `hidden` ids, apps `order`, `pinned` folders (≤ 12) | `null` | user | plain | | The user's sidebar (U8), applied over the sections in both shells, after the administrator's `apps.enabled`. Read through `readLayout`, which drops what does not parse. |
 | `shell.sidebarCollapsed` | `neutrino.sidebar.collapsed` | boolean | `false` | user, device | device | ✓ | Device: a laptop and a wide monitor want different answers. Stays in the boot cache so it doesn't flash. |
 | `calendar.weekStart` | `neutrino:calendar:weekStart` | 0–6 | 0 (Sunday) | org, user | plain | | |
 | `calendar.dayStartHour` | `neutrino:calendar:dayStartHour` | 0–23 | 8 (`DEFAULT_DAY_START_HOUR`) | user | plain | | |
@@ -57,6 +59,8 @@ Columns: **Scopes** — who may set it (`org` default/lock, `team` default, `use
 | `teamSpace.view` | — *(new, stage 3)* | `large` \| `small` \| `list` | `large` | team, user | plain | | A team space's Files view (T2). A member's own pick becomes theirs, in every space. |
 | `teamSpace.sort` | — *(new, stage 3)* | `name` \| `size` \| `createdAt` \| `updatedAt` | `name` | team, user | plain | | As above. |
 | `teamSpace.sortDirection` | — *(new, stage 3)* | `asc` \| `desc` | `asc` | team, user | plain | | As above. |
+| `listing.views` | — *(new, stage 4)* | object ≤ 4 KB: listing id → `{ view, sort, dir }` | `null` | user | plain | | Default views (U9): choosing a view or sort in a listing is setting its default (`lib/listingViews.ts`). Unset, the new looks open Drive's listings as a list. |
+| `drive.landing` | — *(new, stage 4)* | `drive` \| `recent` \| `starred` | `drive` | org, user | plain | | Where Drive opens: the logo, and the first `/drive` of a tab once preferences have loaded. |
 | `ai.apiKey` | `neutrino.ai.settings` (`apiKey`) | string | `''` | user | **encrypted** | | Leaves plaintext `localStorage` (roadmap U12). `readAiSettings` in `@neutrino/api-core` keeps its signature and reads through the registry. |
 
 ## 2. Personal library content (encrypted tier)
@@ -94,6 +98,8 @@ These must **not** move into the registry or sync, and the stage 1 lint allowlis
 | `neutrino:search:deviceId`, `…:lastSync:<user>`, `…:contentVersion:<user>`, `…:snapshotVersion:<user>`, `…:snapshotFingerprint:<user>` | Machine state of this browser's IndexedDB index and its snapshot exchange. |
 | `neutrino:notified-reminders` | Which reminders this browser has already notified for — per-device by definition. |
 | `neutrino:diagram-template:<id>`, `neutrino:sheet-template:<id>` | One-shot handoff from a template picker to the editor it opens. |
+| `neutrino.prefs.accentCss` | The CSS derived from `appearance.accent` on this device, so the anti-FOUC script can paint it before React runs. Derived, not a preference: it is rebuilt from the synced value and ignored once that is cleared. |
+| `neutrino.landed` *(sessionStorage)* | Whether this tab has already been sent to `drive.landing`, so it happens once per tab. |
 
 Not storage at all, listed so nobody migrates them: `neutrino:access-revoked` and
 `neutrino:drive-changed` are `window` events.

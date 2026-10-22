@@ -102,7 +102,8 @@ requests; tokens and lint baseline in place; no preference read outside `usePref
 or user-authored content in `localStorage`.
 
 **Status — built 2026-10-21 (`feature/ui-stage-1`).** Measured in real Chromium at 4× CPU against
-the same 1 000-file folder: B2 38 → **60 fps, 0 % dropped**; B3 INP 1 080 → **112 ms**; B5 menu
+the same 1 000-file folder: B2 38 → **60 fps, 0 % dropped**; B3 INP 1 080 → **112 ms** (the switch to
+the small grid; the large-grid switch stayed near 700 ms — see Stage 4); B5 menu
 894 → **122 ms** (INP 32 ms); B4 sort/filter 664/488 → 274/350 ms. **B1 is not met**: 4 055 →
 3 132 ms, growth 8.4 → **4.9×** against a ≤ 2× target (the baseline's figures; an earlier 2 161 ms
 came from a scroll helper that could stop at the first page) — what remains is five sequential page
@@ -234,6 +235,39 @@ Drive — reads only tokens, so the setting visibly works instead of half-workin
 
 **Exit:** Drive matches the mockups in all three looks and three densities; B-section targets still
 met at every density; sidebar and default views sync across devices.
+
+**Status — built 2026-10-22 (`feature/ui-stage-1`, PR #266).**
+
+- **Drive and the listings (LF4).** A listing token group drives `FileGrid` (rows, cards, chips,
+  view and sort controls, file colours); classic's values are what it drew before — a page-level
+  snapshot of Drive (grid and list), Recent, Docs, Settings, Calendar, Photos and both editors,
+  light and dark, 27 properties per element, is identical to stage 3. In the new looks Drive is two
+  regions on the ground: Quick access (the four files last edited, as preview cards) and Files
+  (the folder as the title, controls, chips, and a list `--row-height` tall at each density). Every
+  `DocumentLibrary` page is one region; Diagrams moved onto `DocumentLibrary` (its `/diagrams`
+  budget raised to the other libraries', 970 → 1 140 KB). Not built: the Owner column (the listing
+  has no owner, and in My Drive it is always you), friendly dates in the list. Photos stays its own
+  timeline — it is not a file listing.
+- **Theme engine, first slice:** density and text size (U2), any accent drawn at 4.5:1 in light
+  and dark and stored as picked (U3), reduce motion, reduce transparency and higher contrast (U5) —
+  Settings › Appearance, applied before first paint.
+- **Layout as data, first slice:** pinned folders, hidden entries and sections, the apps' order
+  (U8, `shell.sidebar`); each listing remembers its view and sort, and Drive's landing page (U9,
+  `listing.views`, `drive.landing`) — synced, checked from a second browser
+  (`e2e/tests/drive/drive-new-looks.spec.ts`).
+- **B section at every density** (Light Flow, list — the new looks' default — 1 000 rows, 4× CPU):
+  B1 1.10 / 1.10 / 1.10 s with growth 2.5 / 2.0 / 2.2× (compact / comfortable / spacious), B2
+  60 fps with nothing dropped, B4 INP 40 ms, B5 16–32 ms. Two findings on the way:
+  - **B1 had been timing its own scroll helper.** It brought the last *rendered* row into view, which
+    advances only by the window's overscan — four rows in the list, so six times as many passes as
+    the large grid. The helper now jumps its scroller to the end. Classic's large grid with the
+    corrected helper: 1.7 s, growth 3.5× (over the 3× budget; the list meets it).
+  - **B3 (view switch) was 650–700 ms in every look, and in the committed baseline** (switch to the
+    large grid 701 ms) — Stage 1's 112 ms was the switch to the small grid. A profile put a third of
+    it in date formatting (`toLocaleDateString` builds a formatter per call; now cached in
+    `@neutrino/utils`): **648 → 344 ms**. The rest is the style and layout of the new view, forced by
+    the window's measurement. Still over 200 ms; carried to the performance track.
+- Also: one `/auth/me` per page load instead of two (concurrent profile reads share a request).
 
 ### Stage 5 — The editors, one at a time
 

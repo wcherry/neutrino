@@ -229,6 +229,14 @@ In delivery order; each depends only on §3 items before it.
 | U12 | **Secrets that sync** | AI provider and key move into the `encrypted` tier, and out of plaintext `localStorage` | 3.2 |
 | U13 | **Settings search** | Settings is a searchable list generated from the registry, not a hand-built page per tab | 3.1 |
 
+**Built in Stage 4:** U2 (density and text size, Settings › Appearance), U3 (any accent, drawn
+adjusted to 4.5:1 in light and dark, stored as picked — `lib/accent.ts`, the same arithmetic as the
+instance brand), U5 (reduce motion, reduce transparency, higher contrast, each following the OS while
+left at "as the device"), U8 (pin folders from their menu, hide entries and sections, reorder the
+apps — `shell.sidebar`) and U9 (each listing remembers its view and sort, synced; Drive's landing
+page). All of them apply before first paint where they are visual. Not yet: link underlines (U5),
+visible-column choice (U9), pinning tags and team spaces (U8).
+
 U11 and U12 are worth doing early even though they look unglamorous: one is data loss in slow
 motion, the other is an API key sitting in plaintext on every browser the user has ever signed in
 on.

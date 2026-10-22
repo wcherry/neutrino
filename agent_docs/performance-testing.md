@@ -432,6 +432,10 @@ measured — the perf project sets `actionTimeout` and `expect.timeout` to 30 s 
   unrunnable.
 - **The repeats live inside the fixture**, not in `repeatEach`. Playwright would run five separate
   tests, and there would be nowhere to compute a median.
+- **`PERF_PREFS` runs a scenario in another look, density or view** — a JSON object of preference
+  values the session fixture writes after sign-in, e.g.
+  `PERF_PREFS='{"appearance.look":"lightflow","appearance.density":"compact"}'`. Stage 4's exit
+  asks for the B section at every density; this is how it is measured without a scenario per setting.
 - **The perf project replaces the functional one** when `PERF=1`, rather than sitting beside it.
   Playwright runs every configured project by default, so a bare `playwright test` would otherwise
   pick up the perf suite.
