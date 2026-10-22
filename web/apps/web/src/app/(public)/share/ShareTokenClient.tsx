@@ -4,7 +4,8 @@ import React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Badge, Button, Card, EmptyState, Heading, Spinner, Text } from '@neutrino/ui';
-import { ApiClientError, getShareDownloadUrl, getSharePreviewUrl, sharingApi } from '@/lib/api';
+import { ApiClientError } from '@neutrino/api-core';
+import { getShareDownloadUrl, getSharePreviewUrl, sharingApi } from '@neutrino/api-drive';
 import { officeAppForFile, type OfficeApp } from '@/lib/officeFormats';
 import styles from './page.module.css';
 

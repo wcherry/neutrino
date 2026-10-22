@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { CellProps } from '../types';
 import type { ChartDef, ChartAnnotation } from './chartTypes';
-import { ChartRenderer } from './ChartRenderer';
+import { ChartRenderer } from './LazyChartRenderer';
 import { ChartAnnotationLayer } from './ChartAnnotationLayer';
 import { useSheetZoom } from '../zoom';
 import { useCommand } from '@neutrino/commands';

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { ApiClientError } from '@neutrino/api-core';
-import { authApi } from '@/lib/api';
+import { authApi } from '@neutrino/auth';
 import { routeAfterSignIn, SIGN_IN_NEXT_PARAM } from '@/lib/signInRedirect';
 import styles from './page.module.css';
 

@@ -28,7 +28,7 @@
  * defaults, not against an attacker.
  */
 
-import sodium from 'libsodium-wrappers';
+import { sodium } from './sodium';
 import {
   deserializeKeyring,
   serializeKeyring,

@@ -32,7 +32,7 @@
  * `agent_docs/client-only-key-architecture.md`.
  */
 
-import sodium from 'libsodium-wrappers';
+import { sodium } from './sodium';
 
 export interface KeyringEntry {
   /** 1-based, matching `user_public_keys.version` on the server. */

@@ -25,7 +25,7 @@
  * is enforced.
  */
 
-import sodium from 'libsodium-wrappers';
+import { sodium } from './sodium';
 import type { Keyring, KeyringEntry } from './keyring';
 
 /** Crockford base32 — no I, L, O or U. */

@@ -1,19 +1,16 @@
 import type { Metadata, Viewport } from 'next';
-import '@neutrino/ui/styles';
-import './fonts';
-import { ToastProvider } from '@neutrino/ui';
-import { AuthProvider } from '@neutrino/auth';
-import { QueryProvider } from '@/providers/QueryProvider';
-import { ThemeProvider } from '@/providers/ThemeProvider';
-import { FeatureFlagsProvider } from '@/providers/FeatureFlagsProvider';
-import { CustomFontsProvider } from '@/providers/CustomFontsProvider';
-import { CustomThemesProvider } from '@/providers/CustomThemesProvider';
-import { E2ECryptoExpose } from '@/components/E2ECryptoExpose';
-import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
 import { APP_IDS } from '@/lib/appForPath';
 import { BOOT_KEY } from '@neutrino/preferences';
 
-export const metadata: Metadata = {
+/*
+ * The document every root layout renders. There are three roots — `(public)` for the signed-out
+ * pages, `(apps)` for the app shell, `(mirror)` for the presenter's second window — so that a
+ * signed-out page loads only what it uses instead of the whole app's providers (P4 in
+ * agent_docs/ui-performance-roadmap.md). Moving between roots is a full page load, which is only
+ * ever signing in, signing out, or opening a share link into an editor.
+ */
+
+export const ROOT_METADATA: Metadata = {
   title: {
     default: 'Neutrino — Cloud Storage',
     template: '%s | Neutrino',
@@ -24,16 +21,12 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = {
+export const ROOT_VIEWPORT: Viewport = {
   width: 'device-width',
   initialScale: 1,
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function RootDocument({ children }: { children: React.ReactNode }) {
   return (
     // `data-look` and `data-density` are the look-and-feel axes beside
     // `data-theme` (packages/tokens/src/looks.css, density.css); classic and
@@ -51,25 +44,7 @@ export default function RootLayout({
         />
         <link rel="manifest" href="/manifest.json" />
       </head>
-      <body>
-        <E2ECryptoExpose />
-        <ServiceWorkerRegister />
-        <ThemeProvider>
-          <FeatureFlagsProvider>
-            <CustomFontsProvider>
-              <CustomThemesProvider>
-                <QueryProvider>
-                  <AuthProvider>
-                    <ToastProvider position="bottom-right">
-                      {children}
-                    </ToastProvider>
-                  </AuthProvider>
-                </QueryProvider>
-              </CustomThemesProvider>
-            </CustomFontsProvider>
-          </FeatureFlagsProvider>
-        </ThemeProvider>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

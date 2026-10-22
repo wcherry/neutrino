@@ -173,7 +173,13 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: ['libsodium-wrappers'],
   experimental: {
-    // Optimize CSS imports from workspace packages
+    // Import only the components a page uses from these barrels, not every module they
+    // re-export: without it each route pulled in the whole of `@neutrino/ui` (and with it
+    // framer-motion), sign-in included. The barrels are pure re-exports, which this needs.
+    optimizePackageImports: ['@neutrino/ui', '@neutrino/layout'],
+    // `app/global-not-found.tsx` is the 404 page with its own document, so it is not rendered
+    // inside (and does not ship the scripts of) one of the three root layouts.
+    globalNotFound: true,
 
     // Only meaningful alongside the dev rewrite above — see
     // DEV_PROXY_MAX_BODY_BYTES. Kept in this block rather than in the `isDev`

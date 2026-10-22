@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import type { SlidePresentation } from '../(apps)/slides/editor/slideEditorTypes';
-import { slideBackgroundStyle } from '../(apps)/slides/editor/slideEditorHelpers';
-import { SlideRenderer } from '../(apps)/slides/editor/SlideRenderer';
+import type { SlidePresentation } from '../../(apps)/slides/editor/slideEditorTypes';
+import { slideBackgroundStyle } from '../../(apps)/slides/editor/slideEditorHelpers';
+import { SlideRenderer } from '../../(apps)/slides/editor/SlideRenderer';
 
 function MirrorContent() {
   const searchParams = useSearchParams();

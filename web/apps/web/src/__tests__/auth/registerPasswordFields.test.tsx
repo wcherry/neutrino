@@ -13,14 +13,11 @@ vi.mock('next/navigation', () => ({
 const register = vi.fn();
 const login = vi.fn();
 const provisionKeyring = vi.fn();
-vi.mock('@/lib/api', () => ({
+vi.mock('@neutrino/auth', () => ({
   authApi: {
     register: (...args: unknown[]) => register(...args),
     login: (...args: unknown[]) => login(...args),
   },
-}));
-
-vi.mock('@neutrino/auth', () => ({
   provisionKeyring: (...args: unknown[]) => provisionKeyring(...args),
   currentRecoveryKit: vi.fn(),
   enrollPasskey: vi.fn(),
@@ -31,7 +28,7 @@ vi.mock('@neutrino/e2e-crypto', () => ({
   getSessionKeyring: () => ({ userId: 'u1', entries: [] }),
 }));
 
-import RegisterPage from '@/app/register/page';
+import RegisterPage from '@/app/(public)/register/page';
 
 function fill(labelText: string, value: string) {
   fireEvent.change(screen.getByLabelText(labelText), { target: { value } });

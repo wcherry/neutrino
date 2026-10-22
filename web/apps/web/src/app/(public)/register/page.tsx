@@ -4,7 +4,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { authApi } from '@/lib/api';
+import { authApi } from '@neutrino/auth';
 import { EncryptionSetupDialog } from '@/components/EncryptionSetupDialog';
 import styles from '../sign-in/page.module.css';
 

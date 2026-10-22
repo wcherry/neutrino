@@ -27,8 +27,8 @@ const isProduction = process.env.NODE_ENV === 'production';
  * keeps controlling the page until something removes it, so we actively
  * unregister and drop its caches to un-wedge machines that already have one.
  *
- * Mirrors the side-effect-only client component pattern already established
- * by `E2ECryptoExpose`.
+ * Mounted by every root layout (`(public)`, `(apps)`, `(mirror)`), so whichever
+ * page a visit starts on installs the worker.
  */
 export function ServiceWorkerRegister() {
   useEffect(() => {
