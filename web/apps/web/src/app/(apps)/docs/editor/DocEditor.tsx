@@ -5,7 +5,7 @@ import './caretFontSize.css';
 import React, { startTransition, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
-import { useNspell } from '@/hooks/useNspell';
+import { spellSuggestionsFor, useNspell } from '@/hooks/useNspell';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
 import { DiagramEmbedExtension } from '@/lib/extensions/DiagramEmbedExtension';
@@ -1399,7 +1399,9 @@ export function DocEditor() {
   // When nspell finishes loading while the context menu is open, compute suggestions.
   useEffect(() => {
     if (!nspell || !spellWord || spellSuggestions !== undefined) return;
-    setSpellSuggestions(nspell.check(spellWord) ? [] : nspell.suggest(spellWord).slice(0, 5));
+    let current = true;
+    void spellSuggestionsFor(nspell, spellWord, 5).then(list => { if (current) setSpellSuggestions(list); });
+    return () => { current = false; };
   }, [nspell, spellWord, spellSuggestions]);
 
   const handleTitleBlur = () => {
@@ -1792,12 +1794,9 @@ export function DocEditor() {
             setSpellWordRange({ from: pmWordFrom, to: pmWordTo });
 
             if (nspell) {
-              // Dictionary already loaded — check immediately.
-              if (!nspell.check(word)) {
-                setSpellSuggestions(nspell.suggest(word));
-              } else {
-                setSpellSuggestions([]); // correctly spelled, no suggestions
-              }
+              // Dictionary already loaded; the answer may still come from the worker. A correctly
+              // spelled word gets no suggestions.
+              void spellSuggestionsFor(nspell, word).then(setSpellSuggestions);
             }
             // If nspell is null (still loading), spellSuggestions stays undefined
             // and the "Checking…" placeholder will be shown.
@@ -1846,11 +1845,9 @@ export function DocEditor() {
   // set but spellSuggestions is still undefined), update the suggestions.
   useEffect(() => {
     if (!nspell || !spellWord || spellSuggestions !== undefined) return;
-    if (!nspell.check(spellWord)) {
-      setSpellSuggestions(nspell.suggest(spellWord));
-    } else {
-      setSpellSuggestions([]);
-    }
+    let current = true;
+    void spellSuggestionsFor(nspell, spellWord).then(list => { if (current) setSpellSuggestions(list); });
+    return () => { current = false; };
   }, [nspell, spellWord, spellSuggestions]);
 
   const handleApplySuggestion = useCallback((replacement: string) => {

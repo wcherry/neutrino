@@ -35,6 +35,8 @@ interface SpellCheckMeta {
   enabled?: boolean;
   nspell?: NspellHandle | null;
   window?: DecorationWindow;
+  /** Answers arrived from the worker that flag words already drawn as correct. */
+  recheck?: boolean;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -107,7 +109,7 @@ export const SpellCheckExtension = Extension.create({
             // the paragraphs it touched (incrementalDecorations.ts) — rebuilding the whole set on
             // every keystroke was the largest cost of typing in a long document — and a scroll only
             // the paragraphs it brought near the screen.
-            if (meta?.enabled !== undefined || meta?.nspell !== undefined || !old.enabled || !old.nspell) {
+            if (meta?.enabled !== undefined || meta?.nspell !== undefined || meta?.recheck || !old.enabled || !old.nspell) {
               return { enabled, nspell, decorations: buildAll(newState.doc, build, window), window };
             }
             let decorations = old.decorations;
@@ -135,11 +137,32 @@ export const SpellCheckExtension = Extension.create({
               view.state.tr.setMeta(spellCheckPluginKey, { window }).setMeta(DECORATION_WINDOW_META, true),
             );
           });
+          // The worker's answers come after the pass that asked for them; when one turns out to be a
+          // misspelling, the window is drawn again from the answers now known.
+          let subscribed: NspellHandle | null = null;
+          let unsubscribe: (() => void) | undefined;
+          const follow = () => {
+            const handle = spellCheckPluginKey.getState(view.state)?.nspell ?? null;
+            if (handle === subscribed) return;
+            unsubscribe?.();
+            subscribed = handle;
+            unsubscribe = handle?.onChange?.(() => {
+              if (view.isDestroyed || view.composing) return;
+              view.dispatch(
+                view.state.tr.setMeta(spellCheckPluginKey, { recheck: true }).setMeta(DECORATION_WINDOW_META, true),
+              );
+            });
+          };
+          follow();
           return {
             update: (updated, prevState) => {
+              follow();
               if (updated.state.doc !== prevState.doc) observer.update();
             },
-            destroy: observer.destroy,
+            destroy: () => {
+              unsubscribe?.();
+              observer.destroy();
+            },
           };
         },
       }),

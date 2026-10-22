@@ -38,7 +38,7 @@ import {
 import type { TableStyle } from './styles/tableStyles';
 import { ConditionalFormattingDialog } from './ConditionalFormattingDialog';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
-import { useNspell } from '@/hooks/useNspell';
+import { firstMisspelledWord, spellSuggestionsFor, useNspell } from '@/hooks/useNspell';
 import { computeCell, propagateDeps, type SheetRef } from './formula';
 import type { CellStyle } from './types';
 
@@ -714,26 +714,25 @@ export function SheetEditor() {
     const [columnFilters, setColumnFilters] = useState<Map<number, Set<string>>>(new Map());
     const [filterDialogCol, setFilterDialogCol] = useState<number | null>(null);
 
-    // nspell only handles single words — extract the first misspelled word from
-    // a cell's raw value so multi-word cells work correctly.
-    function firstMisspelled(raw: string, spell: NonNullable<typeof nspell>): string | null {
-        const words = raw.match(/[a-zA-Z']+/g) ?? [];
-        return words.find(w => !spell.check(w)) ?? null;
-    }
-
-    // When nspell finishes loading while the context menu is open, find the first
-    // misspelled word in the stored raw value and compute suggestions for it.
-    useEffect(() => {
-        if (!nspell || !spellWord || spellSuggestions !== undefined) return;
-        const misspelled = firstMisspelled(spellWord, nspell);
+    // nspell only handles single words, so a multi-word cell is offered suggestions for its first
+    // misspelled word (`firstMisspelledWord`). The answers can come from the worker, so they land a
+    // moment after the menu opens.
+    const showCellSpelling = useCallback(async (raw: string, spell: NonNullable<typeof nspell>) => {
+        const misspelled = await firstMisspelledWord(spell, raw);
         if (misspelled) {
             setSpellWord(misspelled);
-            setSpellSuggestions(nspell.suggest(misspelled).slice(0, 5));
+            setSpellSuggestions(await spellSuggestionsFor(spell, misspelled, 5));
         } else {
             // No misspelled word found — close the spell section silently.
             setSpellWord(undefined);
         }
-    }, [nspell, spellWord, spellSuggestions]);
+    }, []);
+
+    // When nspell finishes loading while the context menu is open, look at the stored raw value.
+    useEffect(() => {
+        if (!nspell || !spellWord || spellSuggestions !== undefined) return;
+        void showCellSpelling(spellWord, nspell);
+    }, [nspell, spellWord, spellSuggestions, showCellSpelling]);
 
     const handleCellContextMenu = useCallback((cellId: string, x: number, y: number) => {
         if (isViewer) return;
@@ -749,11 +748,7 @@ export function SheetEditor() {
             const raw = cell?.raw ?? '';
             if (raw.length > 0 && !raw.startsWith('=')) {
                 if (nspell) {
-                    const misspelled = firstMisspelled(raw, nspell);
-                    if (misspelled) {
-                        setSpellWord(misspelled);
-                        setSpellSuggestions(nspell.suggest(misspelled).slice(0, 5));
-                    }
+                    void showCellSpelling(raw, nspell);
                 } else {
                     // nspell still loading — store the raw so the useEffect can
                     // extract the misspelled word once the dictionary arrives.
@@ -763,7 +758,7 @@ export function SheetEditor() {
         }
 
         setContextMenu({ cellId, x, y });
-    }, [isCellSelected, editing.stableOnCellActivate, spellCheck, nspell, dataRef]);
+    }, [isCellSelected, editing.stableOnCellActivate, spellCheck, nspell, dataRef, showCellSpelling]);
 
     const handleApplySuggestion = useCallback((word: string) => {
         if (!contextMenu || !spellWord) return;

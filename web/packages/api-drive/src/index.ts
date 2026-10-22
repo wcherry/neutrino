@@ -25,9 +25,10 @@ export {
   notificationsApi,
   getNotificationsWsUrl,
   tagsApi,
+  setBytesSealer,
 } from './client';
 
-export type { AutosaveTransport } from './client';
+export type { AutosaveTransport, BytesSealer } from './client';
 
 // The only way to write user content into Drive. See the module header for why
 // the plaintext helpers this replaced no longer exist.

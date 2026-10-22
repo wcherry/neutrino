@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 import { registerServiceWorker } from '@/lib/serviceWorker';
+// Not a service worker, but the same kind of thing: the editors' worker registers its sealer here.
+import '@/lib/workers/registerEditorWorker';
 
 /**
  * Registers the app-shell service worker (`/sw.js`) on every production boot
