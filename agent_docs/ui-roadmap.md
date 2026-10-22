@@ -296,6 +296,59 @@ old one keep it until they change their lock).
 D8 INP ≤ 200 ms, D7 ≤ 500 ms; F5/D9 longest task ≤ 50 ms; every editor in all three looks with
 lint debt at zero for its files.
 
+**Status — built 2026-10-22 (`feature/ui-stage-1`, PR #266).** Every editor is restyled in all
+three looks and its lint debt is at zero; Classic is pixel-identical. Five of the nine performance
+targets are met; four are better but not met. The default look stays **Classic**, by decision: the
+new looks are an addition, not a replacement.
+
+| Target | Before | Now | |
+|---|---|---|---|
+| C2 typing INP, 1 000 paragraphs | 312 ms | **48 ms** (80–136 ms under heavy machine load) | met |
+| C6 grow table / undo | 3 835 / 3 942 ms | **1 213 / 655 ms** (wall time of five and eight clicks); INP 192 ms | not met |
+| C8 longest task during spell-check | 359 ms | **50–62 ms** | not met |
+| D2 longest frame while the L sheet loads | 3 929 ms (9.6 s at load ~20) | **177–181 ms** | met |
+| D8 header multi-select INP | 1 208 ms | **32 ms** | met |
+| D7 chart over a large range | 1 520 ms (1.8 s) | **654 ms** (suite budget 800) | not met (500) |
+| F5 longest block while a 16 MB upload is sealed | 208 ms | **0** (in the worker) | met |
+| D9 longest task during an L-sheet autosave | 347 ms | **61–64 ms** (suite budget 150) | not met (50) |
+| D3 in-app recalc | 307 ms | **64 ms** | — |
+
+What did it, in the order it was found (each from a CPU profile or a Chrome trace at 4× CPU):
+
+- **Docs (P2).** Spell- and grammar-check rebuilt their decorations over the whole document on every
+  keystroke; now only the paragraphs a change touched (`lib/extensions/incrementalDecorations.ts`).
+  Changes are found by comparing documents, because y-prosemirror applies an undo as one step
+  replacing the whole document. Grammar does nothing while off. Pagination re-measures once
+  typing settles, reading rects only for replaced blocks. The editor re-renders after paint (and
+  only after typing pauses), and the document is serialised when the save runs, not per keystroke.
+  The largest single cost was Chrome's own: every caret move walks the editable root to find the
+  caret's offset, and 9 000 misspelling spans made that walk five times longer. Misspellings are now
+  drawn only within a screen of the viewport, so the editor has 1 600 elements instead of 10 700.
+- **Sheets (P3).** Opening a workbook read every cell and evaluated every formula in one task, after
+  round-tripping the model through JSON; now in slices (`lib/yieldToMain.ts`). Selecting header rows
+  built two Sets of a million ids; selections are now shaped `CellSet`s that answer from their
+  rectangle or indices. The xlsx writer is sliced, and the search index reads the model it already
+  has. Charts draw at most 200 points or 400 bars (LTTB for curves, the peak of each run for bars).
+- **The editor worker (P6).** One worker seals uploads and autosaves (same cipher and output;
+  `api-drive` takes a pluggable sealer and falls back to the page) and runs spell-check. The
+  dictionary is no longer built on the page when an editor opens; checks answer from a verdict cache
+  fed in batches.
+- **Look (LF5).** An `--editor-…` token group in `tokens/looks.css`, defined for the new looks only.
+  It gives the frame's title bar the app-coloured icon and "Saved and encrypted · just now", a
+  floating toolbar (Precision), a soft one (Light Flow) or a glass one (Blended), and quiet status bars
+  and panels. Sheets gets the toolbar above a field-like formula bar, a mono name box and the running
+  Sum of the selection. Docs gets page count and language in its status bar.
+- **Customization (U10).** Toolbars are ordered lists of tool groups (`lib/editorToolbars.ts`,
+  `editor.toolbars`): reorder, hide into "More tools", and captions on or off. Customize from a
+  right-click on any toolbar or from Settings › Appearance › Toolbars.
+
+Not met, and why. C6's remaining time is mostly first-use warm-up plus React commits per click;
+warm, a row is 41–135 ms. C8 and D9 sit just over 50 ms: one decoration window build and one
+writer slice plus jszip's chunking. D7 is recharts' per-bar cost at 400 bars. All four are carried
+to the performance track. Browser suite: 555/557. The failures are the Docker storage-path test,
+and the search page tests' index being cleared under load — partly fixed: they now turn search
+sync off where the app reads it.
+
 ### Stage 6 — Everything else, teams, and lock it in
 
 | Track | Item | Size |
