@@ -54,8 +54,8 @@
 
 .segmentedBtnActive,
 .segmentedBtnActive:hover {
-  background-color: var(--color-accent);
-  color: var(--color-text-on-accent);
+  background-color: var(--screen-selected-bg, var(--color-accent));
+  color: var(--screen-selected-fg, var(--color-text-on-accent));
 }
 
 .toolbar {

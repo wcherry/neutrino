@@ -122,8 +122,9 @@
 
 .primaryBtn {
   border-color: transparent;
-  background: var(--color-primary);
-  color: var(--palette-gray-100);
+  background: var(--screen-primary-bg, var(--color-primary));
+  color: var(--screen-primary-fg, var(--palette-gray-100));
+  box-shadow: var(--screen-primary-ring, none);
 }
 
 .dangerBtn {

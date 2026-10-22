@@ -611,10 +611,11 @@
   padding: 6px 14px;
   border: 1px solid var(--color-primary);
   border-radius: 6px;
-  background: var(--color-primary);
-  color: var(--palette-gray-100);
+  background: var(--screen-primary-bg, var(--color-primary));
+  color: var(--screen-primary-fg, var(--palette-gray-100));
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
+  box-shadow: var(--screen-primary-ring, none);
 }
 
 .primaryBtn:hover:not(:disabled) {

@@ -107,8 +107,8 @@
 }
 
 .viewBtnActive {
-  background: var(--color-primary);
-  color: var(--palette-gray-100);
+  background: var(--screen-selected-bg, var(--color-primary));
+  color: var(--screen-selected-fg, var(--palette-gray-100));
 }
 
 .viewBtnActive:hover {
@@ -641,8 +641,8 @@
 
 .reminderRangeBtnActive,
 .reminderRangeBtnActive:hover {
-  background: var(--color-primary);
-  color: var(--palette-gray-100);
+  background: var(--screen-selected-bg, var(--color-primary));
+  color: var(--screen-selected-fg, var(--palette-gray-100));
 }
 
 .reminderActions {
@@ -1242,8 +1242,8 @@
 }
 
 .attachmentTabActive {
-  background: var(--color-primary);
-  color: var(--palette-gray-100);
+  background: var(--screen-selected-bg, var(--color-primary));
+  color: var(--screen-selected-fg, var(--palette-gray-100));
 }
 
 /* ── Event detail sections ───────────────────────────────────────────────── */

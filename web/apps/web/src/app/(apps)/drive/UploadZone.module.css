@@ -189,8 +189,8 @@
 
 .doneBtn {
   padding: var(--space-2) var(--space-4);
-  background: var(--color-accent);
-  color: var(--palette-gray-100);
+  background: var(--screen-primary-bg, var(--color-accent));
+  color: var(--screen-primary-fg, var(--palette-gray-100));
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   font-family: var(--font-sans);
@@ -198,8 +198,9 @@
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-default);
+  box-shadow: var(--screen-primary-ring, none);
 }
 
 .doneBtn:hover {
-  background: var(--color-accent-hover);
+  background: var(--screen-primary-hover-bg, var(--color-accent-hover));
 }

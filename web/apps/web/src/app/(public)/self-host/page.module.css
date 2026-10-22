@@ -116,17 +116,18 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
-  background: var(--color-accent);
-  color: var(--palette-gray-100);
+  background: var(--screen-primary-bg, var(--color-accent));
+  color: var(--screen-primary-fg, var(--palette-gray-100));
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   border-radius: var(--radius-md);
   text-decoration: none;
   transition: background var(--duration-fast) var(--ease-default);
+  box-shadow: var(--screen-primary-ring, none);
 }
 
 .btnPrimary:hover {
-  background: var(--color-accent-hover);
+  background: var(--screen-primary-hover-bg, var(--color-accent-hover));
 }
 
 /* ── Header ───────────────────────────────────────────────────────────────── */
@@ -442,16 +443,17 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-6);
-  background: var(--color-accent);
-  color: var(--palette-gray-100);
+  background: var(--screen-primary-bg, var(--color-accent));
+  color: var(--screen-primary-fg, var(--palette-gray-100));
   font-size: var(--text-base);
   font-weight: var(--font-semibold);
   border-radius: var(--radius-lg);
   text-decoration: none;
+  box-shadow: var(--screen-primary-ring, none);
 }
 
 .ctaPrimary:hover {
-  background: var(--color-accent-hover);
+  background: var(--screen-primary-hover-bg, var(--color-accent-hover));
 }
 
 .ctaSecondary {

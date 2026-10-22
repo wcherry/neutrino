@@ -134,8 +134,8 @@
 }
 
 .segmentedBtnActive {
-  background: var(--color-primary);
-  color: var(--palette-gray-100);
+  background: var(--screen-selected-bg, var(--color-primary));
+  color: var(--screen-selected-fg, var(--palette-gray-100));
 }
 
 .segmentedBtnActive:hover {

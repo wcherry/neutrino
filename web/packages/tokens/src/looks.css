@@ -794,6 +794,43 @@
   --editor-ground: transparent;
 }
 
+/* ── Screens outside the shell's regions (look-and-feel roadmap phase 6, LF6) ─
+ * Primary actions, selected states and the sign-in card on the remaining
+ * screens — Settings, admin, profile, Calendar, dialogs, the public pages.
+ * New looks only, read as `var(--screen-…, <classic value>)` like the editor
+ * group above: the classic look keeps what it drew.
+ */
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  /* The flows draw no filled buttons (§2): a primary action is accent text on a quiet ring. */
+  --screen-primary-bg: transparent;
+  --screen-primary-fg: var(--brand-accent);
+  --screen-primary-ring: inset 0 0 0 1px color-mix(in srgb, var(--brand-accent) 35%, transparent);
+  --screen-primary-hover-bg: color-mix(in srgb, var(--brand-accent) 8%, transparent);
+  /* Selection is a pale accent tint in every new look, as in the toolbars. */
+  --screen-selected-bg: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  --screen-selected-fg: var(--brand-accent);
+  --screen-selected-border: color-mix(in srgb, var(--brand-accent) 30%, transparent);
+  --screen-ground: var(--surface-ground);
+  --screen-card-bg: var(--glass-bg);
+  --screen-card-border: 1px solid var(--glass-border);
+  --screen-card-shadow: var(--glass-shadow);
+  --screen-card-filter: var(--glass-filter);
+}
+
+[data-look="precision"] {
+  /* Precision fills its primary actions (§3). */
+  --screen-primary-bg: var(--brand-accent);
+  --screen-primary-fg: #ffffff;
+  --screen-primary-ring: none;
+  --screen-primary-hover-bg: var(--brand-accent-hover);
+  --screen-card-bg: var(--surface-region);
+  --screen-card-border: var(--region-border);
+  --screen-card-shadow: var(--region-shadow);
+  --screen-card-filter: none;
+}
+
 /* Translucency is a preference too: with it reduced, every frosted surface
    is opaque (look-and-feel roadmap §2, "Menus, popups and translucency"). */
 @media (prefers-reduced-transparency: reduce) {
