@@ -655,6 +655,145 @@
   --card-preview-bg: color-mix(in srgb, var(--app-color) 8%, transparent);
 }
 
+/* ── Editor chrome (look-and-feel roadmap phase 5, LF5) ──────────────────────
+ * The editors' title bars, toolbars, status bars and the ground their page,
+ * grid or canvas sits on. Defined for the new looks only: every editor's CSS
+ * reads these as `var(--editor-…, <what it drew before>)`, so in the classic
+ * look each one falls back to exactly its old value.
+ */
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  --editor-bar-bg: transparent;
+  --editor-bar-rule: none;
+  --editor-title-size: 15px;
+  --editor-title-weight: 600;
+  --editor-title-color: var(--text-1, #16181d);
+  --editor-toolbar-bg: rgb(22 24 29 / 0.035);
+  --editor-toolbar-border: 0;
+  --editor-toolbar-rule: none;
+  --editor-toolbar-radius: 10px;
+  --editor-toolbar-shadow: none;
+  --editor-toolbar-filter: none;
+  --editor-toolbar-margin: 2px 12px 6px;
+  --editor-toolbar-padding: 3px 6px;
+  --editor-tool-radius: 7px;
+  --editor-tool-fg: #4a5160;
+  --editor-tool-hover-bg: rgb(22 24 29 / 0.06);
+  --editor-tool-hover-fg: #16181d;
+  --editor-tool-active-bg: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  --editor-tool-active-fg: var(--brand-accent);
+  --editor-rail-active-bg: var(--editor-tool-active-bg);
+  --editor-rail-active-fg: var(--editor-tool-active-fg);
+  --editor-divider: rgb(22 24 29 / 0.09);
+  --editor-field-bg: transparent;
+  --editor-field-border: rgb(22 24 29 / 0.12);
+  --editor-field-radius: 7px;
+  --editor-ground: #f5f6f8;
+  --editor-status-bg: transparent;
+  --editor-status-rule: none;
+  --editor-status-fg: #656c7a;
+  --editor-panel-bg: transparent;
+  --editor-panel-rule: 1px solid rgb(22 24 29 / 0.06);
+  --editor-header-cell-bg: #f7f8fa;
+  --editor-header-cell-fg: #656c7a;
+  --editor-header-cell-active-bg: color-mix(in srgb, var(--brand-accent) 12%, #ffffff);
+  --editor-header-cell-active-fg: var(--brand-accent);
+  --editor-mono: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  /* What only the classic look draws (its own document badge, say) reads this as its display. */
+  --editor-classic-display: none;
+  --editor-primary-bg: var(--primary-bg);
+  --editor-primary-fg: var(--primary-fg);
+  --editor-primary-border: 1px solid var(--button-border-rest);
+  --editor-primary-hover-bg: var(--button-bg-hover);
+  --editor-paper-shadow: 0 0 0 1px rgb(22 24 29 / 0.06), 0 2px 10px rgb(22 24 29 / 0.04);
+  --editor-paper-radius: 4px;
+  /* A secondary bar under the toolbar (Docs' editing mode): quiet, not a yellow band. */
+  --editor-subbar-bg: transparent;
+  --editor-subbar-rule: none;
+  --editor-subbar-padding: 0 18px 4px;
+  /* Sheets: toolbar above the formula bar, a field-like formula bar with a mono name box, quiet
+     grid lines and tabs. */
+  --editor-titlebar-order: -2;
+  --editor-toolbar-order: -1;
+  --editor-formula-bg: transparent;
+  --editor-formula-border: 1px solid rgb(22 24 29 / 0.1);
+  --editor-formula-rule: 1px solid rgb(22 24 29 / 0.1);
+  --editor-formula-radius: 8px;
+  --editor-formula-margin: 0 12px 8px;
+  --editor-formula-overflow: hidden;
+  --editor-name-box-weight: 600;
+  --editor-name-box-fg: var(--text-1, #16181d);
+  --editor-grid-line: #e8eaee;
+  --editor-tab-rule: 0;
+  --editor-tab-radius: 0 0 8px 8px;
+  --editor-tab-active-bg: #ffffff;
+  --editor-tab-active-fg: var(--brand-accent);
+  --editor-tab-active-weight: 600;
+  --editor-tab-active-rule: var(--brand-accent);
+}
+
+[data-look="precision"] {
+  --editor-paper-shadow: var(--paper-shadow);
+  --editor-paper-radius: 8px;
+  --editor-primary-border: 1px solid transparent;
+  --editor-primary-hover-bg: var(--brand-accent-hover);
+  --editor-toolbar-bg: #ffffff;
+  --editor-toolbar-border: 1px solid #e3e6eb;
+  --editor-toolbar-rule: 1px solid #e3e6eb;
+  --editor-toolbar-radius: 12px;
+  --editor-toolbar-shadow: 0 1px 2px rgb(22 24 29 / 0.04), 0 4px 14px rgb(22 24 29 / 0.04);
+  --editor-toolbar-margin: 2px 10px 8px;
+  --editor-ground: #eef0f3;
+  --editor-panel-bg: #ffffff;
+  --editor-panel-rule: 1px solid #e3e6eb;
+}
+
+[data-look="blended"] {
+  --editor-paper-shadow: 0 1px 2px rgb(37 52 170 / 0.06), 0 10px 30px rgb(37 52 170 / 0.08);
+  --editor-toolbar-bg: var(--glass-bg);
+  --editor-toolbar-border: 1px solid var(--glass-border);
+  --editor-toolbar-rule: 1px solid var(--glass-border);
+  --editor-toolbar-filter: var(--glass-filter);
+  --editor-ground: transparent;
+  --editor-tool-hover-bg: color-mix(in srgb, var(--app-color) 9%, transparent);
+  --editor-header-cell-bg: color-mix(in srgb, var(--app-color) 5%, #ffffff);
+}
+
+[data-look="lightflow"][data-theme="dark"],
+[data-look="precision"][data-theme="dark"],
+[data-look="blended"][data-theme="dark"] {
+  --editor-title-color: #e8eaef;
+  --editor-toolbar-bg: rgb(255 255 255 / 0.045);
+  --editor-tool-fg: #b8bfcc;
+  --editor-tool-hover-bg: rgb(255 255 255 / 0.07);
+  --editor-tool-hover-fg: #f2f4f8;
+  --editor-divider: rgb(255 255 255 / 0.1);
+  --editor-field-border: rgb(255 255 255 / 0.14);
+  --editor-ground: #0b0d10;
+  --editor-status-fg: #8a93a3;
+  --editor-panel-rule: 1px solid rgb(255 255 255 / 0.07);
+  --editor-formula-border: 1px solid rgb(255 255 255 / 0.12);
+  --editor-formula-rule: 1px solid rgb(255 255 255 / 0.12);
+  --editor-name-box-fg: #e8eaef;
+  --editor-tab-active-bg: rgb(255 255 255 / 0.06);
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --editor-toolbar-bg: #15181e;
+  --editor-toolbar-border: 1px solid #242832;
+  --editor-toolbar-rule: 1px solid #242832;
+  --editor-toolbar-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --editor-ground: #0a0c0f;
+  --editor-panel-bg: #15181e;
+  --editor-panel-rule: 1px solid #242832;
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --editor-toolbar-bg: var(--glass-bg);
+  --editor-ground: transparent;
+}
+
 /* Translucency is a preference too: with it reduced, every frosted surface
    is opaque (look-and-feel roadmap §2, "Menus, popups and translucency"). */
 @media (prefers-reduced-transparency: reduce) {

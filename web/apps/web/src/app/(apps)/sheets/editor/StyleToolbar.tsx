@@ -17,6 +17,8 @@ import {
 import type { CellStyle } from './types';
 import { ColorPickerPopover, FontSizeInput, Toolbar, ToolbarGroup, ToolbarDivider, ToolbarButton, ToolbarSelect } from '@neutrino/ui';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
+import { ToolbarItems, type ToolDef } from '@/components/editorChrome/ToolbarItems';
+import pageStyles from './page.module.css';
 import { CustomFormatDialog } from './CustomFormatDialog';
 import { TableStyleGalleryModal } from './components/TableStyleGalleryModal';
 import { computeTableStylePatches } from './styles/applyTableStyle';
@@ -113,305 +115,332 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
     const [showFormatDialog, setShowFormatDialog] = useState(false);
     const [showTableStyles, setShowTableStyles] = useState(false);
 
+    // One entry per group, in the order and with the dividers the toolbar always had; the user
+    // reorders, hides and captions them (U10, lib/editorToolbars.ts).
+    const tools: ToolDef[] = [
+        {
+            id: 'history',
+            render: () => (
+                <ToolbarGroup>
+                    <ToolbarButton onClick={onUndo} disabled={!canUndo} title="Undo (⌘Z)">
+                        <Undo2 size={15} />
+                    </ToolbarButton>
+                    <ToolbarButton onClick={onRedo} disabled={!canRedo} title="Redo (⌘⇧Z)">
+                        <Redo2 size={15} />
+                    </ToolbarButton>
+                    <ToolbarButton
+                        active={isFormatPainterActive}
+                        onClick={onFormatPainterClick}
+                        title="Format Painter"
+                    >
+                        <Paintbrush size={15} />
+                    </ToolbarButton>
+                </ToolbarGroup>
+            ),
+        },
+        {
+            id: 'font',
+            render: () => (
+                <>
+                    {/* Font family */}
+                    <ToolbarSelect
+                        value={cellStyle?.fontFamily ?? ''}
+                        onChange={e => onStyleChange({ fontFamily: e.target.value || undefined })}
+                        disabled={disabled}
+                        title="Font family"
+                        style={{ width: 120 }}
+                    >
+                        {FONT_FAMILIES.map(f => (
+                            <option key={f.value} value={f.value}>{f.label}</option>
+                        ))}
+                    </ToolbarSelect>
+
+                    {/* Font size */}
+                    <FontSizeInput
+                        sizes={FONT_SIZES}
+                        value={cellStyle?.fontSize ? cellStyle.fontSize.replace('pt', '') : '11'}
+                        onChange={size => onStyleChange({ fontSize: `${size}pt` })}
+                        disabled={disabled}
+                    />
+                </>
+            ),
+        },
+        {
+            id: 'marks',
+            render: () => (
+                <ToolbarGroup>
+                    <ToolbarButton
+                        active={isBold}
+                        onClick={() => onStyleChange({ fontWeight: isBold ? 'normal' : 'bold' })}
+                        disabled={disabled}
+                        title="Bold (Ctrl+B)"
+                        style={{ fontWeight: 'bold' }}
+                    >B</ToolbarButton>
+                    <ToolbarButton
+                        active={isItalic}
+                        onClick={() => onStyleChange({ fontStyle: isItalic ? 'normal' : 'italic' })}
+                        disabled={disabled}
+                        title="Italic (Ctrl+I)"
+                        style={{ fontStyle: 'italic' }}
+                    >I</ToolbarButton>
+                    <ToolbarButton
+                        active={isStrikethrough}
+                        onClick={() => onStyleChange({ textDecoration: isStrikethrough ? 'none' : 'line-through' })}
+                        disabled={disabled}
+                        title="Strikethrough"
+                        style={{ textDecoration: 'line-through' }}
+                    >S</ToolbarButton>
+                </ToolbarGroup>
+            ),
+        },
+        {
+            id: 'colors',
+            render: () => (
+                <ToolbarGroup>
+                    <ColorPickerPopover
+                        color={cellStyle?.color ?? '#000000'}
+                        disabled={disabled}
+                        onChange={hex => onStyleChange({ color: hex })}
+                        title="Font Color"
+                    >
+                        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                            <span style={{ fontWeight: 'bold', fontSize: 13 }}>A</span>
+                            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: cellStyle?.color ?? '#000000' }} />
+                        </span>
+                    </ColorPickerPopover>
+
+                    <ColorPickerPopover
+                        color={cellStyle?.backgroundColor ?? '#ffffff'}
+                        disabled={disabled}
+                        onChange={hex => onStyleChange({ backgroundColor: hex })}
+                        title="Background Color"
+                    >
+                        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                            <span style={{ display: 'block', width: 14, height: 11, border: '1px solid rgba(0,0,0,0.15)', borderRadius: 2, backgroundColor: cellStyle?.backgroundColor ?? 'transparent' }} />
+                            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: cellStyle?.backgroundColor ?? '#ffffff' }} />
+                        </span>
+                    </ColorPickerPopover>
+                </ToolbarGroup>
+            ),
+        },
+        {
+            id: 'align',
+            render: () => (
+                <ToolbarGroup>
+                    <ToolbarButton
+                        active={cellStyle?.textAlign === 'left'}
+                        onClick={() => onStyleChange({ textAlign: 'left' })}
+                        disabled={disabled}
+                        title="Align Left"
+                    ><AlignLeft size={15} /></ToolbarButton>
+                    <ToolbarButton
+                        active={cellStyle?.textAlign === 'center'}
+                        onClick={() => onStyleChange({ textAlign: 'center' })}
+                        disabled={disabled}
+                        title="Align Center"
+                    ><AlignCenter size={15} /></ToolbarButton>
+                    <ToolbarButton
+                        active={cellStyle?.textAlign === 'right'}
+                        onClick={() => onStyleChange({ textAlign: 'right' })}
+                        disabled={disabled}
+                        title="Align Right"
+                    ><AlignRight size={15} /></ToolbarButton>
+                </ToolbarGroup>
+            ),
+        },
+        {
+            id: 'valign',
+            joined: true,
+            render: () => (
+                <ToolbarGroup>
+                    <ToolbarButton
+                        active={cellStyle?.verticalAlign === 'top'}
+                        onClick={() => onStyleChange({ verticalAlign: 'top' })}
+                        disabled={disabled}
+                        title="Align Top"
+                    ><AlignVerticalJustifyStart size={15} /></ToolbarButton>
+                    <ToolbarButton
+                        active={!cellStyle?.verticalAlign || cellStyle.verticalAlign === 'middle'}
+                        onClick={() => onStyleChange({ verticalAlign: 'middle' })}
+                        disabled={disabled}
+                        title="Align Middle"
+                    ><AlignVerticalJustifyCenter size={15} /></ToolbarButton>
+                    <ToolbarButton
+                        active={cellStyle?.verticalAlign === 'bottom'}
+                        onClick={() => onStyleChange({ verticalAlign: 'bottom' })}
+                        disabled={disabled}
+                        title="Align Bottom"
+                    ><AlignVerticalJustifyEnd size={15} /></ToolbarButton>
+                </ToolbarGroup>
+            ),
+        },
+        {
+            id: 'borders',
+            render: () => (
+                <ToolbarSelect
+                    value={cellStyle?.borderStyle ?? 'none'}
+                    onChange={e => onStyleChange({
+                        borderStyle: e.target.value as CellStyle['borderStyle'],
+                        borderTop: undefined,
+                        borderRight: undefined,
+                        borderBottom: undefined,
+                        borderLeft: undefined,
+                    })}
+                    disabled={disabled}
+                    title="Border Style"
+                >
+                    <option value="none">No Border</option>
+                    <option value="thin">Thin Border</option>
+                    <option value="medium">Medium Border</option>
+                    <option value="thick">Thick Border</option>
+                </ToolbarSelect>
+            ),
+        },
+        {
+            id: 'tableStyles',
+            joined: true,
+            render: () => (
+                <ToolbarButton
+                    onClick={() => setShowTableStyles(true)}
+                    disabled={disabled}
+                    title="Table styles"
+                >
+                    <TableProperties size={15} />
+                </ToolbarButton>
+            ),
+        },
+        {
+            id: 'wrap',
+            render: () => (
+                <ToolbarGroup>
+                    <ToolbarButton
+                        active={!cellStyle?.wrapMode || cellStyle.wrapMode === 'overflow'}
+                        onClick={() => onStyleChange({ wrapMode: 'overflow' })}
+                        disabled={disabled}
+                        title="Overflow"
+                    ><WrapOverflowIcon /></ToolbarButton>
+                    <ToolbarButton
+                        active={cellStyle?.wrapMode === 'wrap'}
+                        onClick={() => onStyleChange({ wrapMode: 'wrap' })}
+                        disabled={disabled}
+                        title="Wrap"
+                    ><WrapWrapIcon /></ToolbarButton>
+                    <ToolbarButton
+                        active={cellStyle?.wrapMode === 'clip'}
+                        onClick={() => onStyleChange({ wrapMode: 'clip' })}
+                        disabled={disabled}
+                        title="Clip"
+                    ><WrapClipIcon /></ToolbarButton>
+                </ToolbarGroup>
+            ),
+        },
+        {
+            id: 'numberFormat',
+            render: () => (
+                <ToolbarGroup>
+                    <ToolbarButton
+                        active={cellStyle?.numberFormat === 'currency'}
+                        onClick={() => onStyleChange({ numberFormat: cellStyle?.numberFormat === 'currency' ? undefined : 'currency' })}
+                        disabled={disabled}
+                        title="Currency"
+                        style={{ fontSize: 14, fontWeight: 600 }}
+                    >$</ToolbarButton>
+                    <ToolbarButton
+                        active={cellStyle?.numberFormat === 'percent'}
+                        onClick={() => onStyleChange({ numberFormat: cellStyle?.numberFormat === 'percent' ? undefined : 'percent' })}
+                        disabled={disabled}
+                        title="Percent"
+                        style={{ fontSize: 13 }}
+                    >%</ToolbarButton>
+                    <ToolbarButton
+                        active={cellStyle?.numberFormat === 'number'}
+                        onClick={() => onStyleChange({ numberFormat: cellStyle?.numberFormat === 'number' ? undefined : 'number' })}
+                        disabled={disabled}
+                        title="Number"
+                        style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 600 }}
+                    >#</ToolbarButton>
+                    <ToolbarButton
+                        active={cellStyle?.numberFormat === 'date'}
+                        onClick={() => onStyleChange({ numberFormat: cellStyle?.numberFormat === 'date' ? undefined : 'date' })}
+                        disabled={disabled}
+                        title="Date"
+                    ><Calendar size={15} /></ToolbarButton>
+                    <ToolbarButton
+                        active={!!cellStyle?.customFormat}
+                        onClick={() => setShowFormatDialog(true)}
+                        disabled={disabled}
+                        title="More formats…"
+                        style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 600, width: 36 }}
+                    >123…</ToolbarButton>
+                </ToolbarGroup>
+            ),
+        },
+        {
+            id: 'merge',
+            render: () => (
+                <ToolbarButton
+                    active={isMerged}
+                    onClick={onMergeCells}
+                    disabled={disabled}
+                    title={isMerged ? 'Unmerge Cells' : 'Merge Cells'}
+                >{isMerged ? <TableCellsSplit size={15} /> : <TableCellsMerge size={15} />}</ToolbarButton>
+            ),
+        },
+        {
+            id: 'decimals',
+            render: () => (
+                <ToolbarGroup>
+                    <ToolbarButton
+                        onClick={() => onStyleChange({ decimalPlaces: Math.max(0, (cellStyle?.decimalPlaces ?? 0) - 1) })}
+                        disabled={disabled || (cellStyle?.decimalPlaces ?? 0) <= 0}
+                        title="Decrease decimal places"
+                    ><DecimalDecIcon /></ToolbarButton>
+                    <ToolbarButton
+                        onClick={() => onStyleChange({ decimalPlaces: (cellStyle?.decimalPlaces ?? 0) + 1 })}
+                        disabled={disabled}
+                        title="Increase decimal places"
+                    ><DecimalIncIcon /></ToolbarButton>
+                </ToolbarGroup>
+            ),
+        },
+        {
+            id: 'chart',
+            render: () => onInsertChart ? (
+                <ToolbarButton
+                    onClick={onInsertChart}
+                    title="Insert Chart"
+                >
+                    <BarChart2 size={15} />
+                </ToolbarButton>
+            ) : null,
+        },
+        {
+            id: 'find',
+            render: () => onFindReplace ? (
+                <ToolbarButton
+                    onClick={onFindReplace}
+                    title="Find and Replace (Ctrl+H)"
+                >
+                    <Search size={15} />
+                </ToolbarButton>
+            ) : null,
+        },
+        {
+            id: 'conditional',
+            render: () => onConditionalFormat ? (
+                <ToolbarButton
+                    onClick={onConditionalFormat}
+                    title="Conditional formatting"
+                >
+                    <Palette size={15} />
+                </ToolbarButton>
+            ) : null,
+        },
+    ];
+
     return (
-        <Toolbar>
-            {/* Undo / Redo / Format Painter */}
-            <ToolbarGroup>
-                <ToolbarButton onClick={onUndo} disabled={!canUndo} title="Undo (⌘Z)">
-                    <Undo2 size={15} />
-                </ToolbarButton>
-                <ToolbarButton onClick={onRedo} disabled={!canRedo} title="Redo (⌘⇧Z)">
-                    <Redo2 size={15} />
-                </ToolbarButton>
-                <ToolbarButton
-                    active={isFormatPainterActive}
-                    onClick={onFormatPainterClick}
-                    title="Format Painter"
-                >
-                    <Paintbrush size={15} />
-                </ToolbarButton>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Font family */}
-            <ToolbarSelect
-                value={cellStyle?.fontFamily ?? ''}
-                onChange={e => onStyleChange({ fontFamily: e.target.value || undefined })}
-                disabled={disabled}
-                title="Font family"
-                style={{ width: 120 }}
-            >
-                {FONT_FAMILIES.map(f => (
-                    <option key={f.value} value={f.value}>{f.label}</option>
-                ))}
-            </ToolbarSelect>
-
-            {/* Font size */}
-            <FontSizeInput
-                sizes={FONT_SIZES}
-                value={cellStyle?.fontSize ? cellStyle.fontSize.replace('pt', '') : '11'}
-                onChange={size => onStyleChange({ fontSize: `${size}pt` })}
-                disabled={disabled}
-            />
-
-            <ToolbarDivider />
-
-            {/* Bold / Italic / Strikethrough */}
-            <ToolbarGroup>
-                <ToolbarButton
-                    active={isBold}
-                    onClick={() => onStyleChange({ fontWeight: isBold ? 'normal' : 'bold' })}
-                    disabled={disabled}
-                    title="Bold (Ctrl+B)"
-                    style={{ fontWeight: 'bold' }}
-                >B</ToolbarButton>
-                <ToolbarButton
-                    active={isItalic}
-                    onClick={() => onStyleChange({ fontStyle: isItalic ? 'normal' : 'italic' })}
-                    disabled={disabled}
-                    title="Italic (Ctrl+I)"
-                    style={{ fontStyle: 'italic' }}
-                >I</ToolbarButton>
-                <ToolbarButton
-                    active={isStrikethrough}
-                    onClick={() => onStyleChange({ textDecoration: isStrikethrough ? 'none' : 'line-through' })}
-                    disabled={disabled}
-                    title="Strikethrough"
-                    style={{ textDecoration: 'line-through' }}
-                >S</ToolbarButton>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Font color / Background color */}
-            <ToolbarGroup>
-                <ColorPickerPopover
-                    color={cellStyle?.color ?? '#000000'}
-                    disabled={disabled}
-                    onChange={hex => onStyleChange({ color: hex })}
-                    title="Font Color"
-                >
-                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                        <span style={{ fontWeight: 'bold', fontSize: 13 }}>A</span>
-                        <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: cellStyle?.color ?? '#000000' }} />
-                    </span>
-                </ColorPickerPopover>
-
-                <ColorPickerPopover
-                    color={cellStyle?.backgroundColor ?? '#ffffff'}
-                    disabled={disabled}
-                    onChange={hex => onStyleChange({ backgroundColor: hex })}
-                    title="Background Color"
-                >
-                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                        <span style={{ display: 'block', width: 14, height: 11, border: '1px solid rgba(0,0,0,0.15)', borderRadius: 2, backgroundColor: cellStyle?.backgroundColor ?? 'transparent' }} />
-                        <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: cellStyle?.backgroundColor ?? '#ffffff' }} />
-                    </span>
-                </ColorPickerPopover>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Horizontal alignment */}
-            <ToolbarGroup>
-                <ToolbarButton
-                    active={cellStyle?.textAlign === 'left'}
-                    onClick={() => onStyleChange({ textAlign: 'left' })}
-                    disabled={disabled}
-                    title="Align Left"
-                ><AlignLeft size={15} /></ToolbarButton>
-                <ToolbarButton
-                    active={cellStyle?.textAlign === 'center'}
-                    onClick={() => onStyleChange({ textAlign: 'center' })}
-                    disabled={disabled}
-                    title="Align Center"
-                ><AlignCenter size={15} /></ToolbarButton>
-                <ToolbarButton
-                    active={cellStyle?.textAlign === 'right'}
-                    onClick={() => onStyleChange({ textAlign: 'right' })}
-                    disabled={disabled}
-                    title="Align Right"
-                ><AlignRight size={15} /></ToolbarButton>
-            </ToolbarGroup>
-
-            {/* Vertical alignment */}
-            <ToolbarGroup>
-                <ToolbarButton
-                    active={cellStyle?.verticalAlign === 'top'}
-                    onClick={() => onStyleChange({ verticalAlign: 'top' })}
-                    disabled={disabled}
-                    title="Align Top"
-                ><AlignVerticalJustifyStart size={15} /></ToolbarButton>
-                <ToolbarButton
-                    active={!cellStyle?.verticalAlign || cellStyle.verticalAlign === 'middle'}
-                    onClick={() => onStyleChange({ verticalAlign: 'middle' })}
-                    disabled={disabled}
-                    title="Align Middle"
-                ><AlignVerticalJustifyCenter size={15} /></ToolbarButton>
-                <ToolbarButton
-                    active={cellStyle?.verticalAlign === 'bottom'}
-                    onClick={() => onStyleChange({ verticalAlign: 'bottom' })}
-                    disabled={disabled}
-                    title="Align Bottom"
-                ><AlignVerticalJustifyEnd size={15} /></ToolbarButton>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Border style */}
-            <ToolbarSelect
-                value={cellStyle?.borderStyle ?? 'none'}
-                onChange={e => onStyleChange({
-                    borderStyle: e.target.value as CellStyle['borderStyle'],
-                    borderTop: undefined,
-                    borderRight: undefined,
-                    borderBottom: undefined,
-                    borderLeft: undefined,
-                })}
-                disabled={disabled}
-                title="Border Style"
-            >
-                <option value="none">No Border</option>
-                <option value="thin">Thin Border</option>
-                <option value="medium">Medium Border</option>
-                <option value="thick">Thick Border</option>
-            </ToolbarSelect>
-
-            {/* Table styles */}
-            <ToolbarButton
-                onClick={() => setShowTableStyles(true)}
-                disabled={disabled}
-                title="Table styles"
-            >
-                <TableProperties size={15} />
-            </ToolbarButton>
-
-            <ToolbarDivider />
-
-            {/* Wrap mode */}
-            <ToolbarGroup>
-                <ToolbarButton
-                    active={!cellStyle?.wrapMode || cellStyle.wrapMode === 'overflow'}
-                    onClick={() => onStyleChange({ wrapMode: 'overflow' })}
-                    disabled={disabled}
-                    title="Overflow"
-                ><WrapOverflowIcon /></ToolbarButton>
-                <ToolbarButton
-                    active={cellStyle?.wrapMode === 'wrap'}
-                    onClick={() => onStyleChange({ wrapMode: 'wrap' })}
-                    disabled={disabled}
-                    title="Wrap"
-                ><WrapWrapIcon /></ToolbarButton>
-                <ToolbarButton
-                    active={cellStyle?.wrapMode === 'clip'}
-                    onClick={() => onStyleChange({ wrapMode: 'clip' })}
-                    disabled={disabled}
-                    title="Clip"
-                ><WrapClipIcon /></ToolbarButton>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Number formats */}
-            <ToolbarGroup>
-                <ToolbarButton
-                    active={cellStyle?.numberFormat === 'currency'}
-                    onClick={() => onStyleChange({ numberFormat: cellStyle?.numberFormat === 'currency' ? undefined : 'currency' })}
-                    disabled={disabled}
-                    title="Currency"
-                    style={{ fontSize: 14, fontWeight: 600 }}
-                >$</ToolbarButton>
-                <ToolbarButton
-                    active={cellStyle?.numberFormat === 'percent'}
-                    onClick={() => onStyleChange({ numberFormat: cellStyle?.numberFormat === 'percent' ? undefined : 'percent' })}
-                    disabled={disabled}
-                    title="Percent"
-                    style={{ fontSize: 13 }}
-                >%</ToolbarButton>
-                <ToolbarButton
-                    active={cellStyle?.numberFormat === 'number'}
-                    onClick={() => onStyleChange({ numberFormat: cellStyle?.numberFormat === 'number' ? undefined : 'number' })}
-                    disabled={disabled}
-                    title="Number"
-                    style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 600 }}
-                >#</ToolbarButton>
-                <ToolbarButton
-                    active={cellStyle?.numberFormat === 'date'}
-                    onClick={() => onStyleChange({ numberFormat: cellStyle?.numberFormat === 'date' ? undefined : 'date' })}
-                    disabled={disabled}
-                    title="Date"
-                ><Calendar size={15} /></ToolbarButton>
-                <ToolbarButton
-                    active={!!cellStyle?.customFormat}
-                    onClick={() => setShowFormatDialog(true)}
-                    disabled={disabled}
-                    title="More formats…"
-                    style={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 600, width: 36 }}
-                >123…</ToolbarButton>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Merge / Unmerge cells */}
-            <ToolbarButton
-                active={isMerged}
-                onClick={onMergeCells}
-                disabled={disabled}
-                title={isMerged ? 'Unmerge Cells' : 'Merge Cells'}
-            >{isMerged ? <TableCellsSplit size={15} /> : <TableCellsMerge size={15} />}</ToolbarButton>
-
-            <ToolbarDivider />
-
-            {/* Decimal places */}
-            <ToolbarGroup>
-                <ToolbarButton
-                    onClick={() => onStyleChange({ decimalPlaces: Math.max(0, (cellStyle?.decimalPlaces ?? 0) - 1) })}
-                    disabled={disabled || (cellStyle?.decimalPlaces ?? 0) <= 0}
-                    title="Decrease decimal places"
-                ><DecimalDecIcon /></ToolbarButton>
-                <ToolbarButton
-                    onClick={() => onStyleChange({ decimalPlaces: (cellStyle?.decimalPlaces ?? 0) + 1 })}
-                    disabled={disabled}
-                    title="Increase decimal places"
-                ><DecimalIncIcon /></ToolbarButton>
-            </ToolbarGroup>
-
-            {onInsertChart && (
-                <>
-                    <ToolbarDivider />
-                    <ToolbarButton
-                        onClick={onInsertChart}
-                        title="Insert Chart"
-                    >
-                        <BarChart2 size={15} />
-                    </ToolbarButton>
-                </>
-            )}
-
-            {onFindReplace && (
-                <>
-                    <ToolbarDivider />
-                    <ToolbarButton
-                        onClick={onFindReplace}
-                        title="Find and Replace (Ctrl+H)"
-                    >
-                        <Search size={15} />
-                    </ToolbarButton>
-                </>
-            )}
-
-            {onConditionalFormat && (
-                <>
-                    <ToolbarDivider />
-                    <ToolbarButton
-                        onClick={onConditionalFormat}
-                        title="Conditional formatting"
-                    >
-                        <Palette size={15} />
-                    </ToolbarButton>
-                </>
-            )}
+        <Toolbar className={pageStyles.styleToolbar}>
+            <ToolbarItems editor="sheets" tools={tools} divider={<ToolbarDivider />} />
 
             {showFormatDialog && (
                 <CustomFormatDialog

@@ -101,3 +101,33 @@
   color: var(--color-accent-text);
   cursor: pointer;
 }
+
+/* Settings › Toolbars: one tab per editor. */
+.editorTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.editorTab {
+  padding: 5px 12px;
+  border: 1px solid var(--button-border-rest, var(--color-border));
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.editorTab:hover {
+  background: var(--button-bg-hover, var(--color-surface-hover));
+  color: var(--color-text);
+}
+
+.editorTab[aria-selected='true'] {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}

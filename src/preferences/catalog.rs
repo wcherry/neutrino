@@ -88,6 +88,7 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "teamSpace.sort", kind: Kind::Enum(&["name", "size", "createdAt", "updatedAt"]), scopes: USER_TEAM },
     Spec { key: "teamSpace.sortDirection", kind: Kind::Enum(&["asc", "desc"]), scopes: USER_TEAM },
     Spec { key: "listing.views", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
+    Spec { key: "editor.toolbars", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
     Spec { key: "drive.landing", kind: Kind::Enum(&["drive", "recent", "starred"]), scopes: USER_ORG },
 ];
 

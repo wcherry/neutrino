@@ -1,5 +1,7 @@
 'use client';
 
+import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
+import { ToolbarItems, type ToolDef } from '@/components/editorChrome/ToolbarItems';
 import React, {
   useState,
   useCallback,
@@ -1460,6 +1462,698 @@ export function SlideEditor() {
     saveStatus === 'error' ? styles.saveStatusError :
     '';
 
+  // The toolbar as tool groups (U10, lib/editorToolbars.ts), each drawing the dividers it always
+  // drew — most only appear for the kind of element selected.
+  const toolbarTools: ToolDef[] = [
+    {
+      id: 'lines',
+      joined: true,
+      render: () => (
+        <>
+          <LinesToolbarDropdown onAdd={addLine} />
+          <ToolbarDivider />
+        </>
+      ),
+    },
+    {
+      id: 'video',
+      joined: true,
+      render: () => selectedElement?.type === 'video' ? (
+        <>
+          <ToolbarDivider />
+          <ToolbarGroup>
+            <label className={styles.toolbarLabel} title="Autoplay">
+              <input
+                type="checkbox"
+                checked={(selectedElement as VideoElement).autoplay}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, autoplay: e.target.checked } as VideoElement))}
+              />
+              Autoplay
+            </label>
+            <label className={styles.toolbarLabel} title="Loop">
+              <input
+                type="checkbox"
+                checked={(selectedElement as VideoElement).loop}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, loop: e.target.checked } as VideoElement))}
+              />
+              Loop
+            </label>
+            <label className={styles.toolbarLabel} title="Muted">
+              <input
+                type="checkbox"
+                checked={(selectedElement as VideoElement).muted}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, muted: e.target.checked } as VideoElement))}
+              />
+              Muted
+            </label>
+            <span className={styles.toolbarLabel} title="Start time in seconds">
+              Start
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={(selectedElement as VideoElement).startSeconds ?? 0}
+                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, startSeconds: parseInt(e.target.value) || 0 } as VideoElement))}
+                className={styles.toolbarNumberInput}
+                title="Start time (seconds)"
+              />
+              s
+            </span>
+            <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete video">
+              <Trash2 size={15} />
+            </ToolbarButton>
+          </ToolbarGroup>
+        </>
+      ) : null,
+    },
+    {
+      id: 'textFont',
+      joined: true,
+      render: () => selectedElement?.type === 'text' ? (
+        <>
+          <ToolbarDivider />
+
+          {/* Font family */}
+          <ToolbarSelect
+            value={(selectedElement as TextElement).style.fontFamily}
+            onChange={(e) => updateTextStyle(selectedElement.id, { fontFamily: e.target.value })}
+            title="Font family"
+            style={{ width: 120 }}
+          >
+            {FONT_FAMILIES.map((f) => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
+          </ToolbarSelect>
+
+          {/* Font size */}
+          <FontSizeInput
+            sizes={FONT_SIZES}
+            value={(selectedElement as TextElement).style.fontSize}
+            onChange={(size) => updateTextStyle(selectedElement.id, { fontSize: size })}
+          />
+        </>
+      ) : null,
+    },
+    {
+      id: 'textMarks',
+      joined: true,
+      render: () => selectedElement?.type === 'text' ? (
+        <>
+          <ToolbarDivider />
+
+          {/* Bold / italic / underline / strikethrough */}
+          <ToolbarGroup>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.bold}
+              onClick={() => updateTextStyle(selectedElement.id, { bold: !(selectedElement as TextElement).style.bold })}
+              title="Bold (B)"
+              style={{ fontWeight: 700 }}
+            >
+              B
+            </ToolbarButton>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.italic}
+              onClick={() => updateTextStyle(selectedElement.id, { italic: !(selectedElement as TextElement).style.italic })}
+              title="Italic (I)"
+              style={{ fontStyle: 'italic' }}
+            >
+              I
+            </ToolbarButton>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.underline}
+              onClick={() => updateTextStyle(selectedElement.id, { underline: !(selectedElement as TextElement).style.underline })}
+              title="Underline (U)"
+              style={{ textDecoration: 'underline' }}
+            >
+              U
+            </ToolbarButton>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.strikethrough ?? false}
+              onClick={() => updateTextStyle(selectedElement.id, { strikethrough: !((selectedElement as TextElement).style.strikethrough ?? false) })}
+              title="Strikethrough"
+              style={{ textDecoration: 'line-through' }}
+            >
+              S
+            </ToolbarButton>
+          </ToolbarGroup>
+        </>
+      ) : null,
+    },
+    {
+      id: 'textColors',
+      joined: true,
+      render: () => selectedElement?.type === 'text' ? (
+        <>
+          <ToolbarDivider />
+
+          {/* Text color + background color */}
+          <ToolbarGroup>
+            <ColorPickerPopover
+              color={(selectedElement as TextElement).style.color ?? '#202124'}
+              onChange={(hex) => updateTextStyle(selectedElement.id, { color: hex })}
+              title="Text color"
+              showAlpha
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.color ?? '#202124' }} />
+              </span>
+            </ColorPickerPopover>
+            <ColorPickerPopover
+              color={(selectedElement as TextElement).style.backgroundColor ?? '#fef08a'}
+              onChange={(hex) => updateTextStyle(selectedElement.id, { backgroundColor: hex })}
+              title="Text background color"
+              showAlpha
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                <span style={{ fontSize: 12 }}>&#9632;</span>
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.backgroundColor ?? '#fef08a' }} />
+              </span>
+            </ColorPickerPopover>
+          </ToolbarGroup>
+        </>
+      ) : null,
+    },
+    {
+      id: 'textShadow',
+      joined: true,
+      render: () => selectedElement?.type === 'text' ? (
+        <>
+          <ToolbarDivider />
+
+          {/* Shadow */}
+          <ToolbarGroup>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.shadow ?? false}
+              onClick={() => updateTextStyle(selectedElement.id, { shadow: !((selectedElement as TextElement).style.shadow ?? false) })}
+              title="Text shadow"
+            >
+              <span style={{ fontWeight: 700, fontSize: 13, textShadow: '1px 1px 2px rgba(0,0,0,0.6)' }}>S</span>
+            </ToolbarButton>
+            {(selectedElement as TextElement).style.shadow && (
+              <ColorPickerPopover
+                color={(selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)'}
+                onChange={(hex) => updateTextStyle(selectedElement.id, { shadowColor: hex })}
+                title="Shadow color"
+                showAlpha
+              >
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                  <span style={{ fontSize: 11, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>A</span>
+                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)' }} />
+                </span>
+              </ColorPickerPopover>
+            )}
+          </ToolbarGroup>
+        </>
+      ) : null,
+    },
+    {
+      id: 'textAlign',
+      joined: true,
+      render: () => selectedElement?.type === 'text' ? (
+        <>
+          <ToolbarDivider />
+
+          {/* Alignment */}
+          <ToolbarGroup>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.align === 'left'}
+              onClick={() => updateTextStyle(selectedElement.id, { align: 'left' })}
+              title="Align left"
+            >
+              <AlignLeft size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.align === 'center'}
+              onClick={() => updateTextStyle(selectedElement.id, { align: 'center' })}
+              title="Align center"
+            >
+              <AlignCenter size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.align === 'right'}
+              onClick={() => updateTextStyle(selectedElement.id, { align: 'right' })}
+              title="Align right"
+            >
+              <AlignRight size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.align === 'justify'}
+              onClick={() => updateTextStyle(selectedElement.id, { align: 'justify' })}
+              title="Justify"
+            >
+              <AlignJustify size={15} />
+            </ToolbarButton>
+          </ToolbarGroup>
+        </>
+      ) : null,
+    },
+    {
+      id: 'textLists',
+      joined: true,
+      render: () => selectedElement?.type === 'text' ? (
+        <>
+          <ToolbarDivider />
+
+          {/* Line & paragraph spacing */}
+          <LineSpacingMenu
+            lineHeight={(selectedElement as TextElement).style.lineHeight}
+            spaceBefore={(selectedElement as TextElement).style.spaceBefore}
+            spaceAfter={(selectedElement as TextElement).style.spaceAfter}
+            fontSize={(selectedElement as TextElement).style.fontSize}
+            onChangeLineHeight={(lh) => updateTextStyle(selectedElement.id, { lineHeight: lh })}
+            onChangeSpaceBefore={(pt) => updateTextStyle(selectedElement.id, { spaceBefore: pt })}
+            onChangeSpaceAfter={(pt) => updateTextStyle(selectedElement.id, { spaceAfter: pt })}
+          />
+
+          {/* List type */}
+          <ToolbarGroup>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.listType === 'bullet'}
+              onClick={() => {
+                const t = selectedElement as TextElement;
+                updateTextStyle(t.id, { listType: t.style.listType === 'bullet' ? 'none' : 'bullet' });
+              }}
+              title="Bullet list"
+            >
+              <List size={15} />
+            </ToolbarButton>
+            <ToolbarButton
+              active={(selectedElement as TextElement).style.listType === 'numbered'}
+              onClick={() => {
+                const t = selectedElement as TextElement;
+                updateTextStyle(t.id, { listType: t.style.listType === 'numbered' ? 'none' : 'numbered' });
+              }}
+              title="Numbered list"
+            >
+              <ListOrdered size={15} />
+            </ToolbarButton>
+          </ToolbarGroup>
+        </>
+      ) : null,
+    },
+    {
+      id: 'textDelete',
+      joined: true,
+      render: () => selectedElement?.type === 'text' ? (
+        <>
+          <ToolbarDivider />
+
+          <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
+            <Trash2 size={15} />
+          </ToolbarButton>
+        </>
+      ) : null,
+    },
+    {
+      id: 'image',
+      joined: true,
+      render: () => selectedElement?.type === 'image' ? (
+        <>
+          <ToolbarDivider />
+          <ToolbarGroup>
+            <ToolbarSelect
+              value={(selectedElement as ImageElement).objectFit ?? 'cover'}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, objectFit: e.target.value } as ImageElement))}
+              title="Image fit"
+            >
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+              <option value="fill">Fill</option>
+            </ToolbarSelect>
+          </ToolbarGroup>
+
+          <ToolbarDivider />
+
+          {/* Transparency */}
+          <span className={styles.toolbarLabel} title="Opacity">
+            Opacity
+            <input
+              type="range"
+              min={0} max={100} step={1}
+              value={Math.round(((selectedElement as ImageElement).opacity ?? 1) * 100)}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, opacity: parseInt(e.target.value) / 100 } as ImageElement))}
+              className={styles.toolbarSlider}
+            />
+            {Math.round(((selectedElement as ImageElement).opacity ?? 1) * 100)}%
+          </span>
+
+          <ToolbarDivider />
+
+          {/* Tint */}
+          <ColorPickerPopover
+            color={(selectedElement as ImageElement).tintColor ?? '#ff0000'}
+            onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, tintColor: hex } as ImageElement))}
+            title="Tint color"
+            showAlpha
+          >
+            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+              <span style={{ fontSize: 11 }}>Tint</span>
+              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ImageElement).tintColor ?? '#ff0000' }} />
+            </span>
+          </ColorPickerPopover>
+          <input
+            type="range"
+            min={0} max={100} step={1}
+            value={Math.round(((selectedElement as ImageElement).tintStrength ?? 0) * 100)}
+            onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, tintStrength: parseInt(e.target.value) / 100 } as ImageElement))}
+            className={styles.toolbarSlider}
+            title="Tint strength"
+          />
+
+          <ToolbarDivider />
+
+          {/* Color adjustments */}
+          <span className={styles.toolbarLabel} title="Brightness">
+            Bright
+            <input
+              type="range"
+              min={-100} max={100} step={1}
+              value={(selectedElement as ImageElement).brightness ?? 0}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, brightness: parseInt(e.target.value) } as ImageElement))}
+              className={styles.toolbarSlider}
+            />
+          </span>
+          <span className={styles.toolbarLabel} title="Contrast">
+            Contrast
+            <input
+              type="range"
+              min={-100} max={100} step={1}
+              value={(selectedElement as ImageElement).contrast ?? 0}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, contrast: parseInt(e.target.value) } as ImageElement))}
+              className={styles.toolbarSlider}
+            />
+          </span>
+          <span className={styles.toolbarLabel} title="Saturation">
+            Sat
+            <input
+              type="range"
+              min={-100} max={100} step={1}
+              value={(selectedElement as ImageElement).saturation ?? 0}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, saturation: parseInt(e.target.value) } as ImageElement))}
+              className={styles.toolbarSlider}
+            />
+          </span>
+
+          <ToolbarDivider />
+
+          {/* White balance */}
+          <span className={styles.toolbarLabel} title="White balance (warm/cool)">
+            Warm
+            <input
+              type="range"
+              min={-100} max={100} step={1}
+              value={(selectedElement as ImageElement).warmth ?? 0}
+              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, warmth: parseInt(e.target.value) } as ImageElement))}
+              className={styles.toolbarSlider}
+            />
+          </span>
+
+          <ToolbarDivider />
+          <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete image">
+            <Trash2 size={15} />
+          </ToolbarButton>
+        </>
+      ) : null,
+    },
+    {
+      id: 'shape',
+      joined: true,
+      render: () => selectedElement?.type === 'shape' ? (
+        <>
+          <ToolbarDivider />
+          <ToolbarGroup>
+            <ColorPickerPopover
+              color={(selectedElement as ShapeElement).fill}
+              onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, fill: hex } as ShapeElement))}
+              title="Fill color"
+              showAlpha
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                <span style={{ fontSize: 12 }}>&#9632;</span>
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).fill }} />
+              </span>
+            </ColorPickerPopover>
+            <ColorPickerPopover
+              color={(selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke}
+              onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as ShapeElement))}
+              title="Outline color"
+              showAlpha
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                <span style={{ fontSize: 12 }}>&#9633;</span>
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke }} />
+              </span>
+            </ColorPickerPopover>
+          </ToolbarGroup>
+          <ToolbarDivider />
+          <span className={styles.toolbarLabel}>Outline</span>
+          <ToolbarGroup>
+            <ToolbarButton
+              onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.max(0, (el as ShapeElement).strokeWidth - 1) } as ShapeElement))}
+              disabled={(selectedElement as ShapeElement).strokeWidth <= 0}
+              title="Decrease outline width"
+            >
+              <Minus size={12} />
+            </ToolbarButton>
+            <span className={styles.stepperValue}>{(selectedElement as ShapeElement).strokeWidth}px</span>
+            <ToolbarButton
+              onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.min(20, (el as ShapeElement).strokeWidth + 1) } as ShapeElement))}
+              disabled={(selectedElement as ShapeElement).strokeWidth >= 20}
+              title="Increase outline width"
+            >
+              <Plus size={12} />
+            </ToolbarButton>
+          </ToolbarGroup>
+          <ToolbarSelect
+            value={(selectedElement as ShapeElement).strokeDash ?? ''}
+            onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, strokeDash: e.target.value } as ShapeElement))}
+            title="Line style"
+          >
+            <option value="">Solid</option>
+            <option value="4 4">Dashed</option>
+            <option value="2 2">Dotted</option>
+            <option value="8 4 2 4">Dash · dot</option>
+            <option value="8 4 2 4 2 4">Dash · dot · dot</option>
+          </ToolbarSelect>
+          <ToolbarDivider />
+          <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
+            <Trash2 size={15} />
+          </ToolbarButton>
+        </>
+      ) : null,
+    },
+    {
+      id: 'line',
+      joined: true,
+      render: () => selectedElement?.type === 'line' ? (
+        <>
+          <ToolbarDivider />
+          <ToolbarGroup>
+            <ColorPickerPopover
+              color={(selectedElement as LineElement).stroke}
+              onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as LineElement))}
+              title="Line color"
+              showAlpha
+            >
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+                <span style={{ fontSize: 12 }}>&#9633;</span>
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as LineElement).stroke }} />
+              </span>
+            </ColorPickerPopover>
+          </ToolbarGroup>
+          <ToolbarDivider />
+          <ToolbarGroup>
+            <ToolbarButton
+              onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.max(1, (el as LineElement).strokeWidth - 1) } as LineElement))}
+              disabled={(selectedElement as LineElement).strokeWidth <= 1}
+              title="Decrease line width"
+            >
+              <Minus size={12} />
+            </ToolbarButton>
+            <span className={styles.stepperValue}>{(selectedElement as LineElement).strokeWidth}px</span>
+            <ToolbarButton
+              onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.min(20, (el as LineElement).strokeWidth + 1) } as LineElement))}
+              disabled={(selectedElement as LineElement).strokeWidth >= 20}
+              title="Increase line width"
+            >
+              <Plus size={12} />
+            </ToolbarButton>
+          </ToolbarGroup>
+          <ToolbarSelect
+            value={(selectedElement as LineElement).strokeDash ?? ''}
+            onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, strokeDash: e.target.value || undefined } as LineElement))}
+            title="Line style"
+          >
+            <option value="">Solid</option>
+            <option value="4 4">Dashed</option>
+            <option value="2 2">Dotted</option>
+            <option value="8 4 2 4">Dash · dot</option>
+            <option value="8 4 2 4 2 4">Dash · dot · dot</option>
+          </ToolbarSelect>
+          <ToolbarDivider />
+          <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete line">
+            <Trash2 size={15} />
+          </ToolbarButton>
+        </>
+      ) : null,
+    },
+    {
+      id: 'arrange',
+      joined: true,
+      render: () => selectedElement ? (
+        <>
+          <ToolbarDivider />
+          <ToolbarGroup>
+            <ToolbarButton
+              onClick={sendElementToBack}
+              disabled={selectedElementIndex <= 0}
+              title="Send to back"
+            >
+              <ArrowDownToLine size={14} />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={moveElementBackward}
+              disabled={selectedElementIndex <= 0}
+              title="Send backward"
+            >
+              <ArrowDown size={14} />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={moveElementForward}
+              disabled={selectedElementIndex >= elementCount - 1}
+              title="Bring forward"
+            >
+              <ArrowUp size={14} />
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={bringElementToFront}
+              disabled={selectedElementIndex >= elementCount - 1}
+              title="Bring to front"
+            >
+              <ArrowUpToLine size={14} />
+            </ToolbarButton>
+          </ToolbarGroup>
+        </>
+      ) : null,
+    },
+    {
+      id: 'animation',
+      joined: true,
+      render: () => selectedElement ? (
+        <>
+          <ToolbarDivider />
+          <Zap size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
+          <ToolbarSelect
+            value={selectedElement.animation?.type ?? 'none'}
+            onChange={(e) =>
+              updateElementAnimation(selectedElement.id, { type: e.target.value as ElementAnimation['type'] })
+            }
+            title="Entry animation"
+          >
+            <option value="none">No animation</option>
+            <option value="fade">Fade in</option>
+            <option value="fly-in">Fly in</option>
+            <option value="zoom">Zoom in</option>
+          </ToolbarSelect>
+          {selectedElement.animation?.type === 'fly-in' && (
+            <ToolbarSelect
+              value={selectedElement.animation.direction ?? 'left'}
+              onChange={(e) =>
+                updateElementAnimation(selectedElement.id, { direction: e.target.value as ElementAnimation['direction'] })
+              }
+              title="Direction"
+            >
+              <option value="left">From left</option>
+              <option value="right">From right</option>
+              <option value="top">From top</option>
+              <option value="bottom">From bottom</option>
+            </ToolbarSelect>
+          )}
+          {selectedElement.animation && selectedElement.animation.type !== 'none' && (
+            <>
+              <span className={styles.toolbarLabel} title="Duration (ms)">
+                Duration
+                <input
+                  type="number"
+                  min={100}
+                  max={2000}
+                  step={100}
+                  value={selectedElement.animation.duration}
+                  onChange={(e) =>
+                    updateElementAnimation(selectedElement.id, { duration: parseInt(e.target.value) || 500 })
+                  }
+                  className={styles.toolbarNumberInput}
+                  title="Duration in milliseconds"
+                />
+                ms
+              </span>
+              <span className={styles.toolbarLabel} title="Delay (ms)">
+                Delay
+                <input
+                  type="number"
+                  min={0}
+                  max={2000}
+                  step={100}
+                  value={selectedElement.animation.delay}
+                  onChange={(e) =>
+                    updateElementAnimation(selectedElement.id, { delay: parseInt(e.target.value) || 0 })
+                  }
+                  className={styles.toolbarNumberInput}
+                  title="Delay in milliseconds"
+                />
+                ms
+              </span>
+            </>
+          )}
+        </>
+      ) : null,
+    },
+    {
+      id: 'background',
+      joined: true,
+      render: () => (
+        <>
+          {/* Background */}
+          <ToolbarDivider />
+          <FillPicker
+            background={currentSlide.background}
+            onChange={(bg) => updateCurrentSlide((s) => ({ ...s, background: bg }))}
+            theme={presentation.theme}
+          />
+        </>
+      ),
+    },
+    {
+      id: 'transition',
+      joined: true,
+      render: () => (
+        <>
+          {/* Transition */}
+          <ToolbarDivider />
+          <ToolbarSelect
+            value={currentSlide.transition}
+            onChange={(e) => updateCurrentSlide((s) => ({ ...s, transition: e.target.value as Slide['transition'] }))}
+            title="Slide transition"
+          >
+            <option value="none">No transition</option>
+            <option value="fade">Fade</option>
+            <option value="dissolve">Dissolve</option>
+            <option value="slide">Slide Right</option>
+            <option value="slide-left">Slide Left</option>
+            <option value="flip">Flip</option>
+            <option value="cube">Cube</option>
+            <option value="gallery">Gallery</option>
+            <option value="pixelate">Pixelate</option>
+            <option value="cover">Cover</option>
+            <option value="wipe">Wipe</option>
+            <option value="zoom">Zoom</option>
+          </ToolbarSelect>
+        </>
+      ),
+    },
+  ];
+
   if (isLoading) return <div style={{ padding: '2rem' }}>Loading presentation…</div>;
 
   if (slideNotFound) {
@@ -1547,7 +2241,8 @@ export function SlideEditor() {
         </Button>
 
         <div className={styles.titleArea}>
-          <Presentation size={18} color="var(--color-rose, #e11d48)" />
+          <span className={styles.classicIcon}><Presentation size={18} color="var(--color-rose, #e11d48)" /></span>
+          <EditorDocIcon app="slides" />
           <input
             ref={titleInputRef}
             className={styles.titleInput}
@@ -1559,7 +2254,11 @@ export function SlideEditor() {
           />
         </div>
 
-        <span className={`${styles.saveStatus} ${saveStatusClass}`}>{saveStatusText}</span>
+        <EditorSaveState
+          state={saveStatus === 'saving' ? 'saving' : saveStatus === 'unsaved' ? 'unsaved' : saveStatus === 'error' ? 'error' : 'saved'}
+          className={`${styles.saveStatus} ${saveStatusClass}`}
+          classic={saveStatusText}
+        />
 
         <div className={styles.actions}>
           {/* Master toggle */}
@@ -1630,616 +2329,7 @@ export function SlideEditor() {
 
       {/* Toolbar */}
       <RichTextToolbar>
-        <LinesToolbarDropdown onAdd={addLine} />
-        <ToolbarDivider />
-
-        {/* Video controls */}
-        {selectedElement?.type === 'video' && (
-          <>
-            <ToolbarDivider />
-            <ToolbarGroup>
-              <label className={styles.toolbarLabel} title="Autoplay">
-                <input
-                  type="checkbox"
-                  checked={(selectedElement as VideoElement).autoplay}
-                  onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, autoplay: e.target.checked } as VideoElement))}
-                />
-                Autoplay
-              </label>
-              <label className={styles.toolbarLabel} title="Loop">
-                <input
-                  type="checkbox"
-                  checked={(selectedElement as VideoElement).loop}
-                  onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, loop: e.target.checked } as VideoElement))}
-                />
-                Loop
-              </label>
-              <label className={styles.toolbarLabel} title="Muted">
-                <input
-                  type="checkbox"
-                  checked={(selectedElement as VideoElement).muted}
-                  onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, muted: e.target.checked } as VideoElement))}
-                />
-                Muted
-              </label>
-              <span className={styles.toolbarLabel} title="Start time in seconds">
-                Start
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={(selectedElement as VideoElement).startSeconds ?? 0}
-                  onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, startSeconds: parseInt(e.target.value) || 0 } as VideoElement))}
-                  className={styles.toolbarNumberInput}
-                  title="Start time (seconds)"
-                />
-                s
-              </span>
-              <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete video">
-                <Trash2 size={15} />
-              </ToolbarButton>
-            </ToolbarGroup>
-          </>
-        )}
-
-        {/* Text formatting controls — mirrors the Docs toolbar */}
-        {selectedElement?.type === 'text' && (
-          <>
-            <ToolbarDivider />
-
-            {/* Font family */}
-            <ToolbarSelect
-              value={(selectedElement as TextElement).style.fontFamily}
-              onChange={(e) => updateTextStyle(selectedElement.id, { fontFamily: e.target.value })}
-              title="Font family"
-              style={{ width: 120 }}
-            >
-              {FONT_FAMILIES.map((f) => (
-                <option key={f.value} value={f.value}>{f.label}</option>
-              ))}
-            </ToolbarSelect>
-
-            {/* Font size */}
-            <FontSizeInput
-              sizes={FONT_SIZES}
-              value={(selectedElement as TextElement).style.fontSize}
-              onChange={(size) => updateTextStyle(selectedElement.id, { fontSize: size })}
-            />
-
-            <ToolbarDivider />
-
-            {/* Bold / italic / underline / strikethrough */}
-            <ToolbarGroup>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.bold}
-                onClick={() => updateTextStyle(selectedElement.id, { bold: !(selectedElement as TextElement).style.bold })}
-                title="Bold (B)"
-                style={{ fontWeight: 700 }}
-              >
-                B
-              </ToolbarButton>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.italic}
-                onClick={() => updateTextStyle(selectedElement.id, { italic: !(selectedElement as TextElement).style.italic })}
-                title="Italic (I)"
-                style={{ fontStyle: 'italic' }}
-              >
-                I
-              </ToolbarButton>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.underline}
-                onClick={() => updateTextStyle(selectedElement.id, { underline: !(selectedElement as TextElement).style.underline })}
-                title="Underline (U)"
-                style={{ textDecoration: 'underline' }}
-              >
-                U
-              </ToolbarButton>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.strikethrough ?? false}
-                onClick={() => updateTextStyle(selectedElement.id, { strikethrough: !((selectedElement as TextElement).style.strikethrough ?? false) })}
-                title="Strikethrough"
-                style={{ textDecoration: 'line-through' }}
-              >
-                S
-              </ToolbarButton>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Text color + background color */}
-            <ToolbarGroup>
-              <ColorPickerPopover
-                color={(selectedElement as TextElement).style.color ?? '#202124'}
-                onChange={(hex) => updateTextStyle(selectedElement.id, { color: hex })}
-                title="Text color"
-                showAlpha
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
-                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.color ?? '#202124' }} />
-                </span>
-              </ColorPickerPopover>
-              <ColorPickerPopover
-                color={(selectedElement as TextElement).style.backgroundColor ?? '#fef08a'}
-                onChange={(hex) => updateTextStyle(selectedElement.id, { backgroundColor: hex })}
-                title="Text background color"
-                showAlpha
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                  <span style={{ fontSize: 12 }}>&#9632;</span>
-                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.backgroundColor ?? '#fef08a' }} />
-                </span>
-              </ColorPickerPopover>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Shadow */}
-            <ToolbarGroup>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.shadow ?? false}
-                onClick={() => updateTextStyle(selectedElement.id, { shadow: !((selectedElement as TextElement).style.shadow ?? false) })}
-                title="Text shadow"
-              >
-                <span style={{ fontWeight: 700, fontSize: 13, textShadow: '1px 1px 2px rgba(0,0,0,0.6)' }}>S</span>
-              </ToolbarButton>
-              {(selectedElement as TextElement).style.shadow && (
-                <ColorPickerPopover
-                  color={(selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)'}
-                  onChange={(hex) => updateTextStyle(selectedElement.id, { shadowColor: hex })}
-                  title="Shadow color"
-                  showAlpha
-                >
-                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                    <span style={{ fontSize: 11, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>A</span>
-                    <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)' }} />
-                  </span>
-                </ColorPickerPopover>
-              )}
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Alignment */}
-            <ToolbarGroup>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.align === 'left'}
-                onClick={() => updateTextStyle(selectedElement.id, { align: 'left' })}
-                title="Align left"
-              >
-                <AlignLeft size={15} />
-              </ToolbarButton>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.align === 'center'}
-                onClick={() => updateTextStyle(selectedElement.id, { align: 'center' })}
-                title="Align center"
-              >
-                <AlignCenter size={15} />
-              </ToolbarButton>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.align === 'right'}
-                onClick={() => updateTextStyle(selectedElement.id, { align: 'right' })}
-                title="Align right"
-              >
-                <AlignRight size={15} />
-              </ToolbarButton>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.align === 'justify'}
-                onClick={() => updateTextStyle(selectedElement.id, { align: 'justify' })}
-                title="Justify"
-              >
-                <AlignJustify size={15} />
-              </ToolbarButton>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Line & paragraph spacing */}
-            <LineSpacingMenu
-              lineHeight={(selectedElement as TextElement).style.lineHeight}
-              spaceBefore={(selectedElement as TextElement).style.spaceBefore}
-              spaceAfter={(selectedElement as TextElement).style.spaceAfter}
-              fontSize={(selectedElement as TextElement).style.fontSize}
-              onChangeLineHeight={(lh) => updateTextStyle(selectedElement.id, { lineHeight: lh })}
-              onChangeSpaceBefore={(pt) => updateTextStyle(selectedElement.id, { spaceBefore: pt })}
-              onChangeSpaceAfter={(pt) => updateTextStyle(selectedElement.id, { spaceAfter: pt })}
-            />
-
-            {/* List type */}
-            <ToolbarGroup>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.listType === 'bullet'}
-                onClick={() => {
-                  const t = selectedElement as TextElement;
-                  updateTextStyle(t.id, { listType: t.style.listType === 'bullet' ? 'none' : 'bullet' });
-                }}
-                title="Bullet list"
-              >
-                <List size={15} />
-              </ToolbarButton>
-              <ToolbarButton
-                active={(selectedElement as TextElement).style.listType === 'numbered'}
-                onClick={() => {
-                  const t = selectedElement as TextElement;
-                  updateTextStyle(t.id, { listType: t.style.listType === 'numbered' ? 'none' : 'numbered' });
-                }}
-                title="Numbered list"
-              >
-                <ListOrdered size={15} />
-              </ToolbarButton>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
-              <Trash2 size={15} />
-            </ToolbarButton>
-          </>
-        )}
-
-        {/* Image controls */}
-        {selectedElement?.type === 'image' && (
-          <>
-            <ToolbarDivider />
-            <ToolbarGroup>
-              <ToolbarSelect
-                value={(selectedElement as ImageElement).objectFit ?? 'cover'}
-                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, objectFit: e.target.value } as ImageElement))}
-                title="Image fit"
-              >
-                <option value="cover">Cover</option>
-                <option value="contain">Contain</option>
-                <option value="fill">Fill</option>
-              </ToolbarSelect>
-            </ToolbarGroup>
-
-            <ToolbarDivider />
-
-            {/* Transparency */}
-            <span className={styles.toolbarLabel} title="Opacity">
-              Opacity
-              <input
-                type="range"
-                min={0} max={100} step={1}
-                value={Math.round(((selectedElement as ImageElement).opacity ?? 1) * 100)}
-                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, opacity: parseInt(e.target.value) / 100 } as ImageElement))}
-                className={styles.toolbarSlider}
-              />
-              {Math.round(((selectedElement as ImageElement).opacity ?? 1) * 100)}%
-            </span>
-
-            <ToolbarDivider />
-
-            {/* Tint */}
-            <ColorPickerPopover
-              color={(selectedElement as ImageElement).tintColor ?? '#ff0000'}
-              onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, tintColor: hex } as ImageElement))}
-              title="Tint color"
-              showAlpha
-            >
-              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                <span style={{ fontSize: 11 }}>Tint</span>
-                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ImageElement).tintColor ?? '#ff0000' }} />
-              </span>
-            </ColorPickerPopover>
-            <input
-              type="range"
-              min={0} max={100} step={1}
-              value={Math.round(((selectedElement as ImageElement).tintStrength ?? 0) * 100)}
-              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, tintStrength: parseInt(e.target.value) / 100 } as ImageElement))}
-              className={styles.toolbarSlider}
-              title="Tint strength"
-            />
-
-            <ToolbarDivider />
-
-            {/* Color adjustments */}
-            <span className={styles.toolbarLabel} title="Brightness">
-              Bright
-              <input
-                type="range"
-                min={-100} max={100} step={1}
-                value={(selectedElement as ImageElement).brightness ?? 0}
-                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, brightness: parseInt(e.target.value) } as ImageElement))}
-                className={styles.toolbarSlider}
-              />
-            </span>
-            <span className={styles.toolbarLabel} title="Contrast">
-              Contrast
-              <input
-                type="range"
-                min={-100} max={100} step={1}
-                value={(selectedElement as ImageElement).contrast ?? 0}
-                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, contrast: parseInt(e.target.value) } as ImageElement))}
-                className={styles.toolbarSlider}
-              />
-            </span>
-            <span className={styles.toolbarLabel} title="Saturation">
-              Sat
-              <input
-                type="range"
-                min={-100} max={100} step={1}
-                value={(selectedElement as ImageElement).saturation ?? 0}
-                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, saturation: parseInt(e.target.value) } as ImageElement))}
-                className={styles.toolbarSlider}
-              />
-            </span>
-
-            <ToolbarDivider />
-
-            {/* White balance */}
-            <span className={styles.toolbarLabel} title="White balance (warm/cool)">
-              Warm
-              <input
-                type="range"
-                min={-100} max={100} step={1}
-                value={(selectedElement as ImageElement).warmth ?? 0}
-                onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, warmth: parseInt(e.target.value) } as ImageElement))}
-                className={styles.toolbarSlider}
-              />
-            </span>
-
-            <ToolbarDivider />
-            <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete image">
-              <Trash2 size={15} />
-            </ToolbarButton>
-          </>
-        )}
-
-        {/* Shape fill + stroke */}
-        {selectedElement?.type === 'shape' && (
-          <>
-            <ToolbarDivider />
-            <ToolbarGroup>
-              <ColorPickerPopover
-                color={(selectedElement as ShapeElement).fill}
-                onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, fill: hex } as ShapeElement))}
-                title="Fill color"
-                showAlpha
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                  <span style={{ fontSize: 12 }}>&#9632;</span>
-                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).fill }} />
-                </span>
-              </ColorPickerPopover>
-              <ColorPickerPopover
-                color={(selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke}
-                onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as ShapeElement))}
-                title="Outline color"
-                showAlpha
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                  <span style={{ fontSize: 12 }}>&#9633;</span>
-                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).stroke === 'transparent' ? '#000000' : (selectedElement as ShapeElement).stroke }} />
-                </span>
-              </ColorPickerPopover>
-            </ToolbarGroup>
-            <ToolbarDivider />
-            <span className={styles.toolbarLabel}>Outline</span>
-            <ToolbarGroup>
-              <ToolbarButton
-                onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.max(0, (el as ShapeElement).strokeWidth - 1) } as ShapeElement))}
-                disabled={(selectedElement as ShapeElement).strokeWidth <= 0}
-                title="Decrease outline width"
-              >
-                <Minus size={12} />
-              </ToolbarButton>
-              <span className={styles.stepperValue}>{(selectedElement as ShapeElement).strokeWidth}px</span>
-              <ToolbarButton
-                onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.min(20, (el as ShapeElement).strokeWidth + 1) } as ShapeElement))}
-                disabled={(selectedElement as ShapeElement).strokeWidth >= 20}
-                title="Increase outline width"
-              >
-                <Plus size={12} />
-              </ToolbarButton>
-            </ToolbarGroup>
-            <ToolbarSelect
-              value={(selectedElement as ShapeElement).strokeDash ?? ''}
-              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, strokeDash: e.target.value } as ShapeElement))}
-              title="Line style"
-            >
-              <option value="">Solid</option>
-              <option value="4 4">Dashed</option>
-              <option value="2 2">Dotted</option>
-              <option value="8 4 2 4">Dash · dot</option>
-              <option value="8 4 2 4 2 4">Dash · dot · dot</option>
-            </ToolbarSelect>
-            <ToolbarDivider />
-            <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete element">
-              <Trash2 size={15} />
-            </ToolbarButton>
-          </>
-        )}
-
-        {/* Line stroke controls */}
-        {selectedElement?.type === 'line' && (
-          <>
-            <ToolbarDivider />
-            <ToolbarGroup>
-              <ColorPickerPopover
-                color={(selectedElement as LineElement).stroke}
-                onChange={(hex) => updateElement(selectedElement.id, (el) => ({ ...el, stroke: hex } as LineElement))}
-                title="Line color"
-                showAlpha
-              >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-                  <span style={{ fontSize: 12 }}>&#9633;</span>
-                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as LineElement).stroke }} />
-                </span>
-              </ColorPickerPopover>
-            </ToolbarGroup>
-            <ToolbarDivider />
-            <ToolbarGroup>
-              <ToolbarButton
-                onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.max(1, (el as LineElement).strokeWidth - 1) } as LineElement))}
-                disabled={(selectedElement as LineElement).strokeWidth <= 1}
-                title="Decrease line width"
-              >
-                <Minus size={12} />
-              </ToolbarButton>
-              <span className={styles.stepperValue}>{(selectedElement as LineElement).strokeWidth}px</span>
-              <ToolbarButton
-                onClick={() => updateElement(selectedElement.id, (el) => ({ ...el, strokeWidth: Math.min(20, (el as LineElement).strokeWidth + 1) } as LineElement))}
-                disabled={(selectedElement as LineElement).strokeWidth >= 20}
-                title="Increase line width"
-              >
-                <Plus size={12} />
-              </ToolbarButton>
-            </ToolbarGroup>
-            <ToolbarSelect
-              value={(selectedElement as LineElement).strokeDash ?? ''}
-              onChange={(e) => updateElement(selectedElement.id, (el) => ({ ...el, strokeDash: e.target.value || undefined } as LineElement))}
-              title="Line style"
-            >
-              <option value="">Solid</option>
-              <option value="4 4">Dashed</option>
-              <option value="2 2">Dotted</option>
-              <option value="8 4 2 4">Dash · dot</option>
-              <option value="8 4 2 4 2 4">Dash · dot · dot</option>
-            </ToolbarSelect>
-            <ToolbarDivider />
-            <ToolbarButton onClick={() => deleteElement(selectedElement.id)} title="Delete line">
-              <Trash2 size={15} />
-            </ToolbarButton>
-          </>
-        )}
-
-        {/* Layer order controls */}
-        {selectedElement && (
-          <>
-            <ToolbarDivider />
-            <ToolbarGroup>
-              <ToolbarButton
-                onClick={sendElementToBack}
-                disabled={selectedElementIndex <= 0}
-                title="Send to back"
-              >
-                <ArrowDownToLine size={14} />
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={moveElementBackward}
-                disabled={selectedElementIndex <= 0}
-                title="Send backward"
-              >
-                <ArrowDown size={14} />
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={moveElementForward}
-                disabled={selectedElementIndex >= elementCount - 1}
-                title="Bring forward"
-              >
-                <ArrowUp size={14} />
-              </ToolbarButton>
-              <ToolbarButton
-                onClick={bringElementToFront}
-                disabled={selectedElementIndex >= elementCount - 1}
-                title="Bring to front"
-              >
-                <ArrowUpToLine size={14} />
-              </ToolbarButton>
-            </ToolbarGroup>
-          </>
-        )}
-
-        {/* Animation controls for selected element */}
-        {selectedElement && (
-          <>
-            <ToolbarDivider />
-            <Zap size={14} style={{ color: 'var(--color-text-muted)', flexShrink: 0 }} />
-            <ToolbarSelect
-              value={selectedElement.animation?.type ?? 'none'}
-              onChange={(e) =>
-                updateElementAnimation(selectedElement.id, { type: e.target.value as ElementAnimation['type'] })
-              }
-              title="Entry animation"
-            >
-              <option value="none">No animation</option>
-              <option value="fade">Fade in</option>
-              <option value="fly-in">Fly in</option>
-              <option value="zoom">Zoom in</option>
-            </ToolbarSelect>
-            {selectedElement.animation?.type === 'fly-in' && (
-              <ToolbarSelect
-                value={selectedElement.animation.direction ?? 'left'}
-                onChange={(e) =>
-                  updateElementAnimation(selectedElement.id, { direction: e.target.value as ElementAnimation['direction'] })
-                }
-                title="Direction"
-              >
-                <option value="left">From left</option>
-                <option value="right">From right</option>
-                <option value="top">From top</option>
-                <option value="bottom">From bottom</option>
-              </ToolbarSelect>
-            )}
-            {selectedElement.animation && selectedElement.animation.type !== 'none' && (
-              <>
-                <span className={styles.toolbarLabel} title="Duration (ms)">
-                  Duration
-                  <input
-                    type="number"
-                    min={100}
-                    max={2000}
-                    step={100}
-                    value={selectedElement.animation.duration}
-                    onChange={(e) =>
-                      updateElementAnimation(selectedElement.id, { duration: parseInt(e.target.value) || 500 })
-                    }
-                    className={styles.toolbarNumberInput}
-                    title="Duration in milliseconds"
-                  />
-                  ms
-                </span>
-                <span className={styles.toolbarLabel} title="Delay (ms)">
-                  Delay
-                  <input
-                    type="number"
-                    min={0}
-                    max={2000}
-                    step={100}
-                    value={selectedElement.animation.delay}
-                    onChange={(e) =>
-                      updateElementAnimation(selectedElement.id, { delay: parseInt(e.target.value) || 0 })
-                    }
-                    className={styles.toolbarNumberInput}
-                    title="Delay in milliseconds"
-                  />
-                  ms
-                </span>
-              </>
-            )}
-          </>
-        )}
-
-        {/* Background */}
-        <ToolbarDivider />
-        <FillPicker
-          background={currentSlide.background}
-          onChange={(bg) => updateCurrentSlide((s) => ({ ...s, background: bg }))}
-          theme={presentation.theme}
-        />
-
-        {/* Transition */}
-        <ToolbarDivider />
-        <ToolbarSelect
-          value={currentSlide.transition}
-          onChange={(e) => updateCurrentSlide((s) => ({ ...s, transition: e.target.value as Slide['transition'] }))}
-          title="Slide transition"
-        >
-          <option value="none">No transition</option>
-          <option value="fade">Fade</option>
-          <option value="dissolve">Dissolve</option>
-          <option value="slide">Slide Right</option>
-          <option value="slide-left">Slide Left</option>
-          <option value="flip">Flip</option>
-          <option value="cube">Cube</option>
-          <option value="gallery">Gallery</option>
-          <option value="pixelate">Pixelate</option>
-          <option value="cover">Cover</option>
-          <option value="wipe">Wipe</option>
-          <option value="zoom">Zoom</option>
-        </ToolbarSelect>
-
+        <ToolbarItems editor="slides" tools={toolbarTools} divider={<ToolbarDivider />} />
       </RichTextToolbar>
 
       {/* Main area */}

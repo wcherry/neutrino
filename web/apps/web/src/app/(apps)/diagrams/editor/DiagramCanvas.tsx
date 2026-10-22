@@ -1353,7 +1353,7 @@ export function DiagramCanvas({
         };
       }
     },
-    [mode, page.shapes, selection, getSvgPoint, svgToDoc, onSelect, viewport.zoom, onRemoveStrokesUnder, onAddConnector, onAddShape, onModeChange, hoveredShapeId, hoveredPort],
+    [mode, page.shapes, selection, getSvgPoint, svgToDoc, onSelect, viewport.zoom, onRemoveStrokesUnder, onAddShape, hoveredShapeId, hoveredPort],
   );
 
   const handleMouseMove = useCallback(

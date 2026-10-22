@@ -463,6 +463,20 @@
       "section": "appearance"
     },
     {
+      "key": "editor.toolbars",
+      "type": {
+        "kind": "object",
+        "maxBytes": 4096
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "label": "Editor toolbars: order, hidden tools and labels",
+      "section": "appearance"
+    },
+    {
       "key": "drive.landing",
       "type": {
         "kind": "enum",

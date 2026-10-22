@@ -3,9 +3,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 16px;
-  background: #fff8e1;
-  border-bottom: 1px solid #ffe082;
+  padding: var(--editor-subbar-padding, 4px 16px);
+  background: var(--editor-subbar-bg, #fff8e1);
+  border-bottom: var(--editor-subbar-rule, 1px solid #ffe082);
   flex-shrink: 0;
   font-size: 13px;
 }

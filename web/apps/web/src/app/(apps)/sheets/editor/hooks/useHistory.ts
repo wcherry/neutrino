@@ -88,7 +88,7 @@ export function useHistory({
         }
         clearSelectionState();
         setHistoryLen({ undo: undoStackRef.current.length, redo: redoStackRef.current.length });
-    }, [dataRef, setData, clearSelectionState, makeRedoEntry]);
+    }, [setData, clearSelectionState, makeRedoEntry]);
 
     const redo = useCallback(() => {
         if (!redoStackRef.current.length) return;

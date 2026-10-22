@@ -1,8 +1,8 @@
 .panel {
   width: 220px;
   flex-shrink: 0;
-  background: var(--color-surface);
-  border-left: 1px solid var(--color-border);
+  background: var(--editor-panel-bg, var(--color-surface));
+  border-left: var(--editor-panel-rule, 1px solid var(--color-border));
   display: flex;
   flex-direction: column;
   overflow: hidden;

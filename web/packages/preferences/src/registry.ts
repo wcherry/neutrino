@@ -84,6 +84,8 @@ export interface PreferenceValues {
   'teamSpace.sortDirection': 'asc' | 'desc';
   /** Listing id → its remembered view and order; see `useListingView` in the web app. */
   'listing.views': Record<string, { view?: string; sort?: string; dir?: string }> | null;
+  /** Editor → its toolbar's order, hidden tools and labels; see lib/editorToolbars.ts in the web app. */
+  'editor.toolbars': Record<string, { order?: string[]; hidden?: string[]; labels?: boolean }> | null;
   'drive.landing': 'drive' | 'recent' | 'starred';
   'ai.apiKey': string;
   'library.sheets.cfTemplates': unknown[];

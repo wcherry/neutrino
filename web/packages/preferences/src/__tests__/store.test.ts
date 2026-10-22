@@ -369,7 +369,7 @@ describe('the typed value map', () => {
       'docs.spellCheck': true, 'docs.splitParagraphs': true, 'photos.autoFaceDetect': true, 'drawing.brush': true,
       'search.syncDisabled': true, 'keyboard.preset': true, 'keyboard.bindings': true, 'ai.provider': true, 'ai.apiKey': true,
       'apps.enabled': true, 'teamSpace.view': true, 'teamSpace.sort': true, 'teamSpace.sortDirection': true,
-      'listing.views': true, 'drive.landing': true,
+      'listing.views': true, 'drive.landing': true, 'editor.toolbars': true,
       'appearance.textSize': true, 'appearance.accent': true, 'a11y.reduceMotion': true,
       'a11y.reduceTransparency': true, 'a11y.contrast': true, 'shell.sidebar': true,
       'library.sheets.cfTemplates': true, 'library.sheets.cfVariables': true, 'library.fill.slides': true,

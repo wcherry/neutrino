@@ -64,6 +64,8 @@ import { useCommand, useCommands, useKeyHandler } from '@neutrino/commands';
 import styles from './page.module.css';
 import { useAccessRevocation } from '@/hooks/useAccessRevocation';
 import { preferences, readVaultOrLegacy } from '@neutrino/preferences';
+import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
+import { SelectionSummary } from './components/SelectionSummary';
 
 const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
@@ -734,10 +736,11 @@ export function SheetEditor() {
         void showCellSpelling(spellWord, nspell);
     }, [nspell, spellWord, spellSuggestions, showCellSpelling]);
 
+    const activateCell = editing.stableOnCellActivate;
     const handleCellContextMenu = useCallback((cellId: string, x: number, y: number) => {
         if (isViewer) return;
         if (!isCellSelected(cellId)) {
-            editing.stableOnCellActivate(cellId);
+            activateCell(cellId);
         }
 
         setSpellWord(undefined);
@@ -758,7 +761,7 @@ export function SheetEditor() {
         }
 
         setContextMenu({ cellId, x, y });
-    }, [isCellSelected, editing.stableOnCellActivate, spellCheck, nspell, dataRef, showCellSpelling]);
+    }, [isViewer, isCellSelected, activateCell, spellCheck, nspell, dataRef, showCellSpelling]);
 
     const handleApplySuggestion = useCallback((word: string) => {
         if (!contextMenu || !spellWord) return;
@@ -1664,6 +1667,7 @@ export function SheetEditor() {
                 <button className={styles.backBtn} aria-label="Sheets" onClick={handleBack}>
                     <ArrowLeft size={16} />
                 </button>
+                <EditorDocIcon app="sheets" />
                 <div className={styles.titleArea}>
                     <div
                         ref={titleInputRef}
@@ -1676,7 +1680,8 @@ export function SheetEditor() {
                         onBlur={isViewer ? undefined : persist.updateTitle}
                     />
                 </div>
-                <div style={{ marginLeft: 'auto' }}>
+                <div className={styles.actions} style={{ marginLeft: 'auto' }}>
+                    <EditorSaveState store={persist.saveState} />
                     <ShareButton users={remoteUsers} onShare={() => setShowShareDialog(true)} />
                 </div>
             </div>
@@ -1876,6 +1881,7 @@ export function SheetEditor() {
                     onMoveSheet={sheets.moveSheet}
                     onCommitRename={sheets.commitRename}
                 />
+                <SelectionSummary data={data} selectedCells={selectedCells} />
                 <div className={styles.zoomArea}>
                     <ZoomSlider value={zoom} onChange={setZoom} min={50} max={200} step={25} />
                 </div>

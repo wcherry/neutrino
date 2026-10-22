@@ -1,11 +1,13 @@
 /* ── Editor wrapper ──────────────────────────────────────────────────────── */
 
+/* The chrome reads `--editor-…` tokens (tokens/looks.css): defined for the new looks only, so the
+   fallback in each is what the classic look draws. */
 .editorWrapper {
   display: flex;
   flex-direction: column;
   height: 100vh;
   overflow: hidden;
-  background: var(--color-surface);
+  background: var(--editor-bar-bg, var(--color-surface));
 }
 
 /* ── Top bar ─────────────────────────────────────────────────────────────── */
@@ -15,10 +17,14 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-bottom: var(--editor-bar-rule, 1px solid var(--color-border));
+  background: var(--editor-bar-bg, var(--color-surface));
   flex-shrink: 0;
   min-height: 56px;
+}
+
+.classicIcon {
+  display: var(--editor-classic-display, inline-flex);
 }
 
 .backBtn {
@@ -34,8 +40,8 @@
 }
 
 .titleInput {
-  font-size: var(--font-size-lg);
-  font-weight: var(--font-weight-semibold);
+  font-size: var(--editor-title-size, var(--font-size-lg));
+  font-weight: var(--editor-title-weight, var(--font-weight-semibold));
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
@@ -177,10 +183,10 @@
 .slidePanel {
   width: 180px;
   flex-shrink: 0;
-  border-right: 1px solid var(--color-border);
+  border-right: var(--editor-panel-rule, 1px solid var(--color-border));
   display: flex;
   flex-direction: column;
-  background: var(--color-surface);
+  background: var(--editor-panel-bg, var(--color-surface));
   overflow: hidden;
 }
 
@@ -329,7 +335,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-lowered, #f3f4f6);
+  background: var(--editor-ground, var(--color-surface-lowered, #f3f4f6));
   overflow: hidden;
   padding: 8px;
 }

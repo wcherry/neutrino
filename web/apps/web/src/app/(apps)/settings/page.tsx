@@ -29,6 +29,7 @@ import { KeyboardSettings } from './KeyboardSettings';
 import { LookPicker } from './LookPicker';
 import { DisplaySettings } from './DisplaySettings';
 import { SidebarSettings } from './SidebarSettings';
+import { ToolbarSettings } from './ToolbarSettings';
 import { InheritedNote, useLocked } from './InheritedNote';
 import styles from './page.module.css';
 
@@ -724,6 +725,10 @@ const qc = useQueryClient();
 
             <div className={styles.formGroup}>
               <SidebarSettings />
+            </div>
+
+            <div className={styles.formGroup}>
+              <ToolbarSettings />
             </div>
 
             {save.isError && (

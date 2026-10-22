@@ -5,7 +5,7 @@ import type { Editor } from '@tiptap/react';
 import {
   Code, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Link, Image, Table, Minus, Undo, Redo, Quote, ArrowUpDown,
+  Link, Image as ImageIcon, Table, Minus, Undo, Redo, Quote, ArrowUpDown,
   Superscript, Subscript, Indent, Outdent, Sparkles, Search, SpellCheck, Network,
 } from 'lucide-react';
 import {
@@ -18,6 +18,7 @@ import {
   ORDERED_LIST_STYLES,
 } from '@/lib/extensions/ListStyleExtension';
 import { useAvailableFonts } from '@/hooks/useAvailableFonts';
+import { ToolbarItems, type ToolDef } from '@/components/editorChrome/ToolbarItems';
 import styles from './page.module.css';
 
 const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72];
@@ -310,252 +311,273 @@ export function Toolbar({
     }
   };
 
-  return (
-    <RickTextToolbar>
-      <ToolbarGroup>
-        <ToolbarButton onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Undo (Ctrl+Z)">
-          <Undo size={15} />
-        </ToolbarButton>
-        <ToolbarButton onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="Redo (Ctrl+Y)">
-          <Redo size={15} />
-        </ToolbarButton>
-      </ToolbarGroup>
-
-      <ToolbarDivider />
-
-      {/* ── Paragraph styles palette button ── */}
-      {onOpenStylesPalette && (
-        <>
-          <ToolbarButton onClick={onOpenStylesPalette} title="Paragraph styles" wide>
-            Styles
+  // Each group is one entry the user can reorder, hide or caption (U10, lib/editorToolbars.ts);
+  // `ToolbarItems` puts the dividers between them, where the toolbar always had one.
+  const tools: ToolDef[] = [
+    {
+      id: 'history',
+      render: () => (
+        <ToolbarGroup>
+          <ToolbarButton onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="Undo (Ctrl+Z)">
+            <Undo size={15} />
           </ToolbarButton>
-          <ToolbarDivider />
-        </>
-      )}
-
-      <ToolbarSelect
-        value={currentHeading?.label ?? 'Normal'}
-        onChange={e => {
-          const item = HEADINGS.find(h => h.label === e.target.value);
-          if (!item) return;
-          if (item.level === null) {
-            editor.chain().focus().setParagraph().run();
-          } else {
-            editor.chain().focus().toggleHeading({ level: item.level as 1 | 2 | 3 | 4 | 5 | 6 }).run();
-          }
-        }}
-        title="Paragraph style"
-        style={{ width: 110 }}
-      >
-        {HEADINGS.map(h => <option key={h.label} value={h.label}>{h.label}</option>)}
-      </ToolbarSelect>
-
-      <ToolbarDivider />
-
-      <ToolbarSelect
-        value={editor.getAttributes('textStyle').fontFamily ?? ''}
-        onChange={e => {
-          if (e.target.value === '') {
-            editor.chain().focus().unsetFontFamily().run();
-          } else {
-            editor.chain().focus().setFontFamily(e.target.value).run();
-          }
-        }}
-        title="Font family"
-        style={{ width: 120 }}
-      >
-        {fontFamilies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-      </ToolbarSelect>
-
-      <FontSizeInput
-        sizes={FONT_SIZES}
-        value={(editor.getAttributes('textStyle').fontSize as string | undefined)?.replace('pt', '') ?? '11'}
-        onChange={size => {
-          editor.chain().focus().setFontSize(`${size}pt`).run();
-        }}
-      />
-
-      <ToolbarDivider />
-
-      <ToolbarGroup>
-        <ToolbarButton active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (Ctrl+B)" style={{ fontWeight: 700 }}>B</ToolbarButton>
-        <ToolbarButton active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</ToolbarButton>
-        <ToolbarButton active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</ToolbarButton>
-        <ToolbarButton active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" style={{ textDecoration: 'line-through' }}>S</ToolbarButton>
-
-        {/* Superscript / Subscript */}
-        <ToolbarButton
-          active={editor.isActive('superscript')}
-          onClick={() => editor.chain().focus().toggleMark('superscript').run()}
-          title="Superscript (Ctrl+.)"
-        >
-          <Superscript size={15} />
+          <ToolbarButton onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="Redo (Ctrl+Y)">
+            <Redo size={15} />
+          </ToolbarButton>
+        </ToolbarGroup>
+      ),
+    },
+    {
+      id: 'styles',
+      render: () => onOpenStylesPalette ? (
+        <ToolbarButton onClick={onOpenStylesPalette} title="Paragraph styles" wide>
+          Styles
         </ToolbarButton>
-        <ToolbarButton
-          active={editor.isActive('subscript')}
-          onClick={() => editor.chain().focus().toggleMark('subscript').run()}
-          title="Subscript (Ctrl+,)"
-        >
-          <Subscript size={15} />
-        </ToolbarButton>
-      </ToolbarGroup>
-
-      <ToolbarDivider />
-
-      <ToolbarGroup>
-        <ColorPickerPopover
-          color={editor.getAttributes('textStyle').color ?? '#202124'}
-          onOpen={() => {
-            const { from, to } = editor.state.selection;
-            colorSelRef.current = { from, to };
-          }}
-          onChange={(hex) => {
-            const sel = colorSelRef.current;
-            if (sel && sel.from !== sel.to) {
-              editor.chain().focus().setTextSelection(sel).setColor(hex).run();
+      ) : null,
+    },
+    {
+      id: 'paragraphStyle',
+      render: () => (
+        <ToolbarSelect
+          value={currentHeading?.label ?? 'Normal'}
+          onChange={e => {
+            const item = HEADINGS.find(h => h.label === e.target.value);
+            if (!item) return;
+            if (item.level === null) {
+              editor.chain().focus().setParagraph().run();
             } else {
-              editor.chain().focus().setColor(hex).run();
+              editor.chain().focus().toggleHeading({ level: item.level as 1 | 2 | 3 | 4 | 5 | 6 }).run();
             }
           }}
-          title="Text color"
+          title="Paragraph style"
+          style={{ width: 110 }}
         >
-          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-            <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
-            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: editor.getAttributes('textStyle').color ?? '#202124' }} />
-          </span>
-        </ColorPickerPopover>
-        <ColorPickerPopover
-          color={editor.getAttributes('highlight').color ?? '#fef08a'}
-          onChange={(hex) => editor.chain().focus().toggleHighlight({ color: hex }).run()}
-          title="Highlight color"
+          {HEADINGS.map(h => <option key={h.label} value={h.label}>{h.label}</option>)}
+        </ToolbarSelect>
+      ),
+    },
+    {
+      id: 'font',
+      render: () => (
+      <>
+        <ToolbarSelect
+          value={editor.getAttributes('textStyle').fontFamily ?? ''}
+          onChange={e => {
+            if (e.target.value === '') {
+              editor.chain().focus().unsetFontFamily().run();
+            } else {
+              editor.chain().focus().setFontFamily(e.target.value).run();
+            }
+          }}
+          title="Font family"
+          style={{ width: 120 }}
         >
-          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
-            <span style={{ fontSize: 12, lineHeight: 1 }}>⬛</span>
-            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: editor.getAttributes('highlight').color ?? '#fef08a' }} />
-          </span>
-        </ColorPickerPopover>
-      </ToolbarGroup>
-
-      <ToolbarDivider />
-
-      {/* Text case */}
-      <TextCaseMenu editor={editor} />
-      <ToolbarDivider />
-
-      <LineSpacingMenu editor={editor} />
-
-      <ToolbarDivider />
-
-      <ToolbarGroup>
-        <ToolbarButton active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()} title="Align left"><AlignLeft size={15} /></ToolbarButton>
-        <ToolbarButton active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()} title="Align center"><AlignCenter size={15} /></ToolbarButton>
-        <ToolbarButton active={editor.isActive({ textAlign: 'right' })} onClick={() => editor.chain().focus().setTextAlign('right').run()} title="Align right"><AlignRight size={15} /></ToolbarButton>
-        <ToolbarButton active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()} title="Justify"><AlignJustify size={15} /></ToolbarButton>
-      </ToolbarGroup>
-
-      <ToolbarDivider />
-
-      <ToolbarGroup>
-        <ToolbarButton active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bulleted list"><List size={15} /></ToolbarButton>
-        <ToolbarButton active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list"><ListOrdered size={15} /></ToolbarButton>
-
-        {/* List style type dropdown (shown only when a list is active) */}
-        <ListStyleMenu editor={editor} />
-
-        <ToolbarButton active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="Quote"><Quote size={15} /></ToolbarButton>
-        <ToolbarButton active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()} title="Inline code"><Code size={15} /></ToolbarButton>
-      </ToolbarGroup>
-
-      {/* Indent / Outdent */}
-      <ToolbarDivider />
-      <ToolbarGroup>
-        <ToolbarButton
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          onClick={() => (editor.chain().focus() as any)?.outdent?.()?.run?.()}
-          title="Outdent (Shift+Tab)"
-        >
-          <Outdent size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          onClick={() => (editor.chain().focus() as any)?.indent?.()?.run?.()}
-          title="Indent (Tab)"
-        >
-          <Indent size={15} />
-        </ToolbarButton>
-      </ToolbarGroup>
-
-      <ToolbarDivider />
-
-      <ToolbarGroup>
-        <ToolbarButton active={editor.isActive('link')} onClick={setLink} title="Insert link"><Link size={15} /></ToolbarButton>
-
-        {/* With a local-upload handler: show a URL insert + a local upload option */}
-        {onInsertLocalImage ? (
-          <>
-            <ToolbarButton onClick={onInsertLocalImage} title="Upload local image"><Image size={15} /></ToolbarButton>
-            {/* When an image is selected, show properties button */}
-            {editor.isActive('image') && onOpenImageProps && (
-              <ToolbarButton onClick={onOpenImageProps} title="Image properties" wide>
-                Img…
-              </ToolbarButton>
-            )}
-          </>
-        ) : (
-          <ToolbarButton onClick={onInsertImage} title="Insert image"><Image size={15} /></ToolbarButton>
-        )}
-
-        <ToolbarButton onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert table"><Table size={15} /></ToolbarButton>
-        <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal rule"><Minus size={15} /></ToolbarButton>
-        {onInsertDiagram && (
-          <ToolbarButton onClick={onInsertDiagram} title="Insert diagram">
-            <Network size={15} />
-          </ToolbarButton>
-        )}
-      </ToolbarGroup>
-
-      {editor.isActive('table') && (
-        <>
-          <ToolbarDivider />
-          <ToolbarGroup>
-            <ToolbarButton wide onClick={() => editor.chain().focus().addColumnAfter().run()} title="Add column">+Col</ToolbarButton>
-            <ToolbarButton wide onClick={() => editor.chain().focus().addRowAfter().run()} title="Add row">+Row</ToolbarButton>
-            <ToolbarButton wide onClick={() => editor.chain().focus().deleteColumn().run()} title="Delete column">-Col</ToolbarButton>
-            <ToolbarButton wide onClick={() => editor.chain().focus().deleteRow().run()} title="Delete row">-Row</ToolbarButton>
-            <ToolbarButton wide onClick={() => editor.chain().focus().mergeCells().run()} title="Merge cells">Merge</ToolbarButton>
-            <ToolbarButton wide onClick={() => editor.chain().focus().splitCell().run()} title="Split cell">Split</ToolbarButton>
-            <ToolbarButton wide onClick={() => editor.chain().focus().deleteTable().run()} title="Delete table" style={{ color: '#d93025' }}>Del Table</ToolbarButton>
-
-            {/* Cell formatting */}
-            {onOpenTableCellModal && (
-              <ToolbarButton wide onClick={onOpenTableCellModal} title="Cell formatting">Cell…</ToolbarButton>
-            )}
-          </ToolbarGroup>
-        </>
-      )}
-
-      {/* ── Editing tools: grammar toggle + find/replace + AI writing ── */}
-      <ToolbarDivider />
-      <ToolbarGroup>
-        <ToolbarButton
-          active={grammarEnabled}
-          onClick={onToggleGrammar}
-          title={grammarEnabled ? 'Grammar check on — click to disable' : 'Enable grammar check'}
-        >
-          <SpellCheck size={15} />
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={onOpenFindReplace}
-          title="Find and replace (Ctrl+F)"
-        >
-          <Search size={15} />
-        </ToolbarButton>
-        <AiWritingMenu
-          onSuggestions={onAiSuggestions}
-          onSummarize={onAiSummarize}
-          onChangeTone={onAiChangeTone}
+          {fontFamilies.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+        </ToolbarSelect>
+        <FontSizeInput
+          sizes={FONT_SIZES}
+          value={(editor.getAttributes('textStyle').fontSize as string | undefined)?.replace('pt', '') ?? '11'}
+          onChange={size => {
+            editor.chain().focus().setFontSize(`${size}pt`).run();
+          }}
         />
-      </ToolbarGroup>
+      </>
+      ),
+    },
+    {
+      id: 'marks',
+      render: () => (
+        <ToolbarGroup>
+          <ToolbarButton active={editor.isActive('bold')} onClick={() => editor.chain().focus().toggleBold().run()} title="Bold (Ctrl+B)" style={{ fontWeight: 700 }}>B</ToolbarButton>
+          <ToolbarButton active={editor.isActive('italic')} onClick={() => editor.chain().focus().toggleItalic().run()} title="Italic (Ctrl+I)" style={{ fontStyle: 'italic' }}>I</ToolbarButton>
+          <ToolbarButton active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline (Ctrl+U)" style={{ textDecoration: 'underline' }}>U</ToolbarButton>
+          <ToolbarButton active={editor.isActive('strike')} onClick={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" style={{ textDecoration: 'line-through' }}>S</ToolbarButton>
+
+          {/* Superscript / Subscript */}
+          <ToolbarButton
+            active={editor.isActive('superscript')}
+            onClick={() => editor.chain().focus().toggleMark('superscript').run()}
+            title="Superscript (Ctrl+.)"
+          >
+            <Superscript size={15} />
+          </ToolbarButton>
+          <ToolbarButton
+            active={editor.isActive('subscript')}
+            onClick={() => editor.chain().focus().toggleMark('subscript').run()}
+            title="Subscript (Ctrl+,)"
+          >
+            <Subscript size={15} />
+          </ToolbarButton>
+        </ToolbarGroup>
+      ),
+    },
+    {
+      id: 'colors',
+      render: () => (
+        <ToolbarGroup>
+          <ColorPickerPopover
+            color={editor.getAttributes('textStyle').color ?? '#202124'}
+            onOpen={() => {
+              const { from, to } = editor.state.selection;
+              colorSelRef.current = { from, to };
+            }}
+            onChange={(hex) => {
+              const sel = colorSelRef.current;
+              if (sel && sel.from !== sel.to) {
+                editor.chain().focus().setTextSelection(sel).setColor(hex).run();
+              } else {
+                editor.chain().focus().setColor(hex).run();
+              }
+            }}
+            title="Text color"
+          >
+            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
+              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: editor.getAttributes('textStyle').color ?? '#202124' }} />
+            </span>
+          </ColorPickerPopover>
+          <ColorPickerPopover
+            color={editor.getAttributes('highlight').color ?? '#fef08a'}
+            onChange={(hex) => editor.chain().focus().toggleHighlight({ color: hex }).run()}
+            title="Highlight color"
+          >
+            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
+              <span style={{ fontSize: 12, lineHeight: 1 }}>⬛</span>
+              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: editor.getAttributes('highlight').color ?? '#fef08a' }} />
+            </span>
+          </ColorPickerPopover>
+        </ToolbarGroup>
+      ),
+    },
+    { id: 'case', render: () => <TextCaseMenu editor={editor} /> },
+    { id: 'spacing', render: () => <LineSpacingMenu editor={editor} /> },
+    {
+      id: 'align',
+      render: () => (
+        <ToolbarGroup>
+          <ToolbarButton active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()} title="Align left"><AlignLeft size={15} /></ToolbarButton>
+          <ToolbarButton active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()} title="Align center"><AlignCenter size={15} /></ToolbarButton>
+          <ToolbarButton active={editor.isActive({ textAlign: 'right' })} onClick={() => editor.chain().focus().setTextAlign('right').run()} title="Align right"><AlignRight size={15} /></ToolbarButton>
+          <ToolbarButton active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()} title="Justify"><AlignJustify size={15} /></ToolbarButton>
+        </ToolbarGroup>
+      ),
+    },
+    {
+      id: 'lists',
+      render: () => (
+        <ToolbarGroup>
+          <ToolbarButton active={editor.isActive('bulletList')} onClick={() => editor.chain().focus().toggleBulletList().run()} title="Bulleted list"><List size={15} /></ToolbarButton>
+          <ToolbarButton active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list"><ListOrdered size={15} /></ToolbarButton>
+
+          {/* List style type dropdown (shown only when a list is active) */}
+          <ListStyleMenu editor={editor} />
+
+          <ToolbarButton active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()} title="Quote"><Quote size={15} /></ToolbarButton>
+          <ToolbarButton active={editor.isActive('code')} onClick={() => editor.chain().focus().toggleCode().run()} title="Inline code"><Code size={15} /></ToolbarButton>
+        </ToolbarGroup>
+      ),
+    },
+    {
+      id: 'indent',
+      render: () => (
+        <ToolbarGroup>
+          <ToolbarButton
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            onClick={() => (editor.chain().focus() as any)?.outdent?.()?.run?.()}
+            title="Outdent (Shift+Tab)"
+          >
+            <Outdent size={15} />
+          </ToolbarButton>
+          <ToolbarButton
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            onClick={() => (editor.chain().focus() as any)?.indent?.()?.run?.()}
+            title="Indent (Tab)"
+          >
+            <Indent size={15} />
+          </ToolbarButton>
+        </ToolbarGroup>
+      ),
+    },
+    {
+      id: 'insert',
+      render: () => (
+        <ToolbarGroup>
+          <ToolbarButton active={editor.isActive('link')} onClick={setLink} title="Insert link"><Link size={15} /></ToolbarButton>
+
+          {/* With a local-upload handler: show a URL insert + a local upload option */}
+          {onInsertLocalImage ? (
+            <>
+              <ToolbarButton onClick={onInsertLocalImage} title="Upload local image"><ImageIcon size={15} /></ToolbarButton>
+              {/* When an image is selected, show properties button */}
+              {editor.isActive('image') && onOpenImageProps && (
+                <ToolbarButton onClick={onOpenImageProps} title="Image properties" wide>
+                  Img…
+                </ToolbarButton>
+              )}
+            </>
+          ) : (
+            <ToolbarButton onClick={onInsertImage} title="Insert image"><ImageIcon size={15} /></ToolbarButton>
+          )}
+
+          <ToolbarButton onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert table"><Table size={15} /></ToolbarButton>
+          <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()} title="Horizontal rule"><Minus size={15} /></ToolbarButton>
+          {onInsertDiagram && (
+            <ToolbarButton onClick={onInsertDiagram} title="Insert diagram">
+              <Network size={15} />
+            </ToolbarButton>
+          )}
+        </ToolbarGroup>
+      ),
+    },
+    {
+      id: 'table',
+      render: () => editor.isActive('table') ? (
+        <ToolbarGroup>
+          <ToolbarButton wide onClick={() => editor.chain().focus().addColumnAfter().run()} title="Add column">+Col</ToolbarButton>
+          <ToolbarButton wide onClick={() => editor.chain().focus().addRowAfter().run()} title="Add row">+Row</ToolbarButton>
+          <ToolbarButton wide onClick={() => editor.chain().focus().deleteColumn().run()} title="Delete column">-Col</ToolbarButton>
+          <ToolbarButton wide onClick={() => editor.chain().focus().deleteRow().run()} title="Delete row">-Row</ToolbarButton>
+          <ToolbarButton wide onClick={() => editor.chain().focus().mergeCells().run()} title="Merge cells">Merge</ToolbarButton>
+          <ToolbarButton wide onClick={() => editor.chain().focus().splitCell().run()} title="Split cell">Split</ToolbarButton>
+          <ToolbarButton wide onClick={() => editor.chain().focus().deleteTable().run()} title="Delete table" style={{ color: '#d93025' }}>Del Table</ToolbarButton>
+
+          {/* Cell formatting */}
+          {onOpenTableCellModal && (
+            <ToolbarButton wide onClick={onOpenTableCellModal} title="Cell formatting">Cell…</ToolbarButton>
+          )}
+        </ToolbarGroup>
+      ) : null,
+    },
+    {
+      id: 'tools',
+      render: () => (
+        <ToolbarGroup>
+          <ToolbarButton
+            active={grammarEnabled}
+            onClick={onToggleGrammar}
+            title={grammarEnabled ? 'Grammar check on — click to disable' : 'Enable grammar check'}
+          >
+            <SpellCheck size={15} />
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={onOpenFindReplace}
+            title="Find and replace (Ctrl+F)"
+          >
+            <Search size={15} />
+          </ToolbarButton>
+          <AiWritingMenu
+            onSuggestions={onAiSuggestions}
+            onSummarize={onAiSummarize}
+            onChangeTone={onAiChangeTone}
+          />
+        </ToolbarGroup>
+      ),
+    },
+  ];
+
+  return (
+    <RickTextToolbar>
+      <ToolbarItems editor="docs" tools={tools} divider={<ToolbarDivider />} />
     </RickTextToolbar>
   );
 }

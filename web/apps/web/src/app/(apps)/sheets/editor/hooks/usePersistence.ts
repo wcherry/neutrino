@@ -22,6 +22,7 @@ import { writeXlsx } from '@/lib/ooxml/xlsx/write';
 import { readXlsx } from '@/lib/ooxml/xlsx/read';
 import { yieldToMain } from '@/lib/yieldToMain';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
+import { createSaveStateStore } from '@/components/editorChrome/EditorTitle';
 
 /**
  * How long one save may hold the save chain before the next one is allowed to
@@ -201,6 +202,9 @@ export function usePersistence({
     // edge case between the browser and the dev/test proxy. Chaining guarantees
     // one request's response is fully received before the next one is sent.
     const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+    // For the title bar's save state; a store rather than state so a save does not re-render the grid.
+    const [saveState] = useState(createSaveStateStore);
+
     const queueSave = (opts?: SaveOptions) => {
         saveChainRef.current = saveChainRef.current
             // Bounded, because everything queued behind a save waits for it. The
@@ -209,8 +213,11 @@ export function usePersistence({
             // into an editor that never saves again — every later edit silently
             // dropped, with no error anywhere. Giving up on one save is recoverable;
             // the next timer tick tries again.
-            .then(() => withDeadline(saveRef.current(opts), SAVE_DEADLINE_MS))
-            .catch(() => {});
+            .then(() => {
+                saveState.set('saving');
+                return withDeadline(saveRef.current(opts), SAVE_DEADLINE_MS);
+            })
+            .then(() => saveState.set('saved'), () => saveState.set('error'));
         return saveChainRef.current;
     };
 
@@ -660,6 +667,7 @@ export function usePersistence({
          * exactly what the chain was built to prevent.
          */
         save: queueSave,
+        saveState,
         manualSave,
         serialize,
         serializeModel,

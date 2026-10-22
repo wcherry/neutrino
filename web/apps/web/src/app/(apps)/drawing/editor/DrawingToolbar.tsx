@@ -23,6 +23,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { ToolType } from './types';
+import { ToolbarItems, type ToolDef } from '@/components/editorChrome/ToolbarItems';
+import styles from './DrawingToolbar.module.css';
 
 interface DrawingToolbarProps {
   tool: ToolType;
@@ -74,81 +76,52 @@ const GROUPS: ToolEntry[][] = [
   ],
 ];
 
+const GROUP_IDS = ['select', 'shapes', 'paint', 'pixelSelect'] as const;
+
 export function DrawingToolbar({ tool, onToolChange, onAddImage }: DrawingToolbarProps) {
-  const btnStyle = (active: boolean): React.CSSProperties => ({
-    width: 36,
-    height: 36,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: 'none',
-    borderRadius: 6,
-    cursor: 'pointer',
-    background: active ? 'var(--color-primary, #2563eb)' : 'transparent',
-    color: active ? '#ffffff' : '#374151',
-    transition: 'background 0.1s',
-  });
+  const button = (id: ToolType, Icon: LucideIcon, label: string) => (
+    <button
+      key={id}
+      title={label}
+      className={`${styles.btn} ${tool === id ? styles.active : ''}`}
+      onClick={() => onToolChange(id)}
+      aria-label={label}
+      aria-pressed={tool === id}
+    >
+      <Icon size={16} />
+    </button>
+  );
 
-  const dividerStyle: React.CSSProperties = {
-    width: 24,
-    height: 1,
-    background: '#e5e7eb',
-    margin: '4px auto',
-  };
-
-  const sidebarStyle: React.CSSProperties = {
-    width: 48,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '8px 0',
-    gap: 2,
-    background: '#ffffff',
-    borderRight: '1px solid #e5e7eb',
-    flexShrink: 0,
-    overflowY: 'auto',
-  };
+  // The four groups and the insert pair, each one entry the user can reorder or hide (U10).
+  const tools: ToolDef[] = [
+    ...GROUPS.map((group, index) => ({
+      id: GROUP_IDS[index],
+      render: () => <>{group.map(({ id, icon, label }) => button(id, icon, label))}</>,
+    })),
+    {
+      id: 'insert',
+      render: () => (
+        <>
+          <button title="Insert image" className={styles.btn} onClick={onAddImage} aria-label="Insert image">
+            <ImageIcon size={16} />
+          </button>
+          <button
+            title="Delete objects"
+            className={`${styles.btn} ${tool === 'eraser' ? styles.active : ''}`}
+            onClick={() => onToolChange('eraser')}
+            aria-label="Delete objects"
+            aria-pressed={tool === 'eraser'}
+          >
+            <Eraser size={16} strokeWidth={1.4} />
+          </button>
+        </>
+      ),
+    },
+  ];
 
   return (
-    <div style={sidebarStyle}>
-      {GROUPS.map((group, index) => (
-        <React.Fragment key={index}>
-          {index > 0 && <div style={dividerStyle} />}
-          {group.map(({ id, icon: Icon, label }) => (
-            <button
-              key={id}
-              title={label}
-              style={btnStyle(tool === id)}
-              onClick={() => onToolChange(id)}
-              aria-label={label}
-              aria-pressed={tool === id}
-            >
-              <Icon size={16} />
-            </button>
-          ))}
-        </React.Fragment>
-      ))}
-
-      <div style={dividerStyle} />
-
-      <button
-        title="Insert image"
-        style={btnStyle(false)}
-        onClick={onAddImage}
-        aria-label="Insert image"
-      >
-        <ImageIcon size={16} />
-      </button>
-
-      <button
-        title="Delete objects"
-        style={btnStyle(tool === 'eraser')}
-        onClick={() => onToolChange('eraser')}
-        aria-label="Delete objects"
-        aria-pressed={tool === 'eraser'}
-      >
-        <Eraser size={16} strokeWidth={1.4} />
-      </button>
+    <div className={styles.rail}>
+      <ToolbarItems editor="drawing" vertical tools={tools} divider={<div className={styles.divider} />} />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { EditorDocIcon, EditorSaveState, createSaveStateStore } from '@/components/editorChrome/EditorTitle';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -477,6 +478,8 @@ export function DrawingEditor() {
   // ── Autosave ──────────────────────────────────────────────────────
 
   const saveInProgress = useRef(false);
+  // For the title bar's save state in the new looks; a store so a save does not re-render the editor.
+  const saveStateRef = useRef(createSaveStateStore());
 
   /**
    * The document plus where the session had got to — redesign §5's viewport,
@@ -531,6 +534,7 @@ export function DrawingEditor() {
 
       isDirtyRef.current = false;
       saveInProgress.current = true;
+      saveStateRef.current.set('saving');
 
       const { awaitDek: resolveDek, versionGuard: guard, toast: notify, userId } = saveDepsRef.current;
       const body = serializeDocument(withSessionState(setTitle(docRef.current, title)));
@@ -548,6 +552,7 @@ export function DrawingEditor() {
           );
         })
         .then((meta) => {
+          saveStateRef.current.set('saved');
           guard.observe(meta.contentVersion);
           serverTitleRef.current = meta.title;
           indexOnSave(userId, {
@@ -558,6 +563,7 @@ export function DrawingEditor() {
           });
         })
         .catch((err) => {
+          saveStateRef.current.set('error');
           if (isMissingEncryptionKey(err)) {
             notify.warning(ENCRYPTION_WARNING_MESSAGE);
             return;
@@ -1103,6 +1109,7 @@ export function DrawingEditor() {
         <button className={styles.backBtn} onClick={() => router.back()} aria-label="Go back">
           <ArrowLeft size={18} />
         </button>
+        <EditorDocIcon app="drawing" />
         <DrawingMenuBar
           tool={tool}
           onToolChange={setTool}
@@ -1161,6 +1168,7 @@ export function DrawingEditor() {
           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
           aria-label="Drawing title"
         />
+        <EditorSaveState store={saveStateRef.current} />
       </div>
 
       <div className={styles.editorBody}>

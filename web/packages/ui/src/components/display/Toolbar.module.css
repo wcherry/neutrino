@@ -1,10 +1,17 @@
+/* Every value an editor's look changes comes through an `--editor-…` token (tokens/looks.css),
+   defined for the new looks only; the fallback is what the classic look always drew. */
 .toolbar {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 6px 12px;
-  background: var(--color-bg);
-  border-bottom: 1px solid var(--color-border);
+  padding: var(--editor-toolbar-padding, 6px 12px);
+  margin: var(--editor-toolbar-margin, 0);
+  background: var(--editor-toolbar-bg, var(--color-bg));
+  border: var(--editor-toolbar-border, 0);
+  border-bottom: var(--editor-toolbar-rule, 1px solid var(--color-border));
+  border-radius: var(--editor-toolbar-radius, 0);
+  box-shadow: var(--editor-toolbar-shadow, none);
+  backdrop-filter: var(--editor-toolbar-filter, none);
   flex-wrap: wrap;
   flex-shrink: 0;
 }
@@ -18,7 +25,7 @@
 .toolbarDivider {
   width: 1px;
   height: 20px;
-  background: var(--color-border);
+  background: var(--editor-divider, var(--color-border));
   margin: 0 6px;
 }
 
@@ -30,22 +37,22 @@
   height: 28px;
   border: none;
   background: none;
-  border-radius: 4px;
+  border-radius: var(--editor-tool-radius, 4px);
   cursor: pointer;
-  color: var(--color-text-muted);
+  color: var(--editor-tool-fg, var(--color-text-muted));
   transition: background 0.1s, color 0.1s;
   font-size: 14px;
   font-weight: 600;
 }
 
 .toolBtn:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
+  background: var(--editor-tool-hover-bg, var(--color-surface-hover));
+  color: var(--editor-tool-hover-fg, var(--color-text));
 }
 
 .toolBtn.active {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
+  background: var(--editor-tool-active-bg, var(--color-accent-subtle));
+  color: var(--editor-tool-active-fg, var(--color-accent));
 }
 
 .toolBtnWide {
@@ -66,17 +73,17 @@
 .toolbarSelect {
   height: 28px;
   padding: 0 6px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border: 1px solid var(--editor-field-border, var(--color-border));
+  border-radius: var(--editor-field-radius, 4px);
   font-size: 13px;
-  background: var(--color-bg);
+  background: var(--editor-field-bg, var(--color-bg));
   color: var(--color-text);
   cursor: pointer;
   outline: none;
 }
 
 .toolbarSelect:hover {
-  background: var(--color-surface-hover);
+  background: var(--editor-tool-hover-bg, var(--color-surface-hover));
 }
 
 .hiddenInput {

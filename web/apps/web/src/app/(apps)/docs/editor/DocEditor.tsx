@@ -6,6 +6,7 @@ import React, { startTransition, useState, useEffect, useRef, useCallback, useMe
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { spellSuggestionsFor, useNspell } from '@/hooks/useNspell';
+import { EditorDocIcon, EditorSaveState } from '@/components/editorChrome/EditorTitle';
 import { useEncryptedDocumentContent } from '@/hooks/useEncryptedDocumentContent';
 import { SheetEmbedExtension } from '@/lib/SheetEmbedExtension';
 import { DiagramEmbedExtension } from '@/lib/extensions/DiagramEmbedExtension';
@@ -2112,6 +2113,9 @@ export function DocEditor() {
   };
 
   const { words: wordCount, characters: charCount } = useDocumentCounts(editor);
+  // The status bar carries the page count and language in the new looks (LF5); classic keeps its own.
+  const [look] = usePreference('appearance.look');
+  const newLook = look !== 'classic';
 
   const { widthPx, heightPx } = useMemo(() => pageDimensions(pageSetup), [pageSetup]);
   const contentHeightPx = heightPx - pageSetup.marginTop - pageSetup.marginBottom;
@@ -2359,6 +2363,7 @@ export function DocEditor() {
         <div className={styles.docIcon}>
           <FileText size={18} />
         </div>
+        <EditorDocIcon app="docs" />
 
         <input
           ref={titleInputRef}
@@ -2378,16 +2383,17 @@ export function DocEditor() {
         )}
 
         <div className={styles.topbarActions}>
-          <span className={styles.saveStatus}>
-            {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'unsaved' ? 'Unsaved changes' : 'All changes saved'}
-          </span>
+          <EditorSaveState
+            state={saveStatus === 'saving' ? 'saving' : saveStatus === 'unsaved' ? 'unsaved' : 'saved'}
+            className={styles.saveStatus}
+            classic={saveStatus === 'saving' ? 'Saving…' : saveStatus === 'unsaved' ? 'Unsaved changes' : 'All changes saved'}
+          />
 
           <button
-            className={styles.exportBtn}
+            className={styles.saveBtn}
             onClick={handleManualSave}
             disabled={officeVersionMutation.isPending || !isLocalWriter}
             title={isLocalWriter ? 'Save version (Ctrl+S)' : 'Another collaborator is the active writer'}
-            style={{ background: '#1a73e8', color: 'white', border: 'none' }}
           >
             Save
           </button>
@@ -2660,8 +2666,10 @@ export function DocEditor() {
       {/* ── Status bar ── */}
       {!distractionFree && (
         <div className={styles.statusBar}>
+          {newLook && <span>{contentPages === 1 ? 'Page 1 of 1' : `${contentPages.toLocaleString()} pages`}</span>}
           <span>{wordCount.toLocaleString()} words</span>
           <span>{charCount.toLocaleString()} characters</span>
+          {newLook && <span>English</span>}
           {charCount > 1_020_000 && (
             <span style={{ color: '#d93025' }}>
               ⚠ Approaching 1M character limit ({charCount.toLocaleString()} / 1,020,000)

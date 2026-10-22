@@ -4,13 +4,13 @@
   box-sizing: border-box;
   width: 62px;
   height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-bg);
+  border: 1px solid var(--editor-field-border, var(--color-border));
+  border-radius: var(--editor-field-radius, 4px);
+  background: var(--editor-field-bg, var(--color-bg));
 }
 
 .wrapper:hover {
-  background: var(--color-surface-hover);
+  background: var(--editor-tool-hover-bg, var(--color-surface-hover));
 }
 
 .wrapper.focused {
