@@ -1,6 +1,6 @@
 .menu {
   position: fixed;
-  z-index: 1000;
+  z-index: var(--z-layer-1000);
   min-width: 180px;
   /* Frosted in the new looks (--glass-*, packages/tokens/src/looks.css); perf scenario B7
      measures what that costs over a scrolling list. */

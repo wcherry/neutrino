@@ -57,7 +57,7 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  z-index: 30;
+  z-index: var(--z-layer-30);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -165,8 +165,8 @@
 }
 
 .revokeBtn:hover {
-  color: var(--color-danger, #e11d48);
-  background: var(--color-danger-subtle, #fff1f2);
+  color: var(--color-danger, var(--palette-red-50-2));
+  background: var(--color-danger-subtle, var(--palette-red-97));
 }
 
 .revokeBtn:disabled {
@@ -237,7 +237,7 @@
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: 12px;
+  font-size: var(--text-xs);
   min-width: 160px;
 }
 
@@ -262,7 +262,7 @@
   position: fixed;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 20;
+  z-index: var(--z-layer-20);
   min-width: 260px;
   padding: 12px;
   border-radius: var(--radius-lg);
@@ -337,7 +337,7 @@
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
   text-align: center;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-muted);
 }
 
@@ -353,7 +353,7 @@
   border: 1px solid transparent;
   background: transparent;
   color: var(--color-text);
-  font-size: 12px;
+  font-size: var(--text-xs);
   cursor: pointer;
   padding: 0;
 }
@@ -369,7 +369,7 @@
 
 .calendarDaySelected {
   background: var(--color-accent);
-  color: var(--color-on-accent, #fff);
+  color: var(--color-on-accent, var(--palette-gray-100));
 }
 
 .calendarDayPlaceholder {

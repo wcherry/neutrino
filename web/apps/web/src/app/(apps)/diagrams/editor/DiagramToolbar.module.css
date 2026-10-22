@@ -10,7 +10,7 @@
   gap: 4px;
   flex-shrink: 0;
   position: relative;
-  z-index: 10;
+  z-index: var(--z-layer-10);
 }
 
 .left, .right {
@@ -49,7 +49,7 @@
 }
 
 .titleInput {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-text);
   border: 1px solid var(--color-primary);
@@ -102,18 +102,18 @@
   height: 30px;
   padding: 0 12px;
   background: var(--editor-primary-bg, var(--color-primary));
-  color: var(--editor-primary-fg, #fff);
+  color: var(--editor-primary-fg, var(--palette-gray-100));
   border: var(--editor-primary-border, none);
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   transition: background 0.15s;
   margin-left: 4px;
 }
 
 .saveBtn:hover {
-  background: var(--editor-primary-hover-bg, var(--color-primary-dark, #1d4ed8));
+  background: var(--editor-primary-hover-bg, var(--color-primary-dark, var(--palette-blue-48)));
 }
 
 .saveBtn:disabled {
@@ -142,7 +142,7 @@
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
   min-width: 180px;
-  z-index: 1000;
+  z-index: var(--z-layer-1000);
   overflow: hidden;
 }
 
@@ -150,7 +150,7 @@
   display: block;
   width: 100%;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   text-align: left;
   background: none;
   border: none;
@@ -183,14 +183,14 @@
 }
 
 .textDefaultsRow label {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 
 .textDefaultsSelect {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 4px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
@@ -200,7 +200,7 @@
 
 .textDefaultsNumber {
   width: 52px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 4px;
   border: 1px solid var(--color-border);
   border-radius: 4px;

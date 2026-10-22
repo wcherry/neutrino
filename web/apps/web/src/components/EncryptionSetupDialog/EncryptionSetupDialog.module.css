@@ -6,7 +6,7 @@
 
 .intro {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
@@ -29,7 +29,7 @@
 
 .sectionTitle {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -45,7 +45,7 @@
 .recoveryKit {
   margin: 0;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 14px;
+  font-size: var(--text-sm);
   line-height: 1.9;
   letter-spacing: 0.06em;
   text-align: center;
@@ -64,7 +64,7 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   line-height: 1.5;
 }
@@ -78,6 +78,6 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-success, var(--color-text-secondary));
 }

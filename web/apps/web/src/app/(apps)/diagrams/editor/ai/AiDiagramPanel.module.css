@@ -10,7 +10,7 @@
 
 .header {
   padding: 10px 12px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -35,7 +35,7 @@
 .tab {
   flex: 1;
   padding: 8px 0;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
@@ -60,7 +60,7 @@
 }
 
 .label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
   margin-bottom: 2px;
 }
@@ -71,7 +71,7 @@
   padding: 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-family: var(--font-sans, Inter, sans-serif);
   color: var(--color-text);
   background: var(--color-bg);
@@ -94,7 +94,7 @@
   padding: 3px 8px;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   cursor: pointer;
   background: var(--color-surface);
   color: var(--color-text-secondary);
@@ -113,7 +113,7 @@
   border: 1px solid var(--color-border);
   border-radius: 6px;
   background: var(--color-surface);
-  font-size: 12px;
+  font-size: var(--text-xs);
   cursor: pointer;
   color: var(--color-text);
   transition: background 0.12s;
@@ -130,18 +130,18 @@
 
 .btnPrimary {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
   border-color: var(--color-primary);
 }
 
 .btnPrimary:hover:not(:disabled) {
-  background: var(--color-primary-dark, #1d4ed8);
+  background: var(--color-primary-dark, var(--palette-blue-48));
 }
 
 .error {
-  font-size: 11px;
-  color: var(--color-danger, #dc2626);
-  background: var(--color-danger-light, #fef2f2);
+  font-size: var(--font-size-11);
+  color: var(--color-danger, var(--palette-red-51));
+  background: var(--color-danger-light, var(--palette-red-97-2));
   border-radius: 4px;
   padding: 6px 8px;
 }
@@ -154,7 +154,7 @@
 }
 
 .analysisSectionTitle {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   color: var(--color-text-secondary);
   margin-bottom: 4px;
@@ -163,13 +163,13 @@
 }
 
 .analysisItem {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text);
   padding: 2px 0;
 }
 
 .analysisItemBtn {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   background: none;
   border: none;
   cursor: pointer;
@@ -179,11 +179,11 @@
 }
 
 .empty {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-muted);
 }
 
 .stat {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
 }

@@ -37,7 +37,7 @@
 }
 
 .headerTitle {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -66,7 +66,7 @@
 }
 
 .sectionTitle {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -87,7 +87,7 @@
 }
 
 .builtinRowName {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
 }
 
@@ -115,10 +115,10 @@
 
 .addBtn {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
   border: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   padding: 2px 8px;
   border-radius: 10px;
@@ -127,7 +127,7 @@
 }
 
 .addBtn:hover {
-  background: #1d4ed8;
+  background: var(--palette-blue-48);
 }
 
 .addForm {
@@ -147,7 +147,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-secondary);
   text-align: left;
   padding: 0;
@@ -176,14 +176,14 @@
   border-radius: 4px;
   cursor: pointer;
   padding: 3px 6px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text);
   text-align: left;
   transition: background 0.1s;
 }
 
 .knownItem:hover:not(:disabled) {
-  background: #eff6ff;
+  background: var(--palette-sky-97);
   border-color: var(--color-primary);
 }
 
@@ -198,7 +198,7 @@
   border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 4px 6px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text);
   background: var(--color-surface);
   outline: none;
@@ -210,10 +210,10 @@
 
 .confirmBtn {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
   border: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   padding: 4px 10px;
   border-radius: 4px;
@@ -221,7 +221,7 @@
 }
 
 .confirmBtn:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--palette-blue-48);
 }
 
 .confirmBtn:disabled {
@@ -233,7 +233,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-primary);
   text-decoration: none;
 }
@@ -263,7 +263,7 @@
 }
 
 .tpName {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   color: var(--color-text);
   white-space: nowrap;
@@ -278,7 +278,7 @@
 }
 
 .tpCount {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-secondary);
 }
 
@@ -294,7 +294,7 @@
 }
 
 .errorIcon {
-  color: #ef4444;
+  color: var(--palette-red-60);
   flex-shrink: 0;
 }
 
@@ -329,8 +329,8 @@
 }
 
 .removeBtn:hover {
-  color: #ef4444;
-  background: #fef2f2;
+  color: var(--palette-red-60);
+  background: var(--palette-red-97-2);
 }
 
 .customRow {
@@ -357,7 +357,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   color: var(--color-text);
   text-align: left;
@@ -379,14 +379,14 @@
   border: 1px solid var(--color-primary);
   border-radius: 3px;
   padding: 1px 4px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text);
   background: var(--color-surface);
   outline: none;
 }
 
 .shapeBadge {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-secondary);
   flex-shrink: 0;
 }
@@ -399,7 +399,7 @@
 
 .hint {
   padding: 0 10px 6px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-secondary);
   font-style: italic;
   line-height: 1.4;
@@ -407,7 +407,7 @@
 
 .emptyNote {
   padding: 4px 10px 6px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-secondary);
   font-style: italic;
 }

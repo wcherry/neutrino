@@ -165,7 +165,7 @@ export default function ShareTokenClient() {
         </div>
 
         {guestSessionMutation.isError && (
-          <p style={{ color: '#d93025', fontSize: '0.875rem', margin: 0 }}>
+          <p style={{ color: 'var(--palette-red-50)', fontSize: '0.875rem', margin: 0 }}>
             Failed to open. Please try again.
           </p>
         )}

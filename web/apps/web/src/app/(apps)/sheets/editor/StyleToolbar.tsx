@@ -205,7 +205,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                     >
                         <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                             <span style={{ fontWeight: 'bold', fontSize: 13 }}>A</span>
-                            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: cellStyle?.color ?? '#000000' }} />
+                            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: cellStyle?.color ?? 'var(--palette-gray-0)' }} />
                         </span>
                     </ColorPickerPopover>
 
@@ -217,7 +217,7 @@ export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRed
                     >
                         <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                             <span style={{ display: 'block', width: 14, height: 11, border: '1px solid rgba(0,0,0,0.15)', borderRadius: 2, backgroundColor: cellStyle?.backgroundColor ?? 'transparent' }} />
-                            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: cellStyle?.backgroundColor ?? '#ffffff' }} />
+                            <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: cellStyle?.backgroundColor ?? 'var(--palette-gray-100)' }} />
                         </span>
                     </ColorPickerPopover>
                 </ToolbarGroup>

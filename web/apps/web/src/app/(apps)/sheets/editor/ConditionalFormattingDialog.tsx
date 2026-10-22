@@ -564,7 +564,7 @@ function RuleEditor({ rule: editing, variables, onChange }: {
                         </select>
                     </div>
                     {/* item 22 */}
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11, cursor: 'pointer', color: 'var(--color-text-secondary, #555)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11, cursor: 'pointer', color: 'var(--color-text-secondary, var(--palette-gray-33))' }}>
                         <input type="checkbox" checked={!!rule.visibleOnly}
                             onChange={e => setRule({ ...rule, visibleOnly: e.target.checked } as CFTopBottomRule)} />
                         Visible rows only (respects active filters)
@@ -582,7 +582,7 @@ function RuleEditor({ rule: editing, variables, onChange }: {
                         <option value="below">Below average</option>
                     </select>
                     {/* item 22 */}
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11, cursor: 'pointer', color: 'var(--color-text-secondary, #555)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 11, cursor: 'pointer', color: 'var(--color-text-secondary, var(--palette-gray-33))' }}>
                         <input type="checkbox" checked={!!rule.visibleOnly}
                             onChange={e => setRule({ ...rule, visibleOnly: e.target.checked } as CFAverageRule)} />
                         Visible rows only (respects active filters)
@@ -600,7 +600,7 @@ function RuleEditor({ rule: editing, variables, onChange }: {
                         placeholder="=A1>B1"
                         spellCheck={false}
                     />
-                    <p style={{ margin: '4px 0 0', fontSize: 10, color: 'var(--color-text-secondary, #888)' }}>
+                    <p style={{ margin: '4px 0 0', fontSize: 10, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>
                         Formula must evaluate to TRUE/FALSE. Use $ to fix references (e.g. =$D1=&ldquo;Done&rdquo;).
                     </p>
                 </>
@@ -650,7 +650,7 @@ function RuleEditor({ rule: editing, variables, onChange }: {
             {/* Variable reference (item 19) */}
             {rule.kind === 'variable' && (
                 variables.length === 0 ? (
-                    <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--color-text-secondary, #888)' }}>
+                    <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>
                         No variables defined yet. Use the Variables tab to create one.
                     </p>
                 ) : (
@@ -681,7 +681,7 @@ function RuleEditor({ rule: editing, variables, onChange }: {
                     <div style={{
                         marginTop: 10, padding: '4px 10px', borderRadius: 4, display: 'inline-block',
                         backgroundColor: currentFormat.backgroundColor ?? 'transparent',
-                        color: currentFormat.color ?? '#000000',
+                        color: currentFormat.color ?? 'var(--palette-gray-0)',
                         fontWeight: currentFormat.fontWeight ?? 'normal',
                         fontStyle: currentFormat.fontStyle ?? 'normal',
                         textDecoration: currentFormat.textDecoration ?? 'none',
@@ -694,7 +694,7 @@ function RuleEditor({ rule: editing, variables, onChange }: {
             )}
 
             {/* item 13: stop if true */}
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 11, cursor: 'pointer', color: 'var(--color-text-secondary, #555)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 10, fontSize: 11, cursor: 'pointer', color: 'var(--color-text-secondary, var(--palette-gray-33))' }}>
                 <input type="checkbox" checked={!!editing.stopIfTrue} onChange={e => setStopIfTrue(e.target.checked)} />
                 Stop if true (don&apos;t evaluate lower-priority rules for matching cells)
             </label>
@@ -720,7 +720,7 @@ function ColorSwatch({ color, dashed }: { color: string; dashed?: boolean }) {
         <div style={{
             width: 24, height: 24, borderRadius: 4,
             backgroundColor: color,
-            border: dashed ? '2px dashed #aaa' : '1px solid rgba(0,0,0,0.2)',
+            border: dashed ? '2px dashed var(--palette-gray-67)' : '1px solid rgba(0,0,0,0.2)',
             cursor: 'pointer',
         }} />
     );
@@ -732,8 +732,8 @@ function FormatToggle({ label, active, style, onClick }: {
     return (
         <button onClick={onClick} style={{
             width: 28, height: 28, borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: 13,
-            backgroundColor: active ? 'var(--color-primary, #1a73e8)' : 'var(--color-surface-2, #f1f3f4)',
-            color: active ? '#fff' : 'inherit',
+            backgroundColor: active ? 'var(--color-primary, var(--palette-sky-51))' : 'var(--color-surface-2, var(--palette-sky-95))',
+            color: active ? 'var(--palette-gray-100)' : 'inherit',
             ...style,
         }}>
             {label}
@@ -795,7 +795,7 @@ function VariablesPanel({ variables, onChange }: VarPanelProps) {
 
     return (
         <div style={{ padding: '8px 12px' }}>
-            <p style={{ fontSize: 11, color: 'var(--color-text-secondary, #888)', margin: '0 0 8px' }}>
+            <p style={{ fontSize: 11, color: 'var(--color-text-secondary, var(--palette-gray-53))', margin: '0 0 8px' }}>
                 Named variables let you define a rule once and reuse it across multiple ranges.
             </p>
             {variables.map((v, i) => (
@@ -807,8 +807,8 @@ function VariablesPanel({ variables, onChange }: VarPanelProps) {
                             <Trash2 size={13} />
                         </button>
                     </div>
-                    {v.description && <p style={{ margin: '2px 0 4px', fontSize: 10, color: 'var(--color-text-secondary, #888)' }}>{v.description}</p>}
-                    <span style={{ fontSize: 10, color: 'var(--color-text-secondary, #888)' }}>{KIND_LABELS[v.rule.kind] ?? v.rule.kind}</span>
+                    {v.description && <p style={{ margin: '2px 0 4px', fontSize: 10, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>{v.description}</p>}
+                    <span style={{ fontSize: 10, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>{KIND_LABELS[v.rule.kind] ?? v.rule.kind}</span>
                 </div>
             ))}
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -818,7 +818,7 @@ function VariablesPanel({ variables, onChange }: VarPanelProps) {
                 <button style={{ ...addBtnStyle, marginTop: 4, alignSelf: 'flex-start' }} onClick={addVariable}>
                     <Plus size={13} style={{ marginRight: 4 }} /> Add variable
                 </button>
-                <p style={{ margin: '4px 0 0', fontSize: 10, color: 'var(--color-text-secondary, #888)' }}>
+                <p style={{ margin: '4px 0 0', fontSize: 10, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>
                     After adding, use a &ldquo;Named variable&rdquo; rule to apply it to any range.
                 </p>
             </div>
@@ -841,11 +841,11 @@ function TemplatesPanel({ templates, editingRules, onApply, onDelete, onSave }: 
 
     return (
         <div style={{ padding: '8px 12px' }}>
-            <p style={{ fontSize: 11, color: 'var(--color-text-secondary, #888)', margin: '0 0 8px' }}>
+            <p style={{ fontSize: 11, color: 'var(--color-text-secondary, var(--palette-gray-53))', margin: '0 0 8px' }}>
                 Save the current rules as a template to reuse across sheets.
             </p>
             {templates.length === 0 && (
-                <p style={{ fontSize: 12, color: 'var(--color-text-secondary, #888)', textAlign: 'center', marginTop: 16 }}>
+                <p style={{ fontSize: 12, color: 'var(--color-text-secondary, var(--palette-gray-53))', textAlign: 'center', marginTop: 16 }}>
                     No saved templates.
                 </p>
             )}
@@ -853,7 +853,7 @@ function TemplatesPanel({ templates, editingRules, onApply, onDelete, onSave }: 
                 <div key={t.id} style={{ ...ruleEditorStyle, marginBottom: 6 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                         <span style={{ fontWeight: 600, fontSize: 12, flexGrow: 1 }}>{t.name}</span>
-                        <span style={{ fontSize: 10, color: 'var(--color-text-secondary, #888)' }}>{t.rules.length} rule{t.rules.length !== 1 ? 's' : ''}</span>
+                        <span style={{ fontSize: 10, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>{t.rules.length} rule{t.rules.length !== 1 ? 's' : ''}</span>
                         <button style={{ ...clearBtnStyle, padding: '2px 4px' }} title="Apply template"
                             onClick={() => onApply(t)}>
                             <FolderOpen size={13} />
@@ -891,10 +891,10 @@ function SmartSuggestions({ suggestions, onApply }: {
 }) {
     if (suggestions.length === 0) return null;
     return (
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border, #e8eaed)' }}>
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border, var(--palette-blue-92))' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
-                <Sparkles size={13} style={{ color: 'var(--color-primary, #1a73e8)' }} />
-                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary, #555)' }}>
+                <Sparkles size={13} style={{ color: 'var(--color-primary, var(--palette-sky-51))' }} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary, var(--palette-gray-33))' }}>
                     Suggestions for this column
                 </span>
             </div>
@@ -904,15 +904,15 @@ function SmartSuggestions({ suggestions, onApply }: {
                         key={s.label}
                         style={{
                             display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
-                            borderRadius: 6, border: '1px solid var(--color-border, #e0e0e0)',
-                            background: 'var(--color-surface, #fff)', cursor: 'pointer', textAlign: 'left',
+                            borderRadius: 6, border: '1px solid var(--color-border, var(--palette-gray-88))',
+                            background: 'var(--color-surface, var(--palette-gray-100))', cursor: 'pointer', textAlign: 'left',
                         }}
                         onClick={() => onApply(s.buildRule('A1:A100'))}
                     >
                         <span style={{ fontSize: 16 }}>{s.icon}</span>
                         <div>
                             <div style={{ fontSize: 12, fontWeight: 600 }}>{s.label}</div>
-                            <div style={{ fontSize: 10, color: 'var(--color-text-secondary, #888)' }}>{s.description}</div>
+                            <div style={{ fontSize: 10, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>{s.description}</div>
                         </div>
                     </button>
                 ))}
@@ -958,10 +958,10 @@ function AiRuleBuilderPanel({ selectionRange, onAddRule }: {
     return (
         <div style={{ padding: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                <Wand2 size={14} style={{ color: 'var(--color-primary, #1a73e8)' }} />
+                <Wand2 size={14} style={{ color: 'var(--color-primary, var(--palette-sky-51))' }} />
                 <span style={{ fontSize: 12, fontWeight: 600 }}>Describe your rule in plain English</span>
             </div>
-            <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--color-text-secondary, #888)' }}>
+            <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>
                 Examples: &ldquo;Highlight cells where revenue is over 10,000&rdquo;, &ldquo;Red for customers who haven&apos;t ordered in 90 days&rdquo;, &ldquo;Yellow for tasks due this week&rdquo;
             </p>
             <textarea
@@ -989,7 +989,7 @@ function AiRuleBuilderPanel({ selectionRange, onAddRule }: {
             {error && (
                 <div style={{
                     marginTop: 10, padding: '8px 10px', borderRadius: 4, fontSize: 12,
-                    backgroundColor: '#fce8e6', color: '#c5221f',
+                    backgroundColor: 'var(--palette-red-95)', color: 'var(--palette-red-45)',
                 }}>
                     {error}
                     {error.includes('API key') && (
@@ -999,18 +999,18 @@ function AiRuleBuilderPanel({ selectionRange, onAddRule }: {
             )}
 
             {preview && (
-                <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 6, border: '1px solid var(--color-border, #e0e0e0)', background: 'var(--color-surface-2, #f8f9fa)' }}>
+                <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 6, border: '1px solid var(--color-border, var(--palette-gray-88))', background: 'var(--color-surface-2, var(--palette-sky-98))' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary, #555)' }}>Generated rule</span>
-                        <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 10, background: '#e6f4ea', color: '#137333' }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary, var(--palette-gray-33))' }}>Generated rule</span>
+                        <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 10, background: 'var(--palette-green-93)', color: 'var(--palette-green-26)' }}>
                             {preview.rule.kind}
                         </span>
                     </div>
-                    <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--color-text, #000)' }}>
+                    <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--color-text, var(--palette-gray-0))' }}>
                         {preview.explanation}
                     </p>
                     {preview.rule.kind === 'formula' && (
-                        <code style={{ display: 'block', fontSize: 11, padding: '4px 6px', background: 'var(--color-surface, #fff)', borderRadius: 4, border: '1px solid var(--color-border, #ddd)', marginBottom: 8 }}>
+                        <code style={{ display: 'block', fontSize: 11, padding: '4px 6px', background: 'var(--color-surface, var(--palette-gray-100))', borderRadius: 4, border: '1px solid var(--color-border, var(--palette-gray-87-2))', marginBottom: 8 }}>
                             {preview.rule.formula}
                         </code>
                     )}
@@ -1018,7 +1018,7 @@ function AiRuleBuilderPanel({ selectionRange, onAddRule }: {
                         <div style={{
                             display: 'inline-block', padding: '3px 10px', borderRadius: 4, fontSize: 12,
                             backgroundColor: (preview.rule.format as CFStyle).backgroundColor ?? 'transparent',
-                            color: (preview.rule.format as CFStyle).color ?? '#000',
+                            color: (preview.rule.format as CFStyle).color ?? 'var(--palette-gray-0)',
                             border: '1px solid rgba(0,0,0,0.1)', marginBottom: 8,
                         }}>
                             Preview
@@ -1136,13 +1136,13 @@ export function ConditionalFormattingDialog({ rules, selectionRange, onUpdate, o
                 </div>
 
                 {/* Tabs */}
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border, #e0e0e0)' }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border, var(--palette-gray-88))' }}>
                     {(['rules', 'ai', 'variables', 'templates'] as TabId[]).map(tab => (
                         <button key={tab} onClick={() => setActiveTab(tab)} style={{
                             flex: 1, padding: '8px 2px', border: 'none', cursor: 'pointer', fontSize: 11,
                             background: 'none', fontWeight: activeTab === tab ? 600 : 'normal',
-                            color: activeTab === tab ? 'var(--color-primary, #1a73e8)' : 'var(--color-text-secondary, #555)',
-                            borderBottom: activeTab === tab ? '2px solid var(--color-primary, #1a73e8)' : '2px solid transparent',
+                            color: activeTab === tab ? 'var(--color-primary, var(--palette-sky-51))' : 'var(--color-text-secondary, var(--palette-gray-33))',
+                            borderBottom: activeTab === tab ? '2px solid var(--color-primary, var(--palette-sky-51))' : '2px solid transparent',
                         }}>
                             {tab === 'rules'     ? `Rules (${editingRules.length})` :
                              tab === 'ai'        ? '✨ AI' :
@@ -1160,12 +1160,12 @@ export function ConditionalFormattingDialog({ rules, selectionRange, onUpdate, o
                         <SmartSuggestions suggestions={suggestions} onApply={addRule} />
                         <div style={{ padding: '8px 12px' }}>
                             {editingRules.length === 0 && suggestions.length === 0 && (
-                                <p style={{ color: 'var(--color-text-secondary, #888)', fontSize: 12, textAlign: 'center', marginTop: 24 }}>
+                                <p style={{ color: 'var(--color-text-secondary, var(--palette-gray-53))', fontSize: 12, textAlign: 'center', marginTop: 24 }}>
                                     No rules yet. Click &ldquo;Add rule&rdquo; below.
                                 </p>
                             )}
                             {editingRules.length === 0 && suggestions.length > 0 && (
-                                <p style={{ color: 'var(--color-text-secondary, #888)', fontSize: 12, textAlign: 'center', marginTop: 12 }}>
+                                <p style={{ color: 'var(--color-text-secondary, var(--palette-gray-53))', fontSize: 12, textAlign: 'center', marginTop: 12 }}>
                                     Apply a suggestion above or click &ldquo;Add rule&rdquo; to create a custom rule.
                                 </p>
                             )}
@@ -1185,8 +1185,8 @@ export function ConditionalFormattingDialog({ rules, selectionRange, onUpdate, o
                                         </div>
                                         <span style={{ fontSize: 12, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             <strong>{KIND_LABELS[r.rule.kind] ?? r.rule.kind}</strong>
-                                            <span style={{ color: 'var(--color-text-secondary, #666)', marginLeft: 6 }}>{r.range}</span>
-                                            {r.stopIfTrue && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--color-primary, #1a73e8)' }}>⏹ stop</span>}
+                                            <span style={{ color: 'var(--color-text-secondary, var(--palette-gray-40))', marginLeft: 6 }}>{r.range}</span>
+                                            {r.stopIfTrue && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--color-primary, var(--palette-sky-51))' }}>⏹ stop</span>}
                                         </span>
                                         <button style={{ ...clearBtnStyle, padding: '2px 4px' }}
                                             onClick={e => { e.stopPropagation(); deleteRule(r.id); }}
@@ -1244,34 +1244,34 @@ export function ConditionalFormattingDialog({ rules, selectionRange, onUpdate, o
 
 const labelStyle: React.CSSProperties = {
     display: 'block', fontSize: 11, fontWeight: 600,
-    color: 'var(--color-text-secondary, #555)', marginBottom: 4, marginTop: 10,
+    color: 'var(--color-text-secondary, var(--palette-gray-33))', marginBottom: 4, marginTop: 10,
 };
 
 const smallLabelStyle: React.CSSProperties = {
-    fontSize: 10, color: 'var(--color-text-tertiary, #888)',
+    fontSize: 10, color: 'var(--color-text-tertiary, var(--palette-gray-53))',
 };
 
 const inputStyle: React.CSSProperties = {
     width: '100%', boxSizing: 'border-box', padding: '5px 8px',
-    border: '1px solid var(--color-border, #ddd)', borderRadius: 4,
-    fontSize: 12, background: 'var(--color-surface, #fff)',
-    color: 'var(--color-text, #000)',
+    border: '1px solid var(--color-border, var(--palette-gray-87-2))', borderRadius: 4,
+    fontSize: 12, background: 'var(--color-surface, var(--palette-gray-100))',
+    color: 'var(--color-text, var(--palette-gray-0))',
 };
 
 const clearBtnStyle: React.CSSProperties = {
     background: 'none', border: 'none', cursor: 'pointer',
-    color: 'var(--color-text-secondary, #555)', fontSize: 14, padding: 0,
+    color: 'var(--color-text-secondary, var(--palette-gray-33))', fontSize: 14, padding: 0,
 };
 
 const iconBtnStyle: React.CSSProperties = {
     background: 'none', border: 'none', cursor: 'pointer', padding: 1,
-    color: 'var(--color-text-secondary, #888)', display: 'flex', alignItems: 'center',
+    color: 'var(--color-text-secondary, var(--palette-gray-53))', display: 'flex', alignItems: 'center',
     lineHeight: 1,
 };
 
 const ruleEditorStyle: React.CSSProperties = {
-    padding: '10px 12px', border: '1px solid var(--color-border, #e0e0e0)',
-    borderRadius: 6, background: 'var(--color-surface-2, #f8f9fa)',
+    padding: '10px 12px', border: '1px solid var(--color-border, var(--palette-gray-88))',
+    borderRadius: 6, background: 'var(--color-surface-2, var(--palette-sky-98))',
     marginBottom: 8,
 };
 
@@ -1283,20 +1283,20 @@ const overlayStyle: React.CSSProperties = {
 const panelStyle: React.CSSProperties = {
     position: 'absolute', right: 0, top: 0, bottom: 0,
     width: 340, display: 'flex', flexDirection: 'column',
-    background: 'var(--color-surface, #fff)',
-    borderLeft: '1px solid var(--color-border, #e0e0e0)',
+    background: 'var(--color-surface, var(--palette-gray-100))',
+    borderLeft: '1px solid var(--color-border, var(--palette-gray-88))',
     boxShadow: '-4px 0 16px rgba(0,0,0,0.1)',
     pointerEvents: 'all',
 };
 
 const headerStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '12px 14px', borderBottom: '1px solid var(--color-border, #e0e0e0)',
+    padding: '12px 14px', borderBottom: '1px solid var(--color-border, var(--palette-gray-88))',
 };
 
 const closeBtnStyle: React.CSSProperties = {
     background: 'none', border: 'none', cursor: 'pointer',
-    color: 'var(--color-text-secondary, #555)', display: 'flex', padding: 2,
+    color: 'var(--color-text-secondary, var(--palette-gray-33))', display: 'flex', padding: 2,
 };
 
 const ruleRowStyle: React.CSSProperties = {
@@ -1307,23 +1307,23 @@ const ruleRowStyle: React.CSSProperties = {
 
 const footerStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '10px 12px', borderTop: '1px solid var(--color-border, #e0e0e0)',
+    padding: '10px 12px', borderTop: '1px solid var(--color-border, var(--palette-gray-88))',
 };
 
 const addBtnStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', background: 'none', border: 'none',
-    cursor: 'pointer', fontSize: 12, color: 'var(--color-primary, #1a73e8)',
+    cursor: 'pointer', fontSize: 12, color: 'var(--color-primary, var(--palette-sky-51))',
     padding: '4px 6px', borderRadius: 4, fontWeight: 600,
 };
 
 const primaryBtnStyle: React.CSSProperties = {
     padding: '5px 14px', borderRadius: 4, border: 'none', cursor: 'pointer',
-    background: 'var(--color-primary, #1a73e8)', color: '#fff', fontSize: 12, fontWeight: 600,
+    background: 'var(--color-primary, var(--palette-sky-51))', color: 'var(--palette-gray-100)', fontSize: 12, fontWeight: 600,
 };
 
 const secondaryBtnStyle: React.CSSProperties = {
     padding: '5px 14px', borderRadius: 4,
-    border: '1px solid var(--color-border, #ddd)', cursor: 'pointer',
+    border: '1px solid var(--color-border, var(--palette-gray-87-2))', cursor: 'pointer',
     background: 'transparent', fontSize: 12,
-    color: 'var(--color-text, #000)',
+    color: 'var(--color-text, var(--palette-gray-0))',
 };

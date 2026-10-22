@@ -92,7 +92,7 @@ export function VersionHistoryPanel({
       <div className={styles.list}>
         {isLoading && <div className={styles.empty}>Loading versions…</div>}
         {isError && (
-          <div className={styles.empty} style={{ color: 'var(--color-danger, #dc2626)' }}>
+          <div className={styles.empty} style={{ color: 'var(--color-danger, var(--palette-red-51))' }}>
             Failed to load version history.
           </div>
         )}

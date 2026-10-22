@@ -27,7 +27,7 @@
   flex: 1;
   padding: 8px 4px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--color-text-secondary);
@@ -50,15 +50,15 @@
   width: 24px;
   height: 24px;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
   border-radius: 50%;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   margin-top: 2px;
 }
 
 .dayHeaderNum {
   display: block;
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 700;
   color: var(--color-text);
   line-height: 1.1;
@@ -82,7 +82,7 @@
   align-items: center;
   justify-content: flex-end;
   padding-right: 6px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   font-weight: 600;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
@@ -125,7 +125,7 @@
 .hourLabel {
   position: absolute;
   right: 8px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   font-weight: 500;
   color: var(--color-text-tertiary);
   line-height: 1;
@@ -167,7 +167,7 @@
   right: 0;
   background: var(--color-surface-secondary);
   pointer-events: none;
-  z-index: 0;
+  z-index: var(--z-base);
 }
 
 /* Hour divider lines */
@@ -176,7 +176,7 @@
   left: 0;
   right: 0;
   border-top: 1px solid var(--color-border);
-  z-index: 1;
+  z-index: var(--z-layer-1);
 }
 
 .halfHourLine {
@@ -185,7 +185,7 @@
   right: 0;
   border-top: 1px dashed var(--color-border);
   opacity: 0.5;
-  z-index: 1;
+  z-index: var(--z-layer-1);
 }
 
 /* ── Scroll-based overflow indicator badges ───────────────────────────── */
@@ -199,13 +199,13 @@
   justify-content: center;
   width: 100%;
   padding: 2px 4px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   font-weight: 600;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
   border: none;
   cursor: pointer;
-  z-index: 10;
+  z-index: var(--z-layer-10);
   transition: background 0.1s;
   /* Remove default button border-radius to span full column width */
   border-radius: 0;
@@ -222,7 +222,7 @@
 
 .overflowIndicatorTop:hover,
 .overflowIndicatorBottom:hover {
-  background: var(--color-primary-dark, #1d4ed8);
+  background: var(--color-primary-dark, var(--palette-blue-48));
 }
 
 /* ── Event chips ──────────────────────────────────────────────────────── */
@@ -236,23 +236,23 @@
   border-left: 3px solid var(--event-solid, var(--color-primary));
   border-radius: 3px;
   padding: 2px 5px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   cursor: pointer;
   overflow: hidden;
   line-height: 1.3;
   transition: background 0.1s;
-  z-index: 2;
+  z-index: var(--z-layer-2);
 }
 
 .eventChip:hover {
   background: var(--event-solid, var(--color-primary));
-  color: #fff;
+  color: var(--palette-gray-100);
 }
 
 .eventChipTime {
   opacity: 0.75;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   display: block;
   margin-bottom: 1px;
 }
@@ -261,7 +261,7 @@
 .eventChipInline {
   padding: 2px 5px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   background: var(--event-bg, var(--color-primary-light));
   color: var(--event-fg, var(--color-primary));
@@ -274,5 +274,5 @@
 
 .eventChipInline:hover {
   background: var(--event-solid, var(--color-primary));
-  color: #fff;
+  color: var(--palette-gray-100);
 }

@@ -60,7 +60,7 @@
   border: 1px solid var(--color-border);
   border-radius: 6px;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   cursor: pointer;
   color: var(--color-text);
@@ -72,7 +72,7 @@
 }
 
 .periodLabel {
-  font-size: 16px;
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--color-text);
   min-width: 200px;
@@ -91,7 +91,7 @@
   border: none;
   border-right: 1px solid var(--color-border);
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   cursor: pointer;
   color: var(--color-text-secondary);
@@ -108,7 +108,7 @@
 
 .viewBtnActive {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
 }
 
 .viewBtnActive:hover {
@@ -161,14 +161,14 @@
   border-bottom: 1px solid var(--color-border);
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-layer-1);
   flex-shrink: 0;
 }
 
 .weekHeaderCell {
   padding: 8px 0;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--color-text-secondary);
@@ -216,7 +216,7 @@
 
 .dayCellToday .dayNumber {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
   border-radius: 50%;
 }
 
@@ -230,7 +230,7 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text);
   margin-bottom: 4px;
@@ -253,7 +253,7 @@
 .eventChip {
   padding: 2px 6px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   font-family: inherit;
   background: var(--color-primary-light);
@@ -273,11 +273,11 @@
 
 .eventChip:hover {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
 }
 
 .moreEvents {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
   padding: 1px 6px;
   cursor: pointer;
@@ -308,7 +308,7 @@
   padding: 0 6px;
   box-sizing: border-box;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   font-family: inherit;
   /* --event-*: the event's calendar colour (`eventColorStyle`), else the primary colour. */
@@ -329,7 +329,7 @@
 
 .weekEventBar:hover {
   background: var(--event-solid, var(--color-primary));
-  color: #fff;
+  color: var(--palette-gray-100);
 }
 
 /* Cut square on the side the event runs on past, so the bar reads as continuing
@@ -373,14 +373,14 @@
 }
 
 .agendaDateNum {
-  font-size: 22px;
+  font-size: var(--font-size-22);
   font-weight: 700;
   line-height: 1;
   color: var(--color-text);
 }
 
 .agendaDateDay {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
   text-transform: uppercase;
 }
@@ -409,26 +409,26 @@
 }
 
 .agendaEventTime {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
   min-width: 70px;
 }
 
 .agendaEventTitle {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text);
 }
 
 .agendaEventLocation {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
 }
 
 .agendaEmpty {
   padding: 8px 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-tertiary);
   font-style: italic;
 }
@@ -457,7 +457,7 @@
 }
 
 .sidebarTitle {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -498,13 +498,13 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text);
 }
 
 .reminderDue {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
 }
 
@@ -512,7 +512,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-tertiary);
   overflow: hidden;
   white-space: nowrap;
@@ -531,7 +531,7 @@
 }
 
 .noItems {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-tertiary);
   text-align: center;
   padding: 16px 0;
@@ -575,7 +575,7 @@
   padding: 5px 26px 5px 26px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
   background: var(--color-surface);
   outline: none;
@@ -622,7 +622,7 @@
   border: none;
   border-right: 1px solid var(--color-border);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   font-family: inherit;
   white-space: nowrap;
@@ -642,7 +642,7 @@
 .reminderRangeBtnActive,
 .reminderRangeBtnActive:hover {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
 }
 
 .reminderActions {
@@ -751,7 +751,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
 }
 
@@ -772,7 +772,7 @@
   border: none;
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-primary);
   cursor: pointer;
@@ -804,7 +804,7 @@
   border-radius: 999px;
   background: var(--color-surface);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   cursor: pointer;
 }
@@ -848,7 +848,7 @@
 }
 
 .placeResult span {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 
@@ -873,11 +873,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .placeError {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-error);
 }
 
@@ -891,7 +891,7 @@
   padding: 8px;
   border-radius: 6px;
   background: var(--color-surface-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
 }
 
@@ -924,7 +924,7 @@
   gap: 8px;
   padding: 4px 4px;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .calendarRow:hover {
@@ -1022,7 +1022,7 @@
   border: none;
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-primary);
   cursor: pointer;
@@ -1036,14 +1036,14 @@
 
 .calendarError {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-error);
 }
 
 .calendarSettingsLink {
   display: inline-block;
   margin-top: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   text-decoration: none;
 }
@@ -1061,7 +1061,7 @@
 }
 
 .formHint {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-tertiary);
 }
 
@@ -1073,7 +1073,7 @@
 }
 
 .formLabel {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-text-secondary);
 }
@@ -1082,7 +1082,7 @@
   padding: 8px 10px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: var(--color-text);
   background: var(--color-surface);
   outline: none;
@@ -1130,7 +1130,7 @@
   padding: 8px 6px;
   border: none;
   outline: none;
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: var(--color-text);
   background: transparent;
 }
@@ -1140,7 +1140,7 @@
   border: none;
   border-left: 1px solid var(--color-border);
   background: var(--color-surface-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-primary);
   cursor: pointer;
@@ -1166,7 +1166,7 @@
   border-radius: 12px;
   background: var(--color-primary-light);
   color: var(--color-primary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .attendeeRemoveBtn {
@@ -1194,7 +1194,7 @@
   border-radius: 6px;
   background: var(--color-surface-secondary);
   margin-bottom: 4px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .reminderEntryLabel {
@@ -1230,7 +1230,7 @@
   padding: 7px;
   border: none;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   cursor: pointer;
   color: var(--color-text-secondary);
@@ -1243,12 +1243,12 @@
 
 .attachmentTabActive {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
 }
 
 /* ── Event detail sections ───────────────────────────────────────────────── */
 .detailSectionLabel {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1261,7 +1261,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   margin-bottom: 6px;
 }
@@ -1292,7 +1292,7 @@
   border-radius: 10px;
   background: var(--color-surface-secondary);
   border: 1px solid var(--color-border);
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
 }
 
@@ -1320,7 +1320,7 @@
 }
 
 .detailAttachmentNote {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
   white-space: pre-wrap;
   line-height: 1.4;
@@ -1337,7 +1337,7 @@
   border: 1px dashed var(--color-border);
   border-radius: 6px;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-primary);
   cursor: pointer;
@@ -1363,7 +1363,7 @@
 
 .selectedFileName {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
@@ -1408,10 +1408,10 @@
   gap: 10px;
   background: rgba(37, 99, 235, 0.08);
   border-radius: 8px;
-  z-index: 10;
+  z-index: var(--z-layer-10);
   pointer-events: none;
   color: var(--color-primary);
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 
@@ -1437,7 +1437,7 @@
   padding: 7px 10px 7px 30px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   background: var(--color-surface);
   outline: none;
@@ -1460,7 +1460,7 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-primary);
   padding: 2px 4px;
@@ -1473,7 +1473,7 @@
 }
 
 .drivePickerBreadcrumbCurrent {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-text-secondary);
   padding: 2px 4px;
@@ -1526,7 +1526,7 @@
 }
 
 .drivePickerItemName {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   flex: 1;
   white-space: nowrap;
@@ -1535,7 +1535,7 @@
 }
 
 .drivePickerItemMeta {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-tertiary);
   flex-shrink: 0;
 }
@@ -1551,7 +1551,7 @@
 }
 
 .drivePickerSelectedFileName {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   flex: 1;
   white-space: nowrap;
@@ -1600,7 +1600,7 @@
 .taskComposerInput {
   width: 100%;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   border: 1px solid var(--color-border);
   border-radius: 5px;
   background: var(--color-surface);
@@ -1624,7 +1624,7 @@
 
 .taskComposerHint {
   margin-top: 4px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   line-height: 1.4;
   color: var(--color-text-tertiary);
 }
@@ -1644,7 +1644,7 @@
   gap: 3px;
   max-width: 100%;
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: var(--font-size-10);
   line-height: 16px;
   border-radius: 8px;
   background: var(--color-surface-secondary);
@@ -1655,12 +1655,12 @@
 }
 
 /* RTM's priority colours: red, blue, light blue. */
-.priority1 { color: #dc2626; }
-.priority2 { color: #2563eb; }
-.priority3 { color: #60a5fa; }
+.priority1 { color: var(--palette-red-51); }
+.priority2 { color: var(--palette-blue-53); }
+.priority3 { color: var(--palette-sky-68); }
 
 .taskTag {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-tertiary);
   white-space: nowrap;
 }
@@ -1734,14 +1734,14 @@
   top: 1px;
   width: 5px;
   height: 9px;
-  border: 2px solid #fff;
+  border: 2px solid var(--palette-gray-100);
   border-top: none;
   border-left: none;
   transform: rotate(45deg);
 }
 
 .taskTitle {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   line-height: 1.4;
 }
@@ -1752,15 +1752,15 @@
 }
 
 .tasksEmpty {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-tertiary);
   padding: 4px 0 4px 4px;
   font-style: italic;
 }
 
 .taskUploadError {
-  font-size: 11px;
-  color: var(--color-danger, #ef4444);
+  font-size: var(--font-size-11);
+  color: var(--color-danger, var(--palette-red-60));
   padding: 2px 4px;
 }
 
@@ -1820,7 +1820,7 @@
   padding: 3px 4px;
   border: none;
   outline: none;
-  font-size: 14px;
+  font-size: var(--text-sm);
   color: var(--color-text);
   background: transparent;
 }
@@ -1833,7 +1833,7 @@
   border-radius: 12px;
   background: var(--color-primary-light);
   color: var(--color-primary);
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 18px;
 }
 
@@ -1858,7 +1858,7 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  z-index: 20;
+  z-index: var(--z-layer-20);
   max-height: 240px;
   margin: 0;
   padding: 4px;
@@ -1876,7 +1876,7 @@
   gap: 6px;
   padding: 6px 8px;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   cursor: pointer;
 }

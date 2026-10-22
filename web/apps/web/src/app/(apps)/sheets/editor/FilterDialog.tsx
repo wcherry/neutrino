@@ -100,14 +100,14 @@ export function FilterDialog({ colIndex, data, currentFilter, onApply, onClose }
                     <button
                         type="button"
                         onClick={selectAll}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent, #0064ff)', padding: 0 }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent, var(--palette-blue-50))', padding: 0 }}
                     >
                         Select all
                     </button>
                     <button
                         type="button"
                         onClick={clearAll}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent, #0064ff)', padding: 0 }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent, var(--palette-blue-50))', padding: 0 }}
                     >
                         Clear all
                     </button>

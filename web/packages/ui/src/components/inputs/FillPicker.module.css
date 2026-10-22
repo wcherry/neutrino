@@ -37,7 +37,7 @@
   width: 24px;
   height: 24px;
   border-radius: 4px;
-  border: 1.5px solid #d1d5db;
+  border: 1.5px solid var(--color-neutral-300);
   cursor: pointer;
   padding: 0;
   flex-shrink: 0;
@@ -49,7 +49,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: 1000;
+  z-index: var(--z-layer-1000);
   width: 280px;
 }
 
@@ -215,7 +215,7 @@
 }
 
 .driveThumbFallback {
-  font-size: 18px;
+  font-size: var(--text-lg);
 }
 
 .driveNote {
@@ -235,7 +235,7 @@
 }
 
 .gradSectionLabel {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted);
   text-transform: uppercase;
@@ -284,11 +284,11 @@
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: var(--color-danger, #dc2626);
-  color: #fff;
+  background: var(--color-danger, var(--palette-red-51));
+  color: var(--palette-gray-100);
   border: none;
   cursor: pointer;
-  font-size: 9px;
+  font-size: var(--font-size-9);
   line-height: 1;
   display: flex;
   align-items: center;
@@ -296,7 +296,7 @@
   padding: 0;
   opacity: 0;
   transition: opacity var(--duration-fast);
-  z-index: 1;
+  z-index: var(--z-layer-1);
 }
 
 .gradUserSwatchWrap:hover .gradUserRemove {
@@ -304,7 +304,7 @@
 }
 
 .gradSmallBtn {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   padding: 2px 7px;
   background: none;
   border: 1px solid var(--color-border);
@@ -327,7 +327,7 @@
 }
 
 .gradEmptyNote {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-muted);
   margin: 0;
   font-style: italic;
@@ -351,7 +351,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
   transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
@@ -390,7 +390,7 @@
   border: 1px solid var(--color-border);
   border-radius: 3px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -427,7 +427,7 @@
 .gradAngleInput {
   width: 52px;
   padding: 3px 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -436,7 +436,7 @@
 }
 
 .gradAngleDeg {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-muted);
 }
 
@@ -485,12 +485,12 @@
   border-radius: 50%;
   background: var(--color-accent);
   cursor: pointer;
-  border: 1.5px solid #fff;
+  border: 1.5px solid var(--palette-gray-100);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .gradStopPct {
-  font-size: 10px;
+  font-size: var(--font-size-10);
   color: var(--color-text-muted);
   min-width: 28px;
   text-align: right;
@@ -506,7 +506,7 @@
   border: none;
   cursor: pointer;
   color: var(--color-text-muted);
-  font-size: 14px;
+  font-size: var(--text-sm);
   line-height: 1;
   display: flex;
   align-items: center;
@@ -518,7 +518,7 @@
 
 .gradStopRemove:hover:not(:disabled) {
   background: var(--color-surface-hover);
-  color: var(--color-danger, #dc2626);
+  color: var(--color-danger, var(--palette-red-51));
 }
 
 .gradStopRemove:disabled {

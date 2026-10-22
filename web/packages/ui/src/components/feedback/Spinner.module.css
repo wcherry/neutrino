@@ -22,7 +22,7 @@
 
 /* Color variants */
 .accent  { --spinner-color: var(--color-accent); }
-.white   { --spinner-color: #ffffff; --spinner-track: rgba(255,255,255,0.25); }
+.white   { --spinner-color: var(--palette-gray-100); --spinner-track: rgba(255,255,255,0.25); }
 .muted   { --spinner-color: var(--color-text-muted); }
 .success { --spinner-color: var(--color-success); }
 .error   { --spinner-color: var(--color-error); }

@@ -1,6 +1,7 @@
 /* @neutrino/tokens — design token entry point */
 
 @import './colors.css';
+@import './palette.css';
 @import './spacing.css';
 @import './typography.css';
 @import './shadows.css';

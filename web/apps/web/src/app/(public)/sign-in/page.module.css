@@ -28,7 +28,7 @@
   width: 36px;
   height: 36px;
   background: var(--color-accent);
-  color: #fff;
+  color: var(--palette-gray-100);
   border-radius: var(--radius-md);
   display: grid;
   place-items: center;
@@ -154,7 +154,7 @@
   width: 100%;
   padding: var(--space-3) var(--space-4);
   background: var(--color-accent);
-  color: #fff;
+  color: var(--palette-gray-100);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   font-family: var(--font-sans);

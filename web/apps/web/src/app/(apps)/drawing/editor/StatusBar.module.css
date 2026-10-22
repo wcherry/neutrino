@@ -40,8 +40,8 @@
 }
 
 .info {
-  font-size: 11px;
-  color: #9ca3af;
+  font-size: var(--font-size-11);
+  color: var(--color-neutral-400);
   padding-left: 12px;
   white-space: nowrap;
 }

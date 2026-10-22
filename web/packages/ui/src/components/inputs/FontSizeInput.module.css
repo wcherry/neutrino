@@ -32,7 +32,7 @@
   border-radius: 4px 0 0 4px;
   background: transparent;
   color: var(--color-text);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-family: inherit;
   outline: none;
   /* Spinners would double up with the preset caret and eat the little width
@@ -81,7 +81,7 @@
 
 .option {
   padding: 4px 12px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   cursor: pointer;
   white-space: nowrap;

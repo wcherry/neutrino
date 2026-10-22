@@ -22,7 +22,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.15s;
@@ -33,7 +33,7 @@
 }
 
 .heading {
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 700;
   color: var(--color-text);
   margin: 0;
@@ -41,7 +41,7 @@
 
 .subheading {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   max-width: 640px;
 }
@@ -71,7 +71,7 @@
   padding: 40px;
   justify-content: center;
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: var(--text-sm);
   border: 1px dashed var(--color-border);
   border-radius: 8px;
 }
@@ -86,7 +86,7 @@
 
 .helpHeading {
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--color-text);
 }
@@ -94,20 +94,20 @@
 .helpList {
   margin: 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.7;
   color: var(--color-text-secondary);
 }
 
 .helpNote {
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 
 .mono {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 /* ── Selected archive ────────────────────────────────────────────────────── */
@@ -126,14 +126,14 @@
 }
 
 .archiveName {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-text);
   word-break: break-all;
 }
 
 .archiveMeta {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   margin-top: 2px;
 }
@@ -202,13 +202,13 @@
 }
 
 .productName {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-text);
 }
 
 .productDest {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
 }
 
@@ -226,7 +226,7 @@
 
 .caveat {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
@@ -253,7 +253,7 @@
 }
 
 .progressCurrent {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   min-height: 18px;
   overflow-wrap: anywhere;
@@ -272,13 +272,13 @@
 }
 
 .resultTitle {
-  font-size: 16px;
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--color-text);
 }
 
 .resultCounts {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   margin-top: 2px;
 }
@@ -305,7 +305,7 @@
 
 .listHeading {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -318,7 +318,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -345,7 +345,7 @@
   gap: 4px;
   flex-shrink: 0;
   padding: 3px 8px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   background: var(--color-bg);
   border: 1px solid var(--color-border);
@@ -366,7 +366,7 @@
 
 .detailsSummary {
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text);
   cursor: pointer;

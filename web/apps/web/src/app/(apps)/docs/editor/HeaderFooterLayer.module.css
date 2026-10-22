@@ -6,7 +6,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 4;
+  z-index: var(--z-layer-4);
 }
 
 .band,
@@ -21,7 +21,7 @@
   pointer-events: auto;
   font-size: 9pt;
   line-height: 1.3;
-  color: #5f6368;
+  color: var(--palette-gray-39);
 }
 
 /* An empty band outside edit mode: invisible, but still the target that opens
@@ -43,16 +43,16 @@
 }
 
 .bandEditing {
-  color: #202124;
+  color: var(--palette-gray-13);
   background: rgba(26, 115, 232, 0.04);
 }
 
 .bandEditing.header {
-  border-bottom-color: #dadce0;
+  border-bottom-color: var(--palette-gray-87);
 }
 
 .bandEditing.footer {
-  border-top-color: #dadce0;
+  border-top-color: var(--palette-gray-87);
 }
 
 .bandActive {
@@ -60,11 +60,11 @@
 }
 
 .bandActive.header {
-  border-bottom-color: #1a73e8;
+  border-bottom-color: var(--palette-sky-51);
 }
 
 .bandActive.footer {
-  border-top-color: #1a73e8;
+  border-top-color: var(--palette-sky-51);
 }
 
 /* Names the variant being edited, so "different odd & even" is visible on the
@@ -75,9 +75,9 @@
   left: 0;
   padding: 1px 6px;
   border-radius: 3px 3px 0 0;
-  background: #1a73e8;
-  color: #fff;
-  font-size: 9px;
+  background: var(--palette-sky-51);
+  color: var(--palette-gray-100);
+  font-size: var(--font-size-9);
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -118,7 +118,7 @@
 }
 
 .slotInput::placeholder {
-  color: #9aa0a6;
+  color: var(--palette-gray-63);
   font-style: italic;
 }
 

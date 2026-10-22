@@ -2089,7 +2089,7 @@ export function DiagramCanvas({
                 width: '90%',
                 textAlign: isTextType ? 'left' : 'center',
                 border: 'none',
-                outline: isTextType ? 'none' : '2px solid #2563eb',
+                outline: isTextType ? 'none' : '2px solid var(--palette-blue-53)',
                 borderRadius: isTextType ? 0 : 4,
                 padding: isTextType ? 0 : '2px 4px',
                 fontSize: shape.style.fontSize,
@@ -2100,8 +2100,8 @@ export function DiagramCanvas({
                 // recolor the typed glyphs (though not the caret), making input
                 // look empty while the user is actively typing.
                 colorScheme: 'light',
-                color: isTextType ? shape.style.textColor : '#111827',
-                WebkitTextFillColor: isTextType ? shape.style.textColor : '#111827',
+                color: isTextType ? shape.style.textColor : 'var(--color-neutral-900)',
+                WebkitTextFillColor: isTextType ? shape.style.textColor : 'var(--color-neutral-900)',
                 background: isTextType ? 'transparent' : 'rgba(255,255,255,0.95)',
               }}
             />

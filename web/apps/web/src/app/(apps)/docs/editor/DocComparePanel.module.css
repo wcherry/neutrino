@@ -22,7 +22,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-text);
 }
@@ -58,7 +58,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
 }
 
@@ -71,7 +71,7 @@
 
 .versionDate {
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-11);
   margin-left: auto;
 }
 
@@ -84,19 +84,19 @@
 .loading,
 .error,
 .noDiff {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-muted);
   text-align: center;
   padding: 24px 0;
 }
 
 .error {
-  color: #d93025;
+  color: var(--palette-red-50);
 }
 
 /* ── Diff view ────────────────────────────────────────────────────────────── */
 .diffView {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.7;
   color: var(--color-text);
   white-space: pre-wrap;
@@ -105,16 +105,16 @@
 }
 
 .insert {
-  background-color: #e8f5e9;
-  color: #2e7d32;
+  background-color: var(--palette-green-94);
+  color: var(--palette-green-34);
   text-decoration: none;
   border-radius: 2px;
   padding: 0 1px;
 }
 
 .delete {
-  background-color: #ffebee;
-  color: #c62828;
+  background-color: var(--palette-red-96);
+  color: var(--palette-red-47);
   text-decoration: line-through;
   border-radius: 2px;
   padding: 0 1px;

@@ -78,7 +78,7 @@ export default function GoogleOAuthCallbackPage() {
     >
       {status === 'pending' && (
         <>
-          <p style={{ fontSize: '1.1rem', color: '#555' }}>
+          <p style={{ fontSize: '1.1rem', color: 'var(--palette-gray-33)' }}>
             Connecting Google Calendar&hellip;
           </p>
         </>
@@ -86,19 +86,19 @@ export default function GoogleOAuthCallbackPage() {
 
       {status === 'success' && (
         <>
-          <p style={{ fontSize: '1.1rem', color: '#22c55e', fontWeight: 600 }}>
+          <p style={{ fontSize: '1.1rem', color: 'var(--palette-green-45-2)', fontWeight: 600 }}>
             Google Calendar connected successfully.
           </p>
-          <p style={{ color: '#888' }}>Redirecting back to settings&hellip;</p>
+          <p style={{ color: 'var(--palette-gray-53)' }}>Redirecting back to settings&hellip;</p>
         </>
       )}
 
       {status === 'error' && (
         <>
-          <p style={{ fontSize: '1.1rem', color: '#ef4444', fontWeight: 600 }}>
+          <p style={{ fontSize: '1.1rem', color: 'var(--palette-red-60)', fontWeight: 600 }}>
             Connection failed
           </p>
-          <p style={{ color: '#555', maxWidth: '400px', textAlign: 'center' }}>
+          <p style={{ color: 'var(--palette-gray-33)', maxWidth: '400px', textAlign: 'center' }}>
             {errorMessage}
           </p>
           <button
@@ -107,8 +107,8 @@ export default function GoogleOAuthCallbackPage() {
               marginTop: '1rem',
               padding: '0.5rem 1.25rem',
               borderRadius: '6px',
-              border: '1px solid #d1d5db',
-              background: '#fff',
+              border: '1px solid var(--color-neutral-300)',
+              background: 'var(--palette-gray-100)',
               cursor: 'pointer',
               fontSize: '0.9rem',
             }}

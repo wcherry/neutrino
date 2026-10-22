@@ -35,7 +35,7 @@
   padding: 3px 6px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
   background: var(--color-surface);
   max-width: 220px;
@@ -45,7 +45,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   cursor: pointer;
   white-space: nowrap;
@@ -73,7 +73,7 @@
   border-radius: 4px;
   background: transparent;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
   text-align: left;
   cursor: pointer;
@@ -86,18 +86,18 @@
 
 .matchCode {
   color: var(--color-text-tertiary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .error {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-error);
 }
 
 .credit {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-tertiary);
 }
 

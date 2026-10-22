@@ -22,7 +22,7 @@
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
-  color: var(--color-text-link, #2563eb);
+  color: var(--color-text-link, var(--palette-blue-53));
   font-size: 0.8125rem;
   line-height: 1.4;
 }

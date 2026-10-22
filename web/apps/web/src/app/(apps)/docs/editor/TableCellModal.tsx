@@ -53,7 +53,7 @@ export function TableCellModal({ editor, onClose }: Props) {
             type="color"
             value={bgColor || '#ffffff'}
             onChange={(e) => setBgColor(e.target.value)}
-            style={{ height: 34, width: 60, border: '1px solid #e0e0e0', borderRadius: 4, cursor: 'pointer' }}
+            style={{ height: 34, width: 60, border: '1px solid var(--palette-gray-88)', borderRadius: 4, cursor: 'pointer' }}
           />
           {bgColor && (
             <button
@@ -73,7 +73,7 @@ export function TableCellModal({ editor, onClose }: Props) {
             type="color"
             value={borderColor || '#e0e0e0'}
             onChange={(e) => setBorderColor(e.target.value)}
-            style={{ height: 34, width: 60, border: '1px solid #e0e0e0', borderRadius: 4, cursor: 'pointer' }}
+            style={{ height: 34, width: 60, border: '1px solid var(--palette-gray-88)', borderRadius: 4, cursor: 'pointer' }}
           />
           {borderColor && (
             <button
@@ -103,7 +103,7 @@ export function TableCellModal({ editor, onClose }: Props) {
           </button>
           <button
             className={styles.exportBtn}
-            style={{ background: '#1a73e8', color: 'white', border: 'none' }}
+            style={{ background: 'var(--palette-sky-51)', color: 'white', border: 'none' }}
             onClick={handleApply}
           >
             Apply

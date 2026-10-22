@@ -85,9 +85,9 @@ export function BrowserFrame({
   return (
     <figure className={`${styles.frame} ${className}`}>
       <div className={styles.frameBar} aria-hidden>
-        <span className={styles.frameDot} style={{ background: '#ff5f57' }} />
-        <span className={styles.frameDot} style={{ background: '#febc2e' }} />
-        <span className={styles.frameDot} style={{ background: '#28c840' }} />
+        <span className={styles.frameDot} style={{ background: 'var(--palette-red-67)' }} />
+        <span className={styles.frameDot} style={{ background: 'var(--palette-amber-59)' }} />
+        <span className={styles.frameDot} style={{ background: 'var(--palette-green-47)' }} />
         <span className={styles.frameUrl}>getneutrino.app</span>
       </div>
       {/* eslint-disable-next-line @next/next/no-img-element */}

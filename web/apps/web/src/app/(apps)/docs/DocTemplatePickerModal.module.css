@@ -7,7 +7,7 @@
 .note {
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: var(--text-sm);
   line-height: 1.5;
 }
 

@@ -55,13 +55,13 @@
 }
 
 .check-icon {
-  color: #ffffff;
+  color: var(--palette-gray-100);
   width: 11px;
   height: 11px;
 }
 
 .minus-icon {
-  color: #ffffff;
+  color: var(--palette-gray-100);
   width: 11px;
   height: 2px;
   background-color: currentColor;

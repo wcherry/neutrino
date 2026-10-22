@@ -543,7 +543,7 @@ export const SheetGrid = React.memo(function SheetGrid({
         return (
             <div style={{
                 position: 'absolute', ...box,
-                border: '2px solid var(--color-accent, #1a73e8)', pointerEvents: 'none', zIndex: 1,
+                border: '2px solid var(--color-accent, var(--palette-sky-51))', pointerEvents: 'none', zIndex: 1,
             }} />
         );
     }, [headerSelection, selectedCells, computeRangeBox]);
@@ -579,7 +579,7 @@ export const SheetGrid = React.memo(function SheetGrid({
         return (
             <div style={{
                 position: 'absolute', ...box,
-                border: '2px dashed var(--color-accent, #1a73e8)', pointerEvents: 'none', zIndex: 1,
+                border: '2px dashed var(--color-accent, var(--palette-sky-51))', pointerEvents: 'none', zIndex: 1,
             }} />
         );
     }, [cutCells, computeRangeBox]);
@@ -594,7 +594,7 @@ export const SheetGrid = React.memo(function SheetGrid({
         return (
             <div style={{
                 position: 'absolute', ...box,
-                border: '2px dashed #0f9d58',
+                border: '2px dashed var(--palette-teal-34)',
                 background: 'rgba(15, 157, 88, 0.08)',
                 pointerEvents: 'none', zIndex: 3,
             }} />
@@ -621,7 +621,7 @@ export const SheetGrid = React.memo(function SheetGrid({
                         top: -18,
                         left: -1,
                         background: color,
-                        color: '#fff',
+                        color: 'var(--palette-gray-100)',
                         fontSize: 10,
                         fontWeight: 600,
                         padding: '1px 5px',
@@ -673,7 +673,7 @@ export const SheetGrid = React.memo(function SheetGrid({
             >
                 <span className={styles.center} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                     {numToAlpha(c + 1)}
-                    {isFiltered && <Filter size={9} style={{ color: '#0064ff', flexShrink: 0 }} />}
+                    {isFiltered && <Filter size={9} style={{ color: 'var(--palette-blue-50)', flexShrink: 0 }} />}
                 </span>
                 <div className={styles.colResizeHandle} onMouseDown={e => handleColResizeStart(e, c)} onClick={e => e.stopPropagation()} />
             </div>
@@ -769,7 +769,7 @@ export const SheetGrid = React.memo(function SheetGrid({
                 onMouseUp={handleMouseUp}
                 onContextMenu={handleContextMenu}
             >
-                <div style={{ position: 'relative', width: totalWidth, height: totalHeight, backgroundColor: '#ffffff' }}>
+                <div style={{ position: 'relative', width: totalWidth, height: totalHeight, backgroundColor: 'var(--palette-gray-100)' }}>
                     {cells}
                     {selectionOverlay}
                     {headerSelectionOverlay}

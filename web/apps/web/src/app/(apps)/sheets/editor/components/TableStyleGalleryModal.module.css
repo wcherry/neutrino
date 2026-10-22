@@ -24,7 +24,7 @@
 }
 
 .cardName {
-    font-size: 14px;
+    font-size: var(--text-sm);
     font-weight: 500;
     color: var(--color-text);
 }

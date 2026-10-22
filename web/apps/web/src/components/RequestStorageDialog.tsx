@@ -145,7 +145,7 @@ export function RequestStorageDialog({ open, onClose, quota }: RequestStorageDia
                 style={{ fontSize: 13, padding: '7px 10px', borderRadius: 6 }}
               />
             </label>
-            {error && <p style={{ margin: 0, fontSize: 12, color: '#b91c1c' }}>{error}</p>}
+            {error && <p style={{ margin: 0, fontSize: 12, color: 'var(--palette-red-42)' }}>{error}</p>}
           </div>
         )}
       </ModalBody>

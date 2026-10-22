@@ -1,7 +1,7 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: var(--z-sticky);
   background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
@@ -134,7 +134,7 @@
 }
 
 .docContent pre {
-  background: var(--color-surface-sunken, #0d0d0d);
+  background: var(--color-surface-sunken, var(--palette-gray-5));
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   overflow-x: auto;
@@ -223,7 +223,7 @@
   min-width: 80px;
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-layer-1);
 }
 
 .sheetRowHeader {
@@ -236,7 +236,7 @@
   min-width: 40px;
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: var(--z-layer-1);
 }
 
 .sheetCell {
@@ -328,7 +328,7 @@
 }
 
 .noteBlockCode {
-  background: var(--color-surface-sunken, #0d0d0d);
+  background: var(--color-surface-sunken, var(--palette-gray-5));
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   font-family: var(--font-mono, ui-monospace, monospace);

@@ -173,7 +173,7 @@ export function FindReplaceDialog({
                                     fontSize: 13,
                                     outline: 'none',
                                     boxSizing: 'border-box',
-                                    background: 'var(--color-surface-raised, #f9f9fb)',
+                                    background: 'var(--color-surface-raised, var(--palette-indigo-98-2))',
                                     color: 'var(--color-text)',
                                 }}
                             />
@@ -184,7 +184,7 @@ export function FindReplaceDialog({
                                     top: '50%',
                                     transform: 'translateY(-50%)',
                                     fontSize: 11,
-                                    color: matches.length === 0 ? '#dc2626' : 'var(--color-text-muted)',
+                                    color: matches.length === 0 ? 'var(--palette-red-51)' : 'var(--color-text-muted)',
                                     pointerEvents: 'none',
                                     whiteSpace: 'nowrap',
                                 }}>
@@ -240,7 +240,7 @@ export function FindReplaceDialog({
                                 outline: 'none',
                                 boxSizing: 'border-box',
                                 width: '100%',
-                                background: 'var(--color-surface-raised, #f9f9fb)',
+                                background: 'var(--color-surface-raised, var(--palette-indigo-98-2))',
                                 color: 'var(--color-text)',
                             }}
                         />
@@ -263,7 +263,7 @@ export function FindReplaceDialog({
                                     background: 'none',
                                     border: 'none',
                                     cursor: 'pointer',
-                                    color: 'var(--color-accent, #0064ff)',
+                                    color: 'var(--color-accent, var(--palette-blue-50))',
                                     padding: 0,
                                     fontSize: 12,
                                 }}

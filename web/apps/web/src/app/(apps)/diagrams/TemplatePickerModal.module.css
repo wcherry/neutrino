@@ -40,12 +40,12 @@
 }
 
 .cardName {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-text);
 }
 
 .cardDesc {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }

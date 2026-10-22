@@ -35,7 +35,7 @@
 .thumb {
   position: absolute;
   border-radius: 50%;
-  background-color: #ffffff;
+  background-color: var(--palette-gray-100);
   box-shadow: var(--shadow-sm);
   transition: transform var(--duration-normal) var(--ease-spring);
 }

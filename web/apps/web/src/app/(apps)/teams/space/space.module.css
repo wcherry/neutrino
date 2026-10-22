@@ -32,14 +32,14 @@
   width: 28px;
   height: 28px;
   border-radius: var(--radius-sm);
-  font-size: 15px;
+  font-size: var(--font-size-15);
   line-height: 1;
-  color: #fff;
+  color: var(--palette-gray-100);
   background: var(--team-avatar-color, var(--color-primary));
 }
 
 .teamName {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-text-primary);
   overflow: hidden;
@@ -60,7 +60,7 @@
   gap: var(--space-2);
   padding: 6px var(--space-2);
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   background: none;
   border: none;
@@ -80,7 +80,7 @@
 
 .navSectionLabel {
   padding: var(--space-3) var(--space-2) var(--space-1);
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -96,7 +96,7 @@
   width: 100%;
   padding: 5px var(--space-2);
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   background: none;
   border: none;
@@ -168,7 +168,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-tertiary);
   flex-wrap: wrap;
 }
@@ -189,7 +189,7 @@
 /* Rendered markdown. Scoped here rather than global so a page's content cannot restyle the app
    around it. */
 .markdown {
-  font-size: 14px;
+  font-size: var(--text-sm);
   line-height: 1.65;
   color: var(--color-text-primary);
 }
@@ -205,12 +205,12 @@
   font-weight: 600;
 }
 
-.markdown h1 { font-size: 24px; }
-.markdown h2 { font-size: 19px; }
-.markdown h3 { font-size: 16px; }
+.markdown h1 { font-size: var(--text-2xl); }
+.markdown h2 { font-size: var(--font-size-19); }
+.markdown h3 { font-size: var(--text-base); }
 .markdown h4,
 .markdown h5,
-.markdown h6 { font-size: 14px; }
+.markdown h6 { font-size: var(--text-sm); }
 
 .markdown > :first-child { margin-top: 0; }
 
@@ -272,7 +272,7 @@
   width: 100%;
   margin: 0 0 var(--space-3);
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   display: block;
   overflow-x: auto;
 }
@@ -309,7 +309,7 @@
   background: var(--color-surface);
   color: var(--color-text-primary);
   font-family: var(--font-mono, monospace);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.6;
   resize: vertical;
 }
@@ -343,7 +343,7 @@
 }
 
 .rowTitle {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text-primary);
   overflow: hidden;
@@ -352,7 +352,7 @@
 }
 
 .rowMeta {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-tertiary);
 }
 
@@ -379,7 +379,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 
@@ -391,13 +391,13 @@
 }
 
 .label {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
   color: var(--color-text-primary);
 }
 
 .hint {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-tertiary);
 }
 
@@ -421,7 +421,7 @@
   border-radius: var(--radius-md);
   background: var(--color-error-bg, var(--color-surface-secondary));
   color: var(--color-error, var(--color-text-primary));
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .archivedNotice {
@@ -429,7 +429,7 @@
   border-radius: var(--radius-md);
   background: var(--color-surface-secondary);
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 /* ── Join requests ─────────────────────────────────────────────────────────
@@ -449,7 +449,7 @@
 /* The requester's own words, quoted. Italic and secondary so it reads as
    something they wrote rather than as a field the product generated. */
 .requestMessage {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-style: italic;
   color: var(--color-text-secondary);
 }
@@ -486,7 +486,7 @@
 }
 
 .storageUsed {
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 600;
   color: var(--color-text-primary);
 }

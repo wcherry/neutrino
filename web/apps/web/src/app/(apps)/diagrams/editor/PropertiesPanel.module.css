@@ -10,7 +10,7 @@
 
 .header {
   padding: 10px 12px 8px;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -27,7 +27,7 @@
 
 .empty {
   padding: 16px 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   line-height: 1.5;
 }
@@ -37,7 +37,7 @@
 }
 
 .sectionTitle {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -56,7 +56,7 @@
 }
 
 .row label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
   min-width: 50px;
 }
@@ -71,7 +71,7 @@
 }
 
 .geoRow label {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   color: var(--color-text-secondary);
 }
 
@@ -82,7 +82,7 @@
   padding: 0 6px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
   background: var(--color-surface);
 }
@@ -93,7 +93,7 @@
   padding: 0 6px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
   background: var(--color-surface);
 }
@@ -110,7 +110,7 @@
   padding: 0 6px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
   background: var(--color-surface);
 }
@@ -126,7 +126,7 @@
   padding: 0 4px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
   background: var(--color-surface);
 }

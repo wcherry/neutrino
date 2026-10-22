@@ -229,7 +229,7 @@ function StarBadge({ item, onToggleStar, size }: { item: GridItem; onToggleStar?
     >
       <Star
         size={size}
-        style={{ color: item.isStarred ? 'var(--color-amber, #d97706)' : 'var(--color-text-muted)' }}
+        style={{ color: item.isStarred ? 'var(--color-amber, var(--palette-orange-44))' : 'var(--color-text-muted)' }}
         fill={item.isStarred ? 'var(--color-amber, #d97706)' : 'none'}
       />
     </button>
@@ -338,7 +338,7 @@ const ListRow = React.memo(function ListRow(props: ItemProps & { listCols: strin
           }
         </span>
         <Text size="sm" truncate>{item.name}</Text>
-        {item.isStarred && <Star size={12} style={{ color: 'var(--color-amber, #d97706)', flexShrink: 0 }} />}
+        {item.isStarred && <Star size={12} style={{ color: 'var(--color-amber, var(--palette-orange-44))', flexShrink: 0 }} />}
       </div>
       <Text size="sm" color="muted">{item.typeText ?? '—'}</Text>
       {showSizeColumn && <Text size="sm" color="muted">{item.sizeText ?? '—'}</Text>}
