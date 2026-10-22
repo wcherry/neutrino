@@ -35,7 +35,16 @@ async function registerAndLogin(request: APIRequestContext, page: Page): Promise
  */
 async function prepareForSeeding(page: Page): Promise<void> {
   await expect.poll(() => hasAnyKeyring(page), { timeout: 15_000 }).toBe(true);
-  await page.evaluate(() => localStorage.setItem('neutrino:search:syncDisabled', 'true'));
+  // Search sync would reconcile the index with the server and drop the seeded rows. Its switch is
+  // a device preference, read from the store the app loads at boot — so it is written where the
+  // store keeps it, and the page reloaded to pick it up (and to stop a sync already under way).
+  await page.evaluate(() => {
+    const key = 'neutrino.prefs.device';
+    const device = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
+    localStorage.setItem(key, JSON.stringify({ ...device, 'search.syncDisabled': true }));
+  });
+  await page.reload();
+  await expect.poll(() => hasAnyKeyring(page), { timeout: 15_000 }).toBe(true);
 }
 
 type SeedDoc = {
