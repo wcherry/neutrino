@@ -2,7 +2,7 @@
 
 import './remoteCursors.css';
 import './caretFontSize.css';
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { startTransition, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSpellCheck } from '@/hooks/useSpellCheck';
 import { useNspell } from '@/hooks/useNspell';
@@ -112,6 +112,7 @@ import { EditorContextMenu } from './EditorContextMenu';
 import { FindReplaceExtension } from '@/lib/extensions/FindReplaceExtension';
 import { GrammarCheckExtension, getGrammarIssueAt } from '@/lib/extensions/GrammarCheckExtension';
 import { SpellCheckExtension } from '@/lib/extensions/SpellCheckExtension';
+import { DECORATION_WINDOW_META } from '@/lib/extensions/incrementalDecorations';
 import { FindReplaceBar } from './FindReplaceBar';
 import { AiPanel, type AiOperation } from './AiPanel';
 import { ChangeToneDialog, type ToneValues } from './ChangeToneDialog';
@@ -540,6 +541,42 @@ const LineParagraph = Paragraph.extend({
 
 const AUTO_SAVE_DELAY_MS = 2000;
 
+/**
+ * How long typing has to pause before the editor's React tree re-renders to pick up what an edit
+ * changed (the footnote list, the outline, the toolbar). Every transaction used to re-render all of
+ * it, and with the caret in a long document every React commit also walks the whole editable DOM
+ * to save and restore the selection — together the larger part of a keystroke. A transaction that
+ * only moves the selection still re-renders straight after it paints, so the toolbar follows the
+ * caret.
+ */
+const RERENDER_AFTER_TYPING_MS = 300;
+
+/** Word and character counts, recounted once typing pauses rather than on every render. */
+function useDocumentCounts(editor: ReturnType<typeof useEditor>): { words: number; characters: number } {
+  const [counts, setCounts] = useState({ words: 0, characters: 0 });
+  useEffect(() => {
+    if (!editor) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const count = () => {
+      timer = null;
+      if (editor.isDestroyed) return;
+      const storage = editor.storage.characterCount;
+      setCounts({ words: storage.words(), characters: storage.characters() });
+    };
+    const onUpdate = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(count, 300);
+    };
+    count();
+    editor.on('update', onUpdate);
+    return () => {
+      editor.off('update', onUpdate);
+      if (timer) clearTimeout(timer);
+    };
+  }, [editor]);
+  return counts;
+}
+
 export function DocEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -593,8 +630,30 @@ export function DocEditor() {
   const headerFooterLayerRef = useRef<HeaderFooterLayerHandle>(null);
   const [showWatermarkModal, setShowWatermarkModal] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
-  // Track editor state version to force footnote list re-render on each transaction
+  // Bumped when the editor changes (see RERENDER_AFTER_TYPING_MS), to re-render what reads its state
   const [editorVersion, setEditorVersion] = useState(0);
+  const rerenderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rerenderFrame = useRef(0);
+  const scheduleRerender = useCallback((docChanged: boolean) => {
+    const fire = () => {
+      rerenderTimer.current = null;
+      rerenderFrame.current = 0;
+      setEditorVersion(v => v + 1);
+    };
+    if (rerenderTimer.current) clearTimeout(rerenderTimer.current);
+    if (docChanged) {
+      if (rerenderFrame.current) cancelAnimationFrame(rerenderFrame.current);
+      rerenderFrame.current = 0;
+      rerenderTimer.current = setTimeout(fire, RERENDER_AFTER_TYPING_MS);
+    } else if (!rerenderFrame.current) {
+      // A timeout set from a frame callback runs after that frame has painted.
+      rerenderFrame.current = requestAnimationFrame(() => { rerenderTimer.current = setTimeout(fire, 0); });
+    }
+  }, []);
+  useEffect(() => () => {
+    if (rerenderTimer.current) clearTimeout(rerenderTimer.current);
+    if (rerenderFrame.current) cancelAnimationFrame(rerenderFrame.current);
+  }, []);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; wordFrom?: number; wordTo?: number; isOnImage?: boolean } | null>(null);
   const [spellWord, setSpellWord] = useState<string | undefined>(undefined);
   const [spellWordRange, setSpellWordRange] = useState<{ from: number; to: number } | null>(null);
@@ -936,6 +995,7 @@ export function DocEditor() {
 
   const editor = useEditor({
     immediatelyRender: false,
+    shouldRerenderOnTransaction: false,
     extensions: [
       // Collaboration uses Y.Doc for undo/redo, so StarterKit's History must be off
       StarterKit.configure({ paragraph: false, history: false }),
@@ -996,19 +1056,25 @@ export function DocEditor() {
     editorProps: {
       attributes: { class: 'ProseMirror', spellcheck: 'false' },
     },
+    onTransaction: ({ transaction }) => {
+      // Spell-check moving its window as the page scrolls changes nothing the React tree shows.
+      if (transaction.getMeta(DECORATION_WINDOW_META)) return;
+      scheduleRerender(transaction.docChanged);
+    },
     onUpdate: ({ editor }) => {
-      // Bump editorVersion so layout-dependent components (e.g. footnote list) re-render
-      setEditorVersion(v => v + 1);
-      // Use the stable ref so we always get fresh metadata values without
-      // needing to re-create the editor when metadata changes.
-      const content = serializeContent(editor.getJSON(), layoutMetaRef.current);
-      pendingContent.current = content;
-      setSaveStatus('unsaved');
+      // Only marked dirty here; the document is serialised when the save runs, not per keystroke.
+      pendingContent.current = '';
+      // A transition: the first edit flipping the status would otherwise re-render the whole editor
+      // inside that keystroke, before it paints.
+      startTransition(() => setSaveStatus('unsaved'));
       if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
       autoSaveTimer.current = setTimeout(() => {
         if (officeModeRef.current) {
           officeAutosaveRef.current();
         } else {
+          // The stable ref gives fresh metadata without re-creating the editor when it changes.
+          const content = serializeContent(editor.getJSON(), layoutMetaRef.current);
+          pendingContent.current = content;
           triggerSave(content, { title: titleRef.current });
         }
       }, AUTO_SAVE_DELAY_MS);
@@ -2048,8 +2114,7 @@ export function DocEditor() {
     setShowSaveAs(false);
   };
 
-  const wordCount = editor ? editor.storage.characterCount.words() : 0;
-  const charCount = editor ? editor.storage.characterCount.characters() : 0;
+  const { words: wordCount, characters: charCount } = useDocumentCounts(editor);
 
   const { widthPx, heightPx } = useMemo(() => pageDimensions(pageSetup), [pageSetup]);
   const contentHeightPx = heightPx - pageSetup.marginTop - pageSetup.marginBottom;
