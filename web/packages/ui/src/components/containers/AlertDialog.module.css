@@ -1,7 +1,9 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--scrim);
+  backdrop-filter: var(--scrim-filter);
+  -webkit-backdrop-filter: var(--scrim-filter);
   z-index: var(--z-modal-backdrop);
   display: flex;
   align-items: center;
@@ -10,10 +12,12 @@
 }
 
 .dialog {
-  background-color: var(--color-surface-overlay);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-xl);
-  border: 1px solid var(--color-border);
+  background-color: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  border-radius: var(--dialog-radius);
+  box-shadow: var(--dialog-shadow);
+  border: 1px solid var(--glass-border);
   width: 100%;
   max-width: 400px;
   padding: var(--space-8) var(--space-6) var(--space-6);

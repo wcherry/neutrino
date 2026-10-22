@@ -3,10 +3,12 @@
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  background-color: var(--color-surface-overlay);
-  box-shadow: var(--shadow-lg);
-  border: 1px solid var(--color-border);
+  border-radius: var(--menu-radius);
+  background-color: var(--toast-bg);
+  box-shadow: var(--toast-shadow);
+  border: 1px solid var(--toast-border);
+  backdrop-filter: var(--toast-filter);
+  -webkit-backdrop-filter: var(--toast-filter);
   min-width: 280px;
   max-width: 400px;
   font-size: var(--text-sm);
@@ -38,12 +40,12 @@
 
 .title {
   font-weight: var(--font-semibold);
-  color: var(--color-text-primary);
+  color: var(--toast-fg);
   margin-bottom: 2px;
 }
 
 .message {
-  color: var(--color-text-secondary);
+  color: var(--toast-fg-2);
   line-height: var(--leading-normal);
 }
 
@@ -64,8 +66,8 @@
 }
 
 .close-btn:hover {
-  background-color: var(--color-bg-subtle);
-  color: var(--color-text-primary);
+  background-color: var(--toast-close-hover);
+  color: var(--toast-fg);
 }
 
 .close-btn:focus-visible {

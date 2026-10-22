@@ -8,9 +8,9 @@
  * anti-FOUC script in app/layout.tsx) and combines with `data-theme` (colour)
  * and `data-density` (density.css) — three independent axes.
  *
- * Nothing reads these yet. Stage 2 moves the @neutrino/ui primitives onto them
- * and Stage 3 the shell; until then `classic` is the only look in use, and its
- * values describe what the current components already draw, so adopting a
+ * The @neutrino/ui primitives read them (Stage 2); the shell follows in
+ * Stage 3. Until a look is selectable `classic` is the only one in use, and its
+ * values are what the components drew before they read tokens, so adopting a
  * token never changes how classic looks.
  *
  * Groups (the table in the look-and-feel roadmap §4):
@@ -19,7 +19,12 @@
  *   buttons   --button-border-rest/-hover, --button-bg-hover
  *   primary   --primary-bg/-fg/-border-hover   (filled only in Precision)
  *   paper     --paper-bg/-shadow/-radius       (a document page)
- *   glass     --glass-bg/-border/-shadow, --scrim, --glass-blur
+ *   glass     --glass-bg/-border/-shadow/-filter, --scrim, --scrim-filter
+ *
+ * and, below the four look blocks, the primitives' own groups (buttons by
+ * variant, fields, selection, chips, menus, dialogs, toasts) — each look's
+ * values for one component, so a component's CSS names a token and never a
+ * look.
  */
 
 /* ── classic — the current UI ─────────────────────────────────────────────── */
@@ -37,7 +42,7 @@
 
   --button-border-rest: var(--color-border);
   --button-border-hover: var(--color-border-strong);
-  --button-bg-hover: var(--color-bg-subtle);
+  --button-bg-hover: var(--color-neutral-100);
 
   --primary-bg: var(--color-accent);
   --primary-fg: var(--color-text-on-accent);
@@ -50,8 +55,9 @@
   --glass-bg: var(--color-surface-overlay);
   --glass-border: var(--color-border);
   --glass-shadow: var(--shadow-lg);
-  --glass-blur: 0px;
-  --scrim: rgb(0 0 0 / 0.4);
+  --glass-filter: none;
+  --scrim: rgb(0 0 0 / 0.5);
+  --scrim-filter: none;
 }
 
 /* ── Light Flow — one seamless surface ────────────────────────────────────── */
@@ -81,8 +87,9 @@
   --glass-bg: rgb(255 255 255 / 0.74);
   --glass-border: rgb(22 24 29 / 0.08);
   --glass-shadow: 0 16px 48px rgb(22 24 29 / 0.14), 0 2px 6px rgb(22 24 29 / 0.06);
-  --glass-blur: 22px;
+  --glass-filter: blur(22px) saturate(1.5);
   --scrim: rgb(22 24 29 / 0.16);
+  --scrim-filter: blur(2px);
 }
 
 /* ── Quiet Precision — every element floats ───────────────────────────────── */
@@ -112,8 +119,9 @@
   --glass-bg: rgb(255 255 255 / 0.82);
   --glass-border: rgb(22 24 29 / 0.08);
   --glass-shadow: 0 16px 48px rgb(22 24 29 / 0.14), 0 2px 6px rgb(22 24 29 / 0.06);
-  --glass-blur: 22px;
+  --glass-filter: blur(22px) saturate(1.5);
   --scrim: rgb(22 24 29 / 0.16);
+  --scrim-filter: blur(2px);
 }
 
 /* ── Blended Flow — seamless, washed in the app's colour ──────────────────── */
@@ -143,8 +151,9 @@
   --glass-bg: rgb(246 247 255 / 0.7);
   --glass-border: color-mix(in srgb, var(--app-color) 16%, transparent);
   --glass-shadow: 0 18px 50px rgb(37 52 170 / 0.18), 0 2px 6px rgb(37 52 170 / 0.08);
-  --glass-blur: 22px;
+  --glass-filter: blur(22px) saturate(1.5);
   --scrim: color-mix(in srgb, var(--app-color) 14%, transparent);
+  --scrim-filter: blur(2px);
 }
 
 /* ── Dark values for the three new looks ──────────────────────────────────── */
@@ -188,15 +197,226 @@
   --scrim: rgb(8 10 30 / 0.5);
 }
 
+
+/* ── Primitives ───────────────────────────────────────────────────────────────
+ * One block per look for the @neutrino/ui primitives. Classic's values are the
+ * literal ones each component drew before (Button, TextInput, Menu, Modal,
+ * Toast …); the flows follow the look-and-feel roadmap §2 "Interaction
+ * states" and §3: borderless until hover, no filled buttons, a pale accent
+ * tint for selection, frosted menus and dialogs, dark frosted toasts.
+ */
+:root,
+[data-look="classic"] {
+  --control-radius: var(--radius-md);
+  /* The accent as UI chrome uses it: the active tab, a focus edge */
+  --accent-ui: var(--color-accent);
+
+  /* Buttons — neutral ("secondary") */
+  --button-bg-rest: var(--color-surface-raised);
+  --button-fg: var(--color-text-primary);
+  /* Ghost */
+  --ghost-fg: var(--color-text-secondary);
+  --ghost-fg-hover: var(--color-text-primary);
+  --ghost-bg-hover: var(--color-bg-subtle);
+  --ghost-border-hover: transparent;
+  /* Primary (beside --primary-bg/-fg/-border-hover above) */
+  --primary-border-rest: var(--color-accent);
+  --primary-bg-hover: var(--color-accent-hover);
+  --primary-fg-hover: var(--color-text-on-accent);
+  /* Danger */
+  --danger-bg: var(--color-error);
+  --danger-fg: #ffffff;
+  --danger-border: var(--color-error);
+  --danger-bg-hover: #b91c1c;
+  --danger-fg-hover: #ffffff;
+  --danger-border-hover: #b91c1c;
+
+  /* Fields — text inputs, textareas, selects */
+  --field-bg: var(--color-surface);
+  --field-border: var(--color-border);
+  --field-border-hover: var(--color-border-strong);
+  --field-border-focus: var(--color-accent);
+  --field-ring: color-mix(in srgb, var(--color-accent) 15%, transparent);
+
+  /* Selection — the active menu item, tab, nav entry */
+  --selected-bg: var(--color-accent-subtle);
+  --selected-fg: var(--color-accent-text);
+
+  /* Chips — filters and toggles */
+  --chip-bg: var(--color-bg-subtle);
+  --chip-border: var(--color-border);
+  --chip-fg: var(--color-text-secondary);
+  --chip-bg-hover: var(--color-neutral-100);
+  --chip-border-hover: var(--color-border-strong);
+  --chip-bg-active: var(--color-accent-subtle);
+  --chip-border-active: var(--color-accent);
+  --chip-fg-active: var(--color-accent-text);
+  --chip-weight-active: var(--font-medium);
+
+  /* Menus and popovers (frosted in the new looks: --glass-*) */
+  --menu-radius: var(--radius-lg);
+  --menu-item-hover: var(--color-bg-subtle);
+  --menu-separator: var(--color-border);
+
+  /* Dialogs */
+  --dialog-radius: var(--radius-xl);
+  --dialog-shadow: var(--shadow-xl);
+  --dialog-rule: 1px solid var(--color-border);
+
+  /* Toasts */
+  --toast-bg: var(--color-surface-overlay);
+  --toast-bg-opaque: var(--color-surface-overlay);
+  --toast-border: var(--color-border);
+  --toast-shadow: var(--shadow-lg);
+  --toast-filter: none;
+  --toast-fg: var(--color-text-primary);
+  --toast-fg-2: var(--color-text-secondary);
+  --toast-close-hover: var(--color-bg-subtle);
+}
+
+/* The three new looks share the shape of every primitive; what differs between
+   them is in the look blocks above (button borders, primary fill, glass). */
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  --control-radius: 10px;
+  --accent-ui: var(--brand-accent);
+  --menu-radius: 12px;
+  --dialog-radius: 16px;
+
+  --button-fg: var(--color-text-primary);
+  --ghost-fg: var(--color-text-secondary);
+  --ghost-fg-hover: var(--color-text-primary);
+  --ghost-bg-hover: var(--button-bg-hover);
+  --ghost-border-hover: var(--button-border-hover);
+
+  --field-border-focus: var(--brand-accent);
+  --field-ring: color-mix(in srgb, var(--brand-accent) 14%, transparent);
+
+  --selected-bg: color-mix(in srgb, var(--brand-accent) 9%, transparent);
+  --selected-fg: var(--brand-accent);
+
+  --chip-border: transparent;
+  --chip-border-hover: var(--button-border-hover);
+  --chip-fg: var(--color-text-secondary);
+  --chip-border-active: transparent;
+  --chip-fg-active: var(--color-text-primary);
+  --chip-weight-active: var(--font-semibold);
+
+  --menu-item-hover: var(--button-bg-hover);
+  --menu-separator: transparent;
+
+  --dialog-shadow: var(--glass-shadow);
+  --dialog-rule: var(--rule);
+
+  --toast-bg: rgb(22 24 29 / 0.84);
+  --toast-bg-opaque: #16181d;
+  --toast-border: rgb(255 255 255 / 0.08);
+  --toast-shadow: var(--glass-shadow);
+  --toast-filter: blur(22px) saturate(1.5);
+  --toast-fg: #ffffff;
+  --toast-fg-2: rgb(255 255 255 / 0.74);
+  --toast-close-hover: rgb(255 255 255 / 0.1);
+}
+
+/* Light Flow and Blended Flow: no filled buttons, fields bounded by a fill. */
+[data-look="lightflow"],
+[data-look="blended"] {
+  --button-bg-rest: transparent;
+  --primary-border-rest: transparent;
+  --primary-fg-hover: var(--brand-accent);
+  --danger-bg: transparent;
+  --danger-fg: var(--color-error);
+  --danger-border: transparent;
+  --danger-bg-hover: color-mix(in srgb, var(--color-error) 8%, transparent);
+  --danger-fg-hover: var(--color-error);
+  --danger-border-hover: color-mix(in srgb, var(--color-error) 35%, transparent);
+  --field-border: transparent;
+  --field-border-hover: var(--button-border-hover);
+  --chip-bg-hover: var(--button-bg-hover);
+}
+
+[data-look="lightflow"] {
+  --primary-bg-hover: color-mix(in srgb, var(--brand-accent) 6%, transparent);
+  --field-bg: #f4f5f7;
+  --chip-bg: #f4f5f7;
+  --chip-bg-active: rgb(22 24 29 / 0.08);
+}
+
+[data-look="blended"] {
+  --primary-bg-hover: rgb(255 255 255 / 0.55);
+  --field-bg: rgb(255 255 255 / 0.6);
+  --chip-bg: rgb(255 255 255 / 0.5);
+  --chip-bg-active: rgb(255 255 255 / 0.85);
+  --toast-bg: rgb(28 38 120 / 0.88);
+  --toast-bg-opaque: #1c2678;
+}
+
+/* Quiet Precision: the one look with filled primary and danger buttons. */
+[data-look="precision"] {
+  --button-bg-rest: #ffffff;
+  --primary-border-rest: var(--brand-accent);
+  --primary-bg-hover: var(--brand-accent-hover);
+  --primary-fg-hover: #ffffff;
+  --danger-bg: var(--color-error);
+  --danger-fg: #ffffff;
+  --danger-border: var(--color-error);
+  --danger-bg-hover: #b91c1c;
+  --danger-fg-hover: #ffffff;
+  --danger-border-hover: #b91c1c;
+  --field-bg: #ffffff;
+  --field-border: #e3e6eb;
+  --field-border-hover: #d4d8e0;
+  --chip-bg: #ffffff;
+  --chip-border: #e3e6eb;
+  --chip-bg-hover: #f6f7f9;
+  --chip-bg-active: #eceef2;
+}
+
+/* Dark values for the primitives in the new looks. */
+[data-look="lightflow"][data-theme="dark"] {
+  --primary-bg-hover: color-mix(in srgb, var(--brand-accent) 12%, transparent);
+  --field-bg: rgb(255 255 255 / 0.06);
+  --chip-bg: rgb(255 255 255 / 0.06);
+  --chip-bg-active: rgb(255 255 255 / 0.12);
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --button-bg-rest: #15181e;
+  --primary-fg-hover: #0f1115;
+  --field-bg: #15181e;
+  --field-border: #242832;
+  --field-border-hover: #343a45;
+  --chip-bg: #15181e;
+  --chip-border: #242832;
+  --chip-bg-hover: #1c2027;
+  --chip-bg-active: #242832;
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --primary-bg-hover: color-mix(in srgb, var(--app-color) 12%, transparent);
+  --field-bg: rgb(255 255 255 / 0.06);
+  --chip-bg: rgb(255 255 255 / 0.05);
+  --chip-bg-active: rgb(255 255 255 / 0.12);
+  --toast-bg: rgb(30 38 96 / 0.9);
+  --toast-bg-opaque: #1e2660;
+}
+
 /* Translucency is a preference too: with it reduced, every frosted surface
    is opaque (look-and-feel roadmap §2, "Menus, popups and translucency"). */
 @media (prefers-reduced-transparency: reduce) {
   :root:not([data-transparency="on"]) {
-    --glass-blur: 0px;
+    --glass-filter: none;
     --glass-bg: var(--color-surface-overlay);
+    --scrim-filter: none;
+    --toast-filter: none;
+    --toast-bg: var(--toast-bg-opaque);
   }
 }
 [data-transparency="off"] {
-  --glass-blur: 0px;
+  --glass-filter: none;
   --glass-bg: var(--color-surface-overlay);
+  --scrim-filter: none;
+  --toast-filter: none;
+  --toast-bg: var(--toast-bg-opaque);
 }

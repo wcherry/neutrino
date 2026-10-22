@@ -26,9 +26,9 @@
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   color: var(--color-text-primary);
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  background-color: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--control-radius);
   padding-right: 2.5rem;
   appearance: none;
   cursor: pointer;
@@ -39,12 +39,12 @@
 }
 
 .select:hover:not(:disabled) {
-  border-color: var(--color-border-strong);
+  border-color: var(--field-border-hover);
 }
 
 .select:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 15%, transparent);
+  border-color: var(--field-border-focus);
+  box-shadow: 0 0 0 3px var(--field-ring);
 }
 
 .select[aria-invalid="true"] {

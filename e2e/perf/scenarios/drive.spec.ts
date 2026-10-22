@@ -39,7 +39,7 @@ import {
 } from '../fixtures/actions';
 
 test.describe('B — drive and file listings', () => {
-  test('B1–B6 Drive listing at scale', async ({ perf, page, request }) => {
+  test('B1–B7 Drive listing at scale', async ({ perf, page, request }) => {
     const session = await signIn(request, page, 'drive');
 
     // Three folders in one account, so B1 can compare sizes without three
@@ -115,6 +115,46 @@ test.describe('B — drive and file listings', () => {
             step: 60,
           }),
         );
+      },
+    );
+
+    // ── B7 ────────────────────────────────────────────────────────────────
+    // B2 with a frosted menu open over the list — the cost of translucency,
+    // measured before any look that uses it ships (performance roadmap §7).
+    // A frosted surface makes the compositor re-blur what is under it on every
+    // frame the content beneath moves, so this is the worst case: a menu held
+    // open while the whole list scrolls under it. The look is set on <html>
+    // directly, as the anti-FOUC script would, rather than through the
+    // preference, so the rest of the account's UI is untouched.
+    await perf.scenario(
+      {
+        id: 'B7',
+        title: 'Scroll the L listing under an open frosted menu (Light Flow)',
+        fixture: `L (${SCALE.files.L} files)`,
+        budgets: { scrollDroppedRatio: 0.1 },
+      },
+      async (s) => {
+        await openFolder('L');
+        await waitForIdle(page);
+        await page.evaluate(() => {
+          document.querySelector('[data-perf-scroller="1"]')?.scrollTo({ top: 0 });
+          document.documentElement.setAttribute('data-look', 'lightflow');
+        });
+        const first = await driveRows(page).first().getAttribute('aria-label');
+        await openRowMenu(page, first!);
+        const filter = await page
+          .getByRole('menu', { name: 'File options' })
+          .evaluate((el) => getComputedStyle(el).backdropFilter);
+        expect(filter, 'the open menu should be frosted in Light Flow').toContain('blur');
+        await s.resetMetrics();
+        await s.frameRate('scroll', () =>
+          scrollThrough(page, '[aria-labelledby="all-files-heading"]', {
+            distance: 12_000,
+            step: 60,
+          }),
+        );
+        await page.keyboard.press('Escape');
+        await page.evaluate(() => document.documentElement.setAttribute('data-look', 'classic'));
       },
     );
 

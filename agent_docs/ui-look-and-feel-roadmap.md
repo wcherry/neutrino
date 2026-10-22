@@ -206,9 +206,17 @@ from one attribute.
 | Buttons | `--button-border-rest`, `--button-border-hover`, `--button-bg-hover` | transparent, 12 % ink, 3.5 % ink | `#E3E6EB`/transparent, `#D4D8E0`, `#F6F7F9` | transparent, 24 % accent, 55 % white |
 | Primary | `--primary-bg`, `--primary-fg`, `--primary-border-hover` | transparent, accent, 35 % accent | accent, white, accent | transparent, accent, 40 % accent |
 | Paper | `--paper-bg`, `--paper-shadow`, `--paper-radius` | white, none, 0 | white, soft, 8 px top | transparent, none, 0 |
-| Glass | `--glass-bg`, `--glass-border`, `--glass-shadow`, `--scrim` | 74 % white | 82 % white | 70 % tinted white, accent-tinted shadow |
+| Glass | `--glass-bg`, `--glass-border`, `--glass-shadow`, `--glass-filter`, `--scrim`, `--scrim-filter` | 74 % white | 82 % white | 70 % tinted white, accent-tinted shadow |
 | Neutrals | `--text-1/2/3` | `#16181D` `#4A5160` `#656C7A` | same | tinted toward the app colour |
 | App | `--app-color`, `--app-wash-from/-to` | used for icons | used for icons | icons **and** wash |
+
+Below these, each primitive has its own small group, so its CSS names a token and never a look:
+buttons by variant (`--button-bg-rest`, `--ghost-*`, `--primary-border-rest`, `--primary-bg-hover`,
+`--danger-*`), fields (`--field-bg/-border/-border-hover/-border-focus/-ring`), selection
+(`--selected-bg/-fg`), chips (`--chip-*`), menus (`--menu-radius`, `--menu-item-hover`,
+`--menu-separator`), dialogs (`--dialog-radius/-shadow/-rule`), toasts (`--toast-*`, with an opaque
+fallback for reduced transparency), `--control-radius` and `--accent-ui`. Classic's value for each
+is what the component drew before it read the token (`packages/tokens/src/looks.css`).
 
 Density (`--row-height`, `--control-height`, `--space-*` multipliers) is a separate axis that
 multiplies across all three looks; the windowed lists read `--row-height` (performance roadmap P1).
@@ -254,7 +262,7 @@ empty states — each inheriting the shell and editor frame rather than inventin
 |---|---|---|
 | **0 — Sign-off** | Dark mode for each look; compact and spacious densities; the screens still to mock | Approved boards for all three looks × light/dark × three densities |
 | **1 — Token contract** | New token groups (§4) in `packages/tokens`, all three look value sets, `data-look` / dynamic `data-app`; lint rules in warn mode; remove `var()` hex fallbacks | Tokens exist and lint reports the baseline debt |
-| **2 — Primitives** | `@neutrino/ui` Button (rest/hover/primary per look), inputs, chips, menus, Popover/Modal/Toast glass, Tabs — all token-only | Storybook shows every primitive in all three looks |
+| **2 — Primitives** | `@neutrino/ui` Button (rest/hover/primary per look), inputs, chips, menus, Popover/Modal/Toast glass, Tabs — all token-only | Storybook shows every primitive in all three looks — **done in Stage 2**: *Looks/All primitives* renders them side by side in light and dark, the toolbar's Look switch covers the portalled dialogs, and classic's computed styles are unchanged |
 | **3 — Shell** | New top bar, sidebar with Apps, editor frame; delete the logo row and the stacked bars | Every route renders in the new shell in all three looks |
 | **4 — Drive and listings** | `FileGrid` restyle **on the windowed version** (performance P1 lands first), Quick access, DocumentLibrary pages | Drive matches the mockups |
 | **5 — Editors** | Docs, Sheets, Slides, Diagrams, Drawing chrome and panels, one editor at a time | Each editor matches; lint debt for that editor at zero |

@@ -26,6 +26,9 @@ export { TeamAvatar } from './components/primitives/TeamAvatar';
 export type { TeamAvatarProps, TeamAvatarSize } from './components/primitives/TeamAvatar';
 
 // Inputs
+export { Chip } from './components/inputs/Chip';
+export type { ChipProps } from './components/inputs/Chip';
+
 export { TextInput } from './components/inputs/TextInput';
 export type { TextInputProps, TextInputSize } from './components/inputs/TextInput';
 
