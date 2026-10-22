@@ -106,6 +106,33 @@ describe('the plain tier', () => {
   });
 });
 
+describe('a reload before a write is sent', () => {
+  it('keeps the write, over the server’s older copy, and sends it', async () => {
+    server.values = { 'appearance.theme': 'light' };
+    await store.attach('u1', server, crypto());
+    store.set('appearance.theme', 'dark');
+    // The page goes away inside the flush delay: nothing reached the server.
+    expect(server.patches).toEqual([]);
+
+    const reloaded = new PreferenceStore(storage);
+    expect(reloaded.get('appearance.theme')).toBe('dark');
+    await reloaded.attach('u1', server, crypto());
+    expect(reloaded.get('appearance.theme')).toBe('dark');
+    expect(await reloaded.flush()).toBe(true);
+    expect(server.values['appearance.theme']).toBe('dark');
+  });
+
+  it('does not carry one user’s unsent writes into another’s session', async () => {
+    await store.attach('u1', server, crypto());
+    store.set('appearance.theme', 'dark');
+    const reloaded = new PreferenceStore(storage);
+    await reloaded.attach('u2', server, crypto());
+    expect(reloaded.get('appearance.theme')).toBe('system');
+    expect(await reloaded.flush()).toBe(true);
+    expect(server.patches).toEqual([]);
+  });
+});
+
 describe('the device tier', () => {
   it('never leaves the browser', async () => {
     await store.attach('u1', server, crypto());

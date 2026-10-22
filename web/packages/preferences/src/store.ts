@@ -102,12 +102,18 @@ export class PreferenceStore {
 
   constructor(private storage: StorageLike | null = browserStorage()) {
     this.device = (safeParse(storage?.getItem(DEVICE_KEY) ?? null) as Record<string, unknown>) ?? {};
-    const cache = safeParse(storage?.getItem(CACHE_KEY) ?? null) as { userId?: string; values?: Record<string, unknown> } | undefined;
+    const cache = safeParse(storage?.getItem(CACHE_KEY) ?? null) as
+      | { userId?: string; values?: Record<string, unknown>; pending?: Record<string, unknown> }
+      | undefined;
     if (cache?.values) {
       // The last signed-in user's plain values, for the first paint of a reload. Replaced — not
       // merged — the moment a different user attaches.
       this.plain = cache.values;
       this.userId = cache.userId ?? null;
+      // And the writes that had not reached the server when the page went away: a reload within
+      // the flush delay of a change would otherwise load the server's older copy over it and
+      // lose it. `attach` keeps them for the same user and sends them.
+      if (cache.pending && typeof cache.pending === 'object') this.pendingPlain = cache.pending;
     }
     if (typeof window !== 'undefined' && storage) {
       // Another tab of this browser changed something: its cache write is the news. Cross-device
@@ -350,6 +356,7 @@ export class PreferenceStore {
     } catch (e) {
       // Keep the batch for the next attempt, under anything written since.
       this.pendingPlain = { ...batch, ...this.pendingPlain };
+      this.persistCache();
       console.warn('[prefs] saving preferences failed; will retry', e);
     }
   }
@@ -384,11 +391,17 @@ export class PreferenceStore {
     for (const listener of this.listeners) listener();
   }
 
+  private persistCache(): void {
+    if (!this.userId) return;
+    this.storage?.setItem(
+      CACHE_KEY,
+      JSON.stringify({ userId: this.userId, values: this.plain, pending: this.pendingPlain }),
+    );
+  }
+
   private changed(): void {
     this.version += 1;
-    if (this.userId) {
-      this.storage?.setItem(CACHE_KEY, JSON.stringify({ userId: this.userId, values: this.plain }));
-    }
+    this.persistCache();
     const boot: Record<string, unknown> = {};
     for (const spec of REGISTRY) if (spec.paint) boot[spec.key] = this.get(spec.key as PreferenceKey);
     this.storage?.setItem(BOOT_KEY, JSON.stringify(boot));
