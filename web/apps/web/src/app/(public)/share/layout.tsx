@@ -1,6 +1,6 @@
-import { QueryProvider } from '@/providers/QueryProvider';
+import { ShareQueryProvider } from './ShareQueryProvider';
 
 /** The only signed-out page that queries the API. */
 export default function ShareLayout({ children }: { children: React.ReactNode }) {
-  return <QueryProvider>{children}</QueryProvider>;
+  return <ShareQueryProvider>{children}</ShareQueryProvider>;
 }

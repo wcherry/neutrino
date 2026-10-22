@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-
-const isProduction = process.env.NODE_ENV === 'production';
+import { registerServiceWorker } from '@/lib/serviceWorker';
 
 /**
  * Registers the app-shell service worker (`/sw.js`) on every production boot
@@ -27,51 +26,12 @@ const isProduction = process.env.NODE_ENV === 'production';
  * keeps controlling the page until something removes it, so we actively
  * unregister and drop its caches to un-wedge machines that already have one.
  *
- * Mounted by every root layout (`(public)`, `(apps)`, `(mirror)`), so whichever
- * page a visit starts on installs the worker.
+ * Mounted by the `(apps)` and `(mirror)` roots; `(public)` mounts its own copy
+ * (`PublicServiceWorker`), so whichever page a visit starts on installs the worker.
  */
 export function ServiceWorkerRegister() {
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-      return;
-    }
-
-    if (!isProduction) {
-      void (async () => {
-        try {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          const unregistered = await Promise.all(
-            registrations.map((registration) => registration.unregister()),
-          );
-
-          if ('caches' in window) {
-            const cacheNames = await caches.keys();
-            await Promise.all(
-              cacheNames
-                .filter((name) => name.startsWith('neutrino-shell-'))
-                .map((name) => caches.delete(name)),
-            );
-          }
-
-          // The page is still controlled by the worker we just unregistered,
-          // so this load is being served from its cache. One reload hands the
-          // page back to the network for good.
-          if (unregistered.some(Boolean) && navigator.serviceWorker.controller) {
-            window.location.reload();
-          }
-        } catch {
-          // Best-effort cleanup — a browser that refuses to enumerate
-          // registrations still leaves the dev server perfectly usable.
-        }
-      })();
-      return;
-    }
-
-    navigator.serviceWorker.register('/sw.js').catch(() => {
-      // Registration failure (e.g. unsupported browser, dev environment
-      // serving over non-HTTPS localhost quirks) is non-fatal — the app
-      // still works online, it just won't have offline app-shell caching.
-    });
+    registerServiceWorker();
   }, []);
   return null;
 }
