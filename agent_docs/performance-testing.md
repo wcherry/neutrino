@@ -296,9 +296,11 @@ These are **hypotheses, not measurements**. They are listed because they shaped 
 
 ## 9. CI and reporting
 
-*Everything below is the design; **the workflow itself is deferred to issue #196**, with the
-reasoning in §12.1. The mechanisms it needs — `PERF_MACHINE`, `PERF_ENFORCE`, `PERF_TOLERANCE`,
-the artifacts, the ratchet flags — are all in place.*
+*The workflow exists since UI roadmap stage 6: `.github/workflows/perf.yml`, nightly and on
+dispatch, with `PERF_ENFORCE=1` on the metrics in `e2e/perf/enforced.ts` — the protected list and
+every target met — and every other budget advisory. Its runner still has to record its own baseline
+(dispatch with `write_baselines`) before regressions against a baseline, not only absolute budgets,
+are judged. The rest of this section is the design it follows.*
 
 - **New workflow**, nightly plus `workflow_dispatch`, on a **fixed runner class** — perf numbers are not comparable across machine types, and the baseline file is keyed by machine class for that reason.
 - **Not a required PR check** initially. Run it in advisory mode for two weeks, watch the variance, and only then set tolerances and make it blocking. A blocking perf check with an unmeasured noise floor gets disabled within a month.
@@ -317,7 +319,7 @@ the artifacts, the ratchet flags — are all in place.*
 | **3 — Baselines** | Run the suite, commit `baselines/<machine-class>.json`, replace every seed budget with a measured one. | **Mechanism done**, no baseline committed — see below |
 | **4 — Scenario build-out** | Sections A–F. | **Done** — 30 scenarios across six spec files |
 | **5 — Product marks** | `performance.mark`/`measure` pairs in the editors, crypto helpers and image resolver. | **Done**, as its own commit — see §14 |
-| **6 — CI** | Nightly workflow, advisory mode, artifact upload, summary comment. | **Deferred** — issue #196 |
+| **6 — CI** | Nightly workflow, advisory mode, artifact upload, summary comment. | **Done** (stage 6) — enforcing the list in `enforced.ts`; baseline pending on the runner |
 | **7 — Fix cycle** | Act on what the numbers show, each fix landing alongside its before/after from the suite. | This is what the above unblocks |
 
 **No baseline file is committed, deliberately.** A baseline is keyed by machine class, CPU throttle

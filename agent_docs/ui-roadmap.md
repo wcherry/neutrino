@@ -361,6 +361,73 @@ sync off where the app reads it.
 **Exit:** no hard-coded visual value anywhere outside `packages/tokens`; every customization
 setting reaches every screen; a PR that regresses a budget or adds a literal colour fails CI.
 
+**Status — built 2026-10-22 (`feature/ui-stage-6`).** Classic stays the default look and is
+unchanged: computed styles of 19 routes in light and dark, 19 427 elements, are identical to Stage 5
+apart from a 0.02 px rounding.
+
+- **No literals outside the tokens.** 807 literal colours, 819 px font sizes and 111 numeric
+  z-indexes moved into `packages/tokens`, each with its exact value:
+  - colours: a neutral token where one matches, otherwise `palette.css`, named by hue and lightness;
+  - font sizes: the rem scale, or rem steps equal to the old px at the default text size — so the
+    text-size setting now reaches all of them;
+  - z-indexes: the layer scale, or named layers.
+
+  212 inline-style colours went the same way. Colours that are data (a sheet's border weights,
+  shape defaults, chart palettes) stay literal on purpose: they reach canvases and saved files,
+  where `var()` means nothing.
+
+  Enforced in CI by a new `Web checks` workflow on every PR:
+  - Stylelint at error;
+  - an ESLint rule against literal colours in `style` props and `CSSProperties` objects;
+  - `lint:colours`, the same check for the packages.
+- **LF6.** A `--screen-…` token group, new looks only, gives the remaining screens the looks'
+  primary actions (accent text on a ring in the flows, filled in Precision) and selection tint, and
+  the sign-in page its ground and glass card. Covered: Settings, admin, profile, Calendar, Drive's
+  upload panel, the Save As and comments dialogs, the public pages. Photos and Notes already read
+  the primitives' tokens.
+- **Theme engine, last two dimensions.**
+  - **Shape** (`appearance.shape`): every radius reads `--radius-scale` — the token scale, the
+    looks' own, and 502 component radii. Sharper halves them; Rounder makes them 1.75×.
+  - **Interface font** (`appearance.font`): a built-in or one from the instance's font library
+    becomes `--font-sans`.
+
+  Both are set by user, team or organisation and applied before first paint.
+- **Teams (T3–T6).**
+  - T3: a Templates view in each space lists the team's .dotx/.xltx/.potx; a Docs template makes
+    a new document.
+  - T4: "Share my library with the team" publishes gradient presets and conditional-format
+    templates as an encrypted team file, sealed to members by `handFileKeyToTeam`. Members see
+    them read-only in the fill pickers and the conditional-format dialog.
+  - T5: pins (folders, files, links) at the top of the space and under the team in the sidebar.
+  - T6: palette shortcuts that make a document from a team template.
+
+  Pins and shortcuts are team defaults (`team.pins`, `team.commands`); the library is named by
+  `team.library`.
+- **Performance, enforced.** `e2e/perf/enforced.ts` names the protected list and every target met.
+  `PERF_ENFORCE=1` fails a run on those and leaves the rest advisory. D2's "no frame over 200 ms
+  while loading" is now a budget. A nightly `Performance` workflow runs the suite on a pinned
+  runner, with a dispatch option to record that runner's baseline first.
+
+**Not done, and why.**
+- **Perf on every PR.** The exit criterion says a PR that regresses a budget fails CI. The suite
+  needs the Docker stack and an hour, so it runs nightly, not per PR, and judges only absolute
+  budgets until the runner has its own baseline.
+- **Shape in inline styles.** Radii set inline in TSX (a few dozen) are not yet scaled.
+- **Libraries not shared yet.** Shape libraries and table styles are not in the team library.
+- **Late joiners.** A member who joins after a team file was shared, the library included, gets
+  its key only at the next share. This is the team-key rule as it stands, and it also affects
+  files uploaded in a team's Files view.
+- **Search tests.** The browser suite's search tests still lose their seeded index now and then
+  under load, even with sync off.
+- **A Slides race.** Renaming a deck right after creating it races the first autosave. The
+  content-version guard answers the rename with 409, and Back, which waits for the save, stays on
+  the page. It fails 1 run in 5 locally. It predates this stage, but the worker sealing added in
+  stage 5 may have changed the timing enough to expose it more often.
+
+Tests: browser suite 560/562 — the Docker storage-path test and that Slides race. New:
+`team-sharing.spec.ts` 3/3, `shape-and-font.spec.ts` 2/2. `vitest`: 3 828 web tests pass, plus
+the same 4 `api-drive` failures as before. Stylelint, `lint:colours` and ESLint are clean.
+
 ---
 
 ## 4. At a glance
