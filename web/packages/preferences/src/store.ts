@@ -315,6 +315,15 @@ export class PreferenceStore {
   }
 
   /**
+   * Every team's defaults, by team id, for the teams the user belongs to — for what a team shares
+   * with its members everywhere, not only inside its space (pinned resources, palette shortcuts).
+   * The same object until the next read replaces it, so it can be a React snapshot.
+   */
+  teamDefaults(): Readonly<Record<string, Record<string, unknown>>> {
+    return this.teams;
+  }
+
+  /**
    * The team whose space is on screen, or null outside every team. Team defaults apply only
    * inside their own space (a team default is a starting point there, not a policy elsewhere).
    */

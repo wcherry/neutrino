@@ -47,6 +47,7 @@ const USER_ORG: Scopes = Scopes { user: true, org: true, team: false };
 const USER_ORG_TEAM: Scopes = Scopes { user: true, org: true, team: true };
 const USER_TEAM: Scopes = Scopes { user: true, org: false, team: true };
 const ORG: Scopes = Scopes { user: false, org: true, team: false };
+const TEAM: Scopes = Scopes { user: false, org: false, team: true };
 
 #[derive(Debug, Clone, Copy)]
 pub struct Spec {
@@ -91,6 +92,9 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "teamSpace.sortDirection", kind: Kind::Enum(&["asc", "desc"]), scopes: USER_TEAM },
     Spec { key: "listing.views", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
     Spec { key: "editor.toolbars", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
+    Spec { key: "team.pins", kind: Kind::Object { max_bytes: 4096 }, scopes: TEAM },
+    Spec { key: "team.commands", kind: Kind::Object { max_bytes: 4096 }, scopes: TEAM },
+    Spec { key: "team.library", kind: Kind::Object { max_bytes: 1024 }, scopes: TEAM },
     Spec { key: "drive.landing", kind: Kind::Enum(&["drive", "recent", "starred"]), scopes: USER_ORG },
 ];
 

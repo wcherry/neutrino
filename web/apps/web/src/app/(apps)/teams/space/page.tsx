@@ -14,7 +14,7 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, Files, Home, Settings, Users } from 'lucide-react';
+import { ExternalLink, FileText, Files, Folder, Home, LayoutTemplate, Pin, Settings, Users } from 'lucide-react';
 import { EmptyState, Spinner } from '@neutrino/ui';
 import { buildPageTree, flattenPageTree, teamsApi } from '@neutrino/api-drive';
 import { useFeatureFlags, useFeatureFlagsLoaded } from '@/providers/FeatureFlagsProvider';
@@ -23,6 +23,8 @@ import { FilesView } from './FilesView';
 import { MembersView } from './MembersView';
 import { PagesView } from './PagesView';
 import { SettingsView } from './SettingsView';
+import { TemplatesView } from './TemplatesView';
+import { pinHref, useTeamPins } from '@/lib/teamResources';
 import { preferences } from '@neutrino/preferences';
 import { safeTeamColor } from '../../navSections';
 import styles from './space.module.css';
@@ -31,6 +33,7 @@ const NAV: Array<{ view: TeamView; label: string; icon: typeof Home }> = [
   { view: 'home', label: 'Home', icon: Home },
   { view: 'pages', label: 'Pages', icon: FileText },
   { view: 'files', label: 'Files', icon: Files },
+  { view: 'templates', label: 'Templates', icon: LayoutTemplate },
   { view: 'members', label: 'Members', icon: Users },
   { view: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -38,6 +41,7 @@ const NAV: Array<{ view: TeamView; label: string; icon: typeof Home }> = [
 function TeamSpace() {
   const router = useRouter();
   const params = useSearchParams();
+  const teamPins = useTeamPins();
   const flags = useFeatureFlags();
   const flagsLoaded = useFeatureFlagsLoaded();
 
@@ -131,6 +135,9 @@ function TeamSpace() {
     );
   }
 
+  // What the team's Owners pinned for everyone (T5).
+  const pins = teamPins[team.id] ?? [];
+
   return (
     // The team's colour tints its space (T1), so it is clear whose library this is.
     <div
@@ -163,6 +170,31 @@ function TeamSpace() {
             </button>
           ))}
         </div>
+
+        {pins.length > 0 && (
+          <>
+            <div className={styles.navSectionLabel}>
+              <Pin size={11} aria-hidden="true" /> Pinned
+            </div>
+            <div className={styles.nav} role="list" aria-label={`Pinned in ${team.name}`}>
+              {pins.map((pin) => {
+                const Icon = pin.kind === 'link' ? ExternalLink : pin.kind === 'folder' ? Folder : FileText;
+                return (
+                  <a
+                    key={pin.id}
+                    role="listitem"
+                    className={styles.treeItem}
+                    href={pinHref(team.id, pin)}
+                    {...(pin.kind === 'link' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                  >
+                    <Icon size={14} aria-hidden="true" />
+                    <span className={styles.treeLabel}>{pin.name}</span>
+                  </a>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         {tree.length > 0 && (
           <>
@@ -204,7 +236,8 @@ function TeamSpace() {
               onSearchChange={setSearch}
             />
           )}
-          {view === 'files' && <FilesView team={team} />}
+          {view === 'files' && <FilesView key={params.get('folder') ?? ''} team={team} />}
+          {view === 'templates' && <TemplatesView team={team} />}
           {view === 'members' && (
             <MembersView team={team} onLeft={() => router.push('/teams')} />
           )}

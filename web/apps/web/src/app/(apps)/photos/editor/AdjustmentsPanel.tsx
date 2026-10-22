@@ -1,5 +1,6 @@
 'use client';
 
+import { useSharedFillPresets } from '@/lib/teamResources';
 import React, { useRef, useState } from 'react';
 import { RotateCcw, RotateCw, FlipHorizontal, FlipVertical, RefreshCcw, Check, Scissors, Sparkles, ScanText, ScreenShare, Loader2, Copy, Eraser, Blend, Grid3x3, Wand2 } from 'lucide-react';
 import { Circle, Square } from 'lucide-react';
@@ -205,6 +206,7 @@ export function AdjustmentsPanel({
 }: AdjustmentsPanelProps) {
   // The picker's saved gradients, synced like every other library (the preference vault).
   const [fillPresets, setFillPresets] = useLibrary('library.fill.default');
+  const sharedFillPresets = useSharedFillPresets('default');
 
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrResult, setOcrResult] = useState<string | null>(null);
@@ -356,6 +358,7 @@ export function AdjustmentsPanel({
                 onChange={onBgReplaceFillChange}
                 triggerLabel=""
                 presets={fillPresets as string[]}
+                sharedPresets={sharedFillPresets}
                 onPresetsChange={setFillPresets}
               />
               <button

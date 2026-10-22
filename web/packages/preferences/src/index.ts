@@ -27,5 +27,5 @@ export {
   type StorageLike,
   type VaultCrypto,
 } from './store';
-export { usePreference, usePreferenceSource, usePreferencesLoaded, useLibrary, useVaultAvailable } from './react';
+export { usePreference, usePreferenceSource, usePreferencesLoaded, useLibrary, useVaultAvailable, useTeamDefaults } from './react';
 export { migrateLegacyPreferences, readVaultOrLegacy } from './migrate';

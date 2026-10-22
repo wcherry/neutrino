@@ -53,10 +53,13 @@ function NavEntry({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
     </>
   );
   const props = {
-    className: styles.item,
+    className: item.nested ? `${styles.item} ${styles.itemNested}` : styles.item,
     'aria-current': item.active ? ('page' as const) : undefined,
     title: collapsed ? item.label : undefined,
   };
+  if (item.href && item.external) {
+    return <a href={item.href} target="_blank" rel="noopener noreferrer" {...props}>{content}</a>;
+  }
   return item.href ? (
     <Link href={item.href} {...props}>{content}</Link>
   ) : (

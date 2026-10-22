@@ -90,6 +90,12 @@ export interface PreferenceValues {
   'listing.views': Record<string, { view?: string; sort?: string; dir?: string }> | null;
   /** Editor → its toolbar's order, hidden tools and labels; see lib/editorToolbars.ts in the web app. */
   'editor.toolbars': Record<string, { order?: string[]; hidden?: string[]; labels?: boolean }> | null;
+  /** A team's pinned folders, files and links (T5); see lib/teamResources.ts in the web app. */
+  'team.pins': { items?: unknown[] } | null;
+  /** A team's command-palette shortcuts to its templates (T6). */
+  'team.commands': { items?: unknown[] } | null;
+  /** Where a team's shared library lives — an encrypted team file, sealed to members (T4). */
+  'team.library': { fileId?: string; updatedAt?: string } | null;
   'drive.landing': 'drive' | 'recent' | 'starred';
   'ai.apiKey': string;
   'library.sheets.cfTemplates': unknown[];

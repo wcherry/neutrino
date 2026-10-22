@@ -1,5 +1,6 @@
 'use client';
 
+import { useSharedFillPresets } from '@/lib/teamResources';
 import React, { useCallback } from 'react';
 import { FillPicker } from '@neutrino/ui';
 import type { Background, DriveImageItem, FillImageChoice } from '@neutrino/ui';
@@ -36,6 +37,7 @@ export interface DiagramFillPickerProps {
 export function DiagramFillPicker({ style, onChange }: DiagramFillPickerProps) {
   // Saved gradients follow the user across devices (the preference vault).
   const [fillPresets, setFillPresets] = useLibrary('library.fill.diagrams');
+  const sharedFillPresets = useSharedFillPresets('diagrams');
   const fetchDriveImages = useCallback(async (): Promise<DriveImageItem[]> => {
     const { items } = await storageApi.listFiles({
       limit: DRIVE_IMAGE_PAGE,
@@ -84,6 +86,7 @@ export function DiagramFillPicker({ style, onChange }: DiagramFillPickerProps) {
       background={shapeFillOf(style) as Background}
       onChange={handleChange}
       presets={fillPresets as string[]}
+      sharedPresets={sharedFillPresets}
       onPresetsChange={setFillPresets}
       triggerLabel=""
       showAlpha

@@ -60,3 +60,10 @@ export function useVaultAvailable(store: PreferenceStore = defaultStore): boolea
 export function usePreferencesLoaded(store: PreferenceStore = defaultStore): boolean {
   return useSyncExternalStore(store.subscribe, () => store.loaded, () => false);
 }
+
+const NO_TEAMS: Readonly<Record<string, Record<string, unknown>>> = {};
+
+/** Every team's defaults, by team id (`store.teamDefaults()`); empty during a server render. */
+export function useTeamDefaults(store: PreferenceStore = defaultStore): Readonly<Record<string, Record<string, unknown>>> {
+  return useSyncExternalStore(store.subscribe, () => store.teamDefaults(), () => NO_TEAMS);
+}

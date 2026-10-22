@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import { useTeamLibraries, useTeamNames } from '@/lib/teamResources';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Plus, Trash2, X, ChevronUp, ChevronDown, Save, FolderOpen, Sparkles, Wand2 } from 'lucide-react';
 import { ColorPickerPopover } from '@neutrino/ui';
 import { aiApi } from '@neutrino/api-core';
@@ -834,9 +835,11 @@ type TemplatePanelProps = {
     onApply: (t: CFTemplate) => void;
     onDelete: (id: string) => void;
     onSave: (name: string) => void;
+    /** Templates the user's teams share (T4) — applied like their own, never deleted from here. */
+    shared?: { label: string; templates: CFTemplate[] }[];
 };
 
-function TemplatesPanel({ templates, editingRules, onApply, onDelete, onSave }: TemplatePanelProps) {
+function TemplatesPanel({ templates, editingRules, onApply, onDelete, onSave, shared = [] }: TemplatePanelProps) {
     const [newName, setNewName] = useState('');
 
     return (
@@ -863,6 +866,23 @@ function TemplatesPanel({ templates, editingRules, onApply, onDelete, onSave }: 
                             <Trash2 size={13} />
                         </button>
                     </div>
+                </div>
+            ))}
+            {shared.map(group => (
+                <div key={group.label} role="group" aria-label={group.label} style={{ marginTop: 10 }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, margin: '0 0 6px' }}>{group.label}</p>
+                    {group.templates.map(t => (
+                        <div key={t.id} style={{ ...ruleEditorStyle, marginBottom: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                                <span style={{ fontWeight: 600, fontSize: 12, flexGrow: 1 }}>{t.name}</span>
+                                <span style={{ fontSize: 10, color: 'var(--color-text-secondary, var(--palette-gray-53))' }}>{t.rules.length} rule{t.rules.length !== 1 ? 's' : ''}</span>
+                                <button style={{ ...clearBtnStyle, padding: '2px 4px' }} title="Apply template"
+                                    onClick={() => onApply(t)}>
+                                    <FolderOpen size={13} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             ))}
             <div style={{ marginTop: 10, display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -1048,6 +1068,17 @@ export function ConditionalFormattingDialog({ rules, selectionRange, onUpdate, o
     const [activeTab, setActiveTab] = useState<TabId>('rules');
     const [variables, setVariables] = useState<CFVariable[]>(() => loadVariables());
     const [templates, setTemplates] = useState<CFTemplate[]>(() => loadTemplates());
+    const teamLibraries = useTeamLibraries();
+    const teamNames = useTeamNames(teamLibraries.length > 0);
+    const sharedTemplates = useMemo(() => teamLibraries
+        .map(({ teamId, library }) => ({
+            label: `From ${teamNames[teamId] ?? 'your team'}`,
+            templates: library.cfTemplates.filter((t): t is CFTemplate => {
+                const r = t as Partial<CFTemplate>;
+                return typeof r?.id === 'string' && typeof r.name === 'string' && Array.isArray(r.rules);
+            }),
+        }))
+        .filter(g => g.templates.length > 0), [teamLibraries, teamNames]);
 
     // item 21: detect column type from selection and build suggestions
     const suggestions: Suggestion[] = React.useMemo(() => {
@@ -1218,6 +1249,7 @@ export function ConditionalFormattingDialog({ rules, selectionRange, onUpdate, o
                             onApply={handleApplyTemplate}
                             onDelete={handleDeleteTemplate}
                             onSave={handleSaveTemplate}
+                            shared={sharedTemplates}
                         />
                     )}
                 </div>

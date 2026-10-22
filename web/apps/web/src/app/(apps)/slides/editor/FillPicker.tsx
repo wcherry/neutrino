@@ -1,5 +1,6 @@
 'use client';
 
+import { useSharedFillPresets } from '@/lib/teamResources';
 import { useCallback } from 'react';
 import { FillPicker } from '@neutrino/ui';
 import type { Background, BackgroundTheme, DriveImageItem, FillImageChoice } from '@neutrino/ui';
@@ -26,6 +27,7 @@ export default function SlidesFillPicker({
 }) {
   // Saved gradients follow the user across devices (the preference vault).
   const [fillPresets, setFillPresets] = useLibrary('library.fill.slides');
+  const sharedFillPresets = useSharedFillPresets('slides');
   const fetchDriveImages = useCallback(async (): Promise<DriveImageItem[]> => {
     const { items } = await storageApi.listFiles({
       limit: DRIVE_IMAGE_PAGE,
@@ -63,6 +65,7 @@ export default function SlidesFillPicker({
       onChange={onChange as (bg: Background) => void}
       theme={theme as BackgroundTheme | undefined}
       presets={fillPresets as string[]}
+      sharedPresets={sharedFillPresets}
       onPresetsChange={setFillPresets}
       triggerLabel="BG"
       onFetchDriveImages={fetchDriveImages}

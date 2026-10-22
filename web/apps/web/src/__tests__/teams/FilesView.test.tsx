@@ -33,7 +33,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@neutrino/auth', () => ({ useUser: () => ({ id: 'u1', name: 'Owner' }) }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@/providers/FeatureFlagsProvider', () => ({
   useFeatureFlags: () => ({ teamSpaces: true, teamFileTransfers: true }),
 }));

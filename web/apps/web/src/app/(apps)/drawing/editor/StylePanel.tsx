@@ -1,5 +1,6 @@
 'use client';
 
+import { useSharedFillPresets } from '@/lib/teamResources';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlignCenter,
@@ -304,6 +305,7 @@ function ObjectStyle({
 }) {
   // Saved fills follow the user across devices (the preference vault).
   const [fillPresets, setFillPresets] = useLibrary('library.fill.drawing');
+  const sharedFillPresets = useSharedFillPresets('drawing');
   const ids = objects.map((o) => o.id);
   const first = objects[0];
   const { style } = first;
@@ -333,6 +335,7 @@ function ObjectStyle({
                 background={fillToBackground(style.fill)}
                 onChange={(bg) => changeStyle({ fill: bg.type === 'image' ? `url(${bg.value})` : bg.value })}
                 presets={fillPresets as string[]}
+                sharedPresets={sharedFillPresets}
                 onPresetsChange={setFillPresets}
                 triggerLabel=""
                 onFetchDriveImages={onFetchDriveImages}

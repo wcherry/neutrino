@@ -25,7 +25,8 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { usePreference } from '@neutrino/preferences';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { TEAM_LIBRARY_NAME } from '@/lib/teamResources';
 import { ChevronRight, Folder, FolderPlus, Trash2, Upload, X } from 'lucide-react';
 import {
   AlertDialog,
@@ -148,7 +149,12 @@ export function FilesView({ team }: { team: Team }) {
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   /** The path from the team root to the folder being shown. Empty means the root. */
-  const [trail, setTrail] = useState<TeamFolder[]>([]);
+  // A pinned folder (T5) opens the view inside it: `?folder=&folderName=` from `pinHref`.
+  const pinnedFolder = useSearchParams();
+  const [trail, setTrail] = useState<TeamFolder[]>(() => {
+    const id = pinnedFolder.get('folder');
+    return id ? [{ id, name: pinnedFolder.get('folderName') ?? 'Folder' } as TeamFolder] : [];
+  });
   const folderId = trail.length > 0 ? trail[trail.length - 1].id : undefined;
 
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -254,7 +260,8 @@ export function FilesView({ team }: { team: Team }) {
   const canManageShares = roleCan(team.userRole, 'managePermissions');
 
   const folders = useMemo(() => data?.folders ?? [], [data]);
-  const files = useMemo(() => data?.files ?? [], [data]);
+  // The team's shared library (T4) is a file here too, but not one to list beside the others.
+  const files = useMemo(() => (data?.files ?? []).filter((f) => f.name !== TEAM_LIBRARY_NAME), [data]);
   const shared = useMemo(() => sharedData?.files ?? [], [sharedData]);
 
   // Folders first, as on My Drive; each group ordered by the current sort.

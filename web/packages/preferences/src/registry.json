@@ -516,6 +516,48 @@
       "section": "appearance"
     },
     {
+      "key": "team.pins",
+      "type": {
+        "kind": "object",
+        "maxBytes": 4096
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "team"
+      ],
+      "label": "Pinned resources",
+      "section": "teams"
+    },
+    {
+      "key": "team.commands",
+      "type": {
+        "kind": "object",
+        "maxBytes": 4096
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "team"
+      ],
+      "label": "Command palette shortcuts",
+      "section": "teams"
+    },
+    {
+      "key": "team.library",
+      "type": {
+        "kind": "object",
+        "maxBytes": 1024
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "team"
+      ],
+      "label": "Shared library",
+      "section": "teams"
+    },
+    {
       "key": "drive.landing",
       "type": {
         "kind": "enum",

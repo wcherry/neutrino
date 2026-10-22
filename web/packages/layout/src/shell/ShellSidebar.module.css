@@ -237,3 +237,11 @@
   background: var(--button-bg-hover);
   color: var(--text-1);
 }
+
+/* A team's pinned resources, under the team (customization roadmap T5). */
+.itemNested {
+  height: calc(var(--nav-item-height) - 6px);
+  padding-left: 30px;
+  font-size: var(--text-xs);
+}
+
