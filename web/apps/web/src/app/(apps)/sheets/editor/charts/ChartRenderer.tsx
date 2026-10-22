@@ -22,6 +22,7 @@ import type { CellProps } from '../types';
 import type { ChartDef, AxisConfig, DataLabelConfig } from './chartTypes';
 import {
     extractChartData,
+    thinForDisplay,
     CHART_COLORS,
     computeHistogramBins,
     computeWaterfallBars,
@@ -161,7 +162,7 @@ function SunburstChart({ labels, values, colors, showLabels, axisTextColor }: Su
 // ── ChartRenderer ─────────────────────────────────────────────────────────────
 
 export function ChartRenderer({ def, data, width, height }: ChartRendererProps) {
-    const { labels, datasets } = extractChartData(def, data);
+    const { labels, datasets } = thinForDisplay(def.type, extractChartData(def, data));
     const legendProps = getLegendProps(def.legendPosition);
 
     // Resolve theme

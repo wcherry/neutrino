@@ -1,5 +1,6 @@
 'use client';
 
+import type { CellSet } from './cellSet';
 import { useState } from 'react';
 import {
     Undo2, Redo2,
@@ -97,11 +98,11 @@ export type StyleToolbarProps = {
     onConditionalFormat?: () => void;
     isFormatPainterActive?: boolean;
     onFormatPainterClick?: () => void;
-    selectedCells: Set<string>;
+    selectedCells: CellSet;
     onApplyStyleMap: (styles: Map<string, Partial<CellStyle>>) => void;
-    onRegisterTableRegion?: (style: TableStyle, cells: Set<string>) => void;
+    onRegisterTableRegion?: (style: TableStyle, cells: CellSet) => void;
     onApplyStyle?: (style: Partial<CellStyle>) => void;
-    onClearTableRegions?: (cells: Set<string>) => void;
+    onClearTableRegions?: (cells: CellSet) => void;
 };
 
 export function StyleToolbar({ cellStyle, onStyleChange, disabled, onUndo, onRedo, canUndo, canRedo, onMergeCells, isMerged, onInsertChart, onFindReplace, onConditionalFormat, isFormatPainterActive, onFormatPainterClick, selectedCells, onApplyStyleMap, onRegisterTableRegion, onApplyStyle, onClearTableRegions }: StyleToolbarProps) {

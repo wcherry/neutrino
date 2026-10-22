@@ -6,7 +6,7 @@ import type { CellProps, SheetFile, CFRule, TableRegion } from '../types';
 import type { ChartDef } from '../charts/chartTypes';
 import {
     driveReadBytes, driveAutosaveEncryptedBytes, driveCreateEncryptedVersionBytes,
-    extractSheetText, storageApi, filesystemApi, type FileItem,
+    extractSheetModelText, storageApi, filesystemApi, type FileItem,
 } from '@/lib/api';
 import { decryptFile } from '@neutrino/e2e-crypto';
 import { useUser } from '@neutrino/auth';
@@ -20,6 +20,7 @@ import { officeAppForFile, withOoxmlExtension, stripOoxmlExtension } from '@/lib
 import { readNeutrinoModel } from '@/lib/ooxmlContainer';
 import { writeXlsx } from '@/lib/ooxml/xlsx/write';
 import { readXlsx } from '@/lib/ooxml/xlsx/read';
+import { yieldToMain } from '@/lib/yieldToMain';
 import { useContentVersionGuard } from '@/hooks/useContentVersionGuard';
 
 /**
@@ -269,8 +270,8 @@ export function usePersistence({
      * understands — a pivot table, an image, a chart part from Excel — survive
      * the save rather than being dropped by it.
      */
-    const buildXlsxBytes = async (): Promise<Uint8Array> =>
-        writeXlsx(serializeModel(), storedPackageRef.current ?? undefined);
+    const buildXlsxBytes = async (model: SheetFile = serializeModel()): Promise<Uint8Array> =>
+        writeXlsx(model, storedPackageRef.current ?? undefined);
 
     const save = async ({ keepalive = false }: SaveOptions = {}) => {
         const transport = { signal: abortAfter(SAVE_DEADLINE_MS), keepalive };
@@ -290,7 +291,9 @@ export function usePersistence({
         // visible to this closure until the next render.
         const meta = fileRef.current;
         if (meta) {
-            const bytes = await buildXlsxBytes();
+            // Once per save: the workbook and the search index are both made from it.
+            const model = serializeModel();
+            const bytes = await buildXlsxBytes(model);
             let saved;
             try {
                 saved = await driveAutosaveEncryptedBytes(
@@ -319,7 +322,7 @@ export function usePersistence({
                 id: sheetId,
                 type: 'spreadsheet',
                 title: stripOoxmlExtension(meta.name),
-                content: extractSheetText(serialize()),
+                content: extractSheetModelText(model),
             });
             return;
         }
@@ -409,20 +412,26 @@ export function usePersistence({
      * Load a serialized `SheetFile` into the editor.
      *
      * Shared by both storage formats: it is the body of a bespoke-JSON
-     * spreadsheet, and it is also the model packed inside an `.xlsx` (issue
-     * #127). Throws on unparseable input, which both callers treat as "there is
-     * nothing readable here" rather than as an empty spreadsheet to save over.
+     * spreadsheet, and it is also the model read out of an `.xlsx` (issue
+     * #127). The caller treats a throw as "there is nothing readable here"
+     * rather than as an empty spreadsheet to save over.
      */
-    const applySheetFileJson = (raw: string): void => {
-        const file = JSON.parse(raw) as SheetFile;
+    const applySheetFile = async (file: SheetFile): Promise<void> => {
         const rawSheets = file.sheets ?? [];
         if (rawSheets.length > 0) {
             const names = rawSheets.map((s, i) => s.name ?? `Sheet ${i + 1}`);
+            // A turn for the browser between the passes, each of which walks every cell.
+            await yieldToMain();
             // Pass 1: build raw maps (no formula evaluation yet)
             const rawMaps = rawSheets.map(buildRawSheetMap);
+            await yieldToMain();
             // Pass 2: evaluate formulas with full cross-sheet context
             const allSheets: SheetRef[] = names.map((name, i) => ({ name, data: rawMaps[i] }));
-            const allData = rawMaps.map(rawMap => evaluateSheetMap(rawMap, allSheets));
+            const allData: ReturnType<typeof evaluateSheetMap>[] = [];
+            for (const rawMap of rawMaps) {
+                allData.push(evaluateSheetMap(rawMap, allSheets));
+                await yieldToMain();
+            }
             const allColWidths = rawSheets.map(s => {
                 const m = new Map<number, number>();
                 for (const [k, v] of Object.entries(s.colWidths ?? {})) m.set(Number(k), v);
@@ -566,7 +575,9 @@ export function usePersistence({
                 // where it exists. Nothing writes one any more, so this shrinks
                 // to nothing as spreadsheets are reopened and saved.
                 const legacy = await readNeutrinoModel(plain, 'sheets');
-                applySheetFileJson(legacy ?? JSON.stringify(await readXlsx(plain)));
+                // Parsed straight into the model: this used to serialise the workbook to JSON only to
+                // parse it back, a whole extra pass over every cell.
+                await applySheetFile(legacy ? (JSON.parse(legacy) as SheetFile) : await readXlsx(plain));
                 setLoadCount(c => c + 1);
             } catch {
                 toast.error('Failed to open this file for editing');

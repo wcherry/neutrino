@@ -40,6 +40,7 @@ import {
   type CFRule, type CFStyle, type CellStyle, type SavedCell, type SheetData,
   type SheetExtra, type SheetExtras, type SheetFile,
 } from './mapping';
+import { createSlicer } from '@/lib/yieldToMain';
 
 // ── XML helpers ───────────────────────────────────────────────────────────────
 
@@ -414,6 +415,8 @@ export async function readXlsx(bytes: Uint8Array): Promise<SheetFile> {
 
   const entries = all(workbook, 'sheet');
   const sheets: SheetData[] = [];
+  // A large workbook is seconds of parsing; it is read in slices so the page keeps painting.
+  const slicer = createSlicer();
   for (const [index, entry] of entries.entries()) {
     const extra: SheetExtra = extras.sheets?.[index] ?? {};
     const path = rels.get(attr(entry, 'id') ?? '');
@@ -425,7 +428,8 @@ export async function readXlsx(bytes: Uint8Array): Promise<SheetFile> {
       sheets.push({ name, cells: {} });
       continue;
     }
-    sheets.push(await readSheet(doc, path!, name, index, pkg, styles, shared, extra));
+    await slicer.yield();
+    sheets.push(await readSheet(doc, path!, name, index, pkg, styles, shared, extra, slicer));
   }
 
   return { sheets: sheets.length > 0 ? sheets : [{ name: 'Sheet 1', cells: {} }] };
@@ -440,6 +444,7 @@ async function readSheet(
   styles: Styles,
   shared: string[],
   extra: SheetExtra,
+  slicer: ReturnType<typeof createSlicer>,
 ): Promise<SheetData> {
   const root = doc.documentElement;
   const sheet: SheetData = { name, cells: {} };
@@ -449,7 +454,9 @@ async function readSheet(
 
   // ── Cells.
   const clipped = new Set(extra.clipped ?? []);
+  let rowsRead = 0;
   for (const row of kids(kid(root, 'sheetData'), 'row')) {
+    if ((++rowsRead & 63) === 0 && slicer.due()) await slicer.yield();
     for (const c of kids(row, 'c')) {
       const cell = readCell(c, shared, styles);
       if (!cell) continue;

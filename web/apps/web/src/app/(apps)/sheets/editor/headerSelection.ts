@@ -16,6 +16,7 @@
 
 import { MAX_COLS, MAX_ROWS } from './constants';
 import { numToAlpha } from './utils';
+import { HeaderCellSet, type CellSet } from './cellSet';
 
 export type HeaderAxis = 'col' | 'row';
 
@@ -134,19 +135,7 @@ export function headerSelectionCellBounds(selection: HeaderSelection): { anchor:
     return { anchor: `A${first + 1}`, active: `${numToAlpha(MAX_COLS)}${last + 1}` };
 }
 
-/** Every cell id covered by a header selection. */
-export function headerSelectionCells(selection: HeaderSelection): Set<string> {
-    const cells = new Set<string>();
-    if (selection.axis === 'col') {
-        for (const c of selection.indices) {
-            const letter = numToAlpha(c + 1);
-            for (let r = 1; r <= MAX_ROWS; r++) cells.add(`${letter}${r}`);
-        }
-    } else {
-        for (const r of selection.indices) {
-            const rowN = r + 1;
-            for (let c = 1; c <= MAX_COLS; c++) cells.add(`${numToAlpha(c)}${rowN}`);
-        }
-    }
-    return cells;
+/** Every cell id covered by a header selection — answered from the indices, never listed up front. */
+export function headerSelectionCells(selection: HeaderSelection): CellSet {
+    return new HeaderCellSet(selection.axis, selection.indices);
 }

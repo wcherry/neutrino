@@ -31,6 +31,7 @@ import {
   type BorderSide, type CFRule, type CFStyle, type CellStyle, type SavedCell,
   type SheetData, type SheetExtra, type SheetExtras, type SheetFile,
 } from './mapping';
+import { createSlicer } from '@/lib/yieldToMain';
 
 // ── The style table ───────────────────────────────────────────────────────────
 
@@ -394,7 +395,13 @@ interface WrittenSheet {
   extra: SheetExtra;
 }
 
-function writeSheet(sheet: SheetData, index: number, styles: StyleTable, tableIdBase: number): WrittenSheet {
+async function writeSheet(
+  sheet: SheetData,
+  index: number,
+  styles: StyleTable,
+  tableIdBase: number,
+  slicer: ReturnType<typeof createSlicer>,
+): Promise<WrittenSheet> {
   const extra: SheetExtra = {};
 
   // ── Cells, grouped into rows in ascending order, as OOXML requires.
@@ -402,7 +409,9 @@ function writeSheet(sheet: SheetData, index: number, styles: StyleTable, tableId
   let maxCol = 0;
   let maxRow = 0;
   const clipped: string[] = [];
+  let visited = 0;
   for (const [id, cell] of Object.entries(sheet.cells)) {
+    if ((++visited & 1023) === 0 && slicer.due()) await slicer.yield();
     const at = parseCellId(id);
     if (!at) continue;
     if (cell.cellStyle?.wrapMode === 'clip') clipped.push(id);
@@ -415,7 +424,9 @@ function writeSheet(sheet: SheetData, index: number, styles: StyleTable, tableId
   if (clipped.length) extra.clipped = clipped.sort();
 
   const heights = sheet.rowHeights ?? {};
-  const rowXml = [...rows.keys()].sort((a, b) => a - b).map((r) => {
+  const rowParts: string[] = [];
+  for (const r of [...rows.keys()].sort((a, b) => a - b)) {
+    if ((rowParts.length & 63) === 0 && slicer.due()) await slicer.yield();
     const cells = rows.get(r)!
       .sort((a, b) => a.col - b.col)
       .map(({ id, cell }) => cellXml(id, cell, styles.cellStyle(cell.cellStyle)))
@@ -423,8 +434,9 @@ function writeSheet(sheet: SheetData, index: number, styles: StyleTable, tableId
     // Heights are keyed 0-based in the model and rows are 1-based here.
     const height = heights[String(r - 1)];
     const ht = typeof height === 'number' ? ` ht="${pxToPoints(height)}" customHeight="1"` : '';
-    return `<row r="${r}"${ht}>${cells}</row>`;
-  }).join('');
+    rowParts.push(`<row r="${r}"${ht}>${cells}</row>`);
+  }
+  const rowXml = rowParts.join('');
 
   // ── Column widths, one `<col>` per sized column.
   const widths = sheet.colWidths ?? {};
@@ -565,12 +577,16 @@ export async function writeXlsx(file: SheetFile, keep?: Uint8Array): Promise<Uin
 
   const extras: SheetExtras = { sheets: {} };
   let tableId = 1;
-  const written = sheets.map((sheet, i) => {
-    const out = writeSheet(sheet, i, styles, tableId);
+  // Written in slices, so an autosave of a large workbook does not hold the page for the whole
+  // serialisation (the perf suite's D9); the zip that follows is already chunked by JSZip.
+  const slicer = createSlicer();
+  const written: WrittenSheet[] = [];
+  for (const [i, sheet] of sheets.entries()) {
+    const out = await writeSheet(sheet, i, styles, tableId, slicer);
     tableId += out.tables.length;
     if (Object.keys(out.extra).length) extras.sheets![i] = out.extra;
-    return out;
-  });
+    written.push(out);
+  }
   const hasExtras = Object.keys(extras.sheets!).length > 0;
 
   // ── Parts.

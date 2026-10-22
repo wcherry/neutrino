@@ -4,6 +4,7 @@ import React, { useRef, useState, useCallback, useTransition, useMemo } from 're
 import type { CellProps, CellStyle } from '../types';
 import { getRangeCells } from '../utils';
 import { alphaToNum, numToAlpha, rangeAddress } from '../utils';
+import { rangeCellSet } from '../cellSet';
 
 // ── Formula reference highlighting ────────────────────────────────────────────
 
@@ -672,7 +673,7 @@ export function useCellEditing({
     // ── Derived values ───────────────────────────────────────────────────────
     const selectedCells = useMemo(() => {
         if (!selectionAnchor) return new Set<string>();
-        return getRangeCells(selectionAnchor, selectionActive ?? selectionAnchor);
+        return rangeCellSet(selectionAnchor, selectionActive ?? selectionAnchor);
     }, [selectionAnchor, selectionActive]);
 
     const formulaRefHighlights = useMemo((): FormulaRefHighlight[] => {

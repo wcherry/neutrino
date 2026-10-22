@@ -1,5 +1,6 @@
 'use client';
 
+import type { CellSet } from './cellSet';
 import React, { useEffect, useRef } from 'react';
 import {
     Scissors, Copy, Clipboard,
@@ -12,7 +13,7 @@ export interface SheetContextMenuProps {
     x: number;
     y: number;
     cellId: string;
-    selectedCells: Set<string>;
+    selectedCells: CellSet;
     cellValue: string;
     spellWord?: string;
     /**

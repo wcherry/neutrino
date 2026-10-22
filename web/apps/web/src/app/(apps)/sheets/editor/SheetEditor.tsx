@@ -1,5 +1,6 @@
 'use client';
 
+import type { CellSet } from './cellSet';
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, useDeferredValue } from 'react';
 import { flushSync } from 'react-dom';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -1140,7 +1141,7 @@ export function SheetEditor() {
     // Records the applied region so structural inserts/deletes can recolor it
     // later (the actual bug fix — table styles are otherwise a one-time paint
     // with no memory of "this range is a table").
-    const handleRegisterTableStyle = useCallback((style: TableStyle, cells: Set<string>) => {
+    const handleRegisterTableStyle = useCallback((style: TableStyle, cells: CellSet) => {
         const bounds = getCellBounds(cells);
         tableRegions.registerRegion({
             id: `table-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -1155,7 +1156,7 @@ export function SheetEditor() {
     // Companion to handleRegisterTableStyle for the "Blank" table style: clears
     // table-region tracking for the current selection without registering a
     // new region in its place.
-    const handleClearTableRegionsForSelection = useCallback((cells: Set<string>) => {
+    const handleClearTableRegionsForSelection = useCallback((cells: CellSet) => {
         const bounds = getCellBounds(cells);
         tableRegions.removeOverlapping({
             minR: bounds.minRow,

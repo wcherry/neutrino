@@ -1,4 +1,5 @@
 import type { CellStyle } from '../types';
+import type { CellSet } from '../cellSet';
 import type { RegularTableStyle } from './tableStyles';
 import { alphaToNum } from '../utils';
 
@@ -6,7 +7,7 @@ import { alphaToNum } from '../utils';
 // RegularTableStyle preset to an arbitrary cell selection. No React, no side
 // effects. Callers must branch on `style.kind` before calling this — a
 // `BlankTableStyle` is handled separately via its `clearPatch`.
-export function computeTableStylePatches(style: RegularTableStyle, cells: Set<string>): Map<string, Partial<CellStyle>> {
+export function computeTableStylePatches(style: RegularTableStyle, cells: CellSet): Map<string, Partial<CellStyle>> {
     let minC = Infinity, minR = Infinity, maxC = -Infinity, maxR = -Infinity;
     const parsed = new Map<string, { col: number; row: number }>();
     for (const id of cells) {
