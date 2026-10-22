@@ -287,6 +287,31 @@ feature-flag rules in `web/CLAUDE.md` are explicit that flags are for blast radi
 product configuration — so it is an org-scoped, lockable `apps.enabled` list in the registry. It
 hides UI; it does not 404 the routes (which is the flag system's job).
 
+### 6.5 Built in Stage 3
+
+- **Defaults and locks** (§6.2): Admin › Organisation › Defaults and locks offers a default, and a
+  lock, for every key whose scopes include `org` — look, theme, density, keyboard preset, AI
+  provider, spell check, face detection, week start. A lock overrides each user's own value (their
+  row is kept, only outranked), the server refuses user writes to it (403), and Settings shows the
+  control disabled with "Set by your organisation". Org changes are pushed to every signed-in user
+  on the notification socket (`NotificationHub::push_all`).
+- **Apps** (§6.3): `apps.enabled`, an org-only key; hiding an app removes it from the sidebar, the
+  New menu and the palette in both shells.
+- **Branding** (§6.1): name, accent, sign-in message, logo (light and dark) and favicon, stored in
+  `instance_branding`/`instance_branding_assets` and written into every page by
+  `src/branding/inject.rs` — the brand data and the org layer as `window.__NEUTRINO_INSTANCE__`
+  ahead of the anti-FOUC script, the accent as custom properties (`html:root[data-theme=…]`, so the
+  light and dark palettes take it and the colour presets keep their own), the logo as CSS over the
+  app's `data-brand="logo"` boxes, and the favicon. The ETag carries a hash of what was injected, so
+  a revalidation is still a 304 until the brand or the org layer changes; the service worker now
+  fetches pages network-first for the same reason. The accent must reach 4.5:1 on white (the server
+  refuses anything lighter) and is lifted automatically until it reaches 4.5:1 on the dark ground.
+  Images are PNG, WebP or ICO checked by their bytes, never SVG. **Not done:** the sender name and
+  logo on notification emails.
+- **Teams** (§5, T1–T2): a team's colour tints its space and marks it in the new sidebar; its
+  colour is now validated as `#rrggbb` (it was stored unchecked, and drawn into every member's page).
+  Owners and Admins set the space's default Files view, order and density; a member's own pick wins.
+
 ### 6.4 What admins don't get: arbitrary custom CSS
 
 It is the obvious request and the wrong answer. Custom CSS couples every instance to internal

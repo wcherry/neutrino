@@ -184,6 +184,41 @@ an admin can set for everyone who wants it early.
 with no flash on `/sign-in`, set and lock a default, and hide apps; the palette runs any registered
 command.
 
+**Status — built 2026-10-22 (`feature/ui-stage-1`, PR #266).** All three exit criteria hold,
+checked end to end (`e2e/tests/cross-cutting/shell-and-organisation.spec.ts`).
+
+- **Shell (LF3).** `@neutrino/layout` gains `ShellTopBar` (brand, a search field that opens the
+  palette, the encryption pill, notifications, account), `ShellSidebar` (New, Drive views, Apps,
+  the user's teams in their colours, tags, admin, storage, collapse to a rail) and
+  `AppShell variant="flow"`; every route renders in it in the three new looks, from tokens only.
+  Editors get the editor frame: no top bar, the brand and collapse control at the top of the
+  sidebar, search, notifications and account at its foot. The editors' own title bars and toolbars
+  are untouched until stage 5. Classic keeps today's shell: 330 computed-style snapshots of the
+  primitives, 0 differences from stage 2. The shell renders on hydration rather than in the static
+  prerender — prerendering the classic one flashed it in front of anyone on a new look.
+- **Look (U4)** in Settings › Appearance, each option a live miniature in its own tokens; **palette
+  (U6)** on ⌘K (and ⌘/, which Docs leaves free — Docs keeps ⌘K for links, as Google Docs does), in
+  both shells, listing whatever the screen underneath has registered plus navigation, and searching
+  files. Commands gained `yields` and `palette: false` in the catalog; the dispatcher gained
+  `availableCommands` and `runCommandById`, and now runs one command per key press across its two
+  phases.
+- **Org and team layer (Phase 4)** — customization roadmap §6.5: org defaults and locks, the apps
+  list, branding written into every page by the server (no flash: the org layer and the brand are in
+  the HTML before any script), T1 team colour and tint, T2 team defaults for view, order and
+  density. Found on the way: team colours were stored unchecked and drawn into every member's page;
+  now `#rrggbb` only. The service worker served cached pages until the next deploy, which would have
+  hidden brand and org changes; pages are now network-first.
+- **A2 levers.** framer-motion is gone from `@neutrino/ui` and `@neutrino/layout` (CSS keyframes and
+  `usePresence`), and the Drive listing starts from the user id in the access token instead of
+  after `/auth/me`. `/drive` first-load JS 1 174 → **1 082 KB** with the new shell included. **A2
+  is still not met: first row 3.54 → 3.02 s, LCP 3.08 → 2.79 s** against ≤ 2.5 s. A waterfall shows
+  the listing no longer waits for auth; what remains is the JavaScript itself (≈ 2.2 s at Fast 3G
+  before the first script runs) and ≈ 300 ms of rendering before the listing request. Also seen:
+  `/auth/me`, `/preferences` and the search-index meta are each requested twice, and a 5 KB chunk of
+  the `(mirror)` root's layout loads on `/drive`. Carried to stage 4.
+- Browser suite: 543 of 544 against a local server (the one failure reads the Docker stack's storage
+  directory, as before). A1 unchanged at 1.33 s.
+
 ### Stage 4 — Drive and the listings
 
 *The most-used screen, on its new list, in its new look, with its first settings.*

@@ -1,9 +1,22 @@
 # Preference registry — the key list
 
-**Status:** implemented in Stage 1 of [`ui-roadmap.md`](ui-roadmap.md). The list below is
-`web/packages/preferences/src/registry.json`; `src/preferences/catalog.rs` is the server's copy of
-its plain tier, and `the_catalog_matches_the_registry` fails when the two drift. Architecture:
-[`ui-customization-roadmap.md`](ui-customization-roadmap.md) §3.1–3.2.
+**Status:** implemented in Stage 1 of [`ui-roadmap.md`](ui-roadmap.md); the organisation and team
+layers in Stage 3. The list below is `web/packages/preferences/src/registry.json`;
+`src/preferences/catalog.rs` is the server's copy of its plain tier, and
+`the_catalog_matches_the_registry` fails when the two drift — in a key, its type or its scopes.
+Architecture: [`ui-customization-roadmap.md`](ui-customization-roadmap.md) §3.1–3.2.
+
+**Scopes are enforced (Stage 3).** A user write to a key without `user` is refused (400
+`NOT_A_USER_PREFERENCE`), and so is one to a key an administrator has locked (403
+`PREFERENCE_LOCKED`); an admin default for a key without `org` (400 `NOT_AN_ORG_PREFERENCE`) and a
+team default for one without `team` (400 `NOT_A_TEAM_PREFERENCE`) likewise. Org defaults and locks
+live in `org_preferences` (written through `PATCH /api/v1/admin/preferences`), team defaults in
+`team_preferences` (`PATCH /api/v1/drive/teams/{id}/preferences`, Owners and Admins). Every user's
+`GET /api/v1/preferences` carries both layers, and the store resolves
+`org lock → device → user → team (inside its space) → org default → default`. The org layer also
+comes with every page the server serves (`__NEUTRINO_INSTANCE__`, `src/branding/inject.rs`), so the
+anti-FOUC script applies a lock or a newer org default before first paint; the boot record's `$own`
+list says which values are the user's own and must not be replaced by an org default.
 
 This is every value the web client keeps in `localStorage`/`sessionStorage` today, sorted into
 what becomes a **preference** in the registry, what becomes **personal library content** in the
@@ -21,13 +34,13 @@ Columns: **Scopes** — who may set it (`org` default/lock, `team` default, `use
 
 | Registry key | Legacy key | Type | Default | Scopes | Sync | Paint | Notes |
 |---|---|---|---|---|---|---|---|
-| `appearance.theme` | `neutrino.theme` (+ `user_profiles.theme` server-side) | `ThemeChoice` (`system`, the presets, `custom-<id>`) | `system` | org, user, device | plain | ✓ | Ends the dual write: the server column becomes this row. `device` scope so one machine can stay on `system`. |
-| `appearance.look` | — *(new)* | `classic` \| `lightflow` \| `precision` \| `blended` | `classic` until the default flips (roadmap stage 5) | org, user | plain | ✓ | `classic` is today's UI, kept selectable until stage 6. |
-| `appearance.density` | — *(new)* | `compact` \| `comfortable` \| `spacious` | `comfortable` | org, team, user, device | plain | ✓ | Feeds `--row-height`; windowed lists re-measure on change. |
-| `appearance.textSize` | — *(new)* | `sm` \| `md` \| `lg` | `md` | org, user, device | plain | ✓ | |
-| `appearance.accent` | — *(new)* | hex colour | look's accent | org, team, user | plain | ✓ | Contrast-adjusted by the engine, never stored adjusted. |
-| `a11y.reduceMotion` | — *(new; today the OS query only)* | `system` \| `on` \| `off` | `system` | user, device | plain | ✓ | |
-| `a11y.reduceTransparency` | — *(new)* | `system` \| `on` \| `off` | `system` | org, user, device | plain | ✓ | Frosted surfaces fall back to opaque. |
+| `appearance.theme` | `neutrino.theme` (+ `user_profiles.theme` server-side) | `ThemeChoice` (`system`, the presets, `custom-<id>`) | `system` | org, user | plain | ✓ | Ends the dual write: the server column becomes this row. A per-device override (`device` scope, so one machine can stay on `system`) is planned, not built. |
+| `appearance.look` | — *(new)* | `classic` \| `lightflow` \| `precision` \| `blended` | `classic` until the default flips (roadmap stage 5) | org, user | plain | ✓ | `classic` is today's UI, kept selectable until stage 6. Chosen in Settings › Appearance (stage 3); the three new looks also switch the shell. |
+| `appearance.density` | — *(new)* | `compact` \| `comfortable` \| `spacious` | `comfortable` | org, team, user | plain | ✓ | Feeds `--row-height`; windowed lists re-measure on change. A team default applies inside its space. No control yet (stage 4, U2). |
+| `appearance.textSize` | — *(planned, stage 4)* | `sm` \| `md` \| `lg` | `md` | org, user, device | plain | ✓ | Not in the registry yet. |
+| `appearance.accent` | — *(planned, stage 4)* | hex colour | look's accent | org, team, user | plain | ✓ | Not in the registry yet. Contrast-adjusted by the engine, never stored adjusted. The instance's brand accent (Admin › Organisation) is separate: it is branding, injected by the server. |
+| `a11y.reduceMotion` | — *(planned, stage 4; today the OS query only)* | `system` \| `on` \| `off` | `system` | user, device | plain | ✓ | Not in the registry yet. |
+| `a11y.reduceTransparency` | — *(planned, stage 4)* | `system` \| `on` \| `off` | `system` | org, user, device | plain | ✓ | Not in the registry yet. Frosted surfaces fall back to opaque. |
 | `shell.sidebarCollapsed` | `neutrino.sidebar.collapsed` | boolean | `false` | user, device | device | ✓ | Device: a laptop and a wide monitor want different answers. Stays in the boot cache so it doesn't flash. |
 | `calendar.weekStart` | `neutrino:calendar:weekStart` | 0–6 | 0 (Sunday) | org, user | plain | | |
 | `calendar.dayStartHour` | `neutrino:calendar:dayStartHour` | 0–23 | 8 (`DEFAULT_DAY_START_HOUR`) | user | plain | | |
@@ -36,10 +49,14 @@ Columns: **Scopes** — who may set it (`org` default/lock, `team` default, `use
 | `docs.splitParagraphs` | `neutrino:docs:splitParagraphs` | boolean | `false` | user | plain | | Whether a paragraph may break across pages. |
 | `photos.autoFaceDetect` | `neutrino:photos:autoFaceDetect` | boolean | `false` | org, user | plain | | An org lock to *off* is a real privacy policy. |
 | `drawing.brush` | `neutrino:drawing:brush` | brush object, repaired by `clampBrush` | built-in brush | user | plain | | Already "never in the document"; now it follows the user. |
-| `search.syncDisabled` | `neutrino:search:syncDisabled` | boolean | `false` | org, user, device | device | | Turns off this browser's index snapshot exchange; device by nature. Org lock lets an admin forbid the encrypted snapshot upload. |
+| `search.syncDisabled` | `neutrino:search:syncDisabled` | boolean | `false` | device | device | | Turns off this browser's index snapshot exchange; device by nature. An org lock forbidding the encrypted snapshot upload is planned, not built — a device key cannot take an org layer as the store stands. |
 | `keyboard.preset` | — *(new, stage 2)* | `neutrino` \| `google` \| `microsoft` | `neutrino` | org, user | plain | | The starting keymap (`PRESETS` in `@neutrino/commands`); each preset changes only the commands where that suite differs. |
 | `keyboard.bindings` | — *(new, stage 2)* | object, command id → chords, ≤ 8 KB | `null` (no changes) | user | plain | | Only the user's departures from the preset; an empty list unbinds. Read through `sanitizeBindings`, which drops ids no longer in the command catalog and chords that do not parse, so a stale binding is never dispatched. Edited in Settings › Keyboard. |
-| `ai.provider` | `neutrino.ai.settings` (`provider`) | `anthropic` \| `openai` \| `gemini` \| `none` | `gemini` (current) | org, user | plain | | Org may restrict or set `none`. |
+| `ai.provider` | `neutrino.ai.settings` (`provider`) | `gemini` \| `claude` \| `openai` | `gemini` (current) | org, user | plain | | An org default or lock picks the provider. Turning AI off entirely (`none`) is planned, not built. |
+| `apps.enabled` | — *(new, stage 3)* | a set of apps (`docs`, `sheets`, `slides`, `notes`, `diagrams`, `drawing`, `photos`, `calendar`) | all of them | org | plain | | Which apps the instance offers (roadmap §6.3). Hides an app from the sidebar, the New menu and the command palette; does not 404 its routes. Admin › Organisation › Apps. |
+| `teamSpace.view` | — *(new, stage 3)* | `large` \| `small` \| `list` | `large` | team, user | plain | | A team space's Files view (T2). A member's own pick becomes theirs, in every space. |
+| `teamSpace.sort` | — *(new, stage 3)* | `name` \| `size` \| `createdAt` \| `updatedAt` | `name` | team, user | plain | | As above. |
+| `teamSpace.sortDirection` | — *(new, stage 3)* | `asc` \| `desc` | `asc` | team, user | plain | | As above. |
 | `ai.apiKey` | `neutrino.ai.settings` (`apiKey`) | string | `''` | user | **encrypted** | | Leaves plaintext `localStorage` (roadmap U12). `readAiSettings` in `@neutrino/api-core` keeps its signature and reads through the registry. |
 
 ## 2. Personal library content (encrypted tier)

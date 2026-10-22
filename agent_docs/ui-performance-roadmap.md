@@ -200,6 +200,13 @@ Separately, interaction costs on the L sheet:
 > (`apps/web/route-budgets.json`). A1 LCP **1.32 s** and F2 sign-in **546 KB raw** are met; A2's
 > first row is **3.54 s** (from 5.57 s), short of 2.5 s — see `ui-roadmap.md`, Stage 2, for
 > what remains. The 769 KB chunk was libsodium.
+>
+> **Stage 3:** framer-motion out of the primitives and the shell (CSS keyframes), and the Drive
+> listing started from the access token's user id rather than after `/auth/me`. `/drive` first-load
+> JS 1 174 → 1 082 KB including the new shell; A2 first row **3.02 s**, LCP 2.79 s — still short of
+> 2.5 s. The listing no longer waits for auth; the remainder is script transfer at Fast 3G and the
+> first render. Next: the duplicated `/auth/me`, `/preferences` and search-meta requests, and a
+> `(mirror)` layout chunk that loads on `/drive` (`ui-roadmap.md`, Stage 3).
 
 **Confirmed and unchanged in shape since `performance-testing.md` §8.4.**
 
