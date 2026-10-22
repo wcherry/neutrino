@@ -27,6 +27,8 @@ import { usePreference } from '@neutrino/preferences';
 import { SettingsSearch } from './SettingsSearch';
 import { KeyboardSettings } from './KeyboardSettings';
 import { LookPicker } from './LookPicker';
+import { DisplaySettings } from './DisplaySettings';
+import { SidebarSettings } from './SidebarSettings';
 import { InheritedNote, useLocked } from './InheritedNote';
 import styles from './page.module.css';
 
@@ -714,6 +716,14 @@ const qc = useQueryClient();
                 <ThemeGrid onSelect={handleThemeSelect} />
               </fieldset>
               <InheritedNote prefKey="appearance.theme" />
+            </div>
+
+            <div className={styles.formGroup}>
+              <DisplaySettings />
+            </div>
+
+            <div className={styles.formGroup}>
+              <SidebarSettings />
             </div>
 
             {save.isError && (

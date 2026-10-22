@@ -57,6 +57,14 @@ export interface PreferenceValues {
   'appearance.theme': string;
   'appearance.look': 'classic' | 'lightflow' | 'precision' | 'blended';
   'appearance.density': 'compact' | 'comfortable' | 'spacious';
+  'appearance.textSize': 'sm' | 'md' | 'lg';
+  /** `#rrggbb`, or null for the look's own accent. Never stored adjusted: lib/accent.ts adjusts. */
+  'appearance.accent': string | null;
+  'a11y.reduceMotion': 'system' | 'on' | 'off';
+  'a11y.reduceTransparency': 'system' | 'on' | 'off';
+  'a11y.contrast': 'system' | 'more' | 'standard';
+  /** Pinned folders, hidden entries and the order of the Apps; see lib/sidebarLayout.ts. */
+  'shell.sidebar': Record<string, unknown> | null;
   'shell.sidebarCollapsed': boolean;
   'calendar.weekStart': number;
   'calendar.dayStartHour': number;
@@ -74,6 +82,9 @@ export interface PreferenceValues {
   'teamSpace.view': 'large' | 'small' | 'list';
   'teamSpace.sort': 'name' | 'size' | 'createdAt' | 'updatedAt';
   'teamSpace.sortDirection': 'asc' | 'desc';
+  /** Listing id → its remembered view and order; see `useListingView` in the web app. */
+  'listing.views': Record<string, { view?: string; sort?: string; dir?: string }> | null;
+  'drive.landing': 'drive' | 'recent' | 'starred';
   'ai.apiKey': string;
   'library.sheets.cfTemplates': unknown[];
   'library.sheets.cfVariables': unknown[];

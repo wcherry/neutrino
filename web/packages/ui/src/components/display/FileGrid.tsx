@@ -378,7 +378,13 @@ export interface FileGridProps {
   sortDir: SortDir;
   onSortChange: (field: SortField, dir: SortDir) => void;
   defaultViewMode?: ViewMode;
-  /** The user picked a view — for a caller that remembers it (a team space's `teamSpace.view`). */
+  /**
+   * The view, for a caller that owns it (a remembered default view, which can change under the
+   * grid when another device saves one). Omitted, the grid keeps its own, starting at
+   * `defaultViewMode`.
+   */
+  viewMode?: ViewMode;
+  /** The user picked a view — for a caller that remembers it (`listing.views`, `teamSpace.view`). */
   onViewModeChange?: (mode: ViewMode) => void;
   totalCount?: number;
   /** Drag-and-drop handlers — wire these up to make the grid a drop target */
@@ -415,6 +421,7 @@ export function FileGrid({
   sortDir,
   onSortChange,
   defaultViewMode = 'large',
+  viewMode: viewModeProp,
   onViewModeChange,
   totalCount,
   onDragEnter,
@@ -426,7 +433,8 @@ export function FileGrid({
   onItemSelect,
   footer,
 }: FileGridProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+  const [ownViewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
+  const viewMode = viewModeProp ?? ownViewMode;
   const [uncontrolledFilter, setUncontrolledFilter] = useState<FilterType>('all');
   const filter = filterProp ?? uncontrolledFilter;
 

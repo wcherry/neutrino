@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ANTI_FOUC_SCRIPT } from '@/lib/antiFouc';
 import { BOOT_KEY, BOOT_OWN_KEY } from '@neutrino/preferences';
+import { ACCENT_CSS_KEY, accentCss } from '@/lib/accent';
 
 /*
  * The script that sets the look, density and theme before first paint. It runs before React and
@@ -14,7 +15,8 @@ type Instance = { org?: { values: Record<string, unknown>; locked: string[] } };
 
 function run(boot: Record<string, unknown> | null, instance?: Instance): HTMLElement {
   const html = document.documentElement;
-  for (const a of ['data-look', 'data-density', 'data-theme']) html.removeAttribute(a);
+  for (const a of ['data-look', 'data-density', 'data-theme', 'data-text-size', 'data-reduce-motion', 'data-transparency', 'data-contrast']) html.removeAttribute(a);
+  document.getElementById('neutrino-accent')?.remove();
   localStorage.clear();
   if (boot) localStorage.setItem(BOOT_KEY, JSON.stringify(boot));
   (window as unknown as { __NEUTRINO_INSTANCE__?: Instance }).__NEUTRINO_INSTANCE__ = instance;
@@ -73,5 +75,34 @@ describe('the anti-FOUC script', () => {
     expect(html.getAttribute('data-look')).toBeNull();
     expect(html.getAttribute('data-density')).toBeNull();
     expect(html.getAttribute('data-theme')).toBe('light');
+  });
+
+  it('applies text size, motion, transparency and contrast, and leaves `system` to the OS', () => {
+    const html = run({
+      'appearance.textSize': 'lg', 'a11y.reduceMotion': 'on', 'a11y.reduceTransparency': 'on', 'a11y.contrast': 'more',
+    });
+    expect(html.getAttribute('data-text-size')).toBe('lg');
+    expect(html.getAttribute('data-reduce-motion')).toBe('on');
+    expect(html.getAttribute('data-transparency')).toBe('off');
+    expect(html.getAttribute('data-contrast')).toBe('more');
+    const plain = run({ 'appearance.textSize': 'md', 'a11y.reduceMotion': 'system', 'a11y.contrast': 'system' });
+    expect(plain.getAttribute('data-text-size')).toBeNull();
+    expect(plain.getAttribute('data-reduce-motion')).toBeNull();
+    expect(plain.getAttribute('data-contrast')).toBeNull();
+  });
+
+  it('paints the remembered accent only while the preference still has one', () => {
+    // No derived CSS on this device yet: nothing to paint (the ThemeProvider adds it after load).
+    run({ 'appearance.accent': '#0e7a4a' });
+    expect(document.getElementById('neutrino-accent')).toBeNull();
+    // With it: painted before React runs.
+    localStorage.setItem(ACCENT_CSS_KEY, accentCss('#0e7a4a'));
+    new Function(ANTI_FOUC_SCRIPT)();
+    expect(document.getElementById('neutrino-accent')?.textContent).toContain('--brand-accent:#0e7a4a');
+    // The accent was cleared since: the stale CSS is not applied.
+    document.getElementById('neutrino-accent')!.remove();
+    localStorage.setItem(BOOT_KEY, JSON.stringify({ 'appearance.accent': null }));
+    new Function(ANTI_FOUC_SCRIPT)();
+    expect(document.getElementById('neutrino-accent')).toBeNull();
   });
 });

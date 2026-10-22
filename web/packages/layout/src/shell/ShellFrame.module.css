@@ -63,6 +63,14 @@
   box-shadow: var(--region-shadow);
 }
 
+/* A page that draws its own regions (Drive's Quick access and Files) sits on the ground. */
+.main:has([data-own-regions]) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+
 .inner {
   height: 100%;
   display: flex;

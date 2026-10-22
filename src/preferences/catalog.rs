@@ -58,6 +58,8 @@ pub struct Spec {
 /// Every app an instance can offer, in sidebar order — the options of `apps.enabled`.
 pub const APPS: &[&str] = &["docs", "sheets", "slides", "notes", "diagrams", "drawing", "photos", "calendar"];
 
+const ACCENT_PATTERN: &str = "^#[0-9a-fA-F]{6}$";
+
 const THEME_PATTERN: &str =
     "^(system|light|dark|glass|midnight|beach|forest|sunbeams|light-glass|custom-[A-Za-z0-9_-]{1,64})$";
 
@@ -65,6 +67,12 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "appearance.theme", kind: Kind::Str { max_length: 80, pattern: Some(THEME_PATTERN) }, scopes: USER_ORG },
     Spec { key: "appearance.look", kind: Kind::Enum(&["classic", "lightflow", "precision", "blended"]), scopes: USER_ORG },
     Spec { key: "appearance.density", kind: Kind::Enum(&["compact", "comfortable", "spacious"]), scopes: USER_ORG_TEAM },
+    Spec { key: "appearance.textSize", kind: Kind::Enum(&["sm", "md", "lg"]), scopes: USER_ORG },
+    Spec { key: "appearance.accent", kind: Kind::Str { max_length: 7, pattern: Some(ACCENT_PATTERN) }, scopes: USER_ORG },
+    Spec { key: "a11y.reduceMotion", kind: Kind::Enum(&["system", "on", "off"]), scopes: USER },
+    Spec { key: "a11y.reduceTransparency", kind: Kind::Enum(&["system", "on", "off"]), scopes: USER_ORG },
+    Spec { key: "a11y.contrast", kind: Kind::Enum(&["system", "more", "standard"]), scopes: USER },
+    Spec { key: "shell.sidebar", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
     Spec { key: "calendar.weekStart", kind: Kind::Integer { min: 0, max: 6 }, scopes: USER_ORG },
     Spec { key: "calendar.dayStartHour", kind: Kind::Integer { min: 0, max: 23 }, scopes: USER },
     Spec { key: "calendar.dayEndHour", kind: Kind::Integer { min: 1, max: 24 }, scopes: USER },
@@ -79,6 +87,8 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "teamSpace.view", kind: Kind::Enum(&["large", "small", "list"]), scopes: USER_TEAM },
     Spec { key: "teamSpace.sort", kind: Kind::Enum(&["name", "size", "createdAt", "updatedAt"]), scopes: USER_TEAM },
     Spec { key: "teamSpace.sortDirection", kind: Kind::Enum(&["asc", "desc"]), scopes: USER_TEAM },
+    Spec { key: "listing.views", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
+    Spec { key: "drive.landing", kind: Kind::Enum(&["drive", "recent", "starred"]), scopes: USER_ORG },
 ];
 
 pub fn spec(key: &str) -> Option<&'static Spec> {

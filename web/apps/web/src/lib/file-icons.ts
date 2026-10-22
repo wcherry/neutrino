@@ -100,12 +100,14 @@ export function getFileIcon(mimeType: string) {
 
 export function getIconColor(mimeType: string): string {
   // Neutrino app types
-  if (mimeType === DOC_MIME) return 'var(--color-blue, #2563eb)';
-  if (mimeType === SHEET_MIME) return 'var(--color-green, #16a34a)';
-  if (mimeType === SLIDES_MIME) return 'var(--color-orange, #ea580c)';
-  if (mimeType === DIAGRAM_MIME) return 'var(--color-cyan, #0891b2)';
-  if (mimeType === DRAWING_MIME) return 'var(--color-lime, #65a30d)';
-  if (mimeType === NOTE_MIME) return 'var(--color-amber, #d97706)';
+  // Neutrino's own types wear their app's colour in the new looks (`--file-color-*`, looks.css);
+  // classic keeps the colours it had.
+  if (mimeType === DOC_MIME) return 'var(--file-color-doc)';
+  if (mimeType === SHEET_MIME) return 'var(--file-color-sheet)';
+  if (mimeType === SLIDES_MIME) return 'var(--file-color-slide)';
+  if (mimeType === DIAGRAM_MIME) return 'var(--file-color-diagram)';
+  if (mimeType === DRAWING_MIME) return 'var(--file-color-drawing)';
+  if (mimeType === NOTE_MIME) return 'var(--file-color-note)';
 
   // Media
   if (mimeType.startsWith('image/')) return 'var(--color-violet, #7c3aed)';

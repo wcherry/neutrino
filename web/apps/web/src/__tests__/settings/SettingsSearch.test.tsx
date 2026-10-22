@@ -22,8 +22,10 @@ describe('searchSettings', () => {
     expect(searchSettings('security')).toContainEqual({ label: 'Security', tab: 'security', where: 'Settings' });
   });
 
-  it('leaves out preferences that have no control yet', () => {
-    expect(searchSettings('density')).toEqual([]);
+  it('finds the display settings on the Appearance tab (stage 4)', () => {
+    for (const label of ['Look', 'Density', 'Text size', 'Accent colour', 'Higher contrast']) {
+      expect(searchSettings(label).find((r) => r.label === label)?.tab, label).toBe('appearance');
+    }
   });
 
   it('knows how to describe every place the registry says a control lives', () => {

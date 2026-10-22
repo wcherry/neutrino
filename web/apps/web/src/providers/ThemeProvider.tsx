@@ -8,6 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { usePreference } from '@neutrino/preferences';
+import { ACCENT_CSS_KEY, accentCss } from '@/lib/accent';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,6 +74,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemePreference] = usePreference('appearance.theme') as [ThemeChoice, (t: ThemeChoice) => void];
   const [look] = usePreference('appearance.look');
   const [density] = usePreference('appearance.density');
+  const [textSize] = usePreference('appearance.textSize');
+  const [accent] = usePreference('appearance.accent');
+  const [reduceMotion] = usePreference('a11y.reduceMotion');
+  const [reduceTransparency] = usePreference('a11y.reduceTransparency');
+  const [contrast] = usePreference('a11y.contrast');
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>('light');
 
   // The anti-FOUC script applied all three before first paint; these keep them current.
@@ -89,6 +95,41 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     document.documentElement.setAttribute('data-density', density);
   }, [density]);
+
+  // Text size, motion, transparency and contrast (packages/tokens/src/a11y.css). `system` — and
+  // `md` for text — is no attribute at all, so the OS setting (or the default) applies.
+  useEffect(() => {
+    const html = document.documentElement;
+    const set = (name: string, value: string | null) => (value ? html.setAttribute(name, value) : html.removeAttribute(name));
+    set('data-text-size', textSize === 'md' ? null : textSize);
+    set('data-reduce-motion', reduceMotion === 'system' ? null : reduceMotion);
+    // "Reduce transparency: on" is transparency off, which is the attribute looks.css reads.
+    set('data-transparency', reduceTransparency === 'system' ? null : reduceTransparency === 'on' ? 'off' : 'on');
+    set('data-contrast', contrast === 'system' ? null : contrast);
+  }, [textSize, reduceMotion, reduceTransparency, contrast]);
+
+  // The user's accent, legible whatever was picked (lib/accent.ts). Kept for the anti-FOUC script
+  // too, so the next load paints it from the first frame.
+  useEffect(() => {
+    const css = accentCss(accent);
+    let el = document.getElementById('neutrino-accent');
+    if (css) {
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'neutrino-accent';
+        document.head.appendChild(el);
+      }
+      el.textContent = css;
+    } else {
+      el?.remove();
+    }
+    try {
+      if (css) localStorage.setItem(ACCENT_CSS_KEY, css);
+      else localStorage.removeItem(ACCENT_CSS_KEY);
+    } catch {
+      // Storage unavailable: the accent still applies, from the second frame on the next load.
+    }
+  }, [accent]);
 
   // Listen to OS preference changes when choice is 'system'
   useEffect(() => {

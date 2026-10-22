@@ -130,6 +130,8 @@ export class PreferenceStore {
   private vaultUpdatedAt: string | null = null;
   /** True once the vault has been loaded and opened (or found absent) for this user. */
   private vaultOpen = false;
+  /** True once this user's preferences have come back from the server at least once. */
+  private serverLoaded = false;
   private device: Record<string, unknown> = {};
   private org = asOrgLayer(null);
   private teams: Record<string, Record<string, unknown>> = {};
@@ -242,6 +244,15 @@ export class PreferenceStore {
     return tier[key] !== undefined;
   }
 
+  /**
+   * Whether this user's values have come from the server since they attached — until then they are
+   * the cache's, or defaults on a device that has none. For a decision that must not be made on a
+   * default ("which page does Drive open on?").
+   */
+  get loaded(): boolean {
+    return this.serverLoaded;
+  }
+
   /** Whether vault-tier values are available — false until a signed-in, unlocked session opens it. */
   get vaultAvailable(): boolean {
     return this.vaultOpen;
@@ -318,6 +329,7 @@ export class PreferenceStore {
   /** A user signed in: load their preferences and start syncing. */
   async attach(userId: string, backend: PreferenceBackend, crypto: VaultCrypto): Promise<void> {
     if (this.userId !== userId) {
+      this.serverLoaded = false;
       this.plain = {};
       this.vault = null;
       this.vaultOpen = false;
@@ -338,6 +350,7 @@ export class PreferenceStore {
     this.backend = null;
     this.crypto = null;
     this.userId = null;
+    this.serverLoaded = false;
     this.plain = {};
     this.vault = null;
     this.vaultOpen = false;
@@ -359,6 +372,7 @@ export class PreferenceStore {
     this.plain = this.withPending(snapshot.values);
     this.adoptLayers(snapshot);
     this.adoptVault(snapshot.vault);
+    this.serverLoaded = true;
     this.changed();
     if (this.dirtyVault.size > 0 || Object.keys(this.pendingPlain).length > 0) this.scheduleFlush();
   }

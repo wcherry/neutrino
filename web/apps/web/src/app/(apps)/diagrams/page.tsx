@@ -2,27 +2,24 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Spinner, useToast } from '@neutrino/ui';
+import { useMutation } from '@tanstack/react-query';
+import { useToast } from '@neutrino/ui';
 import { diagramsApi } from '@neutrino/api-diagrams';
-import { GitBranch, Plus, Trash2, Clock } from 'lucide-react';
+import { GitBranch } from 'lucide-react';
+import { DocumentLibrary } from '../DocumentLibrary';
 import { TemplatePickerModal } from './TemplatePickerModal';
 import type { DiagramTemplate } from './editor/templates/diagramTemplates';
-import styles from './page.module.css';
 
 const TEMPLATE_SESSION_KEY_PREFIX = 'neutrino:diagram-template:';
 
+/**
+ * The Diagrams library — the shared `DocumentLibrary` (FileGrid, views, sort, rename, delete) since
+ * Stage 4, where it had been a grid of its own. New diagrams still start from the template picker.
+ */
 export default function DiagramsPage() {
   const router = useRouter();
   const toast = useToast();
-  const qc = useQueryClient();
-  const [creating, setCreating] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['diagrams'],
-    queryFn: () => diagramsApi.listDiagrams(),
-  });
 
   const createMutation = useMutation({
     mutationFn: (template: DiagramTemplate) => diagramsApi.createDiagram({
@@ -43,91 +40,43 @@ export default function DiagramsPage() {
       router.push(`/diagrams/editor?id=${diagram.id}`);
     },
     onError: () => toast.error('Failed to create diagram'),
-    onSettled: () => setCreating(false),
   });
 
-  const handlePickTemplate = (template: DiagramTemplate) => {
-    setCreating(true);
-    setShowTemplatePicker(false);
-    createMutation.mutate(template);
-  };
-
-  if (isLoading) {
-    return (
-      <div className={styles.loading}>
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  const diagrams = data?.diagrams ?? [];
-
   return (
-    <div className={styles.root}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Diagrams</h1>
-        <button
-          className={styles.createBtn}
-          onClick={() => setShowTemplatePicker(true)}
-          disabled={creating || createMutation.isPending}
-        >
-          <Plus size={16} />
-          New diagram
-        </button>
-      </div>
-
-      {diagrams.length === 0 ? (
-        <div className={styles.empty}>
-          <GitBranch size={48} className={styles.emptyIcon} />
-          <h3>No diagrams yet</h3>
-          <p>Create your first diagram to get started.</p>
-          <button
-            className={styles.createBtn}
-            onClick={() => setShowTemplatePicker(true)}
-            disabled={creating || createMutation.isPending}
-          >
-            <Plus size={16} />
-            New diagram
-          </button>
-        </div>
-      ) : (
-        <div className={styles.grid}>
-          {diagrams.map((d) => (
-            <div
-              key={d.id}
-              className={styles.card}
-              onClick={() => router.push(`/diagrams/editor?id=${d.id}`)}
-            >
-              <div className={styles.cardThumb}>
-                <GitBranch size={32} className={styles.thumbIcon} />
-              </div>
-              <div className={styles.cardBody}>
-                <div className={styles.cardTitle}>{d.title}</div>
-                <div className={styles.cardMeta}>
-                  <Clock size={11} />
-                  {new Date(d.updatedAt).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                  {/* Only the one that is not the default is worth a badge:
-                      saying "Neutrino diagram" on every other card would be
-                      noise, and what a reader needs to know is which of these
-                      files is also a picture anything can open. */}
-                  {d.format === 'svg' && <span className={styles.formatBadge}>SVG</span>}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
+    <>
+      <DocumentLibrary
+        title="Diagrams"
+        noun="diagram"
+        typeText="Diagram"
+        icon={GitBranch}
+        iconColor="var(--file-color-diagram)"
+        editorPath="/diagrams/editor"
+        queryKey="diagrams"
+        previewKind="diagram"
+        // Only the one that is not the default says so: what a reader needs to know is which of
+        // these files is also a picture anything can open.
+        fetchItems={async () =>
+          (await diagramsApi.listDiagrams()).diagrams.map((d) => ({
+            id: d.id,
+            title: d.title,
+            updatedAt: d.updatedAt,
+            typeText: d.format === 'svg' ? 'Diagram (SVG)' : undefined,
+          }))
+        }
+        createItem={() => diagramsApi.createDiagram({ title: 'Untitled diagram' })}
+        onCreate={() => setShowTemplatePicker(true)}
+        renameItem={(id, title) => diagramsApi.saveDiagram(id, { title })}
+        deleteItem={(id) => diagramsApi.deleteDiagram(id)}
+      />
       <TemplatePickerModal
         open={showTemplatePicker}
         onClose={() => setShowTemplatePicker(false)}
-        onSelect={handlePickTemplate}
-        busy={creating || createMutation.isPending}
+        onSelect={(template) => {
+          setShowTemplatePicker(false);
+          createMutation.mutate(template);
+        }}
+        busy={createMutation.isPending}
       />
-    </div>
+    </>
   );
 }

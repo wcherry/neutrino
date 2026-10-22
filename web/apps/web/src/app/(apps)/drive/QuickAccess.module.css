@@ -1,0 +1,141 @@
+/* Quick access in the new looks — the region and preview cards of the Drive boards. */
+
+.region {
+  background: var(--surface-region);
+  border: var(--region-border);
+  border-radius: var(--region-radius);
+  box-shadow: var(--region-shadow);
+  padding: var(--drive-section-pad);
+}
+
+.heading {
+  margin: 0 0 12px;
+  font-size: calc(var(--ui-font-size) - 1px);
+  font-weight: var(--font-semibold);
+  color: var(--text-2);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.card {
+  display: block;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--card-frame-border);
+  background: var(--card-frame-bg);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-default), background-color var(--duration-fast) var(--ease-default);
+}
+
+.card:hover {
+  border-color: var(--card-frame-border-hover);
+  background-color: var(--button-bg-hover);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--accent-ui);
+  outline-offset: 2px;
+}
+
+.preview {
+  display: block;
+  height: calc(100px * var(--density));
+  min-height: 72px;
+  border-radius: 8px;
+  background: var(--card-preview-bg);
+  padding: 14px 20px 0;
+  overflow: hidden;
+}
+
+.thumb {
+  display: block;
+  width: calc(100% + 40px);
+  height: calc(100% + 14px);
+  margin: -14px -20px 0;
+  object-fit: cover;
+}
+
+.paper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 12px 12px 0;
+  border-radius: 4px 4px 0 0;
+  background: var(--paper-card-bg);
+  box-shadow: var(--paper-card-lift);
+}
+
+.titleLine {
+  height: 7px;
+  width: 55%;
+  border-radius: 3px;
+}
+
+.line {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--paper-card-line);
+}
+
+.line[data-w='92'] { width: 92%; }
+.line[data-w='80'] { width: 80%; }
+.line[data-w='66'] { width: 66%; }
+
+.meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 6px 4px;
+}
+
+.icon {
+  flex: 0 0 18px;
+  display: inline-flex;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  font-weight: var(--font-semibold);
+  font-size: calc(var(--ui-font-size) - 1px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-1);
+}
+
+.when {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.skeleton {
+  height: calc(100px * var(--density) + 52px);
+  border-radius: 12px;
+  background: var(--card-preview-bg);
+}
+
+.empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}

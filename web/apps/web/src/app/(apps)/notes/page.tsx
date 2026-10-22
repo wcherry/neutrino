@@ -12,6 +12,7 @@ import { DocumentPreviewModal } from '@/components/DocumentPreviewModal';
 import { useDismiss } from '@neutrino/commands';
 import styles from './page.module.css';
 import contextMenuStyles from '../drive/FileContextMenu.module.css';
+import { useListingView } from '@/lib/listingViews';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -127,8 +128,10 @@ export default function NotesPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [sortBy, setSortBy] = React.useState<SortField>('updatedAt');
-  const [sortDir, setSortDir] = React.useState<SortDir>('desc');
+  // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
+  const listing = useListingView('notes', { view: 'large', sort: 'updatedAt', dir: 'desc', flowView: 'list' });
+  const sortBy = listing.sort;
+  const sortDir = listing.dir;
   const [previewId, setPreviewId] = React.useState<string | null>(null);
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(null);
   const [renaming, setRenaming] = React.useState<{ id: string; title: string } | null>(null);
@@ -229,9 +232,11 @@ export default function NotesPage() {
         onItemMenuOpen={handleMenuOpen}
         showFilter={false}
         showSizeColumn={false}
+        viewMode={listing.view}
+        onViewModeChange={listing.setView}
         sortBy={sortBy}
         sortDir={sortDir}
-        onSortChange={(field, dir) => { setSortBy(field); setSortDir(dir); }}
+        onSortChange={listing.setSort}
         totalCount={isLoading ? undefined : notes.length}
       />
 

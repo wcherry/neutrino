@@ -109,14 +109,32 @@ async function loadedRowCount(page: Page): Promise<number> {
 async function scrollToBottom(page: Page): Promise<void> {
   await page.evaluate(async (sel) => {
     const frame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    // The element that scrolls the list: the nearest ancestor that overflows and is taller inside
+    // than out. Looked up again on every pass, because which one it is only settles once the
+    // windowed list has its full height.
+    const scroller = (el: HTMLElement): HTMLElement | null => {
+      for (let n = el.parentElement; n; n = n.parentElement) {
+        const o = getComputedStyle(n).overflowY;
+        if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+      }
+      return null;
+    };
     for (let i = 0; i < 200; i += 1) {
       const rows = document.querySelectorAll(`${sel} [role="listitem"]`);
       const last = rows[rows.length - 1] as HTMLElement | undefined;
       if (!last) return;
-      last.scrollIntoView({ block: 'end' });
+      // To the end of what is loaded, in one move. Bringing the last *rendered* row into view
+      // advanced only by the window's overscan per pass — four rows in the list, four rows of six
+      // in the large grid — so B1 timed this walk, six times longer in the list, rather than the
+      // listing. A scroller that cannot be found yet falls back to that walk.
+      const box = scroller(last);
+      if (box) box.scrollTop = box.scrollHeight;
+      else last.scrollIntoView({ block: 'end' });
       await frame();
-      const pos = Number(last.getAttribute('aria-posinset') ?? 0);
-      const size = Number(last.getAttribute('aria-setsize') ?? 0);
+      const now = document.querySelectorAll(`${sel} [role="listitem"]`);
+      const end = now[now.length - 1] as HTMLElement | undefined;
+      const pos = Number(end?.getAttribute('aria-posinset') ?? 0);
+      const size = Number(end?.getAttribute('aria-setsize') ?? 0);
       if (!size || pos >= size) break;
     }
     document.querySelector(`${sel} [aria-live="polite"]`)?.scrollIntoView({ block: 'end' });

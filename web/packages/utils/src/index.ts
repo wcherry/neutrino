@@ -13,24 +13,33 @@ export function formatFileSize(bytes: number): string {
 // Date formatting
 // ---------------------------------------------------------------------------
 
+/**
+ * One `Intl.DateTimeFormat` per set of options, made once. `toLocaleDateString` builds a new
+ * formatter on every call, and a listing formats a date or two per row on every render — profiled
+ * at a third of the long task when Drive switches view over a large folder.
+ */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+function formatter(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = JSON.stringify(options);
+  let f = formatters.get(key);
+  if (!f) formatters.set(key, (f = new Intl.DateTimeFormat(undefined, options)));
+  return f;
+}
+
+const DATE_OPTIONS: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' };
+const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = { ...DATE_OPTIONS, hour: '2-digit', minute: '2-digit' };
+
+/** Invalid input formats as "Invalid Date", as `toLocaleDateString` did. */
+function format(date: Date, options: Intl.DateTimeFormatOptions): string {
+  return Number.isNaN(date.getTime()) ? 'Invalid Date' : formatter(options).format(date);
+}
+
 export function formatDate(dateString: string, options?: Intl.DateTimeFormatOptions): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, options ?? {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+  return format(new Date(dateString), options ?? DATE_OPTIONS);
 }
 
 export function formatDateTime(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return format(new Date(dateString), DATE_TIME_OPTIONS);
 }
 
 export function formatRelativeTime(dateString: string): string {
@@ -107,7 +116,7 @@ export function formatFriendlyDate(
     return hours <= 1 ? 'An hour ago' : `${hours} hours ago`;
   }
   if (days === 1) return 'Yesterday';
-  if (days < 7) return date.toLocaleDateString(undefined, { weekday: 'long' });
+  if (days < 7) return format(date, { weekday: 'long' });
   if (days < 14) return 'A week ago';
 
   const weeks = Math.floor(days / 7);

@@ -24,6 +24,7 @@ import { fileToGridItem } from '../gridItems';
 import { routeForFile } from '../routeForFile';
 import { PreviewModal } from '../PreviewModal';
 import styles from '../tags/tags.module.css';
+import { useListingView } from '@/lib/listingViews';
 
 /**
  * A tag is addressed by query string (`/drive/tag?id=…`) rather than a path
@@ -50,8 +51,10 @@ function TagDetail() {
   const [draftName, setDraftName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
-  const [sortBy, setSortBy] = useState<SortField>('name');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Remembered per listing and synced, so this is also its default view (U9, lib/listingViews.ts).
+  const listing = useListingView('tag', { view: 'large', sort: 'name', dir: 'asc', flowView: 'list' });
+  const sortBy = listing.sort;
+  const sortDir = listing.dir;
 
   const { data: tag, isLoading: tagLoading, isError: tagError } = useQuery({
     queryKey: ['tag', tagId],
@@ -188,12 +191,11 @@ function TagDetail() {
         items={items}
         isLoading={filesLoading}
         onItemClick={openFile}
+        viewMode={listing.view}
+        onViewModeChange={listing.setView}
         sortBy={sortBy}
         sortDir={sortDir}
-        onSortChange={(field, dir) => {
-          setSortBy(field);
-          setSortDir(dir);
-        }}
+        onSortChange={listing.setSort}
         totalCount={filesData?.total}
         emptyState={
           <EmptyState

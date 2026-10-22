@@ -55,3 +55,8 @@ export function useLibrary<K extends PreferenceKey>(
 export function useVaultAvailable(store: PreferenceStore = defaultStore): boolean {
   return useSyncExternalStore(store.subscribe, () => store.vaultAvailable, () => false);
 }
+
+/** Whether the signed-in user's preferences have arrived from the server yet (`store.loaded`). */
+export function usePreferencesLoaded(store: PreferenceStore = defaultStore): boolean {
+  return useSyncExternalStore(store.subscribe, () => store.loaded, () => false);
+}

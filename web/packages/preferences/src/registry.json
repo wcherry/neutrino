@@ -38,7 +38,7 @@
       ],
       "paint": true,
       "label": "Look",
-      "section": "none"
+      "section": "appearance"
     },
     {
       "key": "appearance.density",
@@ -59,7 +59,102 @@
       ],
       "paint": true,
       "label": "Density",
-      "section": "none"
+      "section": "appearance"
+    },
+    {
+      "key": "appearance.textSize",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "sm",
+          "md",
+          "lg"
+        ]
+      },
+      "default": "md",
+      "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
+      "paint": true,
+      "label": "Text size",
+      "section": "appearance"
+    },
+    {
+      "key": "appearance.accent",
+      "type": {
+        "kind": "string",
+        "maxLength": 7,
+        "pattern": "^#[0-9a-fA-F]{6}$"
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
+      "paint": true,
+      "label": "Accent colour",
+      "section": "appearance"
+    },
+    {
+      "key": "a11y.reduceMotion",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "system",
+          "on",
+          "off"
+        ]
+      },
+      "default": "system",
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "paint": true,
+      "label": "Reduce motion",
+      "section": "appearance"
+    },
+    {
+      "key": "a11y.reduceTransparency",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "system",
+          "on",
+          "off"
+        ]
+      },
+      "default": "system",
+      "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
+      "paint": true,
+      "label": "Reduce transparency",
+      "section": "appearance"
+    },
+    {
+      "key": "a11y.contrast",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "system",
+          "more",
+          "standard"
+        ]
+      },
+      "default": "system",
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "paint": true,
+      "label": "Higher contrast",
+      "section": "appearance"
     },
     {
       "key": "shell.sidebarCollapsed",
@@ -75,6 +170,20 @@
       "label": "Collapse the sidebar",
       "section": "sidebar",
       "legacyKey": "neutrino.sidebar.collapsed"
+    },
+    {
+      "key": "shell.sidebar",
+      "type": {
+        "kind": "object",
+        "maxBytes": 4096
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "label": "Sidebar: pinned, hidden and ordered entries",
+      "section": "sidebar"
     },
     {
       "key": "calendar.weekStart",
@@ -338,6 +447,39 @@
       ],
       "label": "Team space sort direction",
       "section": "teams"
+    },
+    {
+      "key": "listing.views",
+      "type": {
+        "kind": "object",
+        "maxBytes": 4096
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "label": "Default views",
+      "section": "appearance"
+    },
+    {
+      "key": "drive.landing",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "drive",
+          "recent",
+          "starred"
+        ]
+      },
+      "default": "drive",
+      "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
+      "label": "Drive opens on",
+      "section": "appearance"
     },
     {
       "key": "ai.apiKey",

@@ -16,7 +16,7 @@
   --row-height: 44px;
   --control-height: 36px;
   --nav-item-height: 34px;
-  --ui-font-size: 14px;
+  --ui-font-size: calc(14px * var(--text-scale, 1));
   --shell-bar-height: 60px;
 }
 
@@ -25,7 +25,7 @@
   --row-height: 34px;
   --control-height: 30px;
   --nav-item-height: 28px;
-  --ui-font-size: 13px;
+  --ui-font-size: calc(13px * var(--text-scale, 1));
   --shell-bar-height: 52px;
 }
 
@@ -34,6 +34,6 @@
   --row-height: 54px;
   --control-height: 42px;
   --nav-item-height: 40px;
-  --ui-font-size: 15px;
+  --ui-font-size: calc(15px * var(--text-scale, 1));
   --shell-bar-height: 68px;
 }

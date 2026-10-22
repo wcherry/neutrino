@@ -69,3 +69,26 @@
   justify-content: flex-end;
   gap: var(--space-2);
 }
+
+/* ── The new looks (Stage 4) ──────────────────────────────────────────────────
+   One region on the shell's ground — a card in Quiet Precision — holding the title, the controls
+   and the list, as Drive's Files region does. */
+.page[data-own-regions] {
+  --page-max-width: none;
+  padding: var(--drive-section-pad);
+  gap: var(--space-4);
+  background: var(--surface-region);
+  border: var(--region-border);
+  border-radius: var(--region-radius);
+  box-shadow: var(--region-shadow);
+  min-height: 100%;
+}
+
+.page-title {
+  margin: 0;
+  font-size: var(--page-title-size);
+  font-weight: var(--page-title-weight);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-1);
+}

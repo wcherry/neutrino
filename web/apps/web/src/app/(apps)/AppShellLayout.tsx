@@ -62,12 +62,16 @@ import { FULL_VERSION_LABEL, VERSION_LABEL } from '@/lib/version';
 import { clearDriveImageCache } from '@/lib/driveImages';
 import { appForPath } from '@/lib/appForPath';
 import { usePreferencesSync } from '@/lib/preferencesSync';
-import { preferences, usePreference } from '@neutrino/preferences';
+import { preferences, usePreference, usePreferencesLoaded } from '@neutrino/preferences';
 import { readInstanceBrand } from '@/lib/instanceBrand';
+import { applyLayout, readLayout } from '@/lib/sidebarLayout';
 import shellStyles from './AppShellLayout.module.css';
 
 /** The editors, which get the editor frame in the new shell: no top bar, their title bar first. */
 const EDITOR_ROUTE = /^\/(docs|sheets|slides|diagrams|drawing)\/editor(\/|$)/;
+
+/** Set once a tab has landed in the app, so `drive.landing` redirects only the first visit. */
+const LANDED_KEY = 'neutrino.landed';
 
 /** Where each `shell.goto.*` command goes; the app ones only while that app is enabled. */
 const GOTO: { id: CommandId; href: string; app?: (typeof APP_ITEMS)[number]['app'] }[] = [
@@ -175,6 +179,26 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = usePreference('shell.sidebarCollapsed');
   const brand = useMemo<ShellBrand>(() => ({ name: readInstanceBrand().name }), []);
 
+  // Where Drive opens (`drive.landing`, U9): the logo goes there, and so does the first visit to
+  // `/drive` in a tab — once, so My Drive is still one click away for the rest of the session.
+  const [landing] = usePreference('drive.landing');
+  const landingHref = landing === 'recent' ? '/drive/recent' : landing === 'starred' ? '/drive/starred' : '/drive';
+  // Decided on the user's real value, not the default a fresh device has before the server answers.
+  const prefsLoaded = usePreferencesLoaded();
+  useEffect(() => {
+    if (auth.status !== 'ready' || !prefsLoaded) return;
+    let landed = true;
+    try {
+      landed = sessionStorage.getItem(LANDED_KEY) === '1';
+      sessionStorage.setItem(LANDED_KEY, '1');
+    } catch {
+      // No session storage: never redirect rather than redirect every time.
+    }
+    if (!landed && landingHref !== '/drive' && window.location.pathname.replace(/\/$/, '') === '/drive' && !window.location.search) {
+      router.replace(landingHref);
+    }
+  }, [auth.status, prefsLoaded, landingHref, router]);
+
   // The new sidebar lists the user's teams by name (T1); the same cached list the Teams page reads.
   const { data: teamsData } = useQuery({
     queryKey: ['teams'],
@@ -183,11 +207,16 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     staleTime: 30_000,
   });
 
+  // The user's own arrangement (U8): pins, hidden entries, the order of the apps.
+  const [sidebarPref] = usePreference('shell.sidebar');
   const navSections = withActiveItem(
-    getNavSections(isAdmin, tags, flags.teamSpaces, {
-      enabledApps,
-      teams: flow && flags.teamSpaces ? teamsData?.teams ?? [] : undefined,
-    }),
+    applyLayout(
+      getNavSections(isAdmin, tags, flags.teamSpaces, {
+        enabledApps,
+        teams: flow && flags.teamSpaces ? teamsData?.teams ?? [] : undefined,
+      }),
+      readLayout(sidebarPref),
+    ),
     pathname
   );
 
@@ -405,7 +434,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       quota={ready ? auth.quota : undefined}
       onRequestStorage={() => setRequestingStorage(true)}
       brand={brand}
-      logoHref="/drive"
+      logoHref={landingHref}
       showBrand={chrome === 'editor'}
       footer={
         chrome === 'editor' ? (
@@ -429,7 +458,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   ) : (
     <Sidebar
       logoText={brand.name ?? 'Neutrino'}
-      logoHref="/drive"
+      logoHref={landingHref}
       sections={navSections}
       quota={ready ? auth.quota : undefined}
       onRequestStorage={() => setRequestingStorage(true)}
@@ -442,7 +471,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const topbar = flow ? (
     <ShellTopBar
       brand={brand}
-      logoHref="/drive"
+      logoHref={landingHref}
       onOpenPalette={openPalette}
       paletteShortcut={paletteShortcut}
       user={shellUser}
