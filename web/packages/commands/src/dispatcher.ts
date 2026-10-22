@@ -141,6 +141,36 @@ export function registerCommand(id: string, run: CommandRun, options: CommandOpt
   return () => remove(commands, entry);
 }
 
+/**
+ * The ids with a mounted handler that is enabled right now — what the command palette offers.
+ * In mount order, most recent last; each id once.
+ */
+export function availableCommands(): string[] {
+  const seen = new Set<string>();
+  for (const c of [...commands].sort((a, b) => a.seq - b.seq)) {
+    if (commandSpec(c.id)?.palette === false) continue;
+    if (c.enabled()) seen.add(c.id);
+  }
+  return [...seen];
+}
+
+/**
+ * Run command `id` as if its key had been pressed — the most recently mounted enabled handler,
+ * declining ones passed over, exactly as `runCommand` picks. Returns whether one ran. The event it
+ * gets is a synthetic `keydown` with no key; a handler that needs a real one should be
+ * `palette: false` in the catalog.
+ */
+export function runCommandById(id: string): boolean {
+  const candidates = commands.filter((c) => c.id === id).sort((a, b) => b.seq - a.seq);
+  const event = typeof KeyboardEvent !== 'undefined' ? new KeyboardEvent('keydown') : ({} as KeyboardEvent);
+  for (const c of candidates) {
+    if (!c.enabled()) continue;
+    if (c.run(event) === false) continue;
+    return true;
+  }
+  return false;
+}
+
 /** Make `dismiss` the topmost Escape layer until the returned function is called. */
 export function pushLayer(dismiss: (e: KeyboardEvent) => void, options: LayerOptions = {}): () => void {
   const entry: LayerEntry = { dismiss, whileTyping: options.whileTyping ?? true, seq: ++seq };
@@ -226,14 +256,25 @@ function runHandlers(e: KeyboardEvent, type: KeyEventType, phase: Phase): void {
   for (const h of handlers.filter((x) => x.type === type && x.phase === phase)) h.handler(e);
 }
 
+/**
+ * Keys a capture-phase command already ran for. One key press runs one command: without this, the
+ * bubble phase would also run a bubble-phase command bound to the same chord — Docs' ⌘K link
+ * (capture) and the command palette's ⌘K (bubble) would both fire. Dismiss layers and key
+ * handlers still see the key, as they always have.
+ */
+const handledInCapture = new WeakSet<Event>();
+
 function onKeyDownCapture(e: KeyboardEvent): void {
-  if (runCommand(e, 'capture')) return;
+  if (runCommand(e, 'capture')) {
+    handledInCapture.add(e);
+    return;
+  }
   runHandlers(e, 'keydown', 'capture');
 }
 
 function onKeyDown(e: KeyboardEvent): void {
   if (dismissTopLayer(e)) return;
-  if (runCommand(e, 'bubble')) return;
+  if (!handledInCapture.has(e) && runCommand(e, 'bubble')) return;
   runHandlers(e, 'keydown', 'bubble');
 }
 

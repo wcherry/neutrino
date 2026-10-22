@@ -1,5 +1,5 @@
 {
-  "$comment": "The one list of user preferences. agent_docs/preference-registry.md explains every entry; src/preferences/catalog.rs is the server's copy of the plain-tier entries, and a test there fails when the two disagree. sync: plain = server-readable and validated; vault = sealed in the browser with the user's key; device = never leaves this browser. paint = applied before first paint from the boot cache. section: where the control lives — a Settings tab id (appearance, calendar, keyboard, advanced, ai), an app or surface (docs, sheets, slides, diagrams, drawing, photos, editors, sidebar), or none while it has no control yet. Settings search is built from it.",
+  "$comment": "The one list of user preferences. agent_docs/preference-registry.md explains every entry; src/preferences/catalog.rs is the server's copy of the plain-tier entries, and a test there fails when the two disagree. sync: plain = server-readable and validated; vault = sealed in the browser with the user's key; device = never leaves this browser. paint = applied before first paint from the boot cache. section: where the control lives — a Settings tab id (appearance, calendar, keyboard, advanced, ai), an app or surface (docs, sheets, slides, diagrams, drawing, photos, editors, sidebar), or none while it has no control yet. Settings search is built from it. scopes: who may set the key — user (the person, synced), device (this browser), org (an administrator's default, which they may lock) and team (a default inside that team's space); resolution is org lock, device, user, team, org default, product default.",
   "preferences": [
     {
       "key": "appearance.theme",
@@ -10,6 +10,10 @@
       },
       "default": "system",
       "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
       "paint": true,
       "label": "Theme",
       "section": "appearance",
@@ -28,6 +32,10 @@
       },
       "default": "classic",
       "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
       "paint": true,
       "label": "Look",
       "section": "none"
@@ -44,6 +52,11 @@
       },
       "default": "comfortable",
       "sync": "plain",
+      "scopes": [
+        "org",
+        "team",
+        "user"
+      ],
       "paint": true,
       "label": "Density",
       "section": "none"
@@ -55,6 +68,9 @@
       },
       "default": false,
       "sync": "device",
+      "scopes": [
+        "device"
+      ],
       "paint": true,
       "label": "Collapse the sidebar",
       "section": "sidebar",
@@ -69,6 +85,10 @@
       },
       "default": 0,
       "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
       "label": "Week starts on",
       "section": "calendar",
       "legacyKey": "neutrino:calendar:weekStart"
@@ -82,6 +102,9 @@
       },
       "default": 8,
       "sync": "plain",
+      "scopes": [
+        "user"
+      ],
       "label": "Working day starts",
       "section": "calendar",
       "legacyKey": "neutrino:calendar:dayStartHour"
@@ -95,6 +118,9 @@
       },
       "default": 20,
       "sync": "plain",
+      "scopes": [
+        "user"
+      ],
       "label": "Working day ends",
       "section": "calendar",
       "legacyKey": "neutrino:calendar:dayEndHour"
@@ -106,6 +132,10 @@
       },
       "default": true,
       "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
       "label": "Check spelling as you type",
       "section": "editors",
       "legacyKey": "neutrino.spellCheck"
@@ -117,6 +147,9 @@
       },
       "default": false,
       "sync": "plain",
+      "scopes": [
+        "user"
+      ],
       "label": "Let paragraphs break across pages",
       "section": "docs",
       "legacyKey": "neutrino:docs:splitParagraphs"
@@ -128,6 +161,10 @@
       },
       "default": false,
       "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
       "label": "Detect faces in new photos automatically",
       "section": "advanced",
       "legacyKey": "neutrino:photos:autoFaceDetect"
@@ -140,6 +177,9 @@
       },
       "default": null,
       "sync": "plain",
+      "scopes": [
+        "user"
+      ],
       "label": "Drawing brush",
       "section": "drawing",
       "legacyKey": "neutrino:drawing:brush"
@@ -151,6 +191,9 @@
       },
       "default": false,
       "sync": "device",
+      "scopes": [
+        "device"
+      ],
       "label": "Don't sync the search index from this device",
       "section": "advanced",
       "legacyKey": "neutrino:search:syncDisabled"
@@ -167,6 +210,10 @@
       },
       "default": "neutrino",
       "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
       "label": "Shortcut preset",
       "section": "keyboard"
     },
@@ -178,6 +225,9 @@
       },
       "default": null,
       "sync": "plain",
+      "scopes": [
+        "user"
+      ],
       "label": "Custom keyboard shortcuts",
       "section": "keyboard"
     },
@@ -193,8 +243,101 @@
       },
       "default": "gemini",
       "sync": "plain",
+      "scopes": [
+        "org",
+        "user"
+      ],
       "label": "AI provider",
       "section": "ai"
+    },
+    {
+      "key": "apps.enabled",
+      "type": {
+        "kind": "set",
+        "options": [
+          "docs",
+          "sheets",
+          "slides",
+          "notes",
+          "diagrams",
+          "drawing",
+          "photos",
+          "calendar"
+        ]
+      },
+      "default": [
+        "docs",
+        "sheets",
+        "slides",
+        "notes",
+        "diagrams",
+        "drawing",
+        "photos",
+        "calendar"
+      ],
+      "sync": "plain",
+      "scopes": [
+        "org"
+      ],
+      "label": "Apps this instance offers",
+      "section": "admin"
+    },
+    {
+      "key": "teamSpace.view",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "large",
+          "small",
+          "list"
+        ]
+      },
+      "default": "large",
+      "sync": "plain",
+      "scopes": [
+        "team",
+        "user"
+      ],
+      "label": "Team space view",
+      "section": "teams"
+    },
+    {
+      "key": "teamSpace.sort",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "name",
+          "size",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "default": "name",
+      "sync": "plain",
+      "scopes": [
+        "team",
+        "user"
+      ],
+      "label": "Team space sort",
+      "section": "teams"
+    },
+    {
+      "key": "teamSpace.sortDirection",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "asc",
+          "desc"
+        ]
+      },
+      "default": "asc",
+      "sync": "plain",
+      "scopes": [
+        "team",
+        "user"
+      ],
+      "label": "Team space sort direction",
+      "section": "teams"
     },
     {
       "key": "ai.apiKey",
@@ -204,6 +347,9 @@
       },
       "default": "",
       "sync": "vault",
+      "scopes": [
+        "user"
+      ],
       "label": "AI API key",
       "section": "ai"
     },
@@ -214,6 +360,9 @@
       },
       "default": [],
       "sync": "vault",
+      "scopes": [
+        "user"
+      ],
       "label": "Conditional-format templates",
       "section": "sheets",
       "legacyKey": "neutrino:sheets:cf-templates"
@@ -225,6 +374,9 @@
       },
       "default": [],
       "sync": "vault",
+      "scopes": [
+        "user"
+      ],
       "label": "Conditional-format variables",
       "section": "sheets",
       "legacyKey": "neutrino:sheets:cf-variables"
@@ -236,6 +388,9 @@
       },
       "default": [],
       "sync": "vault",
+      "scopes": [
+        "user"
+      ],
       "label": "Saved gradients (Slides)",
       "section": "slides",
       "legacyKey": "neutrino:slides:gradientPresets"
@@ -247,6 +402,9 @@
       },
       "default": [],
       "sync": "vault",
+      "scopes": [
+        "user"
+      ],
       "label": "Saved gradients (Diagrams)",
       "section": "diagrams",
       "legacyKey": "neutrino:diagrams:gradientPresets"
@@ -258,6 +416,9 @@
       },
       "default": [],
       "sync": "vault",
+      "scopes": [
+        "user"
+      ],
       "label": "Saved fills (Drawing)",
       "section": "drawing",
       "legacyKey": "neutrino:drawing:fillPresets"
@@ -269,6 +430,9 @@
       },
       "default": [],
       "sync": "vault",
+      "scopes": [
+        "user"
+      ],
       "label": "Saved gradients",
       "section": "photos",
       "legacyKey": "neutrino:bg:gradientPresets"
@@ -280,6 +444,9 @@
       },
       "default": null,
       "sync": "vault",
+      "scopes": [
+        "user"
+      ],
       "label": "Shape libraries (Diagrams)",
       "section": "diagrams",
       "legacyKey": "neutrino:diagrams:shapeLibraries"

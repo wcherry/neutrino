@@ -17,6 +17,7 @@
   --control-height: 36px;
   --nav-item-height: 34px;
   --ui-font-size: 14px;
+  --shell-bar-height: 60px;
 }
 
 [data-density="compact"] {
@@ -25,6 +26,7 @@
   --control-height: 30px;
   --nav-item-height: 28px;
   --ui-font-size: 13px;
+  --shell-bar-height: 52px;
 }
 
 [data-density="spacious"] {
@@ -33,4 +35,5 @@
   --control-height: 42px;
   --nav-item-height: 40px;
   --ui-font-size: 15px;
+  --shell-bar-height: 68px;
 }

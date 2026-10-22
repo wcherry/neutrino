@@ -23,6 +23,7 @@ import {
   SearchX,
   X,
 } from 'lucide-react';
+import { getCurrentUserId } from '@neutrino/api-core';
 import { storageApi, filesystemApi, teamsApi, downloadAndDecryptFile, useUser, type FileItem, type Folder as FolderItem, type DriveFileType } from '@/lib/api';
 import { describeKeyHandover, handFileKeyToTeam } from '@/lib/teamTransfer';
 import { getFileIcon, getIconColor } from '@/lib/file-icons';
@@ -96,6 +97,12 @@ function DriveContent() {
   const toast = useToast();
   const router = useRouter();
   const currentUser = useUser();
+  // The root folder's id is the user's id, and the access token already names it. Reading it from
+  // there lets the listing start in parallel with `/auth/me` instead of after it — the first row
+  // of My Drive was waiting a full round trip for an answer it already had (A2 in the performance
+  // guide). The server still checks the token on the listing request itself.
+  const [tokenUserId] = useState(getCurrentUserId);
+  const ownerId = currentUser?.id ?? tokenUserId;
   const searchParams = useSearchParams();
   const searchTerm = (searchParams.get(DRIVE_SEARCH_PARAM) ?? '').trim();
 
@@ -293,9 +300,9 @@ function DriveContent() {
     // through its own listing, rather than through the whole folder with the
     // misses dropped in the browser — which left a chip looking empty until
     // enough pages had been scrolled past to reach a file that matched.
-    queryKey: ['contents', currentFolderId, currentUser?.id, { orderBy: sortBy, direction: sortDir, type: fileTypeParam(filter) }],
+    queryKey: ['contents', currentFolderId, ownerId, { orderBy: sortBy, direction: sortDir, type: fileTypeParam(filter) }],
     queryFn: ({ pageParam }) =>
-      filesystemApi.getFolderContents(currentFolderId ?? currentUser!.id, {
+      filesystemApi.getFolderContents(currentFolderId ?? ownerId!, {
         limit: CONTENTS_PAGE_SIZE,
         offset: pageParam,
         orderBy: sortBy,
@@ -310,7 +317,7 @@ function DriveContent() {
       lastPage.folders.length === CONTENTS_PAGE_SIZE || lastPage.files.length === CONTENTS_PAGE_SIZE
         ? lastOffset + CONTENTS_PAGE_SIZE
         : undefined,
-    enabled: !!currentFolderId || !!currentUser,
+    enabled: !!currentFolderId || !!ownerId,
     // Re-read the folder every time this page is mounted, rather than trusting
     // the global one-minute `staleTime` (see `QueryProvider`). The mutations on
     // this page invalidate the listing themselves, but the ones that change it

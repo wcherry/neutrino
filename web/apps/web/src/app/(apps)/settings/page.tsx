@@ -26,6 +26,8 @@ import { forceUploadSnapshot } from '@/lib/searchIndexSnapshot';
 import { usePreference } from '@neutrino/preferences';
 import { SettingsSearch } from './SettingsSearch';
 import { KeyboardSettings } from './KeyboardSettings';
+import { LookPicker } from './LookPicker';
+import { InheritedNote, useLocked } from './InheritedNote';
 import styles from './page.module.css';
 
 // ---------------------------------------------------------------------------
@@ -499,6 +501,9 @@ const qc = useQueryClient();
     },
   });
 
+  const themeLocked = useLocked('appearance.theme');
+  const aiProviderLocked = useLocked('ai.provider');
+
   function handleThemeSelect(themeId: string) {
     applyTheme(themeId as ThemeChoice);
     save.mutate({ theme: themeId });
@@ -642,12 +647,14 @@ const qc = useQueryClient();
               <select
                 className={styles.formInput}
                 value={aiProvider}
+                disabled={aiProviderLocked}
                 onChange={(e) => { aiDraftEdited.current = true; setAiProvider(e.target.value as AiSettings['provider']); }}
               >
                 <option value="gemini">Google Gemini (free tier available)</option>
                 <option value="claude">Anthropic Claude</option>
                 <option value="openai">OpenAI (GPT-4o)</option>
               </select>
+              <InheritedNote prefKey="ai.provider" />
             </div>
 
             <div className={styles.formGroup}>
@@ -691,10 +698,22 @@ const qc = useQueryClient();
 
             <div className={styles.formGroup}>
               <div className={styles.settingInfo}>
+                <div className={styles.settingName}>Look</div>
+                <div className={styles.settingDesc}>The shape of the interface — how its regions, buttons and menus are drawn. Try a new look; you can switch back at any time</div>
+              </div>
+              <LookPicker />
+            </div>
+
+            <div className={styles.formGroup}>
+              <div className={styles.settingInfo}>
                 <div className={styles.settingName}>Theme</div>
                 <div className={styles.settingDesc}>Choose the color scheme for the interface — selecting a theme applies and saves it immediately</div>
               </div>
-              <ThemeGrid onSelect={handleThemeSelect} />
+              {/* A locked theme still shows the grid, disabled, so it is clear what is set and by whom. */}
+              <fieldset className={styles.lockable} disabled={themeLocked}>
+                <ThemeGrid onSelect={handleThemeSelect} />
+              </fieldset>
+              <InheritedNote prefKey="appearance.theme" />
             </div>
 
             {save.isError && (

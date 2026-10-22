@@ -11,9 +11,16 @@
  *    only**; this is what takes the AI key out of plaintext `localStorage`.
  *  - **device** — this browser only, in `localStorage`.
  *
- * Resolution for a key is its tier's stored value if it is valid, else the registry default.
- * A stored value that fails validation is treated as absent, so a component never receives a
- * shape it was not written for.
+ * Resolution, most specific first, with the organisation's lock on top (roadmap §3.1):
+ *
+ *     org lock → device → user → team (inside that team's space) → org default → registry default
+ *
+ * `device` and `user` are the key's own tier (device, plain or vault), whichever it is; a key only
+ * consults the team and org layers if its `scopes` allow them. A stored value that fails validation
+ * is treated as absent at every layer, so a component never receives a shape it was not written
+ * for. The org layer comes with every page (`window.__NEUTRINO_INSTANCE__`, written by the server)
+ * and with every preferences read; team defaults come with the read and apply once the app names
+ * the team whose space is on screen (`setTeamContext`).
  *
  * The store has no dependencies: the app *attaches* a backend (HTTP) and the vault crypto once
  * a user is signed in, which is what lets `@neutrino/layout` read preferences without the API
@@ -23,9 +30,42 @@
 
 import { REGISTRY, defaultOf, isValid, specFor, type PreferenceKey, type PreferenceValues } from './registry';
 
+export interface OrgLayer {
+  values: Record<string, unknown>;
+  /** Keys whose org value wins over the user's own, and that the user cannot change. */
+  locked: string[];
+}
+
 export interface PreferencesSnapshot {
   values: Record<string, unknown>;
   vault: { blob: string; updatedAt: string } | null;
+  /** Absent from a server older than the org layer; treated as empty. */
+  org?: OrgLayer;
+  /** Team id → that team's defaults, for each team the user belongs to. */
+  teams?: Record<string, Record<string, unknown>>;
+}
+
+/** Where a key's resolved value came from — what Settings says beside a control. */
+export type PreferenceSource = 'locked' | 'device' | 'user' | 'team' | 'org' | 'default';
+
+/** What the server writes into every page (`src/branding/inject.rs`). */
+export interface InstanceData {
+  brand?: Record<string, unknown>;
+  org?: OrgLayer;
+}
+
+export function readInstance(): InstanceData | null {
+  if (typeof window === 'undefined') return null;
+  const data = (window as unknown as { __NEUTRINO_INSTANCE__?: InstanceData }).__NEUTRINO_INSTANCE__;
+  return data && typeof data === 'object' ? data : null;
+}
+
+function asOrgLayer(raw: unknown): { values: Record<string, unknown>; locked: Set<string> } {
+  const layer = (raw && typeof raw === 'object' ? raw : {}) as Partial<OrgLayer>;
+  return {
+    values: layer.values && typeof layer.values === 'object' ? layer.values : {},
+    locked: new Set(Array.isArray(layer.locked) ? layer.locked.filter((k) => typeof k === 'string') : []),
+  };
 }
 
 export interface PreferenceBackend {
@@ -55,8 +95,10 @@ export interface StorageLike {
   removeItem(key: string): void;
 }
 
-/** What the anti-FOUC script reads before React runs (app/layout.tsx). */
+/** What the anti-FOUC script reads before React runs (app/RootDocument.tsx). */
 export const BOOT_KEY = 'neutrino.prefs.boot';
+/** The field of the boot record listing the paint keys the user (or device) set themselves. */
+export const BOOT_OWN_KEY = '$own';
 const CACHE_KEY = 'neutrino.prefs.cache';
 const DEVICE_KEY = 'neutrino.prefs.device';
 const FLUSH_DELAY_MS = 400;
@@ -89,6 +131,9 @@ export class PreferenceStore {
   /** True once the vault has been loaded and opened (or found absent) for this user. */
   private vaultOpen = false;
   private device: Record<string, unknown> = {};
+  private org = asOrgLayer(null);
+  private teams: Record<string, Record<string, unknown>> = {};
+  private teamContext: string | null = null;
   private userId: string | null = null;
   private backend: PreferenceBackend | null = null;
   private crypto: VaultCrypto | null = null;
@@ -100,11 +145,23 @@ export class PreferenceStore {
   private listeners = new Set<Listener>();
   private version = 0;
 
-  constructor(private storage: StorageLike | null = browserStorage()) {
+  constructor(
+    private storage: StorageLike | null = browserStorage(),
+    instance: InstanceData | null = readInstance(),
+  ) {
     this.device = (safeParse(storage?.getItem(DEVICE_KEY) ?? null) as Record<string, unknown>) ?? {};
     const cache = safeParse(storage?.getItem(CACHE_KEY) ?? null) as
-      | { userId?: string; values?: Record<string, unknown>; pending?: Record<string, unknown> }
+      | {
+          userId?: string;
+          values?: Record<string, unknown>;
+          pending?: Record<string, unknown>;
+          org?: OrgLayer;
+          teams?: Record<string, Record<string, unknown>>;
+        }
       | undefined;
+    // The org layer the server wrote into this page is the freshest there is; the cached copy is
+    // for a page that came from somewhere that does not inject it (the Next dev server).
+    this.org = asOrgLayer(instance?.org ?? cache?.org);
     if (cache?.values) {
       // The last signed-in user's plain values, for the first paint of a reload. Replaced — not
       // merged — the moment a different user attaches.
@@ -114,6 +171,7 @@ export class PreferenceStore {
       // the flush delay of a change would otherwise load the server's older copy over it and
       // lose it. `attach` keeps them for the same user and sends them.
       if (cache.pending && typeof cache.pending === 'object') this.pendingPlain = cache.pending;
+      if (cache.teams && typeof cache.teams === 'object') this.teams = cache.teams;
     }
     if (typeof window !== 'undefined' && storage) {
       // Another tab of this browser changed something: its cache write is the news. Cross-device
@@ -136,14 +194,48 @@ export class PreferenceStore {
   // ── Reading ──────────────────────────────────────────────────────────────────
 
   get<K extends PreferenceKey>(key: K): PreferenceValues[K] {
-    const spec = specFor(key);
-    if (!spec) throw new Error(`${key} is not a registered preference`);
-    const tier = spec.sync === 'device' ? this.device : spec.sync === 'vault' ? this.vault ?? {} : this.plain;
-    const value = tier[key];
-    return (value !== undefined && isValid(spec, value) ? value : defaultOf(key)) as PreferenceValues[K];
+    return this.resolve(key).value as PreferenceValues[K];
   }
 
-  /** Whether the user (or this device) has set `key`, as opposed to it resolving to the default. */
+  /** Where `key`'s value comes from: a lock, the user's own choice, a team or org default, or none. */
+  sourceOf(key: PreferenceKey): PreferenceSource {
+    return this.resolve(key).source;
+  }
+
+  /** Locked by the organisation: Settings shows it disabled, and `set` refuses it. */
+  isLocked(key: PreferenceKey): boolean {
+    return this.resolve(key).source === 'locked';
+  }
+
+  /** The value `key` would have without the user's own choice — what "reset" would give them. */
+  inherited<K extends PreferenceKey>(key: K): PreferenceValues[K] {
+    return this.resolve(key, false).value as PreferenceValues[K];
+  }
+
+  /** The organisation's defaults and locks, as the server last described them. */
+  orgLayer(): OrgLayer {
+    return { values: { ...this.org.values }, locked: [...this.org.locked] };
+  }
+
+  private resolve(key: PreferenceKey, own = true): { value: unknown; source: PreferenceSource } {
+    const spec = specFor(key);
+    if (!spec) throw new Error(`${key} is not a registered preference`);
+    const ok = (v: unknown) => v !== undefined && isValid(spec, v);
+    const scoped = (scope: 'org' | 'team') => spec.scopes.includes(scope);
+    if (scoped('org') && this.org.locked.has(key) && ok(this.org.values[key])) {
+      return { value: this.org.values[key], source: 'locked' };
+    }
+    if (own) {
+      const tier = spec.sync === 'device' ? this.device : spec.sync === 'vault' ? this.vault ?? {} : this.plain;
+      if (ok(tier[key])) return { value: tier[key], source: spec.sync === 'device' ? 'device' : 'user' };
+    }
+    const team = this.teamContext ? this.teams[this.teamContext]?.[key] : undefined;
+    if (scoped('team') && ok(team)) return { value: team, source: 'team' };
+    if (scoped('org') && ok(this.org.values[key])) return { value: this.org.values[key], source: 'org' };
+    return { value: defaultOf(key), source: 'default' };
+  }
+
+  /** Whether the user (or this device) has set `key`, as opposed to it resolving to an inherited value. */
   isSet(key: PreferenceKey): boolean {
     const spec = specFor(key)!;
     const tier = spec.sync === 'device' ? this.device : spec.sync === 'vault' ? this.vault ?? {} : this.plain;
@@ -165,10 +257,15 @@ export class PreferenceStore {
 
   // ── Writing ──────────────────────────────────────────────────────────────────
 
-  /** Returns false (and changes nothing) for a value the registry would not accept. */
+  /**
+   * Returns false (and changes nothing) for a value the registry would not accept, for a key the
+   * user does not set (an org-only key), and for one the organisation has locked.
+   */
   set<K extends PreferenceKey>(key: K, value: PreferenceValues[K]): boolean {
     const spec = specFor(key);
     if (!spec || !isValid(spec, value)) return false;
+    if (!spec.scopes.includes('user') && !spec.scopes.includes('device')) return false;
+    if (this.isLocked(key)) return false;
     // Setting what is already there is not a change: no save, no re-render.
     if (this.isSet(key) && JSON.stringify(this.get(key)) === JSON.stringify(value)) return true;
     if (spec.sync === 'device') {
@@ -206,6 +303,16 @@ export class PreferenceStore {
     this.scheduleFlush();
   }
 
+  /**
+   * The team whose space is on screen, or null outside every team. Team defaults apply only
+   * inside their own space (a team default is a starting point there, not a policy elsewhere).
+   */
+  setTeamContext(teamId: string | null): void {
+    if (this.teamContext === teamId) return;
+    this.teamContext = teamId;
+    this.changed();
+  }
+
   // ── Session ──────────────────────────────────────────────────────────────────
 
   /** A user signed in: load their preferences and start syncing. */
@@ -237,6 +344,9 @@ export class PreferenceStore {
     this.vaultUpdatedAt = null;
     this.pendingPlain = {};
     this.dirtyVault.clear();
+    // The org layer is the instance's and stays; which teams the user was in does not.
+    this.teams = {};
+    this.teamContext = null;
     this.storage?.removeItem(CACHE_KEY);
     this.changed();
   }
@@ -247,6 +357,7 @@ export class PreferenceStore {
     const snapshot = await this.backend.load();
     // Local writes not yet sent win over what the server had a moment ago.
     this.plain = this.withPending(snapshot.values);
+    this.adoptLayers(snapshot);
     this.adoptVault(snapshot.vault);
     this.changed();
     if (this.dirtyVault.size > 0 || Object.keys(this.pendingPlain).length > 0) this.scheduleFlush();
@@ -310,6 +421,12 @@ export class PreferenceStore {
     return merged;
   }
 
+  /** The org and team layers from a server read; an older server sends neither and changes nothing. */
+  private adoptLayers(snapshot: PreferencesSnapshot): void {
+    if (snapshot.org) this.org = asOrgLayer(snapshot.org);
+    if (snapshot.teams && typeof snapshot.teams === 'object') this.teams = snapshot.teams;
+  }
+
   private adoptVault(vault: PreferencesSnapshot['vault']): void {
     if (!vault) {
       // No vault yet: an empty one is open, and the first vault write creates it.
@@ -352,6 +469,7 @@ export class PreferenceStore {
     try {
       const snapshot = await this.backend.patch(batch);
       this.plain = this.withPending(snapshot.values);
+      this.adoptLayers(snapshot);
       this.changed();
     } catch (e) {
       // Keep the batch for the next attempt, under anything written since.
@@ -395,15 +513,31 @@ export class PreferenceStore {
     if (!this.userId) return;
     this.storage?.setItem(
       CACHE_KEY,
-      JSON.stringify({ userId: this.userId, values: this.plain, pending: this.pendingPlain }),
+      JSON.stringify({
+        userId: this.userId,
+        values: this.plain,
+        pending: this.pendingPlain,
+        org: this.orgLayer(),
+        teams: this.teams,
+      }),
     );
   }
 
   private changed(): void {
     this.version += 1;
     this.persistCache();
+    // Resolved values, plus which of them are the user's own: the anti-FOUC script lets a fresher
+    // org default (from the page itself) replace an inherited value, never the user's own choice.
     const boot: Record<string, unknown> = {};
-    for (const spec of REGISTRY) if (spec.paint) boot[spec.key] = this.get(spec.key as PreferenceKey);
+    const own: string[] = [];
+    for (const spec of REGISTRY) {
+      if (!spec.paint) continue;
+      const key = spec.key as PreferenceKey;
+      boot[key] = this.get(key);
+      const source = this.sourceOf(key);
+      if (source === 'user' || source === 'device') own.push(key);
+    }
+    boot[BOOT_OWN_KEY] = own;
     this.storage?.setItem(BOOT_KEY, JSON.stringify(boot));
     for (const listener of this.listeners) listener();
   }

@@ -214,3 +214,19 @@
   cursor: not-allowed;
   transform: none;
 }
+
+/* The administrator's message (Admin › Organisation › Branding), when there is one. */
+.brandMessage {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  white-space: pre-line;
+}
+
+.brandMessage:empty {
+  display: none;
+}

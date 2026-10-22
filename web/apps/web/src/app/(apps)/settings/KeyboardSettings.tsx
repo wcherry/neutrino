@@ -18,6 +18,7 @@ import {
   useKeymap,
 } from '@neutrino/commands';
 import { preferences } from '@neutrino/preferences';
+import { InheritedNote, useLocked } from './InheritedNote';
 import styles from './KeyboardSettings.module.css';
 
 /** Keys that already mean something everywhere and so cannot be a command's binding. */
@@ -103,6 +104,7 @@ export function KeyboardSettings() {
   }
 
   const customised = Object.keys(bindings).length;
+  const presetLocked = useLocked('keyboard.preset');
 
   return (
     <div className={styles.root}>
@@ -119,12 +121,14 @@ export function KeyboardSettings() {
               role="radio"
               aria-checked={preset === p.id}
               className={`${styles.segmentedBtn} ${preset === p.id ? styles.segmentedBtnActive : ''}`}
+              disabled={presetLocked}
               onClick={() => setPreset(p.id)}
             >
               {p.label}
             </button>
           ))}
         </div>
+        <InheritedNote prefKey="keyboard.preset" />
       </section>
 
       <section className={styles.section}>

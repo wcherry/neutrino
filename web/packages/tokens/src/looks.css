@@ -402,6 +402,103 @@
   --toast-bg-opaque: #1e2660;
 }
 
+/* ── Shell — the top bar, sidebar and editor frame (Stage 3) ───────────────────
+ * The new shell (@neutrino/layout `ShellFrame`) only runs in the three new
+ * looks; classic keeps today's Sidebar and Topbar, so classic's values here are
+ * never drawn and only exist so a token always resolves.
+ *
+ * From the mockups (agent_docs/ui-look-and-feel-roadmap.md §3): the flows run
+ * the top bar edge to edge and pad the body; Precision floats the top bar as a
+ * card with a margin, and every region below it is a card with a gap.
+ */
+:root,
+[data-look="classic"] {
+  --shell-bar-margin: 0px;
+  --shell-body-pad: 0px;
+  --shell-editor-top: 0px;
+  --shell-gap: 0px;
+  --shell-sidebar-width: 244px;
+  --shell-rail-width: 60px;
+  --nav-active-bg: var(--selected-bg);
+  --nav-active-fg: var(--selected-fg);
+  --search-bg: var(--field-bg);
+  --search-border: var(--field-border);
+  --pill-bg: var(--color-bg-subtle);
+  --kbd-border: var(--color-border);
+  --meter-track: var(--color-bg-subtle);
+  --text-1: var(--color-text-primary);
+  --text-2: var(--color-text-secondary);
+  --text-3: var(--color-text-muted);
+}
+
+[data-look="lightflow"],
+[data-look="precision"],
+[data-look="blended"] {
+  --text-1: #16181d;
+  --text-2: #4a5160;
+  --text-3: #656c7a;
+  --nav-active-fg: var(--text-1);
+  --kbd-border: #e3e6eb;
+  --pill-bg: #f4f5f7;
+  --nav-active-bg: #f3f4f7;
+  --meter-track: #eef0f3;
+}
+
+[data-look="lightflow"],
+[data-look="blended"] {
+  --shell-body-pad: 0 24px 24px 8px;
+  --shell-gap: 8px;
+  --search-bg: #f4f5f7;
+  --search-border: transparent;
+}
+
+[data-look="precision"] {
+  --shell-bar-margin: 8px 8px 0;
+  --shell-body-pad: 10px 8px 8px;
+  --shell-editor-top: 8px;
+  --shell-gap: 10px;
+  --search-bg: #f6f7f9;
+  --search-border: #e3e6eb;
+}
+
+/* Blended: neutrals and fills tinted toward the app's colour, translucent over the wash. */
+[data-look="blended"] {
+  --text-2: color-mix(in srgb, var(--app-color) 22%, #3a3f50);
+  --text-3: color-mix(in srgb, var(--app-color) 20%, #565b6e);
+  --search-bg: rgb(255 255 255 / 0.7);
+  --pill-bg: rgb(255 255 255 / 0.6);
+  --nav-active-bg: rgb(255 255 255 / 0.7);
+  --kbd-border: color-mix(in srgb, var(--app-color) 20%, transparent);
+  --meter-track: color-mix(in srgb, var(--app-color) 12%, transparent);
+}
+
+[data-look="lightflow"][data-theme="dark"],
+[data-look="precision"][data-theme="dark"],
+[data-look="blended"][data-theme="dark"] {
+  --text-1: #e8eaee;
+  --text-2: #a8aeba;
+  --text-3: #8a919e;
+  --search-bg: #1a1d23;
+  --pill-bg: #1a1d23;
+  --nav-active-bg: #1c2027;
+  --kbd-border: #2c313b;
+  --meter-track: #232730;
+}
+
+[data-look="precision"][data-theme="dark"] {
+  --search-border: #242832;
+}
+
+[data-look="blended"][data-theme="dark"] {
+  --text-2: #aeb3cc;
+  --text-3: #8f95b0;
+  --search-bg: rgb(255 255 255 / 0.06);
+  --pill-bg: rgb(255 255 255 / 0.06);
+  --nav-active-bg: color-mix(in srgb, var(--app-color) 16%, transparent);
+  --kbd-border: color-mix(in srgb, var(--app-color) 28%, transparent);
+  --meter-track: color-mix(in srgb, var(--app-color) 18%, transparent);
+}
+
 /* Translucency is a preference too: with it reduced, every frosted surface
    is opaque (look-and-feel roadmap §2, "Menus, popups and translucency"). */
 @media (prefers-reduced-transparency: reduce) {

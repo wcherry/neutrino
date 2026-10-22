@@ -80,13 +80,19 @@ export function buildKeymap(preset: Preset, bindings: Bindings): Map<string, str
   return map;
 }
 
-/** Commands other than `id` that `chord` would also run where `id` runs. */
+/**
+ * Commands other than `id` that `chord` would also run where `id` runs. A global command that
+ * `yields` to an app's own binding of the chord is not a conflict with it — the app's wins inside
+ * the app, by design (catalog.ts).
+ */
 export function conflictsWith(id: string, chord: string, keymap: Map<string, string[]>): CommandSpec[] {
   const spec = commandSpec(id);
   const normal = normalizeChord(chord);
   if (!spec || !normal) return [];
+  const yieldsTo = (a: CommandSpec, b: CommandSpec) => a.app === 'global' && !!a.yields && b.app !== 'global';
   return (keymap.get(normal) ?? [])
     .filter((other) => other !== id)
     .map((other) => commandSpec(other)!)
-    .filter((other) => sharesScope(spec.app, other.app));
+    .filter((other) => sharesScope(spec.app, other.app))
+    .filter((other) => !yieldsTo(spec, other) && !yieldsTo(other, spec));
 }

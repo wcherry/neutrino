@@ -30,6 +30,8 @@ const ELSEWHERE: Record<string, string> = {
   photos: 'In the photo editor',
   editors: 'In the Docs, Sheets and Slides editors',
   sidebar: 'The sidebar’s collapse button',
+  admin: 'Admin › Organisation (administrators only)',
+  teams: 'A team’s Settings, or the view controls in its space',
 };
 
 export interface SettingsSearchResult {

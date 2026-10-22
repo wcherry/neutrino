@@ -8,6 +8,17 @@ import raw from './registry.json';
 
 export type Sync = 'plain' | 'vault' | 'device';
 
+/**
+ * Who may set a key. `user` and `device` are the person's own; `org` is an administrator's default
+ * (which they may lock) and `team` a default inside that team's space. Resolution, most specific
+ * first, with the org lock on top: org lock → device → user → team → org default → default.
+ */
+export type Scope = 'user' | 'device' | 'org' | 'team';
+
+/** Every app an instance can offer, in sidebar order — the options of `apps.enabled`. */
+export const APPS = ['docs', 'sheets', 'slides', 'notes', 'diagrams', 'drawing', 'photos', 'calendar'] as const;
+export type AppKey = (typeof APPS)[number];
+
 export type PreferenceType =
   | { kind: 'enum'; options: readonly string[] }
   | { kind: 'boolean' }
@@ -15,6 +26,8 @@ export type PreferenceType =
   | { kind: 'string'; maxLength: number; pattern?: string }
   | { kind: 'object'; maxBytes: number }
   | { kind: 'stringList'; maxItems: number; maxLength: number }
+  /** Distinct values, each one of `options`. */
+  | { kind: 'set'; options: readonly string[] }
   /** A list of user-authored items (a library); its items are the feature's own shape. */
   | { kind: 'list' }
   /** Any JSON value the owning feature validates itself. Vault-only: the server never reads it. */
@@ -25,6 +38,7 @@ export interface PreferenceSpec {
   type: PreferenceType;
   default: unknown;
   sync: Sync;
+  scopes: readonly Scope[];
   /** Applied before first paint, from the boot cache. */
   paint?: boolean;
   label: string;
@@ -56,6 +70,10 @@ export interface PreferenceValues {
   /** Command id → chords; see @neutrino/commands `sanitizeBindings`. */
   'keyboard.bindings': Record<string, string[]> | null;
   'ai.provider': 'gemini' | 'claude' | 'openai';
+  'apps.enabled': AppKey[];
+  'teamSpace.view': 'large' | 'small' | 'list';
+  'teamSpace.sort': 'name' | 'size' | 'createdAt' | 'updatedAt';
+  'teamSpace.sortDirection': 'asc' | 'desc';
   'ai.apiKey': string;
   'library.sheets.cfTemplates': unknown[];
   'library.sheets.cfVariables': unknown[];
@@ -113,6 +131,11 @@ export function isValid(spec: PreferenceSpec, value: unknown): boolean {
         Array.isArray(value) &&
         value.length <= t.maxItems &&
         value.every((v) => typeof v === 'string' && [...v].length <= t.maxLength)
+      );
+    case 'set':
+      return (
+        Array.isArray(value) &&
+        value.every((v, i) => typeof v === 'string' && t.options.includes(v) && value.indexOf(v) === i)
       );
     case 'list':
       return Array.isArray(value);

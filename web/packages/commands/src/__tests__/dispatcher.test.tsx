@@ -4,7 +4,9 @@ import { render, fireEvent, act } from '@testing-library/react';
 import { preferences } from '@neutrino/preferences';
 import {
   addKeyHandler,
+  availableCommands,
   pushLayer,
+  runCommandById,
   registerCommand,
   resetForTesting,
   setPlatformForTesting,
@@ -239,5 +241,42 @@ describe('useCommands', () => {
     act(() => { e = press('a', { metaKey: true }); });
     expect(select).toHaveBeenCalledOnce();
     expect(e.defaultPrevented).toBe(true);
+  });
+});
+
+describe('the command palette\'s view', () => {
+  it('lists the commands that could run now, once each, without key-only ones', () => {
+    registerCommand('docs.save', () => {});
+    registerCommand('docs.find', () => {}, { enabled: () => false });
+    registerCommand('sheets.copy', () => {});
+    registerCommand('docs.save', () => {});
+    expect(availableCommands()).toEqual(['docs.save']);
+  });
+
+  it('runs a command by id through the same handler a key would, skipping ones that decline', () => {
+    const outer = vi.fn();
+    const inner = vi.fn(() => false);
+    registerCommand('shell.goto.docs', outer);
+    registerCommand('shell.goto.docs', inner);
+    expect(runCommandById('shell.goto.docs')).toBe(true);
+    expect(inner).toHaveBeenCalledOnce();
+    expect(outer).toHaveBeenCalledOnce();
+    expect(runCommandById('shell.goto.sheets')).toBe(false);
+  });
+
+  it("gives ⌘K to Docs' link command inside Docs and to the palette everywhere else", () => {
+    const palette = vi.fn();
+    const link = vi.fn();
+    registerCommand('shell.commandPalette', palette);
+    press('k', { metaKey: true });
+    expect(palette).toHaveBeenCalledOnce();
+    const off = registerCommand('docs.insertLink', link, { phase: 'capture' });
+    press('k', { metaKey: true });
+    expect(link).toHaveBeenCalledOnce();
+    expect(palette).toHaveBeenCalledOnce();
+    // ⌘/ still opens the palette inside Docs.
+    press('/', { metaKey: true });
+    expect(palette).toHaveBeenCalledTimes(2);
+    off();
   });
 });

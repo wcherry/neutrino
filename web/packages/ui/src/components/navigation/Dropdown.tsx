@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useRef, useEffect, useId } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { useDismiss } from '@neutrino/commands';
-import { slideUp } from '../../motion/variants';
+import { usePresence } from '../../motion/presence';
 import { Menu } from './Menu';
 import type { MenuItemDef } from './Menu';
 import styles from './Dropdown.module.css';
@@ -46,6 +45,7 @@ export function Dropdown({
   }, [open, onClose]);
 
   useDismiss(onClose, open);
+  const { mounted, state } = usePresence(open);
 
   const contentClasses = [styles.content, styles[placement], className]
     .filter(Boolean)
@@ -60,17 +60,17 @@ export function Dropdown({
       >
         {trigger}
       </div>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            id={menuId}
-            className={contentClasses}
-            {...slideUp}
-          >
-            {children ?? (items && <Menu items={items} />)}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {mounted && (
+        <div
+          id={menuId}
+          className={contentClasses}
+          aria-hidden={open ? undefined : true}
+          data-motion="rise"
+          data-state={state}
+        >
+          {children ?? (items && <Menu items={items} />)}
+        </div>
+      )}
     </div>
   );
 }

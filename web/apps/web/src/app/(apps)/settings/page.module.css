@@ -715,3 +715,15 @@ a.outlineBtn {
   word-break: keep-all;
   overflow-wrap: break-word;
 }
+
+/* A fieldset only to disable a group of controls together (an organisation's lock). */
+.lockable {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.lockable:disabled {
+  opacity: 0.6;
+}

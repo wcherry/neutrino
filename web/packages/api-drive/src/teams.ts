@@ -353,6 +353,19 @@ export const teamsApi = {
     return request<TeamListResponse>(base);
   },
 
+  /** The team's preference defaults for its space (T2): view, sort and density. */
+  async getPreferences(teamId: string): Promise<{ values: Record<string, unknown> }> {
+    return request(`${base}/${encodeURIComponent(teamId)}/preferences`);
+  },
+
+  /** Set or clear (`null`) defaults. Owners and Admins only. */
+  async patchPreferences(teamId: string, values: Record<string, unknown>): Promise<{ values: Record<string, unknown> }> {
+    return request(`${base}/${encodeURIComponent(teamId)}/preferences`, {
+      method: 'PATCH',
+      body: JSON.stringify({ values }),
+    });
+  },
+
   async get(teamId: string): Promise<Team> {
     return request<Team>(`${base}/${encodeURIComponent(teamId)}`);
   },

@@ -1,0 +1,223 @@
+/*
+ * The shell's transient surfaces — notifications and the account menu. Frosted in the new looks
+ * (the `--glass-*` tokens; opaque under reduced transparency), grouped by space rather than rules
+ * (look-and-feel roadmap §2, "Menus, popups and translucency").
+ */
+
+.anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.icon-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--control-radius);
+  border: 1px solid var(--button-border-rest);
+  background: var(--button-bg-rest);
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-default),
+    border-color var(--duration-fast) var(--ease-default);
+}
+
+[data-look='precision'] .icon-btn {
+  border-color: transparent;
+  background: transparent;
+}
+
+.icon-btn:hover {
+  border-color: var(--button-border-hover);
+  background: var(--button-bg-hover);
+}
+
+.icon-btn:focus-visible,
+.avatar:focus-visible,
+.item:focus-visible,
+.text-btn:focus-visible {
+  outline: 2px solid var(--accent-ui);
+  outline-offset: 2px;
+}
+
+.dot {
+  position: absolute;
+  top: 8px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--brand-accent);
+}
+
+.avatar {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  cursor: pointer;
+}
+
+.popup {
+  position: absolute;
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 240px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: var(--menu-radius);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  color: var(--text-1);
+  font-size: var(--text-sm);
+}
+
+.below {
+  top: calc(100% + 6px);
+}
+
+.above {
+  bottom: calc(100% + 6px);
+}
+
+.align-start {
+  right: auto;
+  left: 0;
+}
+
+.wide {
+  width: 340px;
+  max-height: min(480px, 70vh);
+  overflow-y: auto;
+}
+
+.popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 0;
+}
+
+.popup-title {
+  font-weight: var(--font-semibold);
+}
+
+.text-btn {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--brand-accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.text-btn:hover {
+  text-decoration: underline;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--space-4) var(--space-2);
+  color: var(--text-3);
+  text-align: center;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notification {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+
+.notification[data-unread] {
+  color: var(--text-1);
+  background: var(--selected-bg);
+}
+
+.notification-text {
+  line-height: var(--leading-normal);
+}
+
+.notification-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px 0;
+  min-width: 0;
+}
+
+.who-name {
+  font-weight: var(--font-semibold);
+}
+
+.who-email {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.item svg {
+  color: var(--text-3);
+}
+
+.item:hover {
+  background: var(--menu-item-hover);
+}
+
+.danger,
+.danger svg {
+  color: var(--color-error);
+}

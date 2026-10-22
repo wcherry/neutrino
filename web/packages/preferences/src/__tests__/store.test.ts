@@ -3,6 +3,7 @@ import {
   PreferenceStore,
   VaultConflictError,
   BOOT_KEY,
+  BOOT_OWN_KEY,
   REGISTRY,
   migrateLegacyPreferences,
   type PreferenceBackend,
@@ -23,10 +24,12 @@ class MemoryStorage implements StorageLike {
 class FakeServer implements PreferenceBackend {
   values: Record<string, unknown> = {};
   vault: { blob: string; updatedAt: string } | null = null;
+  org: PreferencesSnapshot['org'] = { values: {}, locked: [] };
+  teams: Record<string, Record<string, unknown>> = {};
   patches: Record<string, unknown>[] = [];
   private n = 0;
   async load(): Promise<PreferencesSnapshot> {
-    return { values: { ...this.values }, vault: this.vault };
+    return { values: { ...this.values }, vault: this.vault, org: this.org, teams: this.teams };
   }
   async patch(values: Record<string, unknown>): Promise<PreferencesSnapshot> {
     this.patches.push(values);
@@ -202,9 +205,78 @@ describe('the boot record', () => {
     server.values = { 'appearance.look': 'precision', 'calendar.weekStart': 1 };
     await store.attach('u1', server, crypto());
     const boot = JSON.parse(storage.getItem(BOOT_KEY)!);
-    expect(Object.keys(boot).sort()).toEqual(REGISTRY.filter((s) => s.paint).map((s) => s.key).sort());
+    expect(Object.keys(boot).sort()).toEqual(
+      [...REGISTRY.filter((s) => s.paint).map((s) => s.key), BOOT_OWN_KEY].sort(),
+    );
     expect(boot['appearance.look']).toBe('precision');
     expect(boot['appearance.density']).toBe('comfortable');
+    // Only the look is the user's own; the rest are inherited and may be replaced before paint.
+    expect(boot[BOOT_OWN_KEY]).toEqual(['appearance.look']);
+  });
+});
+
+describe('the organisation and team layers', () => {
+  it('resolves lock, then own, then team inside its space, then org default, then the registry', async () => {
+    server.values = { 'appearance.look': 'blended', 'appearance.density': 'spacious' };
+    server.org = {
+      values: { 'appearance.look': 'precision', 'appearance.density': 'compact', 'keyboard.preset': 'google' },
+      locked: ['appearance.look'],
+    };
+    server.teams = { t1: { 'teamSpace.view': 'list', 'appearance.density': 'compact' } };
+    await store.attach('u1', server, crypto());
+
+    // Locked: the org wins over the user's own row, and the user cannot change it.
+    expect(store.get('appearance.look')).toBe('precision');
+    expect(store.sourceOf('appearance.look')).toBe('locked');
+    expect(store.set('appearance.look', 'lightflow')).toBe(false);
+    // Unlocked org default: used until the user sets their own.
+    expect(store.get('keyboard.preset')).toBe('google');
+    expect(store.sourceOf('keyboard.preset')).toBe('org');
+    // The user's own value beats both the team and the org default.
+    expect(store.get('appearance.density')).toBe('spacious');
+
+    // A team default applies only inside that team's space.
+    expect(store.get('teamSpace.view')).toBe('large');
+    store.setTeamContext('t1');
+    expect(store.get('teamSpace.view')).toBe('list');
+    expect(store.sourceOf('teamSpace.view')).toBe('team');
+    store.setTeamContext(null);
+    expect(store.sourceOf('teamSpace.view')).toBe('default');
+  });
+
+  it('refuses a user write to a key only an organisation sets', async () => {
+    await store.attach('u1', server, crypto());
+    expect(store.set('apps.enabled', ['docs'])).toBe(false);
+    await store.flush();
+    expect(server.patches).toEqual([]);
+  });
+
+  it('starts from the org layer the page itself carries, before any request', () => {
+    const fresh = new PreferenceStore(new MemoryStorage(), {
+      org: { values: { 'appearance.look': 'precision', 'apps.enabled': ['docs', 'calendar'] }, locked: ['appearance.look'] },
+    });
+    expect(fresh.get('appearance.look')).toBe('precision');
+    expect(fresh.isLocked('appearance.look')).toBe(true);
+    expect(fresh.get('apps.enabled')).toEqual(['docs', 'calendar']);
+  });
+
+  it('ignores org values that are not legal for the key', () => {
+    const fresh = new PreferenceStore(new MemoryStorage(), {
+      org: { values: { 'appearance.look': 'neon', 'apps.enabled': ['docs', 'docs'] }, locked: ['appearance.look'] },
+    });
+    expect(fresh.get('appearance.look')).toBe('classic');
+    expect(fresh.isLocked('appearance.look')).toBe(false);
+    expect(fresh.get('apps.enabled')).toHaveLength(8);
+  });
+
+  it('forgets the team layer on sign-out but keeps the instance\'s org layer', async () => {
+    server.org = { values: { 'keyboard.preset': 'microsoft' }, locked: [] };
+    server.teams = { t1: { 'teamSpace.view': 'list' } };
+    await store.attach('u1', server, crypto());
+    store.setTeamContext('t1');
+    store.detach();
+    expect(store.get('teamSpace.view')).toBe('large');
+    expect(store.get('keyboard.preset')).toBe('microsoft');
   });
 });
 
@@ -296,6 +368,7 @@ describe('the typed value map', () => {
       'calendar.weekStart': true, 'calendar.dayStartHour': true, 'calendar.dayEndHour': true,
       'docs.spellCheck': true, 'docs.splitParagraphs': true, 'photos.autoFaceDetect': true, 'drawing.brush': true,
       'search.syncDisabled': true, 'keyboard.preset': true, 'keyboard.bindings': true, 'ai.provider': true, 'ai.apiKey': true,
+      'apps.enabled': true, 'teamSpace.view': true, 'teamSpace.sort': true, 'teamSpace.sortDirection': true,
       'library.sheets.cfTemplates': true, 'library.sheets.cfVariables': true, 'library.fill.slides': true,
       'library.fill.diagrams': true, 'library.fill.drawing': true, 'library.fill.default': true,
       'library.diagrams.shapeLibraries': true,

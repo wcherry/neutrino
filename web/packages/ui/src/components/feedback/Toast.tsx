@@ -2,8 +2,6 @@
 
 import React from 'react';
 import { AlertCircle, CheckCircle, AlertTriangle, Info, X } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { toastVariants } from '../../motion/variants';
 import styles from './Toast.module.css';
 
 export type ToastVariant = 'info' | 'success' | 'warning' | 'error';
@@ -18,6 +16,8 @@ export interface ToastData {
 
 export interface ToastProps extends ToastData {
   onClose: (id: string) => void;
+  /** Dismissed and playing its exit animation; the provider removes it when that ends. */
+  leaving?: boolean;
 }
 
 const ICONS: Record<ToastVariant, React.FC<{ size: number }>> = {
@@ -34,6 +34,7 @@ export function Toast({
   message,
   duration = 4000,
   onClose,
+  leaving = false,
 }: ToastProps) {
   const ToastIcon = ICONS[variant];
 
@@ -46,12 +47,12 @@ export function Toast({
   const classes = [styles.toast, styles[variant]].filter(Boolean).join(' ');
 
   return (
-    <motion.div
-      layout
+    <div
       className={classes}
       role="status"
       aria-live="polite"
-      {...toastVariants}
+      data-motion="toast"
+      data-state={leaving ? 'closed' : 'open'}
     >
       <span className={styles['icon-wrapper']} aria-hidden="true">
         <ToastIcon size={18} />
@@ -75,6 +76,6 @@ export function Toast({
           aria-hidden="true"
         />
       )}
-    </motion.div>
+    </div>
   );
 }

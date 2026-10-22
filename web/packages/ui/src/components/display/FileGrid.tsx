@@ -378,6 +378,8 @@ export interface FileGridProps {
   sortDir: SortDir;
   onSortChange: (field: SortField, dir: SortDir) => void;
   defaultViewMode?: ViewMode;
+  /** The user picked a view — for a caller that remembers it (a team space's `teamSpace.view`). */
+  onViewModeChange?: (mode: ViewMode) => void;
   totalCount?: number;
   /** Drag-and-drop handlers — wire these up to make the grid a drop target */
   onDragEnter?: React.DragEventHandler<HTMLDivElement>;
@@ -413,6 +415,7 @@ export function FileGrid({
   sortDir,
   onSortChange,
   defaultViewMode = 'large',
+  onViewModeChange,
   totalCount,
   onDragEnter,
   onDragOver,
@@ -491,7 +494,7 @@ export function FileGrid({
             key={mode}
             type="button"
             className={[styles['view-btn'], viewMode === mode ? styles['view-btn-active'] : ''].filter(Boolean).join(' ')}
-            onClick={() => setViewMode(mode)}
+            onClick={() => { setViewMode(mode); onViewModeChange?.(mode); }}
             aria-label={label}
             aria-pressed={viewMode === mode}
             title={label}

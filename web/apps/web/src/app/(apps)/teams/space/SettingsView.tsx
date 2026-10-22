@@ -8,8 +8,8 @@
  * Owners and Admins. Deleting takes the pages and files with it and is the Owner's alone.
  */
 
-import React, { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 import {
   AlertDialog,
@@ -29,6 +29,7 @@ import {
   type TeamVisibility,
 } from '@neutrino/api-drive';
 import { roleCan, teamCan } from '../permissions';
+import { AVATAR_COLORS } from '../teamColors';
 import { formatBytes, formatLimit, usagePercent } from '../../admin/bytes';
 import styles from './space.module.css';
 
@@ -53,6 +54,8 @@ export function SettingsView({ team, onDeleted }: { team: Team; onDeleted: () =>
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description ?? '');
   const [visibility, setVisibility] = useState<TeamVisibility>(team.visibility);
+  const [color, setColor] = useState(team.avatarColor ?? AVATAR_COLORS[0]);
+  const [emoji, setEmoji] = useState(team.avatarEmoji ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const invalidate = () => {
@@ -66,6 +69,8 @@ export function SettingsView({ team, onDeleted }: { team: Team; onDeleted: () =>
         name: name.trim(),
         description: description.trim() || null,
         visibility,
+        avatarColor: color,
+        avatarEmoji: emoji.trim() || null,
       }),
     onSuccess: () => {
       invalidate();
@@ -158,6 +163,35 @@ export function SettingsView({ team, onDeleted }: { team: Team; onDeleted: () =>
         <span className={styles.hint}>{TEAM_VISIBILITY_DESCRIPTIONS[visibility]}</span>
       </div>
 
+      <div className={styles.field}>
+        <span className={styles.label}>Colour and icon</span>
+        <div className={styles.colorRow}>
+          {AVATAR_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              aria-label={`Team colour ${c}`}
+              aria-pressed={c === color}
+              className={`${styles.colorSwatch} ${c === color ? styles.colorSwatchActive : ''}`}
+              style={{ background: c }}
+              onClick={() => setColor(c)}
+              disabled={!canManage}
+            />
+          ))}
+        </div>
+        <TextInput
+          value={emoji}
+          onChange={(e) => setEmoji(e.target.value.slice(0, 2))}
+          placeholder="An emoji, optional"
+          aria-label="Team icon"
+          disabled={!canManage}
+        />
+        <span className={styles.hint}>
+          The team&rsquo;s square in the sidebar, and the tint of this space, so members can tell
+          whose library they are in.
+        </span>
+      </div>
+
       {canManage && (
         <div className={styles.actions}>
           <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!name.trim()}>
@@ -165,6 +199,8 @@ export function SettingsView({ team, onDeleted }: { team: Team; onDeleted: () =>
           </Button>
         </div>
       )}
+
+      {canManage && <MemberDefaultsSection team={team} />}
 
       <StorageSection team={team} />
 
@@ -250,6 +286,112 @@ export function SettingsView({ team, onDeleted }: { team: Team; onDeleted: () =>
  * The figure is recomputed server-side on every `GET /teams/{id}`, so what a team sees here is what
  * the quota check will actually use, not a counter that has drifted since the last upload.
  */
+const DEFAULT_CHOICES: { key: string; label: string; options: { value: string; label: string }[] }[] = [
+  {
+    key: 'teamSpace.view',
+    label: 'Files view',
+    options: [
+      { value: 'large', label: 'Large grid' },
+      { value: 'small', label: 'Small grid' },
+      { value: 'list', label: 'List' },
+    ],
+  },
+  {
+    key: 'teamSpace.sort',
+    label: 'Sort files by',
+    options: [
+      { value: 'name', label: 'Name' },
+      { value: 'updatedAt', label: 'Last modified' },
+      { value: 'createdAt', label: 'Created' },
+      { value: 'size', label: 'Size' },
+    ],
+  },
+  {
+    key: 'teamSpace.sortDirection',
+    label: 'Order',
+    options: [
+      { value: 'asc', label: 'Ascending' },
+      { value: 'desc', label: 'Descending' },
+    ],
+  },
+  {
+    key: 'appearance.density',
+    label: 'Density',
+    options: [
+      { value: 'compact', label: 'Compact' },
+      { value: 'comfortable', label: 'Comfortable' },
+      { value: 'spacious', label: 'Spacious' },
+    ],
+  },
+];
+
+/**
+ * What this team's space starts with for each member (T2, customization roadmap §5). A member's
+ * own choice still wins — a team default is a starting point, not a policy — and the defaults
+ * apply only inside this space.
+ */
+function MemberDefaultsSection({ team }: { team: Team }) {
+  const qc = useQueryClient();
+  const { success, error: toastError } = useToast();
+  const { data } = useQuery({
+    queryKey: ['team-preferences', team.id],
+    queryFn: () => teamsApi.getPreferences(team.id),
+  });
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!data) return;
+    setDraft(Object.fromEntries(Object.entries(data.values).map(([k, v]) => [k, String(v)])));
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const values: Record<string, unknown> = {};
+      for (const { key } of DEFAULT_CHOICES) {
+        const before = data?.values[key];
+        const after = draft[key] || undefined;
+        if (String(before ?? '') !== String(after ?? '')) values[key] = after ?? null;
+      }
+      return teamsApi.patchPreferences(team.id, values);
+    },
+    onSuccess: (result) => {
+      qc.setQueryData(['team-preferences', team.id], result);
+      success('Defaults saved.');
+    },
+    onError: () => toastError('Could not save the defaults.'),
+  });
+
+  return (
+    <div className={styles.storageSection}>
+      <Heading level={2} size="sm">
+        Defaults for members
+      </Heading>
+      <Text size="sm" color="secondary">
+        How this space opens for each member until they choose for themselves.
+      </Text>
+      <div className={styles.defaultsGrid}>
+        {DEFAULT_CHOICES.map(({ key, label, options }) => (
+          <div key={key} className={styles.field}>
+            <label className={styles.label} htmlFor={`team-default-${key}`}>
+              {label}
+            </label>
+            <Select
+              id={`team-default-${key}`}
+              value={draft[key] ?? ''}
+              onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+              options={[{ value: '', label: 'Each member’s own' }, ...options]}
+            />
+          </div>
+        ))}
+      </div>
+      <div className={styles.actions}>
+        <Button variant="secondary" onClick={() => save.mutate()} loading={save.isPending}>
+          Save defaults
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function StorageSection({ team }: { team: Team }) {
   const percent = usagePercent(team.storageUsedBytes, team.storageLimitBytes);
   const full = percent !== null && percent >= 100;

@@ -10,6 +10,14 @@
  * `whileTyping: 'run'` lets a command fire while focus is in a text field or a contenteditable
  * (the editors' own text is one). A binding without Ctrl, ⌘ or ⌥ never fires there, whatever
  * this says, so remapping a command to a bare letter cannot eat keystrokes.
+ *
+ * `yields: true` marks a global command that gives a key up to an app's own command for it — the
+ * command palette's ⌘K is Docs' "insert link" inside Docs, as it is in Google Docs and Word. The
+ * dispatcher already runs the app's command first (it mounts later, and Docs' runs in the capture
+ * phase); `yields` is what tells conflict detection that this is intended.
+ *
+ * `palette: false` keeps a command out of the command palette: the palette runs a command by
+ * calling its handler, and these only make sense as a key press (clipboard events, presenting).
  */
 
 export type CommandApp =
@@ -35,6 +43,8 @@ export interface CommandSpec {
   app: CommandApp;
   defaultKeys: readonly string[];
   whileTyping?: 'run' | 'skip';
+  yields?: boolean;
+  palette?: boolean;
 }
 
 const UNDO = ['Mod+Z'];
@@ -42,6 +52,23 @@ const REDO = ['Mod+Shift+Z', 'Mod+Y'];
 const DELETE = ['Delete', 'Backspace'];
 
 export const COMMANDS = [
+  // ── Everywhere ────────────────────────────────────────────────────────────
+  { id: 'shell.commandPalette', title: 'Search and run a command', app: 'global', defaultKeys: ['Mod+K', 'Mod+/'], whileTyping: 'run', yields: true, palette: false },
+  { id: 'shell.toggleSidebar', title: 'Collapse or expand the sidebar', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.drive', title: 'Go to My Drive', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.recent', title: 'Go to Recent', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.shared', title: 'Go to Shared with me', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.docs', title: 'Go to Docs', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.sheets', title: 'Go to Sheets', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.slides', title: 'Go to Slides', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.notes', title: 'Go to Notes', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.diagrams', title: 'Go to Diagrams', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.drawing', title: 'Go to Drawings', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.photos', title: 'Go to Photos', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.calendar', title: 'Go to Calendar', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.settings', title: 'Open Settings', app: 'global', defaultKeys: [] },
+  { id: 'shell.goto.keyboard', title: 'Open keyboard shortcuts', app: 'global', defaultKeys: [] },
+
   // ── All editors ───────────────────────────────────────────────────────────
   { id: 'editors.spellCheck.toggle', title: 'Turn spell check on or off', app: 'editors', defaultKeys: ['Mod+Shift+;'], whileTyping: 'run' },
 
@@ -61,16 +88,16 @@ export const COMMANDS = [
   { id: 'sheets.undo', title: 'Undo', app: 'sheets', defaultKeys: UNDO },
   { id: 'sheets.redo', title: 'Redo', app: 'sheets', defaultKeys: REDO },
   { id: 'sheets.selectAll', title: 'Select all cells', app: 'sheets', defaultKeys: ['Mod+A'] },
-  { id: 'sheets.copy', title: 'Copy cells', app: 'sheets', defaultKeys: ['Mod+C'], whileTyping: 'run' },
-  { id: 'sheets.cut', title: 'Cut cells', app: 'sheets', defaultKeys: ['Mod+X'], whileTyping: 'run' },
-  { id: 'sheets.paste', title: 'Paste cells', app: 'sheets', defaultKeys: ['Mod+V'], whileTyping: 'run' },
+  { id: 'sheets.copy', title: 'Copy cells', app: 'sheets', defaultKeys: ['Mod+C'], whileTyping: 'run', palette: false },
+  { id: 'sheets.cut', title: 'Cut cells', app: 'sheets', defaultKeys: ['Mod+X'], whileTyping: 'run', palette: false },
+  { id: 'sheets.paste', title: 'Paste cells', app: 'sheets', defaultKeys: ['Mod+V'], whileTyping: 'run', palette: false },
   { id: 'sheets.chart.delete', title: 'Delete the selected chart', app: 'sheets', defaultKeys: DELETE },
 
   // ── Slides ────────────────────────────────────────────────────────────────
   { id: 'slides.save', title: 'Save', app: 'slides', defaultKeys: ['Mod+S'], whileTyping: 'run' },
   { id: 'slides.element.delete', title: 'Delete the selected element', app: 'slides', defaultKeys: DELETE },
-  { id: 'slides.present.next', title: 'Next slide (presenting)', app: 'slides', defaultKeys: ['ArrowRight', 'ArrowDown', 'Space'] },
-  { id: 'slides.present.previous', title: 'Previous slide (presenting)', app: 'slides', defaultKeys: ['ArrowLeft', 'ArrowUp'] },
+  { id: 'slides.present.next', title: 'Next slide (presenting)', app: 'slides', defaultKeys: ['ArrowRight', 'ArrowDown', 'Space'], palette: false },
+  { id: 'slides.present.previous', title: 'Previous slide (presenting)', app: 'slides', defaultKeys: ['ArrowLeft', 'ArrowUp'], palette: false },
 
   // ── Notes ─────────────────────────────────────────────────────────────────
   { id: 'notes.save', title: 'Save', app: 'notes', defaultKeys: ['Mod+S'], whileTyping: 'run' },
@@ -98,9 +125,9 @@ export const COMMANDS = [
   { id: 'drawing.undo', title: 'Undo', app: 'drawing', defaultKeys: UNDO },
   { id: 'drawing.redo', title: 'Redo', app: 'drawing', defaultKeys: REDO },
   { id: 'drawing.selectAll', title: 'Select all', app: 'drawing', defaultKeys: ['Mod+A'] },
-  { id: 'drawing.copy', title: 'Copy', app: 'drawing', defaultKeys: ['Mod+C'] },
-  { id: 'drawing.cut', title: 'Cut', app: 'drawing', defaultKeys: ['Mod+X'] },
-  { id: 'drawing.paste', title: 'Paste', app: 'drawing', defaultKeys: ['Mod+V'] },
+  { id: 'drawing.copy', title: 'Copy', app: 'drawing', defaultKeys: ['Mod+C'], palette: false },
+  { id: 'drawing.cut', title: 'Cut', app: 'drawing', defaultKeys: ['Mod+X'], palette: false },
+  { id: 'drawing.paste', title: 'Paste', app: 'drawing', defaultKeys: ['Mod+V'], palette: false },
   { id: 'drawing.duplicate', title: 'Duplicate', app: 'drawing', defaultKeys: ['Mod+D'] },
   { id: 'drawing.invertSelection', title: 'Invert pixel selection', app: 'drawing', defaultKeys: ['Mod+Shift+I'] },
   { id: 'drawing.deselectPixels', title: 'Deselect pixels', app: 'drawing', defaultKeys: ['Mod+Shift+D'] },

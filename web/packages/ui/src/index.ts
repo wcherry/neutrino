@@ -219,19 +219,6 @@ export type { PresenceBarProps, PresenceBarUser } from './components/collab/Pres
 export { Icon } from './icons/Icon';
 export type { IconProps } from './icons/Icon';
 
-// Motion
-export {
-  fadeIn,
-  slideUp,
-  slideDown,
-  slideLeft,
-  slideRight,
-  scaleIn,
-  scaleUp,
-  drawerLeft,
-  drawerRight,
-  drawerBottom,
-  staggerContainer,
-  staggerItem,
-  toastVariants,
-} from './motion/variants';
+// Motion — enter/exit for transient surfaces, in CSS (styles/motion.css)
+export { usePresence, EXIT_MS } from './motion/presence';
+export type { MotionName, PresenceState } from './motion/presence';

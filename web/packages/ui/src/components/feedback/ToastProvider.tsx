@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence } from 'framer-motion';
+import { EXIT_MS } from '../../motion/presence';
 import { Toast, type ToastData, type ToastVariant } from './Toast';
 import styles from './Toast.module.css';
 
@@ -42,7 +42,8 @@ export function ToastProvider({
   position = 'bottom-right',
   maxToasts = 5,
 }: ToastProviderProps) {
-  const [toasts, setToasts] = useState<ToastData[]>([]);
+  // A dismissed toast stays in the list, `leaving`, for its exit animation (styles/motion.css).
+  const [toasts, setToasts] = useState<(ToastData & { leaving?: boolean })[]>([]);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -50,19 +51,23 @@ export function ToastProvider({
   }, []);
 
   const dismiss = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), EXIT_MS);
   }, []);
 
   const dismissAll = useCallback(() => {
-    setToasts([]);
+    setToasts((prev) => prev.map((t) => ({ ...t, leaving: true })));
+    setTimeout(() => setToasts((prev) => prev.filter((t) => !t.leaving)), EXIT_MS);
   }, []);
 
   const addToast = useCallback(
     (data: Omit<ToastData, 'id'>): string => {
       const id = generateId();
       setToasts((prev) => {
-        const next = [{ ...data, id }, ...prev];
-        return next.slice(0, maxToasts);
+        // The cap counts toasts on screen to stay, not ones already on their way out.
+        const staying = prev.filter((t) => !t.leaving);
+        const leaving = prev.filter((t) => t.leaving);
+        return [{ ...data, id }, ...staying].slice(0, maxToasts).concat(leaving);
       });
       return id;
     },
@@ -91,11 +96,9 @@ export function ToastProvider({
       {mounted &&
         createPortal(
           <div className={portalClasses} aria-label="Notifications" role="region">
-            <AnimatePresence initial={false} mode="sync">
-              {toasts.map((t) => (
-                <Toast key={t.id} {...t} onClose={dismiss} />
-              ))}
-            </AnimatePresence>
+            {toasts.map((t) => (
+              <Toast key={t.id} {...t} onClose={dismiss} />
+            ))}
           </div>,
           document.body
         )}

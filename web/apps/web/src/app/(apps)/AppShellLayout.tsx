@@ -3,30 +3,48 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Search } from 'lucide-react';
 import {
+  AccountMenu,
   AppShell,
+  CommandPalette,
+  NotificationsMenu,
+  ShellSidebar,
+  ShellTopBar,
   Sidebar,
   Topbar,
+  type PaletteCommand,
+  type ShellBrand,
   type StorageQuota,
   type TopbarSearchResult,
   type TopbarNotification,
 } from '@neutrino/layout';
-import type { NotificationItem } from '@neutrino/api-drive';
 import {
-  Spinner,
-  useToast,
-} from '@neutrino/ui';
+  COMMAND_APPS,
+  availableCommands,
+  commandSpec,
+  detectPlatform,
+  formatChord,
+  keysFor,
+  runCommandById,
+  useCommands,
+  useKeymap,
+  type CommandId,
+} from '@neutrino/commands';
+import type { NotificationItem } from '@neutrino/api-drive';
+import { useToast } from '@neutrino/ui';
 import {
   authApi,
   storageApi,
   tagsApi,
+  teamsApi,
   uploadDriveFile,
   canEncryptFor,
   type UserProfile,
   type QuotaInfo,
 } from '@/lib/api';
 import { ENCRYPTION_WARNING_MESSAGE } from '@/components/EncryptionWarningMessage';
-import { getNavSections, withActiveItem } from './navSections';
+import { APP_ITEMS, getNavSections, withActiveItem } from './navSections';
 import { useFeatureFlags } from '@/providers/FeatureFlagsProvider';
 import { NewItemFAB } from './NewItemFAB';
 import { E2EEUnlockGate } from '@/components/E2EEUnlockGate';
@@ -44,7 +62,22 @@ import { FULL_VERSION_LABEL, VERSION_LABEL } from '@/lib/version';
 import { clearDriveImageCache } from '@/lib/driveImages';
 import { appForPath } from '@/lib/appForPath';
 import { usePreferencesSync } from '@/lib/preferencesSync';
-import { preferences } from '@neutrino/preferences';
+import { preferences, usePreference } from '@neutrino/preferences';
+import { readInstanceBrand } from '@/lib/instanceBrand';
+import shellStyles from './AppShellLayout.module.css';
+
+/** The editors, which get the editor frame in the new shell: no top bar, their title bar first. */
+const EDITOR_ROUTE = /^\/(docs|sheets|slides|diagrams|drawing)\/editor(\/|$)/;
+
+/** Where each `shell.goto.*` command goes; the app ones only while that app is enabled. */
+const GOTO: { id: CommandId; href: string; app?: (typeof APP_ITEMS)[number]['app'] }[] = [
+  { id: 'shell.goto.drive', href: '/drive' },
+  { id: 'shell.goto.recent', href: '/drive/recent' },
+  { id: 'shell.goto.shared', href: '/drive/shared' },
+  ...APP_ITEMS.map((item) => ({ id: `shell.goto.${item.app}` as CommandId, href: item.href!, app: item.app })),
+  { id: 'shell.goto.settings', href: '/settings' },
+  { id: 'shell.goto.keyboard', href: '/settings?tab=keyboard' },
+];
 
 /** Search hits carry an icon *component* so Drive can size it its own way. */
 function toTopbarResult(hit: SearchHit): TopbarSearchResult {
@@ -104,6 +137,12 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const [searchResults, setSearchResults] = useState<TopbarSearchResult[]>([]);
   const [searchPending, setSearchPending] = useState(false);
   const { search } = useClientSearch();
+  // Nothing but the page's ground is prerendered; the shell and the route render once the page
+  // has hydrated. The build cannot know which shell a user's look wants — prerendering the classic
+  // one flashed it in front of anyone on a new look — nor does any page have to be safe to render
+  // at build time. (Before, a spinner was prerendered in the same place.)
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
 
   // Nothing is searched server-side, so the local index has to be kept current
   // or the box would have nothing to match against.
@@ -126,10 +165,73 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   // the map arrives, so the sidebar starts as the pre-#185 one rather than flashing an entry that
   // then disappears.
   const flags = useFeatureFlags();
+
+  // The look decides the shell: classic keeps today's (the default until the editors are done,
+  // ui-roadmap.md stage 5); the three new looks get the new top bar, sidebar and editor frame.
+  const [look] = usePreference('appearance.look');
+  const flow = look !== 'classic';
+  const chrome = EDITOR_ROUTE.test(pathname) ? 'editor' : 'full';
+  const [enabledApps] = usePreference('apps.enabled');
+  const [sidebarCollapsed, setSidebarCollapsed] = usePreference('shell.sidebarCollapsed');
+  const brand = useMemo<ShellBrand>(() => ({ name: readInstanceBrand().name }), []);
+
+  // The new sidebar lists the user's teams by name (T1); the same cached list the Teams page reads.
+  const { data: teamsData } = useQuery({
+    queryKey: ['teams'],
+    queryFn: () => teamsApi.list(),
+    enabled: auth.status === 'ready' && flags.teamSpaces && flow,
+    staleTime: 30_000,
+  });
+
   const navSections = withActiveItem(
-    getNavSections(isAdmin, tags, flags.teamSpaces),
+    getNavSections(isAdmin, tags, flags.teamSpaces, {
+      enabledApps,
+      teams: flow && flags.teamSpaces ? teamsData?.teams ?? [] : undefined,
+    }),
     pathname
   );
+
+  // ── The command palette (U6) ─────────────────────────────────────────────
+  // ⌘K in either shell. It lists every command the screen underneath has registered right now,
+  // with the user's own keys for it, plus the shell's own navigation; the field also searches files.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteCommands, setPaletteCommands] = useState<PaletteCommand[]>([]);
+  const { preset, bindings } = useKeymap();
+  const platform = useMemo(() => detectPlatform(), []);
+  const openPalette = useCallback(() => {
+    const groups = new Map(COMMAND_APPS.map((a) => [a.id, a.label]));
+    setPaletteCommands(
+      availableCommands().flatMap((id) => {
+        const spec = commandSpec(id);
+        if (!spec) return [];
+        return [{
+          id,
+          title: spec.title,
+          group: groups.get(spec.app) ?? '',
+          keys: keysFor(id, preset, bindings).map((chord) => formatChord(chord, platform)),
+          run: () => { runCommandById(id); },
+        }];
+      }),
+    );
+    setPaletteOpen(true);
+  }, [preset, bindings, platform]);
+  const paletteShortcut = useMemo(() => {
+    const chord = keysFor('shell.commandPalette', preset, bindings)[0];
+    return chord ? formatChord(chord, platform) : undefined;
+  }, [preset, bindings, platform]);
+
+  const shellCommands = useMemo(() => {
+    const runs: Partial<Record<CommandId, () => void>> = {
+      'shell.commandPalette': openPalette,
+      'shell.toggleSidebar': () => setSidebarCollapsed(!preferences.get('shell.sidebarCollapsed')),
+    };
+    for (const g of GOTO) {
+      if (g.app && !enabledApps.includes(g.app)) continue;
+      runs[g.id] = () => router.push(g.href);
+    }
+    return runs;
+  }, [openPalette, setSidebarCollapsed, enabledApps, router]);
+  useCommands(shellCommands);
 
   const { data: profileDetails } = useQuery({
     queryKey: ['profile-details'],
@@ -272,20 +374,64 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     router.replace('/sign-in');
   }
 
-  if (auth.status === 'loading') {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  // The shell and the route render before `/auth/me` answers, rather than a full-screen spinner
+  // in their place: the route's own requests (Drive's listing above all) start in parallel with
+  // it instead of after it. Nothing user-specific is drawn until it arrives — no account menu, no
+  // storage meter — and a visitor whose session turns out to be gone is sent to sign-in by `init`
+  // (or by the first request that 401s, whichever is first).
+  const ready = auth.status === 'ready';
 
-  const sidebar = (
+  const accountActions = {
+    onProfile: () => router.push('/profile'),
+    onSettings: () => router.push('/settings'),
+    onImport: () => router.push('/import'),
+    onSignOut: handleSignOut,
+    bugReportHref: BUG_REPORT_URL,
+  };
+  const shellUser = ready
+    ? { name: auth.user.name, email: auth.user.email, avatarSrc: profileDetails?.avatar ?? undefined }
+    : undefined;
+  const notificationProps = {
+    notifications: toTopbarNotifications(notifications),
+    unreadCount: unreadCount,
+    onRead: markRead,
+    onMarkAllRead: markAllRead,
+  };
+
+  const sidebar = flow ? (
+    <ShellSidebar
+      sections={navSections}
+      newButton={<NewItemFAB variant="sidebar" compact={sidebarCollapsed} />}
+      quota={ready ? auth.quota : undefined}
+      onRequestStorage={() => setRequestingStorage(true)}
+      brand={brand}
+      logoHref="/drive"
+      showBrand={chrome === 'editor'}
+      footer={
+        chrome === 'editor' ? (
+          // No top bar in the editor frame: its search, notifications and account sit here.
+          <div className={shellStyles['editor-foot']} data-collapsed={sidebarCollapsed || undefined}>
+            <button
+              type="button"
+              className={shellStyles['foot-btn']}
+              onClick={openPalette}
+              aria-label="Search and commands"
+              title={paletteShortcut ? `Search and commands (${paletteShortcut})` : 'Search and commands'}
+            >
+              <Search size={17} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+            <NotificationsMenu {...notificationProps} placement="above" />
+            {shellUser && <AccountMenu user={shellUser} {...accountActions} placement="above" />}
+          </div>
+        ) : undefined
+      }
+    />
+  ) : (
     <Sidebar
-      logoText="Neutrino"
+      logoText={brand.name ?? 'Neutrino'}
       logoHref="/drive"
       sections={navSections}
-      quota={auth.quota}
+      quota={ready ? auth.quota : undefined}
       onRequestStorage={() => setRequestingStorage(true)}
       onUpload={handleUpload}
       version={VERSION_LABEL}
@@ -293,16 +439,29 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     />
   );
 
-  const topbar = (
+  const topbar = flow ? (
+    <ShellTopBar
+      brand={brand}
+      logoHref="/drive"
+      onOpenPalette={openPalette}
+      paletteShortcut={paletteShortcut}
+      user={shellUser}
+      notifications={notificationProps.notifications}
+      unreadNotificationCount={unreadCount}
+      onNotificationRead={markRead}
+      onMarkAllNotificationsRead={markAllRead}
+      account={accountActions}
+    />
+  ) : (
     <Topbar
-      user={{ name: auth.user.name, email: auth.user.email, avatarSrc: profileDetails?.avatar ?? undefined }}
+      user={shellUser}
       onSearch={handleSearch}
       searchPlaceholder="Search in Drive..."
       searchResults={searchResults}
       onResultClick={handleResultClick}
       onSearchSubmit={handleSearchSubmit}
       searchPending={searchPending}
-      notifications={toTopbarNotifications(notifications)}
+      notifications={notificationProps.notifications}
       unreadNotificationCount={unreadCount}
       onNotificationRead={markRead}
       onMarkAllNotificationsRead={markAllRead}
@@ -316,23 +475,37 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     </Topbar>
   );
 
+  if (!hydrated) return <div className={shellStyles.boot} />;
+
   return (
     // Above the route: a Takeout import runs for as long as it runs, and this
     // is what keeps it — and its progress bar — alive across an app switch.
     <ImportRunProvider>
-      <AppShell sidebar={sidebar} topbar={topbar}>
+      <AppShell sidebar={sidebar} topbar={topbar} variant={flow ? 'flow' : 'classic'} chrome={chrome}>
         {children}
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          commands={paletteCommands}
+          onSearch={handleSearch}
+          searchResults={searchResults}
+          searchPending={searchPending}
+          onResultClick={handleResultClick}
+          onSearchSubmit={handleSearchSubmit}
+        />
         {/* Overlays the shell when the identity key is missing or locked. Renders
             nothing once unlocked, and is dismissable — see the component notes. */}
-        <E2EEUnlockGate userId={auth.user.id} userName={auth.user.email} />
+        {ready && <E2EEUnlockGate userId={auth.user.id} userName={auth.user.email} />}
         {/* The storage meter's "Request Additional" (issue #144). Mounted here
             rather than in the sidebar because @neutrino/layout has no API
             dependencies, so the ask belongs to the app. */}
-        <RequestStorageDialog
-          open={requestingStorage}
-          onClose={() => setRequestingStorage(false)}
-          quota={auth.quotaInfo}
-        />
+        {ready && (
+          <RequestStorageDialog
+            open={requestingStorage}
+            onClose={() => setRequestingStorage(false)}
+            quota={auth.quotaInfo}
+          />
+        )}
       </AppShell>
     </ImportRunProvider>
   );

@@ -30,9 +30,11 @@ export {
 } from './keymap';
 export {
   addKeyHandler,
+  availableCommands,
   isEditableTarget,
   pushLayer,
   registerCommand,
+  runCommandById,
   resetForTesting,
   setPlatformForTesting,
   type CommandOptions,

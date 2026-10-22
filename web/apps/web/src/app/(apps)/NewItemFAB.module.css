@@ -85,3 +85,51 @@
   inset: 0;
   z-index: calc(var(--z-dropdown) - 1);
 }
+
+/* ── The new shell's sidebar button (Stage 3) ──────────────────────────────────
+   The look's primary button: accent text and a hover border in the flows, filled in Precision
+   (looks.css `--primary-*`). The menu opens below it, frosted. */
+.fab[data-variant='sidebar'] .trigger {
+  height: 40px;
+  padding: 0 14px 0 10px;
+  border-radius: var(--control-radius);
+  border: 1px solid var(--primary-border-rest);
+  background-color: var(--primary-bg);
+  color: var(--primary-fg);
+  font-size: var(--ui-font-size);
+  font-weight: var(--font-semibold);
+}
+
+.fab[data-variant='sidebar'] .trigger:hover {
+  border-color: var(--primary-border-hover);
+  background-color: var(--primary-bg-hover);
+  color: var(--primary-fg-hover);
+}
+
+.fab[data-variant='sidebar'] .trigger:focus-visible {
+  outline: 2px solid var(--accent-ui);
+  outline-offset: 2px;
+}
+
+.fab[data-variant='sidebar'] .menu {
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: 0;
+  right: auto;
+  border-radius: var(--menu-radius);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.fab[data-variant='sidebar'] .menuItem {
+  color: var(--text-1);
+  font-size: var(--ui-font-size);
+  border-radius: 8px;
+}
+
+.fab[data-variant='sidebar'] .menuItem:hover {
+  background-color: var(--menu-item-hover);
+}

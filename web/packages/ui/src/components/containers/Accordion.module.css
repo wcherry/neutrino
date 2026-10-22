@@ -56,10 +56,15 @@
 }
 
 .content {
+  /* A one-row grid so the expand motion can animate the row from 0fr to 1fr: height: auto
+     without measuring (styles/motion.css). */
+  display: grid;
+  grid-template-rows: 1fr;
   overflow: hidden;
 }
 
 .inner {
+  min-height: 0;
   padding: var(--space-1) var(--space-5) var(--space-5);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);

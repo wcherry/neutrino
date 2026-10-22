@@ -3,9 +3,8 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { addKeyHandler, useDismiss } from '@neutrino/commands';
-import { scaleIn, fadeIn } from '../../motion/variants';
+import { usePresence } from '../../motion/presence';
 import styles from './Modal.module.css';
 
 const ModalTitleIdContext = React.createContext<string | undefined>(undefined);
@@ -98,33 +97,33 @@ export function Modal({
 
   // A modal is a layer even when Escape does not close it, so the key never reaches what is under it.
   useDismiss(() => { if (closeOnEscRef.current) onCloseRef.current(); }, open);
+  const { mounted, state } = usePresence(open);
 
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' || !mounted) return null;
 
   return createPortal(
-    <AnimatePresence>
-      {open && (
-        <ModalTitleIdContext.Provider value={titleId}>
-          <motion.div
-            className={styles.backdrop}
-            onClick={closeOnBackdrop ? onClose : undefined}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            {...fadeIn}
-          >
-            <motion.div
-              ref={modalRef}
-              className={[styles.modal, styles[size], className].filter(Boolean).join(' ')}
-              onClick={(e) => e.stopPropagation()}
-              {...scaleIn}
-            >
-              {children}
-            </motion.div>
-          </motion.div>
-        </ModalTitleIdContext.Provider>
-      )}
-    </AnimatePresence>,
+    <ModalTitleIdContext.Provider value={titleId}>
+      <div
+        className={styles.backdrop}
+        onClick={closeOnBackdrop && open ? onClose : undefined}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-hidden={open ? undefined : true}
+        data-motion="fade"
+        data-state={state}
+      >
+        <div
+          ref={modalRef}
+          className={[styles.modal, styles[size], className].filter(Boolean).join(' ')}
+          onClick={(e) => e.stopPropagation()}
+          data-motion="scale"
+          data-state={state}
+        >
+          {children}
+        </div>
+      </div>
+    </ModalTitleIdContext.Provider>,
     document.body
   );
 }

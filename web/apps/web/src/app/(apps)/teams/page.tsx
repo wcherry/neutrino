@@ -30,25 +30,8 @@ import {
 import { teamsApi, type Team } from '@neutrino/api-drive';
 import { useFeatureFlags, useFeatureFlagsLoaded } from '@/providers/FeatureFlagsProvider';
 import { teamHref } from './teamHref';
+import { AVATAR_COLORS } from './teamColors';
 import styles from './page.module.css';
-
-/**
- * The avatar colours a team can be given.
- *
- * A fixed palette rather than a free colour picker: the avatar's job is to make one team findable
- * among a dozen in a sidebar, which a set of clearly distinct colours does and an arbitrary hex
- * does not.
- */
-const AVATAR_COLORS = [
-  '#2563eb',
-  '#7c3aed',
-  '#db2777',
-  '#dc2626',
-  '#ea580c',
-  '#ca8a04',
-  '#16a34a',
-  '#0891b2',
-];
 
 function teamInitial(team: { avatarEmoji: string | null; name: string }): string {
   return team.avatarEmoji || team.name.trim().charAt(0).toUpperCase() || '?';

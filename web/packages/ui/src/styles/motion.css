@@ -1,0 +1,80 @@
+/*
+ * Enter and exit motion for transient surfaces — menus, popovers, dialogs, drawers, toasts.
+ *
+ * This replaced framer-motion, which was ~110 KB of JavaScript on every app page for what is a
+ * handful of fades and slides (performance roadmap, A2). A component marks the element with
+ * `data-motion="<name>"` and `data-state="open" | "closed"`; `usePresence` keeps it mounted for
+ * the exit animation and then drops it.
+ *
+ * The keyframes move `translate` and `scale`, the individual transform properties, never
+ * `transform`: those compose with a component's own `transform` (a popover centred with
+ * `translateX(-50%)`) instead of replacing it, which framer-motion's inline transform did.
+ *
+ * Reduced motion is the global rule in @neutrino/tokens' motion.css: durations drop to ~0.
+ */
+
+[data-motion] {
+  animation-duration: 150ms;
+  animation-timing-function: var(--ease-default);
+  animation-fill-mode: both;
+}
+
+[data-motion][data-state='closed'] {
+  pointer-events: none;
+}
+
+[data-motion='fade'][data-state='open'] { animation-name: nui-fade-in; }
+[data-motion='fade'][data-state='closed'] { animation-name: nui-fade-out; }
+
+[data-motion='scale'][data-state='open'] { animation-name: nui-scale-in; }
+[data-motion='scale'][data-state='closed'] { animation-name: nui-scale-out; }
+
+[data-motion='rise'] { animation-duration: 200ms; }
+[data-motion='rise'][data-state='open'] { animation-name: nui-rise-in; }
+[data-motion='rise'][data-state='closed'] { animation-name: nui-rise-out; }
+
+[data-motion='drop'] { animation-duration: 200ms; }
+[data-motion='drop'][data-state='open'] { animation-name: nui-drop-in; }
+[data-motion='drop'][data-state='closed'] { animation-name: nui-drop-out; }
+
+[data-motion='expand'] { animation-duration: 200ms; }
+[data-motion='expand'][data-state='open'] { animation-name: nui-expand-in; }
+[data-motion='expand'][data-state='closed'] { animation-name: nui-expand-out; }
+
+[data-motion='toast'][data-state='open'] {
+  animation-name: nui-toast-in;
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-spring);
+}
+[data-motion='toast'][data-state='closed'] {
+  animation-name: nui-toast-out;
+  animation-timing-function: var(--ease-in);
+}
+
+[data-motion^='drawer-'][data-state='open'] { animation-duration: 250ms; }
+[data-motion^='drawer-'][data-state='closed'] { animation-duration: 200ms; animation-timing-function: var(--ease-in); }
+[data-motion='drawer-left'][data-state='open'] { animation-name: nui-drawer-left-in; }
+[data-motion='drawer-left'][data-state='closed'] { animation-name: nui-drawer-left-out; }
+[data-motion='drawer-right'][data-state='open'] { animation-name: nui-drawer-right-in; }
+[data-motion='drawer-right'][data-state='closed'] { animation-name: nui-drawer-right-out; }
+[data-motion='drawer-bottom'][data-state='open'] { animation-name: nui-drawer-bottom-in; }
+[data-motion='drawer-bottom'][data-state='closed'] { animation-name: nui-drawer-bottom-out; }
+
+@keyframes nui-fade-in { from { opacity: 0; } }
+@keyframes nui-fade-out { to { opacity: 0; } }
+@keyframes nui-scale-in { from { opacity: 0; scale: 0.95; } }
+@keyframes nui-scale-out { to { opacity: 0; scale: 0.95; } }
+@keyframes nui-rise-in { from { opacity: 0; translate: 0 8px; } }
+@keyframes nui-rise-out { to { opacity: 0; translate: 0 8px; } }
+@keyframes nui-drop-in { from { opacity: 0; translate: 0 -8px; } }
+@keyframes nui-drop-out { to { opacity: 0; translate: 0 -8px; } }
+@keyframes nui-expand-in { from { opacity: 0; grid-template-rows: 0fr; } }
+@keyframes nui-expand-out { to { opacity: 0; grid-template-rows: 0fr; } }
+@keyframes nui-toast-in { from { opacity: 0; translate: 0 24px; scale: 0.95; } }
+@keyframes nui-toast-out { to { opacity: 0; translate: 0 -8px; scale: 0.95; } }
+@keyframes nui-drawer-left-in { from { translate: -100% 0; } }
+@keyframes nui-drawer-left-out { to { translate: -100% 0; } }
+@keyframes nui-drawer-right-in { from { translate: 100% 0; } }
+@keyframes nui-drawer-right-out { to { translate: 100% 0; } }
+@keyframes nui-drawer-bottom-in { from { translate: 0 100%; } }
+@keyframes nui-drawer-bottom-out { to { translate: 0 100%; } }

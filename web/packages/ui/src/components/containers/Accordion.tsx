@@ -1,8 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useId, useState } from 'react';
+import React, { createContext, useContext, useEffect, useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { usePresence } from '../../motion/presence';
 import styles from './Accordion.module.css';
 
 interface AccordionContextValue {
@@ -75,6 +75,11 @@ export function AccordionItem({ id, title, icon, className = '', children }: Acc
   const isOpen = openItems.has(id);
   const triggerId = `${baseId}-trigger-${id}`;
   const panelId = `${baseId}-panel-${id}`;
+  const { mounted, state } = usePresence(isOpen);
+  // Items open on first render appear without the expand animation, as they did under
+  // framer-motion's `initial={false}`; every toggle after that animates.
+  const [animate, setAnimate] = useState(false);
+  useEffect(() => setAnimate(true), []);
 
   return (
     <div className={[styles.item, className].filter(Boolean).join(' ')}>
@@ -92,22 +97,19 @@ export function AccordionItem({ id, title, icon, className = '', children }: Acc
         </span>
         <ChevronDown size={16} className={styles.chevron} aria-hidden="true" />
       </button>
-      <AnimatePresence initial={false}>
-        {isOpen && (
-          <motion.div
-            id={panelId}
-            role="region"
-            aria-labelledby={triggerId}
-            className={styles.content}
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-          >
-            <div className={styles.inner}>{children}</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {mounted && (
+        <div
+          id={panelId}
+          role="region"
+          aria-labelledby={triggerId}
+          aria-hidden={isOpen ? undefined : true}
+          className={styles.content}
+          data-motion={animate ? 'expand' : undefined}
+          data-state={state}
+        >
+          <div className={styles.inner}>{children}</div>
+        </div>
+      )}
     </div>
   );
 }

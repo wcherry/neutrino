@@ -72,6 +72,14 @@ describe('conflictsWith', () => {
     expect(conflictsWith('docs.find', 'Mod+H', keymap)).toEqual([]);
   });
 
+  it("does not count a yielding global command against an app's own binding", () => {
+    const keymap = buildKeymap('neutrino', {});
+    expect(conflictsWith('shell.commandPalette', 'Mod+K', keymap)).toEqual([]);
+    expect(conflictsWith('docs.insertLink', 'Mod+K', keymap)).toEqual([]);
+    // A command that does not yield still conflicts with an app's.
+    expect(conflictsWith('shell.goto.docs', 'Mod+S', keymap).length).toBeGreaterThan(0);
+  });
+
   it('treats Everywhere as sharing a scope with every app', () => {
     expect(sharesScope('global', 'drawing')).toBe(true);
     expect(sharesScope('editors', 'drawing')).toBe(false);

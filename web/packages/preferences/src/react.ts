@@ -2,7 +2,7 @@
 
 import { useCallback, useSyncExternalStore } from 'react';
 import { defaultOf, type PreferenceKey, type PreferenceValues } from './registry';
-import { preferences as defaultStore, type PreferenceStore } from './store';
+import { preferences as defaultStore, type PreferenceSource, type PreferenceStore } from './store';
 import { readVaultOrLegacy } from './migrate';
 
 /**
@@ -26,6 +26,15 @@ export function usePreference<K extends PreferenceKey>(
     store.set(key, next);
   }, [key, store]);
   return [value, set];
+}
+
+/**
+ * Where a preference's value comes from — `locked` (Settings disables the control and says the
+ * organisation set it), the user's or device's own choice, or a team or org default ("Compact —
+ * your team's default"). `default` during a server render.
+ */
+export function usePreferenceSource(key: PreferenceKey, store: PreferenceStore = defaultStore): PreferenceSource {
+  return useSyncExternalStore(store.subscribe, () => store.sourceOf(key), () => 'default');
 }
 
 /**
