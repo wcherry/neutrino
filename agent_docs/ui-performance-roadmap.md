@@ -195,6 +195,12 @@ Separately, interaction costs on the L sheet:
 
 ### P4 — The shell carries most of the app
 
+> **Stage 2:** three root layouts, libsodium on demand, barrel imports tree-shaken, the preview,
+> zip and chart stacks lazy, and per-route budgets that fail the build
+> (`apps/web/route-budgets.json`). A1 LCP **1.32 s** and F2 sign-in **546 KB raw** are met; A2's
+> first row is **3.54 s** (from 5.57 s), short of 2.5 s — see `ui-roadmap.md`, Stage 2, for
+> what remains. The 769 KB chunk was libsodium.
+
 **Confirmed and unchanged in shape since `performance-testing.md` §8.4.**
 
 | | Raw (parsed) | Transferred |

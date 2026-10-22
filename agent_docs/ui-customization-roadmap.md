@@ -150,6 +150,33 @@ from 24 colour keys to the five groups, with the same allowlist-and-strict-value
 
 ### 3.4 A command and shortcut registry
 
+> **Built in Stage 2** (`@neutrino/commands`). What shipped differs from the sketch below in
+> three ways, each for a reason found in the code:
+>
+> - **The catalog is separate from the handlers.** `catalog.ts` lists every command (id, title,
+>   app, default keys) whether or not its screen is loaded; a screen supplies the behaviour with
+>   `useCommand(id, run)` while mounted. Settings › Keyboard — and later the palette — can then
+>   name every shortcut without importing an editor. `when` became the handler's own `enabled`
+>   flag, or a `run` that returns `false` to decline.
+> - **Three kinds of key behaviour, not one.** Of the ~55 listeners there were, about half only
+>   closed something on Escape; those are *dismiss layers* (`useDismiss`), and Escape now closes
+>   the topmost one only — before, one Escape closed every open menu and dialog at once. Behaviour
+>   that is not a nameable command (arrow keys moving a sheet's selection, type-to-edit, holding
+>   Space to pan) is a *key handler* (`useKeyHandler`). Everything else is a command.
+> - **One dispatcher, three listeners.** It listens on `window` for keydown in the capture and
+>   bubble phases and for keyup. Bubble is the default, so an input's own `onKeyDown` and
+>   ProseMirror's keymap still see a key first; capture exists for the one command that must beat
+>   the focused element (Docs' ⌘K, which macOS Chrome otherwise takes as "delete to end of line").
+>   A test fails if any other source file adds a key listener.
+>
+> Bindings are the `keyboard.preset` and `keyboard.bindings` preferences (plain tier). The presets
+> change only what Google Workspace or Microsoft 365 binds differently for commands Neutrino has
+> (find and replace in Sheets, the spell-check toggle). A binding without Ctrl, ⌘ or ⌥ never fires
+> while typing, whatever the user maps it to. Not yet in the registry: ProseMirror's own keymaps
+> inside the Docs and Notes editors (⌘B and friends) — they are element-scoped, not listeners, and
+> move when the toolbars become command lists (§4, U10). Menu labels still print their shortcut as
+> text; they read the keymap when the toolbars do.
+
 Every action the UI can perform — *New spreadsheet*, *Share*, *Toggle sidebar*, *Bold*, *Insert
 table*, *Switch density* — is registered once:
 

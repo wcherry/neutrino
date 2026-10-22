@@ -136,6 +136,37 @@ and before any editor toolbar is redesigned (toolbars become command lists).
 failing a PR that exceeds them; one `keydown` listener; every primitive renders in all three looks
 with no literal visual values.
 
+**Status — built 2026-10-21 (`feature/ui-stage-1`, PR #266).** Measured at Fast 3G and 4× CPU
+against the baseline committed at the start of the stage:
+
+- **P4.** Three root layouts — `(public)` (landing, sign-in, register, self-host, share),
+  `(apps)`, `(mirror)` — with a standalone 404. libsodium (the 769 KB A6 chunk) loads inside
+  `initSodium()` instead of with every page; `@neutrino/ui`/`@neutrino/layout` imports are
+  tree-shaken; the document preview (which carried part of every editor), the zip viewer and
+  recharts load on first use. Raw first-load JS: `/sign-in` 1 803 → **546 KB**, `/drive`
+  2 363 → 1 174 KB, the Sheets editor 1 998 → 1 498 KB. **A1 LCP 3.26 → 1.32 s** (met); **F2
+  sign-in ≤ 600 KB** (met). **A2 first Drive row 5.57 → 3.54 s — not met** against 2.5 s: what
+  remains is ≈ 350 KB of compressed shell JS at Fast 3G and the folder listing waiting for
+  `auth/me`; fewer, larger chunks made no difference (measured). The next steps are framer-motion
+  out of the primitives and the listing fetched beside the auth check, both in Stage 3's shell.
+  `scripts/check-route-budgets.mjs` runs after every build and fails it when a route passes
+  `route-budgets.json` — it caught a regression the first day (a client component shared between
+  two roots pulls the other root's chunks onto every page that uses it; the public root now has
+  its own).
+- **Command registry.** `@neutrino/commands`: a catalog of 68 commands, one dispatcher on
+  `window` (keydown capture and bubble, keyup — three listeners, one module), Escape as a stack
+  of dismiss layers so it closes only the topmost thing, and Settings › Keyboard with presets
+  (Neutrino, Google Workspace, Microsoft 365), recording, conflict prompts and search. All ~55
+  listeners moved; a test fails on any new one. Found on the way: Docs saved twice per ⌘S.
+- **LF2.** Every primitive draws from look tokens; *Looks/All primitives* in Storybook shows them
+  in all three looks, light and dark; classic's computed styles are unchanged (330 snapshots).
+  Drive's row menu is on the glass tokens too — in the legacy `light-glass` theme that makes it
+  as opaque as every other menu there (overlay rather than surface colour).
+- **Translucency.** B7 scrolls the 1 000-row list under a frosted menu: 60.5 fps, 0 % dropped
+  (B2 without the menu: 60.1 fps). The frame metric is main-thread cadence in headless Chromium;
+  compositor cost on weaker GPUs is not captured, so B7 is worth re-running on real hardware
+  before glass ships.
+
 ### Stage 3 — The new shell, as an opt-in
 
 *Users can switch to Light Flow, Quiet Precision or Blended Flow.*
