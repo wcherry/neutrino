@@ -79,6 +79,11 @@ export interface PanelRailProps {
    * themed differently from its canvas (the photo editor's dark panels over a light page).
    */
   chromeClassName?: string;
+  /**
+   * Show the view alone — no rails, no floating panels — without unmounting it, as a
+   * distraction-free mode needs. The layout is kept for when they come back.
+   */
+  railsHidden?: boolean;
 }
 
 const SIDE_LABEL: Record<RailSide, string> = { left: 'left', right: 'right', top: 'top', bottom: 'bottom' };
@@ -135,6 +140,7 @@ export function PanelRail({
   children,
   className,
   chromeClassName,
+  railsHidden = false,
 }: PanelRailProps) {
   const uid = useId();
   const narrow = useNarrow();
@@ -289,7 +295,7 @@ export function PanelRail({
 
   return (
     <div className={[styles.workspace, className].filter(Boolean).join(' ')} data-dragging={dragging ? 'true' : undefined}>
-      {sides.map((side) => (
+      {!railsHidden && sides.map((side) => (
         <Rail
           key={side}
           uid={uid}
@@ -314,7 +320,7 @@ export function PanelRail({
       ))}
       <div ref={centerRef} className={styles.center} data-rail-view="" data-drop-float={dragging?.target?.kind === 'float' ? 'true' : undefined}>
         {children}
-        {Object.entries(layout.floating).map(([id, entry]) => {
+        {!railsHidden && Object.entries(layout.floating).map(([id, entry]) => {
           const panel = byId.get(id);
           if (!panel) return null;
           return (

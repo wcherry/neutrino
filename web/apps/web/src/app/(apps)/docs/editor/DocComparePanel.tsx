@@ -2,7 +2,6 @@
 
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, GitCompare } from 'lucide-react';
 import { storageApi } from '@/lib/api';
 import type { FileVersionItem } from '@neutrino/api-drive';
 import styles from './DocComparePanel.module.css';
@@ -11,7 +10,6 @@ interface DocComparePanelProps {
   fileId: string;
   baseVersion: FileVersionItem;
   compareVersion: FileVersionItem;
-  onClose: () => void;
   /** When provided, used directly as "compare version" content (for the current unsaved doc). */
   currentContent?: string;
 }
@@ -94,7 +92,7 @@ function extractFromNode(node: any): string {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
-export function DocComparePanel({ fileId, baseVersion, compareVersion, onClose, currentContent }: DocComparePanelProps) {
+export function DocComparePanel({ fileId, baseVersion, compareVersion, currentContent }: DocComparePanelProps) {
   const baseQuery = useQuery({
     queryKey: ['version-content', fileId, baseVersion.id],
     queryFn: () => storageApi.downloadVersionContent(fileId, baseVersion.id),
@@ -127,15 +125,6 @@ export function DocComparePanel({ fileId, baseVersion, compareVersion, onClose, 
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <div className={styles.headerTitle}>
-          <GitCompare size={15} />
-          <span>Compare versions</span>
-        </div>
-        <button className={styles.closeBtn} onClick={onClose} type="button" aria-label="Close compare panel">
-          <X size={14} />
-        </button>
-      </div>
 
       <div className={styles.versionLabels}>
         <div className={styles.versionLabel}>

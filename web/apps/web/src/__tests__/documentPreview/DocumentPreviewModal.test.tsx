@@ -129,7 +129,9 @@ vi.mock('next/navigation', () => ({
 
 // ── Neutrino UI mocks ─────────────────────────────────────────────────────────
 
-vi.mock('@neutrino/ui', () => ({
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()),
   Text: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   Spinner: ({ size }: { size: string }) => <div data-testid={`spinner-${size}`} />,
   Button: ({ children, onClick, icon }: { children: React.ReactNode; onClick?: () => void; icon?: React.ReactNode }) => (

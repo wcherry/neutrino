@@ -78,7 +78,7 @@ test.describe('Docs version history', () => {
     await openNewDoc(page);
 
     await openViewSubmenu(page);
-    await page.getByText('Version history').click();
+    await page.getByRole('menu').getByRole('button', { name: /^Version history/ }).click();
 
     // States only the VersionHistoryPanel renders. A document created a moment
     // ago already has a version — its current content *is* version 1 since
@@ -108,7 +108,7 @@ test.describe('Docs version history', () => {
 
     // Open version history
     await openViewSubmenu(page);
-    await page.getByText('Version history').click();
+    await page.getByRole('menu').getByRole('button', { name: /^Version history/ }).click();
 
     // Panel should now show the saved version. The newest version (idx=0) shows
     // a "Current" badge instead of a "Restore" button, so check for either.
@@ -123,12 +123,12 @@ test.describe('Docs version history', () => {
     await openNewDoc(page);
 
     await openViewSubmenu(page);
-    await page.getByText('Version history').click();
+    await page.getByRole('menu').getByRole('button', { name: /^Version history/ }).click();
 
     await expect(panelState(page)).toBeVisible({ timeout: 10_000 });
 
-    // Close button inside the panel (title="Close")
-    await page.getByTitle('Close').click();
+    // The panel is a tab in the right rail; collapsing it hides the panel.
+    await page.getByRole('button', { name: 'Collapse Version history' }).click();
 
     await expect(panelState(page)).not.toBeVisible({ timeout: 5_000 });
   });
@@ -140,7 +140,7 @@ test.describe('Docs comments panel', () => {
     await openNewDoc(page);
 
     await openViewSubmenu(page);
-    await page.getByText('Comments').click();
+    await page.getByRole('menu').getByRole('button', { name: /^Comments/ }).click();
 
     // CommentsPanel renders a textarea for new comments
     await expect(
@@ -153,14 +153,14 @@ test.describe('Docs comments panel', () => {
     await openNewDoc(page);
 
     await openViewSubmenu(page);
-    await page.getByText('Comments').click();
+    await page.getByRole('menu').getByRole('button', { name: /^Comments/ }).click();
 
     const textarea = page.getByPlaceholder('Add a comment… (use @name to mention)');
     await expect(textarea).toBeVisible({ timeout: 10_000 });
     await textarea.fill('This is a test comment from e2e');
 
     // Submit via the Comment button
-    await page.getByRole('button', { name: 'Comment' }).click();
+    await page.getByRole('button', { name: 'Comment', exact: true }).click();
 
     // Comment body should appear in the panel
     await expect(page.getByText('This is a test comment from e2e')).toBeVisible({ timeout: 10_000 });
@@ -171,13 +171,13 @@ test.describe('Docs comments panel', () => {
     await openNewDoc(page);
 
     await openViewSubmenu(page);
-    await page.getByText('Comments').click();
+    await page.getByRole('menu').getByRole('button', { name: /^Comments/ }).click();
 
     await expect(
       page.getByPlaceholder('Add a comment… (use @name to mention)'),
     ).toBeVisible({ timeout: 10_000 });
 
-    await page.getByTitle('Close').click();
+    await page.getByRole('button', { name: 'Collapse Comments' }).click();
 
     await expect(
       page.getByPlaceholder('Add a comment… (use @name to mention)'),

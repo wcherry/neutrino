@@ -16,7 +16,10 @@ export interface VersionHistoryPanelProps {
   versions: VersionItem[];
   isLoading?: boolean;
   isError?: boolean;
-  onClose: () => void;
+  /** The frame's close button; unused when `framed` is false. */
+  onClose?: () => void;
+  /** Draw the panel's own frame. False inside a `Panel`, which draws its own; see CommentsPanel. */
+  framed?: boolean;
   onLabelVersion: (versionId: string, label: string) => Promise<void>;
   onRestoreVersion: (versionId: string) => Promise<void>;
 }
@@ -43,6 +46,7 @@ export function VersionHistoryPanel({
   isLoading,
   isError,
   onClose,
+  framed = true,
   onLabelVersion,
   onRestoreVersion,
 }: VersionHistoryPanelProps) {
@@ -78,16 +82,18 @@ export function VersionHistoryPanel({
   }
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.header}>
-        <div className={styles.headerTitle}>
-          <History size={16} />
-          Version history
+    <div className={framed ? styles.panel : undefined}>
+      {framed && (
+        <div className={styles.header}>
+          <div className={styles.headerTitle}>
+            <History size={16} />
+            Version history
+          </div>
+          <button className={styles.closeBtn} onClick={onClose} title="Close">
+            <X size={16} />
+          </button>
         </div>
-        <button className={styles.closeBtn} onClick={onClose} title="Close">
-          <X size={16} />
-        </button>
-      </div>
+      )}
 
       <div className={styles.list}>
         {isLoading && <div className={styles.empty}>Loading versions…</div>}

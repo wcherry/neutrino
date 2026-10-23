@@ -113,6 +113,7 @@ export {
   dockPanel,
   expandPanel,
   floatPanel,
+  locate as locatePanel,
   movePanel,
   normalizeLayout as normalizeRailLayout,
   togglePanel,

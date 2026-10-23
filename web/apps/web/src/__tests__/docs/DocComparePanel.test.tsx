@@ -7,7 +7,6 @@
  * - Renders loading state while queries are in flight
  * - Renders diff when currentContent is provided (no API call needed)
  * - Shows "No differences" when documents are identical
- * - Close button calls onClose
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -56,7 +55,6 @@ const defaultProps = {
   fileId: 'file1',
   baseVersion,
   compareVersion,
-  onClose: vi.fn(),
 };
 
 beforeEach(() => {
@@ -64,7 +62,7 @@ beforeEach(() => {
 });
 
 describe('DocComparePanel', () => {
-  it('renders "Compare versions" header', () => {
+  it('draws no frame of its own — the rail panel around it has the title and collapse', () => {
     render(
       <DocComparePanel
         {...defaultProps}
@@ -72,7 +70,8 @@ describe('DocComparePanel', () => {
       />,
       { wrapper }
     );
-    expect(screen.getByText('Compare versions')).toBeInTheDocument();
+    expect(screen.queryByText('Compare versions')).toBeNull();
+    expect(screen.queryByRole('button', { name: /close/i })).toBeNull();
   });
 
   it('shows base version label', () => {
@@ -117,20 +116,6 @@ describe('DocComparePanel', () => {
     await waitFor(() => {
       expect(screen.getByText(/no differences/i)).toBeInTheDocument();
     });
-  });
-
-  it('close button calls onClose', () => {
-    const onClose = vi.fn();
-    render(
-      <DocComparePanel
-        {...defaultProps}
-        onClose={onClose}
-        currentContent='{"type":"doc","content":[]}'
-      />,
-      { wrapper }
-    );
-    screen.getByRole('button', { name: /close/i }).click();
-    expect(onClose).toHaveBeenCalled();
   });
 
   it('shows loading state while fetching base version', async () => {

@@ -1,30 +1,9 @@
 /* ── AiPanel — slides up from the bottom of the editor area ─────────────── */
 
 .panel {
-  position: fixed;
-  bottom: 40px; /* above the status bar */
-  right: 24px;
-  width: 340px;
-  max-height: 420px;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: calc(10px * var(--radius-scale));
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
-  z-index: var(--z-layer-800);
-  animation: slideUp 0.18s ease-out;
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  min-height: 100%;
 }
 
 /* ── Header ── */
@@ -52,24 +31,7 @@
   flex-shrink: 0;
 }
 
-.closeBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: background 0.1s;
-}
 
-.closeBtn:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text);
-}
 
 /* ── Description ── */
 

@@ -27,7 +27,14 @@ export interface CommentsPanelProps {
   isError?: boolean;
   filter: 'open' | 'all';
   onFilterChange: (filter: 'open' | 'all') => void;
-  onClose: () => void;
+  /** The frame's close button; unused when `framed` is false. */
+  onClose?: () => void;
+  /**
+   * Draw the panel's own frame (title, close button, border). False inside a `Panel` — in a
+   * `PanelRail` — which draws all of that itself; the count and filter then sit at the top of
+   * the body. Goes away once every editor's comments are in a rail.
+   */
+  framed?: boolean;
   initialText?: string;
   onCreateComment: (body: string) => Promise<void>;
   onDeleteComment: (commentId: string) => Promise<void>;
@@ -197,6 +204,7 @@ export function CommentsPanel({
   filter,
   onFilterChange,
   onClose,
+  framed = true,
   initialText,
   onCreateComment,
   onDeleteComment,
@@ -208,8 +216,12 @@ export function CommentsPanel({
   const [creating, setCreating] = useState(false);
   const newTextareaRef = React.useRef<HTMLTextAreaElement>(null);
 
+  // A panel in a rail stays mounted, so "comment on this" arrives as a new initialText rather
+  // than a fresh mount: take the quote into the box (unless a draft is already there) and focus it.
   React.useEffect(() => {
-    if (initialText) newTextareaRef.current?.focus();
+    if (!initialText) return;
+    setNewText((draft) => (draft.trim() ? draft : initialText));
+    newTextareaRef.current?.focus();
   }, [initialText]);
 
   async function submitNew() {
@@ -226,28 +238,40 @@ export function CommentsPanel({
 
   const openCount = comments.filter(c => c.status === 'open').length;
 
+  const filterSelect = (
+    <select
+      className={styles.filterSelect}
+      aria-label="Show comments"
+      value={filter}
+      onChange={e => onFilterChange(e.target.value as 'open' | 'all')}
+    >
+      <option value="open">Open</option>
+      <option value="all">All</option>
+    </select>
+  );
+
   return (
-    <div className={styles.panel}>
-      <div className={styles.header}>
-        <div className={styles.headerTitle}>
-          <MessageSquare size={16} />
-          Comments
-          {openCount > 0 && <span className={styles.countBadge}>{openCount}</span>}
+    <div className={framed ? styles.panel : styles.content}>
+      {framed ? (
+        <div className={styles.header}>
+          <div className={styles.headerTitle}>
+            <MessageSquare size={16} />
+            Comments
+            {openCount > 0 && <span className={styles.countBadge}>{openCount}</span>}
+          </div>
+          <div className={styles.headerRight}>
+            {filterSelect}
+            <button className={styles.closeBtn} onClick={onClose} title="Close">
+              <X size={16} />
+            </button>
+          </div>
         </div>
-        <div className={styles.headerRight}>
-          <select
-            className={styles.filterSelect}
-            value={filter}
-            onChange={e => onFilterChange(e.target.value as 'open' | 'all')}
-          >
-            <option value="open">Open</option>
-            <option value="all">All</option>
-          </select>
-          <button className={styles.closeBtn} onClick={onClose} title="Close">
-            <X size={16} />
-          </button>
+      ) : (
+        <div className={styles.toolbar}>
+          <span className={styles.toolbarCount}>{openCount === 1 ? '1 open' : `${openCount} open`}</span>
+          {filterSelect}
         </div>
-      </div>
+      )}
 
       <div className={styles.newCommentForm}>
         <textarea
