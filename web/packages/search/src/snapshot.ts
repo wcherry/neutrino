@@ -17,10 +17,11 @@
 import {
   openSearchDb,
   clearSearchIndex,
+  countDocEntries,
   type DocEntry,
   type TokenEntry,
 } from './db';
-import { emitSearchIndexUpdate } from './events';
+import { emitSearchIndexUpdate, indexRevision } from './events';
 
 /**
  * Bumped when the snapshot's shape changes. A device reading a snapshot it does
@@ -77,6 +78,25 @@ function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
     req.onerror = () => reject(req.error);
     tx.onerror = () => reject(tx.error);
   });
+}
+
+/**
+ * A cheap identity for the local index: its document and entry counts, which IndexedDB answers from
+ * its own metadata, and the revision every write bumps. Equal fingerprints mean nothing was written
+ * in between, so the sync can skip `exportSnapshot` — which deserialises every entry on the main
+ * thread — when there is nothing new to upload.
+ */
+export async function indexFingerprint(): Promise<{ documents: number; fingerprint: string }> {
+  const db = await openSearchDb();
+  const [documents, tokens] = await Promise.all([
+    countDocEntries(db),
+    new Promise<number>((resolve, reject) => {
+      const req = db.transaction('tokens', 'readonly').objectStore('tokens').count();
+      req.onsuccess = () => resolve(req.result ?? 0);
+      req.onerror = () => reject(req.error);
+    }),
+  ]);
+  return { documents, fingerprint: `${documents}:${tokens}:${indexRevision()}` };
 }
 
 /** The whole local index, ready to be encrypted and uploaded. */

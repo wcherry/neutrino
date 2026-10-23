@@ -6,6 +6,7 @@ export type { TokenEntry, DocEntry } from './db';
 export { IndexEngine } from './engine';
 export {
   emitSearchIndexUpdate,
+  indexRevision,
   subscribeToSearchIndexUpdates,
   resetSearchIndexEvents,
 } from './events';
@@ -13,6 +14,7 @@ export type { SearchIndexUpdate, SearchIndexListener } from './events';
 export {
   exportSnapshot,
   importSnapshot,
+  indexFingerprint,
   serializeSnapshot,
   deserializeSnapshot,
   SNAPSHOT_FORMAT,

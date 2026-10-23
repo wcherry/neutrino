@@ -22,6 +22,12 @@ const importSnapshotMock = vi.fn();
  * localStorage claims — the whole point of the check under test.
  */
 const countDocumentsMock = vi.fn();
+const indexFingerprintMock = vi.fn();
+/**
+ * What `indexFingerprint` reports for the local index. A write (here, an import or `changeIndex`)
+ * gives it a new revision, as `emitSearchIndexUpdate` does for real.
+ */
+let localIndex = { documents: 2, fingerprint: '2:1:rev-0' };
 
 class FakeConflictError extends Error {
   constructor() {
@@ -48,6 +54,7 @@ vi.mock('@neutrino/search', () => ({
   },
   exportSnapshot: (...a: unknown[]) => exportSnapshotMock(...a),
   importSnapshot: (...a: unknown[]) => importSnapshotMock(...a),
+  indexFingerprint: (...a: unknown[]) => indexFingerprintMock(...a),
   // Identity transforms: the sync layer only moves these bytes around.
   serializeSnapshot: (s: unknown) => new TextEncoder().encode(JSON.stringify(s)),
   deserializeSnapshot: (b: Uint8Array) => JSON.parse(new TextDecoder().decode(b)),
@@ -69,7 +76,6 @@ import {
   forgetSyncedVersion,
   pullSnapshot,
   pushSnapshot,
-  snapshotFingerprint,
   syncSnapshot,
 } from '@/lib/searchIndexSnapshot';
 
@@ -91,6 +97,12 @@ function makeSnapshot(docCount = 2, newest = 1_700_000_000_000) {
   };
 }
 
+/** Something was indexed: the export grows to `docCount` and the fingerprint moves. */
+function changeIndex(docCount: number) {
+  exportSnapshotMock.mockResolvedValue(makeSnapshot(docCount));
+  localIndex = { documents: docCount, fingerprint: `${docCount}:1:rev-${Math.random()}` };
+}
+
 function meta(version: number, device: string | null = 'other-device') {
   return {
     version,
@@ -106,7 +118,12 @@ beforeEach(() => {
   localStorage.clear();
   forgetSyncedVersion(USER);
   exportSnapshotMock.mockResolvedValue(makeSnapshot());
-  importSnapshotMock.mockImplementation(async (s: { docs: unknown[] }) => s.docs.length);
+  localIndex = { documents: 2, fingerprint: '2:1:rev-0' };
+  indexFingerprintMock.mockImplementation(async () => ({ ...localIndex }));
+  importSnapshotMock.mockImplementation(async (s: { docs: unknown[] }) => {
+    localIndex = { documents: s.docs.length, fingerprint: `${s.docs.length}:1:rev-imported` };
+    return s.docs.length;
+  });
   uploadMock.mockResolvedValue(meta(1, deviceId()));
   getMetaMock.mockResolvedValue(null);
   downloadMock.mockResolvedValue(null);
@@ -138,7 +155,7 @@ describe('pushSnapshot', () => {
     await pushSnapshot(USER);
 
     // A change to the index, so the fingerprint check does not skip the push.
-    exportSnapshotMock.mockResolvedValue(makeSnapshot(3));
+    changeIndex(3);
     await pushSnapshot(USER);
 
     expect(uploadMock.mock.calls[1][1].expectedVersion).toBe(4);
@@ -147,7 +164,7 @@ describe('pushSnapshot', () => {
   it('never replaces a stored snapshot with an empty index', async () => {
     // A device that has not built its index yet has nothing worth sharing, and
     // uploading it would wipe out every other device's search.
-    exportSnapshotMock.mockResolvedValue(makeSnapshot(0));
+    changeIndex(0);
 
     const result = await pushSnapshot(USER);
 
@@ -165,10 +182,21 @@ describe('pushSnapshot', () => {
     expect(uploadMock).not.toHaveBeenCalled();
   });
 
+  it('decides an unchanged index without reading the whole of it', async () => {
+    // Exporting deserialises every entry on the main thread: on a large library that was a
+    // ~300 ms freeze on every page load, for a sync that then uploaded nothing.
+    await pushSnapshot(USER);
+    exportSnapshotMock.mockClear();
+
+    await pushSnapshot(USER);
+
+    expect(exportSnapshotMock).not.toHaveBeenCalled();
+  });
+
   it('uploads again once the index actually changes', async () => {
     await pushSnapshot(USER);
     uploadMock.mockClear();
-    exportSnapshotMock.mockResolvedValue(makeSnapshot(5));
+    changeIndex(5);
 
     const result = await pushSnapshot(USER);
 
@@ -381,21 +409,5 @@ describe('syncSnapshot', () => {
     expect(uploadMock).toHaveBeenCalledTimes(2);
     // Pulled once up front and once more after losing the race.
     expect(getMetaMock).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('snapshotFingerprint', () => {
-  it('changes when a document is added', () => {
-    expect(snapshotFingerprint(makeSnapshot(2))).not.toBe(snapshotFingerprint(makeSnapshot(3)));
-  });
-
-  it('changes when a document is re-indexed with a newer revision', () => {
-    expect(snapshotFingerprint(makeSnapshot(2, 1))).not.toBe(
-      snapshotFingerprint(makeSnapshot(2, 2)),
-    );
-  });
-
-  it('is stable for an unchanged index', () => {
-    expect(snapshotFingerprint(makeSnapshot())).toBe(snapshotFingerprint(makeSnapshot()));
   });
 });

@@ -525,6 +525,24 @@ export function FileGrid({
     </div>
   );
 
+  // Drawn while loading too: it does not depend on the items, and adding it once they arrive
+  // pushed the list down under the reader.
+  const filterBar = showFilter && (
+    <div className={styles['filter-bar']} role="group" aria-label="Filter files">
+      {FILTER_CHIPS.map(({ key, label }) => (
+        <button
+          key={key}
+          type="button"
+          className={[styles['filter-chip'], filter === key ? styles['filter-chip-active'] : ''].filter(Boolean).join(' ')}
+          onClick={() => { setUncontrolledFilter(key); onFilterChange?.(key); }}
+          aria-pressed={filter === key}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   const rootClass = [styles.root, isDraggingOver ? styles['root--drag-over'] : ''].filter(Boolean).join(' ');
   const dragProps = { onDragEnter, onDragOver, onDragLeave, onDrop };
 
@@ -532,6 +550,7 @@ export function FileGrid({
     return (
       <div className={rootClass} {...dragProps}>
         {toolbar}
+        {filterBar}
         <div className={styles['list-container']}>
           <FileListSkeleton rows={8} />
         </div>
@@ -543,21 +562,7 @@ export function FileGrid({
     <div className={rootClass} {...dragProps}>
       {toolbar}
 
-      {showFilter && (
-        <div className={styles['filter-bar']} role="group" aria-label="Filter files">
-          {FILTER_CHIPS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              className={[styles['filter-chip'], filter === key ? styles['filter-chip-active'] : ''].filter(Boolean).join(' ')}
-              onClick={() => { setUncontrolledFilter(key); onFilterChange?.(key); }}
-              aria-pressed={filter === key}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      {filterBar}
 
       {(isError || filteredItems.length === 0) ? (
         <>
