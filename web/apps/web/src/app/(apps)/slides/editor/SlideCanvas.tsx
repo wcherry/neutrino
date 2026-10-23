@@ -26,7 +26,7 @@ function DiagramSlideElement({ el }: { el: DiagramElement }) {
     return () => { cancelled = true; };
   }, [el.diagramId, el.pageIndex, setPage]);
 
-  if (!page) return <div style={{ width: '100%', height: '100%', background: 'var(--palette-sky-98-2)', borderRadius: 4 }} />;
+  if (!page) return <div style={{ width: '100%', height: '100%', background: 'var(--palette-sky-98-2)', borderRadius: 'calc(4px * var(--radius-scale))' }} />;
   return <EmbeddedDiagramView page={page} width="100%" height="100%" />;
 }
 
@@ -772,7 +772,7 @@ export default function SlideCanvas({
                 overflow: 'hidden',
                 background: 'var(--palette-gray-100)',
                 border: '1px solid var(--palette-sky-91)',
-                borderRadius: 4,
+                borderRadius: 'calc(4px * var(--radius-scale))',
               }}
               onMouseDown={(e) => handleMouseDown(e, el.id, el)}
               onClick={(e) => e.stopPropagation()}

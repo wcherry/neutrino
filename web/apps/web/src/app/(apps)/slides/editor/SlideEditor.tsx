@@ -1616,7 +1616,7 @@ export function SlideEditor() {
             >
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                 <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
-                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.color ?? 'var(--palette-gray-13)' }} />
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: (selectedElement as TextElement).style.color ?? 'var(--palette-gray-13)' }} />
               </span>
             </ColorPickerPopover>
             <ColorPickerPopover
@@ -1627,7 +1627,7 @@ export function SlideEditor() {
             >
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                 <span style={{ fontSize: 12 }}>&#9632;</span>
-                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.backgroundColor ?? 'var(--palette-yellow-77)' }} />
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: (selectedElement as TextElement).style.backgroundColor ?? 'var(--palette-yellow-77)' }} />
               </span>
             </ColorPickerPopover>
           </ToolbarGroup>
@@ -1659,7 +1659,7 @@ export function SlideEditor() {
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                   <span style={{ fontSize: 11, textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>A</span>
-                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)' }} />
+                  <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: (selectedElement as TextElement).style.shadowColor ?? 'rgba(0,0,0,0.5)' }} />
                 </span>
               </ColorPickerPopover>
             )}
@@ -1809,7 +1809,7 @@ export function SlideEditor() {
           >
             <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
               <span style={{ fontSize: 11 }}>Tint</span>
-              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ImageElement).tintColor ?? 'var(--palette-red-50-3)' }} />
+              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: (selectedElement as ImageElement).tintColor ?? 'var(--palette-red-50-3)' }} />
             </span>
           </ColorPickerPopover>
           <input
@@ -1891,7 +1891,7 @@ export function SlideEditor() {
             >
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                 <span style={{ fontSize: 12 }}>&#9632;</span>
-                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).fill }} />
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: (selectedElement as ShapeElement).fill }} />
               </span>
             </ColorPickerPopover>
             <ColorPickerPopover
@@ -1902,7 +1902,7 @@ export function SlideEditor() {
             >
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                 <span style={{ fontSize: 12 }}>&#9633;</span>
-                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as ShapeElement).stroke === 'transparent' ? 'var(--palette-gray-0)' : (selectedElement as ShapeElement).stroke }} />
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: (selectedElement as ShapeElement).stroke === 'transparent' ? 'var(--palette-gray-0)' : (selectedElement as ShapeElement).stroke }} />
               </span>
             </ColorPickerPopover>
           </ToolbarGroup>
@@ -1958,7 +1958,7 @@ export function SlideEditor() {
             >
               <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
                 <span style={{ fontSize: 12 }}>&#9633;</span>
-                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: (selectedElement as LineElement).stroke }} />
+                <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: (selectedElement as LineElement).stroke }} />
               </span>
             </ColorPickerPopover>
           </ToolbarGroup>

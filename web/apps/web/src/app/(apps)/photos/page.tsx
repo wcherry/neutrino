@@ -180,7 +180,7 @@ function AlbumCard({ album }: { album: AlbumResponse }) {
         <p className={styles.albumTitle}>
           {album.title}
           {album.isAuto && (
-            <span style={{ marginLeft: 6, fontSize: 'var(--font-size-xs)', fontWeight: 400, color: 'var(--color-text-secondary)', background: 'var(--color-surface-raised, var(--color-neutral-100))', borderRadius: 4, padding: '1px 5px' }}>
+            <span style={{ marginLeft: 6, fontSize: 'var(--font-size-xs)', fontWeight: 400, color: 'var(--color-text-secondary)', background: 'var(--color-surface-raised, var(--color-neutral-100))', borderRadius: 'calc(4px * var(--radius-scale))', padding: '1px 5px' }}>
               Smart
             </span>
           )}

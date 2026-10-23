@@ -140,7 +140,7 @@ export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormat
             }}
         >
             <div style={{
-                background: 'var(--palette-gray-100)', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+                background: 'var(--palette-gray-100)', borderRadius: 'calc(10px * var(--radius-scale))', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
                 width: 380, maxHeight: '80vh', display: 'flex', flexDirection: 'column',
                 overflow: 'hidden', fontFamily: 'sans-serif', fontSize: 13, color: 'var(--palette-gray-13-2)',
             }}>
@@ -195,7 +195,7 @@ export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormat
                         placeholder='e.g. #,##0.00 or mmm yyyy'
                         style={{
                             width: '100%', boxSizing: 'border-box', padding: '6px 8px',
-                            border: '1px solid var(--palette-gray-82)', borderRadius: 5, fontSize: 12,
+                            border: '1px solid var(--palette-gray-82)', borderRadius: 'calc(5px * var(--radius-scale))', fontSize: 12,
                             fontFamily: 'monospace', outline: 'none',
                         }}
                     />
@@ -211,11 +211,11 @@ export function CustomFormatDialog({ cellStyle, onApply, onClose }: CustomFormat
                 <div style={{ padding: '10px 18px', borderTop: '1px solid var(--palette-gray-93)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button
                         onClick={onClose}
-                        style={{ padding: '6px 16px', border: '1px solid var(--palette-gray-82)', borderRadius: 6, background: 'var(--palette-gray-96)', cursor: 'pointer', fontSize: 12 }}
+                        style={{ padding: '6px 16px', border: '1px solid var(--palette-gray-82)', borderRadius: 'calc(6px * var(--radius-scale))', background: 'var(--palette-gray-96)', cursor: 'pointer', fontSize: 12 }}
                     >Cancel</button>
                     <button
                         onClick={handleApply}
-                        style={{ padding: '6px 16px', border: 'none', borderRadius: 6, background: 'rgb(0,90,220)', color: 'var(--palette-gray-100)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}
+                        style={{ padding: '6px 16px', border: 'none', borderRadius: 'calc(6px * var(--radius-scale))', background: 'rgb(0,90,220)', color: 'var(--palette-gray-100)', cursor: 'pointer', fontSize: 12, fontWeight: 500 }}
                     >Apply</button>
                 </div>
             </div>

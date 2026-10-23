@@ -168,7 +168,7 @@ export function FindReplaceDialog({
                                     width: '100%',
                                     padding: '6px 10px',
                                     paddingRight: matchLabel ? 80 : 10,
-                                    borderRadius: 6,
+                                    borderRadius: 'calc(6px * var(--radius-scale))',
                                     border: '1px solid var(--color-border)',
                                     fontSize: 13,
                                     outline: 'none',
@@ -200,7 +200,7 @@ export function FindReplaceDialog({
                             style={{
                                 padding: '6px 10px',
                                 border: '1px solid var(--color-border)',
-                                borderRadius: 6,
+                                borderRadius: 'calc(6px * var(--radius-scale))',
                                 background: 'none',
                                 cursor: matches.length === 0 ? 'default' : 'pointer',
                                 fontSize: 14,
@@ -216,7 +216,7 @@ export function FindReplaceDialog({
                             style={{
                                 padding: '6px 10px',
                                 border: '1px solid var(--color-border)',
-                                borderRadius: 6,
+                                borderRadius: 'calc(6px * var(--radius-scale))',
                                 background: 'none',
                                 cursor: matches.length === 0 ? 'default' : 'pointer',
                                 fontSize: 14,
@@ -234,7 +234,7 @@ export function FindReplaceDialog({
                             onChange={e => setReplaceText(e.target.value)}
                             style={{
                                 padding: '6px 10px',
-                                borderRadius: 6,
+                                borderRadius: 'calc(6px * var(--radius-scale))',
                                 border: '1px solid var(--color-border)',
                                 fontSize: 13,
                                 outline: 'none',

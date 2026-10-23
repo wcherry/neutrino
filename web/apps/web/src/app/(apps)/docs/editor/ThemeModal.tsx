@@ -53,7 +53,7 @@ export function ThemeModal({ currentTheme, onSave, onClose }: ThemeModalProps) {
               onClick={() => setSelected(theme.id)}
               style={{
                 border: selected === theme.id ? '2px solid var(--palette-sky-51)' : '2px solid var(--color-border, var(--palette-gray-88))',
-                borderRadius: 8,
+                borderRadius: 'calc(8px * var(--radius-scale))',
                 padding: 12,
                 cursor: 'pointer',
                 background: selected === theme.id ? 'var(--palette-blue-95)' : 'var(--color-bg, var(--palette-gray-100))',

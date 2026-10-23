@@ -433,7 +433,7 @@ export function Toolbar({
           >
             <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
               <span style={{ fontWeight: 600, fontSize: 13 }}>A</span>
-              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: editor.getAttributes('textStyle').color ?? 'var(--palette-gray-13)' }} />
+              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: editor.getAttributes('textStyle').color ?? 'var(--palette-gray-13)' }} />
             </span>
           </ColorPickerPopover>
           <ColorPickerPopover
@@ -443,7 +443,7 @@ export function Toolbar({
           >
             <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, lineHeight: 1 }}>
               <span style={{ fontSize: 12, lineHeight: 1 }}>⬛</span>
-              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 2, backgroundColor: editor.getAttributes('highlight').color ?? 'var(--palette-yellow-77)' }} />
+              <span style={{ display: 'block', width: 14, height: 3, borderRadius: 'calc(2px * var(--radius-scale))', backgroundColor: editor.getAttributes('highlight').color ?? 'var(--palette-yellow-77)' }} />
             </span>
           </ColorPickerPopover>
         </ToolbarGroup>

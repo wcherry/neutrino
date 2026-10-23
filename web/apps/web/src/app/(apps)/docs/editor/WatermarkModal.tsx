@@ -42,7 +42,7 @@ export function WatermarkModal({
               type="color"
               value={bg}
               onChange={(e) => setBg(e.target.value)}
-              style={{ width: 40, height: 34, cursor: 'pointer', padding: 2, border: '1px solid var(--color-border, var(--palette-gray-88))', borderRadius: 6 }}
+              style={{ width: 40, height: 34, cursor: 'pointer', padding: 2, border: '1px solid var(--color-border, var(--palette-gray-88))', borderRadius: 'calc(6px * var(--radius-scale))' }}
             />
             <input
               className={styles.formInput}

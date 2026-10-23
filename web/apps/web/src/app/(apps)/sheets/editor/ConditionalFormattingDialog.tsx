@@ -680,7 +680,7 @@ function RuleEditor({ rule: editing, variables, onChange }: {
                             onClick={() => setFormat({ textDecoration: currentFormat.textDecoration === 'underline' ? 'none' : 'underline' })} />
                     </div>
                     <div style={{
-                        marginTop: 10, padding: '4px 10px', borderRadius: 4, display: 'inline-block',
+                        marginTop: 10, padding: '4px 10px', borderRadius: 'calc(4px * var(--radius-scale))', display: 'inline-block',
                         backgroundColor: currentFormat.backgroundColor ?? 'transparent',
                         color: currentFormat.color ?? 'var(--palette-gray-0)',
                         fontWeight: currentFormat.fontWeight ?? 'normal',
@@ -719,7 +719,7 @@ function ColorStop({ label, color, onChange }: { label: string; color: string; o
 function ColorSwatch({ color, dashed }: { color: string; dashed?: boolean }) {
     return (
         <div style={{
-            width: 24, height: 24, borderRadius: 4,
+            width: 24, height: 24, borderRadius: 'calc(4px * var(--radius-scale))',
             backgroundColor: color,
             border: dashed ? '2px dashed var(--palette-gray-67)' : '1px solid rgba(0,0,0,0.2)',
             cursor: 'pointer',
@@ -732,7 +732,7 @@ function FormatToggle({ label, active, style, onClick }: {
 }) {
     return (
         <button onClick={onClick} style={{
-            width: 28, height: 28, borderRadius: 4, border: 'none', cursor: 'pointer', fontSize: 13,
+            width: 28, height: 28, borderRadius: 'calc(4px * var(--radius-scale))', border: 'none', cursor: 'pointer', fontSize: 13,
             backgroundColor: active ? 'var(--color-primary, var(--palette-sky-51))' : 'var(--color-surface-2, var(--palette-sky-95))',
             color: active ? 'var(--palette-gray-100)' : 'inherit',
             ...style,
@@ -768,7 +768,7 @@ function StatusIndicatorPreview({ template }: { template: CFStatusIndicatorTempl
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
             {items.map(it => (
                 <span key={it.label} style={{
-                    padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 500,
+                    padding: '2px 8px', borderRadius: 'calc(10px * var(--radius-scale))', fontSize: 10, fontWeight: 500,
                     backgroundColor: it.bg, color: it.fg,
                 }}>
                     {it.label}
@@ -924,7 +924,7 @@ function SmartSuggestions({ suggestions, onApply }: {
                         key={s.label}
                         style={{
                             display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
-                            borderRadius: 6, border: '1px solid var(--color-border, var(--palette-gray-88))',
+                            borderRadius: 'calc(6px * var(--radius-scale))', border: '1px solid var(--color-border, var(--palette-gray-88))',
                             background: 'var(--color-surface, var(--palette-gray-100))', cursor: 'pointer', textAlign: 'left',
                         }}
                         onClick={() => onApply(s.buildRule('A1:A100'))}
@@ -1008,7 +1008,7 @@ function AiRuleBuilderPanel({ selectionRange, onAddRule }: {
 
             {error && (
                 <div style={{
-                    marginTop: 10, padding: '8px 10px', borderRadius: 4, fontSize: 12,
+                    marginTop: 10, padding: '8px 10px', borderRadius: 'calc(4px * var(--radius-scale))', fontSize: 12,
                     backgroundColor: 'var(--palette-red-95)', color: 'var(--palette-red-45)',
                 }}>
                     {error}
@@ -1019,10 +1019,10 @@ function AiRuleBuilderPanel({ selectionRange, onAddRule }: {
             )}
 
             {preview && (
-                <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 6, border: '1px solid var(--color-border, var(--palette-gray-88))', background: 'var(--color-surface-2, var(--palette-sky-98))' }}>
+                <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'calc(6px * var(--radius-scale))', border: '1px solid var(--color-border, var(--palette-gray-88))', background: 'var(--color-surface-2, var(--palette-sky-98))' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary, var(--palette-gray-33))' }}>Generated rule</span>
-                        <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 10, background: 'var(--palette-green-93)', color: 'var(--palette-green-26)' }}>
+                        <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 'calc(10px * var(--radius-scale))', background: 'var(--palette-green-93)', color: 'var(--palette-green-26)' }}>
                             {preview.rule.kind}
                         </span>
                     </div>
@@ -1030,13 +1030,13 @@ function AiRuleBuilderPanel({ selectionRange, onAddRule }: {
                         {preview.explanation}
                     </p>
                     {preview.rule.kind === 'formula' && (
-                        <code style={{ display: 'block', fontSize: 11, padding: '4px 6px', background: 'var(--color-surface, var(--palette-gray-100))', borderRadius: 4, border: '1px solid var(--color-border, var(--palette-gray-87-2))', marginBottom: 8 }}>
+                        <code style={{ display: 'block', fontSize: 11, padding: '4px 6px', background: 'var(--color-surface, var(--palette-gray-100))', borderRadius: 'calc(4px * var(--radius-scale))', border: '1px solid var(--color-border, var(--palette-gray-87-2))', marginBottom: 8 }}>
                             {preview.rule.formula}
                         </code>
                     )}
                     {'format' in preview.rule && preview.rule.format && (
                         <div style={{
-                            display: 'inline-block', padding: '3px 10px', borderRadius: 4, fontSize: 12,
+                            display: 'inline-block', padding: '3px 10px', borderRadius: 'calc(4px * var(--radius-scale))', fontSize: 12,
                             backgroundColor: (preview.rule.format as CFStyle).backgroundColor ?? 'transparent',
                             color: (preview.rule.format as CFStyle).color ?? 'var(--palette-gray-0)',
                             border: '1px solid rgba(0,0,0,0.1)', marginBottom: 8,
@@ -1285,7 +1285,7 @@ const smallLabelStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
     width: '100%', boxSizing: 'border-box', padding: '5px 8px',
-    border: '1px solid var(--color-border, var(--palette-gray-87-2))', borderRadius: 4,
+    border: '1px solid var(--color-border, var(--palette-gray-87-2))', borderRadius: 'calc(4px * var(--radius-scale))',
     fontSize: 12, background: 'var(--color-surface, var(--palette-gray-100))',
     color: 'var(--color-text, var(--palette-gray-0))',
 };
@@ -1303,7 +1303,7 @@ const iconBtnStyle: React.CSSProperties = {
 
 const ruleEditorStyle: React.CSSProperties = {
     padding: '10px 12px', border: '1px solid var(--color-border, var(--palette-gray-88))',
-    borderRadius: 6, background: 'var(--color-surface-2, var(--palette-sky-98))',
+    borderRadius: 'calc(6px * var(--radius-scale))', background: 'var(--color-surface-2, var(--palette-sky-98))',
     marginBottom: 8,
 };
 
@@ -1333,7 +1333,7 @@ const closeBtnStyle: React.CSSProperties = {
 
 const ruleRowStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 6,
-    padding: '8px 4px', cursor: 'pointer', borderRadius: 4,
+    padding: '8px 4px', cursor: 'pointer', borderRadius: 'calc(4px * var(--radius-scale))',
     marginBottom: 2,
 };
 
@@ -1345,16 +1345,16 @@ const footerStyle: React.CSSProperties = {
 const addBtnStyle: React.CSSProperties = {
     display: 'flex', alignItems: 'center', background: 'none', border: 'none',
     cursor: 'pointer', fontSize: 12, color: 'var(--color-primary, var(--palette-sky-51))',
-    padding: '4px 6px', borderRadius: 4, fontWeight: 600,
+    padding: '4px 6px', borderRadius: 'calc(4px * var(--radius-scale))', fontWeight: 600,
 };
 
 const primaryBtnStyle: React.CSSProperties = {
-    padding: '5px 14px', borderRadius: 4, border: 'none', cursor: 'pointer',
+    padding: '5px 14px', borderRadius: 'calc(4px * var(--radius-scale))', border: 'none', cursor: 'pointer',
     background: 'var(--color-primary, var(--palette-sky-51))', color: 'var(--palette-gray-100)', fontSize: 12, fontWeight: 600,
 };
 
 const secondaryBtnStyle: React.CSSProperties = {
-    padding: '5px 14px', borderRadius: 4,
+    padding: '5px 14px', borderRadius: 'calc(4px * var(--radius-scale))',
     border: '1px solid var(--color-border, var(--palette-gray-87-2))', cursor: 'pointer',
     background: 'transparent', fontSize: 12,
     color: 'var(--color-text, var(--palette-gray-0))',

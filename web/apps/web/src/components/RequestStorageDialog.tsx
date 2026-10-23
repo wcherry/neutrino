@@ -131,7 +131,7 @@ export function RequestStorageDialog({ open, onClose, quota }: RequestStorageDia
                 value={value}
                 disabled={submit.isPending}
                 onChange={(e) => setRequested(e.target.value)}
-                style={{ fontSize: 13, padding: '7px 10px', borderRadius: 6 }}
+                style={{ fontSize: 13, padding: '7px 10px', borderRadius: 'calc(6px * var(--radius-scale))' }}
               />
             </label>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -142,7 +142,7 @@ export function RequestStorageDialog({ open, onClose, quota }: RequestStorageDia
                 placeholder="What you need the room for"
                 disabled={submit.isPending}
                 onChange={(e) => setReason(e.target.value)}
-                style={{ fontSize: 13, padding: '7px 10px', borderRadius: 6 }}
+                style={{ fontSize: 13, padding: '7px 10px', borderRadius: 'calc(6px * var(--radius-scale))' }}
               />
             </label>
             {error && <p style={{ margin: 0, fontSize: 12, color: 'var(--palette-red-42)' }}>{error}</p>}

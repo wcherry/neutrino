@@ -108,7 +108,7 @@ export function ColorPickerPopover({ color, onChange, onOpen, disabled, title, c
                             display: 'inline-block',
                             width: 16,
                             height: 16,
-                            borderRadius: 2,
+                            borderRadius: 'calc(2px * var(--radius-scale))',
                             background: color,
                             border: '1px solid rgba(0,0,0,0.15)',
                         }} />

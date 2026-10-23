@@ -106,7 +106,7 @@ export default function GoogleOAuthCallbackPage() {
             style={{
               marginTop: '1rem',
               padding: '0.5rem 1.25rem',
-              borderRadius: '6px',
+              borderRadius: 'calc(6px * var(--radius-scale))',
               border: '1px solid var(--color-neutral-300)',
               background: 'var(--palette-gray-100)',
               cursor: 'pointer',
