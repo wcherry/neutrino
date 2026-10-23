@@ -508,6 +508,23 @@
   color: var(--color-text);
 }
 
+/* Image properties: a floating panel over the page, drawn on the looks' card surface. */
+.imagePropertiesPanel {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  z-index: var(--z-popover);
+  /* Wide enough for all four tabs; the old container fitted them in a dropdown. */
+  width: 380px;
+  height: 400px;
+  overflow: hidden;
+  border: var(--screen-card-border, 1px solid var(--color-border));
+  border-radius: var(--dialog-radius, var(--radius-lg));
+  background: var(--screen-card-bg, var(--color-surface));
+  box-shadow: var(--screen-card-shadow, var(--shadow-xl));
+  backdrop-filter: var(--screen-card-filter, none);
+}
+
 .formRow {
   display: flex;
   align-items: center;

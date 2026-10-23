@@ -1,16 +1,16 @@
 /**
- * The layout of a rail workspace, as plain data: which pane sits in which rail and in what order,
- * which one each rail has open, which panes float and where, and how big each pane is.
+ * The layout of a rail workspace, as plain data: which panel sits in which rail and in what order,
+ * which one each rail has open, which panels float and where, and how big each panel is.
  *
  * It is kept apart from the components so the rules are testable without rendering, and so an app
  * can store it as a preference: every function here returns a new layout and never mutates, and
- * `normalizeLayout` turns whatever came back from storage into a layout that is valid for the panes
+ * `normalizeLayout` turns whatever came back from storage into a layout that is valid for the panels
  * the app has today.
  *
  * Three rules hold for every layout these functions produce:
- *  - every pane is in exactly one place — one rail, or floating;
- *  - a rail has at most one pane expanded, and it is one of its own;
- *  - a floating pane remembers the rail (and position in it) it came from, so closing it puts it back.
+ *  - every panel is in exactly one place — one rail, or floating;
+ *  - a rail has at most one panel expanded, and it is one of its own;
+ *  - a floating panel remembers the rail (and position in it) it came from, so closing it puts it back.
  */
 
 export type RailSide = 'left' | 'right' | 'top' | 'bottom';
@@ -25,13 +25,13 @@ export interface FloatRect {
 }
 
 export interface RailState {
-  /** Pane ids in tab order. */
-  panes: string[];
-  /** The one expanded pane, or null when the rail is only its strip. */
+  /** Panel ids in tab order. */
+  panels: string[];
+  /** The one expanded panel, or null when the rail is only its strip. */
   expanded: string | null;
 }
 
-export interface FloatingPane {
+export interface FloatingPanel {
   rect: FloatRect;
   /** Where closing it returns it to. */
   home: RailSide;
@@ -41,20 +41,20 @@ export interface FloatingPane {
 export interface RailLayout {
   version: 1;
   rails: Partial<Record<RailSide, RailState>>;
-  floating: Record<string, FloatingPane>;
-  /** A pane's width in a side rail, or height in a top or bottom one, in px. */
+  floating: Record<string, FloatingPanel>;
+  /** A panel's width in a side rail, or height in a top or bottom one, in px. */
   sizes: Record<string, number>;
 }
 
-/** What an app declares: its panes and the rails it has. */
+/** What an app declares: its panels and the rails it has. */
 export interface RailSpec {
   sides: readonly RailSide[];
-  panes: readonly { id: string; side: RailSide }[];
+  panels: readonly { id: string; side: RailSide }[];
 }
 
-export const MIN_PANE_SIZE = 160;
-export const MAX_PANE_SIZE = 960;
-export const DEFAULT_PANE_SIZE: Record<'vertical' | 'horizontal', number> = { vertical: 280, horizontal: 220 };
+export const MIN_PANEL_SIZE = 160;
+export const MAX_PANEL_SIZE = 960;
+export const DEFAULT_PANEL_SIZE: Record<'vertical' | 'horizontal', number> = { vertical: 280, horizontal: 220 };
 export const MIN_FLOAT_WIDTH = 200;
 export const MIN_FLOAT_HEIGHT = 140;
 
@@ -63,7 +63,7 @@ export function isVertical(side: RailSide): boolean {
 }
 
 export function clampSize(size: number): number {
-  return Math.round(Math.min(MAX_PANE_SIZE, Math.max(MIN_PANE_SIZE, size)));
+  return Math.round(Math.min(MAX_PANEL_SIZE, Math.max(MIN_PANEL_SIZE, size)));
 }
 
 function homeSide(spec: RailSpec, side: RailSide | undefined): RailSide {
@@ -71,26 +71,26 @@ function homeSide(spec: RailSpec, side: RailSide | undefined): RailSide {
   return spec.sides[0] ?? 'left';
 }
 
-/** The layout an app starts from: each pane in its declared rail, in declaration order. */
+/** The layout an app starts from: each panel in its declared rail, in declaration order. */
 export function defaultLayout(
   spec: RailSpec,
   expanded: Partial<Record<RailSide, string>> = {},
 ): RailLayout {
   const rails: RailLayout['rails'] = {};
-  for (const side of spec.sides) rails[side] = { panes: [], expanded: null };
-  for (const pane of spec.panes) rails[homeSide(spec, pane.side)]!.panes.push(pane.id);
+  for (const side of spec.sides) rails[side] = { panels: [], expanded: null };
+  for (const panel of spec.panels) rails[homeSide(spec, panel.side)]!.panels.push(panel.id);
   for (const side of spec.sides) {
     const want = expanded[side];
-    if (want && rails[side]!.panes.includes(want)) rails[side]!.expanded = want;
+    if (want && rails[side]!.panels.includes(want)) rails[side]!.expanded = want;
   }
   return { version: 1, rails, floating: {}, sizes: {} };
 }
 
-/** Where a pane is: a rail and its index there, or `floating`. Null for a pane the layout lacks. */
-export function locate(layout: RailLayout, paneId: string): { side: RailSide; index: number } | 'floating' | null {
-  if (layout.floating[paneId]) return 'floating';
+/** Where a panel is: a rail and its index there, or `floating`. Null for a panel the layout lacks. */
+export function locate(layout: RailLayout, panelId: string): { side: RailSide; index: number } | 'floating' | null {
+  if (layout.floating[panelId]) return 'floating';
   for (const side of RAIL_SIDES) {
-    const index = layout.rails[side]?.panes.indexOf(paneId) ?? -1;
+    const index = layout.rails[side]?.panels.indexOf(panelId) ?? -1;
     if (index >= 0) return { side, index };
   }
   return null;
@@ -100,32 +100,32 @@ function cloneRails(layout: RailLayout): RailLayout['rails'] {
   const rails: RailLayout['rails'] = {};
   for (const side of RAIL_SIDES) {
     const rail = layout.rails[side];
-    if (rail) rails[side] = { panes: [...rail.panes], expanded: rail.expanded };
+    if (rail) rails[side] = { panels: [...rail.panels], expanded: rail.expanded };
   }
   return rails;
 }
 
-/** The layout with `paneId` taken out of wherever it is, the source rail collapsing if it was open. */
-function detach(layout: RailLayout, paneId: string): { layout: RailLayout; from: ReturnType<typeof locate> } {
-  const from = locate(layout, paneId);
+/** The layout with `panelId` taken out of wherever it is, the source rail collapsing if it was open. */
+function detach(layout: RailLayout, panelId: string): { layout: RailLayout; from: ReturnType<typeof locate> } {
+  const from = locate(layout, panelId);
   const rails = cloneRails(layout);
   const floating = { ...layout.floating };
-  if (from === 'floating') delete floating[paneId];
+  if (from === 'floating') delete floating[panelId];
   else if (from) {
     const rail = rails[from.side]!;
-    rail.panes.splice(from.index, 1);
-    if (rail.expanded === paneId) rail.expanded = null;
+    rail.panels.splice(from.index, 1);
+    if (rail.expanded === panelId) rail.expanded = null;
   }
   return { layout: { ...layout, rails, floating }, from };
 }
 
-/** Open a pane: the one expanded in its rail (closing whichever was). A floating pane is already open. */
-export function expandPane(layout: RailLayout, paneId: string): RailLayout {
-  const at = locate(layout, paneId);
+/** Open a panel: the one expanded in its rail (closing whichever was). A floating panel is already open. */
+export function expandPanel(layout: RailLayout, panelId: string): RailLayout {
+  const at = locate(layout, panelId);
   if (!at || at === 'floating') return layout;
-  if (layout.rails[at.side]!.expanded === paneId) return layout;
+  if (layout.rails[at.side]!.expanded === panelId) return layout;
   const rails = cloneRails(layout);
-  rails[at.side]!.expanded = paneId;
+  rails[at.side]!.expanded = panelId;
   return { ...layout, rails };
 }
 
@@ -137,71 +137,71 @@ export function collapseRail(layout: RailLayout, side: RailSide): RailLayout {
   return { ...layout, rails };
 }
 
-/** What a tab click does: open the pane, or collapse it if it is the one already open. */
-export function togglePane(layout: RailLayout, paneId: string): RailLayout {
-  const at = locate(layout, paneId);
+/** What a tab click does: open the panel, or collapse it if it is the one already open. */
+export function togglePanel(layout: RailLayout, panelId: string): RailLayout {
+  const at = locate(layout, panelId);
   if (!at || at === 'floating') return layout;
-  return layout.rails[at.side]!.expanded === paneId ? collapseRail(layout, at.side) : expandPane(layout, paneId);
+  return layout.rails[at.side]!.expanded === panelId ? collapseRail(layout, at.side) : expandPanel(layout, panelId);
 }
 
 /**
- * Put a pane into a rail at `index` (the end by default) and open it there. Moving within one rail
+ * Put a panel into a rail at `index` (the end by default) and open it there. Moving within one rail
  * reorders it; `index` counts positions in the rail as it is before the move.
  */
-export function movePane(layout: RailLayout, paneId: string, side: RailSide, index?: number): RailLayout {
+export function movePanel(layout: RailLayout, panelId: string, side: RailSide, index?: number): RailLayout {
   if (!layout.rails[side]) return layout;
-  const { layout: without, from } = detach(layout, paneId);
+  const { layout: without, from } = detach(layout, panelId);
   if (!from) return layout;
   const rails = cloneRails(without);
   const target = rails[side]!;
-  let at = index ?? target.panes.length;
-  // The index was read off the rail with the pane still in it; taking it out shifts what follows.
+  let at = index ?? target.panels.length;
+  // The index was read off the rail with the panel still in it; taking it out shifts what follows.
   if (from !== 'floating' && from.side === side && from.index < at) at -= 1;
-  target.panes.splice(Math.max(0, Math.min(at, target.panes.length)), 0, paneId);
-  target.expanded = paneId;
+  target.panels.splice(Math.max(0, Math.min(at, target.panels.length)), 0, panelId);
+  target.expanded = panelId;
   return { ...without, rails };
 }
 
-/** Lift a pane out of its rail into a floating window, remembering where to return it. */
-export function floatPane(layout: RailLayout, paneId: string, rect: FloatRect): RailLayout {
-  const at = locate(layout, paneId);
+/** Lift a panel out of its rail into a floating window, remembering where to return it. */
+export function floatPanel(layout: RailLayout, panelId: string, rect: FloatRect): RailLayout {
+  const at = locate(layout, panelId);
   if (!at) return layout;
-  if (at === 'floating') return setFloatRect(layout, paneId, rect);
-  const { layout: without } = detach(layout, paneId);
+  if (at === 'floating') return setFloatRect(layout, panelId, rect);
+  const { layout: without } = detach(layout, panelId);
   return {
     ...without,
-    floating: { ...without.floating, [paneId]: { rect: normalizeRect(rect), home: at.side, homeIndex: at.index } },
+    floating: { ...without.floating, [panelId]: { rect: normalizeRect(rect), home: at.side, homeIndex: at.index } },
   };
 }
 
-/** Close a floating pane: back into the rail it came from, at the place it left, and open. */
-export function dockPane(layout: RailLayout, paneId: string): RailLayout {
-  const entry = layout.floating[paneId];
+/** Close a floating panel: back into the rail it came from, at the place it left, and open. */
+export function dockPanel(layout: RailLayout, panelId: string): RailLayout {
+  const entry = layout.floating[panelId];
   if (!entry) return layout;
   const side = layout.rails[entry.home] ? entry.home : (RAIL_SIDES.find((s) => layout.rails[s]) ?? null);
   if (!side) return layout;
-  const { layout: without } = detach(layout, paneId);
+  const { layout: without } = detach(layout, panelId);
   const rails = cloneRails(without);
   const rail = rails[side]!;
-  rail.panes.splice(Math.min(entry.homeIndex, rail.panes.length), 0, paneId);
-  rail.expanded = paneId;
+  rail.panels.splice(Math.min(entry.homeIndex, rail.panels.length), 0, panelId);
+  rail.expanded = panelId;
   return { ...without, rails };
 }
 
-export function setFloatRect(layout: RailLayout, paneId: string, rect: FloatRect): RailLayout {
-  const entry = layout.floating[paneId];
+export function setFloatRect(layout: RailLayout, panelId: string, rect: FloatRect): RailLayout {
+  const entry = layout.floating[panelId];
   if (!entry) return layout;
-  return { ...layout, floating: { ...layout.floating, [paneId]: { ...entry, rect: normalizeRect(rect) } } };
+  return { ...layout, floating: { ...layout.floating, [panelId]: { ...entry, rect: normalizeRect(rect) } } };
 }
 
-export function resizePane(layout: RailLayout, paneId: string, size: number): RailLayout {
+export function resizePanel(layout: RailLayout, panelId: string, size: number): RailLayout {
   const next = clampSize(size);
-  if (layout.sizes[paneId] === next) return layout;
-  return { ...layout, sizes: { ...layout.sizes, [paneId]: next } };
+  if (layout.sizes[panelId] === next) return layout;
+  return { ...layout, sizes: { ...layout.sizes, [panelId]: next } };
 }
 
-export function paneSize(layout: RailLayout, paneId: string, side: RailSide): number {
-  return layout.sizes[paneId] ?? DEFAULT_PANE_SIZE[isVertical(side) ? 'vertical' : 'horizontal'];
+export function panelSize(layout: RailLayout, panelId: string, side: RailSide): number {
+  return layout.sizes[panelId] ?? DEFAULT_PANEL_SIZE[isVertical(side) ? 'vertical' : 'horizontal'];
 }
 
 function normalizeRect(rect: FloatRect): FloatRect {
@@ -217,8 +217,8 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 
 /**
  * A layout that is valid for `spec`, from anything — a stored preference written by an older
- * build, another device with different panes, or nothing at all. Unknown panes and rails are
- * dropped, a pane that appears twice keeps its first place, panes the stored layout never saw go
+ * build, another device with different panels, or nothing at all. Unknown panels and rails are
+ * dropped, a panel that appears twice keeps its first place, panels the stored layout never saw go
  * to their declared rail, and an `expanded` that is not in its rail is cleared. What survives keeps
  * the user's arrangement.
  */
@@ -231,27 +231,27 @@ export function normalizeLayout(
   const r = raw as Partial<RailLayout> | null | undefined;
   if (!r || typeof r !== 'object' || r.version !== 1) return base;
 
-  const known = new Map(spec.panes.map((p) => [p.id, p]));
+  const known = new Map(spec.panels.map((p) => [p.id, p]));
   const placed = new Set<string>();
   const rails: RailLayout['rails'] = {};
-  for (const side of spec.sides) rails[side] = { panes: [], expanded: null };
+  for (const side of spec.sides) rails[side] = { panels: [], expanded: null };
 
   for (const side of spec.sides) {
     const stored = (r.rails as Record<string, RailState | undefined> | undefined)?.[side];
-    if (!stored || !Array.isArray(stored.panes)) continue;
-    for (const id of stored.panes) {
+    if (!stored || !Array.isArray(stored.panels)) continue;
+    for (const id of stored.panels) {
       if (typeof id === 'string' && known.has(id) && !placed.has(id)) {
-        rails[side]!.panes.push(id);
+        rails[side]!.panels.push(id);
         placed.add(id);
       }
     }
-    if (typeof stored.expanded === 'string' && rails[side]!.panes.includes(stored.expanded)) {
+    if (typeof stored.expanded === 'string' && rails[side]!.panels.includes(stored.expanded)) {
       rails[side]!.expanded = stored.expanded;
     }
   }
 
   const floating: RailLayout['floating'] = {};
-  for (const [id, entry] of Object.entries((r.floating ?? {}) as Record<string, Partial<FloatingPane>>)) {
+  for (const [id, entry] of Object.entries((r.floating ?? {}) as Record<string, Partial<FloatingPanel>>)) {
     const rect = entry?.rect as Partial<FloatRect> | undefined;
     if (!known.has(id) || placed.has(id) || !rect) continue;
     if (![rect.x, rect.y, rect.width, rect.height].every(finite)) continue;
@@ -263,8 +263,8 @@ export function normalizeLayout(
     placed.add(id);
   }
 
-  for (const pane of spec.panes) {
-    if (!placed.has(pane.id)) rails[homeSide(spec, pane.side)]!.panes.push(pane.id);
+  for (const panel of spec.panels) {
+    if (!placed.has(panel.id)) rails[homeSide(spec, panel.side)]!.panels.push(panel.id);
   }
 
   const sizes: RailLayout['sizes'] = {};

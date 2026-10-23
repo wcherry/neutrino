@@ -14,7 +14,7 @@ import { useSessionKeyPair } from '@/hooks/useSessionKeyPair';
 import { toRenderableImageBlob } from '@/lib/heic';
 import { PhotoTopBar } from './PhotoTopBar';
 import { PhotoToolbar } from './PhotoToolbar';
-import { AdjustmentsPanel } from './AdjustmentsPanel';
+import { AdjustmentsRail } from './AdjustmentsPanel';
 import { PhotoCanvas, type PhotoCanvasHandle } from './PhotoCanvas';
 import type { Tool, Adjustments, CropRect, MarkupStroke, PhotoFilter, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection, DeblurKernel } from './types';
 import { DEFAULT_ADJUSTMENTS, DEFAULT_CLONE_SETTINGS, DEFAULT_TEXT_SETTINGS, DEFAULT_STROKE_SETTINGS } from './types';
@@ -205,7 +205,9 @@ export function PhotoEditor() {
   const objectUrlRef = useRef<string | null>(null);
 
   const [activeTool, setActiveTool] = useState<Tool>('select');
-  const [panelTab, setPanelTab] = useState('filters');
+  // Which adjustment panel the editor wants open; a new seq re-opens one the user collapsed.
+  const [panelRequest, setPanelRequest] = useState<{ id: string; seq: number } | null>(null);
+  const openPanel = (id: string) => setPanelRequest((r) => ({ id, seq: (r?.seq ?? 0) + 1 }));
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -216,7 +218,7 @@ export function PhotoEditor() {
       activeTool === 'pen' || activeTool === 'highlighter' || activeTool === 'arrow' ||
       activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'line'
     ) {
-      setPanelTab('tools');
+      openPanel('tools');
     }
   }, [activeTool]);
 
@@ -831,7 +833,7 @@ export function PhotoEditor() {
     setAreaSelection(rect);
     setEdgeMask(null);
     setDetectedObjects(null);
-    if (rect) setPanelTab('ai');
+    if (rect) openPanel('ai');
   }, []);
 
   const handleAreaOp = useCallback((op: 'blur' | 'pixelate' | 'fill') => {
@@ -862,7 +864,7 @@ export function PhotoEditor() {
       const { base64, mediaType } = await resizeForAi(blob);
       const objects = await photosAiApi.detectObjects(base64, target, mediaType);
       setDetectedObjects(objects);
-      setPanelTab('ai');
+      openPanel('ai');
     } catch {
       toastError('Object detection failed');
     }
@@ -982,38 +984,7 @@ export function PhotoEditor() {
       />
       <div className={styles.editorBody}>
         <PhotoToolbar activeTool={activeTool} onToolChange={setActiveTool} />
-        <div className={styles.canvasArea} ref={canvasAreaRef}>
-          <PhotoCanvas
-            ref={canvasRef}
-            imageDataUrl={imageDataUrl}
-            deblurKernel={deblurKernel}
-            adjustments={adjustments}
-            rotation={rotation}
-            flipH={flipH}
-            flipV={flipV}
-            cropRect={cropRect}
-            photoFilter={photoFilter}
-            activeTool={activeTool}
-            markupStrokes={markupStrokes}
-            zoom={zoom}
-            panOffset={panOffset}
-            cloneSettings={cloneSettings}
-            textSettings={textSettings}
-            strokeSettings={strokeSettings}
-            selectedStrokeIds={selectedStrokeIds}
-            areaSelection={areaSelection}
-            edgeMask={edgeMask}
-            detectedObjects={detectedObjects}
-            onStrokeAdd={handleStrokeAdd}
-            onCropChange={handleCropChange}
-            onSelectionChange={handleSelectionChange}
-            onAreaSelect={handleAreaSelect}
-          />
-          <div className={styles.zoomBar}>
-            <ZoomSlider value={zoom} onChange={setZoom} min={10} max={400} step={25} sliderStep={1} showHandle />
-          </div>
-        </div>
-        <AdjustmentsPanel
+        <AdjustmentsRail
           adjustments={adjustments}
           blurAnalysis={blurAnalysis}
           deblurKernel={deblurKernel}
@@ -1027,8 +998,7 @@ export function PhotoEditor() {
           activeTool={activeTool}
           cloneSettings={cloneSettings}
           textSettings={textSettings}
-          activeTabId={panelTab}
-          onTabChange={setPanelTab}
+          openRequest={panelRequest}
           onAdjustmentChange={handleAdjustmentChange}
           onRotateLeft={handleRotateLeft}
           onRotateRight={handleRotateRight}
@@ -1055,7 +1025,39 @@ export function PhotoEditor() {
           onSmartErase={handleSmartErase}
           onRemoveObjects={handleRemoveObjects}
           onSmartEraseClear={() => setDetectedObjects(null)}
-        />
+        >
+          <div className={styles.canvasArea} ref={canvasAreaRef}>
+            <PhotoCanvas
+              ref={canvasRef}
+              imageDataUrl={imageDataUrl}
+              deblurKernel={deblurKernel}
+              adjustments={adjustments}
+              rotation={rotation}
+              flipH={flipH}
+              flipV={flipV}
+              cropRect={cropRect}
+              photoFilter={photoFilter}
+              activeTool={activeTool}
+              markupStrokes={markupStrokes}
+              zoom={zoom}
+              panOffset={panOffset}
+              cloneSettings={cloneSettings}
+              textSettings={textSettings}
+              strokeSettings={strokeSettings}
+              selectedStrokeIds={selectedStrokeIds}
+              areaSelection={areaSelection}
+              edgeMask={edgeMask}
+              detectedObjects={detectedObjects}
+              onStrokeAdd={handleStrokeAdd}
+              onCropChange={handleCropChange}
+              onSelectionChange={handleSelectionChange}
+              onAreaSelect={handleAreaSelect}
+            />
+            <div className={styles.zoomBar}>
+              <ZoomSlider value={zoom} onChange={setZoom} min={10} max={400} step={25} sliderStep={1} showHandle />
+            </div>
+          </div>
+        </AdjustmentsRail>
       </div>
       <AlertDialog
         open={confirmDialog !== null}

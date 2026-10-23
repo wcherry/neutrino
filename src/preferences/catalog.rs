@@ -92,6 +92,7 @@ pub const PLAIN: &[Spec] = &[
     Spec { key: "teamSpace.sortDirection", kind: Kind::Enum(&["asc", "desc"]), scopes: USER_TEAM },
     Spec { key: "listing.views", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
     Spec { key: "editor.toolbars", kind: Kind::Object { max_bytes: 4096 }, scopes: USER },
+    Spec { key: "editor.panels", kind: Kind::Object { max_bytes: 16384 }, scopes: USER },
     Spec { key: "team.pins", kind: Kind::Object { max_bytes: 4096 }, scopes: TEAM },
     Spec { key: "team.commands", kind: Kind::Object { max_bytes: 4096 }, scopes: TEAM },
     Spec { key: "team.library", kind: Kind::Object { max_bytes: 1024 }, scopes: TEAM },

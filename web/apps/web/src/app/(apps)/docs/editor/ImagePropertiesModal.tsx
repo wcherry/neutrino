@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
+import { X } from 'lucide-react';
 import type { Editor } from '@tiptap/react';
-import { PanelContainer, Button, type PanelTab } from '@neutrino/ui';
+import { Button, Panel, Tab, TabList, TabPanel, Tabs } from '@neutrino/ui';
 import styles from './page.module.css';
 
 export interface ImageAttrs {
@@ -102,12 +103,12 @@ export function ImagePropertiesModal({ editor, initialAttrs, onClose }: Props) {
   };
 
   const sharedFooter = <TabFooter onApply={handleApply} onClose={onClose} />;
+  const titleId = useId();
 
-  const tabs: PanelTab[] = [
+  const tabs: { id: string; title: string; content: React.ReactNode }[] = [
     {
       id: 'layout',
       title: 'Layout',
-      footer: sharedFooter,
       content: (
         <TabBody>
           <div className={styles.formRow}>
@@ -137,7 +138,6 @@ export function ImagePropertiesModal({ editor, initialAttrs, onClose }: Props) {
     {
       id: 'appearance',
       title: 'Appearance',
-      footer: sharedFooter,
       content: (
         <TabBody>
           <div className={styles.formRow}>
@@ -167,7 +167,6 @@ export function ImagePropertiesModal({ editor, initialAttrs, onClose }: Props) {
     {
       id: 'tint',
       title: 'Tint',
-      footer: sharedFooter,
       content: (
         <TabBody>
           <div className={styles.formRow}>
@@ -215,7 +214,6 @@ export function ImagePropertiesModal({ editor, initialAttrs, onClose }: Props) {
     {
       id: 'metadata',
       title: 'Metadata',
-      footer: sharedFooter,
       content: (
         <TabBody>
           <div className={styles.formRow}>
@@ -250,15 +248,29 @@ export function ImagePropertiesModal({ editor, initialAttrs, onClose }: Props) {
     },
   ];
 
+  // A non-modal panel over the page, so the image stays in view while it is adjusted.
   return (
-    <div style={{ position: 'fixed', top: 80, right: 24, zIndex: 1000 }}>
-      <PanelContainer
-        tabs={tabs}
-        defaultLocation="float"
-        onClose={onClose}
-        width={320}
-        height={400}
-      />
-    </div>
+    <Panel
+      className={styles.imagePropertiesPanel}
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
+      titleId={titleId}
+      title="Image properties"
+      footer={sharedFooter}
+      control={{ label: 'Close image properties', title: 'Close', icon: <X size={14} />, onClick: onClose }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape' || e.defaultPrevented) return;
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <Tabs defaultTab={tabs[0].id}>
+        <TabList>
+          {tabs.map((t) => <Tab key={t.id} id={t.id}>{t.title}</Tab>)}
+        </TabList>
+        {tabs.map((t) => <TabPanel key={t.id} id={t.id}>{t.content}</TabPanel>)}
+      </Tabs>
+    </Panel>
   );
 }

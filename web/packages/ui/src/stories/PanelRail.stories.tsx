@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import { History, ListTree, Layers, MessageSquare, Palette, Terminal } from 'lucide-react';
-import { RailWorkspace, type RailPane } from '../components/rails/RailWorkspace';
+import { PanelRail, type RailPanel } from '../components/rails/PanelRail';
+import { Panel } from '../components/containers/Panel';
 import type { RailLayout } from '../components/rails/railLayout';
 
 /*
- * Rails of panes around an editor's view. Click a tab to open its pane and again to collapse it;
+ * Rails of panels around an editor's view. Click a tab to open its panel and again to collapse it;
  * drag a tab to another rail, or out over the page to float it; the ⋯ menu does the same moves.
  * Switch the Look in the toolbar: rails read the editor-chrome tokens, so they sit on the
  * surface each look gives an editor.
  */
 
-const meta: Meta<typeof RailWorkspace> = {
-  title: 'Containers/RailWorkspace',
-  component: RailWorkspace,
+const meta: Meta<typeof PanelRail> = {
+  title: 'Containers/PanelRail',
+  component: PanelRail,
   parameters: { layout: 'fullscreen' },
 };
 
@@ -28,7 +29,7 @@ const body = (lines: string[]) => (
   </div>
 );
 
-const PANES: RailPane[] = [
+const PANELS: RailPanel[] = [
   { id: 'outline', title: 'Outline', icon: <ListTree size={14} />, side: 'left', content: body(['Introduction', 'Methods', 'Results', 'Discussion']) },
   { id: 'layers', title: 'Layers', icon: <Layers size={14} />, side: 'left', content: body(['Header', 'Body text', 'Footnotes']) },
   { id: 'comments', title: 'Comments', icon: <MessageSquare size={14} />, side: 'right', content: body(['William: Test 123', 'Ada: Looks good']) },
@@ -53,7 +54,7 @@ function Page() {
         }}
       >
         <h1 style={{ marginTop: 0 }}>Introduction</h1>
-        <p>The rails around this page hold the editor’s panes. Drag a tab to move it.</p>
+        <p>The rails around this page hold the editor’s panels. Drag a tab to move it.</p>
       </div>
     </div>
   );
@@ -67,9 +68,9 @@ function Frame({ children }: { children: React.ReactNode }) {
 export const SideRails: Story = {
   render: () => (
     <Frame>
-      <RailWorkspace panes={PANES.filter((p) => p.side === 'left' || p.side === 'right')} sides={['left', 'right']} defaultExpanded={{ left: 'outline', right: 'comments' }}>
+      <PanelRail panels={PANELS.filter((p) => p.side === 'left' || p.side === 'right')} sides={['left', 'right']} defaultExpanded={{ left: 'outline', right: 'comments' }}>
         <Page />
-      </RailWorkspace>
+      </PanelRail>
     </Frame>
   ),
 };
@@ -78,29 +79,29 @@ export const SideRails: Story = {
 export const AllSides: Story = {
   render: () => (
     <Frame>
-      <RailWorkspace panes={PANES} sides={['left', 'right', 'top', 'bottom']} defaultExpanded={{ left: 'outline', bottom: 'console' }}>
+      <PanelRail panels={PANELS} sides={['left', 'right', 'top', 'bottom']} defaultExpanded={{ left: 'outline', bottom: 'console' }}>
         <Page />
-      </RailWorkspace>
+      </PanelRail>
     </Frame>
   ),
 };
 
-/** A pane floating over the page; closing it returns it to the right rail. */
+/** A panel floating over the page; closing it returns it to the right rail. */
 export const Floating: Story = {
   render: () => (
     <Frame>
-      <RailWorkspace
-        panes={PANES.filter((p) => p.side === 'left' || p.side === 'right')}
+      <PanelRail
+        panels={PANELS.filter((p) => p.side === 'left' || p.side === 'right')}
         sides={['left', 'right']}
         defaultLayout={{
           version: 1,
-          rails: { left: { panes: ['outline', 'layers'], expanded: 'outline' }, right: { panes: ['comments'], expanded: null } },
+          rails: { left: { panels: ['outline', 'layers'], expanded: 'outline' }, right: { panels: ['comments'], expanded: null } },
           floating: { history: { rect: { x: 360, y: 80, width: 300, height: 260 }, home: 'right', homeIndex: 1 } },
           sizes: {},
         }}
       >
         <Page />
-      </RailWorkspace>
+      </PanelRail>
     </Frame>
   ),
 };
@@ -111,12 +112,32 @@ export const Controlled: Story = {
     const [layout, setLayout] = useState<RailLayout | null>(null);
     return (
       <Frame>
-        <RailWorkspace panes={PANES} sides={['left', 'right', 'bottom']} layout={layout} onLayoutChange={setLayout} defaultExpanded={{ left: 'outline' }}>
+        <PanelRail panels={PANELS} sides={['left', 'right', 'bottom']} layout={layout} onLayoutChange={setLayout} defaultExpanded={{ left: 'outline' }}>
           <pre style={{ margin: 0, padding: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--color-text)', overflow: 'auto', height: '100%' }}>
             {JSON.stringify(layout, null, 2) ?? 'null — nothing stored yet'}
           </pre>
-        </RailWorkspace>
+        </PanelRail>
       </Frame>
     );
   },
+};
+
+/** The frame on its own, as a page uses it outside a rail: its control closes rather than collapses. */
+export const StandalonePanel: Story = {
+  render: () => (
+    <Frame>
+      <div style={{ padding: 'var(--space-6)' }}>
+        <div style={{ width: 320, height: 360, display: 'flex', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', background: 'var(--color-surface)', overflow: 'hidden' }}>
+          <Panel
+            title="Image properties"
+            icon={<Palette size={14} />}
+            control={{ label: 'Close image properties', icon: <span aria-hidden="true">×</span>, onClick: () => {} }}
+            footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)', fontSize: 'var(--text-sm)' }}>Cancel · Apply</div>}
+          >
+            {body(['Width: 100%', 'Alignment: Centre', 'Shadow: None'])}
+          </Panel>
+        </div>
+      </div>
+    </Frame>
+  ),
 };

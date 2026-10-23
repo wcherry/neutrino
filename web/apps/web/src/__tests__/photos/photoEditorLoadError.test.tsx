@@ -99,7 +99,9 @@ vi.mock('@/app/(apps)/photos/editor/PhotoCanvas', () => ({
 }));
 vi.mock('@/app/(apps)/photos/editor/PhotoTopBar', () => ({ PhotoTopBar: () => null }));
 vi.mock('@/app/(apps)/photos/editor/PhotoToolbar', () => ({ PhotoToolbar: () => null }));
-vi.mock('@/app/(apps)/photos/editor/AdjustmentsPanel', () => ({ AdjustmentsPanel: () => null }));
+vi.mock('@/app/(apps)/photos/editor/AdjustmentsPanel', () => ({
+  AdjustmentsRail: ({ children }: { children: React.ReactNode }) => children,
+}));
 
 import { PhotoEditor } from '@/app/(apps)/photos/editor/PhotoEditor';
 

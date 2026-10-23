@@ -159,6 +159,7 @@
 
 .canvasArea {
   flex: 1;
+  height: 100%;
   position: relative;
   overflow: hidden;
   background: var(--palette-gray-7);
@@ -199,14 +200,20 @@
   pointer-events: none;
 }
 
-/* ── Adjustments panel (right) — PanelContainer dark override ────────────── */
+/* ── Adjustments panels — a PanelRail around the canvas ─────────────────── */
 
+.panelHost {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The panels' dark override, applied to the rails and floating panels but not the canvas. */
 .panelDark {
-  flex-shrink: 0;
   --color-surface: var(--palette-gray-10);
   --color-surface-overlay: var(--palette-gray-12);
   --color-border: var(--palette-gray-16);
   --color-bg-subtle: var(--palette-gray-13-2);
+  --color-text: var(--color-neutral-200);
   --color-text-primary: var(--color-neutral-200);
   --color-text-secondary: var(--color-neutral-400);
   --color-text-muted: var(--color-neutral-500);
