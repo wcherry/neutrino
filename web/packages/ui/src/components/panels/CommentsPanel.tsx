@@ -271,7 +271,7 @@ export function CommentsPanel({
       <div className={styles.list}>
         {isLoading && <Spinner size="sm" />}
         {isError && (
-          <div className={styles.empty} style={{ color: 'var(--color-danger, #dc2626)' }}>
+          <div className={styles.empty} style={{ color: 'var(--color-danger, var(--palette-red-51))' }}>
             Failed to load comments.
           </div>
         )}

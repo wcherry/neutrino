@@ -7,6 +7,20 @@ import { formatCellValue } from './utils';
 import { numToAlpha } from './utils';
 import styles from './page.module.css';
 
+/**
+ * A cell border as the spreadsheet stores it: the three weights of the file format, drawn in the
+ * same fixed greys whatever the look or theme — they are the document's formatting, not chrome.
+ */
+const BORDER_WEIGHTS: Record<'thin' | 'medium' | 'thick', string> = {
+    thin: '1px solid #999',
+    medium: '2px solid #555',
+    thick: '3px solid #111',
+};
+
+function sideBorder(side?: 'none' | 'thin' | 'medium' | 'thick'): string {
+    return side && side !== 'none' ? BORDER_WEIGHTS[side] : 'none';
+}
+
 export const Cell = React.memo(function Cell(props: CellProps & {
     selected?: boolean;
     style?: React.CSSProperties;
@@ -17,12 +31,6 @@ export const Cell = React.memo(function Cell(props: CellProps & {
     const hasPerSideBorder =
         cs?.borderTop !== undefined || cs?.borderRight !== undefined ||
         cs?.borderBottom !== undefined || cs?.borderLeft !== undefined;
-    function sideBorder(side?: 'none' | 'thin' | 'medium' | 'thick'): string {
-        return side === 'thin'   ? '1px solid #999' :
-               side === 'medium' ? '2px solid #555' :
-               side === 'thick'  ? '3px solid #111' :
-               'none';
-    }
     const borderCss: React.CSSProperties = hasPerSideBorder
         ? {
               borderTop: sideBorder(cs?.borderTop),
@@ -30,9 +38,7 @@ export const Cell = React.memo(function Cell(props: CellProps & {
               borderBottom: sideBorder(cs?.borderBottom),
               borderLeft: sideBorder(cs?.borderLeft),
           }
-        : cs?.borderStyle === 'thin'   ? { border: '1px solid #999' } :
-          cs?.borderStyle === 'medium' ? { border: '2px solid #555' } :
-          cs?.borderStyle === 'thick'  ? { border: '3px solid #111' } :
+        : cs?.borderStyle && cs.borderStyle !== 'none' ? { border: sideBorder(cs.borderStyle) } :
           {};
     const wrapCss: React.CSSProperties =
         cs?.wrapMode === 'wrap' ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'hidden' } :

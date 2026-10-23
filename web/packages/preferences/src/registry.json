@@ -62,6 +62,45 @@
       "section": "appearance"
     },
     {
+      "key": "appearance.shape",
+      "type": {
+        "kind": "enum",
+        "options": [
+          "sharper",
+          "default",
+          "rounder"
+        ]
+      },
+      "default": "default",
+      "sync": "plain",
+      "scopes": [
+        "org",
+        "team",
+        "user"
+      ],
+      "paint": true,
+      "label": "Corners",
+      "section": "appearance"
+    },
+    {
+      "key": "appearance.font",
+      "type": {
+        "kind": "string",
+        "maxLength": 80,
+        "pattern": "^[^'\"<>;{}\\\\]{0,80}$"
+      },
+      "default": "",
+      "sync": "plain",
+      "scopes": [
+        "org",
+        "team",
+        "user"
+      ],
+      "paint": true,
+      "label": "Interface font",
+      "section": "appearance"
+    },
+    {
       "key": "appearance.textSize",
       "type": {
         "kind": "enum",
@@ -475,6 +514,48 @@
       ],
       "label": "Editor toolbars: order, hidden tools and labels",
       "section": "appearance"
+    },
+    {
+      "key": "team.pins",
+      "type": {
+        "kind": "object",
+        "maxBytes": 4096
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "team"
+      ],
+      "label": "Pinned resources",
+      "section": "teams"
+    },
+    {
+      "key": "team.commands",
+      "type": {
+        "kind": "object",
+        "maxBytes": 4096
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "team"
+      ],
+      "label": "Command palette shortcuts",
+      "section": "teams"
+    },
+    {
+      "key": "team.library",
+      "type": {
+        "kind": "object",
+        "maxBytes": 1024
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "team"
+      ],
+      "label": "Shared library",
+      "section": "teams"
     },
     {
       "key": "drive.landing",

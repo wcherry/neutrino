@@ -42,7 +42,7 @@
 
 .active {
   background-color: var(--color-accent);
-  color: #ffffff;
+  color: var(--palette-gray-100);
   border-color: var(--color-accent);
 }
 

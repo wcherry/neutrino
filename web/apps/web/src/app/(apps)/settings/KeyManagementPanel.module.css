@@ -6,7 +6,7 @@
 
 .hint {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
@@ -25,7 +25,7 @@
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 .activeIcon {
@@ -53,23 +53,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--color-text-primary);
 }
 
 .activeBadge {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 500;
   padding: 1px 6px;
   border-radius: 999px;
-  background: var(--color-success-bg, #dcfce7);
+  background: var(--color-success-bg, var(--palette-green-93-2));
   color: var(--color-success);
 }
 
 .versionFingerprint {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12px;
+  font-size: var(--text-xs);
   letter-spacing: 0.06em;
   color: var(--color-text-secondary);
   word-break: keep-all;
@@ -90,12 +90,12 @@
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: var(--color-surface-secondary, transparent);
 }
 
 .blockTitle {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -107,9 +107,9 @@
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   border: 1px solid var(--color-border);
   background: transparent;
@@ -122,8 +122,9 @@
 
 .primaryBtn {
   border-color: transparent;
-  background: var(--color-primary);
-  color: #fff;
+  background: var(--screen-primary-bg, var(--color-primary));
+  color: var(--screen-primary-fg, var(--palette-gray-100));
+  box-shadow: var(--screen-primary-ring, none);
 }
 
 .dangerBtn {
@@ -145,12 +146,12 @@
 .kit {
   margin: 0;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.9;
   letter-spacing: 0.06em;
   text-align: center;
   padding: 14px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   border: 1px dashed var(--color-border);
   background: var(--color-surface);
   color: var(--color-text-primary);
@@ -164,7 +165,7 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.5;
   color: var(--color-text-secondary);
 }
@@ -179,12 +180,12 @@
   display: flex;
   justify-content: center;
   padding: 16px;
-  background: #fff;
-  border-radius: 8px;
+  background: var(--palette-gray-100);
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 .sasLabel {
-  font-size: 12px;
+  font-size: var(--text-xs);
   text-align: center;
   color: var(--color-text-secondary);
 }
@@ -193,7 +194,7 @@
    screen, and it is the only thing standing between the user and a relay. */
 .sas {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 28px;
+  font-size: var(--font-size-28);
   font-weight: 600;
   letter-spacing: 0.3em;
   text-align: center;
@@ -207,12 +208,12 @@
 .warning {
   margin: 0;
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.6;
-  color: var(--color-warning-text, #92400e);
-  background: var(--color-warning-bg, #fffbeb);
-  border: 1px solid var(--color-warning-border, #fde68a);
-  border-radius: 8px;
+  color: var(--color-warning-text, var(--palette-orange-31));
+  background: var(--color-warning-bg, var(--palette-amber-96));
+  border: 1px solid var(--color-warning-border, var(--palette-amber-77));
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 /*
@@ -237,7 +238,7 @@
 }
 
 .countdown {
-  font-size: 12px;
+  font-size: var(--text-xs);
   text-align: center;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-secondary);
@@ -251,9 +252,9 @@
   justify-content: center;
   min-height: 220px;
   padding: 16px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   text-align: center;
   color: var(--color-text-secondary);
-  background: var(--color-surface-muted, #f9fafb);
-  border-radius: 8px;
+  background: var(--color-surface-muted, var(--color-neutral-50));
+  border-radius: calc(8px * var(--radius-scale));
 }

@@ -116,7 +116,7 @@
   border: 0;
   background: none;
   padding: 2px 4px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   font: inherit;
   font-size: var(--text-xs);
   color: var(--brand-accent);
@@ -149,7 +149,7 @@
   flex-direction: column;
   gap: 2px;
   padding: 8px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   color: var(--text-2);
 }
 
@@ -200,7 +200,7 @@
   height: 34px;
   padding: 0 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   background: transparent;
   color: var(--text-1);
   font: inherit;

@@ -380,7 +380,7 @@ export function ColorPicker({ value, onChange, showAlpha, onClose, flat }: Color
                         value={alpha}
                         className={styles.alphaSlider}
                         style={{
-                            backgroundImage: `linear-gradient(to right, transparent, ${hex}), repeating-conic-gradient(#c0c0c0 0% 25%, #fff 0% 50%)`,
+                            backgroundImage: `linear-gradient(to right, transparent, ${hex}), repeating-conic-gradient(var(--palette-gray-75) 0% 25%, var(--palette-gray-100) 0% 50%)`,
                             backgroundSize: '100% 100%, 8px 8px',
                         }}
                         onChange={e => commitAlpha(parseInt(e.target.value))}

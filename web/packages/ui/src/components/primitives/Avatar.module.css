@@ -48,11 +48,11 @@
 .status-busy    { background-color: var(--color-error); }
 
 /* Color variants for initials */
-.color-0 { background-color: #eff6ff; color: #1e40af; }
-.color-1 { background-color: #f0fdf4; color: #166534; }
-.color-2 { background-color: #fffbeb; color: #92400e; }
-.color-3 { background-color: #fef2f2; color: #991b1b; }
-.color-4 { background-color: #f5f3ff; color: #4c1d95; }
-.color-5 { background-color: #fdf4ff; color: #701a75; }
-.color-6 { background-color: #fff7ed; color: #9a3412; }
-.color-7 { background-color: #ecfdf5; color: #065f46; }
+.color-0 { background-color: var(--palette-sky-97); color: var(--palette-blue-40); }
+.color-1 { background-color: var(--palette-green-97); color: var(--palette-green-24); }
+.color-2 { background-color: var(--palette-amber-96); color: var(--palette-orange-31); }
+.color-3 { background-color: var(--palette-red-97-2); color: var(--palette-red-35); }
+.color-4 { background-color: var(--palette-indigo-98); color: var(--palette-violet-35); }
+.color-5 { background-color: var(--palette-purple-98); color: var(--palette-fuchsia-28); }
+.color-6 { background-color: var(--palette-orange-96); color: var(--palette-orange-34); }
+.color-7 { background-color: var(--palette-teal-96); color: var(--palette-teal-20); }

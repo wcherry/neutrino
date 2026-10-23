@@ -57,7 +57,7 @@ function getLegendProps(position: ChartDef['legendPosition']): object | null {
 
 function NoData({ message }: { message?: string }) {
     return (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#888', fontSize: 13, textAlign: 'center', padding: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--palette-gray-53)', fontSize: 13, textAlign: 'center', padding: 12 }}>
             {message ?? 'No data'}
         </div>
     );

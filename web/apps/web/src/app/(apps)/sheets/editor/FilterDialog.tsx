@@ -87,7 +87,7 @@ export function FilterDialog({ colIndex, data, currentFilter, onApply, onClose }
                     autoFocus
                     style={{
                         padding: '6px 10px',
-                        borderRadius: 6,
+                        borderRadius: 'calc(6px * var(--radius-scale))',
                         border: '1px solid var(--color-border)',
                         fontSize: 13,
                         outline: 'none',
@@ -100,14 +100,14 @@ export function FilterDialog({ colIndex, data, currentFilter, onApply, onClose }
                     <button
                         type="button"
                         onClick={selectAll}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent, #0064ff)', padding: 0 }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent, var(--palette-blue-50))', padding: 0 }}
                     >
                         Select all
                     </button>
                     <button
                         type="button"
                         onClick={clearAll}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent, #0064ff)', padding: 0 }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-accent, var(--palette-blue-50))', padding: 0 }}
                     >
                         Clear all
                     </button>
@@ -119,7 +119,7 @@ export function FilterDialog({ colIndex, data, currentFilter, onApply, onClose }
                     ) : visibleValues.map(v => (
                         <label
                             key={v}
-                            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '3px 2px', fontSize: 13, borderRadius: 4 }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '3px 2px', fontSize: 13, borderRadius: 'calc(4px * var(--radius-scale))' }}
                         >
                             <input
                                 type="checkbox"

@@ -4,13 +4,14 @@ import React from 'react';
 import { RotateCcw } from 'lucide-react';
 import { usePreference, type PreferenceKey, type PreferenceValues } from '@neutrino/preferences';
 import { accentPalette } from '@/lib/accent';
+import { useAvailableFonts } from '@/hooks/useAvailableFonts';
 import { resetListingView, storedView, type ListingId } from '@/lib/listingViews';
 import { InheritedNote, useLocked } from './InheritedNote';
 import styles from './DisplaySettings.module.css';
 
 /**
- * Settings › Appearance below the look and theme (customization roadmap U2, U3, U5, U9): density
- * and text size, an accent colour with a contrast guarantee, the accessibility switches, where
+ * Settings › Appearance below the look and theme (customization roadmap U2, U3, U5, U9, §3.3):
+ * density, text size, corners and the interface font, an accent colour with a contrast guarantee, the accessibility switches, where
  * Drive opens, and the views each listing has remembered.
  */
 
@@ -103,6 +104,32 @@ function AccentPicker() {
   );
 }
 
+/** The interface font: the look's own, a built-in, or one from the instance's font library. */
+function InterfaceFont() {
+  const [font, setFont] = usePreference('appearance.font');
+  const locked = useLocked('appearance.font');
+  const { fontFamilyNames } = useAvailableFonts();
+  return (
+    <div className={styles.row}>
+      <label className={styles.label} htmlFor="appearance-font">Interface font</label>
+      <select
+        id="appearance-font"
+        className={styles.select}
+        value={font}
+        disabled={locked}
+        onChange={e => setFont(e.target.value)}
+        style={font ? { fontFamily: `'${font}', sans-serif` } : undefined}
+      >
+        <option value="">Look&rsquo;s own</option>
+        {fontFamilyNames.map(f => (
+          <option key={f.value} value={f.value}>{f.label}</option>
+        ))}
+      </select>
+      <InheritedNote prefKey="appearance.font" />
+    </div>
+  );
+}
+
 const LISTINGS: { id: ListingId; label: string }[] = [
   { id: 'drive', label: 'My Drive' },
   { id: 'recent', label: 'Recent' },
@@ -176,6 +203,16 @@ export function DisplaySettings() {
           { value: 'lg', label: 'Large' },
         ]}
       />
+      <Segmented
+        prefKey="appearance.shape"
+        label="Corners"
+        options={[
+          { value: 'sharper', label: 'Sharper' },
+          { value: 'default', label: 'Default' },
+          { value: 'rounder', label: 'Rounder' },
+        ]}
+      />
+      <InterfaceFont />
       <AccentPicker />
       <Segmented
         prefKey="a11y.reduceMotion"

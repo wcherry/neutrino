@@ -46,6 +46,12 @@ export interface FillPickerProps {
    */
   presets?: string[];
   onPresetsChange?: (presets: string[]) => void;
+  /**
+   * Presets other people share with this user — a team's library (customization roadmap T4) —
+   * shown after the user's own, one row per source. Read-only: applying one is the same as
+   * applying a saved preset; removing or editing it is its owner's business.
+   */
+  sharedPresets?: { label: string; presets: string[] }[];
   /** Label shown on the trigger button (default: 'BG') */
   triggerLabel?: string;
   /**
@@ -229,6 +235,7 @@ export function FillPicker({
   presetsKey,
   presets: controlledPresets,
   onPresetsChange,
+  sharedPresets,
   triggerLabel,
   showAlpha,
   onFetchDriveImages,
@@ -513,6 +520,25 @@ export function FillPicker({
                 ) : (
                   <p className={styles.gradEmptyNote}>No saved gradients yet.</p>
                 )}
+
+                {sharedPresets?.filter((group) => group.presets.length > 0).map((group) => (
+                  <div key={group.label}>
+                    <div className={styles.gradUserHeader}>
+                      <span className={styles.gradSectionLabel}>{group.label}</span>
+                    </div>
+                    <div className={styles.gradPresetRow} role="group" aria-label={group.label}>
+                      {group.presets.map((g, i) => (
+                        <button
+                          key={i}
+                          className={`${styles.gradPresetSwatch} ${background.type === 'gradient' && background.value === g ? styles.gradPresetSwatchActive : ''}`}
+                          style={{ background: g }}
+                          onClick={() => applyPreset(g)}
+                          title="Apply"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
 
                 <div className={styles.gradDivider} />
 

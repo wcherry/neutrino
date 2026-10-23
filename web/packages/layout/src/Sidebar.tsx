@@ -19,6 +19,10 @@ export interface NavItem {
   color?: string;
   /** Drawn instead of the icon in the new shell: a team's square, its accent and initial or emoji. */
   swatch?: { color: string; text: string };
+  /** Drawn indented under the entry before it — a team's pinned resources under the team. */
+  nested?: boolean;
+  /** A link out of the app, opened in a new tab. */
+  external?: boolean;
 }
 
 export interface NavSection {

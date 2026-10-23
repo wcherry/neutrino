@@ -13,7 +13,7 @@
   border-radius: var(--radius-md);
   border: none;
   background-color: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
   cursor: pointer;
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
@@ -22,7 +22,7 @@
 }
 
 .trigger:hover {
-  background-color: var(--color-primary-hover, color-mix(in srgb, var(--color-primary) 85%, black));
+  background-color: var(--color-primary-hover, color-mix(in srgb, var(--color-primary) 85%, var(--palette-gray-0)));
 }
 
 .trigger:disabled {
@@ -127,7 +127,7 @@
 .fab[data-variant='sidebar'] .menuItem {
   color: var(--text-1);
   font-size: var(--ui-font-size);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
 }
 
 .fab[data-variant='sidebar'] .menuItem:hover {

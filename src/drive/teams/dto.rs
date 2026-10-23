@@ -376,6 +376,9 @@ pub struct TeamFileResponse {
     pub uploaded_by: String,
     pub created_at: String,
     pub updated_at: String,
+    /// The file is encrypted and the caller holds no key to it — they joined after it was added.
+    /// They can ask for one (`POST /teams/{id}/key-requests`). Set only on the library listing.
+    pub key_missing: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -469,6 +472,8 @@ pub struct TeamSharedFileResponse {
     pub shared_by: String,
     pub shared_by_name: String,
     pub shared_at: String,
+    /// As on [`TeamFileResponse`]: encrypted, and the caller holds no key to it.
+    pub key_missing: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

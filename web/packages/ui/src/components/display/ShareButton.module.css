@@ -52,7 +52,7 @@
   border-radius: 50%;
   border: none;
   background-color: var(--color-primary);
-  color: #fff;
+  color: var(--palette-gray-100);
   cursor: pointer;
   padding: 0;
   flex-shrink: 0;

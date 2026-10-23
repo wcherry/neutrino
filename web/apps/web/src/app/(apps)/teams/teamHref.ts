@@ -6,7 +6,7 @@
  * static list of teams. `/notes/editor?id=` and `/drive?q=` are here for the same reason.
  */
 
-export type TeamView = 'home' | 'pages' | 'files' | 'members' | 'settings';
+export type TeamView = 'home' | 'pages' | 'files' | 'templates' | 'members' | 'settings';
 
 export function teamHref(teamId: string, view: TeamView = 'home', pageId?: string): string {
   const params = new URLSearchParams({ id: teamId });
@@ -24,6 +24,7 @@ export function parseTeamView(value: string | null): TeamView {
   switch (value) {
     case 'pages':
     case 'files':
+    case 'templates':
     case 'members':
     case 'settings':
       return value;

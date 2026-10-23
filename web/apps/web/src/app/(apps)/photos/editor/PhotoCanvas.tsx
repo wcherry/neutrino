@@ -1535,7 +1535,7 @@ export const PhotoCanvas = forwardRef<PhotoCanvasHandle, PhotoCanvasProps>(funct
             padding: '3px 6px',
             lineHeight: '1.4',
             zIndex: 20,
-            borderRadius: 2,
+            borderRadius: 'calc(2px * var(--radius-scale))',
           }}
         />
       )}

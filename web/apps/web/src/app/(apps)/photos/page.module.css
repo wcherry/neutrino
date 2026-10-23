@@ -60,7 +60,7 @@
   border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
-  background: var(--color-surface-subtle, #f3f4f6);
+  background: var(--color-surface-subtle, var(--color-neutral-100));
   border: 1px solid var(--color-border);
   transition: transform 0.15s, box-shadow 0.15s;
 }
@@ -101,8 +101,8 @@
   padding: 2px 6px;
   border-radius: var(--radius-full, 999px);
   background: rgba(0, 0, 0, 0.55);
-  color: #ffffff;
-  font-size: 10px;
+  color: var(--palette-gray-100);
+  font-size: var(--font-size-10);
   font-weight: 600;
   letter-spacing: 0.06em;
   pointer-events: none;
@@ -154,7 +154,7 @@
 
 .photoName {
   font-size: var(--font-size-xs);
-  color: white;
+  color: var(--palette-gray-100);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -176,7 +176,7 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: white;
+  color: var(--palette-gray-100);
   transition: background 0.1s;
 }
 
@@ -185,7 +185,7 @@
 }
 
 .starredIcon {
-  color: #fbbf24;
+  color: var(--palette-amber-56);
 }
 
 .emptyState {
@@ -217,7 +217,7 @@
 
 .uploadZone:hover {
   border-color: var(--color-primary);
-  background: var(--color-primary-subtle, #eef2ff);
+  background: var(--color-primary-subtle, var(--palette-blue-97));
 }
 
 .uploadZoneText {
@@ -243,7 +243,7 @@
   overflow: hidden;
   cursor: pointer;
   transition: box-shadow 0.15s;
-  background: var(--color-surface, white);
+  background: var(--color-surface);
 }
 
 .albumCard:hover {
@@ -252,7 +252,7 @@
 
 .albumCover {
   aspect-ratio: 4/3;
-  background: var(--color-surface-subtle, #f3f4f6);
+  background: var(--color-surface-subtle, var(--color-neutral-100));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -307,7 +307,7 @@
   aspect-ratio: 1;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--color-surface-subtle, #f3f4f6);
+  background: var(--color-surface-subtle, var(--color-neutral-100));
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(2, 1fr);
@@ -326,7 +326,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface-subtle, #f3f4f6);
+  background: var(--color-surface-subtle, var(--color-neutral-100));
   color: var(--color-text-tertiary);
 }
 
@@ -377,7 +377,7 @@
 .modalDropZone:hover,
 .modalDropZoneActive {
   border-color: var(--color-primary);
-  background: var(--color-primary-subtle, #eef2ff);
+  background: var(--color-primary-subtle, var(--palette-blue-97));
 }
 
 .modalDropIcon {
@@ -422,11 +422,11 @@
   gap: var(--space-1);
   padding: 3px var(--space-2);
   border-radius: var(--radius-full, 9999px);
-  background: var(--color-primary-subtle, #eef2ff);
+  background: var(--color-primary-subtle, var(--palette-blue-97));
   color: var(--color-primary);
   font-size: var(--font-size-xs);
   font-weight: 500;
-  border: 1px solid var(--color-primary-muted, #c7d2fe);
+  border: 1px solid var(--color-primary-muted, var(--palette-blue-89));
 }
 
 .filterChipRemove {
@@ -471,7 +471,7 @@
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface, white);
+  background: var(--color-surface);
   font-size: var(--font-size-sm);
   color: var(--color-text);
   cursor: pointer;
@@ -481,16 +481,16 @@
 
 .filterDropdownTrigger:hover {
   border-color: var(--color-primary);
-  background: var(--color-primary-subtle, #eef2ff);
+  background: var(--color-primary-subtle, var(--palette-blue-97));
 }
 
 .filterDropdownMenu {
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  z-index: 50;
+  z-index: var(--z-layer-50);
   min-width: 200px;
-  background: var(--color-surface, white);
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.1));
@@ -545,7 +545,7 @@
   width: 24px;
   height: 24px;
   border-radius: var(--radius-full, 9999px);
-  background: var(--color-surface-subtle, #f3f4f6);
+  background: var(--color-surface-subtle, var(--color-neutral-100));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -564,10 +564,10 @@
 
 .errorBanner {
   padding: var(--space-3) var(--space-4);
-  background: var(--color-danger-subtle, #fef2f2);
-  border: 1px solid var(--color-danger, #dc2626);
+  background: var(--color-danger-subtle, var(--palette-red-97-2));
+  border: 1px solid var(--color-danger, var(--palette-red-51));
   border-radius: var(--radius-md);
-  color: var(--color-danger, #dc2626);
+  color: var(--color-danger, var(--palette-red-51));
   font-size: var(--font-size-sm);
   display: flex;
   justify-content: space-between;

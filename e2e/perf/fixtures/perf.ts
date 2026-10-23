@@ -43,6 +43,7 @@ import {
   machineClass,
   type NetworkName,
 } from './env';
+import { isEnforced } from '../enforced';
 import {
   EVENT_REPORTING_FLOOR_MS,
   installInPageInstrumentation,
@@ -610,13 +611,16 @@ export const test = base.extend<{ perf: Perf }>({
 
         const breached = metrics.filter((m) => m.verdict === 'fail');
         if (breached.length > 0) {
-          const lines = breached.map((m) => `  ${m.metric}: ${m.note}`).join('\n');
-          const message = `${spec.id} ${spec.title}\n${lines}`;
+          const line = (m: (typeof breached)[number]) => `  ${m.metric}: ${m.note}`;
           // Advisory by default, per §9 — measured, reported, not blocking.
-          // `PERF_ENFORCE=1` promotes a breach to a failure once the machine's
-          // noise floor is understood.
-          if (ENFORCE) failures.push(message);
-          else console.warn(`\n⚠︎  perf budget exceeded (advisory)\n${message}\n`);
+          // `PERF_ENFORCE=1` fails the run on the metrics in `enforced.ts` (the
+          // protected list and every met target); any other breach stays a warning.
+          const blocking = ENFORCE ? breached.filter((m) => isEnforced(spec.id, m.metric)) : [];
+          const advisory = breached.filter((m) => !blocking.includes(m));
+          if (blocking.length > 0) failures.push(`${spec.id} ${spec.title}\n${blocking.map(line).join('\n')}`);
+          if (advisory.length > 0) {
+            console.warn(`\n⚠︎  perf budget exceeded (advisory)\n${spec.id} ${spec.title}\n${advisory.map(line).join('\n')}\n`);
+          }
         }
 
         const improved = metrics.filter(isImprovement);

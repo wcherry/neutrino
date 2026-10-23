@@ -494,7 +494,7 @@ function PageSetupModal({ pageSetup, onSave, onClose }: PageSetupModalProps) {
         <div className={styles.modalActions}>
           <button className={styles.exportBtn} onClick={onClose}>Cancel</button>
           <button className={styles.exportBtn}
-            style={{ background: '#1a73e8', color: 'white', border: 'none' }}
+            style={{ background: 'var(--palette-sky-51)', color: 'white', border: 'none' }}
             onClick={() => {
               onSave({
                 ...ps,
@@ -2671,7 +2671,7 @@ export function DocEditor() {
           <span>{charCount.toLocaleString()} characters</span>
           {newLook && <span>English</span>}
           {charCount > 1_020_000 && (
-            <span style={{ color: '#d93025' }}>
+            <span style={{ color: 'var(--palette-red-50)' }}>
               ⚠ Approaching 1M character limit ({charCount.toLocaleString()} / 1,020,000)
             </span>
           )}

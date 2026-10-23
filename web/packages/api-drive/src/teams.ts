@@ -167,6 +167,37 @@ export interface JoinRequestListResponse {
   total: number;
 }
 
+export type KeyRequestStatus = 'pending' | 'approved' | 'denied';
+
+/**
+ * A member asking for the key to a team file they cannot open — someone who joined after it was
+ * added. Answered by the team's Owners and Admins or the file's owner, who seal the key to the
+ * requester in their own browser before approving (`lib/teamKeyRequests.ts`).
+ */
+export interface TeamKeyRequest {
+  id: string;
+  teamId: string;
+  fileId: string;
+  fileName: string;
+  requesterId: string;
+  requesterName: string;
+  requesterEmail: string;
+  message: string | null;
+  status: KeyRequestStatus;
+  /** Why it was denied, if the person who denied it said. */
+  reason: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+  /** Whether the caller may approve or deny it. */
+  canDecide: boolean;
+}
+
+export interface TeamKeyRequestListResponse {
+  requests: TeamKeyRequest[];
+  total: number;
+}
+
 export interface TeamMember {
   userId: string;
   email: string;
@@ -268,6 +299,8 @@ export interface TeamFile {
   uploadedBy: string;
   createdAt: string;
   updatedAt: string;
+  /** Encrypted, and the caller holds no key to it — they joined after it was added. */
+  keyMissing?: boolean;
 }
 
 export interface TeamFolder {
@@ -311,6 +344,8 @@ export interface TeamSharedFile {
   sharedBy: string;
   sharedByName: string;
   sharedAt: string;
+  /** As on `TeamFile`: encrypted, and the caller holds no key to it. */
+  keyMissing?: boolean;
 }
 
 export interface TeamSharedFileListResponse {
@@ -442,6 +477,40 @@ export const teamsApi = {
         requestId
       )}/decline`,
       { method: 'POST' }
+    );
+  },
+
+  // Key requests
+
+  /** Ask for the key to a team file the caller cannot open. */
+  async requestFileKey(teamId: string, fileId: string, message?: string): Promise<TeamKeyRequest> {
+    return request<TeamKeyRequest>(`${base}/${encodeURIComponent(teamId)}/key-requests`, {
+      method: 'POST',
+      body: JSON.stringify({ fileId, message }),
+    });
+  },
+
+  /**
+   * The key requests the caller can see — every one for an Owner or Admin; otherwise those on files
+   * the caller owns and the caller's own. Pending unless another status is asked for.
+   */
+  async listKeyRequests(teamId: string, status?: KeyRequestStatus): Promise<TeamKeyRequestListResponse> {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return request<TeamKeyRequestListResponse>(`${base}/${encodeURIComponent(teamId)}/key-requests${q}`);
+  },
+
+  /** Approve a request. The key must already be sealed to the requester, or this is a 409 `KEY_NOT_SHARED`. */
+  async approveKeyRequest(teamId: string, requestId: string): Promise<TeamKeyRequest> {
+    return request<TeamKeyRequest>(
+      `${base}/${encodeURIComponent(teamId)}/key-requests/${encodeURIComponent(requestId)}/approve`,
+      { method: 'POST' }
+    );
+  },
+
+  async denyKeyRequest(teamId: string, requestId: string, reason?: string): Promise<TeamKeyRequest> {
+    return request<TeamKeyRequest>(
+      `${base}/${encodeURIComponent(teamId)}/key-requests/${encodeURIComponent(requestId)}/deny`,
+      { method: 'POST', body: JSON.stringify({ reason }) }
     );
   },
 

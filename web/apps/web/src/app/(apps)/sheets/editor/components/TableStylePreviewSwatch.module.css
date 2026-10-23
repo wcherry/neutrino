@@ -2,7 +2,7 @@
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    font-size: 10px;
+    font-size: var(--font-size-10);
 }
 
 .cell {

@@ -6,7 +6,7 @@
 
 .intro {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
@@ -21,7 +21,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-tertiary, var(--color-text-secondary));
 }
 
@@ -50,7 +50,7 @@
   background: none;
   border: none;
   padding: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   cursor: pointer;
   text-align: left;
@@ -66,12 +66,12 @@
 .recoveryKit {
   margin: 0;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 14px;
+  font-size: var(--text-sm);
   line-height: 1.9;
   letter-spacing: 0.06em;
   text-align: center;
   padding: 16px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   border: 1px dashed var(--color-border);
   background: var(--color-surface-secondary, var(--color-surface));
   color: var(--color-text-primary);
@@ -85,7 +85,7 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   line-height: 1.5;
 }

@@ -73,7 +73,8 @@ test.describe('D — sheets', () => {
         id: 'D2',
         title: 'Scroll vertically and horizontally on the L sheet',
         fixture: `L (${SCALE.cells.L} cells)`,
-        budgets: { scrollDownDroppedRatio: 0.1, scrollAcrossDroppedRatio: 0.1 },
+        // loafMax: the longest frame while the sheet loads (stage 5's D2 target).
+        budgets: { scrollDownDroppedRatio: 0.1, scrollAcrossDroppedRatio: 0.1, loafMax: 200 },
       },
       async (s) => {
         await openSheet(page, sheets.L.id);

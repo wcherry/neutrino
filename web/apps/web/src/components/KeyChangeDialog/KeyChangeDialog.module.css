@@ -6,7 +6,7 @@
 
 .intro {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
@@ -19,7 +19,7 @@
 
 .sectionTitle {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -31,11 +31,11 @@
  */
 .fingerprint {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 15px;
+  font-size: var(--font-size-15);
   letter-spacing: 0.08em;
   line-height: 1.6;
   padding: 12px 14px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   border: 1px solid var(--color-border);
   background: var(--color-surface-secondary, var(--color-surface));
   color: var(--color-text-primary);

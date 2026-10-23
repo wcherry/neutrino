@@ -1,0 +1,64 @@
+# The performance suite, nightly and on demand (performance-testing.md §9, UI roadmap stage 6).
+#
+# Runs the whole suite against the Docker test stack with PERF_ENFORCE=1: a breach of a metric in
+# e2e/perf/enforced.ts — the protected list and every target the roadmap has met — fails the run;
+# every other budget is reported in the summary and stays advisory.
+#
+# Numbers are only comparable on one machine class, so the runner is pinned and the baseline is
+# keyed by PERF_MACHINE. Until that runner has written its own baseline (run once with
+# `write_baselines`), only the absolute budgets are judged.
+name: Performance
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      write_baselines:
+        description: Record this runner's baseline instead of judging against it
+        type: boolean
+        default: false
+
+concurrency:
+  group: perf
+  cancel-in-progress: false
+
+jobs:
+  perf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PERF_MACHINE: github-ubuntu-24.04-4core
+      PERF_ENFORCE: '1'
+      NEUTRINO_E2E_BASE_DIR: ${{ github.workspace }}/perf-runs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 23
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir e2e exec playwright install --with-deps chromium
+      - name: Secrets for the test stack (fresh each run; never the deployment's)
+        run: |
+          mkdir -p e2e/secrets
+          openssl rand -hex 32 > e2e/secrets/jwt_secret.txt
+          openssl rand -hex 32 > e2e/secrets/worker_secret.txt
+      - name: Run the suite
+        run: pnpm --dir e2e perf ${{ inputs.write_baselines && '--write-baselines' || '' }}
+      - name: Summary
+        if: always()
+        run: |
+          latest="$(ls -td perf-runs/*/ | head -1)"
+          if [ -f "${latest}perf/summary.md" ]; then cat "${latest}perf/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-results
+          path: |
+            perf-runs/*/perf
+            perf-runs/*/playwright-report
+          retention-days: 30

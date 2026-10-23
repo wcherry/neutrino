@@ -14,12 +14,15 @@ import {
   Table2,
   Presentation,
   Paintbrush,
+  ExternalLink,
+  Folder,
 } from 'lucide-react';
 import type { NavItem, NavSection } from '@neutrino/layout';
 import type { AppKey } from '@neutrino/preferences';
 import type { Tag, Team } from '@/lib/api';
 import { tagNavSection } from '@/lib/tagNav';
 import { teamHref } from './teams/teamHref';
+import { pinHref, type TeamPin } from '@/lib/teamResources';
 
 /**
  * Drive views only. Every application has its own landing page and lives in the
@@ -93,7 +96,7 @@ function teamItem(team: Team): NavItem {
  * the old entry back, and the Shared Drives page and its endpoint were never removed — which is
  * what the six iOS apps and the macOS client still read.
  */
-function teamSection(teamSpacesEnabled: boolean, teams?: readonly Team[]): NavSection {
+function teamSection(teamSpacesEnabled: boolean, teams?: readonly Team[], pins: Record<string, TeamPin[]> = {}): NavSection {
   if (!teamSpacesEnabled) {
     return { id: 'team', label: 'Team', items: [{ id: 'shared-drives', label: 'Shared Drives', icon: Users, href: '/drive/team' }] };
   }
@@ -104,7 +107,18 @@ function teamSection(teamSpacesEnabled: boolean, teams?: readonly Team[]): NavSe
       id: 'team',
       label: 'Teams',
       items: [
-        ...teams.filter((t) => !t.archived).map(teamItem),
+        ...teams.filter((t) => !t.archived).flatMap((t) => [
+          teamItem(t),
+          // What the team's Owners pinned for everyone (T5), under the team.
+          ...(pins[t.id] ?? []).map((pin): NavItem => ({
+            id: `team-${t.id}-pin-${pin.id}`,
+            label: pin.name,
+            icon: pin.kind === 'link' ? ExternalLink : pin.kind === 'folder' ? Folder : FileText,
+            href: pinHref(t.id, pin),
+            nested: true,
+            external: pin.kind === 'link',
+          })),
+        ]),
         { id: 'shared-spaces', label: teams.length ? 'All teams' : 'Shared Spaces', icon: Users, href: '/teams' },
       ],
     };
@@ -132,18 +146,20 @@ export interface NavOptions {
   enabledApps?: readonly AppKey[];
   /** The user's teams, listed by name — the new shell's sidebar. Omitted, the Team section is one link. */
   teams?: readonly Team[];
+  /** Each team's pinned resources (T5), drawn under it. */
+  teamPins?: Record<string, TeamPin[]>;
 }
 
 export function getNavSections(
   isAdmin: boolean,
   tags: Tag[],
   teamSpacesEnabled = false,
-  { enabledApps = APP_ITEMS.map((i) => i.app), teams }: NavOptions = {},
+  { enabledApps = APP_ITEMS.map((i) => i.app), teams, teamPins }: NavOptions = {},
 ): NavSection[] {
   const sections = [
     DRIVE_SECTION,
     appsSection(enabledApps),
-    teamSection(teamSpacesEnabled, teams),
+    teamSection(teamSpacesEnabled, teams, teamPins),
     tagNavSection(tags),
   ];
   return isAdmin ? [...sections, ADMIN_SECTION] : sections;

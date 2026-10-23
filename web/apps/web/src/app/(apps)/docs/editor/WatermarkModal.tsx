@@ -42,7 +42,7 @@ export function WatermarkModal({
               type="color"
               value={bg}
               onChange={(e) => setBg(e.target.value)}
-              style={{ width: 40, height: 34, cursor: 'pointer', padding: 2, border: '1px solid var(--color-border, #e0e0e0)', borderRadius: 6 }}
+              style={{ width: 40, height: 34, cursor: 'pointer', padding: 2, border: '1px solid var(--color-border, var(--palette-gray-88))', borderRadius: 'calc(6px * var(--radius-scale))' }}
             />
             <input
               className={styles.formInput}
@@ -67,7 +67,7 @@ export function WatermarkModal({
           <button className={styles.exportBtn} onClick={onClose}>Cancel</button>
           <button
             className={styles.exportBtn}
-            style={{ background: '#1a73e8', color: 'white', border: 'none' }}
+            style={{ background: 'var(--palette-sky-51)', color: 'white', border: 'none' }}
             onClick={() => { onSave(watermark, bg === '#ffffff' ? '' : bg); onClose(); }}
           >
             Apply

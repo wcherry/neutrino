@@ -14,7 +14,7 @@ function linkifyText(text: string): React.ReactNode[] {
     const url = match[0];
     parts.push(
       <a key={match.index} href={url} target="_blank" rel="noopener noreferrer"
-        style={{ color: 'var(--color-primary, #2563eb)', textDecoration: 'underline' }}>
+        style={{ color: 'var(--color-primary, var(--palette-blue-53))', textDecoration: 'underline' }}>
         {url}
       </a>
     );
@@ -452,7 +452,7 @@ export function EventDetail({
 
   return (
     <>
-      <div style={{ padding: 16, borderBottom: '1px solid var(--color-border, #e5e7eb)' }}>
+      <div style={{ padding: 16, borderBottom: '1px solid var(--color-border, var(--color-neutral-200))' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
           <span style={{ fontWeight: 600, fontSize: 14 }}>{event.title}</span>
           <button className={styles.modalClose} onClick={onClose}><X size={14} /></button>

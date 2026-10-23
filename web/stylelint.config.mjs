@@ -5,13 +5,14 @@
  * most of it doesn't yet: hundreds of px font sizes, numeric z-indexes and
  * literal colours. These rules name every one of them.
  *
- * **Warnings, not errors, until the migration says otherwise** — `pnpm
- * lint:css` reports and exits 0. Roadmap stage 6 turns `defaultSeverity` to
- * "error"; until then the count should only go down. `packages/tokens` is
- * where literal values belong, so it is exempt.
+ * **Errors** since roadmap stage 6, which moved every literal into
+ * `packages/tokens` (colours into `palette.css` with their exact values, so the
+ * classic look did not change). `packages/tokens` is where literal values
+ * belong, so it is exempt. A new colour goes there — as a semantic token if the
+ * looks and themes should reach it, as a palette entry if it is fixed.
  */
 export default {
-  defaultSeverity: 'warning',
+  defaultSeverity: 'error',
   ignoreFiles: ['packages/tokens/src/**/*.css', '**/node_modules/**', '**/.next/**', '**/out/**'],
   rules: {
     // Colours come from tokens; a literal colour is one no theme can change.

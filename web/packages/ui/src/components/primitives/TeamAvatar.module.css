@@ -7,7 +7,7 @@
   justify-content: center;
   flex-shrink: 0;
   border-radius: var(--radius-md);
-  color: #fff;
+  color: var(--palette-gray-100);
   line-height: 1;
   user-select: none;
   /* The team's own colour when it has one. Teams created before avatar colours, and any row whose

@@ -57,7 +57,7 @@
   padding: 0;
   border: none;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition: color 0.15s;
@@ -68,7 +68,7 @@
 }
 
 .heading {
-  font-size: 20px;
+  font-size: var(--text-xl);
   font-weight: 700;
   color: var(--color-text);
   margin: 0 0 16px;
@@ -93,7 +93,7 @@
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -156,7 +156,7 @@
 }
 
 .sectionTitle {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -172,14 +172,14 @@
  */
 .tableWrap {
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   overflow-x: auto;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--font-size-13);
 }
 
 .table th {
@@ -187,7 +187,7 @@
   padding: 8px 12px;
   background: var(--color-surface-raised);
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--font-size-11);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--color-text-secondary);
@@ -207,7 +207,7 @@
 
 /* ── Process status badges ───────────────────────────────────────────────── */
 .statusRunning {
-  color: #16a34a;
+  color: var(--palette-green-36);
   font-weight: 500;
 }
 
@@ -216,7 +216,7 @@
 }
 
 .statusOther {
-  color: #dc2626;
+  color: var(--palette-red-51);
   font-weight: 500;
 }
 
@@ -235,7 +235,7 @@
 }
 
 .diskStatLabel {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -243,7 +243,7 @@
 }
 
 .diskStatValue {
-  font-size: 22px;
+  font-size: var(--font-size-22);
   font-weight: 700;
   color: var(--color-text);
 }
@@ -253,7 +253,7 @@
 }
 
 .diskBarLabel {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   margin-bottom: 6px;
 }
@@ -263,7 +263,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   overflow: hidden;
 }
 
@@ -289,13 +289,13 @@
 }
 
 .serviceName {
-  font-size: 14px;
+  font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-text);
 }
 
 .serviceMeta {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -310,7 +310,7 @@
 }
 
 .serviceLabel {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
@@ -318,11 +318,11 @@
 /* ── Error state ─────────────────────────────────────────────────────────── */
 .error {
   padding: 14px 16px;
-  color: #dc2626;
-  font-size: 14px;
-  border: 1px solid #fca5a5;
-  border-radius: 8px;
-  background: #fef2f2;
+  color: var(--palette-red-51);
+  font-size: var(--text-sm);
+  border: 1px solid var(--palette-red-82);
+  border-radius: calc(8px * var(--radius-scale));
+  background: var(--palette-red-97-2);
 }
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
@@ -330,23 +330,23 @@
   padding: 32px 16px;
   text-align: center;
   color: var(--color-text-secondary);
-  font-size: 14px;
+  font-size: var(--text-sm);
 }
 
 /* ── User management ─────────────────────────────────────────────────────── */
 .userCount {
   font-weight: 400;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   text-transform: none;
   letter-spacing: 0;
 }
 
 .roleSelect {
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 6px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
@@ -358,35 +358,35 @@
 }
 
 .twoFaOn {
-  color: #16a34a;
+  color: var(--palette-green-36);
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .twoFaOff {
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .selfLabel {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   font-style: italic;
 }
 
 .deleteBtn {
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 10px;
-  border: 1px solid #fca5a5;
-  border-radius: 4px;
+  border: 1px solid var(--palette-red-82);
+  border-radius: calc(4px * var(--radius-scale));
   background: transparent;
-  color: #dc2626;
+  color: var(--palette-red-51);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .deleteBtn:hover {
-  background: #fef2f2;
+  background: var(--palette-red-97-2);
 }
 
 .confirmRow {
@@ -396,25 +396,25 @@
 }
 
 .confirmBtn {
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 10px;
-  border: 1px solid #fca5a5;
-  border-radius: 4px;
-  background: #dc2626;
-  color: #fff;
+  border: 1px solid var(--palette-red-82);
+  border-radius: calc(4px * var(--radius-scale));
+  background: var(--palette-red-51);
+  color: var(--palette-gray-100);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .confirmBtn:hover {
-  background: #b91c1c;
+  background: var(--palette-red-42);
 }
 
 .cancelBtn {
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 8px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -431,7 +431,7 @@
   align-items: center;
   gap: 6px;
   margin-bottom: 12px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   cursor: pointer;
 }
@@ -446,16 +446,16 @@
   display: inline-block;
   margin-left: 8px;
   padding: 1px 6px;
-  border-radius: 10px;
-  background: #fef3c7;
-  color: #92400e;
-  font-size: 11px;
+  border-radius: calc(10px * var(--radius-scale));
+  background: var(--palette-amber-89);
+  color: var(--palette-orange-31);
+  font-size: var(--font-size-11);
   white-space: nowrap;
 }
 
 :global([data-theme='dark']) .deletedBadge {
-  background: #422006;
-  color: #fcd34d;
+  background: var(--palette-orange-14);
+  color: var(--palette-amber-65);
 }
 
 /* ── Pagination ──────────────────────────────────────────────────────────── */
@@ -467,10 +467,10 @@
 }
 
 .pageBtn {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   padding: 5px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
@@ -487,14 +487,14 @@
 }
 
 .pageInfo {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
 }
 
 /* ── Settings forms (version retention) ──────────────────────────────────── */
 .settingIntro {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1.6;
   color: var(--color-text-secondary);
   max-width: 108ch;
@@ -502,11 +502,11 @@
 
 .numberInput {
   width: 84px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   padding: 4px 8px;
   text-align: right;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text);
 }
@@ -524,7 +524,7 @@
  * three and has to wrap, or the policy form reads as a column of half-sentences.
  */
 .settingMeta {
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.5;
   color: var(--color-text-secondary);
   max-width: 68ch;
@@ -551,10 +551,10 @@
 .textInput {
   width: 100%;
   max-width: 340px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   padding: 6px 8px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text);
   /* The value is a set of individual characters, so they are easier to tell
@@ -581,11 +581,11 @@
   height: 24px;
   padding: 0 6px;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: var(--color-surface-secondary);
   color: var(--color-text);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 13px;
+  font-size: var(--font-size-13);
   line-height: 1;
 }
 
@@ -607,18 +607,19 @@
 }
 
 .primaryBtn {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   padding: 6px 14px;
   border: 1px solid var(--color-primary);
-  border-radius: 6px;
-  background: var(--color-primary);
-  color: #fff;
+  border-radius: calc(6px * var(--radius-scale));
+  background: var(--screen-primary-bg, var(--color-primary));
+  color: var(--screen-primary-fg, var(--palette-gray-100));
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
+  box-shadow: var(--screen-primary-ring, none);
 }
 
 .primaryBtn:hover:not(:disabled) {
-  background: var(--color-primary-hover, #1d4ed8);
+  background: var(--color-primary-hover, var(--palette-blue-48));
 }
 
 .primaryBtn:disabled {
@@ -643,7 +644,7 @@
   height: 26px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -661,10 +662,10 @@
  * link: it does something rather than going somewhere.
  */
 .linkBtn {
-  font-size: 12px;
+  font-size: var(--text-xs);
   padding: 3px 6px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--radius-scale));
   background: transparent;
   color: var(--color-primary);
   cursor: pointer;
@@ -691,27 +692,27 @@
 }
 
 .badgeOk {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
 }
 
 .badgeDisabled {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 4px;
-  background: #fef2f2;
-  color: #b91c1c;
+  border-radius: calc(4px * var(--radius-scale));
+  background: var(--palette-red-97-2);
+  color: var(--palette-red-42);
   white-space: nowrap;
 }
 
 .badgeExpired {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 4px;
-  background: #fffbeb;
-  color: #b45309;
+  border-radius: calc(4px * var(--radius-scale));
+  background: var(--palette-amber-96);
+  color: var(--palette-orange-37);
   white-space: nowrap;
 }
 
@@ -720,12 +721,12 @@
  * released by a different action, so it does not share that badge's colour.
  */
 .badgeLocked {
-  font-size: 11px;
+  font-size: var(--font-size-11);
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 4px;
-  background: #eef2ff;
-  color: #4338ca;
+  border-radius: calc(4px * var(--radius-scale));
+  background: var(--palette-blue-97);
+  color: var(--palette-indigo-51);
   white-space: nowrap;
 }
 
@@ -739,13 +740,13 @@
 }
 
 .quotaText {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text);
   white-space: nowrap;
 }
 
 .quotaOver {
-  color: #b91c1c;
+  color: var(--palette-red-42);
   font-weight: 600;
 }
 
@@ -764,16 +765,16 @@
 }
 
 .formLabel {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--color-text);
 }
 
 .formInput {
-  font-size: 13px;
+  font-size: var(--font-size-13);
   padding: 7px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   background: var(--color-surface);
   color: var(--color-text);
   width: 100%;
@@ -786,16 +787,16 @@
 }
 
 .formHint {
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.5;
   color: var(--color-text-secondary);
   margin: 0;
 }
 
 .formError {
-  font-size: 12px;
+  font-size: var(--text-xs);
   line-height: 1.5;
-  color: #b91c1c;
+  color: var(--palette-red-42);
   margin: 0;
 }
 
@@ -803,7 +804,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text);
 }
 
@@ -818,12 +819,12 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
-  font-size: 13px;
+  font-size: var(--font-size-13);
   color: var(--color-text-secondary);
 }
 
 .queueReason {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   max-width: 32ch;
   white-space: normal;
@@ -834,21 +835,21 @@
 }
 
 .statusApproved {
-  color: #16a34a;
+  color: var(--palette-green-36);
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .statusDenied {
-  color: #b91c1c;
+  color: var(--palette-red-42);
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 .statusPending {
-  color: #b45309;
+  color: var(--palette-orange-37);
   font-weight: 500;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 /* ── Teams tab ───────────────────────────────────────────────────────────── */
@@ -873,7 +874,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 12px;
+  font-size: var(--text-xs);
 }
 
 
@@ -902,7 +903,7 @@
  * so it wraps at any character rather than truncating like `.serviceMeta`.
  */
 .fontPathCell {
-  font-size: 12px;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
   max-width: 36ch;

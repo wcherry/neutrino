@@ -880,6 +880,23 @@ diesel::table! {
     }
 }
 
+// ── Added in migration 146 ────────────────────────────────────────────────────
+diesel::table! {
+    team_key_requests (id) {
+        id -> Text,
+        team_id -> Text,
+        file_id -> Text,
+        requester_id -> Text,
+        message -> Nullable<Text>,
+        status -> Text,
+        reason -> Nullable<Text>,
+        decided_by -> Nullable<Text>,
+        decided_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
 // Added in migration 130
 diesel::table! {
     team_file_shares (id) {
@@ -1334,6 +1351,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     team_pages,
     team_page_versions,
     team_file_shares,
+    team_key_requests,
     feature_flags,
     legal_holds,
     retention_policies,

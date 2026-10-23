@@ -30,7 +30,7 @@
   height: 2rem;
   border-radius: var(--radius-md);
   background-color: var(--color-accent);
-  color: #ffffff;
+  color: var(--palette-gray-100);
   flex-shrink: 0;
 }
 
@@ -68,7 +68,7 @@
 
 .upload-btn:hover {
   background-color: var(--color-accent);
-  color: #ffffff;
+  color: var(--palette-gray-100);
   border-style: solid;
 }
 
@@ -79,9 +79,9 @@
 
 @keyframes upload-flash {
   0%        { background-color: var(--color-accent-subtle); color: var(--color-accent-text); }
-  25%       { background-color: var(--color-accent);        color: #ffffff; }
+  25%       { background-color: var(--color-accent);        color: var(--palette-gray-100); }
   50%       { background-color: var(--color-accent-subtle); color: var(--color-accent-text); }
-  75%, 100% { background-color: var(--color-accent);        color: #ffffff; }
+  75%, 100% { background-color: var(--color-accent);        color: var(--palette-gray-100); }
 }
 
 .upload-btn.drag-over {

@@ -675,7 +675,7 @@ function ParsedTextField<T>({
       <div
         id={`${id}-feedback`}
         className={styles.taskComposerHint}
-        style={field.invalid ? { color: 'var(--color-danger, #dc2626)' } : undefined}
+        style={field.invalid ? { color: 'var(--color-danger, var(--palette-red-51))' } : undefined}
       >
         {field.invalid
           ? "Couldn't read that"

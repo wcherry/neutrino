@@ -20,13 +20,13 @@
   left: 50%;
   transform: translateX(-50%);
   background-color: var(--color-accent);
-  color: #fff;
+  color: var(--palette-gray-100);
   padding: var(--space-2) var(--space-5);
   border-radius: var(--radius-full, 9999px);
   font-size: var(--font-size-sm);
   font-weight: var(--font-medium);
   pointer-events: none;
-  z-index: 9998;
+  z-index: var(--z-layer-9998);
   box-shadow: var(--shadow-md);
 }
 
@@ -246,7 +246,7 @@
 
 .card-meta-sep {
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-11);
   line-height: 1;
   flex-shrink: 0;
 }
@@ -374,7 +374,7 @@
   align-items: center;
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-layer-1);
 }
 
 .list-row {

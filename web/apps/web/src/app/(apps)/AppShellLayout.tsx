@@ -1,5 +1,7 @@
 'use client';
 
+import { useTeamCommands, useTeamPins } from '@/lib/teamResources';
+import { createDocFromTemplate } from '@/lib/docTemplates';
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -99,8 +101,13 @@ function toTopbarResult(hit: SearchHit): TopbarSearchResult {
 
 function notificationHref(n: NotificationItem): string | undefined {
   const payload = n.payload as Record<string, string>;
-  const { resourceType, resourceId, mimeType } = payload;
+  const { resourceType, resourceId, mimeType, teamId } = payload;
   if (!resourceId) return undefined;
+  // A key request is answered from the team's Files; an approved one opens the file.
+  if (n.eventType === 'team_key_approved') return `/open/file/${encodeURIComponent(resourceId)}`;
+  if ((n.eventType === 'team_key_requested' || n.eventType === 'team_key_denied') && teamId) {
+    return `/teams/space?id=${encodeURIComponent(teamId)}&view=files`;
+  }
   if (resourceType === 'folder') return `/drive`;
   // Map file mimeType to the right editor
   if (mimeType?.includes('document')) return `/docs/editor?id=${resourceId}`;
@@ -207,6 +214,10 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
     staleTime: 30_000,
   });
 
+  // What each team pinned for its members (T5), and its palette shortcuts (T6).
+  const teamPins = useTeamPins();
+  const teamCommands = useTeamCommands();
+
   // The user's own arrangement (U8): pins, hidden entries, the order of the apps.
   const [sidebarPref] = usePreference('shell.sidebar');
   const navSections = withActiveItem(
@@ -214,6 +225,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
       getNavSections(isAdmin, tags, flags.teamSpaces, {
         enabledApps,
         teams: flow && flags.teamSpaces ? teamsData?.teams ?? [] : undefined,
+        teamPins,
       }),
       readLayout(sidebarPref),
     ),
@@ -230,7 +242,7 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
   const openPalette = useCallback(() => {
     const groups = new Map(COMMAND_APPS.map((a) => [a.id, a.label]));
     setPaletteCommands(
-      availableCommands().flatMap((id) => {
+      availableCommands().flatMap((id): PaletteCommand[] => {
         const spec = commandSpec(id);
         if (!spec) return [];
         return [{
@@ -240,10 +252,22 @@ export function AppShellLayout({ children }: { children: React.ReactNode }) {
           keys: keysFor(id, preset, bindings).map((chord) => formatChord(chord, platform)),
           run: () => { runCommandById(id); },
         }];
-      }),
+      }).concat(
+        // A team's shortcut makes a new document from one of its Docs templates (T6).
+        teamCommands.map(({ teamId, command }) => ({
+          id: `team-${teamId}-${command.id}`,
+          title: command.title,
+          group: teamsData?.teams.find((t) => t.id === teamId)?.name ?? 'Team',
+          run: () => {
+            createDocFromTemplate({ userId: auth.status === 'ready' ? auth.user.id : undefined, templateId: command.templateId, title: command.title })
+              .then((id) => router.push(`/docs/editor?id=${encodeURIComponent(id)}`))
+              .catch(() => toast.error('Could not make a document from that template.'));
+          },
+        })),
+      ),
     );
     setPaletteOpen(true);
-  }, [preset, bindings, platform]);
+  }, [preset, bindings, platform, teamCommands, teamsData, auth, router, toast]);
   const paletteShortcut = useMemo(() => {
     const chord = keysFor('shell.commandPalette', preset, bindings)[0];
     return chord ? formatChord(chord, platform) : undefined;

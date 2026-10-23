@@ -17,12 +17,19 @@ import { ToastProvider } from '@neutrino/ui';
 const listLibrary = vi.fn();
 const listSharedFiles = vi.fn();
 const unshareFileFromTeam = vi.fn();
+const listKeyRequests = vi.fn();
+const requestFileKey = vi.fn();
+const denyKeyRequest = vi.fn();
+const approveKeyRequest = vi.fn();
 
 vi.mock('@/lib/api', () => ({
   teamsApi: {
     listLibrary: (...a: unknown[]) => listLibrary(...a),
     listSharedFiles: (...a: unknown[]) => listSharedFiles(...a),
     unshareFileFromTeam: (...a: unknown[]) => unshareFileFromTeam(...a),
+    listKeyRequests: (...a: unknown[]) => listKeyRequests(...a),
+    requestFileKey: (...a: unknown[]) => requestFileKey(...a),
+    denyKeyRequest: (...a: unknown[]) => denyKeyRequest(...a),
     claimFile: vi.fn(),
     createLibraryFolder: vi.fn(),
     trashLibraryFile: vi.fn(),
@@ -32,8 +39,13 @@ vi.mock('@/lib/api', () => ({
   isMissingEncryptionKey: () => false,
 }));
 
+vi.mock('@/lib/teamKeyRequests', () => ({
+  approveKeyRequest: (...a: unknown[]) => approveKeyRequest(...a),
+  describeKeyApproval: (result: string, who: string) => `${result}:${who}`,
+}));
+
 vi.mock('@neutrino/auth', () => ({ useUser: () => ({ id: 'u1', name: 'Owner' }) }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@/providers/FeatureFlagsProvider', () => ({
   useFeatureFlags: () => ({ teamSpaces: true, teamFileTransfers: true }),
 }));
@@ -83,6 +95,7 @@ describe('FilesView', () => {
       storageUsedBytes: 2048,
     });
     listSharedFiles.mockResolvedValue({ files: [], total: 0 });
+    listKeyRequests.mockResolvedValue({ requests: [], total: 0 });
   });
 
   it('renders the library through FileGrid, with its chrome and Drive-shaped rows', async () => {
@@ -168,5 +181,54 @@ describe('FilesView', () => {
     const menu = await screen.findByRole('menu');
     await user.click(within(menu).getByRole('menuitem', { name: /Stop sharing/ }));
     expect(unshareFileFromTeam).toHaveBeenCalledWith('t1', 'f9');
+  });
+
+  it('asks for the key to a file the caller cannot open instead of opening it', async () => {
+    listLibrary.mockResolvedValue({
+      folders: [],
+      files: [{
+        id: 'f1', name: 'Roadmap.pdf', sizeBytes: 2048, mimeType: 'application/pdf', folderId: null,
+        uploadedBy: 'u2', createdAt: ISO, updatedAt: ISO, keyMissing: true,
+      }],
+      storageUsedBytes: 2048,
+    });
+    requestFileKey.mockResolvedValue({ id: 'kr1' });
+    const user = renderView();
+
+    await user.click(await screen.findByText('Roadmap.pdf'));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/added before you joined/)).toBeTruthy();
+    await user.type(within(dialog).getByLabelText('Message (optional)'), 'For the launch');
+    await user.click(within(dialog).getByRole('button', { name: 'Request key' }));
+    await waitFor(() => expect(requestFileKey).toHaveBeenCalledWith('t1', 'f1', 'For the launch'));
+  });
+
+  it('lists requests this person can answer, and approves or denies them', async () => {
+    const pending = {
+      id: 'kr1', teamId: 't1', fileId: 'f1', fileName: 'Roadmap.pdf', requesterId: 'u3',
+      requesterName: 'Bo', requesterEmail: 'bo@example.com', message: 'please', status: 'pending',
+      reason: null, decidedBy: null, decidedAt: null, createdAt: ISO, canDecide: true,
+    };
+    listKeyRequests.mockResolvedValue({
+      requests: [pending, { ...pending, id: 'kr2', requesterName: 'Own', canDecide: false }],
+      total: 2,
+    });
+    approveKeyRequest.mockResolvedValue('approved');
+    denyKeyRequest.mockResolvedValue({ ...pending, status: 'denied' });
+    const user = renderView();
+
+    const list = await screen.findByRole('list', { name: 'Key requests' });
+    // Only the rows this person may answer.
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText(/please/)).toBeTruthy();
+
+    await user.click(within(list).getByRole('button', { name: "Approve Bo's request for Roadmap.pdf" }));
+    await waitFor(() => expect(approveKeyRequest).toHaveBeenCalledWith(pending, 'u1'));
+
+    await user.click(within(list).getByRole('button', { name: "Deny Bo's request for Roadmap.pdf" }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Reason (optional)'), 'Not this one');
+    await user.click(within(dialog).getByRole('button', { name: 'Deny' }));
+    await waitFor(() => expect(denyKeyRequest).toHaveBeenCalledWith('t1', 'kr1', 'Not this one'));
   });
 });

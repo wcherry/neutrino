@@ -2,7 +2,7 @@
    useRemoteCursors.ts. Color is set via --cursor-color CSS custom property. */
 .remote-cursor {
   position: relative;
-  border-left: 2px solid var(--cursor-color, #1a73e8);
+  border-left: 2px solid var(--cursor-color, var(--palette-sky-51));
   margin-left: -1px;
   pointer-events: none;
   display: inline-block;
@@ -14,12 +14,12 @@
   position: absolute;
   top: -18px;
   left: -1px;
-  background: var(--cursor-color, #1a73e8);
-  color: #fff;
-  font-size: 10px;
+  background: var(--cursor-color, var(--palette-sky-51));
+  color: var(--palette-gray-100);
+  font-size: var(--font-size-10);
   font-weight: 600;
   padding: 1px 4px;
-  border-radius: 3px 3px 3px 0;
+  border-radius: calc(3px * var(--radius-scale)) calc(3px * var(--radius-scale)) calc(3px * var(--radius-scale)) 0;
   white-space: nowrap;
   pointer-events: none;
   user-select: none;

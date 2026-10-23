@@ -1,0 +1,37 @@
+# The web client's static checks on every pull request (UI roadmap stage 6): a change that puts
+# a literal colour, a px font size or a numeric z-index back into component code fails here, as
+# does a lint error. Type-checking and the unit and browser suites are not gated yet — the
+# type-check carries pre-existing test-file errors, and the browser suite needs the full stack.
+name: Web checks
+
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/web-checks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 23
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Tokens only — no literal colours, px font sizes or numeric z-indexes in CSS
+        run: pnpm --dir web lint:css
+      - name: Tokens only — no literal colours in the packages' inline styles
+        run: pnpm --dir web lint:colours
+      - name: ESLint (includes literal colours in the web app's inline styles)
+        run: pnpm --dir web/apps/web lint

@@ -25,7 +25,7 @@
   padding: 6px 10px;
   border: none;
   background: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--radius-scale));
   cursor: pointer;
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);

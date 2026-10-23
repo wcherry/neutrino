@@ -773,6 +773,7 @@ async fn main() -> std::io::Result<()> {
     ));
     let drive_teams_state = web::Data::new(drive::teams::api::TeamsApiState {
         service: drive_teams_service,
+        notifications: Some(drive_notification_service.clone()),
     });
 
     let drive_security_repo = Arc::new(SecurityRepository::new(pool.clone()));

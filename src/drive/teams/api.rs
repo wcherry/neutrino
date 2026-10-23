@@ -11,13 +11,37 @@ use actix_web::{delete, get, patch, post, web, HttpResponse};
 use std::sync::Arc;
 
 use super::dto::*;
+use super::key_requests::{
+    CreateKeyRequestRequest, DenyKeyRequestRequest, Notice, TeamKeyRequestListResponse,
+    TeamKeyRequestResponse,
+};
 use super::service::TeamsService;
+use crate::drive::notifications::service::NotificationService;
 use crate::preferences::api::PreferencesApiState;
 use crate::preferences::dto::{PatchPreferencesRequest, TeamPreferencesResponse};
 use crate::shared::{ApiError, AuthenticatedUser};
 
 pub struct TeamsApiState {
     pub service: Arc<TeamsService>,
+    /// Where key-request notices go. `None` in tests that do not exercise them.
+    pub notifications: Option<Arc<NotificationService>>,
+}
+
+impl TeamsApiState {
+    /// Send a notice after the response is decided, so a slow notification never holds it up.
+    fn send(&self, notice: Notice) {
+        let Some(ns) = self.notifications.clone() else {
+            return;
+        };
+        if notice.recipients.is_empty() {
+            return;
+        }
+        tokio::spawn(async move {
+            let _ = ns
+                .notify(notice.recipients, notice.event_type, notice.payload)
+                .await;
+        });
+    }
 }
 
 // ── Teams ────────────────────────────────────────────────────────────────────
@@ -309,6 +333,144 @@ pub async fn decline_join_request(
         .service
         .decline_join_request(&team_id, &request_id, &user)?;
     Ok(HttpResponse::NoContent().finish())
+}
+
+// ── Key requests ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+pub struct KeyRequestListQuery {
+    pub status: Option<String>,
+}
+
+/// Ask for the key to a team file the caller cannot open.
+///
+/// The team's Owners and Admins, and the file's owner, are notified.
+#[utoipa::path(
+    post,
+    path = "/api/v1/drive/teams/{teamId}/key-requests",
+    params(("teamId" = String, Path, description = "Team id")),
+    request_body = CreateKeyRequestRequest,
+    responses(
+        (status = 200, description = "The request", body = TeamKeyRequestResponse),
+        (status = 400, description = "The file is not encrypted, or the message is too long"),
+        (status = 404, description = "No such team, or no such file in it"),
+        (status = 409, description = "The caller already has the key, or has already asked"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[post("/{team_id}/key-requests")]
+pub async fn create_key_request(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<String>,
+    body: web::Json<CreateKeyRequestRequest>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<TeamKeyRequestResponse>, ApiError> {
+    let (response, notice) =
+        state
+            .service
+            .create_key_request(&path.into_inner(), body.into_inner(), &user)?;
+    state.send(notice);
+    Ok(web::Json(response))
+}
+
+/// The key requests the caller can see — every one for an Owner or Admin; otherwise those on
+/// files the caller owns and the caller's own.
+#[utoipa::path(
+    get,
+    path = "/api/v1/drive/teams/{teamId}/key-requests",
+    params(
+        ("teamId" = String, Path, description = "Team id"),
+        ("status" = Option<String>, Query, description = "pending (default), approved or denied"),
+    ),
+    responses(
+        (status = 200, description = "The requests", body = TeamKeyRequestListResponse),
+        (status = 404, description = "No such team, or the caller is not a member of it"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[get("/{team_id}/key-requests")]
+pub async fn list_key_requests(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<String>,
+    query: web::Query<KeyRequestListQuery>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<TeamKeyRequestListResponse>, ApiError> {
+    Ok(web::Json(state.service.list_key_requests(
+        &path.into_inner(),
+        query.status.as_deref(),
+        &user,
+    )?))
+}
+
+/// Approve a key request. The caller seals the key to the requester first
+/// (`POST /encryption/files/{id}/share`); approval is refused until they hold it.
+#[utoipa::path(
+    post,
+    path = "/api/v1/drive/teams/{teamId}/key-requests/{requestId}/approve",
+    params(
+        ("teamId" = String, Path, description = "Team id"),
+        ("requestId" = String, Path, description = "Key request id"),
+    ),
+    responses(
+        (status = 200, description = "The answered request", body = TeamKeyRequestResponse),
+        (status = 403, description = "The caller cannot answer it, or the team is archived"),
+        (status = 404, description = "No such request in this team"),
+        (status = 409, description = "Already answered, or the key has not been shared yet (KEY_NOT_SHARED)"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[post("/{team_id}/key-requests/{request_id}/approve")]
+pub async fn approve_key_request(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<(String, String)>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<TeamKeyRequestResponse>, ApiError> {
+    let (team_id, request_id) = path.into_inner();
+    let (response, notice) = state
+        .service
+        .approve_key_request(&team_id, &request_id, &user)?;
+    state.send(notice);
+    Ok(web::Json(response))
+}
+
+/// Deny a key request, optionally with a reason the requester sees.
+#[utoipa::path(
+    post,
+    path = "/api/v1/drive/teams/{teamId}/key-requests/{requestId}/deny",
+    params(
+        ("teamId" = String, Path, description = "Team id"),
+        ("requestId" = String, Path, description = "Key request id"),
+    ),
+    request_body = DenyKeyRequestRequest,
+    responses(
+        (status = 200, description = "The answered request", body = TeamKeyRequestResponse),
+        (status = 400, description = "The reason is too long"),
+        (status = 403, description = "The caller cannot answer it, or the team is archived"),
+        (status = 404, description = "No such request in this team"),
+        (status = 409, description = "Already answered"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "drive-teams"
+)]
+#[post("/{team_id}/key-requests/{request_id}/deny")]
+pub async fn deny_key_request(
+    state: web::Data<TeamsApiState>,
+    path: web::Path<(String, String)>,
+    body: Option<web::Json<DenyKeyRequestRequest>>,
+    user: AuthenticatedUser,
+) -> Result<web::Json<TeamKeyRequestResponse>, ApiError> {
+    let (team_id, request_id) = path.into_inner();
+    let (response, notice) = state.service.deny_key_request(
+        &team_id,
+        &request_id,
+        body.map(|b| b.into_inner()).unwrap_or_default(),
+        &user,
+    )?;
+    state.send(notice);
+    Ok(web::Json(response))
 }
 
 // ── Members ──────────────────────────────────────────────────────────────────
@@ -1086,6 +1248,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(approve_join_request)
             .service(decline_join_request)
             .service(list_join_requests)
+            .service(approve_key_request)
+            .service(deny_key_request)
+            .service(create_key_request)
+            .service(list_key_requests)
             .service(request_access)
             .service(join_team)
             .service(list_page_versions)
@@ -1137,6 +1303,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         list_join_requests,
         approve_join_request,
         decline_join_request,
+        create_key_request,
+        list_key_requests,
+        approve_key_request,
+        deny_key_request,
         list_members,
         add_member,
         update_member,
@@ -1173,6 +1343,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         JoinRequestResponse,
         JoinRequestListResponse,
         ApproveJoinRequestRequest,
+        CreateKeyRequestRequest,
+        DenyKeyRequestRequest,
+        TeamKeyRequestResponse,
+        TeamKeyRequestListResponse,
         TeamMemberResponse,
         TeamMemberListResponse,
         AddMemberRequest,
@@ -1254,6 +1428,7 @@ mod routing {
         (
             web::Data::new(TeamsApiState {
                 service: Arc::new(service),
+                notifications: None,
             }),
             web::Data::new(Arc::new(TokenService::new("test-secret-for-tests".into()))),
         )

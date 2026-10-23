@@ -326,7 +326,7 @@ export function ExportDialogs({
                             <label className={styles.csvExportLabel}>Name</label>
                             <input
                                 className={styles.csvExportInput}
-                                style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: '7px 10px' }}
+                                style={{ border: '1px solid var(--color-border)', borderRadius: 'calc(6px * var(--radius-scale))', padding: '7px 10px' }}
                                 value={newTitle}
                                 onChange={e => setNewTitle(e.target.value)}
                                 onFocus={e => e.target.select()}
@@ -370,7 +370,7 @@ export function ExportDialogs({
                             <label className={styles.csvExportLabel}>Name</label>
                             <input
                                 className={styles.csvExportInput}
-                                style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: '7px 10px' }}
+                                style={{ border: '1px solid var(--color-border)', borderRadius: 'calc(6px * var(--radius-scale))', padding: '7px 10px' }}
                                 value={templateTitle}
                                 onChange={e => setTemplateTitle(e.target.value)}
                                 onFocus={e => e.target.select()}
@@ -411,7 +411,7 @@ export function ExportDialogs({
                             <label className={styles.csvExportLabel}>Name</label>
                             <input
                                 className={styles.csvExportInput}
-                                style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: '7px 10px' }}
+                                style={{ border: '1px solid var(--color-border)', borderRadius: 'calc(6px * var(--radius-scale))', padding: '7px 10px' }}
                                 value={duplicateTitle || `${title} (copy)`}
                                 onChange={e => setDuplicateTitle(e.target.value)}
                                 onFocus={e => { if (!duplicateTitle) setDuplicateTitle(`${title} (copy)`); e.target.select(); }}
