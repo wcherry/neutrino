@@ -1,20 +1,25 @@
 'use client';
 
 import { useSharedFillPresets } from '@/lib/teamResources';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RotateCcw, RotateCw, FlipHorizontal, FlipVertical, RefreshCcw, Check, Scissors, Sparkles, ScanText, ScreenShare, Loader2, Copy, Eraser, Blend, Grid3x3, Wand2 } from 'lucide-react';
 import { Circle, Square } from 'lucide-react';
-import { FillPicker, PanelContainer, ColorPickerPopover } from '@neutrino/ui';
-import type { Background, PanelTab } from '@neutrino/ui';
+import { FillPicker, PanelRail, ColorPickerPopover, expandPanel, normalizeRailLayout } from '@neutrino/ui';
+import type { Background, RailPanel, RailSide } from '@neutrino/ui';
+import { usePanelLayout } from '@/lib/panelLayouts';
 import type { Adjustments, PhotoFilter, Tool, CloneStampSettings, TextSettings, StrokeSettings, AreaSelection, DeblurKernel } from './types';
 import type { DetectedObject, SmartEraseTarget, BlurAnalysis } from '@neutrino/api-photos';
 import { DEFAULT_ADJUSTMENTS, FILTER_LABELS, FILTER_PREVIEW_CSS } from './types';
 import styles from './page.module.css';
 import { useLibrary } from '@neutrino/preferences';
 
+/** The adjustment panels start in a right rail; the user can move them to the left or bottom, or float them. */
+const PANEL_SIDES: RailSide[] = ['right', 'left', 'bottom'];
+const DEFAULT_OPEN: Partial<Record<RailSide, string>> = { right: 'filters' };
+
 const ALL_FILTERS: PhotoFilter[] = ['none', 'grayscale', 'sepia', 'vintage', 'hdr', 'bw'];
 
-interface AdjustmentsPanelProps {
+interface AdjustmentsRailProps {
   adjustments: Adjustments;
   /** The blur verdict, once the photo has been analysed. */
   blurAnalysis: BlurAnalysis | null;
@@ -31,8 +36,13 @@ interface AdjustmentsPanelProps {
   cloneSettings: CloneStampSettings;
   textSettings: TextSettings;
   strokeSettings: StrokeSettings;
-  activeTabId?: string;
-  onTabChange?: (id: string) => void;
+  /**
+   * A panel the editor wants open — a tool's settings when the tool is picked, AI after an area
+   * is selected. A new `seq` re-opens it even if it is the same panel the user since collapsed.
+   */
+  openRequest?: { id: string; seq: number } | null;
+  /** The canvas the panels sit beside. */
+  children: React.ReactNode;
   onAdjustmentChange: (key: keyof Adjustments, value: number) => void;
   onRotateLeft: () => void;
   onRotateRight: () => void;
@@ -161,7 +171,7 @@ function MotionBlurRow({
   );
 }
 
-export function AdjustmentsPanel({
+export function AdjustmentsRail({
   adjustments,
   blurAnalysis,
   deblurKernel,
@@ -176,8 +186,8 @@ export function AdjustmentsPanel({
   cloneSettings,
   textSettings,
   strokeSettings,
-  activeTabId,
-  onTabChange,
+  openRequest,
+  children,
   onAdjustmentChange,
   onRotateLeft,
   onRotateRight,
@@ -203,7 +213,7 @@ export function AdjustmentsPanel({
   onSmartErase,
   onRemoveObjects,
   onSmartEraseClear,
-}: AdjustmentsPanelProps) {
+}: AdjustmentsRailProps) {
   // The picker's saved gradients, synced like every other library (the preference vault).
   const [fillPresets, setFillPresets] = useLibrary('library.fill.default');
   const sharedFillPresets = useSharedFillPresets('default');
@@ -242,7 +252,7 @@ export function AdjustmentsPanel({
     }
   }
 
-  const tabs: PanelTab[] = [
+  const tabs: Omit<RailPanel, 'side'>[] = [
     {
       id: 'filters',
       title: 'Filters',
@@ -698,30 +708,46 @@ export function AdjustmentsPanel({
     },
   ];
 
+  // Revert and Apply act on every adjustment, so every panel carries them.
+  const headerActions = (
+    <>
+      <button className={styles.applyHeaderBtn} onClick={onRevert} title="Revert to last applied">
+        Revert
+      </button>
+      <button
+        className={`${styles.applyHeaderBtn} ${styles.applyHeaderBtnAccent}`}
+        onClick={onApply}
+        title="Apply adjustments"
+      >
+        <Check size={11} />
+        Apply
+      </button>
+    </>
+  );
+  const panels: RailPanel[] = tabs.map((tab) => ({ ...tab, side: 'right', actions: headerActions }));
+
+  const [layout, setLayout] = usePanelLayout('photos-editor');
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  useEffect(() => {
+    if (!openRequest) return;
+    const spec = { sides: PANEL_SIDES, panels: panels.map((p) => ({ id: p.id, side: p.side })) };
+    setLayout(expandPanel(normalizeRailLayout(layoutRef.current, spec, DEFAULT_OPEN), openRequest.id));
+    // Only a new request opens a panel; the panels themselves change on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest?.seq]);
+
   return (
-    <PanelContainer
-      tabs={tabs}
-      tabsSide="left"
-      defaultLocation="right"
-      width={280}
-      className={styles.panelDark}
-      activeTabId={activeTabId}
-      onTabChange={onTabChange}
-      headerActions={
-        <>
-          <button className={styles.applyHeaderBtn} onClick={onRevert} title="Revert to last applied">
-            Revert
-          </button>
-          <button
-            className={`${styles.applyHeaderBtn} ${styles.applyHeaderBtnAccent}`}
-            onClick={onApply}
-            title="Apply adjustments"
-          >
-            <Check size={11} />
-            Apply
-          </button>
-        </>
-      }
-    />
+    <PanelRail
+      panels={panels}
+      sides={PANEL_SIDES}
+      layout={layout}
+      onLayoutChange={setLayout}
+      defaultExpanded={DEFAULT_OPEN}
+      className={styles.panelHost}
+      chromeClassName={styles.panelDark}
+    >
+      {children}
+    </PanelRail>
   );
 }

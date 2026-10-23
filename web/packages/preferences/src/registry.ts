@@ -90,6 +90,8 @@ export interface PreferenceValues {
   'listing.views': Record<string, { view?: string; sort?: string; dir?: string }> | null;
   /** Editor → its toolbar's order, hidden tools and labels; see lib/editorToolbars.ts in the web app. */
   'editor.toolbars': Record<string, { order?: string[]; hidden?: string[]; labels?: boolean }> | null;
+  /** Surface (an editor or page) → its panel layout; see lib/panelLayouts.ts in the web app. Repaired on read. */
+  'editor.panels': Record<string, unknown> | null;
   /** A team's pinned folders, files and links (T5); see lib/teamResources.ts in the web app. */
   'team.pins': { items?: unknown[] } | null;
   /** A team's command-palette shortcuts to its templates (T6). */

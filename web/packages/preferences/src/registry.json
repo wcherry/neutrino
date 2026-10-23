@@ -516,6 +516,20 @@
       "section": "appearance"
     },
     {
+      "key": "editor.panels",
+      "type": {
+        "kind": "object",
+        "maxBytes": 16384
+      },
+      "default": null,
+      "sync": "plain",
+      "scopes": [
+        "user"
+      ],
+      "label": "Panel layouts: which rail each panel is in, what is open, sizes and floating windows",
+      "section": "appearance"
+    },
+    {
       "key": "team.pins",
       "type": {
         "kind": "object",

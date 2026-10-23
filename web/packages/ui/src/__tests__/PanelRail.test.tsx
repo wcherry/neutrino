@@ -1,6 +1,6 @@
 /**
- * The rail control as someone uses it: tabs open and collapse panes one per rail, a pane moves by
- * its menu or by dragging its tab, a floating pane returns to its rail when closed, and the layout
+ * The rail control as someone uses it: tabs open and collapse panels one per rail, a panel moves by
+ * its menu or by dragging its tab, a floating panel returns to its rail when closed, and the layout
  * it reports is what an app would store.
  *
  * jsdom does no layout, so the drag tests give the strips, tabs and view rectangles by hand.
@@ -9,7 +9,7 @@
 import React, { useState } from 'react';
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, screen, fireEvent, within, act } from '@testing-library/react';
-import { RailWorkspace, type RailPane } from '../components/rails/RailWorkspace';
+import { PanelRail, type RailPanel } from '../components/rails/PanelRail';
 import type { RailLayout, RailSide } from '../components/rails/railLayout';
 
 beforeAll(() => {
@@ -20,7 +20,7 @@ beforeAll(() => {
   }
 });
 
-function panes(): RailPane[] {
+function panels(): RailPanel[] {
   return [
     { id: 'outline', title: 'Outline', side: 'left', content: <p>Outline body</p> },
     { id: 'pages', title: 'Pages', side: 'left', content: <input aria-label="Page filter" /> },
@@ -33,15 +33,15 @@ function setup(props: { sides?: RailSide[]; layout?: unknown; defaultExpanded?: 
   const onLayoutChange = vi.fn<(l: RailLayout) => void>();
   const utils = render(
     <div style={{ width: 1000, height: 700 }}>
-      <RailWorkspace
-        panes={panes()}
+      <PanelRail
+        panels={panels()}
         sides={props.sides ?? ['left', 'right', 'bottom']}
         defaultLayout={props.layout}
         defaultExpanded={props.defaultExpanded ?? { left: 'outline' }}
         onLayoutChange={onLayoutChange}
       >
         <main>The document</main>
-      </RailWorkspace>
+      </PanelRail>
     </div>,
   );
   return { ...utils, onLayoutChange };
@@ -74,8 +74,8 @@ function dragTab(tab: HTMLElement, from: { x: number; y: number }, to: { x: numb
   fireEvent.click(tab);
 }
 
-describe('RailWorkspace', () => {
-  it('shows each rail as a strip of tabs, with only the open pane rendered', () => {
+describe('PanelRail', () => {
+  it('shows each rail as a strip of tabs, with only the open panel rendered', () => {
     setup();
     expect(within(rail('Left panels')).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Outline', 'Pages']);
     expect(rail('Left panels')).toHaveAttribute('aria-orientation', 'vertical');
@@ -86,7 +86,7 @@ describe('RailWorkspace', () => {
     expect(screen.getByText('The document')).toBeInTheDocument();
   });
 
-  it('opens one pane per rail, and a second click on the open tab collapses the rail', () => {
+  it('opens one panel per rail, and a second click on the open tab collapses the rail', () => {
     const { onLayoutChange } = setup();
     fireEvent.click(screen.getByRole('tab', { name: 'Pages' }));
     expect(screen.getByRole('tab', { name: 'Pages' })).toHaveAttribute('aria-selected', 'true');
@@ -103,7 +103,7 @@ describe('RailWorkspace', () => {
     expect(screen.queryByRole('tabpanel', { name: 'Comments' })).toBeNull();
   });
 
-  it('collapses from the pane’s button or Escape, and gives focus back to its tab', () => {
+  it('collapses from the panel’s button or Escape, and gives focus back to its tab', () => {
     setup();
     fireEvent.click(screen.getByRole('button', { name: 'Collapse Outline' }));
     expect(screen.getByRole('tab', { name: 'Outline' })).toHaveAttribute('aria-selected', 'false');
@@ -115,7 +115,7 @@ describe('RailWorkspace', () => {
     expect(screen.getByRole('tab', { name: 'Pages' })).toHaveFocus();
   });
 
-  it('keeps a pane’s content mounted while it is collapsed', () => {
+  it('keeps a panel’s content mounted while it is collapsed', () => {
     setup();
     fireEvent.click(screen.getByRole('tab', { name: 'Pages' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Page filter' }), { target: { value: 'draft' } });
@@ -136,7 +136,7 @@ describe('RailWorkspace', () => {
     expect(screen.getByRole('tab', { name: 'Pages' })).toHaveAttribute('tabindex', '-1');
   });
 
-  it('moves a pane to another rail from its menu, and opens it there', () => {
+  it('moves a panel to another rail from its menu, and opens it there', () => {
     const { onLayoutChange } = setup();
     fireEvent.click(screen.getByRole('button', { name: 'Move Outline' }));
     const menu = screen.getByRole('menu', { name: 'Move Outline' });
@@ -148,7 +148,27 @@ describe('RailWorkspace', () => {
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Move to right rail' }));
     expect(within(rail('Right panels')).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Comments', 'Outline']);
     expect(screen.getByRole('tab', { name: 'Outline' })).toHaveAttribute('aria-selected', 'true');
-    expect(last(onLayoutChange).rails.left).toEqual({ panes: ['pages'], expanded: null });
+    expect(last(onLayoutChange).rails.left).toEqual({ panels: ['pages'], expanded: null });
+  });
+
+  it('Escape in the move menu closes the menu, not the panel', () => {
+    setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Move Outline' }));
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Float' }), { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Move Outline' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Outline' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('Escape during a drag drops it where it started', () => {
+    const { container } = setup();
+    giveGeometry(container);
+    const pages = screen.getByRole('tab', { name: 'Pages' });
+    fireEvent.pointerDown(pages, { button: 0, clientX: 15, clientY: 120 });
+    fireEvent.pointerMove(window, { clientX: 400, clientY: 300 });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.pointerUp(window, { clientX: 985, clientY: 150 });
+    expect(within(rail('Left panels')).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Outline', 'Pages']);
   });
 
   it('offers only Float when the view has a single rail', () => {
@@ -157,13 +177,13 @@ describe('RailWorkspace', () => {
     expect(within(screen.getByRole('menu')).getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Float']);
   });
 
-  it('moves a pane by dragging its tab onto another rail, at the place it is dropped', () => {
+  it('moves a panel by dragging its tab onto another rail, at the place it is dropped', () => {
     const { container, onLayoutChange } = setup();
     giveGeometry(container);
     // Onto the right strip, below Comments (its tab spans y 10–90).
     dragTab(screen.getByRole('tab', { name: 'Pages' }), { x: 15, y: 120 }, { x: 985, y: 150 });
     expect(within(rail('Right panels')).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Comments', 'Pages']);
-    expect(last(onLayoutChange).rails.right).toEqual({ panes: ['comments', 'pages'], expanded: 'pages' });
+    expect(last(onLayoutChange).rails.right).toEqual({ panels: ['comments', 'pages'], expanded: 'pages' });
     // The click that ends the drag did not toggle it closed again.
     expect(screen.getByRole('tab', { name: 'Pages' })).toHaveAttribute('aria-selected', 'true');
   });
@@ -196,7 +216,7 @@ describe('RailWorkspace', () => {
     expect(screen.getByRole('tab', { name: 'Outline' })).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('a floating pane can be docked into any rail from its menu', () => {
+  it('a floating panel can be docked into any rail from its menu', () => {
     const { container } = setup();
     giveGeometry(container);
     fireEvent.click(screen.getByRole('button', { name: 'Move Outline' }));
@@ -212,7 +232,7 @@ describe('RailWorkspace', () => {
     expect(within(rail('Bottom panels')).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Console', 'Outline']);
   });
 
-  it('resizes the open pane from the keyboard and reports the size', () => {
+  it('resizes the open panel from the keyboard and reports the size', () => {
     const { onLayoutChange } = setup();
     const handle = screen.getByRole('separator', { name: 'Resize Outline' });
     expect(handle).toHaveAttribute('aria-valuenow', '280');
@@ -237,7 +257,7 @@ describe('RailWorkspace', () => {
     setup({
       layout: {
         version: 1,
-        rails: { right: { panes: ['outline', 'retired'], expanded: 'outline' } },
+        rails: { right: { panels: ['outline', 'retired'], expanded: 'outline' } },
         floating: {},
         sizes: {},
       },
@@ -254,9 +274,9 @@ describe('RailWorkspace', () => {
       return (
         <>
           <button type="button" onClick={() => setLayout(null)}>reset</button>
-          <RailWorkspace panes={panes()} sides={['left', 'right']} layout={layout} onLayoutChange={setLayout}>
+          <PanelRail panels={panels()} sides={['left', 'right']} layout={layout} onLayoutChange={setLayout}>
             <main>doc</main>
-          </RailWorkspace>
+          </PanelRail>
         </>
       );
     }
@@ -283,7 +303,7 @@ describe('RailWorkspace', () => {
       };
     }
 
-    it('shows only the pane opened last, without closing the other in the stored layout', () => {
+    it('shows only the panel opened last, without closing the other in the stored layout', () => {
       const restore = phone();
       try {
         const { onLayoutChange } = setup();
@@ -307,7 +327,7 @@ describe('RailWorkspace', () => {
       }
     });
 
-    it('on a fresh page, collapsing the pane showing does not uncover another rail’s', () => {
+    it('on a fresh page, collapsing the panel showing does not uncover another rail’s', () => {
       const restore = phone();
       try {
         setup({ defaultExpanded: { left: 'outline', right: 'comments' } });

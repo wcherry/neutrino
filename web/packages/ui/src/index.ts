@@ -100,22 +100,22 @@ export type {
   CardFooterProps,
 } from './components/containers/Card';
 
-export { Panel } from './components/containers/Panel';
-export type { PanelProps, PanelColor, PanelPadding } from './components/containers/Panel';
+export { Callout } from './components/containers/Callout';
+export type { CalloutProps, CalloutColor, CalloutPadding } from './components/containers/Callout';
 
-export { PanelContainer } from './components/containers/PanelContainer';
-export type { PanelContainerProps, PanelLocation, PanelTab } from './components/containers/PanelContainer';
-export { RailWorkspace } from './components/rails/RailWorkspace';
-export type { RailPane, RailWorkspaceProps } from './components/rails/RailWorkspace';
+export { Panel } from './components/containers/Panel';
+export type { PanelProps, PanelControl } from './components/containers/Panel';
+export { PanelRail } from './components/rails/PanelRail';
+export type { RailPanel, PanelRailProps } from './components/rails/PanelRail';
 export {
   collapseRail,
   defaultLayout as defaultRailLayout,
-  dockPane,
-  expandPane,
-  floatPane,
-  movePane,
+  dockPanel,
+  expandPanel,
+  floatPanel,
+  movePanel,
   normalizeLayout as normalizeRailLayout,
-  togglePane,
+  togglePanel,
   RAIL_SIDES,
 } from './components/rails/railLayout';
 export type { FloatRect, RailLayout, RailSide, RailSpec, RailState } from './components/rails/railLayout';

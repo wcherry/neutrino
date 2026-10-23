@@ -2,21 +2,24 @@
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MoreHorizontal, X } from 'lucide-react';
+import { useDismiss } from '@neutrino/commands';
 import { Menu, MenuItem } from '../navigation/Menu';
+import { Panel } from '../containers/Panel';
+import panelStyles from '../containers/Panel.module.css';
 import {
   RAIL_SIDES,
   collapseRail,
-  dockPane,
-  floatPane,
+  dockPanel,
+  floatPanel,
   isVertical,
   locate,
-  movePane,
+  movePanel,
   normalizeLayout,
-  paneSize,
-  resizePane,
+  panelSize,
+  resizePanel,
   sameLayout,
   setFloatRect,
-  togglePane,
+  togglePanel,
   MIN_FLOAT_HEIGHT,
   MIN_FLOAT_WIDTH,
   type FloatRect,
@@ -24,50 +27,58 @@ import {
   type RailSide,
   type RailSpec,
 } from './railLayout';
-import styles from './RailWorkspace.module.css';
+import styles from './PanelRail.module.css';
 
 /**
- * Rails of panes around a view (an editor's page, grid or canvas).
+ * Rails of panels around a view (an editor's page, grid or canvas).
  *
  * A rail sits on any side and is a strip of tabs with labels turned along it. Clicking a tab opens
- * its pane beside the strip; a rail shows one pane at a time, and clicking the open tab — or the
- * pane's collapse button — folds the rail back to its strip. Every pane is always a tab somewhere:
+ * its panel beside the strip; a rail shows one panel at a time, and clicking the open tab — or the
+ * panel's collapse button — folds the rail back to its strip. Every panel is always a tab somewhere:
  * nothing is closed, only collapsed. A tab can be dragged to another rail or out over the view,
- * where it floats; closing a floating pane puts it back where it came from. The pane's ⋯ menu does
+ * where it floats; closing a floating panel puts it back where it came from. The panel's ⋯ menu does
  * the same moves for keyboard and screen-reader users.
  *
  * The layout is plain data (`railLayout.ts`) so an app can keep it as a preference: pass `layout`
  * and `onLayoutChange` to control it, or `defaultLayout` to let the workspace hold it. Whatever is
- * passed is normalised against the panes the app has now, so a stored layout from an older build
+ * passed is normalised against the panels the app has now, so a stored layout from an older build
  * never breaks the view. Drags and resizes update locally and report the layout once, on release.
  */
 
-export interface RailPane {
+export interface RailPanel {
   id: string;
   title: string;
   icon?: React.ReactNode;
-  /** The rail this pane starts in. */
+  /** The rail this panel starts in. */
   side: RailSide;
   content: React.ReactNode;
+  /** The panel's own header buttons. */
+  actions?: React.ReactNode;
+  footer?: React.ReactNode;
 }
 
-export interface RailWorkspaceProps {
-  panes: RailPane[];
+export interface PanelRailProps {
+  panels: RailPanel[];
   /** The rails this view has. */
   sides: RailSide[];
   /**
-   * Controlled layout — anything, normalised against `panes` and `sides`; `null` for a controlled
+   * Controlled layout — anything, normalised against `panels` and `sides`; `null` for a controlled
    * workspace with nothing stored yet. Leave it undefined to let the workspace hold the layout.
    */
   layout?: unknown;
   /** Starting layout when uncontrolled. */
   defaultLayout?: unknown;
-  /** Panes open in a fresh layout, by rail. */
+  /** Panels open in a fresh layout, by rail. */
   defaultExpanded?: Partial<Record<RailSide, string>>;
   onLayoutChange?: (layout: RailLayout) => void;
   /** The view the rails surround. */
   children: React.ReactNode;
   className?: string;
+  /**
+   * A class for the rails and floating panels but not the view — for an app whose panels are
+   * themed differently from its canvas (the photo editor's dark panels over a light page).
+   */
+  chromeClassName?: string;
 }
 
 const SIDE_LABEL: Record<RailSide, string> = { left: 'left', right: 'right', top: 'top', bottom: 'bottom' };
@@ -88,7 +99,7 @@ const NEW_FLOAT_SIZE = { width: 320, height: 360 };
 type DropTarget = { kind: 'rail'; side: RailSide; index: number } | { kind: 'float' };
 
 interface TabDrag {
-  paneId: string;
+  panelId: string;
   startX: number;
   startY: number;
   x: number;
@@ -114,8 +125,8 @@ function within(rect: DOMRect, x: number, y: number, slop = 0): boolean {
   return x >= rect.left - slop && x <= rect.right + slop && y >= rect.top - slop && y <= rect.bottom + slop;
 }
 
-export function RailWorkspace({
-  panes,
+export function PanelRail({
+  panels,
   sides,
   layout: controlled,
   defaultLayout: initial,
@@ -123,14 +134,15 @@ export function RailWorkspace({
   onLayoutChange,
   children,
   className,
-}: RailWorkspaceProps) {
+  chromeClassName,
+}: PanelRailProps) {
   const uid = useId();
   const narrow = useNarrow();
   const spec: RailSpec = useMemo(
-    () => ({ sides, panes: panes.map((p) => ({ id: p.id, side: p.side })) }),
-    // The spec is the ids, sides and starting rails — not the pane contents, which change every render.
+    () => ({ sides, panels: panels.map((p) => ({ id: p.id, side: p.side })) }),
+    // The spec is the ids, sides and starting rails — not the panel contents, which change every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sides.join(), panes.map((p) => `${p.id}:${p.side}`).join()],
+    [sides.join(), panels.map((p) => `${p.id}:${p.side}`).join()],
   );
   const [uncontrolled, setUncontrolled] = useState<unknown>(initial);
   const layout = useMemo(
@@ -141,8 +153,8 @@ export function RailWorkspace({
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
-  // At phone width an open pane covers the view, so only one shows: the rail opened most recently.
-  // Display only — the stored layout keeps every rail's pane for when there is room again.
+  // At phone width an open panel covers the view, so only one shows: the rail opened most recently.
+  // Display only — the stored layout keeps every rail's panel for when there is room again.
   const [front, setFront] = useState<RailSide | null>(null);
   const frontRef = useRef<RailSide | null>(null);
 
@@ -153,7 +165,7 @@ export function RailWorkspace({
       if (sameLayout(current, next)) return;
       const opened = RAIL_SIDES.find((side) => next.rails[side]?.expanded && next.rails[side]?.expanded !== current.rails[side]?.expanded);
       // The first change pins whichever rail was showing, so collapsing it does not fall through
-      // to another rail's pane.
+      // to another rail's panel.
       const pinned = opened ?? frontRef.current;
       if (pinned) setFront(pinned);
       layoutRef.current = next;
@@ -163,14 +175,14 @@ export function RailWorkspace({
     [controlled, onLayoutChange],
   );
 
-  const byId = useMemo(() => new Map(panes.map((p) => [p.id, p])), [panes]);
-  // Until something is opened here, the first rail with a pane open; after that, the rail last
-  // opened — even once it is collapsed again, so collapsing a pane leaves the view uncovered
-  // rather than uncovering another rail's pane.
+  const byId = useMemo(() => new Map(panels.map((p) => [p.id, p])), [panels]);
+  // Until something is opened here, the first rail with a panel open; after that, the rail last
+  // opened — even once it is collapsed again, so collapsing a panel leaves the view uncovered
+  // rather than uncovering another rail's panel.
   const frontSide: RailSide | null = front ?? sides.find((side) => layout.rails[side]?.expanded) ?? null;
   frontRef.current = frontSide;
 
-  // Panes keep their content mounted once opened, so collapsing one does not lose what is in it.
+  // Panels keep their content mounted once opened, so collapsing one does not lose what is in it.
   const visited = useRef(new Set<string>());
   for (const side of sides) {
     const open = layout.rails[side]?.expanded;
@@ -202,9 +214,9 @@ export function RailWorkspace({
     [narrow],
   );
 
-  const startTabDrag = (paneId: string, e: React.PointerEvent) => {
+  const startTabDrag = (panelId: string, e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    setDrag({ paneId, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, target: null });
+    setDrag({ panelId, startX: e.clientX, startY: e.clientY, x: e.clientX, y: e.clientY, active: false, target: null });
   };
 
   useEffect(() => {
@@ -221,14 +233,14 @@ export function RailWorkspace({
       setDrag(null);
       if (!d.active) return;
       // The click that follows a drag is the end of the drag, not a tab press.
-      suppressClick.current = d.paneId;
+      suppressClick.current = d.panelId;
       const target = dropTargetAt(e.clientX, e.clientY);
-      if (target?.kind === 'rail') update((l) => movePane(l, d.paneId, target.side, target.index));
+      if (target?.kind === 'rail') update((l) => movePanel(l, d.panelId, target.side, target.index));
       else if (target?.kind === 'float') {
         const center = centerRef.current!.getBoundingClientRect();
         const width = Math.min(NEW_FLOAT_SIZE.width, center.width);
         const height = Math.min(NEW_FLOAT_SIZE.height, center.height);
-        update((l) => floatPane(l, d.paneId, {
+        update((l) => floatPanel(l, d.panelId, {
           x: Math.min(Math.max(0, e.clientX - center.left - 24), Math.max(0, center.width - width)),
           y: Math.min(Math.max(0, e.clientY - center.top - 12), Math.max(0, center.height - height)),
           width,
@@ -236,29 +248,24 @@ export function RailWorkspace({
         }));
       }
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDrag(null);
-    };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-    window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('keydown', onKey);
     };
     // Re-bound per drag start only; the handlers read the latest pointer through setDrag.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag?.paneId, drag?.startX, drag?.startY, drag?.active, dropTargetAt, update]);
+  }, [drag?.panelId, drag?.startX, drag?.startY, drag?.active, dropTargetAt, update]);
 
-  const moveTargets = (paneId: string): { label: string; run: () => void }[] => {
-    const at = locate(layout, paneId);
+  const moveTargets = (panelId: string): { label: string; run: () => void }[] => {
+    const at = locate(layout, panelId);
     const here = at && at !== 'floating' ? at.side : null;
     const items = sides
       .filter((side) => side !== here)
       .map((side) => ({
         label: at === 'floating' ? `Dock to ${SIDE_LABEL[side]} rail` : `Move to ${SIDE_LABEL[side]} rail`,
-        run: () => update((l) => movePane(l, paneId, side)),
+        run: () => update((l) => movePanel(l, panelId, side)),
       }));
     if (at !== 'floating' && !narrow) {
       items.push({
@@ -269,7 +276,7 @@ export function RailWorkspace({
           const height = Math.min(NEW_FLOAT_SIZE.height, center?.height || NEW_FLOAT_SIZE.height);
           const x = Math.max(0, ((center?.width ?? width) - width) / 2);
           const y = Math.max(0, ((center?.height ?? height) - height) / 3);
-          update((l) => floatPane(l, paneId, { x, y, width, height }));
+          update((l) => floatPanel(l, panelId, { x, y, width, height }));
         },
       });
     }
@@ -277,6 +284,8 @@ export function RailWorkspace({
   };
 
   const dragging = drag?.active ? drag : null;
+  // Escape drops a drag where it started.
+  useDismiss(() => setDrag(null), !!dragging);
 
   return (
     <div className={[styles.workspace, className].filter(Boolean).join(' ')} data-dragging={dragging ? 'true' : undefined}>
@@ -285,6 +294,7 @@ export function RailWorkspace({
           key={side}
           uid={uid}
           side={side}
+          chromeClassName={chromeClassName}
           layout={layout}
           byId={byId}
           visited={visited.current}
@@ -296,7 +306,7 @@ export function RailWorkspace({
           onTabPointerDown={startTabDrag}
           suppressClick={suppressClick}
           dropIndex={dragging?.target?.kind === 'rail' && dragging.target.side === side ? dragging.target.index : null}
-          draggingId={dragging?.paneId ?? null}
+          draggingId={dragging?.panelId ?? null}
           moveTargets={moveTargets}
           coveredOnPhone={narrow && frontSide !== null && frontSide !== side}
           bringToFront={() => setFront(side)}
@@ -305,26 +315,27 @@ export function RailWorkspace({
       <div ref={centerRef} className={styles.center} data-rail-view="" data-drop-float={dragging?.target?.kind === 'float' ? 'true' : undefined}>
         {children}
         {Object.entries(layout.floating).map(([id, entry]) => {
-          const pane = byId.get(id);
-          if (!pane) return null;
+          const panel = byId.get(id);
+          if (!panel) return null;
           return (
-            <FloatingPane
+            <FloatingPanel
               key={id}
               uid={uid}
-              pane={pane}
+              panel={panel}
               rect={entry.rect}
               centerRef={centerRef}
               onRect={(rect) => update((l) => setFloatRect(l, id, rect))}
-              onClose={() => update((l) => dockPane(l, id))}
+              onClose={() => update((l) => dockPanel(l, id))}
               moveTargets={moveTargets(id)}
+              chromeClassName={chromeClassName}
             />
           );
         })}
       </div>
       {dragging && (
-        <div className={styles.dragGhost} style={{ left: dragging.x + 12, top: dragging.y + 12 }} aria-hidden="true">
-          {byId.get(dragging.paneId)?.icon}
-          <span>{byId.get(dragging.paneId)?.title}</span>
+        <div className={[styles.dragGhost, chromeClassName].filter(Boolean).join(' ')} style={{ left: dragging.x + 12, top: dragging.y + 12 }} aria-hidden="true">
+          {byId.get(dragging.panelId)?.icon}
+          <span>{byId.get(dragging.panelId)?.title}</span>
         </div>
       )}
     </div>
@@ -334,17 +345,18 @@ export function RailWorkspace({
 interface RailProps {
   uid: string;
   side: RailSide;
+  chromeClassName?: string;
   layout: RailLayout;
-  byId: Map<string, RailPane>;
+  byId: Map<string, RailPanel>;
   visited: Set<string>;
   update: (change: (l: RailLayout) => RailLayout) => void;
   registerStrip: (el: HTMLElement | null) => void;
-  onTabPointerDown: (paneId: string, e: React.PointerEvent) => void;
+  onTabPointerDown: (panelId: string, e: React.PointerEvent) => void;
   suppressClick: React.MutableRefObject<string | null>;
   dropIndex: number | null;
   draggingId: string | null;
-  moveTargets: (paneId: string) => { label: string; run: () => void }[];
-  /** At phone width another rail's pane is showing, so this one's stays folded away. */
+  moveTargets: (panelId: string) => { label: string; run: () => void }[];
+  /** At phone width another rail's panel is showing, so this one's stays folded away. */
   coveredOnPhone: boolean;
   bringToFront: () => void;
 }
@@ -352,6 +364,7 @@ interface RailProps {
 function Rail({
   uid,
   side,
+  chromeClassName,
   layout,
   byId,
   visited,
@@ -373,9 +386,9 @@ function Rail({
   const [liveSize, setLiveSize] = useState<number | null>(null);
   if (!rail) return null;
 
-  const ids = rail.panes.filter((id) => byId.has(id));
+  const ids = rail.panels.filter((id) => byId.has(id));
   const focusable = expanded ?? ids[0];
-  const size = liveSize ?? (expanded ? paneSize(layout, expanded, side) : 0);
+  const size = liveSize ?? (expanded ? panelSize(layout, expanded, side) : 0);
 
   const focusTab = (id: string | undefined) => {
     if (id) tabRefs.current.get(id)?.focus();
@@ -398,8 +411,8 @@ function Rail({
     if (!expanded || e.button !== 0) return;
     e.preventDefault();
     const start = vertical ? e.clientX : e.clientY;
-    const base = paneSize(layout, expanded, side);
-    // Dragging towards the view grows a left or top pane and shrinks a right or bottom one.
+    const base = panelSize(layout, expanded, side);
+    // Dragging towards the view grows a left or top panel and shrinks a right or bottom one.
     const sign = side === 'left' || side === 'top' ? 1 : -1;
     let latest = base;
     const onMove = (ev: PointerEvent) => {
@@ -410,7 +423,7 @@ function Rail({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       setLiveSize(null);
-      update((l) => resizePane(l, expanded, latest));
+      update((l) => resizePanel(l, expanded, latest));
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -423,13 +436,13 @@ function Rail({
     const delta = e.key === grow ? KEY_RESIZE_STEP : e.key === shrink ? -KEY_RESIZE_STEP : 0;
     if (!delta) return;
     e.preventDefault();
-    update((l) => resizePane(l, expanded, paneSize(l, expanded, side) + delta));
+    update((l) => resizePanel(l, expanded, panelSize(l, expanded, side) + delta));
   };
 
   const tabs: React.ReactNode[] = [];
   ids.forEach((id, index) => {
     if (dropIndex === index) tabs.push(<span key="drop" className={styles.dropMarker} aria-hidden="true" />);
-    const pane = byId.get(id)!;
+    const panel = byId.get(id)!;
     tabs.push(
       <button
         key={id}
@@ -441,32 +454,32 @@ function Rail({
         role="tab"
         id={`${uid}-tab-${id}`}
         aria-selected={expanded === id}
-        aria-controls={`${uid}-pane-${id}`}
+        aria-controls={`${uid}-panel-${id}`}
         tabIndex={focusable === id ? 0 : -1}
         className={styles.tab}
         data-dragging={draggingId === id ? 'true' : undefined}
-        title={pane.title}
+        title={panel.title}
         onPointerDown={(e) => onTabPointerDown(id, e)}
         onClick={() => {
           if (suppressClick.current === id) {
             suppressClick.current = null;
             return;
           }
-          // Open in the layout but folded away for another rail's pane: bring it back, not close it.
+          // Open in the layout but folded away for another rail's panel: bring it back, not close it.
           if (coveredOnPhone && stored === id) bringToFront();
-          else update((l) => togglePane(l, id));
+          else update((l) => togglePanel(l, id));
         }}
         onKeyDown={(e) => onTabKeyDown(e, index)}
       >
-        {pane.icon && <span className={styles.tabIcon} aria-hidden="true">{pane.icon}</span>}
-        <span className={styles.tabLabel}>{pane.title}</span>
+        {panel.icon && <span className={styles.tabIcon} aria-hidden="true">{panel.icon}</span>}
+        <span className={styles.tabLabel}>{panel.title}</span>
       </button>,
     );
   });
   if (dropIndex !== null && dropIndex >= ids.length) tabs.push(<span key="drop" className={styles.dropMarker} aria-hidden="true" />);
 
   return (
-    <div className={styles.rail} data-side={side} data-expanded={expanded ? 'true' : undefined}>
+    <div className={[styles.rail, chromeClassName].filter(Boolean).join(' ')} data-side={side} data-expanded={expanded ? 'true' : undefined}>
       <div
         ref={registerStrip}
         className={styles.strip}
@@ -479,20 +492,33 @@ function Rail({
       </div>
       {ids.some((id) => id === expanded || visited.has(id)) && (
         <div
-          className={styles.paneArea}
+          className={styles.panelArea}
           hidden={!expanded}
           style={expanded ? (vertical ? { width: size } : { height: size }) : undefined}
         >
           {ids.filter((id) => id === expanded || visited.has(id)).map((id) => {
-            const pane = byId.get(id)!;
+            const panel = byId.get(id)!;
             return (
-              <section
+              <Panel
                 key={id}
-                id={`${uid}-pane-${id}`}
+                id={`${uid}-panel-${id}`}
                 role="tabpanel"
                 aria-labelledby={`${uid}-tab-${id}`}
                 hidden={expanded !== id}
-                className={styles.pane}
+                title={panel.title}
+                icon={panel.icon}
+                actions={panel.actions}
+                footer={panel.footer}
+                menu={<PanelMenu title={panel.title} items={moveTargets(id)} />}
+                control={{
+                  label: `Collapse ${panel.title}`,
+                  title: 'Collapse',
+                  icon: COLLAPSE_ICON[side],
+                  onClick: () => {
+                    update((l) => collapseRail(l, side));
+                    focusTab(id);
+                  },
+                }}
                 onKeyDown={(e) => {
                   if (e.key !== 'Escape' || e.defaultPrevented) return;
                   e.preventDefault();
@@ -500,25 +526,8 @@ function Rail({
                   focusTab(id);
                 }}
               >
-                <header className={styles.paneHeader}>
-                  {pane.icon && <span className={styles.paneIcon} aria-hidden="true">{pane.icon}</span>}
-                  <span className={styles.paneTitle}>{pane.title}</span>
-                  <PaneMenu title={pane.title} items={moveTargets(id)} />
-                  <button
-                    type="button"
-                    className={styles.iconButton}
-                    aria-label={`Collapse ${pane.title}`}
-                    title="Collapse"
-                    onClick={() => {
-                      update((l) => collapseRail(l, side));
-                      focusTab(id);
-                    }}
-                  >
-                    {COLLAPSE_ICON[side]}
-                  </button>
-                </header>
-                <div className={styles.paneBody}>{pane.content}</div>
-              </section>
+                {panel.content}
+              </Panel>
             );
           })}
           {expanded && (
@@ -539,7 +548,7 @@ function Rail({
   );
 }
 
-function PaneMenu({ title, items }: { title: string; items: { label: string; run: () => void }[] }) {
+function PanelMenu({ title, items }: { title: string; items: { label: string; run: () => void }[] }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -550,28 +559,28 @@ function PaneMenu({ title, items }: { title: string; items: { label: string; run
     const onDown = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      e.stopPropagation();
-      setOpen(false);
-      buttonRef.current?.focus();
-    };
     document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey, true);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey, true);
-    };
+    return () => document.removeEventListener('pointerdown', onDown);
   }, [open]);
 
   if (items.length === 0) return null;
   return (
-    <div className={styles.menuRoot} ref={rootRef}>
+    <div
+      className={styles.menuRoot}
+      ref={rootRef}
+      onKeyDown={(e) => {
+        // On the menu itself, so it closes before the panel around it sees Escape and collapses.
+        if (e.key !== 'Escape' || !open) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setOpen(false);
+        buttonRef.current?.focus();
+      }}
+    >
       <button
         ref={buttonRef}
         type="button"
-        className={styles.iconButton}
+        className={panelStyles.iconButton}
         aria-label={`Move ${title}`}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -601,17 +610,18 @@ function PaneMenu({ title, items }: { title: string; items: { label: string; run
   );
 }
 
-interface FloatingPaneProps {
+interface FloatingPanelProps {
   uid: string;
-  pane: RailPane;
+  panel: RailPanel;
   rect: FloatRect;
   centerRef: React.RefObject<HTMLDivElement | null>;
   onRect: (rect: FloatRect) => void;
   onClose: () => void;
   moveTargets: { label: string; run: () => void }[];
+  chromeClassName?: string;
 }
 
-function FloatingPane({ uid, pane, rect, centerRef, onRect, onClose, moveTargets }: FloatingPaneProps) {
+function FloatingPanel({ uid, panel, rect, centerRef, onRect, onClose, moveTargets, chromeClassName }: FloatingPanelProps) {
   const [live, setLive] = useState<FloatRect | null>(null);
   const shown = live ?? rect;
 
@@ -653,34 +663,28 @@ function FloatingPane({ uid, pane, rect, centerRef, onRect, onClose, moveTargets
   };
 
   return (
-    <section
-      className={styles.floating}
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby={`${uid}-float-${pane.id}`}
-      style={{ left: shown.x, top: shown.y, width: shown.width, height: shown.height }}
-      onKeyDown={(e) => {
-        if (e.key !== 'Escape' || e.defaultPrevented) return;
-        e.preventDefault();
-        onClose();
-      }}
-    >
-      <header className={`${styles.paneHeader} ${styles.floatHeader}`} onPointerDown={(e) => track(e, 'move')}>
-        {pane.icon && <span className={styles.paneIcon} aria-hidden="true">{pane.icon}</span>}
-        <span className={styles.paneTitle} id={`${uid}-float-${pane.id}`}>{pane.title}</span>
-        <PaneMenu title={pane.title} items={moveTargets} />
-        <button
-          type="button"
-          className={styles.iconButton}
-          aria-label={`Close ${pane.title}`}
-          title="Close (returns it to its rail)"
-          onClick={onClose}
-        >
-          <X size={14} />
-        </button>
-      </header>
-      <div className={styles.paneBody}>{pane.content}</div>
+    <div className={[styles.floating, chromeClassName].filter(Boolean).join(' ')} style={{ left: shown.x, top: shown.y, width: shown.width, height: shown.height }}>
+      <Panel
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby={`${uid}-float-${panel.id}`}
+        titleId={`${uid}-float-${panel.id}`}
+        title={panel.title}
+        icon={panel.icon}
+        actions={panel.actions}
+        footer={panel.footer}
+        menu={<PanelMenu title={panel.title} items={moveTargets} />}
+        control={{ label: `Close ${panel.title}`, title: 'Close (returns it to its rail)', icon: <X size={14} />, onClick: onClose }}
+        headerProps={{ className: styles.floatHeader, onPointerDown: (e) => track(e as React.PointerEvent, 'move') }}
+        onKeyDown={(e) => {
+          if (e.key !== 'Escape' || e.defaultPrevented) return;
+          e.preventDefault();
+          onClose();
+        }}
+      >
+        {panel.content}
+      </Panel>
       <div className={styles.floatResize} aria-hidden="true" onPointerDown={(e) => track(e, 'resize')} />
-    </section>
+    </div>
   );
 }

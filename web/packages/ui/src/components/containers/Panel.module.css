@@ -1,19 +1,84 @@
+/* The frame of an app panel. It draws no surface of its own: a rail, a floating window or the
+   page it sits in gives it one, so it reads the editor-chrome tokens only for its rules and
+   controls (look-and-feel roadmap LF5), with the classic values where those are not defined. */
+
 .panel {
-  background-color: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  backdrop-filter: var(--glass-backdrop, none);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
 }
 
-/* Colors */
-.default { background-color: var(--color-surface-raised); }
-.accent  { background-color: var(--color-accent-subtle); border-color: color-mix(in srgb, var(--color-accent) 20%, transparent); }
-.success { background-color: var(--color-success-subtle); border-color: color-mix(in srgb, var(--color-success) 20%, transparent); }
-.warning { background-color: var(--color-warning-subtle); border-color: color-mix(in srgb, var(--color-warning) 20%, transparent); }
-.error   { background-color: var(--color-error-subtle); border-color: color-mix(in srgb, var(--color-error) 20%, transparent); }
+.panel[hidden] {
+  display: none;
+}
 
-/* Padding */
-.sm { padding: var(--space-3); }
-.md { padding: var(--space-4); }
-.lg { padding: var(--space-6); }
+.header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: var(--editor-panel-rule, 1px solid var(--color-border));
+}
+
+.icon {
+  display: inline-flex;
+  color: var(--editor-tool-fg, var(--color-text-secondary));
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-13);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.footer {
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--editor-panel-rule, 1px solid var(--color-border));
+}
+
+.iconButton {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--editor-tool-radius, var(--radius-sm));
+  background: none;
+  color: var(--editor-tool-fg, var(--color-text-muted));
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
+  color: var(--editor-tool-hover-fg, var(--color-text));
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--editor-tool-active-fg, var(--color-accent));
+  outline-offset: 1px;
+}

@@ -39,7 +39,7 @@
   pointer-events: none;
 }
 
-/* ── A rail: the strip on the outer edge, the open pane beside it ── */
+/* ── A rail: the strip on the outer edge, the open panel beside it ── */
 
 .rail {
   display: flex;
@@ -165,9 +165,9 @@
   height: 100%;
 }
 
-/* ── The open pane ── */
+/* ── The open panel ── */
 
-.paneArea {
+.panelArea {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -177,91 +177,34 @@
   background: var(--editor-panel-bg, var(--color-surface));
 }
 
-/* A pane is capped only in the direction it grows, so it can never squeeze the view out. */
-.rail[data-side='left'] .paneArea,
-.rail[data-side='right'] .paneArea {
+/* A panel is capped only in the direction it grows, so it can never squeeze the view out. */
+.rail[data-side='left'] .panelArea,
+.rail[data-side='right'] .panelArea {
   max-width: 60vw;
 }
 
-.rail[data-side='top'] .paneArea,
-.rail[data-side='bottom'] .paneArea {
+.rail[data-side='top'] .panelArea,
+.rail[data-side='bottom'] .panelArea {
   max-height: 60vh;
 }
 
-.paneArea[hidden] {
+.panelArea[hidden] {
   display: none;
 }
 
-.rail[data-side='left'] .paneArea { border-right: var(--editor-panel-rule, 1px solid var(--color-border)); }
-.rail[data-side='right'] .paneArea { border-left: var(--editor-panel-rule, 1px solid var(--color-border)); }
-.rail[data-side='top'] .paneArea { border-bottom: var(--editor-panel-rule, 1px solid var(--color-border)); }
-.rail[data-side='bottom'] .paneArea { border-top: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='left'] .panelArea { border-right: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='right'] .panelArea { border-left: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='top'] .panelArea { border-bottom: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='bottom'] .panelArea { border-top: var(--editor-panel-rule, 1px solid var(--color-border)); }
 
-.pane {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
 
-.pane[hidden] {
-  display: none;
-}
 
-.paneHeader {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
-  border-bottom: var(--editor-panel-rule, 1px solid var(--color-border));
-}
 
-.paneIcon {
-  display: inline-flex;
-  color: var(--editor-tool-fg, var(--color-text-secondary));
-}
 
-.paneTitle {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--font-size-13);
-  font-weight: var(--font-semibold);
-  color: var(--color-text);
-}
 
-.paneBody {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
 
-.iconButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: var(--editor-tool-radius, var(--radius-sm));
-  background: none;
-  color: var(--editor-tool-fg, var(--color-text-muted));
-  cursor: pointer;
-}
 
-.iconButton:hover {
-  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
-  color: var(--editor-tool-hover-fg, var(--color-text));
-}
 
-.iconButton:focus-visible {
-  outline: 2px solid var(--editor-tool-active-fg, var(--color-accent));
-  outline-offset: 1px;
-}
 
 .resizeHandle {
   position: absolute;
@@ -295,7 +238,7 @@
   min-width: 180px;
 }
 
-/* ── Floating panes ── */
+/* ── Floating panels ── */
 
 .floating {
   position: absolute;
@@ -342,11 +285,11 @@
   pointer-events: none;
 }
 
-/* ── Phone width: an open pane covers the view rather than squeezing it, and floats fill it ── */
+/* ── Phone width: an open panel covers the view rather than squeezing it, and floats fill it ── */
 
 @media (max-width: 640px) {
-  /* Opaque: a covering pane over a translucent look would show the page through its text. */
-  .rail .paneArea {
+  /* Opaque: a covering panel over a translucent look would show the page through its text. */
+  .rail .panelArea {
     position: absolute;
     z-index: var(--z-layer-10);
     max-width: none;
@@ -355,15 +298,15 @@
     box-shadow: var(--shadow-xl);
   }
 
-  /* `!important` over the pane's remembered size, which is an inline style. */
-  .rail[data-side='left'] .paneArea { top: 0; bottom: 0; left: var(--rail-strip); width: calc(100% - var(--rail-strip)) !important; max-width: none; }
-  .rail[data-side='right'] .paneArea { top: 0; bottom: 0; right: var(--rail-strip); width: calc(100% - var(--rail-strip)) !important; max-width: none; }
-  .rail[data-side='top'] .paneArea { left: 0; right: 0; top: var(--rail-strip); height: 70% !important; max-height: none; }
-  .rail[data-side='bottom'] .paneArea { left: 0; right: 0; bottom: var(--rail-strip); height: 70% !important; max-height: none; }
+  /* `!important` over the panel's remembered size, which is an inline style. */
+  .rail[data-side='left'] .panelArea { top: 0; bottom: 0; left: var(--rail-strip); width: calc(100% - var(--rail-strip)) !important; max-width: none; }
+  .rail[data-side='right'] .panelArea { top: 0; bottom: 0; right: var(--rail-strip); width: calc(100% - var(--rail-strip)) !important; max-width: none; }
+  .rail[data-side='top'] .panelArea { left: 0; right: 0; top: var(--rail-strip); height: 70% !important; max-height: none; }
+  .rail[data-side='bottom'] .panelArea { left: 0; right: 0; bottom: var(--rail-strip); height: 70% !important; max-height: none; }
 
   /* With a rail on the opposite side too, leave its strip reachable. */
-  .workspace:has(.rail[data-side='right']) .rail[data-side='left'] .paneArea,
-  .workspace:has(.rail[data-side='left']) .rail[data-side='right'] .paneArea {
+  .workspace:has(.rail[data-side='right']) .rail[data-side='left'] .panelArea,
+  .workspace:has(.rail[data-side='left']) .rail[data-side='right'] .panelArea {
     width: calc(100% - 2 * var(--rail-strip)) !important;
   }
 
