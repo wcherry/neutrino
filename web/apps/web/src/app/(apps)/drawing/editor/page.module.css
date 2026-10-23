@@ -57,19 +57,17 @@
   overflow: hidden;
 }
 
+/* The canvas inside its panel rails. */
+.panelHost {
+  flex: 1;
+  min-width: 0;
+}
+
 .canvasArea {
   flex: 1;
+  height: 100%;
   position: relative;
   overflow: hidden;
   background: var(--editor-ground, var(--color-neutral-50));
 }
 
-.versionHistoryPanel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 280px;
-  z-index: var(--z-dropdown);
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
-}

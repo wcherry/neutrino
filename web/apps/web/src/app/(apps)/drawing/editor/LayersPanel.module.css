@@ -1,30 +1,19 @@
 .panel {
-  width: 200px;
-  background: var(--palette-gray-100);
-  border-right: 1px solid var(--color-neutral-200);
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  overflow: hidden;
+  min-height: 100%;
 }
 
 .header {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   padding: 0 8px 0 12px;
   height: 36px;
   border-bottom: 1px solid var(--color-neutral-200);
   flex-shrink: 0;
 }
 
-.headerLabel {
-  flex: 1;
-  font-size: var(--font-size-11);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-neutral-400);
-}
 
 .addBtn {
   background: none;

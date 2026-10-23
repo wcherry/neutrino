@@ -4,8 +4,9 @@ import { EditorDocIcon, EditorSaveState, createSaveStateStore } from '@/componen
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft } from 'lucide-react';
-import { Spinner, useToast } from '@neutrino/ui';
+import { ArrowLeft, History, Layers as LayersIcon, Palette } from 'lucide-react';
+import { PanelRail, Spinner, useToast, type RailPanel, type RailSide, type RailSpec } from '@neutrino/ui';
+import { useRailState } from '@/lib/panelLayouts';
 import { drawingApi, extractDrawingText } from '@neutrino/api-drawing';
 import { driveReadBytes, isMissingEncryptionKey } from '@neutrino/api-drive';
 import { useUser } from '@neutrino/auth';
@@ -237,6 +238,18 @@ type Clipboard =
   | { kind: 'nodes'; nodes: DrawingNode[] }
   | null;
 
+/** Drawing's panels and the rails they start in — today's places. */
+const DRAWING_SIDES: RailSide[] = ['left', 'right'];
+const DRAWING_PANEL_SPEC: RailSpec = {
+  sides: DRAWING_SIDES,
+  panels: [
+    { id: 'layers', side: 'left' },
+    { id: 'style', side: 'right' },
+    { id: 'history', side: 'right' },
+  ],
+};
+const DRAWING_PANELS_OPEN: Partial<Record<RailSide, string>> = { left: 'layers', right: 'style' };
+
 export function DrawingEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -260,7 +273,8 @@ export function DrawingEditor() {
   const [newObjectStyle, setNewObjectStyle] = useState<VectorStyle>({ ...DEFAULT_VECTOR_STYLE });
   const [bitmaps, setBitmaps] = useState<ReadonlyMap<string, CanvasImageSource>>(new Map());
   const [zoom, setZoom] = useState(100);
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  // Layers on the left, style and version history on the right — tabs in rails (lib/panelLayouts.ts).
+  const panels = useRailState('drawing-editor', DRAWING_PANEL_SPEC, DRAWING_PANELS_OPEN);
   const [showExport, setShowExport] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [clipboard, setClipboard] = useState<Clipboard>(null);
@@ -1103,6 +1117,64 @@ export function DrawingEditor() {
     );
   }
 
+  const railPanels: RailPanel[] = [
+    {
+      id: 'layers',
+      title: 'Layers',
+      icon: <LayersIcon size={14} />,
+      side: 'left',
+      content: (
+      <LayersPanel
+        doc={doc}
+        onDocumentChange={applyDocument}
+        selection={selection}
+        onSelectionChange={setSelection}
+        activeLayerId={activeLayerId}
+        onActiveLayerChange={setActiveLayerId}
+        onAddImageLayer={() => setShowImagePicker(true)}
+      />
+      ),
+    },
+    {
+      id: 'style',
+      title: 'Style',
+      icon: <Palette size={14} />,
+      side: 'right',
+      content: (
+      <StylePanel
+        doc={doc}
+        onDocumentChange={applyDocument}
+        selection={selection}
+        newObjectStyle={newObjectStyle}
+        onNewObjectStyleChange={setNewObjectStyle}
+        tool={tool}
+        brush={brush}
+        onBrushChange={setBrush}
+        maskEditing={maskEditing}
+        onMaskEditingChange={setMaskEditing}
+        activeLayerId={activeLayerId}
+        onReloadAsset={handleReloadAsset}
+      />
+      ),
+    },
+    {
+      id: 'history',
+      title: 'Version history',
+      icon: <History size={14} />,
+      side: 'right',
+      content: drawingId ? (
+        <VersionHistoryPanel
+          fileId={drawingId}
+          framed={false}
+          onRestore={() => {
+            panels.close('history');
+            window.location.reload();
+          }}
+        />
+      ) : null,
+    },
+  ];
+
   return (
     <div className={styles.container}>
       <div className={styles.topBar}>
@@ -1131,7 +1203,7 @@ export function DrawingEditor() {
           onFitToScreen={handleFitToScreen}
           onToggleLock={handleToggleLock}
           onExport={() => setShowExport(true)}
-          onVersionHistory={() => setShowVersionHistory(true)}
+          onVersionHistory={() => panels.open('history')}
           onAddImage={() => setShowImagePicker(true)}
           onGroup={handleGroup}
           onUngroup={handleUngroup}
@@ -1173,59 +1245,33 @@ export function DrawingEditor() {
 
       <div className={styles.editorBody}>
         <DrawingToolbar tool={tool} onToolChange={setTool} onAddImage={() => setShowImagePicker(true)} />
-        <LayersPanel
-          doc={doc}
-          onDocumentChange={applyDocument}
-          selection={selection}
-          onSelectionChange={setSelection}
-          activeLayerId={activeLayerId}
-          onActiveLayerChange={setActiveLayerId}
-          onAddImageLayer={() => setShowImagePicker(true)}
-        />
-        <div className={styles.canvasArea}>
-          <DrawingCanvas
-            ref={canvasRef}
-            doc={doc}
-            onDocumentChange={applyDocument}
-            tool={tool}
-            onToolChange={setTool}
-            selection={selection}
-            onSelectionChange={setSelection}
-            activeLayerId={activeLayerId}
-            newObjectStyle={newObjectStyle}
-            onTransformChange={handleTransformChange}
-            bitmaps={bitmaps}
-            brush={brush}
-            maskEditing={maskEditing}
-            initialTransform={doc.viewport}
-          />
-        </div>
-        <StylePanel
-          doc={doc}
-          onDocumentChange={applyDocument}
-          selection={selection}
-          newObjectStyle={newObjectStyle}
-          onNewObjectStyleChange={setNewObjectStyle}
-          tool={tool}
-          brush={brush}
-          onBrushChange={setBrush}
-          maskEditing={maskEditing}
-          onMaskEditingChange={setMaskEditing}
-          activeLayerId={activeLayerId}
-          onReloadAsset={handleReloadAsset}
-        />
-        {showVersionHistory && drawingId && (
-          <div className={styles.versionHistoryPanel}>
-            <VersionHistoryPanel
-              fileId={drawingId}
-              onClose={() => setShowVersionHistory(false)}
-              onRestore={() => {
-                setShowVersionHistory(false);
-                window.location.reload();
-              }}
+        <PanelRail
+          panels={railPanels}
+          sides={DRAWING_SIDES}
+          layout={panels.layout}
+          onLayoutChange={panels.setLayout}
+          defaultExpanded={DRAWING_PANELS_OPEN}
+          className={styles.panelHost}
+        >
+          <div className={styles.canvasArea}>
+            <DrawingCanvas
+              ref={canvasRef}
+              doc={doc}
+              onDocumentChange={applyDocument}
+              tool={tool}
+              onToolChange={setTool}
+              selection={selection}
+              onSelectionChange={setSelection}
+              activeLayerId={activeLayerId}
+              newObjectStyle={newObjectStyle}
+              onTransformChange={handleTransformChange}
+              bitmaps={bitmaps}
+              brush={brush}
+              maskEditing={maskEditing}
+              initialTransform={doc.viewport}
             />
           </div>
-        )}
+        </PanelRail>
       </div>
 
       <StatusBar

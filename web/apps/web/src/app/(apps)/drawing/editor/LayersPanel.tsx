@@ -344,8 +344,8 @@ export function LayersPanel({
 
   return (
     <div className={styles.panel}>
+      {/* Adding layers; the panel around this is titled "Layers". */}
       <div className={styles.header}>
-        <span className={styles.headerLabel}>Layers</span>
         <div ref={addMenuRef} className={styles.addWrap}>
           <button className={styles.addBtn} onClick={() => setAddOpen((v) => !v)} title="Add layer" aria-label="Add layer">
             <Plus size={13} />
