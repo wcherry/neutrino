@@ -331,6 +331,7 @@
 /* ── Canvas area ─────────────────────────────────────────────────────────── */
 
 .canvasArea {
+  height: 100%;
   flex: 1;
   display: flex;
   align-items: center;
@@ -430,30 +431,6 @@
 
 /* ── Right panel ─────────────────────────────────────────────────────────── */
 
-.rightPanel {
-  width: 244px;
-  flex-shrink: 0;
-  border-left: 1px solid var(--color-border);
-  display: flex;
-  flex-direction: row;
-  background: var(--color-surface);
-  overflow: hidden;
-}
-
-.rightPanelHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-2) var(--space-3);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-muted);
-  border-bottom: 1px solid var(--color-border);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  flex-shrink: 0;
-}
-
 .notesBar {
   height: 120px;
   flex-shrink: 0;
@@ -494,58 +471,6 @@
 }
 
 /* ── Right panel vertical tab strip ─────────────────────────────────────── */
-
-.rightPanelTabStrip {
-  width: 28px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--color-border);
-  background: var(--color-surface);
-}
-
-.rightPanelTab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  border-right: 2px solid transparent;
-  cursor: pointer;
-  color: var(--color-text-muted);
-  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
-  padding: 0;
-}
-
-.rightPanelTab:hover {
-  color: var(--color-text);
-  background: var(--color-surface-hover);
-}
-
-.rightPanelTabActive {
-  color: var(--color-accent);
-  border-right-color: var(--color-accent);
-  background: var(--color-accent-subtle);
-}
-
-.rightPanelTabLabel {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-}
-
-.rightPanelContent {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-width: 0;
-}
 
 /* ── Layout panel ────────────────────────────────────────────────────────── */
 
@@ -1715,4 +1640,17 @@
   height: 1px;
   background: var(--color-border);
   margin: 4px 0;
+}
+
+/* The slide canvas inside its panel rail. */
+.panelHost {
+  flex: 1;
+  min-width: 0;
+}
+
+.panelEmpty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--font-size-13);
+  color: var(--color-text-muted);
 }

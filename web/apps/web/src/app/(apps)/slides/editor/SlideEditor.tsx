@@ -11,49 +11,7 @@ import React, {
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
-  Download,
-  Plus,
-  Trash2,
-  Type,
-  Square,
-  Circle,
-  ChevronDown,
-  Play,
-  Presentation,
-  Copy,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  AlignJustify,
-  Minus,
-  ChevronUp,
-  LayoutTemplate,
-  Zap,
-  Upload,
-  ArrowRight,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpToLine,
-  ArrowDownToLine,
-  ZoomIn,
-  Layers,
-  Sun,
-  RotateCcw,
-  Box,
-  Images,
-  Grid,
-  ChevronsRight,
-  Eraser,
-  Video,
-  Table2,
-  ImageIcon,
-  List,
-  ListOrdered,
-  ArrowUpDown,
-  Network,
-  Pencil,
-  Eye,
+  ArrowLeft, Download, Plus, Trash2, Type, Square, Circle, ChevronDown, Play, Presentation, Copy, AlignLeft, AlignCenter, AlignRight, AlignJustify, Minus, ChevronUp, LayoutTemplate, Zap, Upload, ArrowRight, ArrowUp, ArrowDown, ArrowUpToLine, ArrowDownToLine, ZoomIn, Layers, Sun, RotateCcw, Box, Images, Grid, ChevronsRight, Eraser, Video, Table2, ImageIcon, List, ListOrdered, ArrowUpDown, Network, Pencil, Eye, Palette, PlusSquare, Stamp,
 } from 'lucide-react';
 import {
   Button,
@@ -67,7 +25,12 @@ import {
   ZoomSlider,
   ShareButton,
   useToast,
+  PanelRail,
+  type RailPanel,
+  type RailSide,
+  type RailSpec,
 } from '@neutrino/ui';
+import { useRailState } from '@/lib/panelLayouts';
 import { useUser } from '@neutrino/auth';
 import { measurePhase } from '@neutrino/utils';
 import {
@@ -329,6 +292,19 @@ function LinesToolbarDropdown({ onAdd }: { onAdd: (lineType: string) => void }) 
 
 // ── Main component ───────────────────────────────────────────────────────────
 
+/** Slides' side panels: today's right-hand tabs, plus the master, in a right rail. */
+const SLIDE_SIDES: RailSide[] = ['right'];
+const SLIDE_PANEL_SPEC: RailSpec = {
+  sides: SLIDE_SIDES,
+  panels: [
+    { id: 'layout', side: 'right' },
+    { id: 'theme', side: 'right' },
+    { id: 'insert', side: 'right' },
+    { id: 'master', side: 'right' },
+  ],
+};
+const SLIDE_PANELS_OPEN: Partial<Record<RailSide, string>> = { right: 'layout' };
+
 export function SlideEditor() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -363,7 +339,16 @@ export function SlideEditor() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const exportingPdfRef = useRef(false);
   const [masterMode, setMasterMode] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState<'layout' | 'theme' | 'insert'>('layout');
+  // Layout, theme, insert and the slide master are tabs in a right rail (lib/panelLayouts.ts).
+  const panels = useRailState('slides-editor', SLIDE_PANEL_SPEC, SLIDE_PANELS_OPEN);
+  const openSidePanel = (['layout', 'theme', 'insert'] as const).find((id) => panels.isOpen(id)) ?? null;
+  // The master's tab opens with master mode, and its old place — instead of the other tabs —
+  // goes back to Layout when master mode ends.
+  useEffect(() => {
+    if (masterMode) panels.open('master');
+    else if (panels.isOpen('master')) panels.open('layout');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masterMode]);
   const [zoom, setZoom] = useState(100);
 
   const [showShareDialog, setShowShareDialog] = useState(false);
@@ -998,7 +983,7 @@ export function SlideEditor() {
     const elements = layout.makeElements(presentation.theme, master);
     updateCurrentSlide((s) => ({ ...s, elements }));
     setSelectedElementId(null);
-    setRightPanelTab('layout');
+    panels.open('layout');
   }
 
   function addSlide() {
@@ -2193,6 +2178,242 @@ export function SlideEditor() {
 
   const master = presentation.master ?? makeDefaultMaster();
 
+  const railPanels: RailPanel[] = [
+    {
+      id: 'layout',
+      title: 'Layout',
+      icon: <LayoutTemplate size={14} />,
+      side: 'right',
+      content: (
+          <div className={styles.layoutPanel}>
+            <div className={styles.layoutGrid}>
+              {SLIDE_LAYOUTS.map((layout) => (
+                <button
+                  key={layout.id}
+                  className={styles.layoutCard}
+                  onClick={() => applyLayout(layout)}
+                  title={layout.name}
+                >
+                  <div className={styles.layoutCardPreview}>
+                    <LayoutPreview shapes={layout.preview} />
+                  </div>
+                  <span className={styles.layoutCardName}>{layout.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+      ),
+    },
+    {
+      id: 'theme',
+      title: 'Theme',
+      icon: <Palette size={14} />,
+      side: 'right',
+      content: (
+          <div className={styles.themePanel}>
+            <div className={styles.themeGrid}>
+              <button
+                className={`${styles.themeCard} ${styles.themeCardNew}`}
+                onClick={() => setThemeDialogState({ mode: 'create', theme: null })}
+                title="Create a new theme from scratch"
+              >
+                <div className={styles.themeCardNewPreview}>
+                  <Plus size={20} />
+                </div>
+                <span className={styles.themeCardName}>New theme</span>
+              </button>
+              {(dbThemesData?.themes ?? []).map((t) => (
+                <div
+                  key={t.id}
+                  className={`${styles.themeCard} ${presentation.theme.name === t.name ? styles.themeCardActive : ''}`}
+                  onClick={() => applyTheme(dbThemeToTheme(t))}
+                  title={t.name}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') applyTheme(dbThemeToTheme(t)); }}
+                >
+                  <button
+                    className={styles.themeCardManageBtn}
+                    onClick={(e) => { e.stopPropagation(); setThemeDialogState({ mode: t.isSystem ? 'view' : 'edit', theme: t }); }}
+                    title={t.isSystem ? 'View theme' : 'Edit theme'}
+                  >
+                    {t.isSystem ? <Eye size={11} /> : <Pencil size={11} />}
+                  </button>
+                  <div className={styles.themeCardPreview}>
+                    <ThemePreview theme={t} />
+                  </div>
+                  <span className={styles.themeCardName}>{t.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+      ),
+    },
+    {
+      id: 'insert',
+      title: 'Insert',
+      icon: <PlusSquare size={14} />,
+      side: 'right',
+      content: (
+          <div className={styles.insertPanel}>
+            <div className={styles.insertSection}>
+              <span className={styles.insertSectionLabel}>Text</span>
+              <button
+                className={styles.insertBtn}
+                onClick={addTextBox}
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData('application/x-slide-insert', JSON.stringify({ kind: 'text' }))}
+              >
+                <Type size={15} />
+                <span>Text Box</span>
+              </button>
+            </div>
+            <div className={styles.insertSection}>
+              <span className={styles.insertSectionLabel}>Media</span>
+              <button className={styles.insertBtn} onClick={() => setImageDialogOpen(true)}>
+                <ImageIcon size={15} />
+                <span>Image</span>
+              </button>
+              <button className={styles.insertBtn} onClick={() => { setVideoUrlInput(''); setVideoDialogOpen(true); }}>
+                <Video size={15} />
+                <span>Video</span>
+              </button>
+              <button className={styles.insertBtn} onClick={() => setSheetDialogOpen(true)}>
+                <Table2 size={15} />
+                <span>Sheet</span>
+              </button>
+              <button className={styles.insertBtn} onClick={() => setDiagramDialogOpen(true)}>
+                <Network size={15} />
+                <span>Diagram</span>
+              </button>
+            </div>
+            {SHAPE_GROUPS.map((group) => (
+              <div key={group.key} className={styles.insertSection}>
+                <span className={styles.insertSectionLabel}>{group.label}</span>
+                <div className={styles.shapesGrid}>
+                  {Object.entries(SHAPE_CATALOG)
+                    .filter(([, def]) => def.group === group.key)
+                    .map(([id, def]) => (
+                      <button
+                        key={id}
+                        className={styles.shapeBtn}
+                        title={def.label}
+                        onClick={() => addShape(id)}
+                        draggable
+                        onDragStart={(e) => e.dataTransfer.setData('application/x-slide-insert', JSON.stringify({ kind: 'shape', shape: id }))}
+                      >
+                        <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">
+                          <path
+                            d={def.path}
+                            fill="var(--color-accent)"
+                            stroke="none"
+                          />
+                        </svg>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            ))}
+          </div>
+      ),
+    },
+    {
+      id: 'master',
+      title: 'Slide master',
+      icon: <Stamp size={14} />,
+      side: 'right',
+      content: masterMode ? (
+        <div className={styles.masterPanel}>
+          <div className={styles.masterSection}>
+            <label className={styles.masterLabel}>Background</label>
+            <div className={styles.masterRow}>
+              <input
+                type="color"
+                className={styles.colorPicker}
+                value={master.background}
+                onChange={(e) => updateMaster((m) => ({ ...m, background: e.target.value }))}
+              />
+              <span className={styles.masterColorVal}>{master.background}</span>
+            </div>
+          </div>
+
+          <div className={styles.masterSection}>
+            <label className={styles.masterLabel}>Title Style</label>
+            <div className={styles.masterRow}>
+              <span className={styles.masterFieldLabel}>Size</span>
+              <input
+                type="number"
+                min={10}
+                max={120}
+                value={master.titleFontSize}
+                onChange={(e) => updateMaster((m) => ({ ...m, titleFontSize: parseInt(e.target.value) || 40 }))}
+                className={styles.masterNumberInput}
+              />
+            </div>
+            <div className={styles.masterRow}>
+              <span className={styles.masterFieldLabel}>Bold</span>
+              <input
+                type="checkbox"
+                checked={master.titleBold}
+                onChange={(e) => updateMaster((m) => ({ ...m, titleBold: e.target.checked }))}
+              />
+            </div>
+            <div className={styles.masterRow}>
+              <span className={styles.masterFieldLabel}>Color</span>
+              <input
+                type="color"
+                className={styles.colorPicker}
+                value={master.titleColor}
+                onChange={(e) => updateMaster((m) => ({ ...m, titleColor: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <div className={styles.masterSection}>
+            <label className={styles.masterLabel}>Body Style</label>
+            <div className={styles.masterRow}>
+              <span className={styles.masterFieldLabel}>Size</span>
+              <input
+                type="number"
+                min={8}
+                max={80}
+                value={master.bodyFontSize}
+                onChange={(e) => updateMaster((m) => ({ ...m, bodyFontSize: parseInt(e.target.value) || 24 }))}
+                className={styles.masterNumberInput}
+              />
+            </div>
+            <div className={styles.masterRow}>
+              <span className={styles.masterFieldLabel}>Bold</span>
+              <input
+                type="checkbox"
+                checked={master.bodyBold}
+                onChange={(e) => updateMaster((m) => ({ ...m, bodyBold: e.target.checked }))}
+              />
+            </div>
+            <div className={styles.masterRow}>
+              <span className={styles.masterFieldLabel}>Color</span>
+              <input
+                type="color"
+                className={styles.colorPicker}
+                value={master.bodyColor}
+                onChange={(e) => updateMaster((m) => ({ ...m, bodyColor: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          <button className={styles.masterApplyBtn} onClick={applyMasterToAllSlides}>
+            Apply to All Slides
+          </button>
+          <p className={styles.masterHint}>
+            New slides will use the master background. &quot;Apply to All&quot; updates backgrounds and text styles across all slides.
+          </p>
+        </div>
+      ) : (
+        <p className={styles.panelEmpty}>Turn on Slide Master in the toolbar to edit the master.</p>
+      ),
+    },
+  ];
+
   return (
     <div className={styles.editorWrapper}>
       {/* Hidden PPTX file input */}
@@ -2240,8 +2461,8 @@ export function SlideEditor() {
           onMoveBackward={moveElementBackward}
           onSendToBack={sendElementToBack}
           onDeleteElement={() => { if (selectedElementId) deleteElement(selectedElementId); }}
-          rightPanelTab={rightPanelTab}
-          onSelectPanel={setRightPanelTab}
+          rightPanelTab={openSidePanel}
+          onSelectPanel={(id) => panels.open(id)}
           masterMode={masterMode}
           onToggleMaster={() => { setMasterMode((v) => !v); setSelectedElementId(null); }}
           zoom={zoom}
@@ -2406,274 +2627,38 @@ export function SlideEditor() {
           </div>
         </div>
 
-        {/* Canvas area */}
-        <div className={`${styles.canvasArea} ${zoom !== 100 ? styles.canvasAreaZoomed : ''}`}>
-          <div style={zoom !== 100 ? { width: `${900 * zoom / 100}px`, flexShrink: 0 } : { width: '100%' }}>
-            {currentSlide && (
-              <SlideCanvas
-                slide={currentSlide}
-                selectedElementId={selectedElementId}
-                editingElementId={editingElementId}
-                editingInitialText={editingInitialText}
-                spellCheck={spellCheck}
-                onSelectElement={setSelectedElementId}
-                onStartEdit={(id) => { setEditingInitialText(null); setEditingElementId(id); }}
-                onStopEdit={() => { setEditingElementId(null); setEditingInitialText(null); }}
-                onUpdateElement={updateElement}
-                onClickBackground={() => { setSelectedElementId(null); setEditingElementId(null); setEditingInitialText(null); }}
-                onEmbedCacheUpdate={handleEmbedCacheUpdate}
-                onEmbedConvertToStatic={handleEmbedConvertToStatic}
-                onEmbedRemove={deleteElement}
-                onInsertDrop={handleInsertDrop}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Right panel: notes or master settings */}
-        <div className={styles.rightPanel}>
-          {masterMode ? (
-            <div className={styles.rightPanelContent}>
-              <div className={styles.rightPanelHeader}>
-                <span>Slide Master</span>
-              </div>
-              <div className={styles.masterPanel}>
-                <div className={styles.masterSection}>
-                  <label className={styles.masterLabel}>Background</label>
-                  <div className={styles.masterRow}>
-                    <input
-                      type="color"
-                      className={styles.colorPicker}
-                      value={master.background}
-                      onChange={(e) => updateMaster((m) => ({ ...m, background: e.target.value }))}
-                    />
-                    <span className={styles.masterColorVal}>{master.background}</span>
-                  </div>
-                </div>
-
-                <div className={styles.masterSection}>
-                  <label className={styles.masterLabel}>Title Style</label>
-                  <div className={styles.masterRow}>
-                    <span className={styles.masterFieldLabel}>Size</span>
-                    <input
-                      type="number"
-                      min={10}
-                      max={120}
-                      value={master.titleFontSize}
-                      onChange={(e) => updateMaster((m) => ({ ...m, titleFontSize: parseInt(e.target.value) || 40 }))}
-                      className={styles.masterNumberInput}
-                    />
-                  </div>
-                  <div className={styles.masterRow}>
-                    <span className={styles.masterFieldLabel}>Bold</span>
-                    <input
-                      type="checkbox"
-                      checked={master.titleBold}
-                      onChange={(e) => updateMaster((m) => ({ ...m, titleBold: e.target.checked }))}
-                    />
-                  </div>
-                  <div className={styles.masterRow}>
-                    <span className={styles.masterFieldLabel}>Color</span>
-                    <input
-                      type="color"
-                      className={styles.colorPicker}
-                      value={master.titleColor}
-                      onChange={(e) => updateMaster((m) => ({ ...m, titleColor: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <div className={styles.masterSection}>
-                  <label className={styles.masterLabel}>Body Style</label>
-                  <div className={styles.masterRow}>
-                    <span className={styles.masterFieldLabel}>Size</span>
-                    <input
-                      type="number"
-                      min={8}
-                      max={80}
-                      value={master.bodyFontSize}
-                      onChange={(e) => updateMaster((m) => ({ ...m, bodyFontSize: parseInt(e.target.value) || 24 }))}
-                      className={styles.masterNumberInput}
-                    />
-                  </div>
-                  <div className={styles.masterRow}>
-                    <span className={styles.masterFieldLabel}>Bold</span>
-                    <input
-                      type="checkbox"
-                      checked={master.bodyBold}
-                      onChange={(e) => updateMaster((m) => ({ ...m, bodyBold: e.target.checked }))}
-                    />
-                  </div>
-                  <div className={styles.masterRow}>
-                    <span className={styles.masterFieldLabel}>Color</span>
-                    <input
-                      type="color"
-                      className={styles.colorPicker}
-                      value={master.bodyColor}
-                      onChange={(e) => updateMaster((m) => ({ ...m, bodyColor: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <button className={styles.masterApplyBtn} onClick={applyMasterToAllSlides}>
-                  Apply to All Slides
-                </button>
-                <p className={styles.masterHint}>
-                  New slides will use the master background. &quot;Apply to All&quot; updates backgrounds and text styles across all slides.
-                </p>
-              </div>
+        <PanelRail
+          panels={railPanels}
+          sides={SLIDE_SIDES}
+          layout={panels.layout}
+          onLayoutChange={panels.setLayout}
+          defaultExpanded={SLIDE_PANELS_OPEN}
+          className={styles.panelHost}
+        >
+          {/* Canvas area */}
+          <div className={`${styles.canvasArea} ${zoom !== 100 ? styles.canvasAreaZoomed : ''}`}>
+            <div style={zoom !== 100 ? { width: `${900 * zoom / 100}px`, flexShrink: 0 } : { width: '100%' }}>
+              {currentSlide && (
+                <SlideCanvas
+                  slide={currentSlide}
+                  selectedElementId={selectedElementId}
+                  editingElementId={editingElementId}
+                  editingInitialText={editingInitialText}
+                  spellCheck={spellCheck}
+                  onSelectElement={setSelectedElementId}
+                  onStartEdit={(id) => { setEditingInitialText(null); setEditingElementId(id); }}
+                  onStopEdit={() => { setEditingElementId(null); setEditingInitialText(null); }}
+                  onUpdateElement={updateElement}
+                  onClickBackground={() => { setSelectedElementId(null); setEditingElementId(null); setEditingInitialText(null); }}
+                  onEmbedCacheUpdate={handleEmbedCacheUpdate}
+                  onEmbedConvertToStatic={handleEmbedConvertToStatic}
+                  onEmbedRemove={deleteElement}
+                  onInsertDrop={handleInsertDrop}
+                />
+              )}
             </div>
-          ) : (
-            <>
-              {/* Tab content */}
-              <div className={styles.rightPanelContent}>
-                {rightPanelTab === 'layout' ? (
-                  <div className={styles.layoutPanel}>
-                    <div className={styles.layoutGrid}>
-                      {SLIDE_LAYOUTS.map((layout) => (
-                        <button
-                          key={layout.id}
-                          className={styles.layoutCard}
-                          onClick={() => applyLayout(layout)}
-                          title={layout.name}
-                        >
-                          <div className={styles.layoutCardPreview}>
-                            <LayoutPreview shapes={layout.preview} />
-                          </div>
-                          <span className={styles.layoutCardName}>{layout.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : rightPanelTab === 'theme' ? (
-                  <div className={styles.themePanel}>
-                    <div className={styles.themeGrid}>
-                      <button
-                        className={`${styles.themeCard} ${styles.themeCardNew}`}
-                        onClick={() => setThemeDialogState({ mode: 'create', theme: null })}
-                        title="Create a new theme from scratch"
-                      >
-                        <div className={styles.themeCardNewPreview}>
-                          <Plus size={20} />
-                        </div>
-                        <span className={styles.themeCardName}>New theme</span>
-                      </button>
-                      {(dbThemesData?.themes ?? []).map((t) => (
-                        <div
-                          key={t.id}
-                          className={`${styles.themeCard} ${presentation.theme.name === t.name ? styles.themeCardActive : ''}`}
-                          onClick={() => applyTheme(dbThemeToTheme(t))}
-                          title={t.name}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') applyTheme(dbThemeToTheme(t)); }}
-                        >
-                          <button
-                            className={styles.themeCardManageBtn}
-                            onClick={(e) => { e.stopPropagation(); setThemeDialogState({ mode: t.isSystem ? 'view' : 'edit', theme: t }); }}
-                            title={t.isSystem ? 'View theme' : 'Edit theme'}
-                          >
-                            {t.isSystem ? <Eye size={11} /> : <Pencil size={11} />}
-                          </button>
-                          <div className={styles.themeCardPreview}>
-                            <ThemePreview theme={t} />
-                          </div>
-                          <span className={styles.themeCardName}>{t.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : rightPanelTab === 'insert' ? (
-                  <div className={styles.insertPanel}>
-                    <div className={styles.insertSection}>
-                      <span className={styles.insertSectionLabel}>Text</span>
-                      <button
-                        className={styles.insertBtn}
-                        onClick={addTextBox}
-                        draggable
-                        onDragStart={(e) => e.dataTransfer.setData('application/x-slide-insert', JSON.stringify({ kind: 'text' }))}
-                      >
-                        <Type size={15} />
-                        <span>Text Box</span>
-                      </button>
-                    </div>
-                    <div className={styles.insertSection}>
-                      <span className={styles.insertSectionLabel}>Media</span>
-                      <button className={styles.insertBtn} onClick={() => setImageDialogOpen(true)}>
-                        <ImageIcon size={15} />
-                        <span>Image</span>
-                      </button>
-                      <button className={styles.insertBtn} onClick={() => { setVideoUrlInput(''); setVideoDialogOpen(true); }}>
-                        <Video size={15} />
-                        <span>Video</span>
-                      </button>
-                      <button className={styles.insertBtn} onClick={() => setSheetDialogOpen(true)}>
-                        <Table2 size={15} />
-                        <span>Sheet</span>
-                      </button>
-                      <button className={styles.insertBtn} onClick={() => setDiagramDialogOpen(true)}>
-                        <Network size={15} />
-                        <span>Diagram</span>
-                      </button>
-                    </div>
-                    {SHAPE_GROUPS.map((group) => (
-                      <div key={group.key} className={styles.insertSection}>
-                        <span className={styles.insertSectionLabel}>{group.label}</span>
-                        <div className={styles.shapesGrid}>
-                          {Object.entries(SHAPE_CATALOG)
-                            .filter(([, def]) => def.group === group.key)
-                            .map(([id, def]) => (
-                              <button
-                                key={id}
-                                className={styles.shapeBtn}
-                                title={def.label}
-                                onClick={() => addShape(id)}
-                                draggable
-                                onDragStart={(e) => e.dataTransfer.setData('application/x-slide-insert', JSON.stringify({ kind: 'shape', shape: id }))}
-                              >
-                                <svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="none">
-                                  <path
-                                    d={def.path}
-                                    fill="var(--color-accent)"
-                                    stroke="none"
-                                  />
-                                </svg>
-                              </button>
-                            ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Vertical tab strip – right side */}
-              <div className={styles.rightPanelTabStrip}>
-                <button
-                  className={`${styles.rightPanelTab} ${rightPanelTab === 'layout' ? styles.rightPanelTabActive : ''}`}
-                  onClick={() => setRightPanelTab('layout')}
-                  title="Layout"
-                >
-                  <span className={styles.rightPanelTabLabel}>Layout</span>
-                </button>
-                <button
-                  className={`${styles.rightPanelTab} ${rightPanelTab === 'theme' ? styles.rightPanelTabActive : ''}`}
-                  onClick={() => setRightPanelTab('theme')}
-                  title="Theme"
-                >
-                  <span className={styles.rightPanelTabLabel}>Theme</span>
-                </button>
-                <button
-                  className={`${styles.rightPanelTab} ${rightPanelTab === 'insert' ? styles.rightPanelTabActive : ''}`}
-                  onClick={() => setRightPanelTab('insert')}
-                  title="Insert"
-                >
-                  <span className={styles.rightPanelTabLabel}>Insert</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+          </div>
+        </PanelRail>
       </div>
 
       {/* Bottom notes bar */}

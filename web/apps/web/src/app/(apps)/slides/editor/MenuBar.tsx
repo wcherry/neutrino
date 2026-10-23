@@ -119,7 +119,8 @@ export interface HamburgerMenuProps {
   onSendToBack: () => void;
   onDeleteElement: () => void;
   // View
-  rightPanelTab: 'layout' | 'theme' | 'insert';
+  /** The side panel open in the right rail, or null when it is collapsed. */
+  rightPanelTab: 'layout' | 'theme' | 'insert' | null;
   onSelectPanel: (tab: 'layout' | 'theme' | 'insert') => void;
   masterMode: boolean;
   onToggleMaster: () => void;

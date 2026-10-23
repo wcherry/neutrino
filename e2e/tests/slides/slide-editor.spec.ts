@@ -181,9 +181,8 @@ test.describe('Insert panel', () => {
     await registerAndLogin(request, page, 'inserttext');
     await createSlideAndGetId(page);
 
-    // Switch to the Insert tab in the right panel. Use an exact-name button
-    // locator so it doesn't also match the "Insert line" shape toolbar button.
-    await page.getByRole('button', { name: 'Insert', exact: true }).click();
+    // Open the Insert tab in the right rail.
+    await page.getByRole('tab', { name: 'Insert', exact: true }).click();
 
     await page.getByRole('button', { name: 'Text Box' }).click();
 

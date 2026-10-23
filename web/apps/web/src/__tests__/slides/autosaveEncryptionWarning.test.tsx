@@ -18,7 +18,9 @@ import { render, act, waitFor } from '@testing-library/react';
 
 const mockWarning = vi.fn();
 
-vi.mock('@neutrino/ui', () => ({
+vi.mock('@neutrino/ui', async (importOriginal) => ({
+  // The real panels and rails; only the pieces these tests stand in for are replaced.
+  ...(await importOriginal<typeof import('@neutrino/ui')>()),
   useToast: () => ({
     warning: mockWarning,
     success: vi.fn(),
