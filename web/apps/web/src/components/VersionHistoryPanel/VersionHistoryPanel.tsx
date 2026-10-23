@@ -10,9 +10,6 @@ import styles from './VersionHistoryPanel.module.css';
 interface VersionHistoryPanelProps {
   fileId: string;
   onRestore?: () => void;
-  onClose?: () => void;
-  /** False inside a `Panel` (a `PanelRail`), which draws the frame; see the shared panel. */
-  framed?: boolean;
   /** When true, shows a "Compare" button for each version (docsCompare flag). */
   compareEnabled?: boolean;
   /** Called when the user clicks "Compare" on a version. */
@@ -22,8 +19,6 @@ interface VersionHistoryPanelProps {
 export function VersionHistoryPanel({
   fileId,
   onRestore,
-  onClose,
-  framed = true,
   compareEnabled,
   onCompare,
 }: VersionHistoryPanelProps) {
@@ -40,13 +35,11 @@ export function VersionHistoryPanel({
   const versions = data?.versions ?? [];
 
   return (
-    <div className={framed ? styles.wrapper : undefined}>
+    <div className={styles.wrapper}>
       <VersionHistoryPanelUI
         versions={versions}
         isLoading={isLoading}
         isError={isError}
-        onClose={onClose}
-        framed={framed}
         onLabelVersion={async (versionId, label) => {
           await storageApi.labelVersion(fileId, versionId, label);
           invalidate();

@@ -1661,7 +1661,6 @@ export function SheetEditor() {
             content: (
                 <VersionHistoryPanel
                     fileId={sheetId}
-                    framed={false}
                     onRestore={() => {
                         persist.load();
                         panels.close('history');

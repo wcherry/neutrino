@@ -7,13 +7,10 @@ import { CommentsPanel as CommentsPanelUI } from '@neutrino/ui';
 
 interface CommentsPanelProps {
   fileId: string;
-  onClose?: () => void;
-  /** False inside a `Panel` (a `PanelRail`), which draws the frame; see the shared panel. */
-  framed?: boolean;
   initialText?: string;
 }
 
-export function CommentsPanel({ fileId, onClose, framed = true, initialText }: CommentsPanelProps) {
+export function CommentsPanel({ fileId, initialText }: CommentsPanelProps) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<'open' | 'all'>('open');
 
@@ -33,8 +30,6 @@ export function CommentsPanel({ fileId, onClose, framed = true, initialText }: C
       isError={isError}
       filter={filter}
       onFilterChange={setFilter}
-      onClose={onClose}
-      framed={framed}
       initialText={initialText}
       onCreateComment={async (body) => { await commentsApi.createComment(fileId, body); invalidate(); }}
       onDeleteComment={async (commentId) => { await commentsApi.deleteComment(fileId, commentId); invalidate(); }}

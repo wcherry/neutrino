@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { MessageSquare, X, Check, Trash2, Reply, ChevronDown, ChevronRight } from 'lucide-react';
+import { Check, Trash2, Reply, ChevronDown, ChevronRight } from 'lucide-react';
 import { Spinner } from '../../index';
 import styles from './CommentsPanel.module.css';
 
@@ -27,14 +27,6 @@ export interface CommentsPanelProps {
   isError?: boolean;
   filter: 'open' | 'all';
   onFilterChange: (filter: 'open' | 'all') => void;
-  /** The frame's close button; unused when `framed` is false. */
-  onClose?: () => void;
-  /**
-   * Draw the panel's own frame (title, close button, border). False inside a `Panel` — in a
-   * `PanelRail` — which draws all of that itself; the count and filter then sit at the top of
-   * the body. Goes away once every editor's comments are in a rail.
-   */
-  framed?: boolean;
   initialText?: string;
   onCreateComment: (body: string) => Promise<void>;
   onDeleteComment: (commentId: string) => Promise<void>;
@@ -203,8 +195,6 @@ export function CommentsPanel({
   isError,
   filter,
   onFilterChange,
-  onClose,
-  framed = true,
   initialText,
   onCreateComment,
   onDeleteComment,
@@ -251,27 +241,11 @@ export function CommentsPanel({
   );
 
   return (
-    <div className={framed ? styles.panel : styles.content}>
-      {framed ? (
-        <div className={styles.header}>
-          <div className={styles.headerTitle}>
-            <MessageSquare size={16} />
-            Comments
-            {openCount > 0 && <span className={styles.countBadge}>{openCount}</span>}
-          </div>
-          <div className={styles.headerRight}>
-            {filterSelect}
-            <button className={styles.closeBtn} onClick={onClose} title="Close">
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className={styles.toolbar}>
-          <span className={styles.toolbarCount}>{openCount === 1 ? '1 open' : `${openCount} open`}</span>
-          {filterSelect}
-        </div>
-      )}
+    <div className={styles.content}>
+      <div className={styles.toolbar}>
+        <span className={styles.toolbarCount}>{openCount === 1 ? '1 open' : `${openCount} open`}</span>
+        {filterSelect}
+      </div>
 
       <div className={styles.newCommentForm}>
         <textarea

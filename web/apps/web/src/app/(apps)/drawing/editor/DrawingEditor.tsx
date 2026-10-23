@@ -1165,7 +1165,6 @@ export function DrawingEditor() {
       content: drawingId ? (
         <VersionHistoryPanel
           fileId={drawingId}
-          framed={false}
           onRestore={() => {
             panels.close('history');
             window.location.reload();

@@ -2360,7 +2360,7 @@ export function DocEditor() {
       title: 'Comments',
       icon: <MessageSquare size={14} />,
       side: 'right',
-      content: <CommentsPanel fileId={docId} framed={false} initialText={commentInitialText} />,
+      content: <CommentsPanel fileId={docId} initialText={commentInitialText} />,
     },
     {
       id: 'history',
@@ -2370,7 +2370,6 @@ export function DocEditor() {
       content: (
         <VersionHistoryPanel
           fileId={docId}
-          framed={false}
           onRestore={() => {
             queryClient.invalidateQueries({ queryKey: ['doc-content', docId] });
           }}

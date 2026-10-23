@@ -1,7 +1,7 @@
 /**
  * In a rail the comments panel stays mounted, so each "comment on this" reaches it as a new
  * `initialText`, not a fresh mount. The quote must still land in the box — without clobbering a
- * draft — and unframed it draws no title or close button of its own.
+ * draft — and it draws no title or close button of its own; the rail's panel has those.
  */
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
@@ -12,7 +12,6 @@ const props = (over: Partial<CommentsPanelProps> = {}): CommentsPanelProps => ({
   comments: [],
   filter: 'open',
   onFilterChange: vi.fn(),
-  framed: false,
   onCreateComment: vi.fn(),
   onDeleteComment: vi.fn(),
   onResolveComment: vi.fn(),
@@ -23,7 +22,7 @@ const props = (over: Partial<CommentsPanelProps> = {}): CommentsPanelProps => ({
 
 const box = () => screen.getByPlaceholderText('Add a comment… (use @name to mention)') as HTMLTextAreaElement;
 
-describe('CommentsPanel, unframed in a rail', () => {
+describe('CommentsPanel in a rail', () => {
   it('takes each new quote into the box while mounted', () => {
     const { rerender } = render(<CommentsPanel {...props({ initialText: '"First"\n\n' })} />);
     expect(box().value).toBe('"First"\n\n');

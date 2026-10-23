@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { History, RotateCcw, Tag, X, Check } from 'lucide-react';
+import { RotateCcw, Tag, X, Check } from 'lucide-react';
 import styles from './VersionHistoryPanel.module.css';
 
 export interface VersionItem {
@@ -16,10 +16,6 @@ export interface VersionHistoryPanelProps {
   versions: VersionItem[];
   isLoading?: boolean;
   isError?: boolean;
-  /** The frame's close button; unused when `framed` is false. */
-  onClose?: () => void;
-  /** Draw the panel's own frame. False inside a `Panel`, which draws its own; see CommentsPanel. */
-  framed?: boolean;
   onLabelVersion: (versionId: string, label: string) => Promise<void>;
   onRestoreVersion: (versionId: string) => Promise<void>;
 }
@@ -45,8 +41,6 @@ export function VersionHistoryPanel({
   versions,
   isLoading,
   isError,
-  onClose,
-  framed = true,
   onLabelVersion,
   onRestoreVersion,
 }: VersionHistoryPanelProps) {
@@ -82,18 +76,7 @@ export function VersionHistoryPanel({
   }
 
   return (
-    <div className={framed ? styles.panel : undefined}>
-      {framed && (
-        <div className={styles.header}>
-          <div className={styles.headerTitle}>
-            <History size={16} />
-            Version history
-          </div>
-          <button className={styles.closeBtn} onClick={onClose} title="Close">
-            <X size={16} />
-          </button>
-        </div>
-      )}
+    <div>
 
       <div className={styles.list}>
         {isLoading && <div className={styles.empty}>Loading versions…</div>}
