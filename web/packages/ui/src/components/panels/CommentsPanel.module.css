@@ -1,10 +1,14 @@
+/* An editor side panel: in the new looks it reads the editor-chrome and screen tokens
+   (look-and-feel roadmap LF5/LF6), so it sits on the editor's own surface with the look's
+   fields and primary action. Each falls back to what the classic look drew. */
+
 .panel {
   width: 300px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg);
-  border-left: 1px solid var(--color-border);
+  background: var(--editor-panel-bg, var(--color-bg));
+  border-left: var(--editor-panel-rule, 1px solid var(--color-border));
   overflow: hidden;
 }
 
@@ -15,7 +19,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--editor-panel-rule, 1px solid var(--color-border));
   flex-shrink: 0;
 }
 
@@ -39,16 +43,16 @@
   font-weight: 500;
   padding: 1px 6px;
   border-radius: calc(10px * var(--radius-scale));
-  background: var(--palette-blue-95);
-  color: var(--palette-sky-51);
+  background: var(--screen-selected-bg, var(--palette-blue-95));
+  color: var(--screen-selected-fg, var(--palette-sky-51));
 }
 
 .filterSelect {
   font-size: var(--text-xs);
   padding: 2px 6px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--editor-field-border, var(--color-border));
   border-radius: calc(4px * var(--radius-scale));
-  background: var(--color-bg);
+  background: var(--editor-field-bg, var(--color-bg));
   color: var(--color-text);
   cursor: pointer;
   outline: none;
@@ -68,14 +72,14 @@
 }
 
 .closeBtn:hover {
-  background: var(--color-bg-hover);
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
 }
 
 /* ── New comment form ── */
 
 .newCommentForm {
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--editor-panel-rule, 1px solid var(--color-border));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -87,19 +91,19 @@
   box-sizing: border-box;
   font-size: var(--font-size-13);
   padding: 8px 10px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--editor-field-border, var(--color-border));
   border-radius: calc(6px * var(--radius-scale));
   resize: none;
   font-family: inherit;
   line-height: 1.4;
   color: var(--color-text);
-  background: var(--color-bg);
+  background: var(--editor-field-bg, var(--color-bg));
   outline: none;
   transition: border-color 0.15s;
 }
 
 .textarea:focus {
-  border-color: var(--palette-sky-51);
+  border-color: var(--editor-tool-active-fg, var(--palette-sky-51));
 }
 
 .formActions {
@@ -111,7 +115,7 @@
 .cancelBtn {
   font-size: var(--font-size-13);
   padding: 5px 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--editor-field-border, var(--color-border));
   border-radius: calc(4px * var(--radius-scale));
   background: none;
   color: var(--color-text-muted);
@@ -119,7 +123,7 @@
 }
 
 .cancelBtn:hover {
-  background: var(--color-bg-hover);
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
 }
 
 .submitBtn {
@@ -127,15 +131,16 @@
   padding: 5px 12px;
   border: none;
   border-radius: calc(4px * var(--radius-scale));
-  background: var(--palette-sky-51);
-  color: var(--palette-gray-100);
+  background: var(--screen-primary-bg, var(--palette-sky-51));
+  color: var(--screen-primary-fg, var(--palette-gray-100));
+  box-shadow: var(--screen-primary-ring, none);
   cursor: pointer;
   font-weight: 500;
   transition: background 0.15s;
 }
 
 .submitBtn:hover:not(:disabled) {
-  background: var(--palette-sky-39);
+  background: var(--screen-primary-hover-bg, var(--palette-sky-39));
 }
 
 .submitBtn:disabled {
@@ -162,7 +167,7 @@
 
 .thread {
   padding: 12px 16px;
-  border-bottom: 1px solid var(--color-border-subtle, var(--palette-sky-95));
+  border-bottom: var(--editor-panel-rule, 1px solid var(--color-border-subtle, var(--palette-sky-95)));
 }
 
 .thread:last-child {
@@ -203,7 +208,7 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--palette-sky-51);
+  background: var(--editor-tool-active-fg, var(--palette-sky-51));
   color: var(--palette-gray-100);
   font-size: var(--font-size-11);
   font-weight: 600;
@@ -249,7 +254,7 @@
   align-items: center;
   gap: 4px;
   font-size: var(--text-xs);
-  color: var(--palette-sky-51);
+  color: var(--editor-tool-active-fg, var(--palette-sky-51));
   background: none;
   border: none;
   padding: 2px 0;
@@ -276,7 +281,7 @@
 }
 
 .replyBtn:hover {
-  background: var(--color-bg-hover);
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
   color: var(--color-text);
 }
 
@@ -285,7 +290,7 @@
 .reply {
   margin-top: 8px;
   padding: 8px 10px;
-  background: var(--color-bg-secondary, var(--palette-sky-98));
+  background: var(--editor-tool-hover-bg, var(--color-bg-secondary, var(--palette-sky-98)));
   border-radius: calc(6px * var(--radius-scale));
 }
 
@@ -329,7 +334,7 @@
 }
 
 .iconBtn:hover:not(:disabled) {
-  background: var(--color-bg-hover);
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
   color: var(--color-text);
 }
 
