@@ -1,0 +1,380 @@
+/* Rails sit on the editor's own surfaces: the new looks' editor-chrome tokens where they are
+   defined (look-and-feel roadmap LF5), the classic panel colours where they are not. */
+
+.workspace {
+  --rail-strip: 30px;
+  position: relative;
+  display: grid;
+  grid-template-areas:
+    'top top top'
+    'left center right'
+    'bottom bottom bottom';
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace[data-dragging='true'] {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.center {
+  grid-area: center;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.center[data-drop-float='true']::after {
+  content: '';
+  position: absolute;
+  inset: var(--space-2);
+  border: 2px dashed var(--editor-tool-active-fg, var(--color-accent));
+  border-radius: var(--radius-md);
+  pointer-events: none;
+}
+
+/* ── A rail: the strip on the outer edge, the open pane beside it ── */
+
+.rail {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.rail[data-side='left'] { grid-area: left; flex-direction: row; }
+.rail[data-side='right'] { grid-area: right; flex-direction: row-reverse; }
+.rail[data-side='top'] { grid-area: top; flex-direction: column; }
+.rail[data-side='bottom'] { grid-area: bottom; flex-direction: column-reverse; }
+
+.strip {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--editor-panel-bg, var(--color-surface));
+}
+
+.rail[data-side='left'] .strip,
+.rail[data-side='right'] .strip {
+  flex-direction: column;
+  width: var(--rail-strip);
+}
+
+.rail[data-side='top'] .strip,
+.rail[data-side='bottom'] .strip {
+  flex-direction: row;
+  height: var(--rail-strip);
+}
+
+.rail[data-side='left'] .strip { border-right: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='right'] .strip { border-left: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='top'] .strip { border-bottom: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='bottom'] .strip { border-top: var(--editor-panel-rule, 1px solid var(--color-border)); }
+
+.strip[data-drop-active='true'] {
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
+  border: none;
+  border-radius: var(--editor-tool-radius, var(--radius-sm));
+  background: none;
+  color: var(--editor-tool-fg, var(--color-text-secondary));
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.rail[data-side='top'] .tab,
+.rail[data-side='bottom'] .tab {
+  padding: var(--space-1) var(--space-2);
+}
+
+/* Labels run along a side rail: read upwards on the left, downwards on the right. */
+.rail[data-side='left'] .tab,
+.rail[data-side='right'] .tab {
+  writing-mode: vertical-rl;
+}
+
+.rail[data-side='left'] .tab {
+  transform: rotate(180deg);
+}
+
+.tab:hover {
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
+  color: var(--editor-tool-hover-fg, var(--color-text));
+}
+
+.tab[aria-selected='true'] {
+  background: var(--editor-tool-active-bg, var(--selected-bg));
+  color: var(--editor-tool-active-fg, var(--selected-fg));
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--editor-tool-active-fg, var(--color-accent));
+  outline-offset: 1px;
+}
+
+.tab[data-dragging='true'] {
+  opacity: 0.4;
+}
+
+.tabIcon {
+  display: inline-flex;
+}
+
+/* An icon stays upright when its label is turned. */
+.rail[data-side='left'] .tabIcon,
+.rail[data-side='right'] .tabIcon {
+  writing-mode: horizontal-tb;
+}
+
+.rail[data-side='left'] .tabIcon {
+  transform: rotate(180deg);
+}
+
+.dropMarker {
+  flex-shrink: 0;
+  border-radius: var(--radius-full, 999px);
+  background: var(--editor-tool-active-fg, var(--color-accent));
+}
+
+.rail[data-side='left'] .dropMarker,
+.rail[data-side='right'] .dropMarker {
+  height: 2px;
+  width: 100%;
+}
+
+.rail[data-side='top'] .dropMarker,
+.rail[data-side='bottom'] .dropMarker {
+  width: 2px;
+  height: 100%;
+}
+
+/* ── The open pane ── */
+
+.paneArea {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
+  background: var(--editor-panel-bg, var(--color-surface));
+}
+
+/* A pane is capped only in the direction it grows, so it can never squeeze the view out. */
+.rail[data-side='left'] .paneArea,
+.rail[data-side='right'] .paneArea {
+  max-width: 60vw;
+}
+
+.rail[data-side='top'] .paneArea,
+.rail[data-side='bottom'] .paneArea {
+  max-height: 60vh;
+}
+
+.paneArea[hidden] {
+  display: none;
+}
+
+.rail[data-side='left'] .paneArea { border-right: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='right'] .paneArea { border-left: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='top'] .paneArea { border-bottom: var(--editor-panel-rule, 1px solid var(--color-border)); }
+.rail[data-side='bottom'] .paneArea { border-top: var(--editor-panel-rule, 1px solid var(--color-border)); }
+
+.pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pane[hidden] {
+  display: none;
+}
+
+.paneHeader {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: var(--editor-panel-rule, 1px solid var(--color-border));
+}
+
+.paneIcon {
+  display: inline-flex;
+  color: var(--editor-tool-fg, var(--color-text-secondary));
+}
+
+.paneTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-13);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.paneBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--editor-tool-radius, var(--radius-sm));
+  background: none;
+  color: var(--editor-tool-fg, var(--color-text-muted));
+  cursor: pointer;
+}
+
+.iconButton:hover {
+  background: var(--editor-tool-hover-bg, var(--color-bg-hover));
+  color: var(--editor-tool-hover-fg, var(--color-text));
+}
+
+.iconButton:focus-visible {
+  outline: 2px solid var(--editor-tool-active-fg, var(--color-accent));
+  outline-offset: 1px;
+}
+
+.resizeHandle {
+  position: absolute;
+  z-index: var(--z-layer-2);
+  background: transparent;
+  touch-action: none;
+}
+
+.rail[data-side='left'] .resizeHandle { top: 0; right: -3px; bottom: 0; width: 6px; cursor: ew-resize; }
+.rail[data-side='right'] .resizeHandle { top: 0; left: -3px; bottom: 0; width: 6px; cursor: ew-resize; }
+.rail[data-side='top'] .resizeHandle { left: 0; right: 0; bottom: -3px; height: 6px; cursor: ns-resize; }
+.rail[data-side='bottom'] .resizeHandle { left: 0; right: 0; top: -3px; height: 6px; cursor: ns-resize; }
+
+.resizeHandle:hover,
+.resizeHandle:focus-visible {
+  outline: none;
+  background: var(--editor-tool-active-fg, var(--color-accent));
+}
+
+/* ── Move menu ── */
+
+.menuRoot {
+  position: relative;
+}
+
+.menuPopover {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 180px;
+}
+
+/* ── Floating panes ── */
+
+.floating {
+  position: absolute;
+  z-index: var(--z-layer-10);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border: var(--screen-card-border, 1px solid var(--color-border));
+  border-radius: var(--dialog-radius, var(--radius-lg));
+  background: var(--screen-card-bg, var(--color-surface));
+  box-shadow: var(--screen-card-shadow, var(--shadow-xl));
+  backdrop-filter: var(--screen-card-filter, none);
+}
+
+.floatHeader {
+  cursor: grab;
+  touch-action: none;
+}
+
+.floatResize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.dragGhost {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: var(--screen-card-border, 1px solid var(--color-border));
+  border-radius: var(--radius-md);
+  background: var(--screen-card-bg, var(--color-surface));
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  pointer-events: none;
+}
+
+/* ── Phone width: an open pane covers the view rather than squeezing it, and floats fill it ── */
+
+@media (max-width: 640px) {
+  /* Opaque: a covering pane over a translucent look would show the page through its text. */
+  .rail .paneArea {
+    position: absolute;
+    z-index: var(--z-layer-10);
+    max-width: none;
+    max-height: none;
+    background: var(--color-surface-overlay);
+    box-shadow: var(--shadow-xl);
+  }
+
+  /* `!important` over the pane's remembered size, which is an inline style. */
+  .rail[data-side='left'] .paneArea { top: 0; bottom: 0; left: var(--rail-strip); width: calc(100% - var(--rail-strip)) !important; max-width: none; }
+  .rail[data-side='right'] .paneArea { top: 0; bottom: 0; right: var(--rail-strip); width: calc(100% - var(--rail-strip)) !important; max-width: none; }
+  .rail[data-side='top'] .paneArea { left: 0; right: 0; top: var(--rail-strip); height: 70% !important; max-height: none; }
+  .rail[data-side='bottom'] .paneArea { left: 0; right: 0; bottom: var(--rail-strip); height: 70% !important; max-height: none; }
+
+  /* With a rail on the opposite side too, leave its strip reachable. */
+  .workspace:has(.rail[data-side='right']) .rail[data-side='left'] .paneArea,
+  .workspace:has(.rail[data-side='left']) .rail[data-side='right'] .paneArea {
+    width: calc(100% - 2 * var(--rail-strip)) !important;
+  }
+
+  .floating {
+    inset: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    border-radius: 0;
+  }
+
+  .floatResize {
+    display: none;
+  }
+}

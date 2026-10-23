@@ -105,6 +105,20 @@ export type { PanelProps, PanelColor, PanelPadding } from './components/containe
 
 export { PanelContainer } from './components/containers/PanelContainer';
 export type { PanelContainerProps, PanelLocation, PanelTab } from './components/containers/PanelContainer';
+export { RailWorkspace } from './components/rails/RailWorkspace';
+export type { RailPane, RailWorkspaceProps } from './components/rails/RailWorkspace';
+export {
+  collapseRail,
+  defaultLayout as defaultRailLayout,
+  dockPane,
+  expandPane,
+  floatPane,
+  movePane,
+  normalizeLayout as normalizeRailLayout,
+  togglePane,
+  RAIL_SIDES,
+} from './components/rails/railLayout';
+export type { FloatRect, RailLayout, RailSide, RailSpec, RailState } from './components/rails/railLayout';
 
 export { Modal, ModalHeader, ModalBody, ModalFooter } from './components/containers/Modal';
 export type {
