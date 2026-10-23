@@ -1,0 +1,71 @@
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* The host may tint itself for an icon (FileGrid's preview does); the
+     preview is content, so it reads in the ordinary text colour. */
+  color: var(--color-text-primary);
+  background-color: var(--color-surface);
+}
+
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Laid out on a page `1 / scale` as wide as the box, then scaled to fit it:
+   zooming out shows more of the content, zooming in enlarges it. */
+.content {
+  width: calc(100% / var(--preview-scale, 1));
+  transform: scale(var(--preview-scale, 1));
+  transform-origin: 0 0;
+  transition: transform var(--duration-fast) var(--ease-default);
+}
+
+/* Fade the bottom edge so cut-off content reads as "continues", not as broken. */
+.viewport::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 28px;
+  background: linear-gradient(to bottom, transparent, var(--color-surface));
+}
+
+.overlay {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-2);
+  transform: translateX(-50%);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background-color: var(--color-surface-overlay, var(--color-surface));
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  cursor: default;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-default);
+}
+
+/* Shown while the preview is pointed at or the slider has focus; always on
+   devices with no hover, where it would otherwise be unreachable. */
+.root:hover .overlay,
+.overlay:focus-within {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .overlay {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content,
+  .overlay {
+    transition: none;
+  }
+}

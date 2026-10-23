@@ -9,6 +9,7 @@ import { createNote, listAllNotes, type NoteMeta } from '@/lib/noteFiles';
 import { filesystemApi, storageApi } from '@neutrino/api-drive';
 import { FileGrid, type GridItem, type SortField, type SortDir } from '@neutrino/ui';
 import { DocumentPreviewModal } from '@/components/DocumentPreviewModal';
+import { NoteCardPreview } from './NoteCardPreview';
 import styles from './page.module.css';
 import contextMenuStyles from '../drive/FileContextMenu.module.css';
 
@@ -31,6 +32,7 @@ function noteToGridItem(note: NoteMeta): GridItem {
     modifiedText: formatDate(note.updatedAt),
     // No subtitle: the card's meta line is the friendly date, as everywhere else.
     updatedAt: note.updatedAt,
+    preview: <NoteCardPreview id={note.id} updatedAt={note.updatedAt} />,
   };
 }
 
