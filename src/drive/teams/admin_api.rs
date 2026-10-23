@@ -270,6 +270,7 @@ mod routing {
         (
             web::Data::new(TeamsApiState {
                 service: Arc::new(service),
+                notifications: None,
             }),
             web::Data::new(Arc::new(TokenService::new("test-secret-for-tests".into()))),
         )

@@ -101,8 +101,13 @@ function toTopbarResult(hit: SearchHit): TopbarSearchResult {
 
 function notificationHref(n: NotificationItem): string | undefined {
   const payload = n.payload as Record<string, string>;
-  const { resourceType, resourceId, mimeType } = payload;
+  const { resourceType, resourceId, mimeType, teamId } = payload;
   if (!resourceId) return undefined;
+  // A key request is answered from the team's Files; an approved one opens the file.
+  if (n.eventType === 'team_key_approved') return `/open/file/${encodeURIComponent(resourceId)}`;
+  if ((n.eventType === 'team_key_requested' || n.eventType === 'team_key_denied') && teamId) {
+    return `/teams/space?id=${encodeURIComponent(teamId)}&view=files`;
+  }
   if (resourceType === 'folder') return `/drive`;
   // Map file mimeType to the right editor
   if (mimeType?.includes('document')) return `/docs/editor?id=${resourceId}`;

@@ -58,7 +58,7 @@ pub struct TeamsRepository {
     pool: DbPool,
 }
 
-fn db_err(context: &'static str) -> impl Fn(diesel::result::Error) -> ApiError {
+pub(super) fn db_err(context: &'static str) -> impl Fn(diesel::result::Error) -> ApiError {
     move |e| {
         tracing::error!("DB {} error: {:?}", context, e);
         ApiError::internal("Database error")
@@ -70,7 +70,7 @@ impl TeamsRepository {
         Self { pool }
     }
 
-    fn conn(
+    pub(super) fn conn(
         &self,
     ) -> Result<diesel::r2d2::PooledConnection<ConnectionManager<SqliteConnection>>, ApiError> {
         self.pool.get().map_err(|e| {
